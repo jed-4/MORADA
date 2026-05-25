@@ -1001,14 +1001,20 @@ export default function ScheduleTemplateDetail() {
                 if (!reorderedItem) return;
                 const filtered = items.filter(i => i.id !== itemId);
                 const insertIdx = afterItemId ? filtered.findIndex(i => i.id === afterItemId) + 1 : 0;
-                const updated = [...filtered.slice(0, insertIdx), { ...reorderedItem, parentItemId: newParentId }, ...filtered.slice(insertIdx)];
+                const updated = [...filtered.slice(0, insertIdx), { ...reorderedItem, parentItemId: newParentId ?? null }, ...filtered.slice(insertIdx)];
                 setItems(updated.map((item, idx) => ({ ...item, sortOrder: idx })));
+                setHasUnsavedChanges(true);
+              }}
+              onNestItem={(itemId, newParentId) => {
+                setItems(prev => prev.map(i => i.id === itemId ? { ...i, parentItemId: newParentId ?? null } : i));
                 setHasUnsavedChanges(true);
               }}
               visibleColumns={visibleColumns}
               allCollapsed={allCollapsed}
               locked={false}
               maxHeight="calc(100vh - 130px)"
+              isTemplate={true}
+              templateReferenceDate={refDate}
             />
           </div>
         ) : (

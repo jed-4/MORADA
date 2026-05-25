@@ -490,8 +490,23 @@ export default function BusinessSchedule() {
   const [showFilter, setShowFilter] = useState(false);
   const [scheduleTypeFilter, setScheduleTypeFilter] = useState<'all' | 'construction' | 'precon'>('all');
   const [showOnline, setShowOnline] = useState(true);
-  const [showOffline, setShowOffline] = useState(false);
+  const [showOffline, setShowOffline] = useState<boolean>(() => {
+    try { return JSON.parse(localStorage.getItem('business-schedule-offline-filter') || 'false'); } catch { return false; }
+  });
   const [showProspective, setShowProspective] = useState(true);
+  const [hideNoDateProjects, setHideNoDateProjects] = useState<boolean>(
+    () => bsLS.get("hideNoDateProjects", false)
+  );
+  const [sortByStartDate, setSortByStartDate] = useState<boolean>(
+    () => bsLS.get("sortByStartDate", false)
+  );
+
+  // Persist filter state — must appear AFTER state declarations to avoid TDZ
+  useEffect(() => {
+    try { localStorage.setItem('business-schedule-offline-filter', JSON.stringify(showOffline)); } catch {}
+  }, [showOffline]);
+  useEffect(() => { bsLS.set("hideNoDateProjects", hideNoDateProjects); }, [hideNoDateProjects]);
+  useEffect(() => { bsLS.set("sortByStartDate", sortByStartDate); }, [sortByStartDate]);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; projectId: string } | null>(null);
   const [settingsProject, setSettingsProject] = useState<BusinessProject | null>(null);
 
@@ -533,9 +548,13 @@ export default function BusinessSchedule() {
       if (scheduleTypeFilter === 'precon') {
         return p.currentSystemPhase === 'lead' || p.currentSystemPhase === 'pre_construction';
       }
+      if (hideNoDateProjects) {
+        const dates = getProjectDates(p);
+        if (!dates.start && !dates.end) return false;
+      }
       return true;
     });
-  }, [projects, scheduleTypeFilter, showOnline, showOffline, showProspective]);
+  }, [projects, scheduleTypeFilter, showOnline, showOffline, showProspective, hideNoDateProjects]);
 
   // Why are some projects not showing? Break the gap into reasons so the user
   // can see at a glance and one-click fix it.
@@ -607,6 +626,15 @@ export default function BusinessSchedule() {
   });
 
   const orderedVisibleProjects = useMemo(() => {
+    if (sortByStartDate) {
+      return [...visibleProjects].sort((a, b) => {
+        const ad = getProjectDates(a);
+        const bd = getProjectDates(b);
+        const at = ad.start ? ad.start.getTime() : Infinity;
+        const bt = bd.start ? bd.start.getTime() : Infinity;
+        return at - bt;
+      });
+    }
     if (!localOrder) return visibleProjects;
     const orderMap = new Map(localOrder.map((id, i) => [id, i]));
     return [...visibleProjects].sort((a, b) => {
@@ -614,7 +642,7 @@ export default function BusinessSchedule() {
       const bi = orderMap.get(b.id) ?? 9999;
       return ai - bi;
     });
-  }, [visibleProjects, localOrder]);
+  }, [visibleProjects, localOrder, sortByStartDate]);
 
   // Bulk-fetch schedule items for every visible project so the Week view can
   // hide rows that have no items in the current week. Only enabled in Week
@@ -647,6 +675,7 @@ export default function BusinessSchedule() {
     (showOnline ? 0 : 1) +
     (showProspective ? 0 : 1) +
     (showOffline ? 1 : 0) +
+    (hideNoDateProjects ? 1 : 0) +
     hiddenProjectsCount;
 
   // Reset to the Week-view canonical defaults (matches activeFilterCount === 0).
@@ -662,6 +691,8 @@ export default function BusinessSchedule() {
     setShowOffline(false);
     setShowProspective(true);
     setScheduleTypeFilter('all');
+    setHideNoDateProjects(false);
+    setSortByStartDate(false);
     const hidden = projects.filter(p => !p.isVisible);
     if (hidden.length === 0) return;
     try {
@@ -716,7 +747,15 @@ export default function BusinessSchedule() {
   useEffect(() => {
     if (timelineRef.current) {
       const todayOffset = todayPosition - timelineRef.current.clientWidth / 3;
-      timelineRef.current.scrollLeft = Math.max(0, todayOffset);
+      const newScrollLeft = Math.max(0, todayOffset);
+      timelineRef.current.scrollLeft = newScrollLeft;
+      // Sync the header transform immediately after auto-scroll so it matches
+      // the body without waiting for the next scroll event.
+      const headerContainer = timelineRef.current.previousElementSibling;
+      const headerInner = headerContainer?.querySelector('div') as HTMLElement | null;
+      if (headerInner) {
+        headerInner.style.transform = `translateX(-${newScrollLeft}px)`;
+      }
     }
   }, [todayPosition, zoomLevel]);
 
@@ -995,6 +1034,29 @@ export default function BusinessSchedule() {
                   </label>
                 </div>
 
+                {/* Additional filters */}
+                <div className="px-3 py-3 border-t border-border">
+                  <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-2">
+                    Display options
+                  </div>
+                  <label className="flex items-center justify-between gap-2 py-1 cursor-pointer">
+                    <span className="text-xs">Hide projects with no dates</span>
+                    <Switch
+                      checked={hideNoDateProjects}
+                      onCheckedChange={setHideNoDateProjects}
+                      data-testid="switch-week-hide-no-dates"
+                    />
+                  </label>
+                  <label className="flex items-center justify-between gap-2 py-1 cursor-pointer">
+                    <span className="text-xs">Sort by start date</span>
+                    <Switch
+                      checked={sortByStartDate}
+                      onCheckedChange={setSortByStartDate}
+                      data-testid="switch-week-sort-by-start-date"
+                    />
+                  </label>
+                </div>
+
                 {/* Per-project visibility */}
                 <div className="px-3 py-3">
                   <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-2">
@@ -1129,6 +1191,8 @@ export default function BusinessSchedule() {
     (!showOnline ? 1 : 0) +
     (!showOffline ? 1 : 0) +
     (!showProspective ? 1 : 0) +
+    (hideNoDateProjects ? 1 : 0) +
+    (sortByStartDate ? 1 : 0) +
     (projects.some(p => !p.isVisible) ? 1 : 0)
   );
   const resetProjectsFilters = () => {
@@ -1136,6 +1200,8 @@ export default function BusinessSchedule() {
     setShowOnline(true);
     setShowOffline(true);
     setShowProspective(true);
+    setHideNoDateProjects(false);
+    setSortByStartDate(false);
     projects.filter(p => !p.isVisible).forEach(p => {
       updateProjectMutation.mutate({ projectId: p.id, isVisible: true });
     });
@@ -1231,6 +1297,29 @@ export default function BusinessSchedule() {
                     checked={showProspective}
                     onCheckedChange={setShowProspective}
                     data-testid="switch-projects-prospective"
+                  />
+                </label>
+              </div>
+
+              {/* Additional display options */}
+              <div className="px-3 py-3 border-t border-border">
+                <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-2">
+                  Display options
+                </div>
+                <label className="flex items-center justify-between gap-2 py-1 cursor-pointer">
+                  <span className="text-xs">Hide projects with no dates</span>
+                  <Switch
+                    checked={hideNoDateProjects}
+                    onCheckedChange={setHideNoDateProjects}
+                    data-testid="switch-projects-hide-no-dates"
+                  />
+                </label>
+                <label className="flex items-center justify-between gap-2 py-1 cursor-pointer">
+                  <span className="text-xs">Sort by start date</span>
+                  <Switch
+                    checked={sortByStartDate}
+                    onCheckedChange={setSortByStartDate}
+                    data-testid="switch-projects-sort-by-start-date"
                   />
                 </label>
               </div>

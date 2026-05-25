@@ -3,6 +3,14 @@ import { CasvaScheduleRow } from "./CasvaScheduleRow";
 import { Table, TableHeader, TableRow, TableHead, TableBody } from "@/components/ui/table";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { ChevronRight, ChevronDown, Pencil, Copy, Trash2, MoreVertical } from "lucide-react";
 import { useState, Fragment, useEffect, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 
@@ -40,6 +48,8 @@ export interface CasvaScheduleListProps {
   onAddSubItem?: (item: ScheduleItem) => void;
   allCollapsed?: boolean;
   locked?: boolean;
+  isTemplate?: boolean;
+  templateReferenceDate?: Date;
 }
 
 interface FlatRow {
@@ -66,7 +76,9 @@ export function CasvaScheduleList({
   onDeleteItem,
   onAddSubItem,
   allCollapsed,
-  locked = false
+  locked = false,
+  isTemplate = false,
+  templateReferenceDate,
 }: CasvaScheduleListProps) {
   const [collapsedItems, setCollapsedItems] = useState<Set<string>>(new Set());
 
@@ -100,6 +112,25 @@ export function CasvaScheduleList({
   const nestHoldTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingNestIdRef = useRef<string | null>(null);
   const [nestHighlightId, setNestHighlightId] = useState<string | null>(null);
+  const [nestBlockedId, setNestBlockedId] = useState<string | null>(null);
+  const nestIsBlockedRef = useRef(false);
+  const itemsRef = useRef(items);
+  itemsRef.current = items;
+
+  const getDescendantIds = useCallback((rootId: string): Set<string> => {
+    const descendants = new Set<string>();
+    const queue = [rootId];
+    while (queue.length > 0) {
+      const current = queue.shift()!;
+      for (const it of itemsRef.current) {
+        if (it.parentItemId === current && !descendants.has(it.id)) {
+          descendants.add(it.id);
+          queue.push(it.id);
+        }
+      }
+    }
+    return descendants;
+  }, []);
 
   const toggleSelection = (itemId: string, e?: React.MouseEvent) => {
     if (!onSelectionChange) return;
@@ -135,7 +166,12 @@ export function CasvaScheduleList({
   }, {} as Record<string, ScheduleItem[]>);
 
   for (const key of Object.keys(subtasksByParent)) {
-    subtasksByParent[key].sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
+    subtasksByParent[key].sort((a, b) => {
+      const aDate = a.startDate ? new Date(a.startDate as string).getTime() : Infinity;
+      const bDate = b.startDate ? new Date(b.startDate as string).getTime() : Infinity;
+      if (aDate !== bDate) return aDate - bDate;
+      return (a.sortOrder || 0) - (b.sortOrder || 0);
+    });
   }
 
   const buildFlatRows = useCallback((): FlatRow[] => {
@@ -390,8 +426,20 @@ export function CasvaScheduleList({
           nestTargetIdRef.current = null;
           setNestHighlightId(null);
           nestHoldTimerRef.current = setTimeout(() => {
-            nestTargetIdRef.current = nestInto;
-            setNestHighlightId(nestInto);
+            const descendants = getDescendantIds(itemId);
+            if (nestInto === itemId || descendants.has(nestInto)) {
+              // Invalid: would create a cycle — show red block state
+              nestTargetIdRef.current = null;
+              nestIsBlockedRef.current = true;
+              dropTargetIdRef.current = null;
+              setNestBlockedId(nestInto);
+              setNestHighlightId(null);
+            } else {
+              nestTargetIdRef.current = nestInto;
+              nestIsBlockedRef.current = false;
+              setNestHighlightId(nestInto);
+              setNestBlockedId(null);
+            }
             setIndicatorLine(null);
           }, 750);
         }
@@ -415,6 +463,9 @@ export function CasvaScheduleList({
         pendingNestIdRef.current = null;
         nestTargetIdRef.current = null;
         setNestHighlightId(null);
+        // Clear any previous blocked-nest state so a normal reorder isn't suppressed
+        setNestBlockedId(null);
+        nestIsBlockedRef.current = false;
         const targetEl = rowRefsMap.current.get(targetId);
         if (targetEl) {
           const rect = targetEl.getBoundingClientRect();
@@ -444,7 +495,7 @@ export function CasvaScheduleList({
       if (dragStartedRef.current) {
         if (nestTargetIdRef.current && onNestItem) {
           onNestItem(itemId, nestTargetIdRef.current);
-        } else if (dropTargetIdRef.current && onReorderItem) {
+        } else if (dropTargetIdRef.current && onReorderItem && !nestIsBlockedRef.current) {
           const params = computeReorderParams(itemId, dropTargetIdRef.current, dropPositionRef.current);
           if (params) {
             onReorderItem(itemId, params.afterItemId, params.newParentId);
@@ -456,6 +507,8 @@ export function CasvaScheduleList({
       setDraggingItemId(null);
       setIndicatorLine(null);
       setNestHighlightId(null);
+      setNestBlockedId(null);
+      nestIsBlockedRef.current = false;
       dropTargetIdRef.current = null;
       nestTargetIdRef.current = null;
       pendingNestIdRef.current = null;
@@ -576,7 +629,7 @@ export function CasvaScheduleList({
               {visibleColumns.item && <TableHead className="font-semibold h-8 py-0 text-xs pl-0">Item</TableHead>}
               {visibleColumns.assignee && <TableHead className="font-semibold w-32 h-8 py-0 text-xs">Assignee</TableHead>}
               {visibleColumns.type && <TableHead className="font-semibold w-24 h-8 py-0 text-xs">Type</TableHead>}
-              {visibleColumns.dueDate && <TableHead className="font-semibold w-36 h-8 py-0 text-xs">Due Date & Duration</TableHead>}
+              {visibleColumns.dueDate && <TableHead className="font-semibold w-36 h-8 py-0 text-xs">{isTemplate ? 'Start Day' : 'Due Date & Duration'}</TableHead>}
               {visibleColumns.status && <TableHead className="font-semibold w-32 h-8 py-0 text-xs">Status</TableHead>}
               <TableHead className="w-8 h-8 py-0 text-xs"></TableHead>
               {visibleColumns.completion && <TableHead className="font-semibold w-28 h-8 py-0 text-xs text-center">Completion %</TableHead>}
@@ -588,17 +641,37 @@ export function CasvaScheduleList({
               const subtasks = subtasksByParent[item.id] || [];
               const isCollapsed = collapsedItems.has(item.id);
               const hasSubtasks = subtasks.length > 0;
+
+              // Compute date range and progress roll-up for section headers
+              const childDates = subtasks.flatMap(s => {
+                const res: Date[] = [];
+                if (s.startDate) res.push(new Date(s.startDate as string));
+                if (s.endDate) res.push(new Date(s.endDate as string));
+                return res;
+              });
+              const childMinDate = childDates.length > 0 ? new Date(Math.min(...childDates.map(d => d.getTime()))) : null;
+              const childMaxDate = childDates.length > 0 ? new Date(Math.max(...childDates.map(d => d.getTime()))) : null;
+              const childProgress = hasSubtasks
+                ? Math.round(subtasks.reduce((sum, s) => sum + (s.progressPercent || 0), 0) / subtasks.length)
+                : (item.progressPercent || 0);
+
               return (
                 <Fragment key={item.id}>
                   <TableRow 
                     ref={(el) => { if (el) rowRefsMap.current.set(item.id, el); }}
-                    className={`group h-8 border-b cursor-pointer relative overflow-visible transition-colors hover-elevate ${
-                      selectedItems.has(item.id) ? 'bg-accent/30' : ''
+                    className={`group border-b cursor-pointer relative overflow-visible transition-colors ${
+                      hasSubtasks ? 'h-9 bg-muted/40 hover:bg-muted/60' : 'h-8 hover-elevate'
+                    } ${selectedItems.has(item.id) ? 'bg-accent/30' : ''
                     } ${draggingItemId === item.id ? 'opacity-30' : ''}`}
                     style={nestHighlightId === item.id ? {
                       outline: '2px solid hsl(var(--primary))',
                       outlineOffset: '-2px',
                       backgroundColor: 'rgba(168, 144, 212, 0.12)',
+                      borderRadius: '4px',
+                    } : nestBlockedId === item.id ? {
+                      outline: '2px solid hsl(var(--destructive))',
+                      outlineOffset: '-2px',
+                      backgroundColor: 'rgba(239, 68, 68, 0.08)',
                       borderRadius: '4px',
                     } : undefined}
                     data-testid={`schedule-row-${item.id}`}
@@ -620,24 +693,102 @@ export function CasvaScheduleList({
                         />
                       </td>
                     )}
-                    <CasvaScheduleRow
-                      item={item}
-                      noteCount={noteCounts[item.id] || 0}
-                      onEdit={() => onEditItem(item)}
-                      onStatusChange={onStatusChange ? (status) => onStatusChange(item.id, status) : undefined}
-                      onDuplicate={onDuplicateItem ? () => onDuplicateItem(item) : undefined}
-                      onDelete={onDeleteItem ? () => onDeleteItem(item.id) : undefined}
-                      onCompletionToggle={onCompletionToggle ? () => onCompletionToggle(item.id, item.progressPercent || 0) : undefined}
-                      statusOptions={statusOptions}
-                      visibleColumns={visibleColumns}
-                      isDraggable={!!(onReorderItem || onNestItem)}
-                      onDragHandleMouseDown={(e) => handleMouseDown(e, item.id)}
-                      isParent={hasSubtasks}
-                      isCollapsed={isCollapsed}
-                      onToggleCollapse={hasSubtasks ? () => toggleCollapse(item.id) : undefined}
-                      hasSubtasks={hasSubtasks}
-                      locked={locked}
-                    />
+                    {hasSubtasks ? (
+                      // Section header rendering for depth-0 with children
+                      <>
+                        {visibleColumns.item && (
+                          <td className="py-0 pl-0" colSpan={1}>
+                            <div className="flex items-center gap-1.5 px-1">
+                              <button
+                                onClick={(e) => { e.stopPropagation(); toggleCollapse(item.id); }}
+                                className="p-0.5 rounded flex-shrink-0 w-4 h-4 flex items-center justify-center text-muted-foreground hover:text-foreground"
+                                data-testid="button-toggle-collapse"
+                              >
+                                {isCollapsed
+                                  ? <ChevronRight className="w-3 h-3" />
+                                  : <ChevronDown className="w-3 h-3" />}
+                              </button>
+                              <span className="font-semibold text-xs truncate" data-testid="schedule-item-title">{item.name}</span>
+                              <span className="text-[10px] text-muted-foreground shrink-0 ml-1">{subtasks.length} item{subtasks.length !== 1 ? 's' : ''}</span>
+                              {childMinDate && childMaxDate && (
+                                <span className="text-[10px] text-muted-foreground shrink-0">
+                                  · {childMinDate.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}–{childMaxDate.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                        )}
+                        {visibleColumns.assignee && <td className="w-32 py-0" />}
+                        {visibleColumns.type && <td className="w-24 py-0" />}
+                        {visibleColumns.dueDate && <td className="w-36 py-0" />}
+                        {visibleColumns.status && <td className="w-32 py-0" />}
+                        <td className="w-8 py-0" />
+                        {visibleColumns.completion && (
+                          <td className="w-28 py-0">
+                            <div className="flex items-center justify-center gap-1.5 px-2">
+                              <div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden">
+                                <div
+                                  className="h-full rounded-full bg-primary transition-all"
+                                  style={{ width: `${childProgress}%` }}
+                                />
+                              </div>
+                              <span className="text-[10px] text-muted-foreground shrink-0">{childProgress}%</span>
+                            </div>
+                          </td>
+                        )}
+                        <td className="w-12 py-0">
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
+                                data-testid={`button-actions-${item.id}`}
+                              >
+                                <MoreVertical className="h-3 w-3" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem onClick={() => onEditItem(item)}>
+                                <Pencil className="h-3.5 w-3.5 mr-2" />
+                                Edit
+                              </DropdownMenuItem>
+                              {onDuplicateItem && (
+                                <DropdownMenuItem onClick={() => onDuplicateItem(item)}>
+                                  <Copy className="h-3.5 w-3.5 mr-2" />
+                                  Duplicate
+                                </DropdownMenuItem>
+                              )}
+                              {onDeleteItem && (
+                                <DropdownMenuItem onClick={() => onDeleteItem(item.id)} className="text-destructive">
+                                  <Trash2 className="h-3.5 w-3.5 mr-2" />
+                                  Delete
+                                </DropdownMenuItem>
+                              )}
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </td>
+                      </>
+                    ) : (
+                      <CasvaScheduleRow
+                        item={item}
+                        noteCount={noteCounts[item.id] || 0}
+                        onEdit={() => onEditItem(item)}
+                        onStatusChange={onStatusChange ? (status) => onStatusChange(item.id, status) : undefined}
+                        onDuplicate={onDuplicateItem ? () => onDuplicateItem(item) : undefined}
+                        onDelete={onDeleteItem ? () => onDeleteItem(item.id) : undefined}
+                        onCompletionToggle={onCompletionToggle ? () => onCompletionToggle(item.id, item.progressPercent || 0) : undefined}
+                        statusOptions={statusOptions}
+                        visibleColumns={visibleColumns}
+                        isDraggable={!!(onReorderItem || onNestItem)}
+                        onDragHandleMouseDown={(e) => handleMouseDown(e, item.id)}
+                        isParent={false}
+                        isCollapsed={false}
+                        locked={locked}
+                        isTemplate={isTemplate}
+                        templateReferenceDate={templateReferenceDate}
+                      />
+                    )}
                     
                   </TableRow>
 
@@ -685,6 +836,8 @@ export function CasvaScheduleList({
                             indentLevel={1}
                             onAddSubItem={onAddSubItem ? () => onAddSubItem(subtask) : undefined}
                             locked={locked}
+                            isTemplate={isTemplate}
+                            templateReferenceDate={templateReferenceDate}
                           />
                           
                         </TableRow>
@@ -725,11 +878,12 @@ export function CasvaScheduleList({
                               onCompletionToggle={onCompletionToggle ? () => onCompletionToggle(grandchild.id, grandchild.progressPercent || 0) : undefined}
                               statusOptions={statusOptions}
                               visibleColumns={visibleColumns}
-                              isDraggable={!!(onReorderItem || onNestItem)}
-                              onDragHandleMouseDown={(e) => handleMouseDown(e, grandchild.id)}
+                              isDraggable={false}
                               isSubtask={true}
                               indentLevel={2}
                               locked={locked}
+                              isTemplate={isTemplate}
+                              templateReferenceDate={templateReferenceDate}
                             />
                           </TableRow>
                         ))}
@@ -753,9 +907,11 @@ export function CasvaScheduleList({
         </span>
       </div>
 
-      {draggingItemId && nestHighlightId && createPortal(
+      {draggingItemId && (nestHighlightId || nestBlockedId) && createPortal(
         (() => {
-          const el = rowRefsMap.current.get(nestHighlightId);
+          const activeId = nestHighlightId || nestBlockedId;
+          const isBlocked = !!nestBlockedId;
+          const el = rowRefsMap.current.get(activeId!);
           if (!el) return null;
           const rect = el.getBoundingClientRect();
           return (
@@ -765,14 +921,14 @@ export function CasvaScheduleList({
                 top: rect.bottom + 2,
                 left: rect.left + 12,
                 fontSize: '9px',
-                color: 'hsl(var(--primary))',
+                color: isBlocked ? 'hsl(var(--destructive))' : 'hsl(var(--primary))',
                 fontWeight: 600,
                 whiteSpace: 'nowrap',
                 zIndex: 99998,
                 pointerEvents: 'none',
               }}
             >
-              Drop to nest inside this item
+              {isBlocked ? 'Cannot nest here — would create a cycle' : 'Drop to nest inside this item'}
             </div>
           );
         })(),

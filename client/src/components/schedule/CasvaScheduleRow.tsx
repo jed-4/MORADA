@@ -53,6 +53,8 @@ export interface CasvaScheduleRowProps {
   locked?: boolean;
   indentLevel?: number;
   onAddSubItem?: () => void;
+  isTemplate?: boolean;
+  templateReferenceDate?: Date;
 }
 
 export function CasvaScheduleRow({ 
@@ -76,15 +78,28 @@ export function CasvaScheduleRow({
   isSubtask = false,
   hasSubtasks = false,
   indentLevel = 0,
-  onAddSubItem
+  onAddSubItem,
+  isTemplate = false,
+  templateReferenceDate,
 }: CasvaScheduleRowProps) {
   const hasValidDates = item.startDate && item.endDate;
   const startDate = hasValidDates ? new Date(item.startDate) : null;
   const endDate = hasValidDates ? new Date(item.endDate) : null;
   const duration = startDate && endDate ? differenceInDays(endDate, startDate) + 1 : null;
-  const dateRange = startDate && endDate 
-    ? `${format(startDate, 'MMM d')}–${format(endDate, 'MMM d')}`
-    : 'No dates';
+
+  const isGrandchild = indentLevel >= 2;
+
+  const dateRange = isTemplate && startDate && templateReferenceDate
+    ? (() => {
+        const refMs = templateReferenceDate.getTime();
+        const msPerDay = 86400000;
+        const startDay = Math.round((startDate.getTime() - refMs) / msPerDay);
+        const endDay = startDay + (duration ?? 1) - 1;
+        return `D${startDay}–D${endDay}`;
+      })()
+    : startDate && endDate
+      ? `${format(startDate, 'MMM d')}–${format(endDate, 'MMM d')}`
+      : 'No dates';
 
   return (
     <>
@@ -124,11 +139,18 @@ export function CasvaScheduleRow({
             )}
             
             <span 
-              className="font-medium text-xs truncate" 
+              className="font-medium text-xs truncate flex items-center gap-1 min-w-0" 
               style={{ paddingLeft: indentLevel > 0 ? `${indentLevel * 16}px` : '0' }}
               data-testid="schedule-item-title"
             >
-              {item.name}
+              {item.color && (
+                <span
+                  className="w-2 h-2 rounded-full flex-shrink-0"
+                  style={{ backgroundColor: item.color }}
+                  aria-hidden="true"
+                />
+              )}
+              <span className="truncate">{item.name}</span>
             </span>
           </div>
         </TableCell>
@@ -137,7 +159,7 @@ export function CasvaScheduleRow({
       {/* Assignee Column */}
       {visibleColumns.assignee && (
         <TableCell className="w-32 h-8 py-0 overflow-hidden" data-testid="schedule-item-assignee">
-          {item.assignedToName && (
+          {!isGrandchild && item.assignedToName && (
             <div className="flex items-center gap-1.5 min-w-0">
               <Avatar className="w-5 h-5 flex-shrink-0">
                 <AvatarFallback className="text-label bg-muted">
@@ -155,7 +177,7 @@ export function CasvaScheduleRow({
       {/* Type Column */}
       {visibleColumns.type && (
         <TableCell className="w-24 h-8 py-0">
-          {item.type && (
+          {!isGrandchild && item.type && (
             <Badge variant="outline" className="text-data h-4 px-1 capitalize">
               {item.type}
             </Badge>
@@ -166,16 +188,18 @@ export function CasvaScheduleRow({
       {/* Due Date & Duration Column */}
       {visibleColumns.dueDate && (
         <TableCell className="w-36 h-8 py-0">
-          <div className="flex items-center gap-1 whitespace-nowrap">
-            <span className="text-xs text-muted-foreground" data-testid="schedule-item-date-range">
-              {dateRange}
-            </span>
-            {duration !== null && (
-              <span className="text-xs text-muted-foreground/70">
-                · {duration}d
+          {!isGrandchild && (
+            <div className="flex items-center gap-1 whitespace-nowrap">
+              <span className="text-xs text-muted-foreground" data-testid="schedule-item-date-range">
+                {dateRange}
               </span>
-            )}
-          </div>
+              {duration !== null && (
+                <span className="text-xs text-muted-foreground/70">
+                  · {duration}d
+                </span>
+              )}
+            </div>
+          )}
         </TableCell>
       )}
 
@@ -218,10 +242,12 @@ export function CasvaScheduleRow({
 
       {/* Notes Column */}
       <TableCell className="w-8 h-8 py-0">
-        <ActivityNotesPopover 
-          scheduleItemId={item.id} 
-          noteCount={noteCount}
-        />
+        {!isGrandchild && (
+          <ActivityNotesPopover 
+            scheduleItemId={item.id} 
+            noteCount={noteCount}
+          />
+        )}
       </TableCell>
 
       {/* Completion Column */}
@@ -254,42 +280,44 @@ export function CasvaScheduleRow({
 
       {/* Actions Column */}
       <TableCell className="w-12 h-8 py-0">
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
-              data-testid={`button-actions-${item.id}`}
-            >
-              <MoreVertical className="h-3 w-3" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={onEdit}>
-              <Pencil className="h-3.5 w-3.5 mr-2" />
-              Edit
-            </DropdownMenuItem>
-            {onAddSubItem && (
-              <DropdownMenuItem onClick={onAddSubItem}>
-                <ListPlus className="h-3.5 w-3.5 mr-2" />
-                Add sub-item
+        {!isGrandchild && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
+                data-testid={`button-actions-${item.id}`}
+              >
+                <MoreVertical className="h-3 w-3" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={onEdit}>
+                <Pencil className="h-3.5 w-3.5 mr-2" />
+                Edit
               </DropdownMenuItem>
-            )}
-            {onDuplicate && (
-              <DropdownMenuItem onClick={onDuplicate}>
-                <Copy className="h-3.5 w-3.5 mr-2" />
-                Duplicate
-              </DropdownMenuItem>
-            )}
-            {onDelete && (
-              <DropdownMenuItem onClick={onDelete} className="text-destructive">
-                <Trash2 className="h-3.5 w-3.5 mr-2" />
-                Delete
-              </DropdownMenuItem>
-            )}
-          </DropdownMenuContent>
-        </DropdownMenu>
+              {onAddSubItem && (
+                <DropdownMenuItem onClick={onAddSubItem}>
+                  <ListPlus className="h-3.5 w-3.5 mr-2" />
+                  Add sub-item
+                </DropdownMenuItem>
+              )}
+              {onDuplicate && (
+                <DropdownMenuItem onClick={onDuplicate}>
+                  <Copy className="h-3.5 w-3.5 mr-2" />
+                  Duplicate
+                </DropdownMenuItem>
+              )}
+              {onDelete && (
+                <DropdownMenuItem onClick={onDelete} className="text-destructive">
+                  <Trash2 className="h-3.5 w-3.5 mr-2" />
+                  Delete
+                </DropdownMenuItem>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
       </TableCell>
     </>
   );

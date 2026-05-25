@@ -202,6 +202,7 @@ export default function Schedule() {
   const [notesExpanded, setNotesExpanded] = useState(true);
   const [showSaveTemplateDialog, setShowSaveTemplateDialog] = useState(false);
   const [showLoadTemplateDialog, setShowLoadTemplateDialog] = useState(false);
+  const [loadTemplateStartDate, setLoadTemplateStartDate] = useState<string>("");
   const [showImportDialog, setShowImportDialog] = useState(false);
   const [showWorkingDaysDialog, setShowWorkingDaysDialog] = useState(false);
   const [templateFormData, setTemplateFormData] = useState({
@@ -222,6 +223,7 @@ export default function Schedule() {
     parentItemId: "",
     progressPercent: 0,
     useWorkingDaysOverride: null as boolean | null,
+    color: "" as string,
   });
   const [taskLinkOffsetsLocal, setTaskLinkOffsetsLocal] = useState<Array<{taskId: string; offsetDays: number; offsetFrom: "start" | "end"}>>([]);
   const [durationInput, setDurationInput] = useState<string>("1");
@@ -1221,8 +1223,23 @@ export default function Schedule() {
       if (!schedule) throw new Error("No schedule found");
       if (scheduleItems.length === 0) throw new Error("No schedule items to save");
 
-      // Convert schedule items to template format (without IDs, scheduleId, etc.)
+      // Compute D0 (earliest start date) for relative-day calculation
+      const startDates = scheduleItems
+        .map(item => item.startDate ? new Date(item.startDate).getTime() : null)
+        .filter((t): t is number => t !== null);
+      const day0Ms = startDates.length > 0 ? Math.min(...startDates) : Date.now();
+      const day0 = new Date(day0Ms);
+
+      // Convert schedule items to template format.
+      // - Keep the original `id` so the apply route can remap parentItemId + dependencies.
+      // - Store `relativeStartDay` as a WORKING-DAY offset from D0.
+      //   The server apply route uses addWorkingDaysServer(day0, relativeStartDay), so this
+      //   must be a working-day count to avoid drift across weekends/holidays.
+      //   Formula: countWorkingDays(day0, itemStart) - 1 gives 0-based working-day offset
+      //   (countWorkingDays is inclusive: D0→D0 = 1, so minus 1 = 0).
+      // - Include `parentItemId`, `dependencies`, and `color` for full fidelity.
       const templateData = scheduleItems.map(item => ({
+        id: item.id,
         name: item.name,
         description: item.description,
         notes: item.notes,
@@ -1230,6 +1247,12 @@ export default function Schedule() {
         priority: item.priority,
         duration: item.duration || 1,
         sortOrder: item.sortOrder || 0,
+        color: item.color || null,
+        parentItemId: item.parentItemId || null,
+        dependencies: (item.dependencies as any[]) || [],
+        relativeStartDay: item.startDate
+          ? Math.max(0, countWorkingDays(day0, new Date(item.startDate)) - 1)
+          : 0,
       }));
 
       return await apiRequest("/api/schedule-templates", "POST", {
@@ -1257,10 +1280,11 @@ export default function Schedule() {
 
   // Load template into current schedule
   const loadTemplateMutation = useMutation({
-    mutationFn: async (templateId: string) => {
+    mutationFn: async ({ templateId, startDate }: { templateId: string; startDate: string }) => {
       if (!schedule) throw new Error("No schedule found");
       return await apiRequest(`/api/schedule-templates/${templateId}/apply`, "POST", {
         scheduleId: schedule.id,
+        startDate,
       });
     },
     onSuccess: () => {
@@ -1295,6 +1319,7 @@ export default function Schedule() {
       parentItemId: "",
       progressPercent: 0,
       useWorkingDaysOverride: null,
+      color: "",
     });
     setTaskLinkOffsetsLocal([]);
     setDurationInput("1");
@@ -1425,6 +1450,7 @@ export default function Schedule() {
         parentItemId: editingItem.parentItemId || "",
         progressPercent: editingItem.progressPercent || 0,
         useWorkingDaysOverride: editingItem.useWorkingDaysOverride ?? null,
+        color: (editingItem as any).color || "",
       });
       setTaskLinkOffsetsLocal((editingItem as any).taskLinkOffsets || []);
       const sd = editingItem.startDate ? new Date(editingItem.startDate) : null;
@@ -1434,8 +1460,8 @@ export default function Schedule() {
       } else {
         setDurationInput("");
       }
-      setDescriptionExpanded(!!(editingItem.description && editingItem.description.trim()));
-      setNotesExpanded(!!(editingItem.notes && editingItem.notes.trim()));
+      setDescriptionExpanded(true);
+      setNotesExpanded(true);
     } else {
       resetForm();
     }
@@ -2309,18 +2335,71 @@ export default function Schedule() {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 overflow-y-auto flex-1 px-1">
-            {/* Name */}
+            {/* Name + Colour dot */}
             <div className="space-y-2">
               <Label htmlFor="item-name">
                 Name <span className="text-destructive">*</span>
               </Label>
-              <Input
-                id="item-name"
-                value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                placeholder="e.g., Foundation Inspection"
-                data-testid="input-item-name"
-              />
+              <div className="flex items-center gap-2">
+                {/* Colour dot picker */}
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <button
+                      type="button"
+                      className="w-5 h-5 rounded-full border-2 border-border focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-1 transition-transform hover:scale-110 active:scale-95 flex-shrink-0"
+                      style={{ backgroundColor: formData.color || '#A890D4' }}
+                      data-testid="button-color-dot"
+                      title="Choose colour"
+                    />
+                  </PopoverTrigger>
+                  <PopoverContent className="w-52 p-3" align="start" data-testid="popover-color-picker">
+                    <div className="space-y-3">
+                      <div className="grid grid-cols-6 gap-1.5">
+                        {[
+                          '#A890D4','#6B5B95','#B5838D','#E07A5F','#F2CC8F','#81B29A',
+                          '#457B9D','#4ECDC4','#FF6B6B','#95D5B2','#3D405B','#A0C4FF',
+                        ].map((preset) => (
+                          <button
+                            key={preset}
+                            type="button"
+                            className="w-6 h-6 rounded-full border-2 transition-transform hover:scale-110 active:scale-95"
+                            style={{
+                              backgroundColor: preset,
+                              borderColor: (formData.color || '#A890D4').toLowerCase() === preset.toLowerCase() ? 'hsl(var(--primary))' : 'transparent',
+                            }}
+                            onClick={() => setFormData({ ...formData, color: preset })}
+                            title={preset}
+                            data-testid={`color-swatch-${preset.replace('#','')}`}
+                          />
+                        ))}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <div className="w-6 h-6 rounded-full border border-border flex-shrink-0" style={{ backgroundColor: formData.color || '#A890D4' }} />
+                        <Input
+                          className="h-7 text-xs font-mono px-2"
+                          value={formData.color || '#A890D4'}
+                          maxLength={7}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            if (/^#[0-9A-Fa-f]{0,6}$/.test(v)) {
+                              setFormData({ ...formData, color: v });
+                            }
+                          }}
+                          data-testid="input-item-color"
+                          placeholder="#A890D4"
+                        />
+                      </div>
+                    </div>
+                  </PopoverContent>
+                </Popover>
+                <Input
+                  id="item-name"
+                  value={formData.name}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  placeholder="e.g., Foundation Inspection"
+                  data-testid="input-item-name"
+                />
+              </div>
             </div>
 
             {/* Dates Row */}
@@ -2413,8 +2492,15 @@ export default function Schedule() {
                     const newEnd = e.target.value;
                     const dur = parseInt(durationInput, 10);
                     if (formData.startDate && newEnd) {
-                      setFormData({ ...formData, endDate: newEnd });
-                      setDurationInput(countWorkingDays(new Date(formData.startDate), new Date(newEnd)).toString());
+                      const wd = countWorkingDays(new Date(formData.startDate), new Date(newEnd));
+                      if (wd < 1) {
+                        // End date is before start date — clamp: keep start, set end = start (1 working day)
+                        setFormData({ ...formData, endDate: formData.startDate });
+                        setDurationInput('1');
+                      } else {
+                        setFormData({ ...formData, endDate: newEnd });
+                        setDurationInput(wd.toString());
+                      }
                     } else if (!formData.startDate && newEnd && !isNaN(dur) && dur > 0) {
                       const start = addWorkingDays(new Date(newEnd), -(dur - 1));
                       setFormData({ ...formData, endDate: newEnd, startDate: start.toISOString().split('T')[0] });
@@ -2487,29 +2573,6 @@ export default function Schedule() {
               )}
             </div>
 
-            {/* Parent Item (Stage) Selector */}
-            <div className="space-y-2">
-              <Label htmlFor="item-parent">Stage</Label>
-              <Select
-                value={formData.parentItemId || "none"}
-                onValueChange={(value) => setFormData({ ...formData, parentItemId: value === "none" ? "" : value })}
-              >
-                <SelectTrigger id="item-parent" data-testid="select-item-parent">
-                  <SelectValue placeholder="None (Top-level item)" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">None (Top-level item)</SelectItem>
-                  {parentItems.map((item) => (
-                    <SelectItem key={item.id} value={item.id}>
-                      {item.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <p className="text-xs text-muted-foreground">
-                Select a parent item to make this a sub-item. Leave as "None" to create a top-level stage.
-              </p>
-            </div>
 
             {/* Type / Status / Assignee / Progress — compact 2×2 grid */}
             {(() => {
@@ -3028,19 +3091,8 @@ export default function Schedule() {
               </div>
             )}
 
-            {/* Advanced section — Allow on weekends, Build markers, Linked Items */}
-              <div className="pt-3 border-t">
-                <button
-                  type="button"
-                  className="flex items-center gap-1.5 w-full text-left text-xs text-muted-foreground hover:text-foreground transition-colors"
-                  onClick={() => setShowAdvanced(v => !v)}
-                >
-                  <ChevronDown className={`h-3.5 w-3.5 transition-transform duration-200 ${showAdvanced ? 'rotate-180' : ''}`} />
-                  <span className="font-medium">Advanced</span>
-                </button>
-
-                {showAdvanced && (
-                  <div className="space-y-4 mt-3">
+            <div className="pt-3 border-t">
+                  <div className="space-y-4">
                     {/* Allow on weekends */}
                     <div className="flex items-center justify-between py-1">
                       <div className="space-y-0.5">
@@ -3293,7 +3345,6 @@ export default function Schedule() {
                       </div>
                     )}
                   </div>
-                )}
               </div>
             </div>
             <DialogFooter className="border-t pt-4 mt-4">
@@ -3416,27 +3467,53 @@ export default function Schedule() {
       </Dialog>
 
       {/* Load Template Dialog */}
-      <Dialog open={showLoadTemplateDialog} onOpenChange={setShowLoadTemplateDialog}>
+      <Dialog
+        open={showLoadTemplateDialog}
+        onOpenChange={(open) => {
+          setShowLoadTemplateDialog(open);
+          if (open) {
+            const projectStart = (currentProject as any)?.startDate;
+            setLoadTemplateStartDate(
+              projectStart
+                ? format(new Date(projectStart), "yyyy-MM-dd")
+                : format(new Date(), "yyyy-MM-dd")
+            );
+          }
+        }}
+      >
         <DialogContent className="max-w-2xl" data-testid="dialog-load-template">
           <DialogHeader>
             <DialogTitle>Load Schedule Template</DialogTitle>
             <DialogDescription>
-              Choose a template to add schedule items to your current schedule.
+              Choose a start date and a template to apply to your current schedule.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
+            <div className="space-y-1">
+              <label className="text-sm font-medium">Schedule Start Date</label>
+              <Input
+                type="date"
+                value={loadTemplateStartDate}
+                onChange={(e) => setLoadTemplateStartDate(e.target.value)}
+                data-testid="input-load-template-start-date"
+              />
+              <p className="text-xs text-muted-foreground">Day 0 of the template maps to this date.</p>
+            </div>
             {scheduleTemplates.length === 0 ? (
               <div className="text-center py-8 text-muted-foreground">
                 <p>No templates available.</p>
                 <p className="text-sm mt-2">Save your first template using "Save as Template".</p>
               </div>
             ) : (
-              <div className="space-y-2 max-h-96 overflow-y-auto">
+              <div className="space-y-2 max-h-80 overflow-y-auto">
                 {scheduleTemplates.map((template: any) => (
                   <Card
                     key={template.id}
                     className={`p-4 hover-elevate ${loadTemplateMutation.isPending ? "opacity-50 pointer-events-none cursor-not-allowed" : "cursor-pointer"}`}
-                    onClick={() => { if (!loadTemplateMutation.isPending) loadTemplateMutation.mutate(template.id); }}
+                    onClick={() => {
+                      if (!loadTemplateMutation.isPending)
+                        loadTemplateMutation.mutate({ templateId: template.id, startDate: loadTemplateStartDate });
+                    }}
                     data-testid={`template-card-${template.id}`}
                   >
                     <div className="flex items-start justify-between">

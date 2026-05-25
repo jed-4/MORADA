@@ -70,6 +70,9 @@ interface GanttProps {
   baselineItems?: any[];
   nonWorkingDays?: NonWorkingDay[];
   sortResetKey?: number;
+  /** When true, the Gantt renders in template mode: D0/D1 axis labels and
+   *  relative-day positioning instead of calendar dates. */
+  isTemplate?: boolean;
 }
 
 function SortableColumnItem({ 
@@ -473,7 +476,7 @@ function useGanttRowDrag(
   };
 }
 
-export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays = [], sortResetKey = 0 }: GanttProps = {}) {
+export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays = [], sortResetKey = 0, isTemplate = false }: GanttProps = {}) {
   const { projectId } = useParams();
   const { toast } = useToast();
   const weekStartDay = useWeekStartDay();
@@ -1124,25 +1127,36 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
     return { timelineStart: start, timelineEnd: end, totalDays: days, dataStart: dataStartDate, dataEnd: dataEndDate };
   }, [allItems, timelineBuffer]);
 
+  // Earliest item start date — used for relative week numbering and D0/D1 axis in template mode
+  const projectStartDate = useMemo(() => {
+    if (allItems.length === 0) return timelineStart;
+    const allStartDates = allItems.map(item => new Date(item.startDate).getTime());
+    return startOfWeek(new Date(Math.min(...allStartDates)), { weekStartsOn: weekStartDay });
+  }, [allItems, timelineStart, weekStartDay]);
+
   // Generate timeline headers based on zoom level
   const timelineHeaders = useMemo(() => {
     if (zoomLevel === 'day') {
-      return eachDayOfInterval({ start: timelineStart, end: timelineEnd }).map(day => ({
-        date: day,
-        dateLabel: format(day, 'd'),
-        dayLabel: format(day, 'EEE').slice(0, 2),
-        width: 40,
-      }));
+      return eachDayOfInterval({ start: timelineStart, end: timelineEnd }).map(day => {
+        const dOffset = differenceInDays(day, projectStartDate);
+        return {
+          date: day,
+          dateLabel: isTemplate ? `D${dOffset}` : format(day, 'd'),
+          dayLabel: isTemplate ? '' : format(day, 'EEE').slice(0, 2),
+          width: 40,
+        };
+      });
     } else if (zoomLevel === 'week') {
       const weeks = eachWeekOfInterval({ start: timelineStart, end: timelineEnd });
       return weeks.map((week, idx) => {
         const nextWeek = weeks[idx + 1];
         const segmentEnd = nextWeek ? addDays(nextWeek, -1) : timelineEnd;
         const daysInSegment = differenceInDays(segmentEnd, week) + 1;
+        const dOffset = differenceInDays(week, projectStartDate);
         return {
           date: week,
-          dateLabel: format(week, 'MMM d'),
-          dayLabel: format(week, 'EEE').slice(0, 2),
+          dateLabel: isTemplate ? `D${dOffset}` : format(week, 'MMM d'),
+          dayLabel: isTemplate ? '' : format(week, 'EEE').slice(0, 2),
           width: daysInSegment * 20,
         };
       });
@@ -1152,22 +1166,16 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
         const nextWeek = weeks[idx + 1];
         const segmentEnd = nextWeek ? addDays(nextWeek, -1) : timelineEnd;
         const daysInSegment = differenceInDays(segmentEnd, week) + 1;
+        const dOffset = differenceInDays(week, projectStartDate);
         return {
           date: week,
-          dateLabel: format(week, 'MMM d'),
+          dateLabel: isTemplate ? `D${dOffset}` : format(week, 'MMM d'),
           dayLabel: '',
           width: daysInSegment * 10,
         };
       });
     }
-  }, [timelineStart, timelineEnd, zoomLevel]);
-
-  // Calculate project start date for relative week numbering
-  const projectStartDate = useMemo(() => {
-    if (allItems.length === 0) return timelineStart;
-    const allStartDates = allItems.map(item => new Date(item.startDate).getTime());
-    return startOfWeek(new Date(Math.min(...allStartDates)), { weekStartsOn: weekStartDay });
-  }, [allItems, timelineStart]);
+  }, [timelineStart, timelineEnd, zoomLevel, isTemplate, projectStartDate]);
 
   // Create week-grouped headers for double-row display (ClickUp style)
   const groupedTimelineHeaders = useMemo(() => {
@@ -1206,7 +1214,7 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
         const weekNumber = getProjectWeekNumber(currentWeekStart);
         const monthLabel = format(currentWeekStart, 'MMM');
         weeks.push({
-          weekLabel: `${monthLabel} - Wk ${weekNumber}`,
+          weekLabel: isTemplate ? `Wk ${weekNumber}` : `${monthLabel} - Wk ${weekNumber}`,
           widthPx: currentWeekDays.length * 40,
           days: currentWeekDays,
         });
@@ -1214,9 +1222,10 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
         currentWeekStart = weekStart;
       }
       
+      const dOffset = differenceInDays(day, projectStartDate);
       currentWeekDays.push({
         date: day,
-        label: `${format(day, 'EEE').slice(0, 2)} ${format(day, 'd')}`,
+        label: isTemplate ? `D${dOffset}` : `${format(day, 'EEE').slice(0, 2)} ${format(day, 'd')}`,
         widthPx: 40,
         isWeekend,
       });
@@ -1227,14 +1236,14 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
       const weekNumber = getProjectWeekNumber(currentWeekStart);
       const monthLabel = format(currentWeekStart, 'MMM');
       weeks.push({
-        weekLabel: `${monthLabel} - Wk ${weekNumber}`,
+        weekLabel: isTemplate ? `Wk ${weekNumber}` : `${monthLabel} - Wk ${weekNumber}`,
         widthPx: currentWeekDays.length * 40,
         days: currentWeekDays,
       });
     }
     
     return weeks;
-  }, [timelineStart, timelineEnd, zoomLevel, projectStartDate, schedule, nonWorkingDays]);
+  }, [timelineStart, timelineEnd, zoomLevel, projectStartDate, schedule, nonWorkingDays, isTemplate]);
 
   // Calculate pixels per day based on zoom level
   const pixelsPerDay = useMemo(() => {

@@ -22555,7 +22555,222 @@ export async function registerRoutes(app: Express): Promise<Server> {
       } catch (parentError) {
         console.error("Failed to recalculate parent progress:", parentError);
       }
-      
+
+      // Section 3: Update parent's date range when a child item's dates change,
+      // then cascade FS dependencies from the parent (and the child itself).
+      const datesChanged = updateData.startDate !== undefined || updateData.endDate !== undefined;
+
+      // Helper: full cascade (FS/SS/FF/SF) with working-day rules, mirroring scheduleCascade.ts.
+      const runCascade = async (origins: Array<{ predId: string; newStart: Date; newEnd: Date }>) => {
+        // Fetch schedule/project/holidays once
+        const cascSched = await storage.getScheduleById(item.scheduleId);
+        const cascProj = cascSched?.projectId ? await storage.getProject(cascSched.projectId) : null;
+        const cascHolidays = cascProj?.companyId
+          ? await fetchNonWorkingDaySet(cascProj.companyId, item.scheduleId)
+          : new Set<string>();
+
+        const inclSat = cascSched?.includeSaturday ?? false;
+        const inclSun = cascSched?.includeSunday ?? false;
+
+        const isNW = (d: Date): boolean => {
+          const dow = d.getDay();
+          if (dow === 0 && !inclSun) return true;
+          if (dow === 6 && !inclSat) return true;
+          if (isHoliday(d, cascHolidays)) return true;
+          return false;
+        };
+
+        const addWD = (date: Date, days: number): Date => {
+          const d = new Date(date); d.setHours(0, 0, 0, 0);
+          let rem = Math.abs(days);
+          const step = days >= 0 ? 1 : -1;
+          while (rem > 0) { d.setDate(d.getDate() + step); if (!isNW(d)) rem--; }
+          return d;
+        };
+
+        const countWD = (start: Date, end: Date): number => {
+          let count = 0;
+          const s = new Date(start); s.setHours(0, 0, 0, 0);
+          const e = new Date(end); e.setHours(0, 0, 0, 0);
+          const cur = new Date(s);
+          while (cur < e) { if (!isNW(cur)) count++; cur.setDate(cur.getDate() + 1); }
+          return count;
+        };
+
+        const snapWD = (date: Date, dir: 'forward' | 'backward'): Date => {
+          const d = new Date(date); d.setHours(0, 0, 0, 0);
+          const step = dir === 'forward' ? 1 : -1;
+          let guard = 14;
+          while (isNW(d) && guard-- > 0) d.setDate(d.getDate() + step);
+          return d;
+        };
+
+        const allItems = await storage.getScheduleItems(item.scheduleId);
+        const allById = new Map<string, any>(allItems.map((i: any) => [String(i.id), i]));
+
+        // Track updated dates for each item we process so chain items use new dates
+        const updatedStart = new Map<string, Date>();
+        const updatedEnd = new Map<string, Date>();
+        for (const o of origins) {
+          updatedStart.set(o.predId, o.newStart);
+          updatedEnd.set(o.predId, o.newEnd);
+        }
+
+        // BFS topological cascade — same approach as getAllDownstreamSuccessors + topo sort
+        const allPredIds = new Set(origins.map(o => o.predId));
+        const workQueue = [...origins.map(o => o.predId)];
+        const visited = new Set<string>();
+
+        while (workQueue.length > 0) {
+          const predId = workQueue.shift()!;
+          if (visited.has(predId)) continue;
+          visited.add(predId);
+
+          for (const succ of allItems as any[]) {
+            const succId = String(succ.id);
+            if (allPredIds.has(succId)) continue;
+            const deps: any[] = (succ.dependencies as any[]) || [];
+            const relevantDeps = deps.filter((d: any) => String(d.id) === predId);
+            if (relevantDeps.length === 0) continue;
+
+            const succStart = succ.startDate ? new Date(succ.startDate) : null;
+            const succEnd = succ.endDate ? new Date(succ.endDate) : null;
+            if (!succStart || !succEnd) continue;
+
+            const workDuration = countWD(succStart, succEnd);
+
+            // Compute required start from all deps (not just the matched predId ones),
+            // taking the latest constraint — respects multi-predecessor diamonds.
+            let requiredStart: Date | null = null;
+            for (const dep of deps) {
+              const depIdStr = String(dep.id);
+              const depType: string = dep.type ?? 'FS';
+              const lag: number = typeof dep.lag === 'number' ? dep.lag : 0;
+
+              let candidate: Date | null = null;
+              if (depType === 'FS' || depType === 'SF') {
+                const predEnd = updatedEnd.get(depIdStr)
+                  ?? (allById.get(depIdStr)?.endDate ? new Date(allById.get(depIdStr).endDate) : null);
+                if (predEnd) {
+                  candidate = snapWD(new Date(predEnd.getTime() + (lag + 1) * 86400000), 'forward');
+                }
+              } else if (depType === 'SS') {
+                const predSt = updatedStart.get(depIdStr)
+                  ?? (allById.get(depIdStr)?.startDate ? new Date(allById.get(depIdStr).startDate) : null);
+                if (predSt) {
+                  candidate = snapWD(new Date(predSt.getTime() + lag * 86400000), 'forward');
+                }
+              } else if (depType === 'FF') {
+                const predEnd = updatedEnd.get(depIdStr)
+                  ?? (allById.get(depIdStr)?.endDate ? new Date(allById.get(depIdStr).endDate) : null);
+                if (predEnd) {
+                  const newSuccEnd = snapWD(new Date(predEnd.getTime() + lag * 86400000), 'forward');
+                  candidate = addWD(newSuccEnd, -workDuration);
+                }
+              }
+
+              if (candidate && (!requiredStart || candidate > requiredStart)) requiredStart = candidate;
+            }
+
+            if (!requiredStart) continue;
+
+            // Only cascade forward (don't pull successors earlier than they already are)
+            if (succStart >= requiredStart) continue;
+
+            const newSuccEnd = addWD(requiredStart, workDuration);
+
+            await storage.updateScheduleItem(succ.id, {
+              startDate: requiredStart,
+              endDate: newSuccEnd,
+              updatedAt: new Date(),
+            });
+
+            // Update in-memory copy so chain items see fresh dates
+            const idx = allItems.findIndex((si: any) => si.id === succ.id);
+            if (idx >= 0) {
+              (allItems[idx] as any).startDate = requiredStart;
+              (allItems[idx] as any).endDate = newSuccEnd;
+              allById.set(succId, allItems[idx]);
+            }
+
+            updatedStart.set(succId, requiredStart);
+            updatedEnd.set(succId, newSuccEnd);
+            allPredIds.add(succId);
+            workQueue.push(succId);
+          }
+        }
+      };
+
+      if (datesChanged) {
+        const cascadeOrigins: Array<{ predId: string; newStart: Date; newEnd: Date }> = [];
+
+        // Always cascade from the edited item itself (direct successors of the child)
+        if (item.startDate && item.endDate) {
+          cascadeOrigins.push({
+            predId: item.id,
+            newStart: new Date(item.startDate),
+            newEnd: new Date(item.endDate),
+          });
+        }
+
+        // If the child has a parent, recompute parent date range, then cascade from parent
+        // if its endDate has moved (primary trigger — parent becoming longer pushes its dependents)
+        if (item.parentItemId) {
+          try {
+            const parentBefore = await storage.getScheduleItem(item.parentItemId);
+            const parentOldEnd = parentBefore?.endDate ? new Date(parentBefore.endDate) : null;
+
+            const siblings = await db.select()
+              .from(scheduleItems)
+              .where(eq(scheduleItems.parentItemId, item.parentItemId));
+
+            if (siblings.length > 0) {
+              let minStart: Date | null = null;
+              let maxEnd: Date | null = null;
+              for (const sib of siblings) {
+                if (sib.startDate) {
+                  const d = new Date(sib.startDate);
+                  if (!minStart || d < minStart) minStart = d;
+                }
+                if (sib.endDate) {
+                  const d = new Date(sib.endDate);
+                  if (!maxEnd || d > maxEnd) maxEnd = d;
+                }
+              }
+              if (minStart || maxEnd) {
+                const parentUpdate: Record<string, any> = { updatedAt: new Date() };
+                if (minStart) parentUpdate.startDate = minStart;
+                if (maxEnd) parentUpdate.endDate = maxEnd;
+                await db.update(scheduleItems)
+                  .set(parentUpdate)
+                  .where(eq(scheduleItems.id, item.parentItemId));
+
+                // Cascade from parent if its endDate moved outward
+                if (maxEnd && (!parentOldEnd || maxEnd.getTime() !== parentOldEnd.getTime())) {
+                  const parentNewStart = minStart
+                    ?? (parentBefore?.startDate ? new Date(parentBefore.startDate) : maxEnd);
+                  cascadeOrigins.push({
+                    predId: item.parentItemId,
+                    newStart: parentNewStart,
+                    newEnd: maxEnd,
+                  });
+                }
+              }
+            }
+          } catch (parentDateErr) {
+            console.error("Failed to update parent item dates:", parentDateErr);
+          }
+        }
+
+        if (cascadeOrigins.length > 0) {
+          try {
+            await runCascade(cascadeOrigins);
+          } catch (cascadeErr) {
+            console.error("Failed to cascade dependencies:", cascadeErr);
+          }
+        }
+      }
+
       // Log activity for schedule item update
       try {
         const schedule = await storage.getScheduleById(item.scheduleId);
@@ -24050,13 +24265,51 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      const templateItems = template.templateData as any[];
+      const { startDate: startDateStr } = req.body;
+      // Fallback order: (1) caller-supplied startDate, (2) project.startDate, (3) today
+      const day0 = startDateStr
+        ? new Date(startDateStr)
+        : project.startDate
+          ? new Date(project.startDate)
+          : new Date();
+
+      const templateItems = (template.templateData as any[]) || [];
+
+      // Topological sort: parents must be created before their children so parentItemId
+      // remapping works correctly regardless of the order items appear in templateData.
+      const sorted: any[] = [];
+      {
+        const remaining = [...templateItems];
+        const addedIds = new Set<string>();
+        let guard = remaining.length * 2 + 1;
+        while (remaining.length > 0 && guard-- > 0) {
+          for (let i = remaining.length - 1; i >= 0; i--) {
+            const tItem = remaining[i];
+            const pid = tItem.parentItemId ?? null;
+            if (pid === null || addedIds.has(String(pid))) {
+              sorted.push(tItem);
+              if (tItem.id) addedIds.add(String(tItem.id));
+              remaining.splice(i, 1);
+            }
+          }
+        }
+        // Any items still stuck (orphaned parents missing) — append as-is
+        sorted.push(...remaining);
+      }
+
+      // Track old template item ID → new schedule item ID mapping for parentItemId rewiring
+      const idMap: Record<string, string> = {};
       const createdItems = [];
 
-      for (const templateItem of templateItems) {
-        const duration = templateItem.duration || 1;
-        const startDate = new Date();
-        const endDate = duration <= 1 ? new Date(startDate) : addWorkingDaysServer(startDate, duration - 1);
+      for (const templateItem of sorted) {
+        const duration = Math.max(1, templateItem.duration || 1);
+        const relDay = templateItem.relativeStartDay ?? 0;
+        const itemStartDate = relDay === 0 ? new Date(day0) : addWorkingDaysServer(new Date(day0), relDay);
+        const itemEndDate = duration <= 1 ? new Date(itemStartDate) : addWorkingDaysServer(new Date(itemStartDate), duration - 1);
+
+        // Remap parentItemId using the old→new ID map
+        const oldParentId = templateItem.parentItemId ?? null;
+        const newParentId = oldParentId ? (idMap[oldParentId] ?? null) : null;
 
         const newItem = await storage.createScheduleItem({
           scheduleId: scheduleId,
@@ -24066,13 +24319,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
           type: templateItem.type || "task",
           status: "not_started",
           priority: templateItem.priority || "low",
-          startDate,
-          endDate,
+          startDate: itemStartDate,
+          endDate: itemEndDate,
           duration,
           progressPercent: 0,
           sortOrder: templateItem.sortOrder || 0,
+          parentItemId: newParentId,
+          color: templateItem.color || null,
         });
         createdItems.push(newItem);
+
+        // Record mapping so children can reference this new ID
+        if (templateItem.id) {
+          idMap[templateItem.id] = newItem.id;
+        }
+      }
+
+      // Second pass: remap dependency IDs from template IDs to newly-created item IDs.
+      // Done after all items are created so forward-references also resolve correctly.
+      for (const templateItem of sorted) {
+        const rawDeps = (templateItem.dependencies as any[]) || [];
+        if (rawDeps.length > 0 && templateItem.id && idMap[templateItem.id]) {
+          const newItemId = idMap[templateItem.id];
+          const remapped = rawDeps.map((dep: any) => ({
+            ...dep,
+            id: idMap[dep.id] ?? dep.id,
+          }));
+          await storage.updateScheduleItem(newItemId, { dependencies: remapped });
+        }
       }
 
       res.status(201).json({ 
