@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef, useCallback } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback, lazy, Suspense } from "react";
 import { useToolbarVisible } from "@/hooks/useToolbarVisible";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -9,33 +9,36 @@ import { useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 
-// Tab content components
-import ProjectActivity from "@/pages/ProjectActivity";
-import Notes from "@/pages/Notes";
-import Messages from "@/pages/Messages";
-import ProjectScope from "@/pages/ProjectScope";
-import Schedule from "@/pages/Schedule";
-import Tasks from "@/pages/Tasks";
-import Timesheets from "@/pages/Timesheets";
-import ProjectFiles from "@/pages/ProjectFiles";
-import Takeoff from "@/pages/Takeoff";
-import ProjectEstimates from "@/pages/ProjectEstimates";
-import Proposals from "@/pages/Proposals";
-import Bills from "@/pages/Bills";
-import Budget from "@/pages/Budget";
-import Calendar from "@/pages/Calendar";
-import Selections from "@/pages/Selections";
-import RFQs from "@/pages/RFQs";
-import RFIs from "@/pages/RFIs";
-import Allowances from "@/pages/Allowances";
-import Defects from "@/pages/Defects";
-import PurchaseOrders from "@/pages/PurchaseOrders";
-import Variations from "@/pages/Variations";
-import ClientInvoices from "@/pages/ClientInvoices";
-import SiteDiaryEntries from "@/pages/SiteDiaryEntries";
-import ProjectTeam from "@/pages/ProjectTeam";
-import ProjectChecklists from "@/pages/ProjectChecklists";
-import Minutes from "@/pages/Minutes";
+// Tab content components — lazy-loaded to avoid circular module initialisation
+// (CustomizableProjectOverview is itself used inside the project page that App.tsx
+// routes to, so statically importing full page components creates TDZ cycles in
+// the production bundle and triggers "Cannot access '…' before initialization".)
+const ProjectActivity = lazy(() => import("@/pages/ProjectActivity"));
+const Notes = lazy(() => import("@/pages/Notes"));
+const Messages = lazy(() => import("@/pages/Messages"));
+const ProjectScope = lazy(() => import("@/pages/ProjectScope"));
+const Schedule = lazy(() => import("@/pages/Schedule"));
+const Tasks = lazy(() => import("@/pages/Tasks"));
+const Timesheets = lazy(() => import("@/pages/Timesheets"));
+const ProjectFiles = lazy(() => import("@/pages/ProjectFiles"));
+const Takeoff = lazy(() => import("@/pages/Takeoff"));
+const ProjectEstimates = lazy(() => import("@/pages/ProjectEstimates"));
+const Proposals = lazy(() => import("@/pages/Proposals"));
+const Bills = lazy(() => import("@/pages/Bills"));
+const Budget = lazy(() => import("@/pages/Budget"));
+const Calendar = lazy(() => import("@/pages/Calendar"));
+const Selections = lazy(() => import("@/pages/Selections"));
+const RFQs = lazy(() => import("@/pages/RFQs"));
+const RFIs = lazy(() => import("@/pages/RFIs"));
+const Allowances = lazy(() => import("@/pages/Allowances"));
+const Defects = lazy(() => import("@/pages/Defects"));
+const PurchaseOrders = lazy(() => import("@/pages/PurchaseOrders"));
+const Variations = lazy(() => import("@/pages/Variations"));
+const ClientInvoices = lazy(() => import("@/pages/ClientInvoices"));
+const SiteDiaryEntries = lazy(() => import("@/pages/SiteDiaryEntries"));
+const ProjectTeam = lazy(() => import("@/pages/ProjectTeam"));
+const ProjectChecklists = lazy(() => import("@/pages/ProjectChecklists"));
+const Minutes = lazy(() => import("@/pages/Minutes"));
 import {
   Dialog,
   DialogContent,
@@ -1174,7 +1177,9 @@ export default function CustomizableProjectOverview() {
       {/* Content Area - either tab content or widget dashboard */}
       {!isOverviewTab ? (
         <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
-          {renderTabContent()}
+          <Suspense fallback={<div className="flex-1 flex items-center justify-center text-muted-foreground text-sm">Loading...</div>}>
+            {renderTabContent()}
+          </Suspense>
         </div>
       ) : (
         <>
