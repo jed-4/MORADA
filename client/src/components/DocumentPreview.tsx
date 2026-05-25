@@ -3,8 +3,6 @@ import { FileText, Download, AlertTriangle, Loader2, ChevronLeft, ChevronRight, 
 import { Document, Page, pdfjs } from "react-pdf";
 import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 
-pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
-
 type Props = {
   src: string;
   mimeType?: string;
@@ -29,6 +27,7 @@ function isSameOrigin(url: string): boolean {
 }
 
 export function DocumentPreview({ src, mimeType, filename, className, height = 300 }: Props) {
+  pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
   const kind = detectKind(src, mimeType);
   const displayName = filename || decodeURIComponent(src.split("/").pop() || "document");
   const heightStyle = typeof height === "number" ? `${height}px` : height;

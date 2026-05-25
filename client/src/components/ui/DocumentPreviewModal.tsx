@@ -6,8 +6,6 @@ import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { ChevronLeft, ChevronRight, Download, Send, Loader2 } from "lucide-react";
 
-pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
-
 interface DocumentPreviewModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -23,6 +21,7 @@ export function DocumentPreviewModal({
   filename,
   onSend,
 }: DocumentPreviewModalProps) {
+  pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
   const [numPages, setNumPages] = useState(0);
   const [currentPage, setCurrentPage] = useState(1);

@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, lazy, Suspense } from "react";
 import { useParams, useLocation } from "wouter";
 import { XeroContactLinkModal } from "@/components/invoices/XeroContactLinkModal";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -31,7 +31,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { LineItemTable, type LineItemColumn } from "@/components/LineItemTable";
 import { Card } from "@/components/ui/card";
-import { DocumentPreview } from "@/components/DocumentPreview";
 import { ToastAction } from "@/components/ui/toast";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -102,6 +101,8 @@ import { Badge } from "@/components/ui/badge";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { CostCodeSelect } from "@/components/CostCodeSelect";
 import type { Bill, Supplier, Project, CostCode, BillLineItem, BillApproval, BillLineItemAllowance, EstimateItem, PurchaseOrder } from "@shared/schema";
+
+const DocumentPreview = lazy(() => import("@/components/DocumentPreview"));
 
 const billFormSchema = z.object({
   billNumber: z.string().min(1, "Bill number is required"),
@@ -3209,13 +3210,15 @@ export default function BillDetail() {
               </div>
             </div>
             <div className="flex-1 overflow-hidden">
-              <DocumentPreview
-                src={sheetPreviewUrl}
-                mimeType={attachmentMeta[sheetPreviewUrl]?.mimeType}
-                filename={sheetPreviewFilename}
-                height="100%"
-                className="w-full h-full"
-              />
+              <Suspense fallback={<div className="flex items-center justify-center h-full"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>}>
+                <DocumentPreview
+                  src={sheetPreviewUrl}
+                  mimeType={attachmentMeta[sheetPreviewUrl]?.mimeType}
+                  filename={sheetPreviewFilename}
+                  height="100%"
+                  className="w-full h-full"
+                />
+              </Suspense>
             </div>
           </div>
         )}
