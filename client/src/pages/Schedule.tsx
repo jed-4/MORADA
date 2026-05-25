@@ -198,8 +198,8 @@ export default function Schedule() {
   const [showCreateLinked, setShowCreateLinked] = useState(false);
   const [createLinkedForm, setCreateLinkedForm] = useState({ name: '', startDate: '', duration: '1' });
   const [allCollapsed, setAllCollapsed] = useState(false);
-  const [descriptionExpanded, setDescriptionExpanded] = useState(true);
-  const [notesExpanded, setNotesExpanded] = useState(true);
+  const [descriptionExpanded, setDescriptionExpanded] = useState(false);
+  const [notesExpanded, setNotesExpanded] = useState(false);
   const [showSaveTemplateDialog, setShowSaveTemplateDialog] = useState(false);
   const [showLoadTemplateDialog, setShowLoadTemplateDialog] = useState(false);
   const [loadTemplateStartDate, setLoadTemplateStartDate] = useState<string>("");
@@ -1460,8 +1460,8 @@ export default function Schedule() {
       } else {
         setDurationInput("");
       }
-      setDescriptionExpanded(true);
-      setNotesExpanded(true);
+      setDescriptionExpanded(!!(editingItem.description));
+      setNotesExpanded(!!(editingItem.notes));
     } else {
       resetForm();
     }
@@ -2573,6 +2573,28 @@ export default function Schedule() {
               )}
             </div>
 
+            {/* Parent Item */}
+            {!(editingItem && !editingItem.parentItemId && scheduleItems.some(i => i.parentItemId === editingItem.id)) && (
+              <div className="space-y-1">
+                <Label htmlFor="item-parent" className="text-xs text-muted-foreground">Parent Item</Label>
+                <Select
+                  value={formData.parentItemId || "none"}
+                  onValueChange={(value) => setFormData({ ...formData, parentItemId: value === "none" ? "" : value })}
+                >
+                  <SelectTrigger id="item-parent" data-testid="select-parent-item">
+                    <SelectValue placeholder="No parent (top level)" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">No parent (top level)</SelectItem>
+                    {parentItems.map((parent) => (
+                      <SelectItem key={parent.id} value={parent.id}>
+                        {parent.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
 
             {/* Type / Status / Assignee / Progress — compact 2×2 grid */}
             {(() => {
