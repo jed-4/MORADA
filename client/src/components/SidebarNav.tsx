@@ -63,7 +63,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { ProjectSwitcher } from "./ProjectSwitcher";
 import { ProjectIcon } from "./ProjectIcon";
-import { BUSINESS_TABS } from "@/pages/Business";
+import { BUSINESS_TABS } from "@/pages/businessTabs";
 type SectionId = "user" | "project" | "management" | "finance" | "allitems" | "system" | "projects" | "business";
 
 interface NavItem {

@@ -1,39 +1,25 @@
-import { useMemo } from "react";
+import { useMemo, lazy, Suspense } from "react";
 import { useLocation } from "wouter";
 import { useToolbarVisible } from "@/hooks/useToolbarVisible";
-import { Home, FolderOpen, CheckSquare, Calendar as CalendarIcon, Timer, MessageSquare, ClipboardList, Users, FileText, HardDrive, GanttChart, BarChart3 } from "lucide-react";
-import BusinessOverview from "@/components/BusinessOverview";
-import BusinessProjects from "./BusinessProjects";
-import BusinessTasks from "./BusinessTasks";
-import BusinessCalendar from "./BusinessCalendar";
-import BusinessFiles from "./BusinessFiles";
-import Timesheets from "./Timesheets";
-import Minutes from "./Minutes";
-import TeamManagement from "./TeamManagement";
-import Messages from "./Messages";
-import Notes from "./Notes";
-import BusinessSchedule from "./BusinessSchedule";
-import ComingSoonPage from "./ComingSoonPage";
-import BusinessMetrics from "./BusinessMetrics";
 import { useAuth } from "@/hooks/use-auth";
-import BusinessOverheads from "./BusinessOverheads";
+import { BUSINESS_TABS } from "./businessTabs";
 
-export const BUSINESS_TABS = [
-  { id: "overview", label: "Overview", icon: Home, path: "/business" },
-  { id: "projects", label: "Projects", icon: FolderOpen, path: "/business/projects" },
-  { id: "tasks", label: "Tasks", icon: CheckSquare, path: "/business/tasks" },
-  { id: "calendar", label: "Calendar", icon: CalendarIcon, path: "/business/calendar" },
-  { id: "schedule", label: "Schedule", icon: GanttChart, path: "/business/schedule" },
-  { id: "files", label: "Files", icon: HardDrive, path: "/business/files" },
-  { id: "overheads", label: "Overheads", icon: BarChart3, path: "/business/overheads" },
-  { id: "timesheets", label: "Timesheets", icon: Timer, path: "/business/timesheets" },
-  { id: "messages", label: "Messages", icon: MessageSquare, path: "/business/messages" },
-  { id: "minutes", label: "Minutes", icon: ClipboardList, path: "/business/minutes" },
-  { id: "notes", label: "Notes", icon: FileText, path: "/business/notes" },
-  { id: "leave", label: "Leave", icon: CalendarIcon, path: "/business/leave" },
-  { id: "team", label: "Team", icon: Users, path: "/business-team" },
-  { id: "metrics", label: "Metrics", icon: BarChart3, path: "/business/metrics" },
-] as const;
+export { BUSINESS_TABS };
+
+const BusinessOverview = lazy(() => import("@/components/BusinessOverview"));
+const BusinessProjects = lazy(() => import("./BusinessProjects"));
+const BusinessTasks = lazy(() => import("./BusinessTasks"));
+const BusinessCalendar = lazy(() => import("./BusinessCalendar"));
+const BusinessFiles = lazy(() => import("./BusinessFiles"));
+const Timesheets = lazy(() => import("./Timesheets"));
+const Minutes = lazy(() => import("./Minutes"));
+const TeamManagement = lazy(() => import("./TeamManagement"));
+const Messages = lazy(() => import("./Messages"));
+const Notes = lazy(() => import("./Notes"));
+const BusinessSchedule = lazy(() => import("./BusinessSchedule"));
+const ComingSoonPage = lazy(() => import("./ComingSoonPage"));
+const BusinessMetrics = lazy(() => import("./BusinessMetrics"));
+const BusinessOverheads = lazy(() => import("./BusinessOverheads"));
 
 export default function Business() {
   const [location, navigate] = useLocation();
@@ -145,7 +131,9 @@ export default function Business() {
 
       {/* Content Area */}
       <div className={`flex-1 min-h-0 ${activeTab === 'schedule' ? 'overflow-hidden' : 'overflow-auto'}`}>
-        {renderContent()}
+        <Suspense fallback={<div className="flex items-center justify-center h-full text-muted-foreground text-sm">Loading...</div>}>
+          {renderContent()}
+        </Suspense>
       </div>
     </div>
   );
