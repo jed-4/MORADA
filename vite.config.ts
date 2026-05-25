@@ -42,7 +42,10 @@ export default defineConfig({
           }
           if (n.includes("/date-fns/")) return "vendor-date-fns";
           if (n.includes("/lucide-react/")) return "vendor-icons";
-          if (n.includes("/recharts/") || /\/d3-[^/]+\//.test(n)) return "vendor-charts";
+          // NOTE: do NOT manually group recharts + d3-* into a single chunk.
+          // Recharts imports d3-* internally, and Rollup's evaluation order
+          // inside a combined chunk produces a TDZ ("Cannot access 'S' before
+          // initialization"). Let Rollup auto-chunk them.
           if (n.includes("/wouter/")) return "vendor-wouter";
           if (n.includes("/@dnd-kit/")) return "vendor-dnd";
           if (n.includes("/framer-motion/")) return "vendor-motion";
