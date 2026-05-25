@@ -13513,11 +13513,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const roleName = (user?.roleName || "").toLowerCase();
       const isAdminLike = roleName.includes("admin") || roleName.includes("owner") || roleName.includes("general manager");
 
+      console.log(`[Bills] user=${user?.id} companyId=${user?.companyId} roleName="${roleName}" isAdminLike=${isAdminLike} projectId=${projectId || 'none'}`);
+
       let bills = await storage.getBills(
         projectId as string | undefined,
         status as string | undefined,
         user?.companyId as string | undefined
       );
+
+      console.log(`[Bills] getBills returned ${bills.length} bill(s) for companyId=${user?.companyId}`);
 
       // Workers can only see receipts they personally created
       if (!isAdminLike && user?.id) {
