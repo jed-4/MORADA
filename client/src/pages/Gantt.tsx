@@ -342,9 +342,13 @@ function useGanttRowDrag(
               parentItemId: nestTargetRef.current,
             }).then(() => {
               invalidateScheduleItems();
-              
-            }).catch(() => {
-              toast({ title: "Failed to nest item", variant: "destructive" });
+            }).catch((err: any) => {
+              console.error("[Gantt] Nest failed:", err);
+              toast({
+                title: "Failed to nest item",
+                description: err?.message || String(err),
+                variant: "destructive",
+              });
             });
           }
         } else if (dropTargetIdRef.current) {
