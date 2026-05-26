@@ -480,44 +480,41 @@ export default function PurchaseOrders({ embedded }: { embedded?: boolean } = {}
   const poColumns = useMemo<ColumnDef<PurchaseOrder, unknown>[]>(() => {
     const cols: (ColumnDef<PurchaseOrder, unknown> & { meta?: DataTableColumnMeta })[] = [
       {
-        id: "select",
+        id: "poNumber",
         header: () => (
-          <input
-            type="checkbox"
-            checked={allMainSelected}
-            ref={el => { if (el) el.indeterminate = someMainSelected; }}
-            onChange={toggleSelectAll}
-            className="w-3 h-3 accent-primary cursor-pointer"
-            aria-label="Select all"
-            data-testid="checkbox-select-all"
-          />
-        ),
-        cell: ({ row }) => (
-          <span onClick={(e) => toggleSelect(row.original.id, e)}>
+          <div className="flex items-center gap-2">
             <input
               type="checkbox"
-              checked={selectedIds.has(row.original.id)}
-              onChange={() => {}}
+              checked={allMainSelected}
+              ref={el => { if (el) el.indeterminate = someMainSelected; }}
+              onChange={toggleSelectAll}
               className="w-3 h-3 accent-primary cursor-pointer"
-              data-testid={`checkbox-${row.original.id}`}
+              aria-label="Select all"
+              data-testid="checkbox-select-all"
+              onClick={(e) => e.stopPropagation()}
             />
-          </span>
+            <span>PO Number</span>
+          </div>
         ),
-        enableSorting: false,
-        size: SELECT_COL_WIDTH,
-        meta: { defaultWidth: SELECT_COL_WIDTH, align: "left", pinned: true, headerLabel: "Select" },
-      },
-      {
-        id: "poNumber",
-        header: "PO Number",
         accessorFn: (po) => po.poNumber || "",
         cell: ({ row }) => (
-          <span className="text-xs font-medium text-primary" data-testid={`cell-po-number-${row.original.id}`}>
-            {row.original.poNumber}
-          </span>
+          <div className="flex items-center gap-2">
+            <span onClick={(e) => toggleSelect(row.original.id, e)} className="flex-shrink-0">
+              <input
+                type="checkbox"
+                checked={selectedIds.has(row.original.id)}
+                onChange={() => {}}
+                className="w-3 h-3 accent-primary cursor-pointer"
+                data-testid={`checkbox-${row.original.id}`}
+              />
+            </span>
+            <span className="text-xs font-medium text-primary truncate" data-testid={`cell-po-number-${row.original.id}`}>
+              {row.original.poNumber}
+            </span>
+          </div>
         ),
-        size: 110,
-        meta: { defaultWidth: 110, headerLabel: "PO Number" },
+        size: 140,
+        meta: { defaultWidth: 140, pinned: true, headerLabel: "PO Number" },
       },
       {
         id: "name",
@@ -707,7 +704,6 @@ export default function PurchaseOrders({ embedded }: { embedded?: boolean } = {}
 
   const pickerColumns = useMemo(
     () => [
-      { id: "select", label: "Select" },
       { id: "poNumber", label: "PO Number" },
       { id: "name", label: "Name" },
       { id: "type", label: "Type" },
