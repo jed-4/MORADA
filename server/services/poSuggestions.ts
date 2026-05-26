@@ -127,6 +127,34 @@ export async function suggestPOsForBill(
   const billTotal = typeof bill.total === "number" ? bill.total : 0;
   const billDate = bill.billDate ? new Date(bill.billDate as any) : null;
 
+  // Pre-compute remaining-unbilled per candidate PO so the amount signal still
+  // fires on partially billed POs (where po.total is much larger than the new
+  // bill but the *outstanding* balance matches).
+  const candidatePOIds = Array.from(byId.keys());
+  const remainingByPOId = new Map<string, number>();
+  if (candidatePOIds.length > 0) {
+    const linked = await db
+      .select({
+        poId: schema.bills.matchedSitePOId,
+        total: schema.bills.total,
+      })
+      .from(schema.bills)
+      .where(and(
+        inArray(schema.bills.matchedSitePOId, candidatePOIds),
+      ));
+    const billedByPO = new Map<string, number>();
+    for (const row of linked) {
+      if (!row.poId) continue;
+      billedByPO.set(row.poId, (billedByPO.get(row.poId) || 0) + (Number(row.total) || 0));
+    }
+    for (const id of candidatePOIds) {
+      const po = byId.get(id);
+      const total = Number(po?.total) || 0;
+      const billed = billedByPO.get(id) || 0;
+      remainingByPOId.set(id, Math.max(0, total - billed));
+    }
+  }
+
   const candidates: SuggestCandidate[] = [];
   for (const po of byId.values()) {
     if (po.status === "cancelled") continue;
@@ -136,10 +164,16 @@ export async function suggestPOsForBill(
 
     let amountWithin2 = false;
     let amountWithin10 = false;
-    if (billTotal > 0 && typeof po.total === "number" && po.total > 0) {
-      const ratio = billTotal / po.total;
-      amountWithin2 = ratio >= 0.98 && ratio <= 1.02;
-      amountWithin10 = ratio >= 0.9 && ratio <= 1.1;
+    if (billTotal > 0) {
+      const checkRatio = (denominator: number) => {
+        if (!denominator || denominator <= 0) return;
+        const ratio = billTotal / denominator;
+        if (ratio >= 0.98 && ratio <= 1.02) amountWithin2 = true;
+        else if (ratio >= 0.9 && ratio <= 1.1) amountWithin10 = true;
+      };
+      checkRatio(typeof po.total === "number" ? po.total : 0);
+      // Fall back to remaining-unbilled (handles partially billed POs).
+      checkRatio(remainingByPOId.get(po.id) || 0);
     }
 
     let dateProximityDays: number | null = null;
@@ -227,8 +261,8 @@ export async function applyPOSuggestionsToBill(
     return { matchedPOId: topAuto.poId, suggestedPOIds: [] };
   }
 
-  if (suggestedPOIds.length > 0) {
-    await storage.updateBill(bill.id, { suggestedSitePOIds: suggestedPOIds } as any);
-  }
+  // Always persist suggestedSitePOIds — even an empty array — so a re-run that
+  // finds no candidates clears stale chips from previous runs.
+  await storage.updateBill(bill.id, { suggestedSitePOIds: suggestedPOIds } as any);
   return { matchedPOId: null, suggestedPOIds };
 }

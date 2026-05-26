@@ -468,7 +468,7 @@ export class AutoBillCreatorService {
       if (options.autoMatch) {
         const pdfFilenames = attachments.map(a => a.filename).filter(Boolean) as string[];
         const extraText = [
-          (invoiceData as any)?.rawText || '',
+          invoiceData?.rawText || '',
           ...pdfFilenames,
           email?.subject || '',
         ].join(' \n ');

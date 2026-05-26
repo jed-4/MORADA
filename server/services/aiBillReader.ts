@@ -20,6 +20,8 @@ export interface InvoiceData {
   }>;
   currency?: string;
   confidence?: number;
+  /** Raw extracted PDF text — used downstream for PO# detection. */
+  rawText?: string;
 }
 
 import { exec } from "child_process";
@@ -386,6 +388,7 @@ export async function processInvoiceWithAI(
   };
 
   let aiResponse: AIInvoiceResponse;
+  let extractedRawText = "";
 
   if (!isPdf) {
     // Non-PDF image — go straight to vision
@@ -395,6 +398,7 @@ export async function processInvoiceWithAI(
     // PDF: try text extraction first
     const pdfBuffer = Buffer.from(base64Clean, "base64");
     const rawText = await extractTextFromPdf(pdfBuffer);
+    extractedRawText = rawText;
 
     if (rawText.length < 50) {
       // Scanned / image PDF — fall back to vision
@@ -454,6 +458,7 @@ export async function processInvoiceWithAI(
     })),
     currency: aiResponse.currency || "AUD",
     confidence: 0.95,
+    rawText: extractedRawText || undefined,
   };
 
   return result;
