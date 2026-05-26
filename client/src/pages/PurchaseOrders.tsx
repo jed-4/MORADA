@@ -19,11 +19,15 @@ import {
   ClipboardList,
   CheckCheck,
   Ban,
+  Copy,
+  Trash2,
+  ExternalLink,
 } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { type ColumnDef } from "@tanstack/react-table";
@@ -304,6 +308,45 @@ export default function PurchaseOrders({ embedded }: { embedded?: boolean } = {}
       variant: "destructive",
     }),
   });
+
+  const duplicatePoMutation = useMutation({
+    mutationFn: (id: string) => apiRequest(`/api/purchase-orders/${id}/duplicate`, "POST"),
+    onSuccess: (newPo: PurchaseOrder) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders"] });
+      toast({ title: "Purchase order duplicated", description: newPo.poNumber || undefined });
+    },
+    onError: (err: Error) => toast({
+      title: "Failed to duplicate purchase order",
+      description: err.message,
+      variant: "destructive",
+    }),
+  });
+
+  const deletePoMutation = useMutation({
+    mutationFn: (id: string) => apiRequest(`/api/purchase-orders/${id}`, "DELETE"),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders"] });
+      toast({ title: "Purchase order deleted" });
+    },
+    onError: (err: Error) => toast({
+      title: "Failed to delete purchase order",
+      description: err.message,
+      variant: "destructive",
+    }),
+  });
+
+  const handleDuplicatePO = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    duplicatePoMutation.mutate(id);
+  };
+
+  const handleDeletePO = (po: PurchaseOrder, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const label = po.poNumber || po.title || "this purchase order";
+    if (window.confirm(`Delete ${label}? This cannot be undone.`)) {
+      deletePoMutation.mutate(po.id);
+    }
+  };
 
   const toggleSelect = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -608,9 +651,58 @@ export default function PurchaseOrders({ embedded }: { embedded?: boolean } = {}
         size: 140,
         meta: { defaultWidth: 140, headerLabel: "Xero" },
       },
+      {
+        id: "actions",
+        header: "",
+        enableSorting: false,
+        cell: ({ row }) => (
+          <div className="flex justify-end" onClick={(e) => e.stopPropagation()}>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  className="h-6 w-6 rounded-md hover-elevate active-elevate-2 flex items-center justify-center text-muted-foreground"
+                  data-testid={`button-row-actions-${row.original.id}`}
+                  title="More actions"
+                >
+                  <MoreVertical className="w-3 h-3" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-40">
+                <DropdownMenuItem
+                  onClick={(e) => { e.stopPropagation(); handleRowClick(row.original.id); }}
+                  data-testid={`menu-open-${row.original.id}`}
+                >
+                  <ExternalLink className="w-3.5 h-3.5 mr-2" />
+                  Open
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={(e) => handleDuplicatePO(row.original.id, e)}
+                  disabled={duplicatePoMutation.isPending}
+                  data-testid={`menu-duplicate-${row.original.id}`}
+                >
+                  <Copy className="w-3.5 h-3.5 mr-2" />
+                  Duplicate
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onClick={(e) => handleDeletePO(row.original, e)}
+                  disabled={deletePoMutation.isPending}
+                  className="text-destructive focus:text-destructive"
+                  data-testid={`menu-delete-${row.original.id}`}
+                >
+                  <Trash2 className="w-3.5 h-3.5 mr-2" />
+                  Delete
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        ),
+        size: 40,
+        meta: { defaultWidth: 40, align: "right", pinned: true, headerLabel: "Actions" },
+      },
     ];
     return cols;
-  }, [projectsMap, suppliersMap, selectedIds, allMainSelected, someMainSelected, mainPOs]);
+  }, [projectsMap, suppliersMap, selectedIds, allMainSelected, someMainSelected, mainPOs, duplicatePoMutation.isPending, deletePoMutation.isPending]);
 
   const pickerColumns = useMemo(
     () => [
@@ -624,6 +716,7 @@ export default function PurchaseOrders({ embedded }: { embedded?: boolean } = {}
       { id: "status", label: "Status" },
       { id: "amount", label: "Amount" },
       { id: "xero", label: "Xero" },
+      { id: "actions", label: "Actions" },
     ],
     [],
   );
