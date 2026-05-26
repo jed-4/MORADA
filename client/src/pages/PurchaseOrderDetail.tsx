@@ -1129,6 +1129,37 @@ export default function PurchaseOrderDetail() {
     },
   });
 
+  // ── Bills linked to this PO ─────────────────────────────────────────────
+  const { data: linkedBills = [] } = useQuery<Array<{
+    id: string;
+    billNumber: string | null;
+    billReference: string | null;
+    status: string;
+    billDate: string | null;
+    dueDate: string | null;
+    total: number;
+    paidAmount: number;
+  }>>({
+    queryKey: ["/api/purchase-orders", poId, "bills"],
+    enabled: !!poId,
+  });
+
+  const unlinkBillMutation = useMutation({
+    mutationFn: async (billId: string) => {
+      return apiRequest(`/api/bills/${billId}/unlink-po`, "POST");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders", poId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders", poId, "bills"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/bills"] });
+      toast({ title: "Bill unlinked" });
+    },
+    onError: (err: any) => {
+      toast({ title: "Failed to unlink bill", description: err?.message, variant: "destructive" });
+    },
+  });
+
   const markInvoicedMutation = useMutation({
     mutationFn: async () => {
       return apiRequest(`/api/purchase-orders/${poId}`, "PATCH", {
@@ -1824,6 +1855,64 @@ export default function PurchaseOrderDetail() {
                 )}
               </CardContent>
             </Card>
+
+            {/* Attached Bills */}
+            {linkedBills.length > 0 && (
+              <Card style={{ borderColor: TOKENS.border }} data-testid="card-attached-bills">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base">
+                    Attached Bills ({linkedBills.length})
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="pt-0 space-y-2">
+                  {linkedBills.map((b) => {
+                    const paidPct = b.total > 0 ? Math.min(100, Math.round((b.paidAmount / b.total) * 100)) : 0;
+                    return (
+                      <div
+                        key={b.id}
+                        className="flex items-center justify-between gap-3 rounded-md border px-3 py-2 hover-elevate"
+                        style={{ borderColor: TOKENS.border }}
+                        data-testid={`row-attached-bill-${b.id}`}
+                      >
+                        <button
+                          onClick={() => setLocation(`/bills/${b.id}`)}
+                          className="flex-1 min-w-0 text-left"
+                          data-testid={`button-open-bill-${b.id}`}
+                        >
+                          <div className="flex items-center gap-2 min-w-0">
+                            <FileText className="w-4 h-4 flex-shrink-0 text-muted-foreground" />
+                            <span className="font-mono text-sm font-semibold truncate">
+                              {b.billNumber || "—"}
+                            </span>
+                            {b.billReference && (
+                              <span className="text-xs text-muted-foreground truncate">
+                                · Ref {b.billReference}
+                              </span>
+                            )}
+                            <Badge variant="outline" className="text-[10px] capitalize ml-1">
+                              {b.status.replace(/_/g, " ")}
+                            </Badge>
+                          </div>
+                          <div className="text-xs text-muted-foreground mt-0.5">
+                            {formatCurrency(b.paidAmount)} of {formatCurrency(b.total)} paid · {paidPct}%
+                          </div>
+                        </button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => unlinkBillMutation.mutate(b.id)}
+                          disabled={unlinkBillMutation.isPending}
+                          data-testid={`button-unlink-bill-${b.id}`}
+                          title="Unlink bill from PO"
+                        >
+                          <X className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    );
+                  })}
+                </CardContent>
+              </Card>
+            )}
 
             {/* PO Details */}
             <Card style={{ borderColor: TOKENS.border }}>

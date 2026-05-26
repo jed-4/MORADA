@@ -1736,17 +1736,47 @@ export default function BillDetail() {
   });
 
   const linkSitePOMutation = useMutation({
-    mutationFn: async (sitePOId: string) => {
-      await apiRequest(`/api/bills/${id}`, "PATCH", { matchedSitePOId: sitePOId, suggestedSitePOIds: [] });
-      await apiRequest(`/api/purchase-orders/${sitePOId}`, "PATCH", { status: "invoiced", matchedBillId: id });
+    mutationFn: async (purchaseOrderId: string) => {
+      await apiRequest(`/api/bills/${id}/link-po`, "POST", { purchaseOrderId });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/bills"] });
       queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders"] });
     },
     onError: () => {
-      toast({ title: "Failed to link site PO", variant: "destructive" });
+      toast({ title: "Failed to link PO", variant: "destructive" });
     },
+  });
+
+  const unlinkSitePOMutation = useMutation({
+    mutationFn: async () => {
+      await apiRequest(`/api/bills/${id}/unlink-po`, "POST");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/bills"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders"] });
+    },
+    onError: () => {
+      toast({ title: "Failed to unlink PO", variant: "destructive" });
+    },
+  });
+
+  // Pickable POs: any non-draft, non-cancelled PO for the bill's supplier.
+  const billSupplierId = form.watch('supplierId') as string | undefined;
+  const { data: pickablePOs = [] } = useQuery<PurchaseOrder[]>({
+    queryKey: ["/api/purchase-orders", { supplierId: billSupplierId }],
+    queryFn: async () => {
+      const r = await fetch(`/api/purchase-orders`, { credentials: "include" });
+      if (!r.ok) return [];
+      const all = (await r.json()) as PurchaseOrder[];
+      return all.filter((po: any) => {
+        if (!billSupplierId) return false;
+        if (po.supplierId !== billSupplierId) return false;
+        if (po.status === "draft" || po.status === "cancelled" || po.status === "paid") return false;
+        return true;
+      });
+    },
+    enabled: !!(isEditMode && !matchedSitePOId && billSupplierId),
   });
 
   const dismissSuggestionsMutation = useMutation({
@@ -1848,18 +1878,62 @@ export default function BillDetail() {
       {/* ── Site PO matched banner ──────────────────────────────────────── */}
       {isEditMode && matchedSitePOId && matchedSitePO && (
         <div className="flex-none border-b bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800 px-4 py-2">
-          <div className="flex items-center gap-2 text-sm text-green-800 dark:text-green-300">
-            <Link2 className="w-4 h-4 flex-shrink-0 text-green-600 dark:text-green-400" />
-            <span className="font-medium">Matched to Site PO</span>
-            <span className="font-mono font-semibold">{matchedSitePO.poNumber}</span>
-            {matchedSitePO.description && (
-              <span className="text-green-700/70 dark:text-green-400/70 truncate">— {matchedSitePO.description}</span>
-            )}
+          <div className="flex items-center justify-between gap-2 text-sm text-green-800 dark:text-green-300">
+            <div className="flex items-center gap-2 min-w-0">
+              <Link2 className="w-4 h-4 flex-shrink-0 text-green-600 dark:text-green-400" />
+              <span className="font-medium">Matched to Purchase Order</span>
+              <button
+                type="button"
+                onClick={() => setLocation(`/purchase-orders/${matchedSitePO.id}`)}
+                className="font-mono font-semibold hover:underline"
+                data-testid="link-matched-po"
+              >
+                {matchedSitePO.poNumber}
+              </button>
+              {matchedSitePO.description && (
+                <span className="text-green-700/70 dark:text-green-400/70 truncate">— {matchedSitePO.description}</span>
+              )}
+            </div>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 px-2 text-xs text-green-800 dark:text-green-300"
+              onClick={() => unlinkSitePOMutation.mutate()}
+              disabled={unlinkSitePOMutation.isPending}
+              data-testid="button-unlink-po"
+            >
+              {unlinkSitePOMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : "Unlink"}
+            </Button>
           </div>
         </div>
       )}
 
-      {/* ── Site PO suggestion banner ───────────────────────────────────── */}
+      {/* ── PO picker (any open PO from the bill's supplier) ──────────────── */}
+      {isEditMode && !matchedSitePOId && billSupplierId && pickablePOs.length > 0 && suggestedSitePOs.length === 0 && (
+        <div className="flex-none border-b bg-blue-50/80 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800 px-4 py-2">
+          <div className="flex items-center gap-2 text-sm">
+            <Link2 className="w-4 h-4 flex-shrink-0 text-blue-600 dark:text-blue-400" />
+            <span className="font-medium text-blue-800 dark:text-blue-300">Link this bill to a PO:</span>
+            <Select onValueChange={(v) => v && linkSitePOMutation.mutate(v)} disabled={linkSitePOMutation.isPending}>
+              <SelectTrigger className="h-8 w-[320px] text-xs" data-testid="select-link-po">
+                <SelectValue placeholder={`Choose from ${pickablePOs.length} open PO${pickablePOs.length === 1 ? "" : "s"}…`} />
+              </SelectTrigger>
+              <SelectContent>
+                {pickablePOs.map((po: any) => (
+                  <SelectItem key={po.id} value={po.id}>
+                    <span className="font-mono">{po.poNumber}</span>
+                    {po.description ? ` — ${po.description}` : ""}
+                    {" · "}{formatCurrency(po.total || 0)}
+                    {" · "}{(po.status || "").replace(/_/g, " ")}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+      )}
+
+      {/* ── PO suggestion banner ────────────────────────────────────────── */}
       {isEditMode && !matchedSitePOId && suggestedSitePOs.length > 0 && (
         <div className="flex-none border-b bg-amber-50/80 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800 px-4 py-3">
           <div className="flex items-start justify-between gap-3">
@@ -1867,7 +1941,7 @@ export default function BillDetail() {
               <ClipboardList className="w-4 h-4 flex-shrink-0 text-amber-600 dark:text-amber-400 mt-0.5" />
               <div className="min-w-0">
                 <p className="text-sm font-medium text-amber-800 dark:text-amber-300 mb-1.5">
-                  Possible Site PO match{suggestedSitePOs.length > 1 ? "es" : ""}
+                  Possible PO match{suggestedSitePOs.length > 1 ? "es" : ""}
                 </p>
                 <div className="flex flex-wrap gap-2">
                   {suggestedSitePOs.map(po => (

@@ -11,6 +11,7 @@ import { sendInvitationEmail, initializeEmailServices, sendGenericEmail } from "
 import { GoogleOAuthService } from "./services/googleOAuthService";
 import { ObjectStorageService } from "./replit_integrations/object_storage";
 import { xeroService, XeroValidationError, type XeroValidationIssue } from "./services/xeroService";
+import { recomputePOStatusFromBills, recomputePOStatusForLinks } from "./services/poStatusFromBills";
 import { 
   insertNoteSchema,
   insertTaskSchema,
@@ -771,6 +772,16 @@ async function syncBillFromXeroInternal(
       ...(invoice.InvoiceNumber ? { billReference: invoice.InvoiceNumber } : {}),
       ...(extraNotes ? { notes: ((bill as any).notes ? (bill as any).notes + "\n" : "") + extraNotes } : {}),
     } as any);
+
+    // If this bill is linked to a PO, payment-state may have shifted →
+    // recompute the PO's status from all of its linked bills.
+    if ((bill as any).matchedSitePOId) {
+      try {
+        await recomputePOStatusFromBills((bill as any).matchedSitePOId);
+      } catch (err) {
+        console.error("[syncBillFromXeroInternal] PO recompute failed:", err);
+      }
+    }
 
     // Only overwrite line items when local bill is still in draft.
     // Once submitted/approved/paid, BuildPro line items are preserved.
@@ -13665,7 +13676,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/bills/:id", async (req, res) => {
+  app.patch("/api/bills/:id", requireAuth, async (req, res) => {
     try {
       const validationResult = insertBillSchema.partial().safeParse(req.body);
       if (!validationResult.success) {
@@ -13676,7 +13687,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const previous = await storage.getBillById(req.params.id);
+      if (!previous) return res.status(404).json({ error: "Bill not found" });
+      const userCompanyId = (req as any).user?.companyId;
+      if (userCompanyId && (previous as any).companyId && (previous as any).companyId !== userCompanyId) {
+        return res.status(403).json({ error: "Forbidden" });
+      }
       const bill = await storage.updateBill(req.params.id, validationResult.data);
+
+      // ── Recompute linked PO status from bills (source of truth) ─────────
+      // Triggered whenever the bill's link, status, paidAmount, or total changed.
+      const linkChanged = "matchedSitePOId" in validationResult.data
+        && (validationResult.data as any).matchedSitePOId !== (previous as any)?.matchedSitePOId;
+      const paymentChanged = ("status" in validationResult.data && validationResult.data.status !== previous?.status)
+        || ("paidAmount" in validationResult.data && validationResult.data.paidAmount !== previous?.paidAmount)
+        || ("total" in validationResult.data && validationResult.data.total !== previous?.total);
+      if (linkChanged) {
+        await recomputePOStatusForLinks(
+          (previous as any)?.matchedSitePOId ?? null,
+          (bill as any)?.matchedSitePOId ?? null,
+        );
+      } else if (paymentChanged && (bill as any)?.matchedSitePOId) {
+        await recomputePOStatusFromBills((bill as any).matchedSitePOId);
+      }
 
       // Best-effort auto-push to Xero
       const companyId = (req as any).user?.companyId;
@@ -14014,12 +14046,104 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/bills/:id", async (req, res) => {
+  app.delete("/api/bills/:id", requireAuth, async (req, res) => {
     try {
+      const previous = await storage.getBillById(req.params.id);
+      if (!previous) return res.status(404).json({ error: "Bill not found" });
+      const userCompanyId = (req as any).user?.companyId;
+      if (userCompanyId && (previous as any).companyId && (previous as any).companyId !== userCompanyId) {
+        return res.status(403).json({ error: "Forbidden" });
+      }
       await storage.deleteBill(req.params.id);
+      if ((previous as any)?.matchedSitePOId) {
+        await recomputePOStatusFromBills((previous as any).matchedSitePOId);
+      }
       res.status(204).send();
     } catch (error) {
       res.status(500).json({ error: "Failed to delete bill" });
+    }
+  });
+
+  // ── Link a bill to a PO (any PO type). Recomputes PO status from bills. ───
+  app.post("/api/bills/:id/link-po", requireAuth, async (req, res) => {
+    try {
+      const { purchaseOrderId } = req.body || {};
+      if (!purchaseOrderId || typeof purchaseOrderId !== "string") {
+        return res.status(400).json({ error: "purchaseOrderId is required" });
+      }
+      const companyId = (req as any).user?.companyId;
+      const po = await storage.getPurchaseOrder(purchaseOrderId);
+      if (!po || (companyId && po.companyId !== companyId)) {
+        return res.status(404).json({ error: "Purchase order not found" });
+      }
+      const previous = await storage.getBillById(req.params.id);
+      if (!previous) return res.status(404).json({ error: "Bill not found" });
+      if (companyId && (previous as any).companyId && (previous as any).companyId !== companyId) {
+        return res.status(403).json({ error: "Forbidden" });
+      }
+
+      const bill = await storage.updateBill(req.params.id, {
+        matchedSitePOId: purchaseOrderId,
+        suggestedSitePOIds: [],
+      } as any);
+
+      await recomputePOStatusForLinks(
+        (previous as any)?.matchedSitePOId ?? null,
+        purchaseOrderId,
+      );
+
+      const updatedPo = await storage.getPurchaseOrder(purchaseOrderId);
+      res.json({ bill, purchaseOrder: updatedPo });
+    } catch (err) {
+      console.error("[link-po]", err);
+      res.status(500).json({ error: "Failed to link bill to PO" });
+    }
+  });
+
+  app.post("/api/bills/:id/unlink-po", requireAuth, async (req, res) => {
+    try {
+      const previous = await storage.getBillById(req.params.id);
+      if (!previous) return res.status(404).json({ error: "Bill not found" });
+      const userCompanyId = (req as any).user?.companyId;
+      if (userCompanyId && (previous as any).companyId && (previous as any).companyId !== userCompanyId) {
+        return res.status(403).json({ error: "Forbidden" });
+      }
+      const previousPoId = (previous as any)?.matchedSitePOId ?? null;
+      const bill = await storage.updateBill(req.params.id, { matchedSitePOId: null } as any);
+      if (previousPoId) await recomputePOStatusFromBills(previousPoId);
+      res.json({ bill });
+    } catch (err) {
+      console.error("[unlink-po]", err);
+      res.status(500).json({ error: "Failed to unlink bill from PO" });
+    }
+  });
+
+  // ── List bills linked to a given PO ───────────────────────────────────────
+  app.get("/api/purchase-orders/:id/bills", requireAuth, async (req, res) => {
+    try {
+      const companyId = (req as any).user?.companyId;
+      const po = await storage.getPurchaseOrder(req.params.id);
+      if (!po || (companyId && po.companyId !== companyId)) {
+        return res.status(404).json({ error: "Purchase order not found" });
+      }
+      const rows = await db
+        .select({
+          id: billsTable.id,
+          billNumber: billsTable.billNumber,
+          billReference: billsTable.billReference,
+          status: billsTable.status,
+          billDate: billsTable.billDate,
+          dueDate: billsTable.dueDate,
+          total: billsTable.total,
+          paidAmount: billsTable.paidAmount,
+          supplierId: billsTable.supplierId,
+        })
+        .from(billsTable)
+        .where(eq(billsTable.matchedSitePOId, req.params.id));
+      res.json(rows);
+    } catch (err) {
+      console.error("[GET /api/purchase-orders/:id/bills]", err);
+      res.status(500).json({ error: "Failed to fetch bills for PO" });
     }
   });
 

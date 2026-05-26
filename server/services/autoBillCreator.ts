@@ -8,6 +8,7 @@ import { objectStorageClient } from "../replit_integrations/object_storage/objec
 import { randomUUID } from "crypto";
 import { db } from "../db";
 import { and, eq, gte, lte } from "drizzle-orm";
+import { recomputePOStatusFromBills } from "./poStatusFromBills";
 
 export interface AutoBillResult {
   success: boolean;
@@ -461,7 +462,8 @@ export class AutoBillCreatorService {
 
       if (options.autoMatch) {
         const pdfFilenames = attachments.map(a => a.filename).filter(Boolean) as string[];
-        const poPattern = /\bSP-\d{4}-\d{3}\b/gi;
+        // PO number patterns cover all PO types (site, supplier, labour, etc.).
+        const poPattern = /\b(?:SP|PO|SO|LP)-\d{4}-\d{3}\b/gi;
         const searchTargets = [
           (invoiceData as any)?.rawText || '',
           ...pdfFilenames,
@@ -472,45 +474,36 @@ export class AutoBillCreatorService {
         const foundPONumber = poMatches?.[0]?.toUpperCase() ?? null;
 
         if (foundPONumber) {
-          const [sitePO] = await db
+          // Match any PO type — bill → PO link is no longer site-only.
+          // Allow draft or sent POs (sent = issued and awaiting an invoice).
+          const [matchedPO] = await db
             .select()
             .from(schema.purchaseOrders)
             .where(and(
               eq(schema.purchaseOrders.companyId, companyId),
-              eq(schema.purchaseOrders.poType, 'site' as any),
               eq(schema.purchaseOrders.poNumber, foundPONumber),
-              eq(schema.purchaseOrders.status, 'draft' as any)
             ))
             .limit(1);
 
-          if (sitePO) {
-            matchedSitePOId = sitePO.id;
+          if (matchedPO && matchedPO.status !== 'cancelled') {
+            matchedSitePOId = matchedPO.id;
 
             // Override project and supplier from the PO (authoritative match)
-            if (sitePO.projectId) projectId = sitePO.projectId;
-            if (sitePO.supplierId) aiSupplierId = sitePO.supplierId;
+            if (matchedPO.projectId) projectId = matchedPO.projectId;
+            if (matchedPO.supplierId) aiSupplierId = matchedPO.supplierId;
 
-            // Mark the site PO as matched
-            await db.update(schema.purchaseOrders)
-              .set({
-                status: 'invoiced' as any,
-                matchedBillId: createdBill.id,
-                matchedAt: new Date(),
-              } as any)
-              .where(eq(schema.purchaseOrders.id, sitePO.id));
-
-            console.log(`[autoBillCreator] Matched site PO ${foundPONumber} → bill ${createdBill.billNumber}`);
+            console.log(`[autoBillCreator] Matched PO ${foundPONumber} (${matchedPO.poType}) → bill ${createdBill.billNumber}`);
           }
         }
 
-        // Fuzzy fallback: suggest site POs by supplier + amount proximity
+        // Fuzzy fallback: suggest POs by supplier + amount proximity (any PO type)
         if (!matchedSitePOId) {
           const billTotal = (invoiceData as any)?.totalAmountIncGst ?? invoiceData?.totalAmount ?? 0;
           const sixtyDaysAgo = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000);
           const conditions: any[] = [
             eq(schema.purchaseOrders.companyId, companyId),
-            eq(schema.purchaseOrders.poType, 'site' as any),
-            eq(schema.purchaseOrders.status, 'draft' as any),
+            // Suggest POs that have been issued but not yet linked to a bill.
+            eq(schema.purchaseOrders.status, 'sent' as any),
             gte(schema.purchaseOrders.createdAt, sixtyDaysAgo),
           ];
           if (aiSupplierId) {
@@ -552,6 +545,16 @@ export class AutoBillCreatorService {
         ...(matchedSitePOId ? { matchedSitePOId } : {}),
         ...(suggestedSitePOIds.length > 0 ? { suggestedSitePOIds } : {}),
       });
+
+      // Push status of the matched PO forward (sent → invoiced) once the bill
+      // is linked. recomputePOStatusFromBills is idempotent and PO-type agnostic.
+      if (matchedSitePOId) {
+        try {
+          await recomputePOStatusFromBills(matchedSitePOId);
+        } catch (err) {
+          console.error("[autoBillCreator] PO recompute failed:", err);
+        }
+      }
 
       if (invoiceData.lineItems && invoiceData.lineItems.length > 0) {
         const costCodes = await storage.getCostCodes(projectId!);
