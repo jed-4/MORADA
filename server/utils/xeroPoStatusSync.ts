@@ -104,8 +104,24 @@ export async function syncOneXeroPurchaseOrder(
       "paid",
       "cancelled",
     ]);
-    const xeroForcesOverride = mapped === "cancelled" || mapped === "invoiced";
-    if (mapped !== current && (xeroForcesOverride || !protectedStates.has(current))) {
+    // Only "cancelled" from Xero is allowed to force-override a protected
+    // local state. "invoiced" must NOT downgrade local 'partially_paid' or
+    // 'paid' — those represent payment progress Xero's PO endpoint does
+    // not track. Use a monotonic rank so Xero can only ever move the PO
+    // forward (or to cancelled).
+    const rank: Record<string, number> = {
+      draft: 0,
+      sent: 1,
+      invoiced: 2,
+      partially_paid: 3,
+      paid: 4,
+      cancelled: 99,
+    };
+    const xeroForcesOverride = mapped === "cancelled";
+    const currentRank = rank[current] ?? 0;
+    const mappedRank = rank[mapped] ?? 0;
+    const canPromote = mappedRank > currentRank && !protectedStates.has(current);
+    if (mapped !== current && (xeroForcesOverride || canPromote)) {
       updates.status = mapped;
       changed = true;
     }
