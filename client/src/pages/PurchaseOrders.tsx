@@ -105,6 +105,7 @@ export default function PurchaseOrders({ embedded }: { embedded?: boolean } = {}
   const [selectedType, setSelectedType] = useState<POType>("all");
   const [selectedStatus, setSelectedStatus] = useState("all");
   const [selectedSupplierId, setSelectedSupplierId] = useState<string | null>(null);
+  const [supplierFilterSearch, setSupplierFilterSearch] = useState("");
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [isProjectDialogOpen, setIsProjectDialogOpen] = useState(false);
   const [newPOProjectId, setNewPOProjectId] = useState<string>("");
@@ -818,6 +819,17 @@ export default function PurchaseOrders({ embedded }: { embedded?: boolean } = {}
           <PopoverContent className="w-64 p-3" align="end">
             <div className="space-y-2">
               <div className="text-xs font-medium text-muted-foreground">Supplier</div>
+              <div className="relative">
+                <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
+                <Input
+                  type="text"
+                  placeholder="Search suppliers..."
+                  value={supplierFilterSearch}
+                  onChange={(e) => setSupplierFilterSearch(e.target.value)}
+                  className="h-7 pl-7 text-xs"
+                  data-testid="input-supplier-filter-search"
+                />
+              </div>
               <div className="space-y-1 max-h-64 overflow-y-auto">
                 <button
                   onClick={() => setSelectedSupplierId(null)}
@@ -828,18 +840,29 @@ export default function PurchaseOrders({ embedded }: { embedded?: boolean } = {}
                 >
                   All Suppliers
                 </button>
-                {suppliers.map((supplier) => (
-                  <button
-                    key={supplier.id}
-                    onClick={() => setSelectedSupplierId(supplier.id)}
-                    className={`w-full text-left px-2 py-1.5 text-sm rounded hover:bg-muted dark:hover:bg-gray-800 transition-colors truncate ${
-                      selectedSupplierId === supplier.id ? "bg-primary/10 text-primary font-medium" : ""
-                    }`}
-                    data-testid={`filter-supplier-${supplier.id}`}
-                  >
-                    {supplier.name}
-                  </button>
-                ))}
+                {suppliers
+                  .filter((supplier) =>
+                    supplier.name.toLowerCase().includes(supplierFilterSearch.trim().toLowerCase())
+                  )
+                  .map((supplier) => (
+                    <button
+                      key={supplier.id}
+                      onClick={() => setSelectedSupplierId(supplier.id)}
+                      className={`w-full text-left px-2 py-1.5 text-sm rounded hover:bg-muted dark:hover:bg-gray-800 transition-colors truncate ${
+                        selectedSupplierId === supplier.id ? "bg-primary/10 text-primary font-medium" : ""
+                      }`}
+                      data-testid={`filter-supplier-${supplier.id}`}
+                    >
+                      {supplier.name}
+                    </button>
+                  ))}
+                {suppliers.filter((s) =>
+                  s.name.toLowerCase().includes(supplierFilterSearch.trim().toLowerCase())
+                ).length === 0 && (
+                  <div className="px-2 py-3 text-xs text-muted-foreground text-center">
+                    No suppliers found
+                  </div>
+                )}
               </div>
             </div>
           </PopoverContent>
