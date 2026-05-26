@@ -505,7 +505,7 @@ export default function PurchaseOrders({ embedded }: { embedded?: boolean } = {}
         ),
         enableSorting: false,
         size: SELECT_COL_WIDTH,
-        meta: { defaultWidth: SELECT_COL_WIDTH, align: "center", pinned: true, headerLabel: "Select" },
+        meta: { defaultWidth: SELECT_COL_WIDTH, align: "left", pinned: true, headerLabel: "Select" },
       },
       {
         id: "poNumber",
