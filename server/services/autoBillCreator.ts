@@ -456,77 +456,60 @@ export class AutoBillCreatorService {
         }
       }
 
-      // ── SITE PO MATCHING ─────────────────────────────────────────────────────
+      // ── PO MATCHING (any PO type) ────────────────────────────────────────────
+      // Suggestion + auto-link logic lives in poSuggestions.ts so the same
+      // matching runs from the AI Bill Reader, the manual "Resuggest" button,
+      // and the backfill job. We compute candidates here against the in-memory
+      // bill snapshot (since the DB row hasn't been updated with supplier/total
+      // yet) and let the helper persist/link if a top candidate is safe.
       let matchedSitePOId: string | null = null;
       let suggestedSitePOIds: string[] = [];
 
       if (options.autoMatch) {
         const pdfFilenames = attachments.map(a => a.filename).filter(Boolean) as string[];
-        // PO number patterns cover all PO types (site, supplier, labour, etc.).
-        const poPattern = /\b(?:SP|PO|SO|LP)-\d{4}-\d{3}\b/gi;
-        const searchTargets = [
+        const extraText = [
           (invoiceData as any)?.rawText || '',
           ...pdfFilenames,
           email?.subject || '',
-        ].join(' ');
+        ].join(' \n ');
 
-        const poMatches = searchTargets.match(poPattern);
-        const foundPONumber = poMatches?.[0]?.toUpperCase() ?? null;
+        // aiBillReader returns totals in cents (see processInvoiceWithAI's
+        // toCents() conversion). suggestPOsForBill expects bill.total in cents
+        // to match purchase_orders.total which is also cents.
+        const billTotalCents = typeof invoiceData?.totalAmount === 'number' ? invoiceData.totalAmount : 0;
+        const { suggestPOsForBill } = await import("./poSuggestions");
+        const { candidates, topAuto } = await suggestPOsForBill(
+          {
+            id: createdBill.id,
+            companyId,
+            supplierId: aiSupplierId,
+            total: billTotalCents,
+            billDate: invoiceData.invoiceDate ? new Date(invoiceData.invoiceDate) : null,
+            ocrData: invoiceData as any,
+            attachmentUrls: attachments.map(a => ({ filename: a.filename })) as any,
+          },
+          { extraText },
+        );
 
-        if (foundPONumber) {
-          // Match any PO type — bill → PO link is no longer site-only.
-          // Allow draft or sent POs (sent = issued and awaiting an invoice).
+        if (topAuto) {
           const [matchedPO] = await db
             .select()
             .from(schema.purchaseOrders)
-            .where(and(
-              eq(schema.purchaseOrders.companyId, companyId),
-              eq(schema.purchaseOrders.poNumber, foundPONumber),
-            ))
+            .where(eq(schema.purchaseOrders.id, topAuto.poId))
             .limit(1);
-
-          if (matchedPO && matchedPO.status !== 'cancelled') {
+          if (matchedPO) {
             matchedSitePOId = matchedPO.id;
-
-            // Override project and supplier from the PO (authoritative match)
+            // Authoritative match: prefer PO's project/supplier on the bill.
             if (matchedPO.projectId) projectId = matchedPO.projectId;
             if (matchedPO.supplierId) aiSupplierId = matchedPO.supplierId;
-
-            console.log(`[autoBillCreator] Matched PO ${foundPONumber} (${matchedPO.poType}) → bill ${createdBill.billNumber}`);
+            console.log(`[autoBillCreator] Auto-linked PO ${matchedPO.poNumber} (${matchedPO.poType}) → bill ${createdBill.billNumber}`);
           }
-        }
-
-        // Fuzzy fallback: suggest POs by supplier + amount proximity (any PO type)
-        if (!matchedSitePOId) {
-          const billTotal = (invoiceData as any)?.totalAmountIncGst ?? invoiceData?.totalAmount ?? 0;
-          const sixtyDaysAgo = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000);
-          const conditions: any[] = [
-            eq(schema.purchaseOrders.companyId, companyId),
-            // Suggest POs that have been issued but not yet linked to a bill.
-            eq(schema.purchaseOrders.status, 'sent' as any),
-            gte(schema.purchaseOrders.createdAt, sixtyDaysAgo),
-          ];
-          if (aiSupplierId) {
-            conditions.push(eq(schema.purchaseOrders.supplierId, aiSupplierId));
-          }
-          if (billTotal > 0) {
-            conditions.push(gte(schema.purchaseOrders.total, Math.round(billTotal * 85)));
-            conditions.push(lte(schema.purchaseOrders.total, Math.round(billTotal * 115)));
-          }
-
-          const suggestions = await db
-            .select({ id: schema.purchaseOrders.id })
-            .from(schema.purchaseOrders)
-            .where(and(...conditions))
-            .limit(3);
-
-          suggestedSitePOIds = suggestions.map(s => s.id);
-          if (suggestedSitePOIds.length > 0) {
-            console.log(`[autoBillCreator] Found ${suggestedSitePOIds.length} site PO suggestion(s) for bill ${createdBill.billNumber}`);
-          }
+        } else if (candidates.length > 0) {
+          suggestedSitePOIds = candidates.map(c => c.poId);
+          console.log(`[autoBillCreator] Found ${suggestedSitePOIds.length} PO suggestion(s) for bill ${createdBill.billNumber}`);
         }
       }
-      // ── END SITE PO MATCHING ──────────────────────────────────────────────────
+      // ── END PO MATCHING ───────────────────────────────────────────────────────
 
       // If no supplier matched, leave as "needs_review" so the bill is flagged
       const billStatus = aiSupplierId ? "awaiting_approval" : "needs_review";

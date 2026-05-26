@@ -1883,8 +1883,11 @@ export const bills = pgTable("bills", {
   ocrProcessed: boolean("ocr_processed").notNull().default(false),
   ocrData: json("ocr_data"), // Raw OCR results
   gmailMessageId: text("gmail_message_id"), // Gmail message ID if imported from bill inbox
-  matchedSitePOId: varchar("matched_site_po_id"), // Confirmed site PO match (ID of purchase_orders row)
-  suggestedSitePOIds: json("suggested_site_po_ids").default([]), // Fuzzy suggestion PO IDs (array of strings)
+  // Confirmed PO match (ID of purchase_orders row). Column name kept for back-compat
+  // but holds the linked PO of ANY type (main / site / supplier / labour), not site-only.
+  matchedSitePOId: varchar("matched_site_po_id"),
+  // Ranked PO suggestion IDs (any PO type). See server/services/poSuggestions.ts.
+  suggestedSitePOIds: json("suggested_site_po_ids").default([]),
   // Reimbursement fields (used when billType === "receipt" and worker paid personally)
   paidByEmployee: boolean("paid_by_employee").default(false),
   reimbursementStatus: text("reimbursement_status"), // null | "pending" | "approved" | "paid" | "rejected"

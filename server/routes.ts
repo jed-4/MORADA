@@ -12,6 +12,7 @@ import { GoogleOAuthService } from "./services/googleOAuthService";
 import { ObjectStorageService } from "./replit_integrations/object_storage";
 import { xeroService, XeroValidationError, type XeroValidationIssue } from "./services/xeroService";
 import { recomputePOStatusFromBills, recomputePOStatusForLinks } from "./services/poStatusFromBills";
+import { suggestPOsForBill, applyPOSuggestionsToBill } from "./services/poSuggestions";
 import { 
   insertNoteSchema,
   insertTaskSchema,
@@ -14115,6 +14116,69 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (err) {
       console.error("[unlink-po]", err);
       res.status(500).json({ error: "Failed to unlink bill from PO" });
+    }
+  });
+
+  // ── Re-run PO suggestions for a single bill ───────────────────────────────
+  // Used by the BillDetail "Resuggest" affordance and as a building block for
+  // the company-wide backfill below.
+  app.post("/api/bills/:id/resuggest-po", requireAuth, async (req, res) => {
+    try {
+      const companyId = (req as any).user?.companyId;
+      const bill = await storage.getBillById(req.params.id);
+      if (!bill) return res.status(404).json({ error: "Bill not found" });
+      if (companyId && (bill as any).companyId && (bill as any).companyId !== companyId) {
+        return res.status(403).json({ error: "Forbidden" });
+      }
+      const result = await applyPOSuggestionsToBill(bill as any, { autoApply: true });
+      const updated = await storage.getBillById(req.params.id);
+      res.json({
+        bill: updated,
+        autoLinked: !!result.matchedPOId,
+        matchedPOId: result.matchedPOId,
+        suggestedPOIds: result.suggestedPOIds,
+      });
+    } catch (err) {
+      console.error("[resuggest-po]", err);
+      res.status(500).json({ error: "Failed to resuggest PO" });
+    }
+  });
+
+  // ── Backfill PO suggestions across all unlinked bills in the company ──────
+  // Admin-only. Returns a summary so the office can see how many were
+  // auto-linked vs. surfaced as suggestions. Re-checks the bill row in the DB
+  // immediately before auto-linking so we don't clobber a concurrent manual
+  // link.
+  app.post("/api/bills/backfill-po-suggestions", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const companyId = (req as any).user?.companyId;
+      if (!companyId) return res.status(403).json({ error: "Forbidden" });
+      const rows = await db
+        .select()
+        .from(billsTable)
+        .where(and(eq(billsTable.companyId, companyId), isNull(billsTable.matchedSitePOId)));
+
+      let autoLinked = 0;
+      let suggested = 0;
+      let scanned = 0;
+      for (const bill of rows) {
+        scanned++;
+        try {
+          // Re-fetch right before applying — a concurrent linker may have
+          // taken this bill between the SELECT above and now.
+          const fresh = await storage.getBillById(bill.id);
+          if (!fresh || (fresh as any).matchedSitePOId) continue;
+          const r = await applyPOSuggestionsToBill(fresh as any, { autoApply: true });
+          if (r.matchedPOId) autoLinked++;
+          else if (r.suggestedPOIds.length > 0) suggested++;
+        } catch (e) {
+          console.error("[backfill-po-suggestions] bill", bill.id, e);
+        }
+      }
+      res.json({ scanned, autoLinked, suggested });
+    } catch (err) {
+      console.error("[backfill-po-suggestions]", err);
+      res.status(500).json({ error: "Failed to backfill PO suggestions" });
     }
   });
 
