@@ -14331,6 +14331,70 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.post("/api/purchase-orders/bulk-status", requireAuth, async (req, res) => {
+    try {
+      if (!req.user?.companyId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      const { ids, status } = req.body;
+      if (!Array.isArray(ids) || ids.length === 0) {
+        return res.status(400).json({ error: "ids must be a non-empty array" });
+      }
+      const validStatuses = [
+        "draft",
+        "pending_approval",
+        "sent",
+        "acknowledged",
+        "accepted",
+        "partially_received",
+        "completed",
+        "cancelled",
+      ];
+      if (!status || !validStatuses.includes(status)) {
+        return res.status(400).json({ error: "Invalid status" });
+      }
+
+      // Per-record company ownership check: reject mixed/foreign IDs.
+      const existing = await Promise.all(
+        ids.map((id: string) => storage.getPurchaseOrder(id)),
+      );
+      for (let i = 0; i < existing.length; i++) {
+        const po = existing[i];
+        if (!po || po.companyId !== req.user.companyId) {
+          return res.status(404).json({ error: `Purchase order not found: ${ids[i]}` });
+        }
+      }
+
+      await Promise.all(
+        ids.map((id: string) => storage.updatePurchaseOrder(id, { status })),
+      );
+
+      // Mirror the single-PATCH side-effect: when transitioning into "billed",
+      // mark any linked source timesheets as paid.
+      if (status === "billed") {
+        for (let i = 0; i < existing.length; i++) {
+          const prev = existing[i];
+          if (!prev || prev.status === "billed") continue;
+          try {
+            const poItems = await storage.getPurchaseOrderItems(prev.id);
+            for (const item of poItems) {
+              if (item.sourceTimesheetId) {
+                await storage.updateTimesheet(item.sourceTimesheetId, { poStatus: "paid" });
+              }
+            }
+          } catch (err) {
+            console.error("[PO bulk-status] linked timesheet update failed:", err);
+          }
+        }
+      }
+
+      res.json({ updated: ids.length });
+    } catch (error) {
+      console.error("[PO bulk-status]", error);
+      res.status(500).json({ error: "Failed to bulk update purchase orders" });
+    }
+  });
+
   app.post("/api/variations/bulk-status", async (req, res) => {
     try {
       const { ids, status } = req.body;

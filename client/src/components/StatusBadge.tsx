@@ -38,6 +38,7 @@ const TONE_BUCKETS: Record<Exclude<StatusTone, "neutral">, string[]> = {
   warning: [
     "pending",
     "partial",
+    "partially_received",
     "in_progress",
     "in-progress",
     "inprogress",
@@ -51,6 +52,9 @@ const TONE_BUCKETS: Record<Exclude<StatusTone, "neutral">, string[]> = {
     "review",
     "submitted",
     "sent_for_review",
+    "billed",
+    "pending_approval",
+    "acknowledged",
   ],
   info: [
     "sent",

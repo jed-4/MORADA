@@ -17,6 +17,8 @@ import {
   X,
   Link2,
   ClipboardList,
+  CheckCheck,
+  Ban,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -55,24 +57,27 @@ import {
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { SiXero } from "react-icons/si";
+import { StatusBadge } from "@/components/StatusBadge";
 import type { PurchaseOrder, Project, Contact, CostCode } from "@shared/schema";
 
 const STATUS_OPTIONS = [
   { key: "all", label: "All Statuses" },
   { key: "draft", label: "Draft" },
   { key: "sent", label: "Sent" },
-  { key: "approved", label: "Approved" },
-  { key: "received", label: "Received" },
+  { key: "accepted", label: "Accepted" },
+  { key: "completed", label: "Completed" },
+  { key: "billed", label: "Billed" },
   { key: "cancelled", label: "Cancelled" },
 ];
 
-const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
-  draft: { bg: "bg-muted", text: "text-secondary" },
-  sent: { bg: "bg-blue-100 dark:bg-blue-900/30", text: "text-status-info dark:text-blue-300" },
-  approved: { bg: "bg-green-100 dark:bg-green-900/30", text: "text-status-success dark:text-green-300" },
-  received: { bg: "bg-purple-100 dark:bg-purple-900/30", text: "text-purple-700 dark:text-purple-300" },
-  cancelled: { bg: "bg-red-100 dark:bg-red-900/30", text: "text-status-danger dark:text-red-300" },
-};
+const SELECT_COL_WIDTH = 32;
+const BULK_STATUSES: Array<{ key: string; label: string; icon?: typeof CheckCheck; className?: string }> = [
+  { key: "sent", label: "Sent" },
+  { key: "accepted", label: "Accepted", icon: CheckCheck, className: "text-emerald-600 dark:text-emerald-400" },
+  { key: "completed", label: "Completed", className: "text-emerald-600 dark:text-emerald-400" },
+  { key: "cancelled", label: "Cancelled", icon: Ban, className: "text-destructive" },
+  { key: "draft", label: "Draft", className: "text-muted-foreground" },
+];
 
 type POType = "all" | "main" | "site";
 
@@ -106,6 +111,7 @@ export default function PurchaseOrders({ embedded }: { embedded?: boolean } = {}
   const [sitePOCostCodeId, setSitePOCostCodeId] = useState<string>("");
   const [sitePOAmount, setSitePOAmount] = useState<string>("");
   const [sitePODescription, setSitePODescription] = useState<string>("");
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (projectIdFromUrl) {
@@ -282,6 +288,34 @@ export default function PurchaseOrders({ embedded }: { embedded?: boolean } = {}
     };
   }, [filteredPOs]);
 
+  const bulkStatusMutation = useMutation({
+    mutationFn: ({ ids, status }: { ids: string[]; status: string }) =>
+      apiRequest("/api/purchase-orders/bulk-status", "POST", { ids, status }),
+    onSuccess: (_, vars) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders"] });
+      setSelectedIds(new Set());
+      toast({
+        title: `${vars.ids.length} purchase order${vars.ids.length !== 1 ? "s" : ""} updated to ${vars.status}`,
+      });
+    },
+    onError: (err: Error) => toast({
+      title: "Failed to update purchase orders",
+      description: err.message,
+      variant: "destructive",
+    }),
+  });
+
+  const toggleSelect = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const clearSelection = () => setSelectedIds(new Set());
+
   const createSitePOMutation = useMutation({
     mutationFn: async (data: {
       projectId: string;
@@ -381,9 +415,54 @@ export default function PurchaseOrders({ embedded }: { embedded?: boolean } = {}
     setLocation(basePath);
   };
 
+  // Main (non-site) POs visible in the table — used for select-all + bulk actions.
+  const mainPOs = useMemo(
+    () => filteredPOs.filter(po => po.poType !== "site"),
+    [filteredPOs],
+  );
+
+  const allMainSelected = mainPOs.length > 0 && mainPOs.every(po => selectedIds.has(po.id));
+  const someMainSelected = mainPOs.some(po => selectedIds.has(po.id)) && !allMainSelected;
+
+  const toggleSelectAll = () => {
+    if (allMainSelected) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(mainPOs.map(po => po.id)));
+    }
+  };
+
   // ── DataTable column defs ───────────────────────────────────────────────
   const poColumns = useMemo<ColumnDef<PurchaseOrder, unknown>[]>(() => {
     const cols: (ColumnDef<PurchaseOrder, unknown> & { meta?: DataTableColumnMeta })[] = [
+      {
+        id: "select",
+        header: () => (
+          <input
+            type="checkbox"
+            checked={allMainSelected}
+            ref={el => { if (el) el.indeterminate = someMainSelected; }}
+            onChange={toggleSelectAll}
+            className="w-3 h-3 accent-primary cursor-pointer"
+            aria-label="Select all"
+            data-testid="checkbox-select-all"
+          />
+        ),
+        cell: ({ row }) => (
+          <span onClick={(e) => toggleSelect(row.original.id, e)}>
+            <input
+              type="checkbox"
+              checked={selectedIds.has(row.original.id)}
+              onChange={() => {}}
+              className="w-3 h-3 accent-primary cursor-pointer"
+              data-testid={`checkbox-${row.original.id}`}
+            />
+          </span>
+        ),
+        enableSorting: false,
+        size: SELECT_COL_WIDTH,
+        meta: { defaultWidth: SELECT_COL_WIDTH, align: "center", pinned: true, headerLabel: "Select" },
+      },
       {
         id: "poNumber",
         header: "PO Number",
@@ -473,19 +552,14 @@ export default function PurchaseOrders({ embedded }: { embedded?: boolean } = {}
         id: "status",
         header: "Status",
         accessorFn: (po) => po.status,
-        cell: ({ row }) => {
-          const statusStyle = STATUS_COLORS[row.original.status] || STATUS_COLORS.draft;
-          return (
-            <Badge
-              variant="secondary"
-              className={`text-data uppercase font-medium ${statusStyle.bg} ${statusStyle.text}`}
-            >
-              {row.original.status}
-            </Badge>
-          );
-        },
-        size: 100,
-        meta: { defaultWidth: 100, headerLabel: "Status" },
+        cell: ({ row }) => (
+          <StatusBadge
+            status={row.original.status}
+            data-testid={`badge-status-${row.original.id}`}
+          />
+        ),
+        size: 110,
+        meta: { defaultWidth: 110, headerLabel: "Status" },
       },
       {
         id: "amount",
@@ -536,10 +610,11 @@ export default function PurchaseOrders({ embedded }: { embedded?: boolean } = {}
       },
     ];
     return cols;
-  }, [projectsMap, suppliersMap]);
+  }, [projectsMap, suppliersMap, selectedIds, allMainSelected, someMainSelected, mainPOs]);
 
   const pickerColumns = useMemo(
     () => [
+      { id: "select", label: "Select" },
       { id: "poNumber", label: "PO Number" },
       { id: "name", label: "Name" },
       { id: "type", label: "Type" },
@@ -828,7 +903,6 @@ export default function PurchaseOrders({ embedded }: { embedded?: boolean } = {}
 
             {/* ── Standard PO Table ──────────────────────────────────────── */}
             {(selectedType === "all" || selectedType === "main") && (() => {
-              const mainPOs = filteredPOs.filter(po => po.poType !== "site");
               if (mainPOs.length === 0 && selectedType !== "main") return null;
               const showHeader = selectedType === "all";
               return (
@@ -854,6 +928,7 @@ export default function PurchaseOrders({ embedded }: { embedded?: boolean } = {}
                       legacyConfigKey="purchase-orders-column-config-v1"
                       rowKey={(po) => po.id}
                       onRowClick={(po) => handleRowClick(po.id)}
+                      rowClassName={(po) => selectedIds.has(po.id) ? "bg-primary/8 dark:bg-primary/10" : ""}
                     />
                   )}
                 </div>
@@ -893,6 +968,46 @@ export default function PurchaseOrders({ embedded }: { embedded?: boolean } = {}
           </>
         )}
       </div>
+
+      {/* ── Floating bulk action bar ── */}
+      {selectedIds.size > 0 && (
+        <div
+          className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-1.5 bg-card border border-border rounded-lg shadow-lg px-3 py-2"
+          data-testid="bulk-action-bar"
+        >
+          <span className="text-xs font-medium text-muted-foreground mr-1" data-testid="bulk-count">
+            {selectedIds.size} selected
+          </span>
+          <div className="w-px h-4 bg-border" />
+          {BULK_STATUSES.map(s => {
+            const Icon = s.icon;
+            return (
+              <Button
+                key={s.key}
+                size="sm"
+                variant="ghost"
+                className={`h-7 px-2 text-xs ${s.className ?? ""}`}
+                onClick={() => bulkStatusMutation.mutate({ ids: [...selectedIds], status: s.key })}
+                disabled={bulkStatusMutation.isPending}
+                data-testid={`button-bulk-${s.key}`}
+              >
+                {Icon && <Icon className="w-3 h-3 mr-1" />}
+                {s.label}
+              </Button>
+            );
+          })}
+          <div className="w-px h-4 bg-border" />
+          <Button
+            size="icon"
+            variant="ghost"
+            className="h-7 w-7"
+            onClick={clearSelection}
+            data-testid="button-bulk-clear"
+          >
+            <X className="w-3 h-3" />
+          </Button>
+        </div>
+      )}
 
       {/* Site PO Creation Dialog */}
       <Dialog open={isSitePODialogOpen} onOpenChange={(open) => { setIsSitePODialogOpen(open); if (!open) resetSitePOForm(); }}>
