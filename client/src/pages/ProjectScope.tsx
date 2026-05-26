@@ -1793,11 +1793,13 @@ function DroppableStage({
                           <div className="flex items-center gap-2">
                             <span className="text-sm font-medium">{po.poNumber}</span>
                             <span className={`text-data px-1.5 py-0.5 rounded ${
-                              po.status === 'completed' || po.status === 'billed'
+                              po.status === 'paid'
                                 ? 'bg-green-100 text-green-800'
                                 : po.status === 'draft'
                                   ? 'bg-muted text-secondary'
-                                  : 'bg-amber-100 text-amber-800'
+                                  : po.status === 'cancelled'
+                                    ? 'bg-muted text-muted-foreground'
+                                    : 'bg-amber-100 text-amber-800'
                             }`}>
                               {po.status.replace('_', ' ')}
                             </span>

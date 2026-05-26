@@ -68,19 +68,20 @@ const STATUS_OPTIONS = [
   { key: "all", label: "All Statuses" },
   { key: "draft", label: "Draft" },
   { key: "sent", label: "Sent" },
-  { key: "accepted", label: "Accepted" },
-  { key: "completed", label: "Completed" },
-  { key: "billed", label: "Billed" },
+  { key: "invoiced", label: "Invoiced" },
+  { key: "partially_paid", label: "Partially Paid" },
+  { key: "paid", label: "Paid" },
   { key: "cancelled", label: "Cancelled" },
 ];
 
 const SELECT_COL_WIDTH = 32;
 const BULK_STATUSES: Array<{ key: string; label: string; icon?: typeof CheckCheck; className?: string }> = [
-  { key: "sent", label: "Sent" },
-  { key: "accepted", label: "Accepted", icon: CheckCheck, className: "text-emerald-600 dark:text-emerald-400" },
-  { key: "completed", label: "Completed", className: "text-emerald-600 dark:text-emerald-400" },
-  { key: "cancelled", label: "Cancelled", icon: Ban, className: "text-destructive" },
   { key: "draft", label: "Draft", className: "text-muted-foreground" },
+  { key: "sent", label: "Sent" },
+  { key: "invoiced", label: "Invoiced", className: "text-amber-600 dark:text-amber-400" },
+  { key: "partially_paid", label: "Partially Paid", className: "text-amber-600 dark:text-amber-400" },
+  { key: "paid", label: "Paid", icon: CheckCheck, className: "text-emerald-600 dark:text-emerald-400" },
+  { key: "cancelled", label: "Cancelled", icon: Ban, className: "text-destructive" },
 ];
 
 type POType = "all" | "main" | "site";
@@ -289,7 +290,7 @@ export default function PurchaseOrders({ embedded }: { embedded?: boolean } = {}
     return {
       total: filteredPOs.reduce((sum, po) => sum + (po.total || 0), 0),
       sent: filteredPOs.filter(po => po.status === "sent").reduce((sum, po) => sum + (po.total || 0), 0),
-      approved: filteredPOs.filter(po => po.status === "approved").reduce((sum, po) => sum + (po.total || 0), 0),
+      paid: filteredPOs.filter(po => po.status === "paid").reduce((sum, po) => sum + (po.total || 0), 0),
     };
   }, [filteredPOs]);
 
@@ -766,7 +767,7 @@ export default function PurchaseOrders({ embedded }: { embedded?: boolean } = {}
           <div className="w-px h-4 bg-border" />
           <span data-testid="text-sent-value">Sent: <span className="font-medium text-foreground">{formatCurrency(totals.sent)}</span></span>
           <div className="w-px h-4 bg-border" />
-          <span data-testid="text-approved-value">Approved: <span className="font-medium text-foreground">{formatCurrency(totals.approved)}</span></span>
+          <span data-testid="text-paid-value">Paid: <span className="font-medium text-foreground">{formatCurrency(totals.paid)}</span></span>
         </div>
 
         <div className="w-px h-4 bg-border mx-1" />
@@ -964,12 +965,22 @@ export default function PurchaseOrders({ embedded }: { embedded?: boolean } = {}
                         const anyPo = po as any;
                         const supplierName = supplierNameForPO(po);
                         const project = po.projectId ? projectsMap.get(po.projectId) : null;
-                        const statusLabel = po.status === "draft" ? "Open" : po.status === "billed" ? "Matched" : po.status === "cancelled" ? "Closed" : po.status;
-                        const statusClass = po.status === "draft"
-                          ? "bg-blue-50 border-blue-200 text-blue-700 dark:bg-blue-900/20 dark:border-blue-800 dark:text-blue-300"
-                          : po.status === "billed"
-                          ? "bg-green-50 border-green-200 text-green-700 dark:bg-green-900/20 dark:border-green-800 dark:text-green-300"
-                          : "bg-muted border-border text-muted-foreground";
+                        const statusLabel =
+                          po.status === "draft" ? "Draft" :
+                          po.status === "sent" ? "Sent" :
+                          po.status === "invoiced" ? "Invoiced" :
+                          po.status === "partially_paid" ? "Part. Paid" :
+                          po.status === "paid" ? "Paid" :
+                          po.status === "cancelled" ? "Cancelled" :
+                          po.status.replace(/_/g, " ");
+                        const statusClass =
+                          po.status === "draft"
+                            ? "bg-blue-50 border-blue-200 text-blue-700 dark:bg-blue-900/20 dark:border-blue-800 dark:text-blue-300"
+                            : po.status === "paid"
+                            ? "bg-green-50 border-green-200 text-green-700 dark:bg-green-900/20 dark:border-green-800 dark:text-green-300"
+                            : po.status === "invoiced" || po.status === "partially_paid"
+                            ? "bg-amber-50 border-amber-200 text-amber-700 dark:bg-amber-900/20 dark:border-amber-800 dark:text-amber-300"
+                            : "bg-muted border-border text-muted-foreground";
                         return (
                           <div
                             key={po.id}
@@ -998,7 +1009,7 @@ export default function PurchaseOrders({ embedded }: { embedded?: boolean } = {}
                               </div>
                               <span className="text-sm font-semibold tabular-nums">{formatCurrency(po.total || 0)}</span>
                             </div>
-                            {po.status === "billed" && anyPo.matchedBillId && (
+                            {(po.status === "invoiced" || po.status === "partially_paid" || po.status === "paid") && anyPo.matchedBillId && (
                               <div className="flex items-center gap-1 text-[11px] text-green-600 dark:text-green-400 mt-0.5">
                                 <Link2 className="w-3 h-3 flex-shrink-0" />
                                 <span>Matched to bill</span>

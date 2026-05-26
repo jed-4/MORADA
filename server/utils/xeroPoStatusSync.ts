@@ -10,13 +10,10 @@ export type XeroPoStatus =
 
 export type BuildProPoStatus =
   | "draft"
-  | "pending_approval"
   | "sent"
-  | "acknowledged"
-  | "accepted"
-  | "partially_received"
-  | "completed"
-  | "billed"
+  | "invoiced"
+  | "partially_paid"
+  | "paid"
   | "cancelled";
 
 export function mapXeroPoStatusToBuildPro(
@@ -29,11 +26,16 @@ export function mapXeroPoStatusToBuildPro(
     case "DRAFT":
       return "draft";
     case "SUBMITTED":
-      return "pending_approval";
+      // SUBMITTED in Xero means "awaiting approval" — BuildPro has no
+      // pending_approval state anymore (task #296). Map to "sent" since
+      // the PO has left the Draft stage.
+      return "sent";
     case "AUTHORISED":
       return "sent";
     case "BILLED":
-      return "billed";
+      // Xero "BILLED" means a bill exists against the PO. In BuildPro
+      // collapsed flow that's "invoiced".
+      return "invoiced";
     case "DELETED":
       return "cancelled";
     default:
@@ -87,23 +89,22 @@ export async function syncOneXeroPurchaseOrder(
   let changed = false;
 
   // Only auto-promote BuildPro status if the Xero status maps cleanly AND
-  // the BuildPro PO is not already in a terminal/post-PO state we don't
-  // want to override (completed, partially_received). Cancelled and billed
-  // from Xero always win.
+  // the BuildPro PO is not already in a state past the one Xero reports.
+  // Cancelled and invoiced from Xero always win.
   if (mapped) {
     const current = po.status as string;
     // Protect BuildPro states that represent user intent past Xero's
-    // current step. e.g. user marked the PO 'sent' locally even though
-    // Xero still has it as DRAFT — don't downgrade. Xero BILLED/DELETED
-    // still override below.
+    // current step. e.g. user already marked the PO 'invoiced'/'paid'
+    // locally; don't downgrade it to 'sent' just because Xero is still
+    // at AUTHORISED. Xero BILLED/DELETED still override below.
     const protectedStates = new Set([
       "sent",
-      "acknowledged",
-      "accepted",
-      "partially_received",
-      "completed",
+      "invoiced",
+      "partially_paid",
+      "paid",
+      "cancelled",
     ]);
-    const xeroForcesOverride = mapped === "cancelled" || mapped === "billed";
+    const xeroForcesOverride = mapped === "cancelled" || mapped === "invoiced";
     if (mapped !== current && (xeroForcesOverride || !protectedStates.has(current))) {
       updates.status = mapped;
       changed = true;
@@ -163,7 +164,7 @@ export async function pollXeroPurchaseOrderStatuses(): Promise<void> {
             isNotNull(purchaseOrders.xeroPurchaseOrderId),
             ne(purchaseOrders.companyId, "" as any),
             sql`${purchaseOrders.companyId} = ${companyId}`,
-            sql`${purchaseOrders.status} NOT IN ('billed','cancelled','completed')`,
+            sql`${purchaseOrders.status} NOT IN ('paid','cancelled')`,
           ),
         );
 

@@ -117,20 +117,19 @@ const TOKENS = {
   darkGreen: "#2d7a4f",
 };
 
-const STEPS = ["Draft", "Sent", "Acknowledged", "Complete"] as const;
+const STEPS = ["Draft", "Sent", "Invoiced", "Paid"] as const;
 const STEP_INDEX: Record<string, number> = {
   draft: 0,
   pending_approval: 0,
   sent: 1,
-  acknowledged: 2,
-  approved: 2,
-  accepted: 3,
-  completed: 3,
-  delivered: 3,
-  partially_delivered: 3,
-  invoiced: 3,
-  billed: 3,
-  closed: 3,
+  acknowledged: 1,
+  accepted: 1,
+  partially_received: 1,
+  completed: 1,
+  invoiced: 2,
+  billed: 2,
+  partially_paid: 2,
+  paid: 3,
 };
 
 function formatCurrency(cents: number): string {
@@ -1130,10 +1129,10 @@ export default function PurchaseOrderDetail() {
     },
   });
 
-  const markReceivedMutation = useMutation({
+  const markInvoicedMutation = useMutation({
     mutationFn: async () => {
       return apiRequest(`/api/purchase-orders/${poId}`, "PATCH", {
-        status: "completed",
+        status: "invoiced",
       });
     },
     onSuccess: () => {
@@ -1141,7 +1140,7 @@ export default function PurchaseOrderDetail() {
         queryKey: ["/api/purchase-orders", poId],
       });
       queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders"] });
-      toast({ title: "Goods received", description: "Status updated to Received" });
+      toast({ title: "Marked as invoiced", description: "Status updated to Invoiced" });
     },
     onError: (error: any) => {
       toast({
@@ -1152,10 +1151,10 @@ export default function PurchaseOrderDetail() {
     },
   });
 
-  const markBilledMutation = useMutation({
+  const markPaidMutation = useMutation({
     mutationFn: async () => {
       return apiRequest(`/api/purchase-orders/${poId}`, "PATCH", {
-        status: "billed",
+        status: "paid",
       });
     },
     onSuccess: () => {
@@ -1163,7 +1162,7 @@ export default function PurchaseOrderDetail() {
         queryKey: ["/api/purchase-orders", poId],
       });
       queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders"] });
-      toast({ title: "Marked as paid", description: "Status updated to Billed" });
+      toast({ title: "Marked as paid", description: "Status updated to Paid" });
     },
     onError: (error: any) => {
       toast({
@@ -1592,20 +1591,20 @@ export default function PurchaseOrderDetail() {
                 <DropdownMenuSeparator />
                 {purchaseOrder.status === "sent" && (
                   <DropdownMenuItem
-                    onClick={() => markReceivedMutation.mutate()}
-                    data-testid="action-receive-goods"
+                    onClick={() => markInvoicedMutation.mutate()}
+                    data-testid="action-mark-invoiced"
                   >
                     <Package className="w-4 h-4 mr-2" />
-                    Mark as Received
+                    Mark as Invoiced
                   </DropdownMenuItem>
                 )}
-                {purchaseOrder.status === "completed" && (
+                {(purchaseOrder.status === "invoiced" || purchaseOrder.status === "partially_paid") && (
                   <DropdownMenuItem
-                    onClick={() => markBilledMutation.mutate()}
-                    data-testid="action-mark-billed"
+                    onClick={() => markPaidMutation.mutate()}
+                    data-testid="action-mark-paid"
                   >
                     <CreditCard className="w-4 h-4 mr-2" />
-                    Paid
+                    Mark as Paid
                   </DropdownMenuItem>
                 )}
                 <DropdownMenuItem
@@ -1680,32 +1679,32 @@ export default function PurchaseOrderDetail() {
               <Button
                 size="sm"
                 variant="outline"
-                onClick={() => markReceivedMutation.mutate()}
-                disabled={markReceivedMutation.isPending}
-                data-testid="button-receive-goods"
+                onClick={() => markInvoicedMutation.mutate()}
+                disabled={markInvoicedMutation.isPending}
+                data-testid="button-mark-invoiced"
               >
-                {markReceivedMutation.isPending ? (
+                {markInvoicedMutation.isPending ? (
                   <Loader2 className="w-4 h-4 mr-1 animate-spin" />
                 ) : (
                   <Package className="w-4 h-4 mr-1" />
                 )}
-                Receive Goods
+                Mark Invoiced
               </Button>
             )}
-            {purchaseOrder.status === "completed" && (
+            {(purchaseOrder.status === "invoiced" || purchaseOrder.status === "partially_paid") && (
               <Button
                 size="sm"
                 variant="outline"
-                onClick={() => markBilledMutation.mutate()}
-                disabled={markBilledMutation.isPending}
+                onClick={() => markPaidMutation.mutate()}
+                disabled={markPaidMutation.isPending}
                 data-testid="button-mark-paid"
               >
-                {markBilledMutation.isPending ? (
+                {markPaidMutation.isPending ? (
                   <Loader2 className="w-4 h-4 mr-1 animate-spin" />
                 ) : (
                   <CreditCard className="w-4 h-4 mr-1" />
                 )}
-                Paid
+                Mark Paid
               </Button>
             )}
           </div>

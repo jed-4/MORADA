@@ -493,7 +493,7 @@ export class AutoBillCreatorService {
             // Mark the site PO as matched
             await db.update(schema.purchaseOrders)
               .set({
-                status: 'billed' as any,
+                status: 'invoiced' as any,
                 matchedBillId: createdBill.id,
                 matchedAt: new Date(),
               } as any)

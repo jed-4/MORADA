@@ -14342,12 +14342,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       const validStatuses = [
         "draft",
-        "pending_approval",
         "sent",
-        "acknowledged",
-        "accepted",
-        "partially_received",
-        "completed",
+        "invoiced",
+        "partially_paid",
+        "paid",
         "cancelled",
       ];
       if (!status || !validStatuses.includes(status)) {
@@ -14369,12 +14367,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         ids.map((id: string) => storage.updatePurchaseOrder(id, { status })),
       );
 
-      // Mirror the single-PATCH side-effect: when transitioning into "billed",
+      // Mirror the single-PATCH side-effect: when transitioning into "paid",
       // mark any linked source timesheets as paid.
-      if (status === "billed") {
+      if (status === "paid") {
         for (let i = 0; i < existing.length; i++) {
           const prev = existing[i];
-          if (!prev || prev.status === "billed") continue;
+          if (!prev || prev.status === "paid") continue;
           try {
             const poItems = await storage.getPurchaseOrderItems(prev.id);
             for (const item of poItems) {
@@ -15046,7 +15044,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: "Purchase order not found" });
       }
 
-      if (po.status === "billed" && existingPo.status !== "billed") {
+      if (po.status === "paid" && existingPo.status !== "paid") {
         try {
           const poItems = await storage.getPurchaseOrderItems(po.id);
           for (const item of poItems) {

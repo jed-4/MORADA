@@ -1738,7 +1738,7 @@ export default function BillDetail() {
   const linkSitePOMutation = useMutation({
     mutationFn: async (sitePOId: string) => {
       await apiRequest(`/api/bills/${id}`, "PATCH", { matchedSitePOId: sitePOId, suggestedSitePOIds: [] });
-      await apiRequest(`/api/purchase-orders/${sitePOId}`, "PATCH", { status: "billed", matchedBillId: id });
+      await apiRequest(`/api/purchase-orders/${sitePOId}`, "PATCH", { status: "invoiced", matchedBillId: id });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/bills"] });

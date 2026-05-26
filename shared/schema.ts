@@ -5044,6 +5044,12 @@ export type RfiComment = typeof rfiComments.$inferSelect;
 export const purchaseOrderTypeEnum = pgEnum("purchase_order_type", ["main", "site"]);
 
 // Purchase Order status enum
+// Active set (task #296): draft, sent, invoiced, partially_paid, paid, cancelled.
+// The older receipt-flow values (pending_approval, acknowledged, accepted,
+// partially_received, completed, billed) are kept in the pg enum because
+// Postgres enums can't drop values cheaply; the startup migration in
+// `server/index.ts` collapses any rows still on those values into the
+// new set. No new code writes them.
 export const purchaseOrderStatusEnum = pgEnum("purchase_order_status", [
   "draft",
   "pending_approval",
@@ -5053,7 +5059,10 @@ export const purchaseOrderStatusEnum = pgEnum("purchase_order_status", [
   "partially_received",
   "completed",
   "billed",
-  "cancelled"
+  "cancelled",
+  "invoiced",
+  "partially_paid",
+  "paid",
 ]);
 
 // Purchase Order GST mode
@@ -5154,7 +5163,7 @@ export const insertPurchaseOrderSchema = createInsertSchema(purchaseOrders).omit
   updatedAt: true,
 }).extend({
   poType: z.enum(["main", "site"]).default("main"),
-  status: z.enum(["draft", "pending_approval", "sent", "acknowledged", "accepted", "partially_received", "completed", "billed", "cancelled"]).default("draft"),
+  status: z.enum(["draft", "sent", "invoiced", "partially_paid", "paid", "cancelled"]).default("draft"),
   gstMode: z.enum(["inclusive", "exclusive", "gst_free"]).default("inclusive"),
   poDate: z.coerce.date().default(() => new Date()),
   requiredByDate: z.coerce.date().optional(),

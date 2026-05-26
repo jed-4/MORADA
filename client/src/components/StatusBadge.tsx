@@ -55,6 +55,8 @@ const TONE_BUCKETS: Record<Exclude<StatusTone, "neutral">, string[]> = {
     "billed",
     "pending_approval",
     "acknowledged",
+    "invoiced",
+    "partially_paid",
   ],
   info: [
     "sent",

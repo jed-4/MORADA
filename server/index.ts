@@ -244,6 +244,27 @@ app.use((req, res, next) => {
       console.error("Bills companyId backfill failed (non-fatal):", err);
     }
 
+    // Task #296: collapse purchase_order_status from 9 → 6 values.
+    // Idempotent: only UPDATEs rows still on the legacy values. ALTER TYPE
+    // ADD VALUE IF NOT EXISTS ensures the new enum members exist before we
+    // try to write them. partially_received/completed → invoiced if a bill
+    // is already linked, otherwise sent.
+    try {
+      const { pool } = await import("./db");
+      await pool.query(`ALTER TYPE purchase_order_status ADD VALUE IF NOT EXISTS 'invoiced'`);
+      await pool.query(`ALTER TYPE purchase_order_status ADD VALUE IF NOT EXISTS 'partially_paid'`);
+      await pool.query(`ALTER TYPE purchase_order_status ADD VALUE IF NOT EXISTS 'paid'`);
+      const r1 = await pool.query(`UPDATE purchase_orders SET status='draft' WHERE status='pending_approval'`);
+      const r2 = await pool.query(`UPDATE purchase_orders SET status='sent' WHERE status IN ('acknowledged','accepted')`);
+      const r3 = await pool.query(`UPDATE purchase_orders SET status='invoiced' WHERE status IN ('partially_received','completed') AND matched_bill_id IS NOT NULL`);
+      const r4 = await pool.query(`UPDATE purchase_orders SET status='sent' WHERE status IN ('partially_received','completed')`);
+      const r5 = await pool.query(`UPDATE purchase_orders SET status='invoiced' WHERE status='billed'`);
+      const moved = (r1.rowCount ?? 0) + (r2.rowCount ?? 0) + (r3.rowCount ?? 0) + (r4.rowCount ?? 0) + (r5.rowCount ?? 0);
+      if (moved > 0) log(`[PO status collapse] migrated ${moved} purchase order(s) to the 6-state lifecycle`);
+    } catch (err) {
+      console.error("[PO status collapse] migration failed (non-fatal):", err);
+    }
+
     // Repair any pre-existing duplicate scope stages before the unique
     // index can possibly trip on legacy rows. Idempotent — exits cheaply
     // when there are no duplicates.
