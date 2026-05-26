@@ -93,22 +93,13 @@ export async function syncOneXeroPurchaseOrder(
   // Cancelled and invoiced from Xero always win.
   if (mapped) {
     const current = po.status as string;
-    // Protect BuildPro states that represent user intent past Xero's
-    // current step. e.g. user already marked the PO 'invoiced'/'paid'
-    // locally; don't downgrade it to 'sent' just because Xero is still
-    // at AUTHORISED. Xero BILLED/DELETED still override below.
-    const protectedStates = new Set([
-      "sent",
-      "invoiced",
-      "partially_paid",
-      "paid",
-      "cancelled",
-    ]);
-    // Only "cancelled" from Xero is allowed to force-override a protected
-    // local state. "invoiced" must NOT downgrade local 'partially_paid' or
-    // 'paid' — those represent payment progress Xero's PO endpoint does
-    // not track. Use a monotonic rank so Xero can only ever move the PO
-    // forward (or to cancelled).
+    // Monotonic-rank guard: Xero may only move the PO forward in the
+    // 6-state lifecycle (draft→sent→invoiced→…→paid), or force it to
+    // cancelled (Xero DELETED). This prevents Xero from downgrading
+    // local 'partially_paid'/'paid' back to 'invoiced' when Xero's PO
+    // endpoint still reports BILLED (Xero doesn't track payment state
+    // on the PO itself). 'sent' is NOT protected so the natural
+    // sent→invoiced promotion from Xero BILLED still flows through.
     const rank: Record<string, number> = {
       draft: 0,
       sent: 1,
@@ -120,7 +111,7 @@ export async function syncOneXeroPurchaseOrder(
     const xeroForcesOverride = mapped === "cancelled";
     const currentRank = rank[current] ?? 0;
     const mappedRank = rank[mapped] ?? 0;
-    const canPromote = mappedRank > currentRank && !protectedStates.has(current);
+    const canPromote = mappedRank > currentRank;
     if (mapped !== current && (xeroForcesOverride || canPromote)) {
       updates.status = mapped;
       changed = true;
