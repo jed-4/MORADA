@@ -106,9 +106,12 @@ export async function suggestPOsForBill(
     ),
   );
 
+  const OPEN_STATUSES = ["sent", "invoiced", "partially_paid"] as const;
   const openPOs = await db.select().from(schema.purchaseOrders).where(openConditions);
   let detectedPOs: typeof openPOs = [];
   if (detectedNumbers.length > 0) {
+    // Detected POs surface for display even when not in the "open" pool, but
+    // we still exclude cancelled/draft so we never rank closed/unsent POs.
     detectedPOs = await db
       .select()
       .from(schema.purchaseOrders)
@@ -174,11 +177,19 @@ export async function suggestPOsForBill(
   candidates.sort((a, b) => b.score - a.score);
   const top = candidates.slice(0, 3);
 
-  // Auto-apply when an explicit PO number was extracted from the bill and
-  // matches an existing PO exactly. Supplier-match is a "nice to have" here:
-  // an exact PO# pulled from the document is an authoritative signal, and
-  // historical behaviour (pre-#298) auto-linked on PO# alone — keep that.
-  const topAuto = top[0] && top[0].signals.poNumberExact ? top[0] : null;
+  // Auto-apply requires the high-confidence trifecta:
+  //   1) PO number was extracted from the bill and matches a PO exactly,
+  //   2) the PO supplier matches the bill supplier,
+  //   3) the PO is in an open status (sent / invoiced / partially_paid).
+  // Anything weaker shows as a suggestion chip for the user to confirm.
+  const topCand = top[0];
+  let topAuto: SuggestCandidate | null = null;
+  if (topCand && topCand.signals.poNumberExact && topCand.signals.supplierMatch) {
+    const po = byId.get(topCand.poId);
+    if (po && (OPEN_STATUSES as readonly string[]).includes(String(po.status))) {
+      topAuto = topCand;
+    }
+  }
 
   return { candidates: top, topAuto };
 }
