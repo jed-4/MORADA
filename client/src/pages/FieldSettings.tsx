@@ -308,7 +308,7 @@ export default function FieldSettings() {
 
   // Fetch field options for selected category
   const { data: allOptions = [] } = useQuery<FieldOption[]>({
-    queryKey: ['/api/field-options', selectedCategoryId],
+    queryKey: ['/api/field-options'],
     enabled: !!selectedCategoryId,
     queryFn: async () => {
       if (!selectedCategoryId) return [];
@@ -373,7 +373,7 @@ export default function FieldSettings() {
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/field-options', selectedCategoryId] });
+      queryClient.invalidateQueries({ queryKey: ['/api/field-options'] });
       toast({
         title: "Option created",
         description: "The field option has been created successfully.",
@@ -396,7 +396,7 @@ export default function FieldSettings() {
       return await apiRequest(`/api/field-options/${id}`, 'PATCH', data);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/field-options', selectedCategoryId] });
+      queryClient.invalidateQueries({ queryKey: ['/api/field-options'] });
       toast({
         title: "Option updated",
         description: "The field option has been updated successfully.",
@@ -420,7 +420,7 @@ export default function FieldSettings() {
       return await apiRequest(`/api/field-options/${id}`, 'DELETE');
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/field-options', selectedCategoryId] });
+      queryClient.invalidateQueries({ queryKey: ['/api/field-options'] });
       toast({
         title: "Option deleted",
         description: "The field option has been deleted successfully.",
@@ -448,7 +448,7 @@ export default function FieldSettings() {
       return await apiRequest(`/api/field-options/${id}`, 'PATCH', { isDefault });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/field-options', selectedCategoryId] });
+      queryClient.invalidateQueries({ queryKey: ['/api/field-options'] });
       toast({
         title: "Default updated",
         description: "The default option has been updated.",
@@ -473,7 +473,7 @@ export default function FieldSettings() {
       return await apiRequest(`/api/field-options/${id}`, 'PATCH', { isCompleted });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/field-options', selectedCategoryId] });
+      queryClient.invalidateQueries({ queryKey: ['/api/field-options'] });
       toast({
         title: "Done status updated",
         description: "The done status flag has been updated.",
@@ -498,7 +498,7 @@ export default function FieldSettings() {
       return await apiRequest(`/api/field-options/${id}`, 'PATCH', { isActionable });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/field-options', selectedCategoryId] });
+      queryClient.invalidateQueries({ queryKey: ['/api/field-options'] });
       toast({
         title: "Actionable status updated",
         description: "The actionable flag has been updated.",
@@ -527,7 +527,7 @@ export default function FieldSettings() {
     },
     onMutate: async (newOptions) => {
       // Cancel outgoing refetches
-      await queryClient.cancelQueries({ queryKey: ['/api/field-options', selectedCategoryId] });
+      await queryClient.cancelQueries({ queryKey: ['/api/field-options'] });
       
       // Snapshot previous value
       const previousOptions = queryClient.getQueryData(['/api/field-options', selectedCategoryId]);
@@ -556,7 +556,7 @@ export default function FieldSettings() {
       // Background sync to ensure consistency (but don't invalidate immediately)
       // Only refetch after a delay to avoid fighting with optimistic state
       setTimeout(() => {
-        queryClient.invalidateQueries({ queryKey: ['/api/field-options', selectedCategoryId] });
+        queryClient.invalidateQueries({ queryKey: ['/api/field-options'] });
       }, 500);
     },
   });
