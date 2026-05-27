@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Progress } from "@/components/ui/progress";
+import { Checkbox } from "@/components/ui/checkbox";
 import { 
   FolderOpen, 
   ChevronRight, 
@@ -12,6 +13,8 @@ import {
   Building2,
   MapPin
 } from "lucide-react";
+
+const PHASE_KEYS = ["lead", "pre_construction", "construction", "post_construction"] as const;
 import { WidgetProps } from "@/types/widgets";
 import { useQuery } from "@tanstack/react-query";
 import { WidgetSkeleton } from "@/components/ui/WidgetSkeleton";
@@ -36,9 +39,14 @@ const PHASE_LABELS: Record<string, string> = {
 
 export default function MyProjectsWidget({ widget, onUpdate, isConfiguring, onCloseConfig, userId }: WidgetProps) {
   const [editingTitle, setEditingTitle] = useState(widget.title);
+  const initialPhases: string[] = Array.isArray(widget.config?.phases) ? widget.config!.phases : [];
+  const [editingPhases, setEditingPhases] = useState<string[]>(initialPhases);
   const [searchQuery, setSearchQuery] = useState("");
   const [, navigate] = useLocation();
   const { user } = useAuth();
+
+  // Empty array means "show all phases" (default behaviour).
+  const activePhaseFilter: string[] = Array.isArray(widget.config?.phases) ? widget.config!.phases : [];
 
   const { data: projects = [], isLoading } = useQuery<Project[]>({
     queryKey: ["/api/projects"],
@@ -50,6 +58,10 @@ export default function MyProjectsWidget({ widget, onUpdate, isConfiguring, onCl
     
     return projects
       .filter(p => !p.isArchived)
+      .filter(p => {
+        if (activePhaseFilter.length === 0) return true;
+        return activePhaseFilter.includes(p.currentSystemPhase || "");
+      })
       .filter(p => {
         if (!searchQuery) return true;
         const query = searchQuery.toLowerCase();
@@ -65,7 +77,7 @@ export default function MyProjectsWidget({ widget, onUpdate, isConfiguring, onCl
         const bOrder = phaseOrder.indexOf(b.currentSystemPhase || 'construction');
         return aOrder - bOrder;
       });
-  }, [projects, userId, user, searchQuery]);
+  }, [projects, userId, user, searchQuery, activePhaseFilter]);
 
   const handleProjectClick = (projectId: string) => {
     navigate(`/projects/${projectId}`);
@@ -83,6 +95,35 @@ export default function MyProjectsWidget({ widget, onUpdate, isConfiguring, onCl
             data-testid="input-widget-title"
           />
         </div>
+        <div className="space-y-2">
+          <Label>Show projects in phase</Label>
+          <p className="text-xs text-muted-foreground">
+            Leave all unchecked to show every phase.
+          </p>
+          <div className="space-y-2">
+            {PHASE_KEYS.map((key) => {
+              const checked = editingPhases.includes(key);
+              return (
+                <label
+                  key={key}
+                  className="flex items-center gap-2 cursor-pointer"
+                  data-testid={`label-phase-${key}`}
+                >
+                  <Checkbox
+                    checked={checked}
+                    onCheckedChange={(v) => {
+                      setEditingPhases((prev) =>
+                        v ? [...prev, key] : prev.filter((p) => p !== key)
+                      );
+                    }}
+                    data-testid={`checkbox-phase-${key}`}
+                  />
+                  <span className="text-sm">{PHASE_LABELS[key]}</span>
+                </label>
+              );
+            })}
+          </div>
+        </div>
         <div className="flex justify-end gap-2">
           <Button variant="outline" size="sm" onClick={onCloseConfig}>
             Cancel
@@ -90,7 +131,11 @@ export default function MyProjectsWidget({ widget, onUpdate, isConfiguring, onCl
           <Button
             size="sm"
             onClick={() => {
-              onUpdate?.({ ...widget, title: editingTitle });
+              onUpdate?.({
+                ...widget,
+                title: editingTitle,
+                config: { ...(widget.config || {}), phases: editingPhases },
+              });
               onCloseConfig?.();
             }}
           >
