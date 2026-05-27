@@ -105,7 +105,7 @@ export default function PurchaseOrders({ embedded }: { embedded?: boolean } = {}
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedType, setSelectedType] = useState<POType>("all");
   const [selectedStatus, setSelectedStatus] = useState("all");
-  const [selectedSupplierId, setSelectedSupplierId] = useState<string | null>(null);
+  const [selectedSupplier, setSelectedSupplier] = useState<{ key: string; name: string; contactId?: string; userId?: string } | null>(null);
   const [supplierFilterSearch, setSupplierFilterSearch] = useState("");
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [isProjectDialogOpen, setIsProjectDialogOpen] = useState(false);
@@ -183,7 +183,7 @@ export default function PurchaseOrders({ embedded }: { embedded?: boolean } = {}
   });
 
   const suppliers = useMemo(() => {
-    return contacts.filter(c => c.contactType === "supplier" || c.contactType === "subcontractor");
+    return contacts.filter(c => c.contactType === "supplier" || c.contactType === "trade");
   }, [contacts]);
 
   // Team-member subcontractors that can also act as PO suppliers (avoids duplicate Xero contacts).
@@ -224,6 +224,37 @@ export default function PurchaseOrders({ embedded }: { embedded?: boolean } = {}
     return m;
   }, [assignableUsers]);
 
+  // Combined + de-duplicated list for the filter popover.
+  // Includes supplier/trade contacts AND subcontractor team users. When the same
+  // person exists in both sources we merge into one entry that carries BOTH the
+  // contactId and the userId, so selecting it still matches POs regardless of
+  // whether the PO links via supplierId or supplierUserId.
+  const supplierFilterOptions = useMemo(() => {
+    const merged = new Map<string, { key: string; name: string; contactId?: string; userId?: string }>();
+    const upsert = (name: string, ids: { contactId?: string; userId?: string }) => {
+      const key = name.trim().toLowerCase();
+      if (!key) return;
+      const existing = merged.get(key);
+      if (existing) {
+        if (ids.contactId && !existing.contactId) existing.contactId = ids.contactId;
+        if (ids.userId && !existing.userId) existing.userId = ids.userId;
+      } else {
+        merged.set(key, { key, name, ...ids });
+      }
+    };
+    suppliers.forEach((c) => upsert(c.name, { contactId: c.id }));
+    assignableUsers.forEach((u) => {
+      if (!u.isSubcontractor) return;
+      const name =
+        u.displayName ||
+        `${u.firstName || ""} ${u.lastName || ""}`.trim() ||
+        u.email ||
+        "Team member";
+      upsert(name, { userId: u.id });
+    });
+    return [...merged.values()].sort((a, b) => a.name.localeCompare(b.name));
+  }, [suppliers, assignableUsers]);
+
   // Resolve the display name of a PO's supplier whether it points at a contact or a user.
   const supplierNameForPO = (po: PurchaseOrder): string => {
     const anyPo = po as any;
@@ -235,8 +266,15 @@ export default function PurchaseOrders({ embedded }: { embedded?: boolean } = {}
 
   const baseFilteredPOs = useMemo(() => {
     return purchaseOrders.filter((po) => {
-      if (selectedSupplierId && po.supplierId !== selectedSupplierId) {
-        return false;
+      if (selectedSupplier) {
+        const anyPo = po as any;
+        const matchesContact =
+          !!selectedSupplier.contactId && anyPo.supplierId === selectedSupplier.contactId;
+        const matchesUser =
+          !!selectedSupplier.userId && anyPo.supplierUserId === selectedSupplier.userId;
+        if (!matchesContact && !matchesUser) {
+          return false;
+        }
       }
       if (searchTerm) {
         const term = searchTerm.toLowerCase();
@@ -253,7 +291,7 @@ export default function PurchaseOrders({ embedded }: { embedded?: boolean } = {}
       return true;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [purchaseOrders, selectedSupplierId, searchTerm, projectsMap, suppliersMap, supplierUsersMap]);
+  }, [purchaseOrders, selectedSupplier, searchTerm, projectsMap, suppliersMap, supplierUsersMap]);
 
   const filteredByType = useMemo(() => {
     if (selectedType === "all") return baseFilteredPOs;
@@ -701,7 +739,7 @@ export default function PurchaseOrders({ embedded }: { embedded?: boolean } = {}
       },
     ];
     return cols;
-  }, [projectsMap, suppliersMap, selectedIds, allMainSelected, someMainSelected, mainPOs, duplicatePoMutation.isPending, deletePoMutation.isPending]);
+  }, [projectsMap, suppliersMap, supplierUsersMap, selectedIds, allMainSelected, someMainSelected, mainPOs, duplicatePoMutation.isPending, deletePoMutation.isPending]);
 
   const pickerColumns = useMemo(
     () => [
@@ -805,7 +843,7 @@ export default function PurchaseOrders({ embedded }: { embedded?: boolean } = {}
           <PopoverTrigger asChild>
             <button
               className={`h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center ${
-                selectedSupplierId ? "bg-primary/10 text-primary border-primary/30" : ""
+                selectedSupplier ? "bg-primary/10 text-primary border-primary/30" : ""
               }`}
               data-testid="button-filter"
               title="Filter"
@@ -815,12 +853,12 @@ export default function PurchaseOrders({ embedded }: { embedded?: boolean } = {}
           </PopoverTrigger>
           <PopoverContent className="w-64 p-3" align="end">
             <div className="space-y-2">
-              <div className="text-xs font-medium text-muted-foreground">Supplier</div>
+              <div className="text-xs font-medium text-muted-foreground">Supplier or Trade</div>
               <div className="relative">
                 <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
                 <Input
                   type="text"
-                  placeholder="Search suppliers..."
+                  placeholder="Search..."
                   value={supplierFilterSearch}
                   onChange={(e) => setSupplierFilterSearch(e.target.value)}
                   className="h-7 pl-7 text-xs"
@@ -829,37 +867,42 @@ export default function PurchaseOrders({ embedded }: { embedded?: boolean } = {}
               </div>
               <div className="space-y-1 max-h-64 overflow-y-auto">
                 <button
-                  onClick={() => setSelectedSupplierId(null)}
+                  onClick={() => setSelectedSupplier(null)}
                   className={`w-full text-left px-2 py-1.5 text-sm rounded hover:bg-muted dark:hover:bg-gray-800 transition-colors ${
-                    !selectedSupplierId ? "bg-primary/10 text-primary font-medium" : ""
+                    !selectedSupplier ? "bg-primary/10 text-primary font-medium" : ""
                   }`}
                   data-testid="filter-supplier-all"
                 >
-                  All Suppliers
+                  All
                 </button>
-                {suppliers
-                  .filter((supplier) =>
-                    supplier.name.toLowerCase().includes(supplierFilterSearch.trim().toLowerCase())
-                  )
-                  .map((supplier) => (
-                    <button
-                      key={supplier.id}
-                      onClick={() => setSelectedSupplierId(supplier.id)}
-                      className={`w-full text-left px-2 py-1.5 text-sm rounded hover:bg-muted dark:hover:bg-gray-800 transition-colors truncate ${
-                        selectedSupplierId === supplier.id ? "bg-primary/10 text-primary font-medium" : ""
-                      }`}
-                      data-testid={`filter-supplier-${supplier.id}`}
-                    >
-                      {supplier.name}
-                    </button>
-                  ))}
-                {suppliers.filter((s) =>
-                  s.name.toLowerCase().includes(supplierFilterSearch.trim().toLowerCase())
-                ).length === 0 && (
-                  <div className="px-2 py-3 text-xs text-muted-foreground text-center">
-                    No suppliers found
-                  </div>
-                )}
+                {(() => {
+                  const term = supplierFilterSearch.trim().toLowerCase();
+                  const matches = supplierFilterOptions.filter((o) =>
+                    o.name.toLowerCase().includes(term)
+                  );
+                  if (matches.length === 0) {
+                    return (
+                      <div className="px-2 py-3 text-xs text-muted-foreground text-center">
+                        No matches
+                      </div>
+                    );
+                  }
+                  return matches.map((opt) => {
+                    const isActive = selectedSupplier?.key === opt.key;
+                    return (
+                      <button
+                        key={opt.key}
+                        onClick={() => setSelectedSupplier(opt)}
+                        className={`w-full text-left px-2 py-1.5 text-sm rounded hover:bg-muted dark:hover:bg-gray-800 transition-colors truncate ${
+                          isActive ? "bg-primary/10 text-primary font-medium" : ""
+                        }`}
+                        data-testid={`filter-supplier-${opt.key}`}
+                      >
+                        {opt.name}
+                      </button>
+                    );
+                  });
+                })()}
               </div>
             </div>
           </PopoverContent>
@@ -1091,6 +1134,14 @@ export default function PurchaseOrders({ embedded }: { embedded?: boolean } = {}
         >
           <span className="text-xs font-medium text-muted-foreground mr-1" data-testid="bulk-count">
             {selectedIds.size} selected
+          </span>
+          <span className="text-xs font-semibold tabular-nums text-foreground mr-1" data-testid="bulk-total">
+            {formatCurrency(
+              purchaseOrders.reduce(
+                (sum, po) => (selectedIds.has(po.id) ? sum + (po.total || 0) : sum),
+                0,
+              ),
+            )}
           </span>
           <div className="w-px h-4 bg-border" />
           {BULK_STATUSES.map(s => {
