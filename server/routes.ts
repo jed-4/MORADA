@@ -2720,6 +2720,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         id: z.string().optional(),
         key: z.string(),
         name: z.string(),
+        description: z.string().nullable().optional(),
         color: z.string().nullable().optional(),
         isActive: z.boolean().optional(),
         isDefault: z.boolean().optional(),

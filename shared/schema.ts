@@ -1361,6 +1361,7 @@ export const fieldOptions = pgTable("field_options", {
   parentId: varchar("parent_id").references(() => fieldOptions.id, { onDelete: "cascade" }), // For hierarchical options (e.g., project sub-statuses)
   key: text("key").notNull(), // Slug/identifier (e.g., "todo", "in_progress", "done")
   name: text("name").notNull(), // Display name (editable by user)
+  description: text("description"), // Long-form description of what this stage/status involves — surfaced in board column Info popover and Stage Guide
   color: text("color"), // Hex color code (e.g., "#3b82f6")
   systemPhase: text("system_phase"), // Maps to system lifecycle phase: lead | pre_construction | construction | post_construction | archive
   isActive: boolean("is_active").notNull().default(true),

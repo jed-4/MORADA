@@ -2,8 +2,9 @@ import { useState, useEffect, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
-import { Plus, LayoutGrid, List, Eye, Layers, Edit3, Columns3, EyeOff } from "lucide-react";
-import { type Project } from "@shared/schema";
+import { Plus, LayoutGrid, List, Eye, Layers, Edit3, Columns3, EyeOff, BookOpen } from "lucide-react";
+import { type Project, type FieldOption } from "@shared/schema";
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { ProjectBoard, type ViewPreferences } from "@/components/ProjectBoard";
 import { ProjectIcon } from "@/components/ProjectIcon";
 import { Badge } from "@/components/ui/badge";
@@ -46,6 +47,87 @@ const STATUS_CONFIG = {
   on_hold: { label: "On Hold", variant: "secondary" as const, color: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200" },
   completed: { label: "Completed", variant: "outline" as const, color: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200" },
 };
+
+// Reads parent project-status options and lists each stage with its long-form
+// description in a Sheet. Read-only — descriptions are edited inline from each
+// column's Info popover on the board.
+function StageGuideButton() {
+  const [open, setOpen] = useState(false);
+  const { data: stages = [], isLoading } = useQuery<FieldOption[]>({
+    queryKey: ["/api/field-categories/by-key/project.status/options-flat"],
+    queryFn: async () => {
+      const catRes = await fetch("/api/field-categories/by-key/project.status");
+      if (!catRes.ok) return [];
+      const cat = await catRes.json();
+      const optsRes = await fetch(`/api/field-categories/${cat.id}/options`);
+      if (!optsRes.ok) return [];
+      const opts: FieldOption[] = await optsRes.json();
+      return opts
+        .filter((o) => !o.parentId)
+        .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+    },
+    enabled: open,
+  });
+
+  return (
+    <Sheet open={open} onOpenChange={setOpen}>
+      <SheetTrigger asChild>
+        <button
+          className="h-6 px-2 text-xs border rounded-md bg-background hover:bg-muted active-elevate-2 flex items-center gap-1 text-foreground"
+          data-testid="button-stage-guide"
+        >
+          <BookOpen className="w-3 h-3" />
+          <span>Stage Guide</span>
+        </button>
+      </SheetTrigger>
+      <SheetContent side="right" className="w-full sm:max-w-lg overflow-y-auto">
+        <SheetHeader>
+          <SheetTitle>Project Stage Guide</SheetTitle>
+          <SheetDescription>
+            What each stage means and what happens when a project lands there.
+            Edit any stage's description from the Info icon on its board column.
+          </SheetDescription>
+        </SheetHeader>
+        <div className="mt-4 space-y-4">
+          {isLoading && (
+            <div className="text-sm text-muted-foreground">Loading…</div>
+          )}
+          {!isLoading && stages.length === 0 && (
+            <div className="text-sm text-muted-foreground italic">
+              No project stages have been configured yet.
+            </div>
+          )}
+          {stages.map((s) => (
+            <div
+              key={s.id}
+              className="rounded-md border border-border/60 p-3 space-y-1.5"
+              data-testid={`stage-guide-item-${s.id}`}
+            >
+              <div className="flex items-center gap-2">
+                <div
+                  className="w-3 h-3 rounded-full flex-shrink-0"
+                  style={{ backgroundColor: s.color || "#6b7280" }}
+                />
+                <h4 className="text-sm font-semibold text-foreground">
+                  {s.name}
+                </h4>
+              </div>
+              {(s as any).description && String((s as any).description).trim() ? (
+                <p className="text-sm text-muted-foreground whitespace-pre-wrap leading-relaxed">
+                  {(s as any).description}
+                </p>
+              ) : (
+                <p className="text-sm text-muted-foreground italic">
+                  No description added yet.
+                </p>
+              )}
+            </div>
+          ))}
+        </div>
+      </SheetContent>
+    </Sheet>
+  );
+}
 
 export default function BusinessProjects() {
   const [, navigate] = useLocation();
@@ -403,6 +485,9 @@ export default function BusinessProjects() {
               </PopoverContent>
             </Popover>
           )}
+
+          {/* Stage Guide — full list of all stages with descriptions */}
+          {activeTab === "board" && <StageGuideButton />}
 
           {/* New Project Button */}
           <button

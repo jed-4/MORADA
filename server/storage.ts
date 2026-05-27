@@ -5399,6 +5399,7 @@ export class MemStorage implements IStorage {
         categoryId,
         key: optData.key,
         name: optData.name,
+        description: optData.description ?? null,
         color: optData.color || "#6B7280",
         isActive: optData.isActive !== false, // Default to true
         isDefault: hasDefault ? (optData.isDefault === true) : (index === 0), // First option is default if none specified
@@ -13136,6 +13137,7 @@ export class DbStorage implements IStorage {
         categoryId,
         key: optData.key,
         name: optData.name,
+        description: optData.description ?? null,
         color: optData.color || "#6B7280",
         isActive: optData.isActive !== false, // Default to true
         isDefault: hasDefault ? (optData.isDefault === true) : (index === 0), // First option is default if none specified
