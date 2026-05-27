@@ -30,3 +30,9 @@ id = "uAp5vMKmLCkXfxV1UStRk"
 uri = "file://.local/po_audit.md"
 type = "text"
 title = "BuildPro — Purchase Orders Audit"
+
+[[outputs]]
+id = "_LDyIrIYnjvAPgw99nc9r"
+uri = "file://.local/exports/expo-qr.png"
+type = "image"
+title = "Expo Go QR — BuildPro Mobile"
