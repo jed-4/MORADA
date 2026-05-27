@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { type Project, type FieldOption, type Variation } from "@shared/schema";
 import { isApprovedVariationStatus } from "@shared/projectMetrics";
 import { useLocation } from "wouter";
-import { ChevronLeft, ChevronRight, Columns3, Settings2, Settings, GripVertical, HelpCircle } from "lucide-react";
+import { ChevronLeft, ChevronRight, Columns3, Settings2, Settings, GripVertical, Sparkles } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Link } from "wouter";
 import { usePermission } from "@/hooks/use-permission";
@@ -340,7 +340,7 @@ function StageInfoPopover({
           data-testid={`button-stage-info-${optionId}`}
           onClick={(e) => e.stopPropagation()}
         >
-          <HelpCircle className="w-3.5 h-3.5" />
+          <Sparkles className="w-3.5 h-3.5" />
         </Button>
       </PopoverTrigger>
       <PopoverContent
