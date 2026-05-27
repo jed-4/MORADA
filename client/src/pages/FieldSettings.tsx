@@ -3,6 +3,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -200,6 +201,7 @@ export default function FieldSettings() {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     name: "",
+    description: "",
     color: "#3b82f6",
     parentId: null as string | null,
   });
@@ -352,7 +354,7 @@ export default function FieldSettings() {
 
   // Create mutation
   const createMutation = useMutation({
-    mutationFn: async (data: { name: string; color: string; parentId: string | null }) => {
+    mutationFn: async (data: { name: string; description?: string; color: string; parentId: string | null }) => {
       if (!selectedCategoryId) throw new Error("No category selected");
       
       const maxSortOrder = Math.max(...allOptions.map(o => o.sortOrder), -1);
@@ -361,6 +363,7 @@ export default function FieldSettings() {
         categoryId: selectedCategoryId,
         key: data.name.toLowerCase().replace(/\s+/g, '_'),
         name: data.name,
+        description: data.description?.trim() ? data.description : null,
         color: data.color,
         parentId: supportsHierarchy ? data.parentId : null,
         sortOrder: maxSortOrder + 1,
@@ -627,6 +630,7 @@ export default function FieldSettings() {
   const resetForm = () => {
     setFormData({
       name: "",
+      description: "",
       color: "#3b82f6",
       parentId: null,
     });
@@ -910,6 +914,7 @@ export default function FieldSettings() {
     setEditingOption(option);
     setFormData({
       name: option.name,
+      description: option.description || "",
       color: option.color || "#3b82f6",
       parentId: option.parentId,
     });
@@ -937,6 +942,7 @@ export default function FieldSettings() {
         id: editingOption.id,
         data: {
           name: formData.name,
+          description: formData.description.trim() ? formData.description : null,
           color: formData.color,
           parentId: supportsHierarchy ? formData.parentId : null,
         },
@@ -1604,6 +1610,22 @@ export default function FieldSettings() {
                               placeholder="e.g., In Progress"
                               data-testid="input-option-name"
                             />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="option-description">
+                              Description <span className="text-xs text-muted-foreground font-normal">(optional)</span>
+                            </Label>
+                            <Textarea
+                              id="option-description"
+                              value={formData.description}
+                              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                              placeholder="What happens in this stage? Goal, what triggers entry, who does what, key outputs."
+                              rows={5}
+                              data-testid="input-option-description"
+                            />
+                            <p className="text-xs text-muted-foreground">
+                              Shown in the help popover on each board column so the team knows what this stage involves.
+                            </p>
                           </div>
                           <div className="space-y-2">
                             <Label htmlFor="option-color">Color</Label>

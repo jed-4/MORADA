@@ -4,9 +4,9 @@ import { Button } from "@/components/ui/button";
 import { type Project, type FieldOption, type Variation } from "@shared/schema";
 import { isApprovedVariationStatus } from "@shared/projectMetrics";
 import { useLocation } from "wouter";
-import { ChevronLeft, ChevronRight, Columns3, Settings2, Settings, GripVertical, Info, Pencil, Loader2, Check, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Columns3, Settings2, Settings, GripVertical, HelpCircle } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Textarea } from "@/components/ui/textarea";
+import { Link } from "wouter";
 import { usePermission } from "@/hooks/use-permission";
 import ProjectCardCompact from "./ProjectCardCompact";
 import PhaseTransitionDialog, { type SystemPhase } from "./PhaseTransitionDialog";
@@ -314,9 +314,10 @@ function SkeletonCard() {
   );
 }
 
-// Info popover shown in each column header. Displays the stage's long-form
-// description (so the user knows what happens when a project lands in this
-// column). Admins can edit the description inline.
+// Help popover shown in each column header. Read-only: displays the stage's
+// long-form description so the team knows what happens when a project lands
+// in this column. Descriptions are edited from Settings → Field Settings →
+// Project Status.
 function StageInfoPopover({
   optionId,
   title,
@@ -327,38 +328,9 @@ function StageInfoPopover({
   description: string | null | undefined;
 }) {
   const canEdit = usePermission("admin.company", "edit");
-  const { toast } = useToast();
-  const [open, setOpen] = useState(false);
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(description ?? "");
-
-  useEffect(() => {
-    setDraft(description ?? "");
-  }, [description, open]);
-
-  const saveMutation = useMutation({
-    mutationFn: async (next: string) => {
-      return apiRequest("PATCH", `/api/field-options/${optionId}`, {
-        description: next.trim() ? next : null,
-      });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/field-categories"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/field-options"] });
-      setEditing(false);
-      toast({ title: "Stage description updated" });
-    },
-    onError: (e: any) => {
-      toast({
-        title: "Couldn't save description",
-        description: e?.message || "Please try again",
-        variant: "destructive",
-      });
-    },
-  });
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover>
       <PopoverTrigger asChild>
         <Button
           size="icon"
@@ -368,7 +340,7 @@ function StageInfoPopover({
           data-testid={`button-stage-info-${optionId}`}
           onClick={(e) => e.stopPropagation()}
         >
-          <Info className="w-3.5 h-3.5" />
+          <HelpCircle className="w-3.5 h-3.5" />
         </Button>
       </PopoverTrigger>
       <PopoverContent
@@ -376,68 +348,25 @@ function StageInfoPopover({
         className="w-80 p-3 space-y-2"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-start justify-between gap-2">
-          <div className="text-sm font-semibold text-foreground">{title}</div>
-          {canEdit && !editing && (
-            <Button
-              size="icon"
-              variant="ghost"
-              className="h-6 w-6 -mr-1 -mt-1"
-              onClick={() => setEditing(true)}
-              data-testid={`button-stage-info-edit-${optionId}`}
-              aria-label="Edit description"
-            >
-              <Pencil className="w-3.5 h-3.5" />
-            </Button>
-          )}
-        </div>
-
-        {editing ? (
-          <div className="space-y-2">
-            <Textarea
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              rows={8}
-              placeholder="Describe what happens in this stage — goal, what triggers entry, who does what, key outputs."
-              className="text-sm"
-              data-testid={`textarea-stage-info-${optionId}`}
-            />
-            <div className="flex items-center justify-end gap-1">
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => {
-                  setEditing(false);
-                  setDraft(description ?? "");
-                }}
-                disabled={saveMutation.isPending}
-              >
-                <X className="w-3.5 h-3.5 mr-1" /> Cancel
-              </Button>
-              <Button
-                size="sm"
-                onClick={() => saveMutation.mutate(draft)}
-                disabled={saveMutation.isPending || draft === (description ?? "")}
-                data-testid={`button-stage-info-save-${optionId}`}
-              >
-                {saveMutation.isPending ? (
-                  <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />
-                ) : (
-                  <Check className="w-3.5 h-3.5 mr-1" />
-                )}
-                Save
-              </Button>
-            </div>
-          </div>
-        ) : description && description.trim() ? (
+        <div className="text-sm font-semibold text-foreground">{title}</div>
+        {description && description.trim() ? (
           <div className="text-sm text-muted-foreground whitespace-pre-wrap leading-relaxed max-h-80 overflow-y-auto">
             {description}
           </div>
         ) : (
           <div className="text-sm text-muted-foreground italic">
-            {canEdit
-              ? "No description yet — click the pencil to add one so the team knows what this stage involves."
-              : "No description has been added for this stage yet."}
+            No description has been added for this stage yet.
+          </div>
+        )}
+        {canEdit && (
+          <div className="pt-1 border-t border-border/40">
+            <Link
+              href="/field-settings"
+              className="text-xs text-primary hover:underline"
+              data-testid={`link-stage-info-edit-${optionId}`}
+            >
+              Edit in Field Settings →
+            </Link>
           </div>
         )}
       </PopoverContent>
