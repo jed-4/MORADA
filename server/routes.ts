@@ -30429,7 +30429,7 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
   // ─── Business Overheads Routes ────────────────────────────────────────────
 
   // Get all overheads data (categories + items + actuals + month status + settings)
-  app.get("/api/overheads", requireAuth, async (req, res) => {
+  app.get("/api/overheads", requireAuth, requirePermission("business.overheads", "view"), async (req, res) => {
     try {
       const user = req.user as any;
       const companyId = user?.companyId;
@@ -30463,7 +30463,7 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
   });
 
   // Create overhead category
-  app.post("/api/overheads/categories", requireAuth, async (req, res) => {
+  app.post("/api/overheads/categories", requireAuth, requirePermission("business.overheads", "add"), async (req, res) => {
     try {
       const user = req.user as any;
       const companyId = user?.companyId;
@@ -30481,7 +30481,7 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
   });
 
   // Update overhead category
-  app.patch("/api/overheads/categories/:id", requireAuth, async (req, res) => {
+  app.patch("/api/overheads/categories/:id", requireAuth, requirePermission("business.overheads", "edit"), async (req, res) => {
     try {
       const user = req.user as any;
       const companyId = user?.companyId;
@@ -30500,7 +30500,7 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
   });
 
   // Delete overhead category
-  app.delete("/api/overheads/categories/:id", requireAuth, async (req, res) => {
+  app.delete("/api/overheads/categories/:id", requireAuth, requirePermission("business.overheads", "delete"), async (req, res) => {
     try {
       const user = req.user as any;
       const companyId = user?.companyId;
@@ -30515,7 +30515,7 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
   });
 
   // Create overhead item
-  app.post("/api/overheads/items", requireAuth, async (req, res) => {
+  app.post("/api/overheads/items", requireAuth, requirePermission("business.overheads", "add"), async (req, res) => {
     try {
       const user = req.user as any;
       const companyId = user?.companyId;
@@ -30537,7 +30537,7 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
   });
 
   // Update overhead item
-  app.patch("/api/overheads/items/:id", requireAuth, async (req, res) => {
+  app.patch("/api/overheads/items/:id", requireAuth, requirePermission("business.overheads", "edit"), async (req, res) => {
     try {
       const user = req.user as any;
       const companyId = user?.companyId;
@@ -30575,7 +30575,7 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
   });
 
   // Delete overhead item
-  app.delete("/api/overheads/items/:id", requireAuth, async (req, res) => {
+  app.delete("/api/overheads/items/:id", requireAuth, requirePermission("business.overheads", "delete"), async (req, res) => {
     try {
       const user = req.user as any;
       const companyId = user?.companyId;
@@ -30595,7 +30595,7 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
   });
 
   // Upsert overhead month actual
-  app.put("/api/overheads/actuals", requireAuth, async (req, res) => {
+  app.put("/api/overheads/actuals", requireAuth, requirePermission("business.overheads", "edit"), async (req, res) => {
     try {
       const user = req.user as any;
       const companyId = user?.companyId;
@@ -30624,7 +30624,7 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
   });
 
   // Bulk upsert Xero actuals (from P&L import)
-  app.post("/api/overheads/actuals/bulk", requireAuth, async (req, res) => {
+  app.post("/api/overheads/actuals/bulk", requireAuth, requirePermission("business.overheads", "add"), async (req, res) => {
     try {
       const user = req.user as any;
       const companyId = user?.companyId;
@@ -30660,7 +30660,7 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
   });
 
   // Smart Xero actuals sync — pulls last 13 months of P&L and matches by xeroAccountCode, no dialog needed
-  app.post("/api/xero/sync-overhead-actuals", requireAuth, async (req, res) => {
+  app.post("/api/xero/sync-overhead-actuals", requireAuth, requirePermission("business.overheads", "add"), async (req, res) => {
     try {
       const user = req.user as any;
       const companyId = user?.companyId;
@@ -30679,7 +30679,7 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
   });
 
   // Toggle month confirmation status
-  app.post("/api/overheads/month-status", requireAuth, async (req, res) => {
+  app.post("/api/overheads/month-status", requireAuth, requirePermission("business.overheads", "add"), async (req, res) => {
     try {
       const user = req.user as any;
       const companyId = user?.companyId;
@@ -30722,7 +30722,7 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
   });
 
   // Get/set company OH settings
-  app.get("/api/overheads/settings", requireAuth, async (req, res) => {
+  app.get("/api/overheads/settings", requireAuth, requirePermission("business.overheads", "view"), async (req, res) => {
     try {
       const user = req.user as any;
       const companyId = user?.companyId;
@@ -30736,7 +30736,7 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
     }
   });
 
-  app.put("/api/overheads/settings", requireAuth, async (req, res) => {
+  app.put("/api/overheads/settings", requireAuth, requirePermission("business.overheads", "edit"), async (req, res) => {
     try {
       const user = req.user as any;
       const companyId = user?.companyId;
@@ -30756,7 +30756,7 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
   });
 
   // OH Pipeline jobs
-  app.get("/api/overheads/pipeline", requireAuth, async (req, res) => {
+  app.get("/api/overheads/pipeline", requireAuth, requirePermission("business.overheads", "view"), async (req, res) => {
     try {
       const user = req.user as any;
       const companyId = user?.companyId;
@@ -30770,7 +30770,7 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
     }
   });
 
-  app.post("/api/overheads/pipeline", requireAuth, async (req, res) => {
+  app.post("/api/overheads/pipeline", requireAuth, requirePermission("business.overheads", "add"), async (req, res) => {
     try {
       const user = req.user as any;
       const companyId = user?.companyId;
@@ -30787,7 +30787,7 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
     }
   });
 
-  app.patch("/api/overheads/pipeline/:id", requireAuth, async (req, res) => {
+  app.patch("/api/overheads/pipeline/:id", requireAuth, requirePermission("business.overheads", "edit"), async (req, res) => {
     try {
       const user = req.user as any;
       const companyId = user?.companyId;
@@ -30808,7 +30808,7 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
     }
   });
 
-  app.delete("/api/overheads/pipeline/:id", requireAuth, async (req, res) => {
+  app.delete("/api/overheads/pipeline/:id", requireAuth, requirePermission("business.overheads", "delete"), async (req, res) => {
     try {
       const user = req.user as any;
       const companyId = user?.companyId;
@@ -30823,7 +30823,7 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
   });
 
   // Forecast overrides — upsert a single cell override
-  app.put("/api/overheads/forecast", requireAuth, async (req, res) => {
+  app.put("/api/overheads/forecast", requireAuth, requirePermission("business.overheads", "edit"), async (req, res) => {
     try {
       const user = req.user as any;
       const companyId = user?.companyId;
@@ -30852,7 +30852,7 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
   });
 
   // Fetch all forecast overrides for this company
-  app.get("/api/overheads/forecast", requireAuth, async (req, res) => {
+  app.get("/api/overheads/forecast", requireAuth, requirePermission("business.overheads", "view"), async (req, res) => {
     try {
       const user = req.user as any;
       const companyId = user?.companyId;
@@ -30872,7 +30872,7 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
   });
 
   // OH Predictor — active projects contracted value aggregation
-  app.get("/api/overheads/predictor/contracted", requireAuth, async (req, res) => {
+  app.get("/api/overheads/predictor/contracted", requireAuth, requirePermission("business.overheads", "view"), async (req, res) => {
     try {
       const user = req.user as any;
       const companyId = user?.companyId;
@@ -30910,7 +30910,7 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
   });
 
   // Xero OH actuals — fetch P&L report for a date range
-  app.get("/api/xero/overhead-actuals", requireAuth, async (req, res) => {
+  app.get("/api/xero/overhead-actuals", requireAuth, requirePermission("business.overheads", "view"), async (req, res) => {
     try {
       const user = req.user as any;
       const companyId = user?.companyId;
@@ -30980,7 +30980,7 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
   });
 
   // Xero — sync overhead accounts (chart of accounts → categories + items)
-  app.post("/api/xero/sync-overhead-accounts", requireAuth, async (req, res) => {
+  app.post("/api/xero/sync-overhead-accounts", requireAuth, requirePermission("business.overheads", "edit"), async (req, res) => {
     try {
       const user = req.user as any;
       const companyId = user?.companyId;

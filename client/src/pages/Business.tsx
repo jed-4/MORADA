@@ -2,7 +2,9 @@ import { useMemo, lazy, Suspense } from "react";
 import { useLocation } from "wouter";
 import { useToolbarVisible } from "@/hooks/useToolbarVisible";
 import { useAuth } from "@/hooks/use-auth";
+import { usePermission } from "@/hooks/use-permission";
 import { BUSINESS_TABS } from "./businessTabs";
+import { AlertCircle } from "lucide-react";
 
 export { BUSINESS_TABS };
 
@@ -25,6 +27,12 @@ export default function Business() {
   const [location, navigate] = useLocation();
   const { user } = useAuth();
   const businessLabel = (user as any)?.companyNickname || "Business";
+  const canViewOverheads = usePermission("business.overheads", "view");
+
+  const visibleTabs = useMemo(
+    () => BUSINESS_TABS.filter((t) => t.id !== "overheads" || canViewOverheads),
+    [canViewOverheads],
+  );
 
   const { toolbarVisible } = useToolbarVisible();
 
@@ -55,7 +63,20 @@ export default function Business() {
       case "files":
         return <BusinessFiles />;
       case "overheads":
-        return <BusinessOverheads />;
+        return canViewOverheads ? (
+          <BusinessOverheads />
+        ) : (
+          <div
+            className="flex flex-col h-full items-center justify-center gap-2 text-center p-8"
+            data-testid="page-overheads-no-access"
+          >
+            <AlertCircle className="h-10 w-10 text-muted-foreground" />
+            <h3 className="text-sm font-semibold">No overheads access</h3>
+            <p className="text-xs text-muted-foreground max-w-xs">
+              You don't have permission to view business overheads. Contact your administrator to request access.
+            </p>
+          </div>
+        );
       case "timesheets":
         return <Timesheets />;
       case "messages":
@@ -90,7 +111,7 @@ export default function Business() {
 
         {/* Row 2 - Floating Tabs */}
         <div className="flex items-center gap-1 px-4 border-b border-border overflow-x-auto">
-          {BUSINESS_TABS.map((tab) => {
+          {visibleTabs.map((tab) => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
             return (
