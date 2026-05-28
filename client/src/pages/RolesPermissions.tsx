@@ -629,13 +629,17 @@ export default function RolesPermissions() {
                                     <div key={col.key} className="text-xs font-medium text-center">{col.label}</div>
                                   ))}
                                 </div>
-                                {categoryPermissions.map(permission => {
+                                {categoryPermissions.map((permission, idx) => {
                                   const hasViewScope = VIEW_SCOPE_KEYS.has(permission.key);
                                   const viewEnabled = isPermissionEnabled(permission.id, "view");
                                   const currentScope = viewScopeData[permission.id]?.viewScope || "own";
                                   const currentViewableRoleIds = viewScopeData[permission.id]?.viewableRoleIds || [];
+                                  const isLastRow = idx === categoryPermissions.length - 1;
                                   return (
-                                    <div key={permission.id}>
+                                    <div
+                                      key={permission.id}
+                                      className={isLastRow ? "py-2" : "py-2 border-b border-border/50"}
+                                    >
                                       <div style={{ ...gridStyle, alignItems: 'center' }}>
                                         <div className="text-sm">{permission.name}</div>
                                         {actionColumns.map(({ key: action }) => {
