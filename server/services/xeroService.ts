@@ -815,6 +815,44 @@ export class XeroService {
     return response.json().catch(() => ({}));
   }
 
+  /**
+   * Downloads a single attachment's binary content from a Xero invoice.
+   * Prefers the AttachmentID (collision-free) and falls back to the
+   * URL-encoded filename. Returns the raw bytes plus filename/contentType so
+   * callers can persist it to object storage.
+   */
+  async downloadInvoiceAttachment(
+    connectionId: string,
+    xeroInvoiceId: string,
+    attachment: { AttachmentID?: string; FileName?: string; MimeType?: string },
+  ): Promise<{ filename: string; contentType: string; buffer: Buffer }> {
+    const accessToken = await this.getValidToken(connectionId);
+    const connection = await storage.getXeroConnection(connectionId);
+    if (!connection) throw new Error("Connection not found");
+
+    const filename = attachment.FileName || "attachment";
+    const contentType = attachment.MimeType || "application/octet-stream";
+    const ref = attachment.AttachmentID || encodeURIComponent(filename);
+    const response = await fetch(
+      `${XERO_API_BASE}/Invoices/${xeroInvoiceId}/Attachments/${ref}`,
+      {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Xero-Tenant-Id": connection.tenantId,
+          // Xero returns the raw file when Accept matches the file's MIME type.
+          Accept: contentType,
+        },
+      },
+    );
+    if (!response.ok) {
+      const txt = await response.text();
+      throw new Error(`Failed to download attachment "${filename}": ${response.status} ${txt}`);
+    }
+    const arrayBuffer = await response.arrayBuffer();
+    return { filename, contentType, buffer: Buffer.from(arrayBuffer) };
+  }
+
   async createInvoice(connectionId: string, invoiceData: {
     clientName: string;
     clientXeroContactId?: string;

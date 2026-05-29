@@ -222,6 +222,32 @@ type PushBillResult = {
  * matching Xero invoice via the Attachments endpoint. Idempotent — files
  * whose filename already exists on the Xero invoice are skipped.
  */
+// Recompute a project's budget totals AND its per-cost-code line items so the
+// Budget page reflects bill changes immediately ("live"), without the user
+// having to press the manual recalculate button. Best-effort: a failure here
+// must never break the bill mutation that triggered it.
+async function recalcProjectBudget(projectId: string | null | undefined): Promise<void> {
+  if (!projectId) return;
+  try {
+    const budget = await storage.calculateBudget(projectId);
+    if (budget) await storage.recalculateBudgetLineItems(budget.id);
+  } catch (e: any) {
+    console.warn(`[recalcProjectBudget] failed for project ${projectId}:`, e?.message || e);
+  }
+}
+
+// Resolve a bill's project and recalc its budget. Used by bill line-item
+// routes that only know the billId.
+async function recalcBudgetForBill(billId: string | null | undefined): Promise<void> {
+  if (!billId) return;
+  try {
+    const bill = await storage.getBillById(billId);
+    await recalcProjectBudget((bill as any)?.projectId);
+  } catch (e: any) {
+    console.warn(`[recalcBudgetForBill] failed for bill ${billId}:`, e?.message || e);
+  }
+}
+
 async function pushBillAttachmentsToXero(
   connectionId: string,
   xeroInvoiceId: string,
@@ -817,6 +843,9 @@ async function syncBillFromXeroInternal(
         } as any);
       }
     }
+
+    // Totals/line items may have changed from the Xero side → keep the budget live.
+    await recalcProjectBudget((bill as any).projectId);
 
     return { ok: true };
   } catch (error: any) {
@@ -13671,6 +13700,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
+      // Keep the project budget live after a bill is added.
+      await recalcProjectBudget(bill.projectId);
+
       res.status(201).json(bill);
     } catch (error) {
       console.error("Error creating bill:", error);
@@ -13763,6 +13795,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
+      // Keep the project budget live after a bill is edited. Recalc both the
+      // previous and current project in case the bill was reassigned.
+      await recalcProjectBudget((previous as any)?.projectId);
+      if ((bill as any)?.projectId && (bill as any)?.projectId !== (previous as any)?.projectId) {
+        await recalcProjectBudget((bill as any).projectId);
+      }
+
       res.json(bill);
     } catch (error) {
       if (error instanceof Error && error.message === "Bill not found") {
@@ -13815,6 +13854,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           order: item.order,
         });
       }
+
+      // Keep the project budget live after duplicating a bill.
+      await recalcProjectBudget(newBill.projectId);
 
       res.status(201).json(newBill);
     } catch (error) {
@@ -14060,6 +14102,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if ((previous as any)?.matchedSitePOId) {
         await recomputePOStatusFromBills((previous as any).matchedSitePOId);
       }
+      // Keep the project budget live after a bill is deleted.
+      await recalcProjectBudget((previous as any)?.projectId);
       res.status(204).send();
     } catch (error) {
       res.status(500).json({ error: "Failed to delete bill" });
@@ -14244,6 +14288,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const lineItem = await storage.createBillLineItem(validationResult.data);
       void maybeAutoPushParentBill(req.params.billId, (req as any).user?.companyId);
+      await recalcBudgetForBill(req.params.billId);
       res.status(201).json(lineItem);
     } catch (error) {
       res.status(500).json({ error: "Failed to create bill line item" });
@@ -14262,6 +14307,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const lineItem = await storage.updateBillLineItem(req.params.id, validationResult.data);
       void maybeAutoPushParentBill(req.params.billId, (req as any).user?.companyId);
+      await recalcBudgetForBill(req.params.billId);
       res.json(lineItem);
     } catch (error) {
       if (error instanceof Error && error.message === "Bill line item not found") {
@@ -14275,6 +14321,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       await storage.deleteBillLineItem(req.params.id);
       void maybeAutoPushParentBill(req.params.billId, (req as any).user?.companyId);
+      await recalcBudgetForBill(req.params.billId);
       res.status(204).send();
     } catch (error) {
       res.status(500).json({ error: "Failed to delete bill line item" });
@@ -30093,6 +30140,45 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
       const connection = await storage.getXeroConnectionByCompanyId(companyId);
       if (!connection) return res.status(400).json({ error: "Xero is not connected" });
 
+      // Build a lookup from Xero tracking option → BuildPro cost code so each
+      // imported line lands on the right budget category (instead of all going
+      // to the single defaultCostCodeId or staying uncategorised).
+      const companyCostCodes = await storage.getCostCodes(companyId).catch(() => [] as any[]);
+      const costCodeByTrackingOptionId = new Map<string, string>();
+      const costCodeByTrackingOptionName = new Map<string, string>();
+      for (const cc of companyCostCodes as any[]) {
+        if (cc.xeroTrackingOptionId) costCodeByTrackingOptionId.set(cc.xeroTrackingOptionId, cc.id);
+        if (cc.xeroTrackingOptionName) costCodeByTrackingOptionName.set(String(cc.xeroTrackingOptionName).trim().toLowerCase(), cc.id);
+      }
+      // TC1 is the tracking category Xero uses for cost codes (TC2 is projects).
+      const costCodeTrackingCategoryId: string | null = (connection as any).trackingCategory1Id || null;
+
+      // Resolve the BuildPro cost code for a Xero line item from its tracking
+      // options. Prefers an exact tracking-option-ID match within the cost-code
+      // category; falls back to matching by option name.
+      const resolveCostCodeFromTracking = (xl: any): string | undefined => {
+        const tracking: any[] = Array.isArray(xl?.Tracking) ? xl.Tracking : [];
+        for (const t of tracking) {
+          if (costCodeTrackingCategoryId && t?.TrackingCategoryID !== costCodeTrackingCategoryId) continue;
+          if (t?.TrackingOptionID && costCodeByTrackingOptionId.has(t.TrackingOptionID)) {
+            return costCodeByTrackingOptionId.get(t.TrackingOptionID);
+          }
+          const optName = (t?.Option || t?.TrackingOptionName || "").toString().trim().toLowerCase();
+          if (optName && costCodeByTrackingOptionName.has(optName)) {
+            return costCodeByTrackingOptionName.get(optName);
+          }
+        }
+        return undefined;
+      };
+
+      // Object storage client for pulling Xero attachments down into BuildPro.
+      const { ObjectStorageService } = await import("./replit_integrations/object_storage");
+      const oss = new ObjectStorageService();
+
+      // Projects touched by this import — their budgets are recalculated once at
+      // the end so the Budget page reflects the new bills immediately.
+      const affectedProjectIds = new Set<string>();
+
       const parseXeroDate = (d: string | undefined): Date => {
         if (!d) return new Date();
         const match = d.match(/\/Date\((\d+)[\+\-]?\d*\)\//);
@@ -30239,11 +30325,14 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
             const xl = xeroLineItems[i];
             const unitPriceCents = Math.round((xl.UnitAmount || 0) * 100);
             const totalLineCents = Math.round((xl.LineAmount || (xl.UnitAmount || 0) * (xl.Quantity || 1)) * 100);
+            // Prefer the cost code mapped from the line's Xero tracking option;
+            // fall back to the import-wide default cost code, then uncategorised.
+            const resolvedCostCodeId = resolveCostCodeFromTracking(xl) || defaultCostCodeId || undefined;
             await storage.createBillLineItem({
               billId: newBill.id,
-              lineType: defaultCostCodeId ? "cost_code" : "custom",
+              lineType: resolvedCostCodeId ? "cost_code" : "custom",
               description: xl.Description || "",
-              costCodeId: defaultCostCodeId || undefined,
+              costCodeId: resolvedCostCodeId,
               quantity: Math.round(xl.Quantity || 1),
               unitPrice: unitPriceCents,
               tax: mapXeroTaxType(xl.TaxType),
@@ -30253,11 +30342,46 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
             } as any);
           }
 
+          // Pull the source document(s) from Xero down into BuildPro so the
+          // imported bill carries its attachment. Best-effort per file.
+          try {
+            const xeroAttachments = await xeroService.getInvoiceAttachments(connection.id, xeroInvoiceId);
+            for (const att of xeroAttachments) {
+              try {
+                const { filename, contentType, buffer } = await xeroService.downloadInvoiceAttachment(
+                  connection.id,
+                  xeroInvoiceId,
+                  att,
+                );
+                const objectPath = await oss.uploadObjectEntity(buffer, contentType, companyId);
+                await storage.appendBillAttachment(newBill.id, {
+                  objectPath,
+                  filename,
+                  mimeType: contentType,
+                  uploadedAt: new Date().toISOString(),
+                  uploadedBy: user.id,
+                  source: "xero",
+                });
+              } catch (attErr: any) {
+                console.warn(`[bills/import] attachment import failed for ${xeroInvoiceId}/${att?.FileName}:`, attErr?.message || attErr);
+              }
+            }
+          } catch (attListErr: any) {
+            console.warn(`[bills/import] could not list attachments for ${xeroInvoiceId}:`, attListErr?.message || attListErr);
+          }
+
+          affectedProjectIds.add(billProjectId);
           results.push({ xeroInvoiceId, ok: true, billId: newBill.id });
         } catch (e: any) {
           console.error(`[bills/import] failed for ${xeroInvoiceId}:`, e);
           results.push({ xeroInvoiceId, ok: false, error: e?.message || "Import failed" });
         }
+      }
+
+      // Recalculate the budget once per project touched by this import so the
+      // Budget page reflects all newly imported bills immediately.
+      for (const pid of affectedProjectIds) {
+        await recalcProjectBudget(pid);
       }
 
       const imported = results.filter(r => r.ok && !r.skipped).length;

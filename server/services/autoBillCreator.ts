@@ -146,6 +146,20 @@ export class AutoBillCreatorService {
 
     try {
       const result = await this.createBillFromEmail(invoiceAttachments, email, options);
+      // Keep the project budget live after creating a bill from email. Covers
+      // all callers of this service (webhook, manual poll, Gmail poller).
+      if (result.success && result.billId) {
+        try {
+          const bill = await storage.getBillById(result.billId);
+          const projectId = (bill as any)?.projectId;
+          if (projectId) {
+            const budget = await storage.calculateBudget(projectId);
+            if (budget) await storage.recalculateBudgetLineItems(budget.id);
+          }
+        } catch (recalcErr: any) {
+          console.warn("[autoBillCreator] budget recalc failed:", recalcErr?.message || recalcErr);
+        }
+      }
       return [result];
     } catch (error: any) {
       return [{ success: false, error: error.message }];
