@@ -595,6 +595,10 @@ export default function BillDetail() {
     setShowUpdateDefaultsPrompt(false);
   }, [watchedSupplierId]);
 
+  const currentSupplier = suppliers.find(s => s.id === watchedSupplierId);
+  const supplierDefaultCostCode = currentSupplier?.defaultCostCodeId || "";
+  const supplierDefaultAccountCode = currentSupplier?.xeroDefaultAccountCode || currentSupplier?.xeroDefaultAccount || "";
+
   // Auto-apply supplier defaults to empty line items when opening an existing bill (edit mode).
   // New bills are handled by the effect above (line ~576).
   useEffect(() => {
@@ -649,10 +653,6 @@ export default function BillDetail() {
       toast({ title: "Failed to save supplier defaults", description: err.message, variant: "destructive" });
     },
   });
-
-  const currentSupplier = suppliers.find(s => s.id === watchedSupplierId);
-  const supplierDefaultCostCode = currentSupplier?.defaultCostCodeId || "";
-  const supplierDefaultAccountCode = currentSupplier?.xeroDefaultAccountCode || currentSupplier?.xeroDefaultAccount || "";
 
   // Compute the "save as defaults" suggestion: most-used non-empty value
   // across the current line items, ignoring values that already match the

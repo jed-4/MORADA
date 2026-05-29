@@ -1,2 +1,1 @@
-- [Permissions gotchas](permissions.md) — requirePermission dev-bypass + isAdminLike built-in-role bypass; both let users see gated pages without explicit perms.
-- [server/routes.ts read tool](routes-ts-reading.md) — file is ~31.8k lines; the `read` tool sometimes caches at ~26.3k. Use `sed -n` / `rg` for anything past line ~26000.
+- [TDZ in hook deps](billdetail-tdz.md) — referencing a later-declared `const` inside a hook dep array crashes at render; can masquerade as React "Invalid hook call".
