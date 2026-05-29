@@ -1209,23 +1209,6 @@ export default function Bills({ embedded }: { embedded?: boolean } = {}) {
         </div>
       )}
 
-      {/* ── Floating amounts summary (fixed at bottom-right) ── */}
-      {billsView === "bills" && (
-        <div className="hidden md:flex fixed bottom-6 right-6 z-40 items-center gap-3 px-3 py-2 rounded-xl shadow-lg border border-border bg-popover text-popover-foreground text-xs text-muted-foreground">
-          <span data-testid="text-total-draft">
-            Draft <span className="font-medium text-foreground">{formatCurrency(statusTotals.draft * 100)}</span>
-          </span>
-          <div className="w-px h-4 bg-border" />
-          <span data-testid="text-total-awaiting-approval">
-            Awaiting Approval <span className="font-medium text-foreground">{formatCurrency(statusTotals.awaiting_approval * 100)}</span>
-          </span>
-          <div className="w-px h-4 bg-border" />
-          <span data-testid="text-total-awaiting-payment">
-            Awaiting Payment <span className="font-medium text-foreground">{formatCurrency(statusTotals.awaiting_payment * 100)}</span>
-          </span>
-        </div>
-      )}
-
       {/* ── Floating bulk action bar (fixed at bottom, doesn't push layout) ── */}
       {selectedBills.size > 0 && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-3 py-2 rounded-xl shadow-lg border border-border bg-popover text-popover-foreground">
@@ -1396,6 +1379,23 @@ export default function Bills({ embedded }: { embedded?: boolean } = {}) {
                 />
               )}
             </div>
+          </div>
+        )}
+
+        {/* Amounts summary — sits below the bills list table */}
+        {!billsLoading && (
+          <div className="hidden md:flex flex-wrap items-center justify-end gap-3 text-xs text-muted-foreground mt-2 px-1">
+            <span data-testid="text-total-draft">
+              Draft <span className="font-medium text-foreground">{formatCurrency(statusTotals.draft * 100)}</span>
+            </span>
+            <div className="w-px h-4 bg-border" />
+            <span data-testid="text-total-awaiting-approval">
+              Awaiting Approval <span className="font-medium text-foreground">{formatCurrency(statusTotals.awaiting_approval * 100)}</span>
+            </span>
+            <div className="w-px h-4 bg-border" />
+            <span data-testid="text-total-awaiting-payment">
+              Awaiting Payment <span className="font-medium text-foreground">{formatCurrency(statusTotals.awaiting_payment * 100)}</span>
+            </span>
           </div>
         )}
       </div>}
