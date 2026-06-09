@@ -2,6 +2,9 @@ import { Component, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App";
 import "./index.css";
+import { installChunkReloadHandlers, isDynamicImportError, attemptChunkReload } from "./lib/chunk-reload";
+
+installChunkReloadHandlers();
 
 class RootErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
   state = { error: null as Error | null };
@@ -9,10 +12,32 @@ class RootErrorBoundary extends Component<{ children: ReactNode }, { error: Erro
     return { error };
   }
   componentDidCatch(error: Error, info: { componentStack: string }) {
+    if (isDynamicImportError(error)) {
+      console.warn("[RootErrorBoundary] Stale app version detected, reloading…", error);
+      attemptChunkReload();
+      return;
+    }
     console.error("[RootErrorBoundary] React tree crashed:", error, info.componentStack);
   }
   render() {
     if (this.state.error) {
+      if (isDynamicImportError(this.state.error)) {
+        return (
+          <div style={{
+            minHeight: "100vh",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "24px",
+            fontFamily: "system-ui, sans-serif",
+            background: "#FAF8F5",
+          }}>
+            <div style={{ maxWidth: 560, textAlign: "center", color: "#6b7280", fontSize: 14 }}>
+              Updating BuildPro to the latest version…
+            </div>
+          </div>
+        );
+      }
       return (
         <div style={{
           minHeight: "100vh",

@@ -1,6 +1,7 @@
 import { Component, type ReactNode } from "react";
 import { AlertCircle, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { isDynamicImportError, attemptChunkReload } from "@/lib/chunk-reload";
 
 interface Props {
   children: ReactNode;
@@ -23,6 +24,11 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, info: { componentStack: string }) {
+    if (isDynamicImportError(error)) {
+      console.warn("[ErrorBoundary] Stale app version detected, reloading…", error);
+      attemptChunkReload();
+      return;
+    }
     console.error("[ErrorBoundary] Caught render error:", error, info.componentStack);
   }
 
@@ -32,6 +38,14 @@ export class ErrorBoundary extends Component<Props, State> {
 
   render() {
     if (this.state.hasError) {
+      if (isDynamicImportError(this.state.error)) {
+        return (
+          <div className="flex flex-col items-center justify-center h-64 gap-2 p-8 text-center">
+            <RefreshCw className="w-6 h-6 text-muted-foreground animate-spin" />
+            <p className="text-sm text-muted-foreground">Updating BuildPro to the latest version…</p>
+          </div>
+        );
+      }
       if (this.props.fallback !== undefined) {
         return this.props.fallback;
       }
