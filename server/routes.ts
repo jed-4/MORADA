@@ -30016,7 +30016,14 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
         return {};
       };
 
-      let xeroBills = await xeroService.listBills(connection.id, { page, modifiedSince });
+      // When filtering by a job (tracking category), Xero cannot do the filtering
+      // server-side, so we must page through EVERY bill and filter locally —
+      // otherwise only the 100 most-recent bills are considered and a job's older
+      // bills silently never appear. Without a tracking filter we keep the fast
+      // single-page behaviour for the default view.
+      let xeroBills = trackingOptionIdFilter
+        ? await xeroService.listAllBills(connection.id, { modifiedSince })
+        : await xeroService.listBills(connection.id, { page, modifiedSince });
       if (supplierContactId) {
         xeroBills = xeroBills.filter((xb: any) => xb.Contact?.ContactID === supplierContactId);
       }

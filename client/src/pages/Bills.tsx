@@ -153,9 +153,15 @@ function ImportFromXeroDialog({
     page: number;
     trackingOptions: XeroTrackingOption[];
   }>({
-    queryKey: ["/api/xero/bills/import-preview", sinceDate],
+    queryKey: ["/api/xero/bills/import-preview", sinceDate, trackingFilter],
     queryFn: async () => {
-      const qs = sinceDate ? `?since=${encodeURIComponent(sinceDate)}` : "";
+      const params = new URLSearchParams();
+      if (sinceDate) params.set("since", sinceDate);
+      // When a job is selected, ask the server to page through every Xero bill
+      // and filter by tracking category — otherwise only the most-recent 100
+      // bills are searched and the job's older bills go missing.
+      if (trackingFilter !== "__all__") params.set("trackingOptionId", trackingFilter);
+      const qs = params.toString() ? `?${params.toString()}` : "";
       const res = await fetch(`/api/xero/bills/import-preview${qs}`, { credentials: "include" });
       if (!res.ok) throw new Error((await res.text()) || "Failed to load Xero bills");
       return res.json();
@@ -359,7 +365,10 @@ function ImportFromXeroDialog({
         <div className="flex-1 overflow-auto border rounded-md min-h-[200px]">
           {isLoading ? (
             <div className="flex items-center justify-center h-32 text-sm text-muted-foreground">
-              <Loader2 className="w-4 h-4 animate-spin mr-2" /> Loading Xero bills...
+              <Loader2 className="w-4 h-4 animate-spin mr-2" />
+              {trackingFilter !== "__all__"
+                ? "Searching all Xero bills for this job…"
+                : "Loading Xero bills..."}
             </div>
           ) : error ? (
             <div className="p-6 text-sm text-destructive flex items-center gap-2">

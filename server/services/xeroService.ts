@@ -985,6 +985,31 @@ export class XeroService {
   }
 
   /**
+   * Fetch ALL pages of ACCPAY bills (up to maxPages) by following Xero's
+   * 100-per-page pagination. Xero cannot filter by tracking category
+   * server-side (tracking lives on line items), so the import preview must
+   * load every page and filter locally — otherwise a job's older bills beyond
+   * the most-recent 100 silently never appear in the import list.
+   */
+  async listAllBills(
+    connectionId: string,
+    opts: { modifiedSince?: Date; statuses?: string[]; maxPages?: number } = {}
+  ): Promise<any[]> {
+    const maxPages = opts.maxPages ?? 50;
+    const all: any[] = [];
+    for (let page = 1; page <= maxPages; page++) {
+      const batch = await this.listBills(connectionId, {
+        modifiedSince: opts.modifiedSince,
+        statuses: opts.statuses,
+        page,
+      });
+      all.push(...batch);
+      if (batch.length < 100) break;
+    }
+    return all;
+  }
+
+  /**
    * Create a payment in Xero against an invoice (POST /Payments).
    * accountCode: Xero bank account code (e.g. "090") or accountId
    */
