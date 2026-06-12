@@ -139,6 +139,44 @@ async function xeroErrorFromResponse(response: Response, fallbackPrefix: string)
   return new Error(`${fallbackPrefix}: ${response.status} ${errorText}`);
 }
 
+/**
+ * fetch() wrapper that transparently retries on HTTP 429 (Too Many Requests),
+ * honouring Xero's `Retry-After` header. Xero enforces ~60 calls/min per tenant;
+ * bursty operations (e.g. paging through every bill) combined with background
+ * pollers can trip this. Retrying with the server-provided delay turns a hard
+ * failure into a brief wait. The wait is capped and retries are bounded so a
+ * request can never hang indefinitely.
+ */
+async function xeroFetchWithRetry(
+  url: string,
+  init: RequestInit,
+  opts: { maxRetries?: number; label?: string } = {}
+): Promise<Response> {
+  const maxRetries = opts.maxRetries ?? 3;
+  let attempt = 0;
+  while (true) {
+    const response = await fetch(url, init);
+    if (response.status !== 429 || attempt >= maxRetries) {
+      return response;
+    }
+    const retryAfterRaw = response.headers.get("Retry-After");
+    const retryAfterSec = retryAfterRaw ? parseInt(retryAfterRaw, 10) : NaN;
+    const waitMs =
+      Number.isFinite(retryAfterSec) && retryAfterSec > 0
+        ? Math.min(retryAfterSec, 60) * 1000
+        : Math.min(2 ** attempt, 30) * 1000;
+    // Drain the body so the underlying socket can be reused.
+    await response.text().catch(() => {});
+    console.warn(
+      `[Xero] 429 rate-limited${opts.label ? ` (${opts.label})` : ""}; retrying in ${Math.round(
+        waitMs / 1000,
+      )}s (attempt ${attempt + 1}/${maxRetries})`,
+    );
+    await new Promise((resolve) => setTimeout(resolve, waitMs));
+    attempt++;
+  }
+}
+
 interface XeroTokenResponse {
   access_token: string;
   refresh_token: string;
@@ -337,13 +375,13 @@ export class XeroService {
     const connection = await storage.getXeroConnection(connectionId);
     if (!connection) throw new Error("Connection not found");
 
-    const response = await fetch(`${XERO_API_BASE}/TrackingCategories`, {
+    const response = await xeroFetchWithRetry(`${XERO_API_BASE}/TrackingCategories`, {
       headers: {
         Authorization: `Bearer ${accessToken}`,
         "Xero-Tenant-Id": connection.tenantId,
         Accept: "application/json",
       },
-    });
+    }, { label: "getTrackingCategories" });
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -973,9 +1011,12 @@ export class XeroService {
       headers["If-Modified-Since"] = opts.modifiedSince.toUTCString();
     }
 
-    const response = await fetch(`${XERO_API_BASE}/Invoices?${params}`, { headers });
+    const response = await xeroFetchWithRetry(`${XERO_API_BASE}/Invoices?${params}`, { headers }, { label: "listBills" });
 
     if (!response.ok) {
+      if (response.status === 429) {
+        throw new Error("Xero is rate-limiting requests right now (429). Please wait a minute and try again.");
+      }
       const errorText = await response.text();
       throw new Error(`Failed to fetch Xero bills: ${response.status} ${errorText}`);
     }
@@ -998,6 +1039,9 @@ export class XeroService {
     const maxPages = opts.maxPages ?? 50;
     const all: any[] = [];
     for (let page = 1; page <= maxPages; page++) {
+      // Pace successive pages so a deep ledger doesn't burst Xero's ~60/min
+      // limit; listBills also retries on 429 as a safety net.
+      if (page > 1) await new Promise((resolve) => setTimeout(resolve, 300));
       const batch = await this.listBills(connectionId, {
         modifiedSince: opts.modifiedSince,
         statuses: opts.statuses,
