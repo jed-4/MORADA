@@ -119,6 +119,10 @@ type XeroBillPreview = {
   amountPaid?: number;
   trackingOptionId?: string;
   trackingOptionName?: string;
+  supplierId?: string | null;
+  supplierName?: string | null;
+  suggestedSupplierId?: string | null;
+  suggestedSupplierName?: string | null;
   alreadyImported: boolean;
   localBillId?: string | null;
 };
@@ -129,22 +133,26 @@ function ImportFromXeroDialog({
   open,
   onOpenChange,
   projects,
+  suppliers,
   defaultProjectId,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   projects: Project[];
+  suppliers: Supplier[];
   defaultProjectId: string;
 }) {
   const { toast } = useToast();
   const [sinceDate, setSinceDate] = useState<string>("");
-  const [unmappedAction, setUnmappedAction] = useState<"skip" | "create">("skip");
   const [importStatus, setImportStatus] = useState<"draft" | "awaiting_approval" | "from_xero">("from_xero");
   const [supplierFilter, setSupplierFilter] = useState<string>("");
   const [trackingFilter, setTrackingFilter] = useState<string>("__all__");
 
   // Per-row project assignments: xeroInvoiceId → projectId
   const [projectMap, setProjectMap] = useState<Map<string, string>>(new Map());
+  // Per-row supplier resolution for unmatched Xero contacts:
+  // xeroInvoiceId → link to an existing supplier, or create a new one.
+  const [supplierMap, setSupplierMap] = useState<Map<string, { mode: "link" | "create"; supplierId?: string }>>(new Map());
   // Tracks which rows the user explicitly overrode (so bulk default changes don't clobber them)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
@@ -186,11 +194,28 @@ function ImportFromXeroDialog({
     });
   }, [allXeroBills, defaultProjectId]);
 
+  // Seed supplier resolutions from the server's fuzzy suggestions so the common
+  // case is a one-glance confirm. Matched / already-imported rows need no entry.
+  useEffect(() => {
+    if (allXeroBills.length === 0) return;
+    setSupplierMap(prev => {
+      const next = new Map(prev);
+      for (const b of allXeroBills) {
+        if (b.alreadyImported || b.supplierId) continue;
+        if (!next.has(b.xeroInvoiceId) && b.suggestedSupplierId) {
+          next.set(b.xeroInvoiceId, { mode: "link", supplierId: b.suggestedSupplierId });
+        }
+      }
+      return next;
+    });
+  }, [allXeroBills]);
+
   // When the dialog opens, reset state.
   useEffect(() => {
     if (open) {
       setSelectedIds(new Set());
       setProjectMap(new Map());
+      setSupplierMap(new Map());
       setSupplierFilter("");
       setTrackingFilter("__all__");
     }
@@ -200,19 +225,33 @@ function ImportFromXeroDialog({
     mutationFn: async (payload: {
       xeroInvoiceIds: string[];
       projectAssignments: Record<string, string>;
-      unmappedSupplierAction: "skip" | "create";
+      supplierResolution: Record<string, { mode: "link" | "create"; supplierId?: string }>;
       importStatus: "draft" | "awaiting_approval" | "from_xero";
     }) => {
       return await apiRequest("/api/xero/bills/import", "POST", payload);
     },
     onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/bills"] });
+      if (data.failed > 0) {
+        const reasons = (data.results || [])
+          .filter((r: any) => !r.ok && r.error)
+          .slice(0, 3)
+          .map((r: any) => r.error)
+          .join("; ");
+        toast({
+          title: `${data.imported} imported — ${data.failed} couldn't be imported`,
+          description: reasons || "Some bills could not be imported. Resolve them and try again.",
+          variant: "destructive",
+        });
+        // Keep the dialog open so the user can fix the flagged rows and retry.
+        return;
+      }
       toast({
         title: "Import complete",
-        description: `${data.imported} imported, ${data.skipped} skipped, ${data.failed} failed.`,
+        description: `${data.imported} imported${data.skipped ? `, ${data.skipped} already in BuildPro` : ""}.`,
       });
       setSelectedIds(new Set());
       onOpenChange(false);
-      queryClient.invalidateQueries({ queryKey: ["/api/bills"] });
     },
     onError: (e: Error) => {
       toast({ title: "Import failed", description: e.message, variant: "destructive" });
@@ -258,6 +297,15 @@ function ImportFromXeroDialog({
     setProjectMap(prev => new Map(prev).set(xeroInvoiceId, pid));
   };
 
+  const setRowSupplier = (xeroInvoiceId: string, value: string) => {
+    setSupplierMap(prev => {
+      const next = new Map(prev);
+      if (value === "__create__") next.set(xeroInvoiceId, { mode: "create" });
+      else next.set(xeroInvoiceId, { mode: "link", supplierId: value });
+      return next;
+    });
+  };
+
   const setDefaultForAll = (pid: string) => {
     setProjectMap(prev => {
       const next = new Map(prev);
@@ -266,22 +314,37 @@ function ImportFromXeroDialog({
     });
   };
 
+  const billById = useMemo(
+    () => new Map(allXeroBills.map(b => [b.xeroInvoiceId, b])),
+    [allXeroBills],
+  );
+
   // Check if every selected bill has a project assigned.
   const missingProject = Array.from(selectedIds).some(id => !projectMap.get(id));
+  // Check that every selected bill that isn't already matched has a supplier
+  // (linked to an existing one or set to create) — no silent skips.
+  const missingSupplier = Array.from(selectedIds).some(id => {
+    const b = billById.get(id);
+    if (!b || b.supplierId) return false;
+    return !supplierMap.get(id);
+  });
 
   const formatMoney = (n?: number) => formatCurrency(n, { fromDollars: true });
 
   const handleImport = () => {
     const ids = Array.from(selectedIds);
     const assignments: Record<string, string> = {};
+    const supplierResolution: Record<string, { mode: "link" | "create"; supplierId?: string }> = {};
     for (const id of ids) {
       const pid = projectMap.get(id);
       if (pid) assignments[id] = pid;
+      const res = supplierMap.get(id);
+      if (res) supplierResolution[id] = res;
     }
     importMutation.mutate({
       xeroInvoiceIds: ids,
       projectAssignments: assignments,
-      unmappedSupplierAction: unmappedAction,
+      supplierResolution,
       importStatus,
     });
   };
@@ -345,18 +408,6 @@ function ImportFromXeroDialog({
               </SelectContent>
             </Select>
           </div>
-          <div className="flex items-center gap-1.5">
-            <span className="text-xs text-muted-foreground whitespace-nowrap">New suppliers:</span>
-            <Select value={unmappedAction} onValueChange={(v) => setUnmappedAction(v as "skip" | "create")}>
-              <SelectTrigger className="h-8 w-32" data-testid="select-unmapped-action">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="skip">Skip</SelectItem>
-                <SelectItem value="create">Auto-create</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
           <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isLoading} className="ml-auto">
             {isLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : "Refresh"}
           </Button>
@@ -390,6 +441,7 @@ function ImportFromXeroDialog({
                   </TableHead>
                   <TableHead className="text-xs">Invoice #</TableHead>
                   <TableHead className="text-xs">Supplier</TableHead>
+                  <TableHead className="text-xs">BuildPro supplier</TableHead>
                   <TableHead className="text-xs">Reference</TableHead>
                   {trackingOptions.length > 0 && <TableHead className="text-xs">Tracking</TableHead>}
                   <TableHead className="text-xs">Date</TableHead>
@@ -411,6 +463,39 @@ function ImportFromXeroDialog({
                     </TableCell>
                     <TableCell className="text-xs font-mono">{b.invoiceNumber || "—"}</TableCell>
                     <TableCell className="text-xs">{b.contactName || "—"}</TableCell>
+                    <TableCell>
+                      {b.alreadyImported ? (
+                        <span className="text-xs text-muted-foreground">—</span>
+                      ) : b.supplierId ? (
+                        <span className="text-xs inline-flex items-center gap-1">
+                          <CheckCircle2 className="w-3 h-3 text-muted-foreground" />
+                          {b.supplierName}
+                        </span>
+                      ) : (
+                        <Select
+                          value={
+                            supplierMap.get(b.xeroInvoiceId)?.mode === "create"
+                              ? "__create__"
+                              : supplierMap.get(b.xeroInvoiceId)?.supplierId || ""
+                          }
+                          onValueChange={(v) => setRowSupplier(b.xeroInvoiceId, v)}
+                        >
+                          <SelectTrigger className="h-7 w-44 text-xs" data-testid={`select-supplier-${b.xeroInvoiceId}`}>
+                            <SelectValue placeholder="Link or create..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="__create__" className="text-xs">
+                              + Create "{b.contactName || "supplier"}"
+                            </SelectItem>
+                            {suppliers.map((s) => (
+                              <SelectItem key={s.id} value={s.id} className="text-xs">
+                                {(s as any).company || s.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )}
+                    </TableCell>
                     <TableCell className="text-xs">{b.reference || "—"}</TableCell>
                     {trackingOptions.length > 0 && (
                       <TableCell className="text-xs text-muted-foreground">{b.trackingOptionName || "—"}</TableCell>
@@ -456,10 +541,13 @@ function ImportFromXeroDialog({
             {missingProject && selectedIds.size > 0 && (
               <span className="text-destructive ml-2">— some selected bills have no project assigned</span>
             )}
+            {missingSupplier && selectedIds.size > 0 && (
+              <span className="text-destructive ml-2">— some selected bills need a supplier</span>
+            )}
           </span>
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
           <Button
-            disabled={selectedIds.size === 0 || missingProject || importMutation.isPending}
+            disabled={selectedIds.size === 0 || missingProject || missingSupplier || importMutation.isPending}
             onClick={handleImport}
             data-testid="button-confirm-import"
           >
@@ -1301,6 +1389,7 @@ export default function Bills({ embedded }: { embedded?: boolean } = {}) {
         open={importDialogOpen}
         onOpenChange={setImportDialogOpen}
         projects={projects}
+        suppliers={suppliers}
         defaultProjectId={importProjectId}
       />
 

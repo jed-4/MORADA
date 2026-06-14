@@ -30031,6 +30031,40 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
         xeroBills = xeroBills.filter((xb: any) => extractTrackingOption(xb).trackingOptionId === trackingOptionIdFilter);
       }
 
+      // Resolve each Xero contact to a local BuildPro supplier so the import UI
+      // can show match status inline and let the user link or create per row.
+      const previewContacts = await storage.getContacts(companyId).catch(() => [] as any[]);
+      const previewDisplayName = (c: any) =>
+        c?.company || c?.name || `${c?.firstName || ""} ${c?.lastName || ""}`.trim() || "(unnamed)";
+      const previewContactById = new Map<string, any>((previewContacts as any[]).map((c) => [c.id, c]));
+      const previewContactByXeroId = new Map<string, any>(
+        (previewContacts as any[]).filter((c) => c.xeroContactId).map((c) => [c.xeroContactId, c]),
+      );
+      const previewSupplierCandidates = (previewContacts as any[])
+        .filter((c) => c.contactType === "supplier" || !c.contactType)
+        .map((c) => ({ id: c.id, names: [c.company, c.name, `${c.firstName || ""} ${c.lastName || ""}`.trim()] }));
+      const resolveSupplierForPreview = (xb: any) => {
+        const xeroContactId = xb.Contact?.ContactID;
+        const xeroContactName = xb.Contact?.Name || "";
+        if (xeroContactId && previewContactByXeroId.has(xeroContactId)) {
+          const c = previewContactByXeroId.get(xeroContactId);
+          return { supplierId: c.id, supplierName: previewDisplayName(c), suggestedSupplierId: null, suggestedSupplierName: null };
+        }
+        if (xeroContactName) {
+          const r = matchSupplier(xeroContactName, previewSupplierCandidates);
+          if (r.match) {
+            const c = previewContactById.get(r.match.candidate.id);
+            return { supplierId: r.match.candidate.id, supplierName: previewDisplayName(c), suggestedSupplierId: null, suggestedSupplierName: null };
+          }
+          const near = r.nearMatches?.[0];
+          if (near) {
+            const c = previewContactById.get(near.candidate.id);
+            return { supplierId: null, supplierName: null, suggestedSupplierId: near.candidate.id, suggestedSupplierName: previewDisplayName(c) };
+          }
+        }
+        return { supplierId: null, supplierName: null, suggestedSupplierId: null, suggestedSupplierName: null };
+      };
+
       // Mark which Xero bills already exist locally
       const enriched = await Promise.all(
         xeroBills.map(async (xb: any) => {
@@ -30044,6 +30078,7 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
             reference: xb.Reference,
             contactName: xb.Contact?.Name,
             contactId: xb.Contact?.ContactID,
+            ...resolveSupplierForPreview(xb),
             date: xb.Date,
             dueDate: xb.DueDate,
             status: xb.Status,
@@ -30118,11 +30153,12 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
       const companyId = user?.companyId;
       if (!companyId) return res.status(401).json({ error: "Unauthorized" });
 
-      const { xeroInvoiceIds, projectId, projectAssignments, unmappedSupplierAction, defaultCostCodeId, importStatus } = req.body as {
+      const { xeroInvoiceIds, projectId, projectAssignments, unmappedSupplierAction, supplierResolution, defaultCostCodeId, importStatus } = req.body as {
         xeroInvoiceIds: string[];
         projectId?: string;
         projectAssignments?: Record<string, string>; // xeroInvoiceId → projectId (per-row overrides)
         unmappedSupplierAction?: "skip" | "create";
+        supplierResolution?: Record<string, { mode: "link" | "create"; supplierId?: string }>; // xeroInvoiceId → explicit per-row supplier choice
         defaultCostCodeId?: string;
         importStatus?: "draft" | "awaiting_approval" | "from_xero";
       };
@@ -30227,7 +30263,45 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
           const xeroContactId = xeroInvoice.Contact?.ContactID;
           const xeroContactName: string = xeroInvoice.Contact?.Name || "";
           const contacts = await storage.getContacts(companyId).catch(() => [] as any[]);
-          if (xeroContactId) {
+
+          // Per-row resolution from the import UI takes precedence: the user
+          // explicitly linked this Xero contact to a BuildPro supplier, or asked
+          // to create a new one. This prevents the silent skip of unmapped suppliers.
+          const resolution = supplierResolution?.[xeroInvoiceId];
+          if (resolution?.mode === "link" && resolution.supplierId) {
+            const linked = (contacts as any[]).find((c) => c.id === resolution.supplierId);
+            if (linked) {
+              supplierId = linked.id;
+              // Remember the link so future imports of this contact match automatically.
+              if (xeroContactId && !linked.xeroContactId) {
+                await storage.updateContact(linked.id, { xeroContactId } as any, companyId).catch(() => undefined);
+              }
+            }
+          } else if (resolution?.mode === "create") {
+            // Reuse a contact that already exists for this Xero contact (e.g. one
+            // created earlier in this same import batch) to avoid duplicates.
+            const existing = xeroContactId
+              ? (contacts as any[]).find((c) => c.xeroContactId === xeroContactId)
+              : undefined;
+            if (existing) {
+              supplierId = existing.id;
+            } else {
+              try {
+                const created = await storage.createContact({
+                  companyId,
+                  contactType: "supplier",
+                  name: xeroContactName || "Imported from Xero",
+                  xeroContactId: xeroContactId || undefined,
+                } as any);
+                supplierId = (created as any).id;
+              } catch (e: any) {
+                results.push({ xeroInvoiceId, ok: false, error: `Could not create supplier "${xeroContactName || "(unknown)"}": ${e?.message || e}` });
+                continue;
+              }
+            }
+          }
+
+          if (!supplierId && xeroContactId) {
             const matched = (contacts as any[]).find((c) => c.xeroContactId === xeroContactId);
             if (matched) supplierId = matched.id;
           }
