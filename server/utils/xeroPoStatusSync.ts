@@ -170,12 +170,18 @@ export async function pollXeroPurchaseOrderStatuses(): Promise<void> {
     const allConnections = await db.select().from(xeroConnections);
     let totalChecked = 0;
     let totalChanged = 0;
+    let totalCalls = 0;
 
     for (const connection of allConnections) {
       const companyId = connection.companyId;
       // Only POs that are linked to Xero and not yet in a final BuildPro state.
       const rows = await db
-        .select({ id: purchaseOrders.id })
+        .select({
+          id: purchaseOrders.id,
+          status: purchaseOrders.status,
+          xeroStatus: purchaseOrders.xeroStatus,
+          xeroPurchaseOrderId: purchaseOrders.xeroPurchaseOrderId,
+        })
         .from(purchaseOrders)
         .where(
           and(
@@ -186,11 +192,40 @@ export async function pollXeroPurchaseOrderStatuses(): Promise<void> {
           ),
         );
 
+      if (rows.length === 0) continue;
+
+      // Fetch every (non-deleted) Xero PO for this tenant in ONE paged call and
+      // match locally — instead of a Xero GET per PO. With dozens of open POs
+      // that's ~1 call vs ~40, which is what was burning Xero's ~60/min budget
+      // and starving the interactive bill-import preview (429s).
+      const xeroPoMap = new Map<string, any>();
+      let listFailed = false;
+      try {
+        const xeroPos = await xeroService.listAllPurchaseOrders(connection.id);
+        totalCalls++;
+        for (const xpo of xeroPos) {
+          if (xpo?.PurchaseOrderID) xeroPoMap.set(xpo.PurchaseOrderID, xpo);
+        }
+      } catch (err) {
+        listFailed = true;
+        console.error("[XeroPoSync] Bulk PO list failed:", err);
+      }
+
       for (const row of rows) {
         totalChecked++;
         try {
-          const result = await syncOneXeroPurchaseOrder(row.id, connection.id);
-          if (result.changed) totalChanged++;
+          const matched = xeroPoMap.get((row as any).xeroPurchaseOrderId);
+          if (matched) {
+            const result = await applyXeroPoStatusToLocal(row, matched);
+            if (result.changed) totalChanged++;
+          } else if (!listFailed) {
+            // Linked PO missing from the active list → likely DELETED in Xero.
+            // Targeted per-PO fetch (rare). Skipped entirely when the bulk list
+            // failed so we never replace one call with dozens during a 429 storm.
+            const result = await syncOneXeroPurchaseOrder(row.id, connection.id);
+            totalCalls++;
+            if (result.changed) totalChanged++;
+          }
         } catch (err) {
           console.error(`[XeroPoSync] Failed to sync PO ${row.id}:`, err);
         }
@@ -198,7 +233,7 @@ export async function pollXeroPurchaseOrderStatuses(): Promise<void> {
     }
 
     console.log(
-      `[XeroPoSync] Poll complete: ${totalChecked} checked, ${totalChanged} updated.`,
+      `[XeroPoSync] Poll complete: ${totalChecked} checked, ${totalChanged} updated, ${totalCalls} Xero call(s).`,
     );
   } catch (err) {
     console.error("[XeroPoSync] Poll failed:", err);

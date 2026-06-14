@@ -30008,7 +30008,7 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
       let trackingOptions: { id: string; name: string }[] = [];
       if (tc2Id) {
         try {
-          const allCategories = await xeroService.getTrackingCategories(connection.id);
+          const allCategories = await xeroService.getTrackingCategories(connection.id, { maxRetries: 0 });
           const tc2 = allCategories.find((tc: any) => tc.TrackingCategoryID === tc2Id);
           if (tc2) {
             trackingOptions = ((tc2.Options || []) as any[])
@@ -30043,8 +30043,8 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
       // bills silently never appear. Without a tracking filter we keep the fast
       // single-page behaviour for the default view.
       let xeroBills = trackingOptionIdFilter
-        ? await xeroService.listAllBills(connection.id, { modifiedSince })
-        : await xeroService.listBills(connection.id, { page, modifiedSince });
+        ? await xeroService.listAllBills(connection.id, { modifiedSince, maxRetries: 1 })
+        : await xeroService.listBills(connection.id, { page, modifiedSince, maxRetries: 1 });
       if (supplierContactId) {
         xeroBills = xeroBills.filter((xb: any) => xb.Contact?.ContactID === supplierContactId);
       }
@@ -30258,7 +30258,7 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
         return "GST on expenses";
       };
 
-      const results: Array<{ xeroInvoiceId: string; ok: boolean; billId?: string; skipped?: boolean; error?: string }> = [];
+      const results: Array<{ xeroInvoiceId: string; ok: boolean; billId?: string; skipped?: boolean; error?: string; attachmentsImported?: number; attachmentWarning?: string }> = [];
 
       for (const xeroInvoiceId of xeroInvoiceIds) {
         try {
@@ -30269,6 +30269,12 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
             continue;
           }
 
+          // Pace each bill's Xero calls (getInvoice + attachment list/download)
+          // so a multi-bill import doesn't burst past Xero's ~60/min limit and
+          // 429 itself — which previously left the whole tenant rate-limited and
+          // hung the next import-preview load. Each Xero call also retries on
+          // 429 (xeroFetchWithRetry) as a safety net for large batches.
+          await new Promise((r) => setTimeout(r, 1000));
           const xeroInvoice = await xeroService.getInvoice(connection.id, xeroInvoiceId);
           if (!xeroInvoice) {
             results.push({ xeroInvoiceId, ok: false, error: "Xero invoice not found" });
@@ -30448,7 +30454,12 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
           }
 
           // Pull the source document(s) from Xero down into BuildPro so the
-          // imported bill carries its attachment. Best-effort per file.
+          // imported bill carries its attachment. Best-effort per file — the
+          // bill itself still imports, but we report any attachment problem so
+          // it isn't silently dropped (e.g. an old Xero connection missing the
+          // accounting.attachments scope returns 401 here).
+          let attachmentsImported = 0;
+          let attachmentWarning: string | undefined;
           try {
             const xeroAttachments = await xeroService.getInvoiceAttachments(connection.id, xeroInvoiceId);
             for (const att of xeroAttachments) {
@@ -30467,16 +30478,24 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
                   uploadedBy: user.id,
                   source: "xero",
                 });
+                attachmentsImported++;
               } catch (attErr: any) {
                 console.warn(`[bills/import] attachment import failed for ${xeroInvoiceId}/${att?.FileName}:`, attErr?.message || attErr);
+                attachmentWarning = "Some source documents couldn't be downloaded from Xero.";
               }
             }
           } catch (attListErr: any) {
-            console.warn(`[bills/import] could not list attachments for ${xeroInvoiceId}:`, attListErr?.message || attListErr);
+            const msg = String(attListErr?.message || attListErr);
+            console.warn(`[bills/import] could not list attachments for ${xeroInvoiceId}:`, msg);
+            // 401/403 almost always means the Xero connection predates the
+            // accounting.attachments scope — tell the user to reconnect.
+            attachmentWarning = /\b401\b|\b403\b|unauthor|forbidden|scope/i.test(msg)
+              ? "Reconnect Xero in Settings to allow importing source documents (attachments)."
+              : "Couldn't import source document(s) from Xero.";
           }
 
           affectedProjectIds.add(billProjectId);
-          results.push({ xeroInvoiceId, ok: true, billId: newBill.id });
+          results.push({ xeroInvoiceId, ok: true, billId: newBill.id, attachmentsImported, attachmentWarning });
         } catch (e: any) {
           console.error(`[bills/import] failed for ${xeroInvoiceId}:`, e);
           results.push({ xeroInvoiceId, ok: false, error: e?.message || "Import failed" });

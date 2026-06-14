@@ -246,9 +246,14 @@ function ImportFromXeroDialog({
         // Keep the dialog open so the user can fix the flagged rows and retry.
         return;
       }
+      const attachmentWarning = (data.results || [])
+        .filter((r: any) => r.ok && r.attachmentWarning)
+        .map((r: any) => r.attachmentWarning)
+        .find(Boolean);
       toast({
         title: "Import complete",
-        description: `${data.imported} imported${data.skipped ? `, ${data.skipped} already in BuildPro` : ""}.`,
+        description: `${data.imported} imported${data.skipped ? `, ${data.skipped} already in BuildPro` : ""}.${attachmentWarning ? ` ${attachmentWarning}` : ""}`,
+        ...(attachmentWarning ? { variant: "default" as const } : {}),
       });
       setSelectedIds(new Set());
       onOpenChange(false);

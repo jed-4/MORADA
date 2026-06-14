@@ -842,14 +842,14 @@ export class XeroService {
     const accessToken = await this.getValidToken(connectionId);
     const connection = await storage.getXeroConnection(connectionId);
     if (!connection) throw new Error("Connection not found");
-    const response = await fetch(`${XERO_API_BASE}/Invoices/${xeroInvoiceId}/Attachments`, {
+    const response = await xeroFetchWithRetry(`${XERO_API_BASE}/Invoices/${xeroInvoiceId}/Attachments`, {
       method: "GET",
       headers: {
         Authorization: `Bearer ${accessToken}`,
         "Xero-Tenant-Id": connection.tenantId,
         Accept: "application/json",
       },
-    });
+    }, { label: "getInvoiceAttachments" });
     if (!response.ok) {
       // 404 from Xero means "no attachments yet" — treat as empty.
       if (response.status === 404) return [];
@@ -919,7 +919,7 @@ export class XeroService {
     const filename = attachment.FileName || "attachment";
     const contentType = attachment.MimeType || "application/octet-stream";
     const ref = attachment.AttachmentID || encodeURIComponent(filename);
-    const response = await fetch(
+    const response = await xeroFetchWithRetry(
       `${XERO_API_BASE}/Invoices/${xeroInvoiceId}/Attachments/${ref}`,
       {
         method: "GET",
@@ -930,6 +930,7 @@ export class XeroService {
           Accept: contentType,
         },
       },
+      { label: "downloadInvoiceAttachment" },
     );
     if (!response.ok) {
       const txt = await response.text();
@@ -1183,13 +1184,13 @@ export class XeroService {
     const connection = await storage.getXeroConnection(connectionId);
     if (!connection) throw new Error("Xero connection not found");
 
-    const response = await fetch(`${XERO_API_BASE}/Invoices/${invoiceId}`, {
+    const response = await xeroFetchWithRetry(`${XERO_API_BASE}/Invoices/${invoiceId}`, {
       headers: {
         Authorization: `Bearer ${accessToken}`,
         "Xero-Tenant-Id": connection.tenantId,
         Accept: "application/json",
       },
-    });
+    }, { label: "getInvoice" });
 
     if (!response.ok) {
       const errorText = await response.text();
