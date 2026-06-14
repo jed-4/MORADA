@@ -370,7 +370,7 @@ export class XeroService {
     return all;
   }
 
-  async getTrackingCategories(connectionId: string): Promise<any[]> {
+  async getTrackingCategories(connectionId: string, opts: { maxRetries?: number } = {}): Promise<any[]> {
     const accessToken = await this.getValidToken(connectionId);
     const connection = await storage.getXeroConnection(connectionId);
     if (!connection) throw new Error("Connection not found");
@@ -381,7 +381,7 @@ export class XeroService {
         "Xero-Tenant-Id": connection.tenantId,
         Accept: "application/json",
       },
-    }, { label: "getTrackingCategories" });
+    }, { label: "getTrackingCategories", maxRetries: opts.maxRetries });
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -648,6 +648,54 @@ export class XeroService {
 
     const data = (await response.json()) as any;
     return data.PurchaseOrders?.[0] || null;
+  }
+
+  /**
+   * List a single page (100) of purchase orders for a tenant. Used by the
+   * background status poller to match many local POs against Xero in ONE call
+   * instead of a GET per PO (which trips Xero's ~60/min rate limit).
+   */
+  async listPurchaseOrders(connectionId: string, opts: { page?: number } = {}): Promise<any[]> {
+    const accessToken = await this.getValidToken(connectionId);
+    const connection = await storage.getXeroConnection(connectionId);
+    if (!connection) throw new Error("Connection not found");
+
+    const params = new URLSearchParams({ page: String(opts.page || 1) });
+    const response = await xeroFetchWithRetry(
+      `${XERO_API_BASE}/PurchaseOrders?${params}`,
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Xero-Tenant-Id": connection.tenantId,
+          Accept: "application/json",
+        },
+      },
+      { label: "listPurchaseOrders" },
+    );
+
+    if (!response.ok) {
+      if (response.status === 429) {
+        throw new Error("Xero is rate-limiting requests right now (429). Please wait a minute and try again.");
+      }
+      const errorText = await response.text();
+      throw new Error(`Failed to fetch Xero purchase orders: ${response.status} ${errorText}`);
+    }
+
+    const data = (await response.json()) as any;
+    return data.PurchaseOrders || [];
+  }
+
+  /** Fetch every page of (non-deleted) purchase orders, 100 per page. */
+  async listAllPurchaseOrders(connectionId: string, opts: { maxPages?: number } = {}): Promise<any[]> {
+    const maxPages = opts.maxPages ?? 20;
+    const all: any[] = [];
+    for (let page = 1; page <= maxPages; page++) {
+      if (page > 1) await new Promise((resolve) => setTimeout(resolve, 300));
+      const batch = await this.listPurchaseOrders(connectionId, { page });
+      all.push(...batch);
+      if (batch.length < 100) break;
+    }
+    return all;
   }
 
   async createBill(connectionId: string, billData: XeroBillData): Promise<any> {
@@ -981,7 +1029,7 @@ export class XeroService {
    */
   async listBills(
     connectionId: string,
-    opts: { modifiedSince?: Date; page?: number; statuses?: string[] } = {}
+    opts: { modifiedSince?: Date; page?: number; statuses?: string[]; maxRetries?: number } = {}
   ): Promise<any[]> {
     const accessToken = await this.getValidToken(connectionId);
     const connection = await storage.getXeroConnection(connectionId);
@@ -1011,7 +1059,7 @@ export class XeroService {
       headers["If-Modified-Since"] = opts.modifiedSince.toUTCString();
     }
 
-    const response = await xeroFetchWithRetry(`${XERO_API_BASE}/Invoices?${params}`, { headers }, { label: "listBills" });
+    const response = await xeroFetchWithRetry(`${XERO_API_BASE}/Invoices?${params}`, { headers }, { label: "listBills", maxRetries: opts.maxRetries });
 
     if (!response.ok) {
       if (response.status === 429) {
@@ -1034,7 +1082,7 @@ export class XeroService {
    */
   async listAllBills(
     connectionId: string,
-    opts: { modifiedSince?: Date; statuses?: string[]; maxPages?: number } = {}
+    opts: { modifiedSince?: Date; statuses?: string[]; maxPages?: number; maxRetries?: number } = {}
   ): Promise<any[]> {
     const maxPages = opts.maxPages ?? 50;
     const all: any[] = [];
@@ -1046,6 +1094,7 @@ export class XeroService {
         modifiedSince: opts.modifiedSince,
         statuses: opts.statuses,
         page,
+        maxRetries: opts.maxRetries,
       });
       all.push(...batch);
       if (batch.length < 100) break;
