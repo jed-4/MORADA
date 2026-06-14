@@ -12,7 +12,7 @@ import { GoogleOAuthService } from "./services/googleOAuthService";
 import { ObjectStorageService } from "./replit_integrations/object_storage";
 import { xeroService, XeroValidationError, type XeroValidationIssue } from "./services/xeroService";
 import { recomputePOStatusFromBills, recomputePOStatusForLinks } from "./services/poStatusFromBills";
-import { suggestPOsForBill, applyPOSuggestionsToBill } from "./services/poSuggestions";
+import { applyPOSuggestionsToBill } from "./services/poSuggestions";
 import { 
   insertNoteSchema,
   insertTaskSchema,
@@ -13724,7 +13724,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Keep the project budget live after a bill is added.
       await recalcProjectBudget(bill.projectId);
 
-      res.status(201).json(bill);
+      // Auto-suggest / auto-link a matching PO. Manual uploads land here after
+      // AI extraction (the client creates the bill with the extracted supplier
+      // /total/date), so this is what gives uploaded bills the same automatic
+      // PO suggestions as the email-import path. Best-effort — never block the
+      // create. Re-fetch so the response reflects any auto-link.
+      let createdResponseBill = bill;
+      try {
+        await applyPOSuggestionsToBill(bill as any, { autoApply: true });
+        createdResponseBill = (await storage.getBillById(bill.id)) || bill;
+      } catch (suggestErr) {
+        console.error("[bills/create] PO auto-suggest failed:", suggestErr);
+      }
+
+      res.status(201).json(createdResponseBill);
     } catch (error) {
       console.error("Error creating bill:", error);
       res.status(500).json({ error: "Failed to create bill" });
@@ -13823,7 +13836,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
         await recalcProjectBudget((bill as any).projectId);
       }
 
-      res.json(bill);
+      // Re-run PO suggestions when the matching signals (supplier/total) were
+      // just set or changed and the bill isn't already linked — e.g. confirming
+      // AI-extracted details on a bill that started empty. Skipped when the user
+      // is manually (un)linking a PO (handled above). Best-effort; re-fetch so
+      // the response reflects any auto-link.
+      let updatedResponseBill = bill;
+      const matchSignalsChanged =
+        ("supplierId" in validationResult.data && (validationResult.data as any).supplierId !== (previous as any)?.supplierId)
+        || ("total" in validationResult.data && (validationResult.data as any).total !== (previous as any)?.total);
+      if (!linkChanged && !(bill as any)?.matchedSitePOId && matchSignalsChanged) {
+        try {
+          await applyPOSuggestionsToBill(bill as any, { autoApply: true });
+          updatedResponseBill = (await storage.getBillById(req.params.id)) || bill;
+        } catch (suggestErr) {
+          console.error("[bills/patch] PO auto-suggest failed:", suggestErr);
+        }
+      }
+
+      res.json(updatedResponseBill);
     } catch (error) {
       if (error instanceof Error && error.message === "Bill not found") {
         return res.status(404).json({ error: "Bill not found" });

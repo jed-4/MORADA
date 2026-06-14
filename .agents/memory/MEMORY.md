@@ -1,4 +1,5 @@
 - [TDZ in hook deps](billdetail-tdz.md) — referencing a later-declared `const` inside a hook dep array crashes at render; can masquerade as React "Invalid hook call".
 - [Budget recalc paths](budget-recalc-paths.md) — budget actuals only refresh if EVERY bill/line-item mutation path triggers recalc; some paths bypass the CRUD routes.
+- [PO suggestion paths](po-suggestion-paths.md) — applyPOSuggestionsToBill must fire on EVERY bill create/edit that sets supplier/total (POST+PATCH /api/bills), not just email import.
 - [Xero import mapping](xero-import-mapping.md) — TC1=cost codes / TC2=projects; map by xeroTrackingOptionId (GUID); download attachments via /Invoices/{id}/Attachments/{id} Accept=MimeType.
 - [tsc OOM](typecheck-oom.md) — typecheck is `npm run check`; full tsc OOMs here (infra limit); trust the tsx dev boot instead.
