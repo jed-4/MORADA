@@ -30411,7 +30411,10 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
             const resolvedCostCodeId = resolveCostCodeFromTracking(xl) || defaultCostCodeId || undefined;
             await storage.createBillLineItem({
               billId: newBill.id,
-              lineType: resolvedCostCodeId ? "cost_code" : "custom",
+              // Budget actuals are attributed by costCodeId, not lineType, so
+              // imported lines stay "custom" (a valid bill_line_type) and carry
+              // the resolved cost code via costCodeId below.
+              lineType: "custom",
               description: xl.Description || "",
               costCodeId: resolvedCostCodeId,
               quantity: Math.round(xl.Quantity || 1),
