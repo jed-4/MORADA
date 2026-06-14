@@ -30073,9 +30073,13 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
       // otherwise only the 100 most-recent bills are considered and a job's older
       // bills silently never appear. Without a tracking filter we keep the fast
       // single-page behaviour for the default view.
+      // Fail fast (maxRetries: 0) — the interactive preview must never sit in a
+      // 60s 429 retry wait (that is what made prod "never load"). If Xero is
+      // rate-limited we return immediately with a clear message so the user can
+      // retry in a moment instead of staring at a spinner.
       let xeroBills = trackingOptionIdFilter
-        ? await xeroService.listAllBills(connection.id, { modifiedSince, maxRetries: 1 })
-        : await xeroService.listBills(connection.id, { page, modifiedSince, maxRetries: 1 });
+        ? await xeroService.listAllBills(connection.id, { modifiedSince, maxRetries: 0 })
+        : await xeroService.listBills(connection.id, { page, modifiedSince, maxRetries: 0 });
       if (supplierContactId) {
         xeroBills = xeroBills.filter((xb: any) => xb.Contact?.ContactID === supplierContactId);
       }
@@ -30140,6 +30144,11 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
             currencyCode: xb.CurrencyCode,
             trackingOptionId: tracking.trackingOptionId,
             trackingOptionName: tracking.trackingOptionName,
+            // HasAttachments comes back on the Invoices list response itself —
+            // so we can flag "this bill has a source document" with ZERO extra
+            // Xero calls. The file itself is only downloaded later, when the
+            // import is actually run.
+            hasAttachment: !!xb.HasAttachments,
             alreadyImported: !!localBill,
             localBillId: localBill?.id || null,
           };

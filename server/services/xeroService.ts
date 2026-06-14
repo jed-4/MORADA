@@ -655,7 +655,7 @@ export class XeroService {
    * background status poller to match many local POs against Xero in ONE call
    * instead of a GET per PO (which trips Xero's ~60/min rate limit).
    */
-  async listPurchaseOrders(connectionId: string, opts: { page?: number } = {}): Promise<any[]> {
+  async listPurchaseOrders(connectionId: string, opts: { page?: number; maxRetries?: number } = {}): Promise<any[]> {
     const accessToken = await this.getValidToken(connectionId);
     const connection = await storage.getXeroConnection(connectionId);
     if (!connection) throw new Error("Connection not found");
@@ -670,7 +670,7 @@ export class XeroService {
           Accept: "application/json",
         },
       },
-      { label: "listPurchaseOrders" },
+      { label: "listPurchaseOrders", maxRetries: opts.maxRetries },
     );
 
     if (!response.ok) {
@@ -686,12 +686,12 @@ export class XeroService {
   }
 
   /** Fetch every page of (non-deleted) purchase orders, 100 per page. */
-  async listAllPurchaseOrders(connectionId: string, opts: { maxPages?: number } = {}): Promise<any[]> {
+  async listAllPurchaseOrders(connectionId: string, opts: { maxPages?: number; maxRetries?: number } = {}): Promise<any[]> {
     const maxPages = opts.maxPages ?? 20;
     const all: any[] = [];
     for (let page = 1; page <= maxPages; page++) {
       if (page > 1) await new Promise((resolve) => setTimeout(resolve, 300));
-      const batch = await this.listPurchaseOrders(connectionId, { page });
+      const batch = await this.listPurchaseOrders(connectionId, { page, maxRetries: opts.maxRetries });
       all.push(...batch);
       if (batch.length < 100) break;
     }

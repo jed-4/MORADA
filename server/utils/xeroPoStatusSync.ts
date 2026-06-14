@@ -201,7 +201,11 @@ export async function pollXeroPurchaseOrderStatuses(): Promise<void> {
       const xeroPoMap = new Map<string, any>();
       let listFailed = false;
       try {
-        const xeroPos = await xeroService.listAllPurchaseOrders(connection.id);
+        // Background poll must fail fast on 429 — never sit in a 60s retry loop
+        // that keeps Xero's per-minute budget saturated and starves the
+        // interactive bill-import preview. If rate-limited, skip this cycle and
+        // try again at the next interval.
+        const xeroPos = await xeroService.listAllPurchaseOrders(connection.id, { maxRetries: 0 });
         totalCalls++;
         for (const xpo of xeroPos) {
           if (xpo?.PurchaseOrderID) xeroPoMap.set(xpo.PurchaseOrderID, xpo);

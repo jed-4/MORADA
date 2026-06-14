@@ -123,6 +123,7 @@ type XeroBillPreview = {
   supplierName?: string | null;
   suggestedSupplierId?: string | null;
   suggestedSupplierName?: string | null;
+  hasAttachment?: boolean;
   alreadyImported: boolean;
   localBillId?: string | null;
 };
@@ -448,6 +449,9 @@ function ImportFromXeroDialog({
                   <TableHead className="text-xs">Supplier</TableHead>
                   <TableHead className="text-xs">BuildPro supplier</TableHead>
                   <TableHead className="text-xs">Reference</TableHead>
+                  <TableHead className="text-xs w-10 text-center" title="Source document attached in Xero">
+                    <Paperclip className="h-3 w-3 inline" />
+                  </TableHead>
                   {trackingOptions.length > 0 && <TableHead className="text-xs">Tracking</TableHead>}
                   <TableHead className="text-xs">Date</TableHead>
                   <TableHead className="text-xs">Status</TableHead>
@@ -518,6 +522,15 @@ function ImportFromXeroDialog({
                       )}
                     </TableCell>
                     <TableCell className="text-xs">{b.reference || "—"}</TableCell>
+                    <TableCell className="text-center">
+                      {b.hasAttachment ? (
+                        <span title="Has a source document in Xero — the file is downloaded when you run the import">
+                          <Paperclip className="w-3.5 h-3.5 text-muted-foreground inline" />
+                        </span>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">—</span>
+                      )}
+                    </TableCell>
                     {trackingOptions.length > 0 && (
                       <TableCell className="text-xs text-muted-foreground">{b.trackingOptionName || "—"}</TableCell>
                     )}
