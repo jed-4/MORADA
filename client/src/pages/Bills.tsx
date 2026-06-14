@@ -451,8 +451,17 @@ function ImportFromXeroDialog({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {visibleBills.map((b) => (
-                  <TableRow key={b.xeroInvoiceId} className={b.alreadyImported ? "opacity-50" : ""}>
+                {visibleBills.map((b) => {
+                  const needsSupplier = !b.alreadyImported && !b.supplierId && !supplierMap.get(b.xeroInvoiceId);
+                  return (
+                  <TableRow
+                    key={b.xeroInvoiceId}
+                    className={cn(
+                      b.alreadyImported && "opacity-50",
+                      needsSupplier && "bg-amber-50 dark:bg-amber-950/30",
+                    )}
+                    data-testid={`row-import-${b.xeroInvoiceId}`}
+                  >
                     <TableCell>
                       <Checkbox
                         disabled={b.alreadyImported}
@@ -472,28 +481,35 @@ function ImportFromXeroDialog({
                           {b.supplierName}
                         </span>
                       ) : (
-                        <Select
-                          value={
-                            supplierMap.get(b.xeroInvoiceId)?.mode === "create"
-                              ? "__create__"
-                              : supplierMap.get(b.xeroInvoiceId)?.supplierId || ""
-                          }
-                          onValueChange={(v) => setRowSupplier(b.xeroInvoiceId, v)}
-                        >
-                          <SelectTrigger className="h-7 w-44 text-xs" data-testid={`select-supplier-${b.xeroInvoiceId}`}>
-                            <SelectValue placeholder="Link or create..." />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="__create__" className="text-xs">
-                              + Create "{b.contactName || "supplier"}"
-                            </SelectItem>
-                            {suppliers.map((s) => (
-                              <SelectItem key={s.id} value={s.id} className="text-xs">
-                                {(s as any).company || s.name}
+                        <div className="flex items-center gap-1.5">
+                          {needsSupplier && (
+                            <span title="Not matched to a BuildPro supplier — link or create one">
+                              <AlertCircle className="w-3.5 h-3.5 text-amber-600 dark:text-amber-500 shrink-0" />
+                            </span>
+                          )}
+                          <Select
+                            value={
+                              supplierMap.get(b.xeroInvoiceId)?.mode === "create"
+                                ? "__create__"
+                                : supplierMap.get(b.xeroInvoiceId)?.supplierId || ""
+                            }
+                            onValueChange={(v) => setRowSupplier(b.xeroInvoiceId, v)}
+                          >
+                            <SelectTrigger className="h-7 w-44 text-xs" data-testid={`select-supplier-${b.xeroInvoiceId}`}>
+                              <SelectValue placeholder="Link or create..." />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="__create__" className="text-xs">
+                                + Create "{b.contactName || "supplier"}"
                               </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                              {suppliers.map((s) => (
+                                <SelectItem key={s.id} value={s.id} className="text-xs">
+                                  {(s as any).company || s.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
                       )}
                     </TableCell>
                     <TableCell className="text-xs">{b.reference || "—"}</TableCell>
@@ -529,7 +545,8 @@ function ImportFromXeroDialog({
                       )}
                     </TableCell>
                   </TableRow>
-                ))}
+                  );
+                })}
               </TableBody>
             </Table>
           )}
