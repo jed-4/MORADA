@@ -1031,6 +1031,16 @@ export default function BillDetail() {
               toast({ title: "Bill saved", description: "Supplier not linked to Xero — select the matching contact below to complete the sync." });
               return; // stay on page so user can complete the mapping
             }
+            if (errData.error === "INVOICE_LOCKED") {
+              // Paid invoices are locked in Xero — the local edit is saved, it
+              // just can't be mirrored back. Inform without a red error.
+              toast({
+                title: "Bill saved",
+                description: errData.message || "This bill is paid in Xero, so its line items can't be changed there.",
+              });
+              setLocation(projectId ? `/projects/${projectId}/bills` : "/bills");
+              return;
+            }
             const err: XeroPushError = Object.assign(
               new Error(errData.message || errData.error || "Xero sync failed"),
               { validationErrors: errData.validationErrors as XeroValidationIssue[] | undefined },

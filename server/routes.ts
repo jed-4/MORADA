@@ -390,6 +390,27 @@ async function pushBillToXeroInternal(
       }
     }
 
+    // A Xero invoice with a payment allocated is locked by Xero: it rejects any
+    // change to its line items or status ("To update fields on a paid invoice
+    // line item, you must supply a LineItemID" / "The status AUTHORISED cannot
+    // be applied … it has payments or credit notes allocated to it"). When a
+    // linked bill is paid (or partially paid) we skip the push entirely — the
+    // edit (e.g. a newly added cost code) is already saved in BuildPro and just
+    // isn't mirrored to the locked invoice. Clear any stale "failed" badge so
+    // the bill doesn't keep showing a red sync error for a change we
+    // intentionally don't push.
+    if (bill.xeroInvoiceId && (bill.status === "paid" || (bill.paidAmount || 0) > 0)) {
+      const msg = "This bill is paid in Xero, so Xero won't accept changes to its line items. Your edit was saved in BuildPro.";
+      try {
+        await storage.updateBill(billId, {
+          xeroLastSyncStatus: null,
+          xeroLastSyncError: null,
+        } as any);
+      } catch {}
+      logOutcome({ ok: false, reason: "INVOICE_LOCKED", message: msg, xeroInvoiceId: bill.xeroInvoiceId });
+      return { ok: false, status: 409, error: "INVOICE_LOCKED", message: msg };
+    }
+
     const lineItems = await storage.getBillLineItems(billId);
 
     let supplierName = "Unknown Supplier";
