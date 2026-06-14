@@ -51,34 +51,14 @@ export interface SyncResult {
   error?: string;
 }
 
-export async function syncOneXeroPurchaseOrder(
-  poId: string,
-  connectionId: string,
-): Promise<SyncResult> {
-  const po = await storage.getPurchaseOrder(poId);
-  if (!po) {
-    return { poId, xeroStatus: null, buildProStatus: null, changed: false, error: "PO not found" };
-  }
-  if (!(po as any).xeroPurchaseOrderId) {
-    return { poId, xeroStatus: null, buildProStatus: po.status, changed: false, error: "Not linked to Xero" };
-  }
-
-  let xeroPo: any;
-  try {
-    xeroPo = await xeroService.getPurchaseOrder(
-      connectionId,
-      (po as any).xeroPurchaseOrderId,
-    );
-  } catch (err: any) {
-    return {
-      poId,
-      xeroStatus: null,
-      buildProStatus: po.status,
-      changed: false,
-      error: err?.message || "Xero fetch failed",
-    };
-  }
-
+/**
+ * Apply an already-fetched Xero purchase order's status to a local PO. Split
+ * out of syncOneXeroPurchaseOrder so the batch poller can reuse the exact same
+ * mapping + monotonic-rank guard WITHOUT making a Xero call per PO.
+ * `po` only needs { id, status, xeroStatus }.
+ */
+async function applyXeroPoStatusToLocal(po: any, xeroPo: any): Promise<SyncResult> {
+  const poId = po.id as string;
   const xeroStatus: string | null = xeroPo?.Status ?? null;
   const mapped = mapXeroPoStatusToBuildPro(xeroStatus, po.status as any);
 
@@ -140,6 +120,37 @@ export async function syncOneXeroPurchaseOrder(
     buildProStatus: updates.status ?? po.status,
     changed,
   };
+}
+
+export async function syncOneXeroPurchaseOrder(
+  poId: string,
+  connectionId: string,
+): Promise<SyncResult> {
+  const po = await storage.getPurchaseOrder(poId);
+  if (!po) {
+    return { poId, xeroStatus: null, buildProStatus: null, changed: false, error: "PO not found" };
+  }
+  if (!(po as any).xeroPurchaseOrderId) {
+    return { poId, xeroStatus: null, buildProStatus: po.status, changed: false, error: "Not linked to Xero" };
+  }
+
+  let xeroPo: any;
+  try {
+    xeroPo = await xeroService.getPurchaseOrder(
+      connectionId,
+      (po as any).xeroPurchaseOrderId,
+    );
+  } catch (err: any) {
+    return {
+      poId,
+      xeroStatus: null,
+      buildProStatus: po.status,
+      changed: false,
+      error: err?.message || "Xero fetch failed",
+    };
+  }
+
+  return applyXeroPoStatusToLocal(po, xeroPo);
 }
 
 let lastPollAt = 0;
