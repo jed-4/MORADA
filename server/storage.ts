@@ -5056,6 +5056,9 @@ export class MemStorage implements IStorage {
       const target = await this.getEstimate(estimateId);
       if (!target || !target.projectId) return undefined;
       const projectId = target.projectId;
+      // A locked contract estimate must only be unlocked via the explicit
+      // revert flow — never silently demoted by re-approving it here.
+      if (target.status === "contract") throw new Error("ALREADY_CONTRACT");
       const lockedContracts = await db
         .select({ id: schema.estimates.id })
         .from(schema.estimates)
@@ -11916,6 +11919,12 @@ export class DbStorage implements IStorage {
       const target = await this.getEstimate(estimateId);
       if (!target || !target.projectId) return undefined;
       const projectId = target.projectId;
+
+      // A locked contract estimate must only be unlocked via the explicit
+      // revert flow — never silently demoted by re-approving it here.
+      if (target.status === "contract") {
+        throw new Error("ALREADY_CONTRACT");
+      }
 
       const lockedContracts = await db
         .select({ id: schema.estimates.id })

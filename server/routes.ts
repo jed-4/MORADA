@@ -5529,6 +5529,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ error: "Forbidden" });
       }
 
+      // A locked contract can only be unlocked via the explicit "Revert to
+      // Approved" flow — never by silently re-approving it here. This keeps the
+      // two-stage lock/freeze semantics intact.
+      if (normalizeStatus(existing.status) === "contract") {
+        return res.status(409).json({
+          error: "This estimate is locked as the contract. Revert it to Approved first.",
+          code: "ALREADY_CONTRACT",
+        });
+      }
+
       const result = await storage.approveEstimate(req.params.id, req.user.id);
       if (!result) {
         return res.status(500).json({ error: "Failed to approve estimate" });
@@ -5545,6 +5555,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(409).json({
           error: "This project already has a locked contract estimate. Revert it to Approved first before approving a different revision.",
           code: "LOCKED_CONTRACT_EXISTS",
+        });
+      }
+      if (error?.message === "ALREADY_CONTRACT") {
+        return res.status(409).json({
+          error: "This estimate is locked as the contract. Revert it to Approved first.",
+          code: "ALREADY_CONTRACT",
         });
       }
       console.error("[/api/estimates/:id/approve]", error);
@@ -5601,6 +5617,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const target = (req.body?.target as string) === "approved" ? "approved" : "draft";
       const existing = await storage.getEstimate(req.params.id);
       if (!existing) return res.status(404).json({ error: "Estimate not found" });
+      if (!existing.projectId) {
+        return res.status(400).json({ error: "Estimate is not associated with a project." });
+      }
+
+      // Authorization: caller must belong to the same company as the project
+      // (mirrors /approve + /contract). Prevents cross-company lifecycle changes
+      // by guessed estimate ID.
+      const project = await storage.getProject(existing.projectId);
+      if (!project) return res.status(404).json({ error: "Project not found" });
+      const userCompanyId = (req.user as any)?.companyId;
+      if (!userCompanyId || project.companyId !== userCompanyId) {
+        return res.status(403).json({ error: "Forbidden" });
+      }
+
       const current = normalizeStatus(existing.status);
       if (target === "approved" && current !== "contract") {
         return res.status(409).json({ error: `Cannot revert to Approved from status '${current}'.` });
@@ -5619,14 +5649,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Revert to Draft: if this estimate was the project's selected estimate,
       // clear the selection + cached contract price so a draft can never act
       // as the live contract.
-      if (target === "draft" && existing.projectId) {
-        const project = await storage.getProject(existing.projectId);
-        if (project && project.selectedEstimateId === req.params.id) {
-          await storage.updateProject(existing.projectId, {
-            selectedEstimateId: null,
-            contractPrice: null,
-          } as any);
-        }
+      if (target === "draft" && project.selectedEstimateId === req.params.id) {
+        await storage.updateProject(existing.projectId, {
+          selectedEstimateId: null,
+          contractPrice: null,
+        } as any);
       }
       res.json(updated);
     } catch (error: any) {

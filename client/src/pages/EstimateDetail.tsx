@@ -2256,6 +2256,14 @@ export default function EstimateDetail() {
   // contractMutation.mutate(id), which locks + freezes the contract price.
   const [contractDialogRevisionId, setContractDialogRevisionId] = useState<string | null>(null);
 
+  // Summary for the revision being marked as the contract — so the confirm
+  // dialog can show the exact ex-GST + inc-GST totals that will be frozen.
+  // Works for any target revision (per-row menu or the current estimate).
+  const { data: contractDialogSummary } = useQuery<EstimateSummary>({
+    queryKey: ["/api/estimates", contractDialogRevisionId, "summary"],
+    enabled: contractDialogRevisionId !== null,
+  });
+
   // Archive confirmation dialog state. Archiving sets the estimate's status
   // to "archived" via PATCH. We gate it behind a confirmation dialog so the
   // status change is deliberate (mirrors the Approve flow).
@@ -7964,9 +7972,29 @@ export default function EstimateDetail() {
           <DialogHeader>
             <DialogTitle>Mark this estimate as the contract?</DialogTitle>
             <DialogDescription>
-              This locks the estimate as the signed contract and freezes the contract price at its current total. The estimate (and the project's Costings) become read-only. You can undo this later with “Revert to Approved”.
+              This locks the estimate as the signed contract and freezes the contract price at the total below. All line-item pricing, cost codes and allowances are captured exactly as they are right now. The estimate and the project's Costings become read-only. You can undo this later with “Revert to Approved”.
             </DialogDescription>
           </DialogHeader>
+          <div className="rounded-md border p-4 space-y-2" data-testid="contract-totals">
+            <div className="flex items-center justify-between gap-4">
+              <span className="text-sm text-muted-foreground">Subtotal (ex GST)</span>
+              <span className="text-sm font-medium tabular-nums" data-testid="contract-total-exgst">
+                {contractDialogSummary ? formatCurrency(contractDialogSummary.totalExTax) : "—"}
+              </span>
+            </div>
+            <div className="flex items-center justify-between gap-4">
+              <span className="text-sm text-muted-foreground">GST</span>
+              <span className="text-sm font-medium tabular-nums" data-testid="contract-total-gst">
+                {contractDialogSummary ? formatCurrency(contractDialogSummary.taxAmount) : "—"}
+              </span>
+            </div>
+            <div className="flex items-center justify-between gap-4 border-t pt-2">
+              <span className="text-sm font-semibold">Contract price (inc GST)</span>
+              <span className="text-base font-semibold tabular-nums text-foreground" data-testid="contract-total-incgst">
+                {contractDialogSummary ? formatCurrency(contractDialogSummary.total) : "—"}
+              </span>
+            </div>
+          </div>
           <DialogFooter>
             <Button
               variant="ghost"
