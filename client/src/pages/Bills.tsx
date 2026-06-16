@@ -62,7 +62,6 @@ import {
   MoreHorizontal,
   RefreshCw,
   X,
-  Camera,
   Banknote,
 } from "lucide-react";
 import {
@@ -74,7 +73,6 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { type Bill, type Project, type Supplier } from "@shared/schema";
 import { useAuth } from "@/hooks/use-auth";
-import { CaptureReceiptDialog } from "@/components/bills/CaptureReceiptDialog";
 import { ReimbursementsQueue } from "@/components/bills/ReimbursementsQueue";
 import { ProjectIcon } from "@/components/ProjectIcon";
 import { StatusBadge } from "@/components/StatusBadge";
@@ -616,7 +614,6 @@ export default function Bills({ embedded }: { embedded?: boolean } = {}) {
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [importProjectId, setImportProjectId] = useState<string>("");
   const [emailSetupOpen, setEmailSetupOpen] = useState(false);
-  const [captureReceiptOpen, setCaptureReceiptOpen] = useState(false);
   const [billsView, setBillsView] = useState<"bills" | "reimbursements">("bills");
 
   const { toast } = useToast();
@@ -1199,16 +1196,6 @@ export default function Bills({ embedded }: { embedded?: boolean } = {}) {
 
         <div className="flex-1" />
 
-        {/* Capture Receipt button */}
-        <button
-          className="h-6 w-auto px-2 text-xs border rounded-md border-border hover-elevate active-elevate-2 flex items-center gap-0.5 flex-shrink-0"
-          onClick={() => setCaptureReceiptOpen(true)}
-          data-testid="button-capture-receipt"
-        >
-          <Camera className="w-3 h-3" />
-          <span>Capture Receipt</span>
-        </button>
-
         {/* New Bill button */}
         {(isAdminLike || billsView === "bills") && (
           <button
@@ -1532,13 +1519,6 @@ export default function Bills({ embedded }: { embedded?: boolean } = {}) {
           </div>
         )}
       </div>}
-
-      {/* ── Capture Receipt dialog ── */}
-      <CaptureReceiptDialog
-        open={captureReceiptOpen}
-        onOpenChange={setCaptureReceiptOpen}
-        projectId={projectIdFromUrl || undefined}
-      />
 
     </div>
   );
