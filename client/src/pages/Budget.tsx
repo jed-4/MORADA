@@ -9,7 +9,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
-import { RefreshCw, DollarSign, AlertCircle, Clock, ChevronDown, ChevronRight } from "lucide-react";
+import { RefreshCw, DollarSign, AlertCircle, Clock, ChevronDown, ChevronRight, ChevronsDownUp, ChevronsUpDown } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -188,22 +188,26 @@ export default function BudgetPage() {
       if (!catMap.has(key)) catMap.set(key, []);
       catMap.get(key)!.push(item);
     });
+    const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
     const sorted = Array.from(catMap.entries()).sort((a, b) => {
       if (a[0] === "Uncategorized") return 1;
       if (b[0] === "Uncategorized") return -1;
-      return a[0].localeCompare(b[0]);
+      return collator.compare(a[0], b[0]);
     });
     const rows: CostRow[] = [];
     sorted.forEach(([categoryTitle, catItems]) => {
-      const budgeted = catItems.reduce((s, i) => s + i.budgetedAmount, 0);
-      const actual = catItems.reduce((s, i) => s + i.actualAmount, 0);
-      const forecast = catItems.reduce((s, i) => s + i.forecastAmount, 0);
-      const variance = catItems.reduce((s, i) => s + i.variance, 0);
+      const items = [...catItems].sort((a, b) =>
+        collator.compare(a.costCodeTitle || "", b.costCodeTitle || ""),
+      );
+      const budgeted = items.reduce((s, i) => s + i.budgetedAmount, 0);
+      const actual = items.reduce((s, i) => s + i.actualAmount, 0);
+      const forecast = items.reduce((s, i) => s + i.forecastAmount, 0);
+      const variance = items.reduce((s, i) => s + i.variance, 0);
       rows.push({
         kind: "category",
         id: `cat-${categoryTitle}`,
         categoryTitle,
-        count: catItems.length,
+        count: items.length,
         budgeted,
         actual,
         forecast,
@@ -211,13 +215,25 @@ export default function BudgetPage() {
       });
       const isCollapsed = collapsedCategories.has(categoryTitle);
       if (!isCollapsed) {
-        catItems.forEach((item) => {
+        items.forEach((item) => {
           rows.push({ kind: "item", id: item.id, item, categoryTitle });
         });
       }
     });
     return rows;
   }, [lineItems, collapsedCategories]);
+
+  const allCategoryTitles = useMemo(() => {
+    const set = new Set<string>();
+    lineItems.forEach((item) => set.add(item.categoryTitle || "Uncategorized"));
+    return Array.from(set);
+  }, [lineItems]);
+
+  const allCollapsed = allCategoryTitles.length > 0 && allCategoryTitles.every((t) => collapsedCategories.has(t));
+
+  const toggleCollapseAll = () => {
+    setCollapsedCategories(allCollapsed ? new Set() : new Set(allCategoryTitles));
+  };
 
   const costColumns = useMemo<ColumnDef<CostRow, unknown>[]>(() => [
     {
@@ -662,8 +678,28 @@ export default function BudgetPage() {
             {/* Cost Code Breakdown Table */}
             <Card className="flex flex-col h-full">
               <CardHeader className="py-2 px-3">
-                <CardTitle className="text-sm">Cost Code Breakdown</CardTitle>
-                <CardDescription className="text-xs">Budget vs actual costs by cost code</CardDescription>
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <div>
+                    <CardTitle className="text-sm">Cost Code Breakdown</CardTitle>
+                    <CardDescription className="text-xs">Budget vs actual costs by cost code</CardDescription>
+                  </div>
+                  {allCategoryTitles.length > 0 && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={toggleCollapseAll}
+                      className="text-xs gap-1"
+                      data-testid="button-collapse-all"
+                    >
+                      {allCollapsed ? (
+                        <ChevronsUpDown className="h-3.5 w-3.5" />
+                      ) : (
+                        <ChevronsDownUp className="h-3.5 w-3.5" />
+                      )}
+                      {allCollapsed ? "Expand all" : "Collapse all"}
+                    </Button>
+                  )}
+                </div>
               </CardHeader>
               <CardContent className="p-0 flex-1 min-h-0 flex flex-col">
                 {lineItemsLoading ? (
