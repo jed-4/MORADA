@@ -1426,6 +1426,16 @@ export default function BillDetail() {
     if (!isEditMode || !bill || !id) return;
     // Already processed by AI — nothing to do.
     if ((bill as any).ocrProcessed) return;
+    // Never auto-run on Xero-imported bills — they already carry correct line
+    // items and totals from Xero, and re-reading would clobber them.
+    if ((bill as any).xeroInvoiceId) return;
+    // Only auto-run for genuine draft bills awaiting extraction (paid/awaiting
+    // payment bills are complete and must not be re-read).
+    if (bill.status !== "draft") return;
+    // Wait for the existing line items to load before deciding, and never
+    // overwrite a bill that already has line items.
+    if (existingLineItemsLoading) return;
+    if (existingLineItems.length > 0) return;
     // Already fired for this bill in this session.
     if (autoOcrTriggeredForRef.current === id) return;
     // Wait until at least one attachment is available.
@@ -1447,7 +1457,7 @@ export default function BillDetail() {
     // Guard: don't double-fire.
     autoOcrTriggeredForRef.current = id;
     ocrFromAttachmentMutation.mutate(firstProcessable);
-  }, [bill, attachmentUrls, isEditMode, id]);
+  }, [bill, attachmentUrls, isEditMode, id, existingLineItems.length, existingLineItemsLoading]);
 
   const performSubmit = (data: BillFormData) => {
     if (isEditMode) {

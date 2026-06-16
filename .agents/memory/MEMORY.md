@@ -4,3 +4,4 @@
 - [Xero import mapping](xero-import-mapping.md) — TC1=cost codes / TC2=projects; map by xeroTrackingOptionId (GUID); download attachments via /Invoices/{id}/Attachments/{id} Accept=MimeType.
 - [tsc OOM](typecheck-oom.md) — typecheck is `npm run check`; full tsc OOMs here (infra limit); trust the tsx dev boot instead.
 - [Attachment preview mimeType](attachment-preview-mimetype.md) — object-storage attachment URLs are extensionless; preview kind-detection needs the stored mimeType, not the URL extension.
+- [Auto OCR gate](auto-ocr-gate.md) — on-open auto AI bill reader must only fire for empty DRAFT bills; Xero imports have ocrProcessed=false and get clobbered (visual only) otherwise.
