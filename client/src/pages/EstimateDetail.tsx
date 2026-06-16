@@ -2178,30 +2178,8 @@ export default function EstimateDetail() {
     onError: (error: any) => toast({ title: "Error", description: error.message || "Failed to revert estimate.", variant: "destructive" }),
   });
 
-  // Mutation for toggling estimate lock status
-  const toggleLockMutation = useMutation({
-    mutationFn: async () => {
-      const endpoint = estimate?.isLocked ? "unlock" : "lock";
-      const data = await apiRequest(`/api/estimates/${effectiveEstimateId}/${endpoint}`, "POST");
-      return data;
-    },
-    onSuccess: (updatedEstimate: Estimate) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/estimates", effectiveEstimateId] });
-      queryClient.invalidateQueries({ queryKey: ["/api/estimates"] });
-      toast({
-        title: "Success",
-        description: updatedEstimate.isLocked ? "Estimate locked successfully." : "Estimate unlocked successfully.",
-      });
-    },
-    onError: (error: any) => {
-      console.error("Lock mutation error:", error);
-      toast({
-        title: "Error",
-        description: error.message || "Failed to toggle estimate lock status.",
-        variant: "destructive",
-      });
-    },
-  });
+  // Lock state is no longer toggled manually — it is owned entirely by the
+  // two-stage flow: Mark as Contract locks/freezes, Revert to Approved unlocks.
 
   const createVersionMutation = useMutation({
     mutationFn: async (sourceId?: string) => {
@@ -2940,12 +2918,6 @@ export default function EstimateDetail() {
       return;
     }
     setIsAddGroupOpen(true);
-  };
-
-  // Handler for toggling lock status
-  const handleToggleLock = () => {
-    if (!estimate) return;
-    toggleLockMutation.mutate();
   };
 
   // Helper function to escape CSV fields
@@ -5334,16 +5306,6 @@ export default function EstimateDetail() {
                 >
                   <Edit className="w-3.5 h-3.5 text-muted-foreground" />
                   Edit estimate details
-                </button>
-                <button
-                  className="flex items-center gap-2 px-2 py-1.5 text-xs rounded-md hover-elevate w-full text-left"
-                  onClick={handleToggleLock}
-                  data-testid="button-toggle-lock"
-                >
-                  {estimate?.isLocked
-                    ? <Lock className="w-3.5 h-3.5 text-muted-foreground" />
-                    : <LockOpen className="w-3.5 h-3.5 text-muted-foreground" />}
-                  {estimate?.isLocked ? 'Unlock estimate' : 'Lock estimate'}
                 </button>
                 <button
                   className="flex items-center gap-2 px-2 py-1.5 text-xs rounded-md hover-elevate w-full text-left disabled:opacity-40 disabled:cursor-not-allowed"

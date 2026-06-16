@@ -186,6 +186,52 @@ export default function Estimates() {
     },
   });
 
+  // Lifecycle transitions must go through the dedicated endpoints (never a raw
+  // status PATCH) so selection, canonical contract-price stamping and the
+  // lock/freeze guards always run. Approve = promote to the live, editable
+  // selected estimate. Revert = step back (unlock + clear selection).
+  const approveMutation = useMutation({
+    mutationFn: async (estimateId: string) =>
+      await apiRequest(`/api/estimates/${estimateId}/approve`, "POST"),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/estimates"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+      toast({
+        title: "Estimate approved",
+        description: "It's now the project's selected estimate — still editable.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Couldn't approve",
+        description: error?.message || "Failed to approve estimate.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const revertMutation = useMutation({
+    mutationFn: async ({ estimateId, target }: { estimateId: string; target: "approved" | "draft" }) =>
+      await apiRequest(`/api/estimates/${estimateId}/revert`, "POST", { target }),
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/estimates"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+      toast({
+        title: variables.target === "approved" ? "Reverted to approved" : "Reverted to draft",
+        description: variables.target === "approved"
+          ? "The estimate is unlocked and editable again."
+          : "The estimate is back in draft.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Couldn't revert",
+        description: error?.message || "Failed to revert estimate.",
+        variant: "destructive",
+      });
+    },
+  });
+
   const handleDragStart = (event: DragStartEvent) => {
     setActiveId(event.active.id as string);
     setHoveredColumnId(null);
@@ -227,7 +273,40 @@ export default function Estimates() {
     const estimate = estimates.find(e => e.id === estimateId);
     if (!estimate || estimate.status === newStatus) return;
 
-    // Update the status
+    const norm = (s?: string | null) =>
+      s === "approved" || s === "contract" || s === "archived" ? s : "draft";
+    const from = norm(estimate.status);
+    const to = norm(newStatus);
+
+    // Mark as Contract locks + freezes the price — a deliberate action that
+    // needs the totals confirmation on the estimate page, never a silent drag.
+    if (to === "contract") {
+      toast({
+        title: "Open the estimate to mark it as contract",
+        description: "This locks and freezes the contract price. Open the estimate and use “Mark as Contract” to confirm.",
+      });
+      return;
+    }
+
+    // Promote to the live, editable selected estimate. Coming from a locked
+    // contract this is a revert (unlock); otherwise a plain approve.
+    if (to === "approved") {
+      if (from === "contract") {
+        revertMutation.mutate({ estimateId, target: "approved" });
+      } else {
+        approveMutation.mutate(estimateId);
+      }
+      return;
+    }
+
+    // Step back to draft — revert (unlock + clear selection) when coming from
+    // a lifecycle status; otherwise a plain status update.
+    if (to === "draft" && (from === "approved" || from === "contract")) {
+      revertMutation.mutate({ estimateId, target: "draft" });
+      return;
+    }
+
+    // Archived and any custom statuses use the generic status update.
     updateEstimateStatusMutation.mutate({ estimateId, status: newStatus });
   };
 

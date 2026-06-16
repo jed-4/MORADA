@@ -31,7 +31,6 @@ import {
   Plus, 
   FileText, 
   Lock, 
-  Unlock, 
   Copy, 
   MoreHorizontal,
   DollarSign,
@@ -137,28 +136,9 @@ export default function ProjectEstimates() {
     enabled: !!projectId,
   });
 
-  // Mutation for toggling estimate lock state
-  const toggleLockMutation = useMutation({
-    mutationFn: async ({ estimateId, isLocked }: { estimateId: string; isLocked: boolean }) => {
-      const endpoint = isLocked ? `/api/estimates/${estimateId}/unlock` : `/api/estimates/${estimateId}/lock`;
-      const response = await apiRequest(endpoint, "POST", {});
-      return response.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/estimates", projectId] });
-      toast({
-        title: "Success",
-        description: "Estimate lock status updated successfully.",
-      });
-    },
-    onError: (error: any) => {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to update estimate lock status.",
-        variant: "destructive",
-      });
-    },
-  });
+  // Lock state is owned by the two-stage flow (Mark as Contract / Revert),
+  // so there is no manual lock toggle here. The "Locked" badge below still
+  // reflects a contract estimate's frozen state for read-only context.
 
   // Mutation for deleting estimate
   const deleteEstimateMutation = useMutation({
@@ -428,23 +408,6 @@ export default function ProjectEstimates() {
                 >
                   <Copy className="w-4 h-4 mr-2" />
                   Create Version
-                </DropdownMenuItem>
-                <DropdownMenuItem 
-                  data-testid={`button-toggle-lock-${estimate.id}`}
-                  onClick={() => toggleLockMutation.mutate({ estimateId: estimate.id, isLocked: estimate.isLocked })}
-                  disabled={toggleLockMutation.isPending}
-                >
-                  {estimate.isLocked ? (
-                    <>
-                      <Unlock className="w-4 h-4 mr-2" />
-                      Unlock
-                    </>
-                  ) : (
-                    <>
-                      <Lock className="w-4 h-4 mr-2" />
-                      Lock
-                    </>
-                  )}
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem 

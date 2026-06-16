@@ -4323,7 +4323,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      const estimate = await storage.updateEstimate(req.params.id, validationResult.data);
+      // Lifecycle status (approved/contract) and lock state are owned by the
+      // dedicated /approve, /contract and /revert endpoints — they run the
+      // selection, canonical contract-price stamping and lock/freeze guards.
+      // Strip any direct lock change and reject lifecycle transitions here so
+      // this generic editor can't become a side-door around the two-stage flow.
+      const { isLocked: _ignoredLock, ...safeUpdate } = validationResult.data as any;
+      const incomingStatus = (validationResult.data as any).status as string | undefined;
+      if (incomingStatus !== undefined) {
+        const existing = await storage.getEstimate(req.params.id);
+        if (!existing) {
+          return res.status(404).json({ error: "Estimate not found" });
+        }
+        const norm = (s?: string | null) =>
+          s === "approved" || s === "contract" || s === "archived" ? s : "draft";
+        const target = norm(incomingStatus);
+        if (target !== norm(existing.status) && (target === "approved" || target === "contract")) {
+          return res.status(409).json({
+            error: "Use the Approve or Mark as Contract action to change this estimate's status.",
+            code: "USE_LIFECYCLE_ENDPOINT",
+          });
+        }
+      }
+
+      const estimate = await storage.updateEstimate(req.params.id, safeUpdate);
       if (!estimate) {
         return res.status(404).json({ error: "Estimate not found" });
       }
@@ -5467,29 +5490,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/estimates/:id/lock", async (req, res) => {
-    try {
-      const lockedEstimate = await storage.lockEstimate(req.params.id);
-      if (!lockedEstimate) {
-        return res.status(404).json({ error: "Estimate not found" });
-      }
-      res.json(lockedEstimate);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to lock estimate" });
-    }
-  });
-
-  app.post("/api/estimates/:id/unlock", async (req, res) => {
-    try {
-      const unlockedEstimate = await storage.unlockEstimate(req.params.id);
-      if (!unlockedEstimate) {
-        return res.status(404).json({ error: "Estimate not found" });
-      }
-      res.json(unlockedEstimate);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to unlock estimate" });
-    }
-  });
+  // Manual lock/unlock endpoints were removed: lock state is owned exclusively
+  // by the two-stage lifecycle (Mark as Contract locks/freezes, Revert unlocks).
 
   // ── Estimate status transitions ──────────────────────────────────────────
   // Workflow: Draft → Approved → Contract. Only the Contract estimate feeds

@@ -26,6 +26,15 @@ BuildPro estimates have a two-stage approval:
 **Why:** the lock/freeze stage is the legal contract baseline; silent unlock or
 cross-company mutation would corrupt the frozen contract price and audit trail.
 
+**No side-doors:** lifecycle status + lock state must NOT be settable through the
+generic `PATCH /api/estimates/:id` — that route strips `isLocked` and rejects any
+transition INTO `approved`/`contract` (409 `USE_LIFECYCLE_ENDPOINT`). There is no
+manual lock/unlock (the `/lock` + `/unlock` routes and their UI toggles were removed;
+lock follows contract only). The Estimates kanban routes drags through the lifecycle
+endpoints (approve / revert), and blocks drag-to-contract with a toast pointing to the
+detail page's confirm dialog. Whenever you add a new way to change an estimate's status
+or lock, route it through approve/contract/revert — never a raw status write.
+
 **How to apply:** keep the same guards mirrored in MemStorage and DbStorage
 (`approveEstimate`/`markEstimateAsContract`) and on every lifecycle route. The
 Mark-as-Contract confirm dialog must display ex-GST + inc-GST totals (from the target
