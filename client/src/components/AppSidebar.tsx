@@ -132,6 +132,17 @@ const settingsItems = [
 export function AppSidebar() {
   const [location] = useLocation();
   const { currentProject, setCurrentProject } = useProject();
+
+  // The Costings page (read-only contract costings) should only appear once the
+  // selected estimate is LOCKED as a contract. While it is merely "approved"
+  // (selectedEstimateId set but still editable) the slot stays as Estimates.
+  const selectedEstimateId = (currentProject as any)?.selectedEstimateId || null;
+  const { data: selectedEstimate } = useQuery<{ status?: string; isLocked?: boolean }>({
+    queryKey: ["/api/estimates", selectedEstimateId],
+    queryFn: () =>
+      fetch(`/api/estimates/${selectedEstimateId}`, { credentials: "include" }).then((r) => r.json()),
+    enabled: !!selectedEstimateId,
+  });
   
   // Collapsible states with localStorage persistence
   const [isSystemOpen, setIsSystemOpen] = useState(() => {
@@ -216,7 +227,9 @@ export function AppSidebar() {
   // the project nav. Without a contract estimate, only Estimates appears in
   // its original slot.
   const getProjectItems = () => {
-    const hasContract = !!currentProject?.selectedEstimateId;
+    const hasContract =
+      !!selectedEstimateId &&
+      (selectedEstimate?.status === "contract" || selectedEstimate?.isLocked === true);
 
     const compose = (urlFor: (baseUrl: string) => string) => {
       const items = projectItemsBase.map(item => ({ ...item, url: urlFor(item.baseUrl) }));

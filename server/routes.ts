@@ -3304,15 +3304,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
         : null;
       const projectMarkupPercent =
         (selectedEstimate as any)?.projectMarkupPercent ?? 0;
+      const taxRate = (selectedEstimate as any)?.taxRate ?? 10;
 
       const metrics = computeContractMetrics(
-        items.map((i: any) => ({ priceIncTax: i.priceIncTax, taxAmount: i.taxAmount })),
+        items.map((i: any) => ({
+          priceIncTax: i.priceIncTax,
+          taxAmount: i.taxAmount,
+          unitCostExTax: i.unitCostExTax,
+          quantity: i.quantity,
+          markupPercent: i.markupPercent,
+        })),
         variations.map((v: any) => ({
           status: v.status ?? null,
           subtotal: v.subtotal ?? null,
           totalAmount: v.totalAmount ?? v.totalIncTax ?? null,
         })),
         projectMarkupPercent,
+        taxRate,
       );
       res.json(metrics);
     } catch (error) {
@@ -3579,6 +3587,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
           });
         }
       }
+
+      // Side-door close: the project's selected estimate and its cached
+      // contract price are owned exclusively by the estimate approval flow
+      // (POST /api/estimates/:id/approve | /contract | /revert). Never let a
+      // generic project PATCH set them directly — that would let a stale or
+      // arbitrary value bypass the canonical-summary stamping + recalc.
+      if ('selectedEstimateId' in updateData) delete (updateData as any).selectedEstimateId;
+      if ('contractPrice' in updateData) delete (updateData as any).contractPrice;
 
       const projectBefore = await storage.getProject(req.params.id);
       const project = await storage.updateProject(req.params.id, updateData);
@@ -5486,16 +5502,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
   const normalizeStatus = (s?: string | null) =>
     s === "approved" || s === "contract" || s === "archived" ? s : "draft";
 
-  // Single atomic "Approve" action — collapses the old draft→approved→contract
-  // workflow into one explicit step. Approving an estimate:
-  //   1. Locks it and promotes its status to "contract" (demoting any prior
-  //      contract on the same project back to "approved").
+  // Stage 1 — "Approve". Promotes an estimate to "approved" and makes it the
+  // project's selected estimate, stamping its canonical total onto
+  // projects.contractPrice. Crucially the estimate stays UNLOCKED, so the
+  // contract price tracks further edits to the selected estimate live.
+  //   1. Sets status "approved", isLocked FALSE.
   //   2. Sets projects.selectedEstimateId to this revision.
-  //   3. Recomputes projects.contractPrice (cents) from the estimate items.
-  //   4. Recalculates the project's budget line items.
-  //   5. Recalculates the project's labour hours budget.
-  // Re-approving a different (or the same) revision re-runs the whole flow,
-  // replacing the existing contract estimate cleanly.
+  //   3. Stamps projects.contractPrice (cents) from the canonical estimate
+  //      summary (computeEstimateSummary: per-line markup + projectMarkup + GST).
+  //   4. Recalculates the project's budget line items + labour-hours budget.
+  // Refuses (409) if a DIFFERENT estimate on the project is already locked as
+  // the contract — the user must revert that contract first.
   app.post("/api/estimates/:id/approve", requireAuth, async (req: any, res) => {
     try {
       const existing = await storage.getEstimate(req.params.id);
@@ -5512,34 +5529,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ error: "Forbidden" });
       }
 
-      // 1. Compute contract price (cents) from items BEFORE the atomic write
-      //    so the same transaction can stamp it onto the project.
-      //    `priceIncTax` is the already-computed line total inc. tax (see
-      //    shared/pricing.ts), so we sum it directly — multiplying by
-      //    quantity would double-count.
-      const items = await storage.getEstimateItems(req.params.id);
-      const totalCents = items.reduce(
-        (sum: number, item) => sum + Math.round((item.priceIncTax ?? 0) * 100),
-        0,
-      );
-
-      // 2. Atomically promote estimate to contract, demote any prior
-      //    contract on this project, stamp approve/contract audit fields,
-      //    update the project's selectedEstimateId + contractPrice, AND
-      //    recalculate the project's budget, budget line items, and
-      //    labour-hours budget — all inside a single DB transaction. If
-      //    any step fails the whole change rolls back so the estimate,
-      //    project, budget, and labour-hours rows can never disagree
-      //    about which estimate is the contract.
-      const promotedResult = await storage.approveEstimateAsContract(
-        req.params.id,
-        req.user.id,
-        totalCents > 0 ? totalCents : null,
-      );
-      if (!promotedResult) {
+      const result = await storage.approveEstimate(req.params.id, req.user.id);
+      if (!result) {
         return res.status(500).json({ error: "Failed to approve estimate" });
       }
-      const { estimate: stamped, project: updatedProject, recalcWarnings } = promotedResult;
+      const { estimate: stamped, project: updatedProject, recalcWarnings } = result;
 
       res.json({
         estimate: stamped,
@@ -5547,21 +5541,59 @@ export async function registerRoutes(app: Express): Promise<Server> {
         recalcWarnings,
       });
     } catch (error: any) {
+      if (error?.message === "LOCKED_CONTRACT_EXISTS") {
+        return res.status(409).json({
+          error: "This project already has a locked contract estimate. Revert it to Approved first before approving a different revision.",
+          code: "LOCKED_CONTRACT_EXISTS",
+        });
+      }
       console.error("[/api/estimates/:id/approve]", error);
       res.status(500).json({ error: error.message || "Failed to approve estimate" });
     }
   });
 
-  // Deprecated: the old two-step "Set as Contract" endpoint. Approving an
-  // estimate (POST /api/estimates/:id/approve) is now the single source of
-  // truth for promoting a revision to the contract estimate, setting
-  // selectedEstimateId, recomputing contractPrice and triggering the budget
-  // and labour-hours recalcs. This endpoint is retained only to surface a
-  // clear error to any out-of-date callers.
-  app.post("/api/estimates/:id/contract", requireAuth, async (_req, res) => {
-    return res.status(410).json({
-      error: "This endpoint has been removed. Use POST /api/estimates/:id/approve to promote an estimate to the contract.",
-    });
+  // Stage 2 — "Mark as Contract". Locks an already-approved estimate as the
+  // signed contract: freezes its canonical total onto projects.contractPrice,
+  // sets isLocked + contracted audit fields, and demotes any prior contract on
+  // the project back to approved. After this the contract price is frozen and
+  // the estimate (and downstream Costings) are read-only until reverted.
+  app.post("/api/estimates/:id/contract", requireAuth, async (req: any, res) => {
+    try {
+      const existing = await storage.getEstimate(req.params.id);
+      if (!existing) return res.status(404).json({ error: "Estimate not found" });
+      if (!existing.projectId) {
+        return res.status(400).json({ error: "Estimate is not associated with a project." });
+      }
+
+      // Authorization: caller must belong to the same company as the project.
+      const project = await storage.getProject(existing.projectId);
+      if (!project) return res.status(404).json({ error: "Project not found" });
+      const userCompanyId = (req.user as any)?.companyId;
+      if (!userCompanyId || project.companyId !== userCompanyId) {
+        return res.status(403).json({ error: "Forbidden" });
+      }
+
+      if (normalizeStatus(existing.status) !== "approved") {
+        return res.status(409).json({
+          error: "Only an Approved estimate can be marked as the contract.",
+        });
+      }
+
+      const result = await storage.markEstimateAsContract(req.params.id, req.user.id);
+      if (!result) {
+        return res.status(500).json({ error: "Failed to mark estimate as contract" });
+      }
+      const { estimate: stamped, project: updatedProject, recalcWarnings } = result;
+
+      res.json({
+        estimate: stamped,
+        project: updatedProject,
+        recalcWarnings,
+      });
+    } catch (error: any) {
+      console.error("[/api/estimates/:id/contract]", error);
+      res.status(500).json({ error: error.message || "Failed to mark estimate as contract" });
+    }
   });
 
   app.post("/api/estimates/:id/revert", requireAuth, async (req: any, res) => {
@@ -5576,10 +5608,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (target === "draft" && current === "draft") {
         return res.status(409).json({ error: "Estimate is already a Draft." });
       }
+      // Revert to Approved: keep it as the selected (live) estimate but UNLOCK
+      // it and clear the contracted audit fields, so editing resumes and the
+      // contract price tracks edits again.
       const patch: any = target === "approved"
-        ? { status: "approved", isLocked: true, contractedAt: null, contractedById: null }
+        ? { status: "approved", isLocked: false, contractedAt: null, contractedById: null }
         : { status: "draft", isLocked: false, approvedAt: null, approvedById: null, contractedAt: null, contractedById: null };
       const updated = await storage.updateEstimateStatus(req.params.id, patch);
+
+      // Revert to Draft: if this estimate was the project's selected estimate,
+      // clear the selection + cached contract price so a draft can never act
+      // as the live contract.
+      if (target === "draft" && existing.projectId) {
+        const project = await storage.getProject(existing.projectId);
+        if (project && project.selectedEstimateId === req.params.id) {
+          await storage.updateProject(existing.projectId, {
+            selectedEstimateId: null,
+            contractPrice: null,
+          } as any);
+        }
+      }
       res.json(updated);
     } catch (error: any) {
       console.error("[/api/estimates/:id/revert]", error);

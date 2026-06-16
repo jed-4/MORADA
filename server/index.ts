@@ -276,5 +276,21 @@ app.use((req, res, next) => {
     } catch (error) {
       console.error('Failed to repair duplicate scope stages:', error);
     }
+
+    // Backfill / correct the cached contract price snapshot on every project
+    // that has a selected estimate, recomputing it from the canonical estimate
+    // summary (per-line markup + project markup + GST). Idempotent and
+    // non-destructive — only updates projects.contractPrice where the cached
+    // value has drifted from the canonical total. This brings historical
+    // contracts (stamped by the old priceIncTax-sum path) onto the correct
+    // figure without any manual re-approval.
+    try {
+      const snap = await storage.recomputeContractPriceSnapshots();
+      if (snap.updated > 0) {
+        log(`Contract price snapshots recomputed: corrected ${snap.updated} of ${snap.scanned} project(s)`);
+      }
+    } catch (error) {
+      console.error('Failed to recompute contract price snapshots:', error);
+    }
   });
 })();

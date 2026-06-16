@@ -113,7 +113,7 @@ import { randomUUID } from "crypto";
 import { PasswordUtils } from "./utils/auth";
 import { generateRecurringTaskInstances, getRecurringTaskKey, generateNextRecurringInstance } from "./utils/recurringTasks";
 import { db } from "./db";
-import { eq, or, and, desc, asc, gte, lte, sql, inArray, isNull, gt, not, ne } from "drizzle-orm";
+import { eq, or, and, desc, asc, gte, lte, sql, inArray, isNull, isNotNull, gt, not, ne } from "drizzle-orm";
 import * as schema from "@shared/schema";
 import { computeEstimateItemPrice, computeEstimateSummary } from "@shared/pricing";
 
@@ -471,11 +471,23 @@ export interface IStorage {
   // the approved/contract status.
   updateEstimateStatus(estimateId: string, patch: Partial<Estimate>): Promise<Estimate | undefined>;
   promoteEstimateToContract(estimateId: string, userId: string): Promise<Estimate | undefined>;
-  approveEstimateAsContract(
+  // Stage 1: promote an estimate to "approved" — it becomes the project's
+  // selected estimate and its full total is stamped onto projects.contractPrice,
+  // but it stays UNLOCKED (editable) so the contract price tracks edits live.
+  // Refuses if a DIFFERENT estimate on the project is already a locked contract.
+  approveEstimate(
     estimateId: string,
     userId: string,
-    contractPriceCents: number | null,
   ): Promise<{ estimate: Estimate; project: Project; recalcWarnings: string[] } | undefined>;
+  // Stage 2: lock an approved estimate as the contract — freezes the price,
+  // sets isLocked + contracted audit fields, demotes any prior contract.
+  markEstimateAsContract(
+    estimateId: string,
+    userId: string,
+  ): Promise<{ estimate: Estimate; project: Project; recalcWarnings: string[] } | undefined>;
+  // Idempotent backfill: recompute projects.contractPrice from the selected
+  // estimate's canonical total wherever the cached snapshot has drifted.
+  recomputeContractPriceSnapshots(): Promise<{ scanned: number; updated: number }>;
   
   // Summary calculations
   getEstimateSummary(estimateId: string): Promise<{
@@ -5034,22 +5046,80 @@ export class MemStorage implements IStorage {
     }
   }
 
-  async approveEstimateAsContract(
+  async approveEstimate(
     estimateId: string,
     userId: string,
-    contractPriceCents: number | null,
   ): Promise<{ estimate: Estimate; project: Project; recalcWarnings: string[] } | undefined> {
-    // MemStorage shim — defers to the DB implementation. MemStorage is not
-    // used by the live approve flow; this method exists only to satisfy
-    // IStorage. See DbStorage.approveEstimateAsContract for the real
-    // transactional implementation.
+    // MemStorage shim — defers to the DB. See DbStorage.approveEstimate for
+    // the authoritative transactional implementation (with budget recalcs).
     try {
       const target = await this.getEstimate(estimateId);
       if (!target || !target.projectId) return undefined;
       const projectId = target.projectId;
+      const lockedContracts = await db
+        .select({ id: schema.estimates.id })
+        .from(schema.estimates)
+        .where(and(
+          eq(schema.estimates.projectId, projectId),
+          eq(schema.estimates.status, "contract"),
+          ne(schema.estimates.id, estimateId),
+        ));
+      if (lockedContracts.length > 0) throw new Error("LOCKED_CONTRACT_EXISTS");
+      const summary = await this.getEstimateSummary(estimateId);
+      const contractPriceCents = Math.round((summary.total || 0) * 100);
+      return await db.transaction(async (tx) => {
+        const promotedRows = await tx.update(schema.estimates)
+          .set({
+            status: "approved",
+            isLocked: false,
+            approvedAt: target.approvedAt ?? new Date(),
+            approvedById: target.approvedById ?? userId,
+            updatedAt: new Date(),
+          })
+          .where(eq(schema.estimates.id, estimateId))
+          .returning();
+        const promoted = promotedRows[0];
+        if (!promoted) throw new Error("Failed to approve estimate");
+        const updatedProjectRows = await tx.update(schema.projects)
+          .set({
+            selectedEstimateId: estimateId,
+            contractPrice: contractPriceCents > 0 ? contractPriceCents : null,
+            updatedAt: new Date(),
+          })
+          .where(eq(schema.projects.id, projectId))
+          .returning();
+        const updatedProject = updatedProjectRows[0];
+        if (!updatedProject) throw new Error("Failed to update project for approved estimate");
+        this.estimates.set(estimateId, promoted);
+        return { estimate: promoted, project: updatedProject, recalcWarnings: [] };
+      });
+    } catch (error) {
+      console.error("Database error in approveEstimate (MemStorage):", error);
+      throw error;
+    }
+  }
+
+  async markEstimateAsContract(
+    estimateId: string,
+    userId: string,
+  ): Promise<{ estimate: Estimate; project: Project; recalcWarnings: string[] } | undefined> {
+    // MemStorage shim — defers to the DB. See DbStorage.markEstimateAsContract
+    // for the authoritative transactional implementation (with budget recalcs).
+    try {
+      const target = await this.getEstimate(estimateId);
+      if (!target || !target.projectId) return undefined;
+      const projectId = target.projectId;
+      const summary = await this.getEstimateSummary(estimateId);
+      const contractPriceCents = Math.round((summary.total || 0) * 100);
       return await db.transaction(async (tx) => {
         await tx.update(schema.estimates)
-          .set({ status: "approved", updatedAt: new Date() })
+          .set({
+            status: "approved",
+            isLocked: false,
+            contractedAt: null,
+            contractedById: null,
+            updatedAt: new Date(),
+          })
           .where(and(
             eq(schema.estimates.projectId, projectId),
             eq(schema.estimates.status, "contract"),
@@ -5072,20 +5142,56 @@ export class MemStorage implements IStorage {
         const updatedProjectRows = await tx.update(schema.projects)
           .set({
             selectedEstimateId: estimateId,
-            contractPrice: contractPriceCents && contractPriceCents > 0 ? contractPriceCents : null,
+            contractPrice: contractPriceCents > 0 ? contractPriceCents : null,
             updatedAt: new Date(),
           })
           .where(eq(schema.projects.id, projectId))
           .returning();
         const updatedProject = updatedProjectRows[0];
-        if (!updatedProject) throw new Error("Failed to update project for approved estimate");
+        if (!updatedProject) throw new Error("Failed to update project for contract estimate");
         this.estimates.set(estimateId, promoted);
         return { estimate: promoted, project: updatedProject, recalcWarnings: [] };
       });
     } catch (error) {
-      console.error("Database error in approveEstimateAsContract (MemStorage):", error);
+      console.error("Database error in markEstimateAsContract (MemStorage):", error);
       throw error;
     }
+  }
+
+  async recomputeContractPriceSnapshots(): Promise<{ scanned: number; updated: number }> {
+    let scanned = 0;
+    let updated = 0;
+    try {
+      const rows = await db
+        .select({
+          id: schema.projects.id,
+          selectedEstimateId: schema.projects.selectedEstimateId,
+          contractPrice: schema.projects.contractPrice,
+        })
+        .from(schema.projects)
+        .where(isNotNull(schema.projects.selectedEstimateId));
+      for (const row of rows) {
+        if (!row.selectedEstimateId) continue;
+        scanned++;
+        try {
+          const summary = await this.getEstimateSummary(row.selectedEstimateId);
+          const cents = Math.round((summary.total || 0) * 100);
+          if (cents <= 0) continue;
+          const current = Number(row.contractPrice) || 0;
+          if (current !== cents) {
+            await db.update(schema.projects)
+              .set({ contractPrice: cents, updatedAt: new Date() })
+              .where(eq(schema.projects.id, row.id));
+            updated++;
+          }
+        } catch (err) {
+          console.error(`[recomputeContractPriceSnapshots] project ${row.id} failed:`, err);
+        }
+      }
+    } catch (err) {
+      console.error("[recomputeContractPriceSnapshots] (MemStorage) failed:", err);
+    }
+    return { scanned, updated };
   }
 
   // Summary calculations
@@ -11796,27 +11902,115 @@ export class DbStorage implements IStorage {
    * separate field for callers that want to surface partial-failure
    * messaging (currently always empty since failures roll back).
    */
-  async approveEstimateAsContract(
+  // Stage 1 of the approval workflow. Promotes an estimate to "approved":
+  // it becomes the project's selected estimate and its canonical total is
+  // stamped onto projects.contractPrice, but it stays UNLOCKED so the
+  // contract price tracks further edits live. Refuses if a DIFFERENT estimate
+  // on the project is already a locked contract — the user must revert that
+  // contract first (an explicit replace).
+  async approveEstimate(
     estimateId: string,
     userId: string,
-    contractPriceCents: number | null,
   ): Promise<{ estimate: Estimate; project: Project; recalcWarnings: string[] } | undefined> {
     try {
       const target = await this.getEstimate(estimateId);
       if (!target || !target.projectId) return undefined;
       const projectId = target.projectId;
 
+      const lockedContracts = await db
+        .select({ id: schema.estimates.id })
+        .from(schema.estimates)
+        .where(and(
+          eq(schema.estimates.projectId, projectId),
+          eq(schema.estimates.status, "contract"),
+          ne(schema.estimates.id, estimateId),
+        ));
+      if (lockedContracts.length > 0) {
+        throw new Error("LOCKED_CONTRACT_EXISTS");
+      }
+
+      // Canonical estimate total (cents) — the single source of truth.
+      const summary = await this.getEstimateSummary(estimateId);
+      const contractPriceCents = Math.round((summary.total || 0) * 100);
+
       return await db.transaction(async (tx) => {
-        // Demote any prior contract on this project.
+        const promotedRows = await tx.update(schema.estimates)
+          .set({
+            status: "approved",
+            isLocked: false,
+            approvedAt: target.approvedAt ?? new Date(),
+            approvedById: target.approvedById ?? userId,
+            updatedAt: new Date(),
+          })
+          .where(eq(schema.estimates.id, estimateId))
+          .returning();
+        const promoted = promotedRows[0];
+        if (!promoted) {
+          throw new Error("Failed to approve estimate");
+        }
+
+        const updatedProjectRows = await tx.update(schema.projects)
+          .set({
+            selectedEstimateId: estimateId,
+            contractPrice: contractPriceCents > 0 ? contractPriceCents : null,
+            updatedAt: new Date(),
+          })
+          .where(eq(schema.projects.id, projectId))
+          .returning();
+        const updatedProject = updatedProjectRows[0];
+        if (!updatedProject) {
+          throw new Error("Failed to update project for approved estimate");
+        }
+
+        const recomputedBudget = await this.calculateBudget(projectId, tx);
+        if (recomputedBudget) {
+          await this.recalculateBudgetLineItems(recomputedBudget.id, tx);
+        }
+        await this.recalculateLabourHoursBudget(projectId, tx);
+
+        return { estimate: promoted, project: updatedProject, recalcWarnings: [] };
+      });
+    } catch (error) {
+      console.error("Database error in approveEstimate:", error);
+      throw error;
+    }
+  }
+
+  // Stage 2 of the approval workflow. Locks an approved estimate as the
+  // contract: freezes the canonical total onto projects.contractPrice, sets
+  // isLocked + contracted audit fields, and demotes any prior contract back to
+  // approved. Budget + labour-hours recalcs run inside the same transaction so
+  // everything commits or rolls back together.
+  async markEstimateAsContract(
+    estimateId: string,
+    userId: string,
+  ): Promise<{ estimate: Estimate; project: Project; recalcWarnings: string[] } | undefined> {
+    try {
+      const target = await this.getEstimate(estimateId);
+      if (!target || !target.projectId) return undefined;
+      const projectId = target.projectId;
+
+      // Freeze the canonical estimate total (cents).
+      const summary = await this.getEstimateSummary(estimateId);
+      const contractPriceCents = Math.round((summary.total || 0) * 100);
+
+      return await db.transaction(async (tx) => {
+        // Demote any prior contract on this project (and unlock it).
         await tx.update(schema.estimates)
-          .set({ status: "approved", updatedAt: new Date() })
+          .set({
+            status: "approved",
+            isLocked: false,
+            contractedAt: null,
+            contractedById: null,
+            updatedAt: new Date(),
+          })
           .where(and(
             eq(schema.estimates.projectId, projectId),
             eq(schema.estimates.status, "contract"),
             ne(schema.estimates.id, estimateId),
           ));
 
-        // Promote target + stamp approve/contract audit fields.
+        // Promote target + stamp approve/contract audit fields + lock.
         const promotedRows = await tx.update(schema.estimates)
           .set({
             status: "contract",
@@ -11834,25 +12028,20 @@ export class DbStorage implements IStorage {
           throw new Error("Failed to promote estimate to contract");
         }
 
-        // Update project selectedEstimateId + contractPrice in the same tx.
+        // Update project selectedEstimateId + frozen contractPrice in the same tx.
         const updatedProjectRows = await tx.update(schema.projects)
           .set({
             selectedEstimateId: estimateId,
-            contractPrice: contractPriceCents && contractPriceCents > 0 ? contractPriceCents : null,
+            contractPrice: contractPriceCents > 0 ? contractPriceCents : null,
             updatedAt: new Date(),
           })
           .where(eq(schema.projects.id, projectId))
           .returning();
         const updatedProject = updatedProjectRows[0];
         if (!updatedProject) {
-          throw new Error("Failed to update project for approved estimate");
+          throw new Error("Failed to update project for contract estimate");
         }
 
-        // Recalculate budget + budget line items + labour-hours budget
-        // inside the SAME transaction so the contract promotion and the
-        // derived data either all commit or all roll back together. This
-        // closes the prior gap where stale budget/labour rows could be
-        // left behind on partial failure.
         const recomputedBudget = await this.calculateBudget(projectId, tx);
         if (recomputedBudget) {
           await this.recalculateBudgetLineItems(recomputedBudget.id, tx);
@@ -11862,9 +12051,49 @@ export class DbStorage implements IStorage {
         return { estimate: promoted, project: updatedProject, recalcWarnings: [] };
       });
     } catch (error) {
-      console.error("Database error in approveEstimateAsContract:", error);
+      console.error("Database error in markEstimateAsContract:", error);
       throw error;
     }
+  }
+
+  // Idempotent backfill. For every project that has a selected estimate,
+  // recompute the canonical estimate total and update projects.contractPrice
+  // when the cached snapshot has drifted. Non-destructive (only corrects a
+  // derived cache) — safe to run on every startup.
+  async recomputeContractPriceSnapshots(): Promise<{ scanned: number; updated: number }> {
+    let scanned = 0;
+    let updated = 0;
+    try {
+      const rows = await db
+        .select({
+          id: schema.projects.id,
+          selectedEstimateId: schema.projects.selectedEstimateId,
+          contractPrice: schema.projects.contractPrice,
+        })
+        .from(schema.projects)
+        .where(isNotNull(schema.projects.selectedEstimateId));
+      for (const row of rows) {
+        if (!row.selectedEstimateId) continue;
+        scanned++;
+        try {
+          const summary = await this.getEstimateSummary(row.selectedEstimateId);
+          const cents = Math.round((summary.total || 0) * 100);
+          if (cents <= 0) continue;
+          const current = Number(row.contractPrice) || 0;
+          if (current !== cents) {
+            await db.update(schema.projects)
+              .set({ contractPrice: cents, updatedAt: new Date() })
+              .where(eq(schema.projects.id, row.id));
+            updated++;
+          }
+        } catch (err) {
+          console.error(`[recomputeContractPriceSnapshots] project ${row.id} failed:`, err);
+        }
+      }
+    } catch (err) {
+      console.error("[recomputeContractPriceSnapshots] failed:", err);
+    }
+    return { scanned, updated };
   }
 
   async getEstimateSummary(estimateId: string): Promise<{

@@ -393,6 +393,17 @@ export default function ClientInvoiceDetail() {
     enabled: !!selectedProjectId,
   });
 
+  // Live original contract price (inc-GST cents) computed from the selected
+  // estimate. While the estimate is "approved" this tracks edits; once it is
+  // marked as Contract the estimate is locked so the value is effectively
+  // frozen. Prefer this over the stamped project.contractPrice snapshot.
+  const { data: contractMetrics } = useQuery<{ originalContractPriceIncGstCents: number }>({
+    queryKey: ["/api/projects", selectedProjectId, "contract-metrics"],
+    queryFn: () =>
+      fetch(`/api/projects/${selectedProjectId}/contract-metrics`, { credentials: "include" }).then((r) => r.json()),
+    enabled: !!selectedProjectId,
+  });
+
   const { data: clientContact } = useQuery<Contact>({
     queryKey: [`/api/contacts/${(currentProject as any)?.clientId}`],
     enabled: !!(currentProject as any)?.clientId,
@@ -679,8 +690,13 @@ export default function ClientInvoiceDetail() {
   // revised here would double-count approved variations on the invoice.
   // Surfaces that need the revised total (Project Total panel, project header)
   // call /api/projects/:id/contract-metrics or use useProjectMetrics.
+  // Read the LIVE original contract price (computed from the selected estimate)
+  // rather than the stamped project.contractPrice snapshot, so progress claims
+  // track estimate edits while approved and stay correct once locked.
   const getEffectiveContractPrice = () =>
-    ((currentProject as any)?.contractPrice ?? null);
+    (contractMetrics?.originalContractPriceIncGstCents
+      ?? (currentProject as any)?.contractPrice
+      ?? null);
 
   const calculateContractPrice = () => {
     const baseCents = getEffectiveContractPrice();

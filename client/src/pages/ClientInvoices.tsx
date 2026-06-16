@@ -150,6 +150,16 @@ export default function ClientInvoices({ embedded }: { embedded?: boolean } = {}
     [projects, projectIdFromUrl]
   );
 
+  // Live original contract price (inc-GST cents) from the selected estimate,
+  // not the stamped project.contractPrice snapshot. Only relevant when scoped
+  // to a single project.
+  const { data: contractMetrics } = useQuery<{ originalContractPriceIncGstCents: number }>({
+    queryKey: ["/api/projects", projectIdFromUrl, "contract-metrics"],
+    queryFn: () =>
+      fetch(`/api/projects/${projectIdFromUrl}/contract-metrics`, { credentials: "include" }).then((r) => r.json()),
+    enabled: !!projectIdFromUrl,
+  });
+
   const getProject = (projectId: string) => projects.find((p) => p.id === projectId);
 
   const formatCurrency = (cents: number) => {
@@ -190,8 +200,12 @@ export default function ClientInvoices({ embedded }: { embedded?: boolean } = {}
     const paidTotal     = filteredInvoices.reduce((s, i) => s + i.paidAmount, 0);
     const balanceTotal  = filteredInvoices.reduce((s, i) => s + i.balanceAmount, 0);
 
-    // Original contract = snapshot from approved estimate (inc-GST cents).
-    const contractPriceCents = (currentProject as any)?.contractPrice ?? 0;
+    // Original contract = LIVE total from the selected estimate (inc-GST cents),
+    // falling back to the stamped snapshot if metrics haven't loaded.
+    const contractPriceCents =
+      contractMetrics?.originalContractPriceIncGstCents
+      ?? (currentProject as any)?.contractPrice
+      ?? 0;
     // Approved variations total (inc-GST cents) — drives the revised contract price.
     const approvedVariationsTotal = projectVariations
       .filter((v) => v.status === "approved" || v.status === "released")
@@ -221,7 +235,7 @@ export default function ClientInvoices({ embedded }: { embedded?: boolean } = {}
       allowancesTotal, finalizedAllowances, pendingAllowances, allowancesVariation,
       projectTotal, paidPct, invoicedPct, remainingPct,
     };
-  }, [filteredInvoices, currentProject, projectVariations, projectAllowances]);
+  }, [filteredInvoices, currentProject, contractMetrics, projectVariations, projectAllowances]);
 
   // ── Column management ─────────────────────────────────────────────────────
 

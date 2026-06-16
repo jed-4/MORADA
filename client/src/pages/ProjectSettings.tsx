@@ -982,33 +982,17 @@ export default function ProjectSettings() {
 
             <div className="space-y-2">
               <Label htmlFor="selected-estimate">Selected Estimate</Label>
-              {isEditing ? (
-                <Select
-                  value={formData.selectedEstimateId || ""}
-                  onValueChange={(value) => setFormData({ ...formData, selectedEstimateId: value })}
-                >
-                  <SelectTrigger data-testid="select-estimate">
-                    <SelectValue placeholder="Select estimate" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {estimates.length === 0 ? (
-                      <SelectItem value="_none" disabled>No estimates available</SelectItem>
-                    ) : (
-                      estimates.map((estimate) => (
-                        <SelectItem key={estimate.id} value={estimate.id}>
-                          {estimate.name}
-                        </SelectItem>
-                      ))
-                    )}
-                  </SelectContent>
-                </Select>
-              ) : (
-                <div className="p-2 bg-muted rounded-md" data-testid="text-selected-estimate">
-                  {currentProject.selectedEstimateId && estimates.find(e => e.id === currentProject.selectedEstimateId)
-                    ? estimates.find(e => e.id === currentProject.selectedEstimateId)?.name || "Unknown estimate"
-                    : "Not set"}
-                </div>
-              )}
+              {/* Read-only. The contract estimate is set from the Estimates page
+                  via Approve / Mark as Contract, never changed directly here —
+                  the project API also ignores selectedEstimateId on update. */}
+              <div className="p-2 bg-muted rounded-md" data-testid="text-selected-estimate">
+                {currentProject.selectedEstimateId && estimates.find(e => e.id === currentProject.selectedEstimateId)
+                  ? estimates.find(e => e.id === currentProject.selectedEstimateId)?.name || "Unknown estimate"
+                  : "Not set"}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Set this by approving an estimate on the Estimates page.
+              </p>
             </div>
           </div>
         </CardContent>

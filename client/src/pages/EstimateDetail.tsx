@@ -2110,10 +2110,10 @@ export default function EstimateDetail() {
     }
   };
 
-  // Approve = single atomic action: promotes the chosen revision to the
-  // project's contract estimate, recomputes contractPrice, and recalculates
-  // both the budget line items and the labour-hours budget on the server.
-  // No more "click here to recalc" toast — recalc is baked in.
+  // Stage 1 — Approve. Promotes the chosen revision to the project's selected
+  // (live) estimate and stamps its canonical total onto contractPrice, but
+  // leaves it UNLOCKED so it stays editable and the contract price tracks edits.
+  // Recalculates the budget line items and labour-hours budget on the server.
   const approveMutation = useMutation({
     mutationFn: async (estimateId?: string) => {
       const id = estimateId ?? effectiveEstimateId;
@@ -2131,18 +2131,48 @@ export default function EstimateDetail() {
       toast({
         title: "Estimate approved",
         description: warnings.length
-          ? `This is now the contract estimate. Recalc warnings: ${warnings.join(", ")}.`
-          : "This is now the contract estimate. The budget and labour hours have been updated.",
+          ? `This is now the live estimate — still editable, with the contract price tracking your edits. Recalc warnings: ${warnings.join(", ")}.`
+          : "This is now the live estimate — still editable, with the contract price tracking your edits.",
       });
     },
     onError: (error: any) => toast({ title: "Error", description: error.message || "Failed to approve estimate.", variant: "destructive" }),
   });
 
+  // Stage 2 — Mark as Contract. Locks the approved estimate as the signed
+  // contract: freezes the contract price and makes the estimate (and the
+  // downstream Costings) read-only until reverted.
+  const contractMutation = useMutation({
+    mutationFn: async (estimateId?: string) => {
+      const id = estimateId ?? effectiveEstimateId;
+      return apiRequest(`/api/estimates/${id}/contract`, "POST");
+    },
+    onSuccess: (data: any) => {
+      invalidateEstimateAndProject();
+      if (estimate?.projectId) {
+        queryClient.invalidateQueries({ queryKey: ["/api/projects", estimate.projectId] });
+        queryClient.invalidateQueries({ queryKey: [`/api/projects/${estimate.projectId}/budget`] });
+        queryClient.invalidateQueries({ queryKey: [`/api/projects/${estimate.projectId}/budget-line-items`] });
+        queryClient.invalidateQueries({ queryKey: [`/api/projects/${estimate.projectId}/labour-hours-budget`] });
+      }
+      const warnings: string[] = data?.recalcWarnings ?? [];
+      toast({
+        title: "Marked as contract",
+        description: warnings.length
+          ? `The contract price is now locked and this estimate is read-only. Recalc warnings: ${warnings.join(", ")}.`
+          : "The contract price is now locked and this estimate is read-only.",
+      });
+    },
+    onError: (error: any) => toast({ title: "Error", description: error.message || "Failed to mark as contract.", variant: "destructive" }),
+  });
+
   const revertMutation = useMutation({
-    mutationFn: async (target: "draft" | "approved") =>
-      apiRequest(`/api/estimates/${effectiveEstimateId}/revert`, "POST", { target }),
+    mutationFn: async ({ target, id }: { target: "draft" | "approved"; id?: string }) =>
+      apiRequest(`/api/estimates/${id ?? effectiveEstimateId}/revert`, "POST", { target }),
     onSuccess: () => {
       invalidateEstimateAndProject();
+      if (estimate?.projectId) {
+        queryClient.invalidateQueries({ queryKey: ["/api/projects", estimate.projectId] });
+      }
       offerBudgetRecalc("Estimate reverted");
     },
     onError: (error: any) => toast({ title: "Error", description: error.message || "Failed to revert estimate.", variant: "destructive" }),
@@ -2221,6 +2251,10 @@ export default function EstimateDetail() {
   // options popover for the active revision). Confirm calls
   // approveMutation.mutate(id).
   const [approveDialogRevisionId, setApproveDialogRevisionId] = useState<string | null>(null);
+
+  // "Mark as Contract" confirmation dialog state (stage 2). Confirm calls
+  // contractMutation.mutate(id), which locks + freezes the contract price.
+  const [contractDialogRevisionId, setContractDialogRevisionId] = useState<string | null>(null);
 
   // Archive confirmation dialog state. Archiving sets the estimate's status
   // to "archived" via PATCH. We gate it behind a confirmation dialog so the
@@ -5158,7 +5192,12 @@ export default function EstimateDetail() {
               </div>
               <div className="rounded-md border overflow-hidden">
                 {estimateVersions.map(v => {
-                  const isContract = v.id === project?.selectedEstimateId;
+                  const vStatus = v.status === "approved" || v.status === "contract" || v.status === "archived" ? v.status : "draft";
+                  const isContract = vStatus === "contract";
+                  const isSelected = v.id === project?.selectedEstimateId;
+                  // "Approved" = the live, still-editable selected estimate
+                  // (stage 1); "Contract" = locked + frozen (stage 2).
+                  const isApprovedLive = isSelected && !isContract;
                   const isCurrent = v.id === effectiveEstimateId;
                   const isRenaming = renamingRevisionId === v.id;
                   return (
@@ -5193,7 +5232,8 @@ export default function EstimateDetail() {
                           <Layers className="h-3 w-3 text-muted-foreground flex-shrink-0" />
                           <span className="truncate flex-1">{getRevLabel(v.version)}{v.name && v.name !== estimate?.name ? ` — ${v.name}` : ''}</span>
                           {isContract && <Badge className="text-label px-1 h-4 bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border-emerald-500/30 no-default-active-elevate">Contract</Badge>}
-                          {!isContract && v.isLocked && <Lock className="h-2.5 w-2.5 text-muted-foreground/50 flex-shrink-0" />}
+                          {isApprovedLive && <Badge className="text-label px-1 h-4 bg-blue-500/15 text-blue-700 dark:text-blue-400 border-blue-500/30 no-default-active-elevate">Approved</Badge>}
+                          {!isContract && !isApprovedLive && v.isLocked && <Lock className="h-2.5 w-2.5 text-muted-foreground/50 flex-shrink-0" />}
                           {!v.isLocked && isCurrent && <span className="text-label text-primary flex-shrink-0">working</span>}
                         </button>
                       )}
@@ -5225,16 +5265,31 @@ export default function EstimateDetail() {
                               Set as Working
                             </DropdownMenuItem>
                           )}
-                          <DropdownMenuItem
-                            onClick={() => setApproveDialogRevisionId(v.id)}
-                            data-testid={`revision-approve-${v.id}`}
-                          >
-                            {isContract
-                              ? <Check className="w-3.5 h-3.5 mr-2 text-emerald-500" />
-                              : <Check className="w-3.5 h-3.5 mr-2 opacity-0" />
-                            }
-                            {isContract ? "Re-approve" : "Approve"}
-                          </DropdownMenuItem>
+                          {vStatus === "contract" ? (
+                            <DropdownMenuItem
+                              onClick={() => revertMutation.mutate({ target: "approved", id: v.id })}
+                              data-testid={`revision-revert-approved-${v.id}`}
+                            >
+                              <Undo2 className="w-3.5 h-3.5 mr-2 text-muted-foreground" />
+                              Revert to Approved
+                            </DropdownMenuItem>
+                          ) : vStatus === "approved" ? (
+                            <DropdownMenuItem
+                              onClick={() => setContractDialogRevisionId(v.id)}
+                              data-testid={`revision-mark-contract-${v.id}`}
+                            >
+                              <Lock className="w-3.5 h-3.5 mr-2 text-emerald-500" />
+                              Mark as Contract
+                            </DropdownMenuItem>
+                          ) : (
+                            <DropdownMenuItem
+                              onClick={() => setApproveDialogRevisionId(v.id)}
+                              data-testid={`revision-approve-${v.id}`}
+                            >
+                              <Check className="w-3.5 h-3.5 mr-2 opacity-0" />
+                              Approve
+                            </DropdownMenuItem>
+                          )}
                           <DropdownMenuItem
                             onClick={() => createVersionMutation.mutate(v.id)}
                             data-testid={`revision-duplicate-${v.id}`}
@@ -5310,7 +5365,9 @@ export default function EstimateDetail() {
                   Browse catalog
                 </button>
                 <Separator className="my-1" />
-                {estimate && estimate.status !== "contract" && (
+                {/* Stage 1 — Approve: available for draft/working estimates.
+                    Promotes to the live (editable) selected estimate. */}
+                {estimate && estimate.status !== "approved" && estimate.status !== "contract" && (
                   <button
                     className="flex items-center gap-2 px-2 py-1.5 text-xs rounded-md hover-elevate w-full text-left disabled:opacity-40 disabled:cursor-not-allowed"
                     onClick={() => setApproveDialogRevisionId(effectiveEstimateId ?? null)}
@@ -5321,27 +5378,41 @@ export default function EstimateDetail() {
                     Approve estimate
                   </button>
                 )}
-                {estimate && estimate.status === "contract" && (
+                {/* Stage 2 — Mark as Contract: available once approved. Locks +
+                    freezes the contract price. Also allow reverting to draft. */}
+                {estimate && estimate.status === "approved" && (
                   <>
                     <button
                       className="flex items-center gap-2 px-2 py-1.5 text-xs rounded-md hover-elevate w-full text-left disabled:opacity-40 disabled:cursor-not-allowed"
-                      onClick={() => setApproveDialogRevisionId(effectiveEstimateId ?? null)}
-                      disabled={approveMutation.isPending}
-                      data-testid="button-reapprove-estimate"
+                      onClick={() => setContractDialogRevisionId(effectiveEstimateId ?? null)}
+                      disabled={contractMutation.isPending}
+                      data-testid="button-mark-contract"
                     >
-                      <Check className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-                      Re-approve estimate
+                      <Lock className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                      Mark as Contract
                     </button>
                     <button
                       className="flex items-center gap-2 px-2 py-1.5 text-xs rounded-md hover-elevate w-full text-left disabled:opacity-40 disabled:cursor-not-allowed"
-                      onClick={() => revertMutation.mutate("approved")}
+                      onClick={() => revertMutation.mutate({ target: "draft" })}
                       disabled={revertMutation.isPending}
-                      data-testid="button-revert-to-approved"
+                      data-testid="button-revert-to-draft"
                     >
                       <Undo2 className="w-3.5 h-3.5 text-muted-foreground" />
-                      Revert to Approved
+                      Revert to Draft
                     </button>
                   </>
+                )}
+                {/* Locked contract — only Revert to Approved (unlocks). */}
+                {estimate && estimate.status === "contract" && (
+                  <button
+                    className="flex items-center gap-2 px-2 py-1.5 text-xs rounded-md hover-elevate w-full text-left disabled:opacity-40 disabled:cursor-not-allowed"
+                    onClick={() => revertMutation.mutate({ target: "approved" })}
+                    disabled={revertMutation.isPending}
+                    data-testid="button-revert-to-approved"
+                  >
+                    <Undo2 className="w-3.5 h-3.5 text-muted-foreground" />
+                    Revert to Approved
+                  </button>
                 )}
                 <button
                   className="flex items-center gap-2 px-2 py-1.5 text-xs rounded-md hover-elevate w-full text-left disabled:opacity-40 disabled:cursor-not-allowed"
@@ -7836,8 +7907,9 @@ export default function EstimateDetail() {
         </div>
       )}
 
-      {/* Approve confirmation dialog (single source of truth for promoting a
-          revision to the contract estimate). */}
+      {/* Stage 1 — Approve confirmation. Promotes the revision to the project's
+          live (still-editable) selected estimate and stamps the contract
+          price. The estimate stays unlocked so you can keep refining it. */}
       <Dialog
         open={approveDialogRevisionId !== null}
         onOpenChange={(open) => { if (!open) setApproveDialogRevisionId(null); }}
@@ -7845,14 +7917,14 @@ export default function EstimateDetail() {
         <DialogContent data-testid="dialog-approve-estimate">
           <DialogHeader>
             <DialogTitle>
-              {project?.selectedEstimateId
-                ? (project.selectedEstimateId === approveDialogRevisionId ? "Re-approve this revision?" : "Replace the current contract estimate?")
+              {project?.selectedEstimateId && project.selectedEstimateId !== approveDialogRevisionId
+                ? "Switch the live estimate to this revision?"
                 : "Approve this revision?"}
             </DialogTitle>
             <DialogDescription>
               {project?.selectedEstimateId && project.selectedEstimateId !== approveDialogRevisionId
-                ? "This will replace the current contract estimate. The contract price, project budget and labour-hours budget will be re-populated from this revision."
-                : "Approving this estimate will turn it into the contract for this project. The contract price, budget and labour-hours budget will all be populated from this estimate, and this Estimates page will become the Costings page."}
+                ? "This makes this revision the project's live estimate. It stays editable, and the contract price, budget and labour-hours budget update live as you change it. You can lock it later with “Mark as Contract”."
+                : "This makes the estimate the project's live estimate. It stays editable — the contract price, budget and labour-hours budget update live as you change it. When you're ready to lock it in, use “Mark as Contract”."}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -7877,6 +7949,46 @@ export default function EstimateDetail() {
               data-testid="button-approve-confirm"
             >
               {approveMutation.isPending ? "Approving…" : "Confirm"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Stage 2 — Mark as Contract confirmation. Locks the approved estimate
+          as the signed contract and freezes the contract price. */}
+      <Dialog
+        open={contractDialogRevisionId !== null}
+        onOpenChange={(open) => { if (!open) setContractDialogRevisionId(null); }}
+      >
+        <DialogContent data-testid="dialog-mark-contract">
+          <DialogHeader>
+            <DialogTitle>Mark this estimate as the contract?</DialogTitle>
+            <DialogDescription>
+              This locks the estimate as the signed contract and freezes the contract price at its current total. The estimate (and the project's Costings) become read-only. You can undo this later with “Revert to Approved”.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="ghost"
+              onClick={() => setContractDialogRevisionId(null)}
+              disabled={contractMutation.isPending}
+              data-testid="button-contract-cancel"
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="default"
+              onClick={() => {
+                const id = contractDialogRevisionId;
+                if (!id) return;
+                contractMutation.mutate(id, {
+                  onSuccess: () => setContractDialogRevisionId(null),
+                });
+              }}
+              disabled={contractMutation.isPending}
+              data-testid="button-contract-confirm"
+            >
+              {contractMutation.isPending ? "Locking…" : "Mark as Contract"}
             </Button>
           </DialogFooter>
         </DialogContent>

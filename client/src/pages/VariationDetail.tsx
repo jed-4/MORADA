@@ -238,7 +238,18 @@ export default function VariationDetail() {
     (sum: number, v: any) => sum + (v.totalAmount ?? 0),
     0
   );
-  const originalContractCents = (currentProject as any)?.contractPrice ?? 0;
+  // Live original contract price (inc-GST cents) from the selected estimate,
+  // not the stamped project.contractPrice snapshot.
+  const { data: variationContractMetrics } = useQuery<{ originalContractPriceIncGstCents: number }>({
+    queryKey: ["/api/projects", currentProjectId, "contract-metrics"],
+    queryFn: () =>
+      fetch(`/api/projects/${currentProjectId}/contract-metrics`, { credentials: "include" }).then((r) => r.json()),
+    enabled: !!currentProjectId,
+  });
+  const originalContractCents =
+    variationContractMetrics?.originalContractPriceIncGstCents
+    ?? (currentProject as any)?.contractPrice
+    ?? 0;
   const revisedContractCents = originalContractCents + approvedVariationsTotal;
   const varLogoUrl = companySettings?.logoUrl
     ? (companySettings.logoUrl.startsWith("http") ? companySettings.logoUrl : `${window.location.origin}${companySettings.logoUrl}`)

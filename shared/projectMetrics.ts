@@ -1,6 +1,18 @@
+import { computeEstimateSummary } from "./pricing";
+
 export interface EstimateItemForMetrics {
   priceIncTax: number | null;
   taxAmount: number | null;
+  // Raw inputs needed to recompute the original contract via the single
+  // pricing source of truth (computeEstimateSummary). unitCostExTax/quantity/
+  // markupPercent let us apply projectMarkupPercent exactly ONCE, instead of
+  // re-applying it on top of the cached priceIncTax (which already bakes the
+  // project markup in for lines that have no explicit per-line markup — that
+  // path double-counts). priceIncTax/taxAmount remain for fixed-price (PC sum)
+  // lines where qty*unitCost === 0.
+  unitCostExTax?: number | null;
+  quantity?: number | null;
+  markupPercent?: number | null;
 }
 
 export interface VariationForMetrics {
@@ -37,27 +49,22 @@ export function computeContractMetricsCents(
   estimateItems: EstimateItemForMetrics[],
   variations: VariationForMetrics[],
   projectMarkupPercent: number | null | undefined = 0,
+  taxRate: number | null | undefined = 10,
 ): ContractMetricsCents {
-  // estimate_items.priceIncTax / taxAmount are stored as dollars (double precision,
-  // 2dp) — convert to cents here. variations.subtotal / totalAmount are integer
-  // cents already.
-  let itemsIncGstCents = 0;
-  let itemsTaxCents = 0;
-  for (const item of estimateItems) {
-    itemsIncGstCents += Math.round((Number(item.priceIncTax) || 0) * 100);
-    itemsTaxCents += Math.round((Number(item.taxAmount) || 0) * 100);
-  }
-  const itemsExGstCents = itemsIncGstCents - itemsTaxCents;
-
-  // Apply project-level builder margin on top of the line items to get the true
-  // contracted (sell) price. The percent is applied to ex-GST, then GST is added
-  // back at the same effective rate the items used.
-  const margin = (Number(projectMarkupPercent) || 0) / 100;
-  const originalExGst = Math.round(itemsExGstCents * (1 + margin));
-  // Preserve the items' effective tax rate (handles non-10% or zero-rated items).
-  const effectiveTaxRate =
-    itemsExGstCents > 0 ? itemsTaxCents / itemsExGstCents : 0;
-  const originalIncGst = Math.round(originalExGst * (1 + effectiveTaxRate));
+  // The ORIGINAL contract price is the canonical estimate total. Derive it from
+  // the single pricing source of truth (computeEstimateSummary) so it ALWAYS
+  // matches the value stamped onto projects.contractPrice at approve/contract
+  // time. This recomputes per-line markup from unitCost/qty/markupPercent and
+  // applies projectMarkupPercent exactly once at the subtotal — avoiding the
+  // double-count that occurs when project markup is re-applied on top of the
+  // cached priceIncTax (which already bakes it in for null-markup lines).
+  // computeEstimateSummary returns dollars (2dp); convert to cents here.
+  const summary = computeEstimateSummary(estimateItems, {
+    projectMarkupPercent,
+    taxRate,
+  });
+  const originalExGst = Math.round((summary.totalExTax || 0) * 100);
+  const originalIncGst = Math.round((summary.total || 0) * 100);
 
   let varExGst = 0;
   let varIncGst = 0;
@@ -93,8 +100,14 @@ export function computeContractMetrics(
   estimateItems: EstimateItemForMetrics[],
   variations: VariationForMetrics[],
   projectMarkupPercent: number | null | undefined = 0,
+  taxRate: number | null | undefined = 10,
 ): ContractMetrics {
   return toContractMetrics(
-    computeContractMetricsCents(estimateItems, variations, projectMarkupPercent),
+    computeContractMetricsCents(
+      estimateItems,
+      variations,
+      projectMarkupPercent,
+      taxRate,
+    ),
   );
 }

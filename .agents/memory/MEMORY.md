@@ -5,3 +5,5 @@
 - [tsc OOM](typecheck-oom.md) — typecheck is `npm run check`; full tsc OOMs here (infra limit); trust the tsx dev boot instead.
 - [Attachment preview mimeType](attachment-preview-mimetype.md) — object-storage attachment URLs are extensionless; preview kind-detection needs the stored mimeType, not the URL extension.
 - [Auto OCR gate](auto-ocr-gate.md) — on-open auto AI bill reader must only fire for empty DRAFT bills; Xero imports have ocrProcessed=false and get clobbered (visual only) otherwise.
+- [Contract price canonical](contract-price-canonical.md) — contract/original price = computeEstimateSummary().total, NOT cached priceIncTax (double-counts projectMarkup on null-markup lines); pass taxRate 4th arg.
+- [Global /api auth middleware](api-global-auth-middleware.md) — one app.use('/api') guard protects all routes via allowlist; per-route "unauthenticated" findings are false positives (auth yes, company-scope no).

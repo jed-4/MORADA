@@ -256,8 +256,15 @@ export function useProjectMetrics() {
       : null;
     const projectMarkupPercent =
       (selectedEstimate as any)?.projectMarkupPercent ?? 0;
+    const taxRate = (selectedEstimate as any)?.taxRate ?? 10;
     const contractMetrics = computeContractMetrics(
-      estimateItems.map((i) => ({ priceIncTax: i.priceIncTax, taxAmount: i.taxAmount })),
+      estimateItems.map((i) => ({
+        priceIncTax: i.priceIncTax,
+        taxAmount: i.taxAmount,
+        unitCostExTax: (i as any).unitCostExTax,
+        quantity: (i as any).quantity,
+        markupPercent: (i as any).markupPercent,
+      })),
       variations.map((v) => {
         const row = v as Variation & {
           subtotal?: number | null;
@@ -274,6 +281,7 @@ export function useProjectMetrics() {
         };
       }),
       projectMarkupPercent,
+      taxRate,
     );
 
     // Contract Price (legacy alias — inc-GST dollars)
