@@ -178,7 +178,7 @@ export default function BudgetPage() {
   const hoursPercentUsed = totalBudgetedHours > 0 ? Math.round((totalActualHours / totalBudgetedHours) * 100) : 0;
 
   type CostRow =
-    | { kind: "category"; id: string; categoryTitle: string; count: number; budgeted: number; actual: number; forecast: number; variance: number }
+    | { kind: "category"; id: string; categoryTitle: string; count: number; budgeted: number; actual: number }
     | { kind: "item"; id: string; item: BudgetLineItem; categoryTitle: string };
 
   const costRows = useMemo<CostRow[]>(() => {
@@ -201,8 +201,6 @@ export default function BudgetPage() {
       );
       const budgeted = items.reduce((s, i) => s + i.budgetedAmount, 0);
       const actual = items.reduce((s, i) => s + i.actualAmount, 0);
-      const forecast = items.reduce((s, i) => s + i.forecastAmount, 0);
-      const variance = items.reduce((s, i) => s + i.variance, 0);
       rows.push({
         kind: "category",
         id: `cat-${categoryTitle}`,
@@ -210,8 +208,6 @@ export default function BudgetPage() {
         count: items.length,
         budgeted,
         actual,
-        forecast,
-        variance,
       });
       const isCollapsed = collapsedCategories.has(categoryTitle);
       if (!isCollapsed) {
@@ -294,36 +290,20 @@ export default function BudgetPage() {
       meta: { defaultWidth: 110, align: "right", headerLabel: "Actual" },
     },
     {
-      id: "forecast",
-      header: "Forecast",
-      enableSorting: false,
-      cell: ({ row }) => {
-        const r = row.original;
-        const value = r.kind === "category" ? r.forecast : r.item.forecastAmount;
-        return (
-          <span className={cn("text-xs tabular-nums", r.kind === "category" && "font-semibold")} data-testid={r.kind === "item" ? `text-forecast-${r.id}` : undefined}>
-            {formatCurrency(value)}
-          </span>
-        );
-      },
-      size: 110,
-      meta: { defaultWidth: 110, align: "right", headerLabel: "Forecast" },
-    },
-    {
       id: "variance",
-      header: "Variance",
+      header: "Difference",
       enableSorting: false,
       cell: ({ row }) => {
         const r = row.original;
-        const value = r.kind === "category" ? r.variance : r.item.variance;
+        const value = r.kind === "category" ? r.budgeted - r.actual : r.item.budgetedAmount - r.item.actualAmount;
         return (
-          <span className={cn("text-xs tabular-nums", r.kind === "category" && "font-semibold", getVarianceColor(value))} data-testid={r.kind === "item" ? `text-variance-${r.id}` : undefined}>
+          <span className={cn("text-xs tabular-nums", r.kind === "category" && "font-semibold", getVarianceColor(value))} data-testid={r.kind === "item" ? `text-difference-${r.id}` : undefined}>
             {formatCurrency(value)}
           </span>
         );
       },
       size: 110,
-      meta: { defaultWidth: 110, align: "right", headerLabel: "Variance" },
+      meta: { defaultWidth: 110, align: "right", headerLabel: "Difference" },
     },
     {
       id: "status",
@@ -331,7 +311,7 @@ export default function BudgetPage() {
       enableSorting: false,
       cell: ({ row }) => {
         const r = row.original;
-        const value = r.kind === "category" ? r.variance : r.item.variance;
+        const value = r.kind === "category" ? r.budgeted - r.actual : r.item.budgetedAmount - r.item.actualAmount;
         return (
           <Badge variant={getVarianceBadgeVariant(value)} className="h-4 px-1.5 text-data">
             {value > 0 ? "Under" : value < 0 ? "Over" : "On Track"}
@@ -571,7 +551,6 @@ export default function BudgetPage() {
                 value: (budgetData.revisedAmount ?? 0) - (budgetData.actualAmount ?? 0),
                 color: getVarianceColor((budgetData.revisedAmount ?? 0) - (budgetData.actualAmount ?? 0)),
               },
-              { label: "Forecast", value: budgetData.forecastAmount, color: "text-foreground" },
             ].map((stat, i) => (
               <div
                 key={stat.label}
