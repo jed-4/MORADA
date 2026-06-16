@@ -74,6 +74,7 @@ import {
 import { type Bill, type Project, type Supplier } from "@shared/schema";
 import { useAuth } from "@/hooks/use-auth";
 import { ReimbursementsQueue } from "@/components/bills/ReimbursementsQueue";
+import { FilePreviewModal, type PreviewFile } from "@/components/FilePreviewModal";
 import { ProjectIcon } from "@/components/ProjectIcon";
 import { StatusBadge } from "@/components/StatusBadge";
 import { formatCurrency, formatDate } from "@/lib/formatters";
@@ -615,6 +616,7 @@ export default function Bills({ embedded }: { embedded?: boolean } = {}) {
   const [importProjectId, setImportProjectId] = useState<string>("");
   const [emailSetupOpen, setEmailSetupOpen] = useState(false);
   const [billsView, setBillsView] = useState<"bills" | "reimbursements">("bills");
+  const [previewFile, setPreviewFile] = useState<PreviewFile | null>(null);
 
   const { toast } = useToast();
 
@@ -1021,19 +1023,19 @@ export default function Bills({ embedded }: { embedded?: boolean } = {}) {
           // attachmentUrls may contain either legacy string entries or rich
           // attachment record objects ({objectPath, filename, ...}). Normalize
           // to a list of URL strings so the popover never crashes.
-          type AttachmentEntry = string | { objectPath?: string; filename?: string };
+          type AttachmentEntry = string | { objectPath?: string; filename?: string; mimeType?: string };
           const rawAttachments: AttachmentEntry[] = Array.isArray(bill.attachmentUrls)
             ? (bill.attachmentUrls as AttachmentEntry[])
             : [];
           const attachments = rawAttachments
             .map((a) => {
-              if (typeof a === "string") return { url: a, filename: undefined as string | undefined };
+              if (typeof a === "string") return { url: a, filename: undefined as string | undefined, mimeType: undefined as string | undefined };
               if (a && typeof a === "object" && typeof a.objectPath === "string") {
-                return { url: a.objectPath, filename: a.filename };
+                return { url: a.objectPath, filename: a.filename, mimeType: a.mimeType };
               }
               return null;
             })
-            .filter((a): a is { url: string; filename: string | undefined } => a !== null && a.url.length > 0);
+            .filter((a): a is { url: string; filename: string | undefined; mimeType: string | undefined } => a !== null && a.url.length > 0);
           const attachmentCount = attachments.length;
           if (attachmentCount === 0) return null;
           return (
@@ -1047,11 +1049,16 @@ export default function Bills({ embedded }: { embedded?: boolean } = {}) {
               <PopoverContent side="left" align="center" className="w-72 p-2" onClick={(e) => e.stopPropagation()}>
                 <p className="text-xs font-medium text-muted-foreground mb-2">Attachments ({attachmentCount})</p>
                 <div className="flex flex-col gap-1">
-                  {attachments.map(({ url, filename: providedFilename }, idx) => {
+                  {attachments.map(({ url, filename: providedFilename, mimeType }, idx) => {
                     const filename = providedFilename || url.split("/").pop()?.split("?")[0] || `Attachment ${idx + 1}`;
-                    const isImage = /\.(jpe?g|png|gif|webp|svg)(\?|$)/i.test(url);
+                    const isImage = mimeType?.startsWith("image/") || /\.(jpe?g|png|gif|webp|svg)(\?|$)/i.test(url);
                     return (
-                      <a key={idx} href={url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 rounded-md p-1.5 hover-elevate">
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); setPreviewFile({ url, filename, mimeType }); }}
+                        className="flex items-center gap-2 rounded-md p-1.5 hover-elevate text-left w-full"
+                      >
                         {isImage ? (
                           <img src={url} alt={filename} className="h-8 w-8 rounded object-cover shrink-0 border border-border" />
                         ) : (
@@ -1060,7 +1067,7 @@ export default function Bills({ embedded }: { embedded?: boolean } = {}) {
                           </div>
                         )}
                         <span className="text-xs truncate text-foreground">{decodeURIComponent(filename)}</span>
-                      </a>
+                      </button>
                     );
                   })}
                 </div>
@@ -1519,6 +1526,12 @@ export default function Bills({ embedded }: { embedded?: boolean } = {}) {
           </div>
         )}
       </div>}
+
+      <FilePreviewModal
+        file={previewFile}
+        open={!!previewFile}
+        onOpenChange={(o) => { if (!o) setPreviewFile(null); }}
+      />
 
     </div>
   );

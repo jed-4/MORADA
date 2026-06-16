@@ -29,6 +29,7 @@ import {
   ClipboardList,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { FilePreviewModal, type PreviewFile } from "@/components/FilePreviewModal";
 import { LineItemTable, type LineItemColumn } from "@/components/LineItemTable";
 import { Card } from "@/components/ui/card";
 import { ToastAction } from "@/components/ui/toast";
@@ -205,6 +206,7 @@ export default function BillDetail() {
   const [attachmentMeta, setAttachmentMeta] = useState<Record<string, { filename: string; mimeType?: string }>>({});
   const [sheetPreviewUrl, setSheetPreviewUrl] = useState<string | null>(null);
   const [sheetPreviewFilename, setSheetPreviewFilename] = useState<string>("");
+  const [modalPreviewFile, setModalPreviewFile] = useState<PreviewFile | null>(null);
   const [duplicateWarning, setDuplicateWarning] = useState<{ existingBillNumber: string; reference: string } | null>(null);
   const pendingSubmitDataRef = useRef<BillFormData | null>(null);
   const [unmatchedSupplierDialogOpen, setUnmatchedSupplierDialogOpen] = useState(false);
@@ -3285,7 +3287,7 @@ export default function BillDetail() {
             <div className="flex items-center justify-between px-3 py-2 border-b shrink-0 gap-2">
               <span className="text-sm font-medium truncate flex-1">{sheetPreviewFilename || "Attachment"}</span>
               <div className="flex items-center gap-1 shrink-0">
-                <Button variant="ghost" size="icon" onClick={() => window.open(sheetPreviewUrl, '_blank')}>
+                <Button variant="ghost" size="icon" onClick={() => setModalPreviewFile({ url: sheetPreviewUrl, filename: sheetPreviewFilename, mimeType: attachmentMeta[sheetPreviewUrl]?.mimeType })}>
                   <Maximize2 className="h-4 w-4" />
                 </Button>
                 <Button variant="ghost" size="icon" onClick={() => setSheetPreviewUrl(null)}>
@@ -3307,6 +3309,12 @@ export default function BillDetail() {
           </div>
         )}
       </div>
+
+      <FilePreviewModal
+        file={modalPreviewFile}
+        open={!!modalPreviewFile}
+        onOpenChange={(o) => { if (!o) setModalPreviewFile(null); }}
+      />
 
       <Dialog open={rejectDialogOpen} onOpenChange={setRejectDialogOpen}>
         <DialogContent data-testid="dialog-reject-bill">
