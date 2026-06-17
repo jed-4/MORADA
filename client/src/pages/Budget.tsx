@@ -1,4 +1,4 @@
-import { useParams } from "wouter";
+import { useParams, Link } from "wouter";
 import { useMemo, useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { type ColumnDef } from "@tanstack/react-table";
@@ -8,6 +8,13 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
 import { Progress } from "@/components/ui/progress";
 import { RefreshCw, DollarSign, AlertCircle, Clock, ChevronDown, ChevronRight, ChevronsDownUp, ChevronsUpDown } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
@@ -94,6 +101,30 @@ export default function BudgetPage() {
     queryKey: ["/api/projects", projectId, "contract-metrics"],
     queryFn: () => apiRequest(`/api/projects/${projectId}/contract-metrics`, "GET"),
     enabled: !!projectId && canViewActuals,
+  });
+
+  // Drill-down: which cost code's Actual is being inspected (null = closed).
+  const [actualDrill, setActualDrill] = useState<{ costCodeId: string | null; title: string } | null>(null);
+  const { data: drillData, isLoading: drillLoading } = useQuery<{
+    total: number;
+    bills: Array<{
+      billId: string;
+      billNumber: string | null;
+      billType: string | null;
+      status: string | null;
+      billDate: string | null;
+      supplierName: string;
+      lineTotal: number;
+      lines: Array<{ id: string; description: string; total: number }>;
+    }>;
+  }>({
+    queryKey: ["/api/projects", projectId, "budget-actuals", actualDrill?.costCodeId ?? "uncategorized"],
+    queryFn: () =>
+      apiRequest(
+        `/api/projects/${projectId}/budget-actuals${actualDrill?.costCodeId ? `?costCodeId=${actualDrill.costCodeId}` : ""}`,
+        "GET",
+      ),
+    enabled: !!projectId && !!actualDrill,
   });
 
   const recalculateMutation = useMutation({
@@ -339,10 +370,28 @@ export default function BudgetPage() {
         const r = row.original;
         const value = r.kind === "category" ? r.actual : r.item.actualAmount;
         if (r.kind === "category") return renderCategoryAmountChip(value);
+        if (value === 0) {
+          return (
+            <span className="text-xs tabular-nums text-muted-foreground" data-testid={`text-actual-${r.id}`}>
+              {formatCurrency(value)}
+            </span>
+          );
+        }
         return (
-          <span className="text-xs tabular-nums" data-testid={`text-actual-${r.id}`}>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setActualDrill({
+                costCodeId: r.item.costCodeId,
+                title: r.item.costCodeTitle || "Uncategorized",
+              });
+            }}
+            className="text-xs tabular-nums text-[hsl(var(--bp-purple))] underline-offset-2 hover:underline"
+            data-testid={`button-actual-${r.id}`}
+          >
             {formatCurrency(value)}
-          </span>
+          </button>
         );
       },
       size: 110,
@@ -769,6 +818,47 @@ export default function BudgetPage() {
         </div>
       )}
 
+      {/* GROSS MARGIN BAR (ex GST) — costs tab only */}
+      {activeTab === "costs" && canViewActuals && (() => {
+        const contractCents =
+          contractMetrics?.revisedContractPriceExGstCents ?? budgetData.revisedAmount ?? 0;
+        const forecastCents = budgetData.forecastAmount ?? 0;
+        const grossProfitCents = contractCents - forecastCents;
+        const marginPct = contractCents > 0 ? (grossProfitCents / contractCents) * 100 : 0;
+        return (
+          <div
+            className="flex items-center gap-x-4 gap-y-1 px-3 py-1.5 bg-[hsl(var(--bp-subtle))] border-b border-border flex-shrink-0 flex-wrap text-[11px]"
+            data-testid="bar-gross-margin"
+          >
+            <span className="text-[9px] uppercase tracking-wide text-muted-foreground font-semibold">
+              Gross Margin (ex GST)
+            </span>
+            <div className="flex items-center gap-1.5" data-testid="margin-contract">
+              <span className="text-muted-foreground">Contract</span>
+              <span className="font-semibold tabular-nums text-foreground">{formatCurrency(contractCents)}</span>
+            </div>
+            <span className="text-muted-foreground">−</span>
+            <div className="flex items-center gap-1.5" data-testid="margin-forecast-cost">
+              <span className="text-muted-foreground">Forecast Cost</span>
+              <span className="font-semibold tabular-nums text-foreground">{formatCurrency(forecastCents)}</span>
+            </div>
+            <span className="text-muted-foreground">=</span>
+            <div className="flex items-center gap-1.5" data-testid="margin-gross-profit">
+              <span className="text-muted-foreground">Gross Profit</span>
+              <span className={cn("font-semibold tabular-nums", getVarianceColor(grossProfitCents))}>
+                {formatCurrency(grossProfitCents)}
+              </span>
+            </div>
+            <div className="flex items-center gap-1.5 ml-auto" data-testid="margin-percent">
+              <span className="text-muted-foreground">Margin</span>
+              <span className={cn("font-semibold tabular-nums", getVarianceColor(grossProfitCents))}>
+                {marginPct.toFixed(1)}%
+              </span>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* Content */}
       <div className="flex-1 min-h-0 overflow-hidden p-2">
         {activeTab === "costs" && canViewActuals && (
@@ -936,6 +1026,72 @@ export default function BudgetPage() {
           </>
         )}
       </div>
+
+      <Dialog open={!!actualDrill} onOpenChange={(o) => { if (!o) setActualDrill(null); }}>
+        <DialogContent className="max-w-2xl" data-testid="dialog-actual-drill">
+          <DialogHeader>
+            <DialogTitle>Actual costs — {actualDrill?.title}</DialogTitle>
+            <DialogDescription>
+              Bills contributing to this cost code's actual spend.
+            </DialogDescription>
+          </DialogHeader>
+          {drillLoading ? (
+            <div className="space-y-2 py-2">
+              {[1, 2, 3].map((i) => (
+                <Skeleton key={i} className="h-12 w-full" />
+              ))}
+            </div>
+          ) : !drillData || drillData.bills.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-4 text-center">
+              No bills found for this cost code.
+            </p>
+          ) : (
+            <div className="space-y-2 max-h-[60vh] overflow-y-auto">
+              {drillData.bills.map((b) => (
+                <Link
+                  key={b.billId}
+                  href={`/projects/${projectId}/bills/${b.billId}`}
+                  onClick={() => setActualDrill(null)}
+                  className="block p-2.5 border rounded-md hover-elevate"
+                  data-testid={`drill-bill-${b.billId}`}
+                >
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="text-sm font-medium">{b.billNumber || "Bill"}</span>
+                        {b.billType === "credit" && (
+                          <Badge variant="secondary" className="text-data">Credit</Badge>
+                        )}
+                        {b.status && (
+                          <Badge variant="outline" className="text-data">{b.status}</Badge>
+                        )}
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {b.supplierName || "—"}
+                        {b.billDate ? ` · ${new Date(b.billDate).toLocaleDateString("en-AU")}` : ""}
+                      </p>
+                    </div>
+                    <span
+                      className={cn(
+                        "text-sm font-semibold tabular-nums",
+                        b.lineTotal < 0 && "text-[hsl(var(--bp-coral))]",
+                      )}
+                    >
+                      {formatCurrency(b.lineTotal)}
+                    </span>
+                  </div>
+                </Link>
+              ))}
+              <div className="flex items-center justify-between gap-2 pt-2 border-t">
+                <span className="text-sm font-semibold">Total</span>
+                <span className="text-sm font-bold tabular-nums" data-testid="text-drill-total">
+                  {formatCurrency(drillData.total)}
+                </span>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

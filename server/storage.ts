@@ -42,6 +42,7 @@ import {
   type RfiComment, type InsertRfiComment,
   type Bill, type InsertBill,
   type BillLineItem, type InsertBillLineItem,
+  type BillPayment, type InsertBillPayment,
   type BillApproval, type InsertBillApproval,
   type Variation, type InsertVariation,
   type VariationItem, type InsertVariationItem,
@@ -116,6 +117,7 @@ import { db } from "./db";
 import { eq, or, and, desc, asc, gte, lte, sql, inArray, isNull, isNotNull, gt, not, ne } from "drizzle-orm";
 import * as schema from "@shared/schema";
 import { computeEstimateItemPrice, computeEstimateSummary } from "@shared/pricing";
+import { computeBillTotalsCents } from "@shared/billTotals";
 
 // --- Timezone helpers (used by clockIn/clockOut and backfill) ---
 export function formatHHmmInTz(d: Date, tz: string): string {
@@ -817,6 +819,15 @@ export interface IStorage {
   createClientInvoicePayment(payment: InsertClientInvoicePayment): Promise<ClientInvoicePayment>;
   deleteClientInvoicePayment(id: string): Promise<boolean>;
   voidClientInvoicePayment(id: string): Promise<ClientInvoicePayment | undefined>;
+
+  // Bill Payments CRUD
+  getBillPayments(billId: string): Promise<BillPayment[]>;
+  getBillPaymentById(id: string): Promise<BillPayment | undefined>;
+  createBillPayment(payment: InsertBillPayment): Promise<BillPayment>;
+  deleteBillPayment(id: string): Promise<boolean>;
+  voidBillPayment(id: string): Promise<BillPayment | undefined>;
+  syncBillPaidStatus(billId: string): Promise<void>;
+  recomputeBillTotals(billId: string): Promise<boolean>;
 
   // Invoice-Estimate Junction Table
   getInvoiceEstimates(invoiceId: string): Promise<InvoiceEstimate[]>;
@@ -15046,6 +15057,9 @@ export class DbStorage implements IStorage {
       const newItems = await db.insert(schema.billLineItems)
         .values(item)
         .returning();
+      // Keep the bill header (subtotal/tax/total) in lockstep with its lines.
+      await this.recomputeBillTotals(newItems[0].billId).catch((e) =>
+        console.error("[recomputeBillTotals] after create line item failed:", e));
       return newItems[0];
     } catch (error) {
       console.error("Database error in createBillLineItem:", error);
@@ -15063,7 +15077,9 @@ export class DbStorage implements IStorage {
       if (!updatedItems[0]) {
         throw new Error("Bill line item not found");
       }
-      
+
+      await this.recomputeBillTotals(updatedItems[0].billId).catch((e) =>
+        console.error("[recomputeBillTotals] after update line item failed:", e));
       return updatedItems[0];
     } catch (error) {
       console.error("Database error in updateBillLineItem:", error);
@@ -15073,10 +15089,161 @@ export class DbStorage implements IStorage {
 
   async deleteBillLineItem(id: string): Promise<void> {
     try {
+      const existing = await db.select({ billId: schema.billLineItems.billId })
+        .from(schema.billLineItems)
+        .where(eq(schema.billLineItems.id, id))
+        .limit(1);
       await db.delete(schema.billLineItems)
         .where(eq(schema.billLineItems.id, id));
+      if (existing[0]?.billId) {
+        await this.recomputeBillTotals(existing[0].billId).catch((e) =>
+          console.error("[recomputeBillTotals] after delete line item failed:", e));
+      }
     } catch (error) {
       console.error("Database error in deleteBillLineItem:", error);
+      throw error;
+    }
+  }
+
+  // Recompute a bill's header (subtotal/tax/total) from its line items, which
+  // are the source of truth. Skips bills with no line items so freight- or
+  // header-only bills are never clobbered. Returns true when a change was made.
+  async recomputeBillTotals(billId: string): Promise<boolean> {
+    try {
+      const billRows = await db.select().from(schema.bills)
+        .where(eq(schema.bills.id, billId)).limit(1);
+      const bill = billRows[0];
+      if (!bill) return false;
+
+      const lines = await db.select().from(schema.billLineItems)
+        .where(eq(schema.billLineItems.billId, billId));
+      if (lines.length === 0) return false;
+
+      const settings = await this.getCompanySettings();
+      const taxRate = Number(settings?.taxRate ?? 10) || 10;
+      const taxMode = bill.taxMode === "inclusive" ? "inclusive" : "exclusive";
+      const { subtotal, tax, total } = computeBillTotalsCents(
+        lines.map((l: BillLineItem) => ({ total: l.total ?? 0, tax: l.tax })),
+        taxMode,
+        taxRate,
+      );
+
+      if (subtotal === (bill.subtotal ?? 0) && tax === (bill.tax ?? 0) && total === (bill.total ?? 0)) {
+        return false;
+      }
+
+      await db.update(schema.bills)
+        .set({ subtotal, tax, total, updatedAt: new Date() })
+        .where(eq(schema.bills.id, billId));
+      return true;
+    } catch (error) {
+      console.error("Database error in recomputeBillTotals:", error);
+      throw error;
+    }
+  }
+
+  async getBillPayments(billId: string): Promise<BillPayment[]> {
+    try {
+      return await db.select()
+        .from(schema.billPayments)
+        .where(eq(schema.billPayments.billId, billId))
+        .orderBy(desc(schema.billPayments.paymentDate));
+    } catch (error) {
+      console.error("Database error in getBillPayments:", error);
+      throw error;
+    }
+  }
+
+  async getBillPaymentById(id: string): Promise<BillPayment | undefined> {
+    try {
+      const result = await db.select()
+        .from(schema.billPayments)
+        .where(eq(schema.billPayments.id, id))
+        .limit(1);
+      return result[0];
+    } catch (error) {
+      console.error("Database error in getBillPaymentById:", error);
+      throw error;
+    }
+  }
+
+  async createBillPayment(payment: InsertBillPayment): Promise<BillPayment> {
+    try {
+      const result = await db.insert(schema.billPayments)
+        .values(payment)
+        .returning();
+      await this.syncBillPaidStatus(payment.billId);
+      return result[0];
+    } catch (error) {
+      console.error("Database error in createBillPayment:", error);
+      throw error;
+    }
+  }
+
+  async deleteBillPayment(id: string): Promise<boolean> {
+    try {
+      const existing = await db.select({ billId: schema.billPayments.billId })
+        .from(schema.billPayments)
+        .where(eq(schema.billPayments.id, id))
+        .limit(1);
+      await db.delete(schema.billPayments)
+        .where(eq(schema.billPayments.id, id));
+      if (existing[0]?.billId) await this.syncBillPaidStatus(existing[0].billId);
+      return true;
+    } catch (error) {
+      console.error("Database error in deleteBillPayment:", error);
+      return false;
+    }
+  }
+
+  async voidBillPayment(id: string): Promise<BillPayment | undefined> {
+    try {
+      const result = await db.update(schema.billPayments)
+        .set({ isVoided: true, updatedAt: new Date() })
+        .where(eq(schema.billPayments.id, id))
+        .returning();
+      if (result[0]?.billId) await this.syncBillPaidStatus(result[0].billId);
+      return result[0];
+    } catch (error) {
+      console.error("Database error in voidBillPayment:", error);
+      throw error;
+    }
+  }
+
+  // Recompute bills.paidAmount and status from the non-voided payment history.
+  // Full payment => paid; partial => awaiting_payment; nothing left but bill was
+  // previously "paid" => fall back to awaiting_payment so it can't get stuck.
+  async syncBillPaidStatus(billId: string): Promise<void> {
+    try {
+      const billRows = await db.select().from(schema.bills)
+        .where(eq(schema.bills.id, billId)).limit(1);
+      const bill = billRows[0];
+      if (!bill) return;
+
+      const payments = await db.select().from(schema.billPayments)
+        .where(and(
+          eq(schema.billPayments.billId, billId),
+          eq(schema.billPayments.isVoided, false),
+        ));
+      const paid = payments.reduce((sum: number, p: BillPayment) => sum + (p.amount ?? 0), 0);
+      const total = bill.total ?? 0;
+
+      let status = bill.status;
+      if (total > 0 && paid >= total) {
+        status = "paid";
+      } else if (paid > 0) {
+        status = "awaiting_payment";
+      } else if (bill.status === "paid") {
+        status = "awaiting_payment";
+      }
+
+      const update: Partial<InsertBill> = { paidAmount: paid } as any;
+      if (status !== bill.status) (update as any).status = status;
+      await db.update(schema.bills)
+        .set({ ...(update as any), updatedAt: new Date() })
+        .where(eq(schema.bills.id, billId));
+    } catch (error) {
+      console.error("Database error in syncBillPaidStatus:", error);
       throw error;
     }
   }

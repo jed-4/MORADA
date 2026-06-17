@@ -1969,6 +1969,35 @@ export const insertBillLineItemSchema = createInsertSchema(billLineItems).omit({
 export type InsertBillLineItem = z.infer<typeof insertBillLineItemSchema>;
 export type BillLineItem = typeof billLineItems.$inferSelect;
 
+// Bill Payments (payment history for supplier bills) — mirrors
+// client_invoice_payments. Replaces the old free-text "Paid" status: marking a
+// bill paid now requires recording one or more payments here.
+export const billPayments = pgTable("bill_payments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  billId: varchar("bill_id").notNull().references(() => bills.id, { onDelete: "cascade" }),
+  amount: integer("amount").notNull(), // cents
+  paymentDate: timestamp("payment_date").notNull(),
+  paymentMethod: text("payment_method"),
+  reference: text("reference"),
+  notes: text("notes"),
+  isVoided: boolean("is_voided").notNull().default(false),
+  recordedBy: varchar("recorded_by").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertBillPaymentSchema = createInsertSchema(billPayments).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  amount: z.number(),
+  paymentDate: z.coerce.date(),
+});
+
+export type InsertBillPayment = z.infer<typeof insertBillPaymentSchema>;
+export type BillPayment = typeof billPayments.$inferSelect;
+
 // Bill Approvals
 export const billApprovals = pgTable("bill_approvals", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

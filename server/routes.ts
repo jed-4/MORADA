@@ -61,6 +61,7 @@ import {
   insertClientInvoiceSchema,
   insertClientInvoiceItemSchema,
   insertClientInvoicePaymentSchema,
+  insertBillPaymentSchema,
   insertInvoiceEstimateSchema,
   insertProposalSchema,
   insertProposalSectionSchema,
@@ -166,6 +167,7 @@ import {
   selections,
   selectionOptions
 } from "@shared/schema";
+import { computeBillTotalsCents } from "@shared/billTotals";
 import { matchSupplier } from "@shared/supplierMatcher";
 import {
   fuzzyMatchTimesheetCostCode,
@@ -13837,6 +13839,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (userCompanyId && (previous as any).companyId && (previous as any).companyId !== userCompanyId) {
         return res.status(403).json({ error: "Forbidden" });
       }
+
+      // New payment flow: a bill becomes "paid" only by recording payments that
+      // cover the total (POST /api/bills/:id/payments), never by flipping the
+      // status directly. This keeps paidAmount and status truthful.
+      if (validationResult.data.status === "paid" && previous.status !== "paid") {
+        const existingPayments = await storage.getBillPayments(req.params.id);
+        const paidSoFar = existingPayments
+          .filter((p) => !p.isVoided)
+          .reduce((sum, p) => sum + (p.amount ?? 0), 0);
+        const billTotal = previous.total ?? 0;
+        if (billTotal > 0 && paidSoFar < billTotal) {
+          return res.status(400).json({
+            error: "Record a payment to mark this bill as paid.",
+            code: "PAYMENT_REQUIRED",
+          });
+        }
+      }
+
       const bill = await storage.updateBill(req.params.id, validationResult.data);
 
       // ── Recompute linked PO status from bills (source of truth) ─────────
@@ -14454,6 +14474,233 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(204).send();
     } catch (error) {
       res.status(500).json({ error: "Failed to delete bill line item" });
+    }
+  });
+
+  // ───────────────────────── Bill Payments ─────────────────────────
+  // Records of money actually paid against a supplier bill. A bill is only
+  // "paid" once recorded payments cover its total (see syncBillPaidStatus).
+  // Amounts are in CENTS.
+  app.get("/api/bills/:id/payments", requireAuth, async (req, res) => {
+    try {
+      const bill = await storage.getBillById(req.params.id);
+      if (!bill) return res.status(404).json({ error: "Bill not found" });
+      const companyId = (req as any).user?.companyId;
+      if (companyId && (bill as any).companyId && (bill as any).companyId !== companyId) {
+        return res.status(403).json({ error: "Forbidden" });
+      }
+      const payments = await storage.getBillPayments(req.params.id);
+      res.json(payments);
+    } catch (error) {
+      console.error("Error fetching bill payments:", error);
+      res.status(500).json({ error: "Failed to fetch bill payments" });
+    }
+  });
+
+  app.post("/api/bills/:id/payments", requireAuth, async (req, res) => {
+    try {
+      const bill = await storage.getBillById(req.params.id);
+      if (!bill) return res.status(404).json({ error: "Bill not found" });
+      const companyId = (req as any).user?.companyId;
+      if (companyId && (bill as any).companyId && (bill as any).companyId !== companyId) {
+        return res.status(403).json({ error: "Forbidden" });
+      }
+
+      const validationResult = insertBillPaymentSchema.safeParse({
+        ...req.body,
+        billId: req.params.id,
+        recordedBy: (req as any).user?.id ?? null,
+      });
+      if (!validationResult.success) {
+        return res.status(400).json({
+          error: "Validation failed",
+          details: fromZodError(validationResult.error).toString(),
+        });
+      }
+      if (!validationResult.data.amount || validationResult.data.amount <= 0) {
+        return res.status(400).json({ error: "Payment amount must be greater than zero." });
+      }
+
+      const wasPaid = bill.status === "paid";
+      const payment = await storage.createBillPayment(validationResult.data);
+
+      // Keep Xero in sync: when this payment brings the bill fully paid, push a
+      // matching payment to Xero (best-effort — never block the local record).
+      const updated = await storage.getBillById(req.params.id);
+      if (updated && !wasPaid && updated.status === "paid" && updated.xeroInvoiceId && companyId) {
+        (async () => {
+          try {
+            const connection = await storage.getXeroConnectionByCompanyId(companyId);
+            if (!connection) return;
+            await xeroService.createPayment(connection.id, {
+              invoiceId: updated.xeroInvoiceId!,
+              amount: (updated.paidAmount || updated.total || 0) / 100,
+              date: new Date().toISOString().slice(0, 10),
+              accountCode: process.env.XERO_DEFAULT_BANK_CODE || "090",
+              reference: `BuildPro bill ${updated.billNumber || updated.id}`,
+            });
+            await storage.updateBill(updated.id, {
+              xeroLastSyncAt: new Date(),
+              xeroLastSyncStatus: "success",
+              xeroLastSyncError: null,
+            } as any);
+          } catch (err: any) {
+            console.error("[bill-payment-push] failed:", err?.message || err);
+            await storage.updateBill(updated.id, {
+              xeroLastSyncAt: new Date(),
+              xeroLastSyncStatus: "failed",
+              xeroLastSyncError: (err?.message || "Payment push failed").slice(0, 500),
+            } as any).catch(() => {});
+          }
+        })();
+      }
+
+      res.status(201).json(payment);
+    } catch (error) {
+      console.error("Error creating bill payment:", error);
+      res.status(500).json({ error: "Failed to create bill payment" });
+    }
+  });
+
+  app.patch("/api/bill-payments/:id/void", requireAuth, async (req, res) => {
+    try {
+      const payment = await storage.getBillPaymentById(req.params.id);
+      if (!payment) return res.status(404).json({ error: "Bill payment not found" });
+      const bill = await storage.getBillById(payment.billId);
+      if (!bill) return res.status(404).json({ error: "Bill not found" });
+      const companyId = (req as any).user?.companyId;
+      if (companyId && (bill as any).companyId && (bill as any).companyId !== companyId) {
+        return res.status(403).json({ error: "Forbidden" });
+      }
+      const result = await storage.voidBillPayment(req.params.id);
+      if (!result) return res.status(404).json({ error: "Bill payment not found" });
+      res.json(result);
+    } catch (error) {
+      console.error("Error voiding bill payment:", error);
+      res.status(500).json({ error: "Failed to void bill payment" });
+    }
+  });
+
+  app.delete("/api/bill-payments/:id", requireAuth, async (req, res) => {
+    try {
+      const payment = await storage.getBillPaymentById(req.params.id);
+      if (!payment) return res.status(404).json({ error: "Bill payment not found" });
+      const bill = await storage.getBillById(payment.billId);
+      if (!bill) return res.status(404).json({ error: "Bill not found" });
+      const companyId = (req as any).user?.companyId;
+      if (companyId && (bill as any).companyId && (bill as any).companyId !== companyId) {
+        return res.status(403).json({ error: "Forbidden" });
+      }
+      const deleted = await storage.deleteBillPayment(req.params.id);
+      if (!deleted) return res.status(404).json({ error: "Bill payment not found" });
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error deleting bill payment:", error);
+      res.status(500).json({ error: "Failed to delete bill payment" });
+    }
+  });
+
+  // ─────────────── Admin: recompute bill header totals ───────────────
+  // Repairs bills whose header (subtotal/tax/total) drifted from their line
+  // items — e.g. older Xero imports that stored ex-GST as the total. Dry-run by
+  // default; pass { dryRun: false } to apply. Scoped to a single project.
+  app.post("/api/bills/recompute-totals", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const { projectId, dryRun = true } = req.body || {};
+      if (!projectId) return res.status(400).json({ error: "projectId is required" });
+      const companyId = (req as any).user?.companyId;
+
+      const bills = await storage.getBills(projectId, undefined, companyId || undefined);
+      const settings = await storage.getCompanySettings();
+      const taxRate = Number(settings?.taxRate ?? 10) || 10;
+
+      const changes: Array<{
+        billId: string; billNumber: string;
+        before: { subtotal: number; tax: number; total: number };
+        after: { subtotal: number; tax: number; total: number };
+      }> = [];
+
+      for (const bill of bills) {
+        const lines = await storage.getBillLineItems(bill.id);
+        if (lines.length === 0) continue;
+        const taxMode = bill.taxMode === "inclusive" ? "inclusive" : "exclusive";
+        const after = computeBillTotalsCents(
+          lines.map((l) => ({ total: l.total ?? 0, tax: l.tax })),
+          taxMode,
+          taxRate,
+        );
+        const before = { subtotal: bill.subtotal ?? 0, tax: bill.tax ?? 0, total: bill.total ?? 0 };
+        if (after.subtotal === before.subtotal && after.tax === before.tax && after.total === before.total) {
+          continue;
+        }
+        changes.push({ billId: bill.id, billNumber: bill.billNumber, before, after });
+      }
+
+      if (!dryRun) {
+        for (const c of changes) {
+          await storage.recomputeBillTotals(c.billId);
+        }
+        await recalcProjectBudget(projectId).catch((e) =>
+          console.error("[recompute-totals] budget recalc failed:", e));
+      }
+
+      res.json({ dryRun: !!dryRun, projectId, count: changes.length, changes });
+    } catch (error) {
+      console.error("Error recomputing bill totals:", error);
+      res.status(500).json({ error: "Failed to recompute bill totals" });
+    }
+  });
+
+  // ─────────── Budget actual-cost drill-down (bills behind a row) ───────────
+  // Returns the bills (with matching line items) that make up a budget row's
+  // Actual figure for a given cost code. Credit notes subtract. Ex-GST cents.
+  app.get("/api/projects/:projectId/budget-actuals", requireAuth, requirePermission("financial.budget_actuals", "view"), async (req, res) => {
+    try {
+      const { projectId } = req.params;
+      const costCodeId = (req.query.costCodeId as string) || null;
+      const companyId = (req as any).user?.companyId;
+
+      const bills = await storage.getBills(projectId, undefined, companyId || undefined);
+      const groups: Array<any> = [];
+
+      for (const bill of bills) {
+        const lines = await storage.getBillLineItems(bill.id);
+        const matched = costCodeId
+          ? lines.filter((l) => (l as any).costCodeId === costCodeId)
+          : lines.filter((l) => !(l as any).costCodeId);
+        if (matched.length === 0) continue;
+
+        const sign = bill.billType === "credit" ? -1 : 1;
+        const lineTotal = matched.reduce((s, l) => s + (l.total ?? 0), 0) * sign;
+
+        let supplierName = "";
+        if (bill.supplierId && companyId) {
+          const contact = await storage.getContact(bill.supplierId, companyId).catch(() => undefined);
+          supplierName = (contact as any)?.name || (contact as any)?.company || "";
+        }
+
+        groups.push({
+          billId: bill.id,
+          billNumber: bill.billNumber,
+          billType: bill.billType,
+          status: bill.status,
+          billDate: bill.billDate,
+          supplierName,
+          lineTotal,
+          lines: matched.map((l) => ({
+            id: l.id,
+            description: (l as any).description ?? "",
+            total: (l.total ?? 0) * sign,
+          })),
+        });
+      }
+
+      groups.sort((a, b) => new Date(b.billDate).getTime() - new Date(a.billDate).getTime());
+      const total = groups.reduce((s, g) => s + g.lineTotal, 0);
+      res.json({ projectId, costCodeId, total, bills: groups });
+    } catch (error) {
+      console.error("Error fetching budget actuals:", error);
+      res.status(500).json({ error: "Failed to fetch budget actuals" });
     }
   });
 
