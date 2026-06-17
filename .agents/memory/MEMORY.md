@@ -5,6 +5,7 @@
 - [tsc OOM](typecheck-oom.md) — typecheck is `npm run check`; full tsc OOMs here (infra limit); trust the tsx dev boot instead.
 - [Attachment preview mimeType](attachment-preview-mimetype.md) — object-storage attachment URLs are extensionless; preview kind-detection needs the stored mimeType, not the URL extension.
 - [Auto OCR gate](auto-ocr-gate.md) — on-open auto AI bill reader must only fire for empty DRAFT bills; Xero imports have ocrProcessed=false and get clobbered (visual only) otherwise.
+- [ErrorBoundary recovery](error-boundary-recovery.md) — router-level boundary must reset on navigation (resetKeys=[location]) + per-widget boundaries + forward render throws to server, or one widget crash wedges every page until hard reload.
 - [Client invoice number uniqueness](client-invoice-number-uniqueness.md) — invoice_number is GLOBALLY unique; auto-numbering must query globally + creates self-heal on collision; frontend must invalidate the next-number cache.
 - [Financial route authz](financial-route-authz.md) — financial read + id-only mutate endpoints must enforce requirePermission + company scope server-side; resolve payment→bill→company; frontend gating isn't enough.
 - [DataTable sticky row bg](datatable-sticky-row-bg.md) — sticky first column paints its own bg; route row zebra/category tints through the `--dt-row-bg` var or banding breaks on horizontal scroll.

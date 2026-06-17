@@ -498,7 +498,7 @@ function AuthWrapper() {
             <div className="flex flex-1 overflow-hidden gap-2">
               <SidebarNav />
               <main className="flex-1 overflow-hidden flex flex-col">
-                <ErrorBoundary>
+                <ErrorBoundary context={`route:${location}`} resetKeys={[location]}>
                   <Suspense fallback={<div className="flex items-center justify-center h-full"><div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" /></div>}>
                     <Router />
                   </Suspense>

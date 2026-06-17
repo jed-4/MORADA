@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Plus, Settings, SlidersHorizontal, ChevronDown, Search, PlusCircle, Check, LayoutGrid, Trash2, Lock, Users, Globe, Eye, Pencil, Star, Palette, Home, MessageSquare, ClipboardList, FileText, Calculator, FileBarChart, File, ListTree, Clock, CheckSquare, ListChecks, FileSearch, HelpCircle, CheckCircle, DollarSign, Receipt, AlertCircle, BookOpen, Timer, FolderOpen, Activity, MoreHorizontal, X } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { ErrorBoundary } from "@/components/ui/error-boundary";
 import { useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
@@ -730,13 +731,25 @@ export default function CustomizableProjectOverview() {
         onConfigure={definition.configurable ? setConfiguringWidget : undefined}
         isConfiguring={configuringWidget === widget.id}
       >
-        <WidgetComponent
-          widget={widget}
-          onUpdate={updateWidget}
-          onRemove={removeWidget}
-          isConfiguring={configuringWidget === widget.id}
-          onCloseConfig={() => setConfiguringWidget(null)}
-        />
+        <ErrorBoundary
+          context={`widget:${widget.type}`}
+          resetKeys={[widget.id]}
+          fallback={
+            <div className="flex flex-col items-center justify-center gap-2 p-6 text-center text-muted-foreground">
+              <AlertCircle className="w-5 h-5 text-destructive" />
+              <p className="text-sm font-medium">This widget couldn't load</p>
+              <p className="text-xs">Try refreshing the page to retry.</p>
+            </div>
+          }
+        >
+          <WidgetComponent
+            widget={widget}
+            onUpdate={updateWidget}
+            onRemove={removeWidget}
+            isConfiguring={configuringWidget === widget.id}
+            onCloseConfig={() => setConfiguringWidget(null)}
+          />
+        </ErrorBoundary>
       </WidgetContainer>
     );
   };

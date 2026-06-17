@@ -6,6 +6,14 @@ import { isDynamicImportError, attemptChunkReload } from "@/lib/chunk-reload";
 interface Props {
   children: ReactNode;
   fallback?: ReactNode;
+  /** Identifier (e.g. route path or "widget:cashflow") sent with crash reports. */
+  context?: string;
+  /**
+   * When the boundary is in an errored state and any value in this array
+   * changes, the boundary resets itself. Used to recover on navigation so a
+   * single crash doesn't wedge the whole app until a hard reload.
+   */
+  resetKeys?: unknown[];
 }
 
 interface State {
@@ -30,6 +38,36 @@ export class ErrorBoundary extends Component<Props, State> {
       return;
     }
     console.error("[ErrorBoundary] Caught render error:", error, info.componentStack);
+    // Forward render errors to the server so they show up in deployment logs.
+    // React swallows render-time throws into this boundary, so without this they
+    // never reach the inline window.onerror reporter in index.html.
+    try {
+      fetch("/api/_client-error", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          label: "react-render-error",
+          info: {
+            context: this.props.context,
+            message: error?.message,
+            stack: String(error?.stack || ""),
+            componentStack: String(info?.componentStack || ""),
+          },
+          ua: navigator.userAgent,
+          url: location.href,
+        }),
+      }).catch(() => {});
+    } catch {}
+  }
+
+  componentDidUpdate(prevProps: Props) {
+    if (!this.state.hasError) return;
+    const prev = prevProps.resetKeys;
+    const next = this.props.resetKeys;
+    if (!prev || !next) return;
+    const changed =
+      prev.length !== next.length || prev.some((k, i) => !Object.is(k, next[i]));
+    if (changed) this.reset();
   }
 
   reset() {
