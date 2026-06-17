@@ -264,13 +264,14 @@ export default function ClientInvoiceDetail() {
   const [columnConfig, setColumnConfig] = useState<ColumnConfig[]>(defaultColumnConfig());
   const [showAmountsIncTax, setShowAmountsIncTax] = useState(true);
   const [contractClaimRows, setContractClaimRows] = useState<ContractClaimRow[]>([
-    { id: crypto.randomUUID(), name: "", description: "", claimPercent: 100 },
+    { id: crypto.randomUUID(), name: "", description: "", claimPercent: 0 },
   ]);
   const [columnPickerOpen, setColumnPickerOpen] = useState(false);
   const [dragOverId, setDragOverId] = useState<ColumnId | null>(null);
   const dragItem = useRef<ColumnId | null>(null);
   const [invoiceDateOpen, setInvoiceDateOpen] = useState(false);
   const [dueDateOpen, setDueDateOpen] = useState(false);
+  const [dueDateCustom, setDueDateCustom] = useState(false);
   const [billsModalOpen, setBillsModalOpen] = useState(false);
   const [labourModalOpen, setLabourModalOpen] = useState(false);
   const [selectionsModalOpen, setSelectionsModalOpen] = useState(false);
@@ -462,13 +463,6 @@ export default function ClientInvoiceDetail() {
     queryKey: [`/api/estimates/${selectedEstimateId}/items`],
     enabled: !!selectedEstimateId,
   });
-
-  const { data: paymentTermsRaw = [] } = useQuery<any[]>({
-    queryKey: ["/api/payment-terms-options"],
-  });
-  const paymentTermsOptions = paymentTermsRaw
-    .filter((o) => o.isInvoiceDefault)
-    .sort((a, b) => a.sortOrder - b.sortOrder);
 
   // Fetch auto-generated invoice number
   const { data: nextNumberData } = useQuery<{ invoiceNumber: string }>({
@@ -978,6 +972,9 @@ export default function ClientInvoiceDetail() {
     },
     onSuccess: async (inv) => {
       queryClient.invalidateQueries({ queryKey: ["/api/client-invoices"] });
+      // Refresh the auto-generated number so the next new invoice advances
+      // instead of reusing (and colliding with) the number we just consumed.
+      queryClient.invalidateQueries({ queryKey: ["/api/client-invoices/next-number"] });
       if (user?.id) {
         logActivity({
           projectId: inv.projectId,
@@ -1013,6 +1010,9 @@ export default function ClientInvoiceDetail() {
       }
     },
     onError: (error: Error) => {
+      // A duplicate-number collision means our cached auto-number is stale —
+      // refresh it so the form picks up a fresh number before the user retries.
+      queryClient.invalidateQueries({ queryKey: ["/api/client-invoices/next-number"] });
       toast({ title: "Error", description: error.message || "Failed to create invoice", variant: "destructive" });
     },
   });
@@ -1923,7 +1923,7 @@ export default function ClientInvoiceDetail() {
                           render={({ field }) => (
                             <FormItem className="flex flex-col">
                               <FormLabel className="h-4 leading-none flex items-center text-table text-muted-foreground/70 uppercase tracking-wide font-medium">Due Date</FormLabel>
-                              <Popover open={dueDateOpen} onOpenChange={setDueDateOpen}>
+                              <Popover open={dueDateOpen} onOpenChange={(open) => { setDueDateOpen(open); if (!open) setDueDateCustom(false); }}>
                                 <PopoverTrigger asChild>
                                   <FormControl>
                                     <Button
@@ -1940,40 +1940,70 @@ export default function ClientInvoiceDetail() {
                                     </Button>
                                   </FormControl>
                                 </PopoverTrigger>
-                                <PopoverContent className="w-auto p-0">
-                                  {paymentTermsOptions.length > 0 && (
-                                    <div className="p-2 border-b flex flex-wrap gap-1">
-                                      {paymentTermsOptions.map((opt) => (
-                                        <button
-                                          key={opt.id}
-                                          type="button"
-                                          className="h-6 px-2 text-xs rounded-md border border-border/60 bg-muted/40 hover-elevate"
-                                          onClick={() => {
-                                            const base = form.getValues("invoiceDate") || new Date();
-                                            field.onChange(addDays(base, opt.dueValue));
-                                            setDueDateOpen(false);
-                                          }}
-                                        >
-                                          {opt.name}
-                                        </button>
-                                      ))}
+                                <PopoverContent className="w-auto p-0" align="start">
+                                  {!dueDateCustom ? (
+                                    <div className="p-1 w-52">
+                                      {[
+                                        { label: "Due on receipt", days: 0 },
+                                        { label: "7 days", days: 7 },
+                                        { label: "14 days", days: 14 },
+                                        { label: "30 days", days: 30 },
+                                      ].map((opt) => {
+                                        const base = form.getValues("invoiceDate") || new Date();
+                                        const target = opt.days === 0 ? base : addDays(base, opt.days);
+                                        return (
+                                          <button
+                                            key={opt.label}
+                                            type="button"
+                                            className="w-full h-8 px-2 text-sm rounded-md hover-elevate flex items-center justify-between gap-3"
+                                            onClick={() => { field.onChange(target); setDueDateOpen(false); }}
+                                            data-testid={`button-due-preset-${opt.days}`}
+                                          >
+                                            <span>{opt.label}</span>
+                                            <span className="text-xs text-muted-foreground">{format(target, "d MMM")}</span>
+                                          </button>
+                                        );
+                                      })}
+                                      <div className="h-px bg-border my-1" />
+                                      <button
+                                        type="button"
+                                        className="w-full h-8 px-2 text-sm rounded-md hover-elevate flex items-center justify-between gap-3"
+                                        onClick={() => setDueDateCustom(true)}
+                                        data-testid="button-due-custom"
+                                      >
+                                        <span>Custom…</span>
+                                        <CalendarIcon className="h-3.5 w-3.5 text-muted-foreground" />
+                                      </button>
                                       {field.value && (
                                         <button
                                           type="button"
-                                          className="h-6 px-2 text-xs rounded-md text-muted-foreground hover-elevate"
+                                          className="w-full h-8 px-2 text-sm rounded-md text-muted-foreground hover-elevate text-left"
                                           onClick={() => { field.onChange(undefined); setDueDateOpen(false); }}
                                         >
                                           Clear
                                         </button>
                                       )}
                                     </div>
+                                  ) : (
+                                    <div>
+                                      <div className="p-1 border-b">
+                                        <button
+                                          type="button"
+                                          className="h-8 px-2 text-sm rounded-md hover-elevate flex items-center gap-1.5 text-muted-foreground"
+                                          onClick={() => setDueDateCustom(false)}
+                                          data-testid="button-due-back"
+                                        >
+                                          <ArrowLeft className="h-3.5 w-3.5" /> Back
+                                        </button>
+                                      </div>
+                                      <Calendar
+                                        mode="single"
+                                        selected={field.value}
+                                        onSelect={(d) => { field.onChange(d); setDueDateOpen(false); setDueDateCustom(false); }}
+                                        initialFocus
+                                      />
+                                    </div>
                                   )}
-                                  <Calendar
-                                    mode="single"
-                                    selected={field.value}
-                                    onSelect={(d) => { field.onChange(d); setDueDateOpen(false); }}
-                                    initialFocus
-                                  />
                                 </PopoverContent>
                               </Popover>
                               <FormMessage />
@@ -2216,7 +2246,6 @@ export default function ClientInvoiceDetail() {
                                           <Input
                                             type="number"
                                             min="0"
-                                            max="100"
                                             value={row.claimPercent}
                                             onChange={(e) =>
                                               updateContractClaimRow(row.id, "claimPercent", parseFloat(e.target.value) || 0)

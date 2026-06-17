@@ -16715,6 +16715,39 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Resolve a project's "job number" used as the client-invoice prefix.
+  const getProjectJobNumber = (project: any): string | null =>
+    project?.constructionNumber || project?.preConstructionNumber || project?.leadNumber || project?.jobNumber || null;
+
+  // Generate the next "<jobNum>-CI-NN" number. invoice_number is GLOBALLY unique
+  // in the schema, so we check every invoice sharing the prefix (across all
+  // projects), derive the next sequence from the HIGHEST existing number (not a
+  // count, so deletions can't cause a repeat) and skip any number already taken.
+  const generateNextJobCiNumber = async (jobNum: string): Promise<string> => {
+    const ciPrefix = `${jobNum}-CI-`;
+    const existing = await storage.getClientInvoiceNumbersByPrefix(ciPrefix);
+    const taken = new Set(existing);
+    let maxSeq = 0;
+    for (const num of existing) {
+      const n = parseInt(num.slice(ciPrefix.length), 10);
+      if (!Number.isNaN(n) && n > maxSeq) maxSeq = n;
+    }
+    let next = maxSeq + 1;
+    let candidate = `${ciPrefix}${String(next).padStart(2, '0')}`;
+    while (taken.has(candidate)) {
+      next += 1;
+      candidate = `${ciPrefix}${String(next).padStart(2, '0')}`;
+    }
+    return candidate;
+  };
+
+  // Only auto-heal collisions on the invoice_number unique constraint.
+  const isInvoiceNumberConflict = (error: any): boolean => {
+    const msg = String(error?.message || "");
+    return error?.constraint === "client_invoices_invoice_number_unique"
+      || msg.includes("client_invoices_invoice_number_unique");
+  };
+
   // Auto-generate next invoice number for a project — must be before /:id route
   app.get("/api/client-invoices/next-number", async (req, res) => {
     try {
@@ -16726,12 +16759,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!project) {
         return res.status(404).json({ error: "Project not found" });
       }
-      const jobNum = (project as any).constructionNumber || (project as any).preConstructionNumber || (project as any).leadNumber || (project as any).jobNumber;
+      const jobNum = getProjectJobNumber(project);
       let invoiceNumber: string;
       if (jobNum) {
-        const existingInvoices = await storage.getClientInvoices(projectId as string);
-        const seq = String(existingInvoices.length + 1).padStart(2, '0');
-        invoiceNumber = `${jobNum}-CI-${seq}`;
+        invoiceNumber = await generateNextJobCiNumber(jobNum);
       } else {
         const prefix = (project as any).clientInvoicePrefix || "INV-";
         const startNumber = (project as any).clientInvoiceStartNumber || 1000;
@@ -16767,26 +16798,39 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const data = validationResult.data;
 
-      // Enforce 100% cap for progress payment invoices
-      if (data.invoicingMethod === "progress_payments" && data.contractClaimRows && data.contractClaimRows.length > 0) {
-        const existingInvoices = await storage.getClientInvoices(data.projectId);
-        const usedPercent = existingInvoices.reduce((sum, inv) => {
-          const rows = (inv as any).contractClaimRows as Array<{ claimPercent: number }> | null;
-          if (!rows || !Array.isArray(rows)) return sum;
-          return sum + rows.reduce((s, r) => s + (r.claimPercent || 0), 0);
-        }, 0);
-        const newPercent = data.contractClaimRows.reduce((s, r) => s + (r.claimPercent || 0), 0);
-        if (usedPercent + newPercent > 100) {
-          const remaining = Math.max(0, 100 - usedPercent);
-          return res.status(400).json({ 
-            error: `Total claim % would exceed 100% for this project. Remaining available: ${remaining}%` 
-          });
+      // Cumulative claim % is allowed to exceed 100% (e.g. variations/extras),
+      // so no server-side cap is enforced here — the remaining-% figure shown
+      // in the UI is informational only.
+
+      // Create with self-healing on invoice_number collisions: a stale client
+      // number or a concurrent create can race for the same auto number, so if
+      // the number was auto-generated (matches "<jobNum>-CI-NN") we regenerate a
+      // globally-free number and retry instead of failing the request.
+      let payload = data;
+      let invoice;
+      for (let attempt = 0; ; attempt++) {
+        try {
+          invoice = await storage.createClientInvoice(payload);
+          break;
+        } catch (error: any) {
+          if (!isInvoiceNumberConflict(error) || attempt >= 5) throw error;
+          const project = await storage.getProject((payload as any).projectId);
+          const jobNum = getProjectJobNumber(project);
+          const ciPrefix = jobNum ? `${jobNum}-CI-` : null;
+          // Only auto-heal auto-generated numbers; a manually entered number that
+          // collides surfaces a clear 409 so the user can choose another.
+          if (!ciPrefix || !(payload as any).invoiceNumber?.startsWith(ciPrefix)) throw error;
+          payload = { ...payload, invoiceNumber: await generateNextJobCiNumber(jobNum!) };
         }
       }
-
-      const invoice = await storage.createClientInvoice(data);
       res.status(201).json(invoice);
-    } catch (error) {
+    } catch (error: any) {
+      if (isInvoiceNumberConflict(error)) {
+        return res.status(409).json({
+          error: `Invoice number "${(req.body as any)?.invoiceNumber ?? ""}" is already in use. Please pick a different number and try again.`,
+        });
+      }
+      console.error("Failed to create client invoice:", error);
       res.status(500).json({ error: "Failed to create client invoice" });
     }
   });
@@ -16803,23 +16847,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const data = validationResult.data;
 
-      // Enforce 100% cap for progress payment invoices on update
-      if (data.invoicingMethod === "progress_payments" && data.contractClaimRows && data.contractClaimRows.length > 0 && data.projectId) {
-        const existingInvoices = await storage.getClientInvoices(data.projectId);
-        const otherInvoices = existingInvoices.filter(inv => inv.id !== req.params.id);
-        const usedPercent = otherInvoices.reduce((sum, inv) => {
-          const rows = (inv as any).contractClaimRows as Array<{ claimPercent: number }> | null;
-          if (!rows || !Array.isArray(rows)) return sum;
-          return sum + rows.reduce((s, r) => s + (r.claimPercent || 0), 0);
-        }, 0);
-        const newPercent = data.contractClaimRows.reduce((s, r) => s + (r.claimPercent || 0), 0);
-        if (usedPercent + newPercent > 100) {
-          const remaining = Math.max(0, 100 - usedPercent);
-          return res.status(400).json({ 
-            error: `Total claim % would exceed 100% for this project. Remaining available: ${remaining}%` 
-          });
-        }
-      }
+      // Cumulative claim % is allowed to exceed 100% on update as well; the
+      // remaining-% figure shown in the UI is informational only.
 
       const invoice = await storage.updateClientInvoice(req.params.id, data);
       if (!invoice) {

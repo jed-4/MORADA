@@ -802,6 +802,7 @@ export interface IStorage {
   // Client Invoices CRUD
   getClientInvoices(projectId?: string, status?: string): Promise<ClientInvoice[]>;
   getNextClientInvoiceNumber(prefix: string, startNumber: number): Promise<string>;
+  getClientInvoiceNumbersByPrefix(prefix: string): Promise<string[]>;
   getClientInvoice(id: string): Promise<ClientInvoice | undefined>;
   getClientInvoiceByXeroId(xeroInvoiceId: string): Promise<ClientInvoice | undefined>;
   createClientInvoice(invoice: InsertClientInvoice): Promise<ClientInvoice>;
@@ -6391,6 +6392,10 @@ export class MemStorage implements IStorage {
 
   async getNextClientInvoiceNumber(prefix: string, startNumber: number): Promise<string> {
     return `${prefix}${startNumber}`;
+  }
+
+  async getClientInvoiceNumbersByPrefix(_prefix: string): Promise<string[]> {
+    return [];
   }
 
   // Supplier Name Mappings — MemStorage stubs
@@ -15873,6 +15878,20 @@ export class DbStorage implements IStorage {
       return `${prefix}${maxNum + 1}`;
     } catch (error) {
       console.error("Database error in getNextClientInvoiceNumber:", error);
+      throw error;
+    }
+  }
+
+  async getClientInvoiceNumbersByPrefix(prefix: string): Promise<string[]> {
+    try {
+      const rows = await db.select({ invoiceNumber: schema.clientInvoices.invoiceNumber })
+        .from(schema.clientInvoices)
+        .where(sql`${schema.clientInvoices.invoiceNumber} like ${prefix + '%'}`);
+      return rows
+        .map((r) => r.invoiceNumber)
+        .filter((n): n is string => !!n);
+    } catch (error) {
+      console.error("Database error in getClientInvoiceNumbersByPrefix:", error);
       throw error;
     }
   }

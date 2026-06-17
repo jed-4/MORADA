@@ -5,6 +5,7 @@
 - [tsc OOM](typecheck-oom.md) — typecheck is `npm run check`; full tsc OOMs here (infra limit); trust the tsx dev boot instead.
 - [Attachment preview mimeType](attachment-preview-mimetype.md) — object-storage attachment URLs are extensionless; preview kind-detection needs the stored mimeType, not the URL extension.
 - [Auto OCR gate](auto-ocr-gate.md) — on-open auto AI bill reader must only fire for empty DRAFT bills; Xero imports have ocrProcessed=false and get clobbered (visual only) otherwise.
+- [Client invoice number uniqueness](client-invoice-number-uniqueness.md) — invoice_number is GLOBALLY unique; auto-numbering must query globally + creates self-heal on collision; frontend must invalidate the next-number cache.
 - [Financial route authz](financial-route-authz.md) — financial read + id-only mutate endpoints must enforce requirePermission + company scope server-side; resolve payment→bill→company; frontend gating isn't enough.
 - [DataTable sticky row bg](datatable-sticky-row-bg.md) — sticky first column paints its own bg; route row zebra/category tints through the `--dt-row-bg` var or banding breaks on horizontal scroll.
 - [Contract price canonical](contract-price-canonical.md) — contract/original price = computeEstimateSummary().total, NOT cached priceIncTax (double-counts projectMarkup on null-markup lines); pass taxRate 4th arg.
