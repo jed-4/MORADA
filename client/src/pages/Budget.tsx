@@ -27,12 +27,27 @@ const PHASE_LABELS: Record<string, string> = {
   archive: "Archive",
 };
 
+function useIsDark(): boolean {
+  const [isDark, setIsDark] = useState<boolean>(() =>
+    typeof document !== "undefined" && document.documentElement.classList.contains("dark"));
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const obs = new MutationObserver(() => {
+      setIsDark(document.documentElement.classList.contains("dark"));
+    });
+    obs.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
+    return () => obs.disconnect();
+  }, []);
+  return isDark;
+}
+
 export default function BudgetPage() {
   const { projectId } = useParams();
   const { toast } = useToast();
   const pageTitle = usePageTitle({ pageName: "Budget" });
   const canViewLabour = usePermission("financial.budget_labour", "view");
   const canViewActuals = usePermission("financial.budget_actuals", "view");
+  const isDark = useIsDark();
 
   const [activeTab, setActiveTab] = useState<"costs" | "hours">("costs");
 
@@ -179,7 +194,7 @@ export default function BudgetPage() {
 
   type CostRow =
     | { kind: "category"; id: string; categoryTitle: string; count: number; budgeted: number; actual: number }
-    | { kind: "item"; id: string; item: BudgetLineItem; categoryTitle: string };
+    | { kind: "item"; id: string; item: BudgetLineItem; categoryTitle: string; zebra: boolean };
 
   const costRows = useMemo<CostRow[]>(() => {
     const catMap = new Map<string, BudgetLineItem[]>();
@@ -195,6 +210,7 @@ export default function BudgetPage() {
       return collator.compare(a[0], b[0]);
     });
     const rows: CostRow[] = [];
+    let itemIdx = 0;
     sorted.forEach(([categoryTitle, catItems]) => {
       const items = [...catItems].sort((a, b) =>
         collator.compare(a.costCodeTitle || "", b.costCodeTitle || ""),
@@ -212,12 +228,19 @@ export default function BudgetPage() {
       const isCollapsed = collapsedCategories.has(categoryTitle);
       if (!isCollapsed) {
         items.forEach((item) => {
-          rows.push({ kind: "item", id: item.id, item, categoryTitle });
+          rows.push({ kind: "item", id: item.id, item, categoryTitle, zebra: itemIdx % 2 === 1 });
+          itemIdx++;
         });
       }
     });
     return rows;
   }, [lineItems, collapsedCategories]);
+
+  const costTotals = useMemo(() => {
+    const budgeted = lineItems.reduce((s, i) => s + i.budgetedAmount, 0);
+    const actual = lineItems.reduce((s, i) => s + i.actualAmount, 0);
+    return { budgeted, actual, difference: budgeted - actual };
+  }, [lineItems]);
 
   const allCategoryTitles = useMemo(() => {
     const set = new Set<string>();
@@ -497,6 +520,69 @@ export default function BudgetPage() {
     profitPercent: 0,
   };
 
+  // Row banding tints — warm muted in light mode, subtle foreground overlay in
+  // dark mode (where --muted ≈ --card). Mirrors the Monthly Actuals approach.
+  const rowTints = {
+    zebra: isDark ? "hsl(var(--foreground) / 0.05)" : "hsl(var(--muted) / 0.5)",
+    category: isDark ? "hsl(var(--foreground) / 0.09)" : "hsl(var(--muted) / 0.85)",
+  };
+
+  // Builds the row style. `--dt-row-bg` is composited over the card so the
+  // sticky first column stays opaque (no bleed-through on horizontal scroll).
+  const rowBgStyle = (tint: string | null): React.CSSProperties => {
+    if (!tint) {
+      return { ["--dt-row-bg"]: "hsl(var(--card))" } as React.CSSProperties;
+    }
+    return {
+      backgroundColor: tint,
+      ["--dt-row-bg"]: `linear-gradient(${tint}, ${tint}), hsl(var(--card))`,
+    } as React.CSSProperties;
+  };
+
+  const renderTotalsBar = (
+    segments: { label: string; value: string; color?: string }[],
+  ) => (
+    <div
+      className="flex-shrink-0 flex flex-wrap items-center justify-between gap-x-4 gap-y-1 px-3 py-2 border-t-2 border-border bg-[hsl(var(--muted)/0.7)] dark:bg-[hsl(var(--foreground)/0.07)]"
+      data-testid="budget-totals-bar"
+    >
+      <span className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
+        Total
+      </span>
+      <div className="flex items-center flex-wrap justify-end gap-y-1">
+        {segments.map((seg, i) => (
+          <div
+            key={seg.label}
+            className={cn("flex flex-col items-end px-3", i > 0 && "border-l border-border/60")}
+            data-testid={`total-${seg.label.toLowerCase().replace(/[^a-z]+/g, "-")}`}
+          >
+            <span className="text-[9px] uppercase tracking-wide text-muted-foreground leading-tight">
+              {seg.label}
+            </span>
+            <span className={cn("text-sm font-bold tabular-nums leading-snug", seg.color ?? "text-foreground")}>
+              {seg.value}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+
+  const renderLegend = () => (
+    <div className="flex-shrink-0 flex items-center flex-wrap gap-x-5 gap-y-1 px-3 py-1.5 border-t border-border/50">
+      {[
+        { color: "hsl(var(--bp-green))", label: "Under" },
+        { color: "hsl(var(--muted-foreground) / 0.4)", label: "On Track" },
+        { color: "hsl(var(--bp-coral))", label: "Over" },
+      ].map(({ color, label }) => (
+        <div key={label} className="flex items-center gap-1.5">
+          <span className="w-2 h-2 rounded-full" style={{ backgroundColor: color }} />
+          <span className="text-[10px] text-muted-foreground">{label}</span>
+        </div>
+      ))}
+    </div>
+  );
+
   return (
     <div className="flex flex-col h-full" data-testid="page-budget">
       {/* TAB ROW */}
@@ -696,26 +782,42 @@ export default function BudgetPage() {
                     </p>
                   </div>
                 ) : (
-                  <div className="flex-1 min-h-0">
-                    <DataTable
-                      data={costRows}
-                      columns={costColumns}
-                      storageKey="budget-costs"
-                      legacyConfigKey="budget-column-config-v1"
-                      rowKey={(row) => row.id}
-                      onRowClick={(row) => {
-                        if (row.kind === "category") {
-                          setCollapsedCategories((prev) => {
-                            const next = new Set(prev);
-                            if (next.has(row.categoryTitle)) next.delete(row.categoryTitle);
-                            else next.add(row.categoryTitle);
-                            return next;
-                          });
+                  <>
+                    <div className="flex-1 min-h-0">
+                      <DataTable
+                        data={costRows}
+                        columns={costColumns}
+                        storageKey="budget-costs"
+                        legacyConfigKey="budget-column-config-v1"
+                        rowKey={(row) => row.id}
+                        onRowClick={(row) => {
+                          if (row.kind === "category") {
+                            setCollapsedCategories((prev) => {
+                              const next = new Set(prev);
+                              if (next.has(row.categoryTitle)) next.delete(row.categoryTitle);
+                              else next.add(row.categoryTitle);
+                              return next;
+                            });
+                          }
+                        }}
+                        rowStyle={(row) =>
+                          row.kind === "category"
+                            ? rowBgStyle(rowTints.category)
+                            : rowBgStyle(row.zebra ? rowTints.zebra : null)
                         }
-                      }}
-                      rowClassName={(row) => row.kind === "category" ? "bg-muted/40" : ""}
-                    />
-                  </div>
+                      />
+                    </div>
+                    {renderTotalsBar([
+                      { label: "Budgeted", value: formatCurrency(costTotals.budgeted) },
+                      { label: "Actual", value: formatCurrency(costTotals.actual) },
+                      {
+                        label: "Difference",
+                        value: formatCurrency(costTotals.difference),
+                        color: getVarianceColor(costTotals.difference),
+                      },
+                    ])}
+                    {renderLegend()}
+                  </>
                 )}
               </CardContent>
             </Card>
@@ -768,15 +870,33 @@ export default function BudgetPage() {
                       : "No labour hours data available."}
                   </div>
                 ) : (
-                  <div className="flex-1 min-h-0">
-                    <DataTable
-                      data={filteredLabourHours}
-                      columns={labourHoursColumns}
-                      storageKey="budget-hours"
-                      legacyConfigKey="budget-column-config-v1"
-                      rowKey={(row) => row.id}
-                    />
-                  </div>
+                  <>
+                    <div className="flex-1 min-h-0">
+                      <DataTable
+                        data={filteredLabourHours}
+                        columns={labourHoursColumns}
+                        storageKey="budget-hours"
+                        legacyConfigKey="budget-column-config-v1"
+                        rowKey={(row) => row.id}
+                        rowStyle={(_row, index) =>
+                          rowBgStyle(index % 2 === 1 ? rowTints.zebra : null)
+                        }
+                      />
+                    </div>
+                    {renderTotalsBar([
+                      { label: "Budgeted", value: formatHours(totalBudgetedHours) },
+                      { label: "Pending", value: formatHours(totalPendingHours), color: "text-[hsl(var(--bp-amber))]" },
+                      { label: "Approved", value: formatHours(totalApprovedHours) },
+                      { label: "Total", value: formatHours(totalActualHours) },
+                      {
+                        label: "Variance",
+                        value: formatHours(hoursRemaining),
+                        color: getVarianceColor(hoursRemaining),
+                      },
+                      { label: "% Used", value: `${hoursPercentUsed}%` },
+                    ])}
+                    {renderLegend()}
+                  </>
                 )}
               </CardContent>
             </Card>

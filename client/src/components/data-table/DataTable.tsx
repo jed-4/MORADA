@@ -62,6 +62,12 @@ export interface DataTableProps<TData> {
   rowKey: (row: TData) => string;
   onRowClick?: (row: TData) => void;
   rowClassName?: (row: TData) => string;
+  /**
+   * Optional inline style applied to each row's `<tr>`. The render index is
+   * provided for zebra striping. Any `--dt-row-bg` custom property set here is
+   * also used as the sticky first column's background so banding spans it.
+   */
+  rowStyle?: (row: TData, index: number) => React.CSSProperties | undefined;
   /** Rendered when data is empty. */
   emptyState?: React.ReactNode;
   /** Optional class on the outer scroll container. */
@@ -214,6 +220,7 @@ export function DataTable<TData>({
   rowKey,
   onRowClick,
   rowClassName,
+  rowStyle,
   emptyState,
   className,
   headerClassName,
@@ -534,7 +541,7 @@ export function DataTable<TData>({
                 </td>
               </tr>
             ) : (
-              table.getRowModel().rows.flatMap((row) => {
+              table.getRowModel().rows.flatMap((row, index) => {
                 const nodes: React.ReactNode[] = [
                   <DataTableRow
                     key={row.id}
@@ -548,6 +555,7 @@ export function DataTable<TData>({
                     isRowExpandable={isRowExpandable}
                     onRowClick={onRowClick}
                     className={rowClassName?.(row.original)}
+                    style={rowStyle?.(row.original, index)}
                   />,
                 ];
                 // Panel mode: render the custom panel beneath an expanded row.
@@ -581,6 +589,7 @@ function DataTableRow<TData>({
   isRowExpandable,
   onRowClick,
   className,
+  style,
 }: {
   row: Row<TData>;
   rowHeight: number;
@@ -592,6 +601,7 @@ function DataTableRow<TData>({
   isRowExpandable?: (row: TData) => boolean;
   onRowClick?: (row: TData) => void;
   className?: string;
+  style?: React.CSSProperties;
 }) {
   // Determine if this row can be expanded (chevron visible).
   let canExpand = false;
@@ -608,7 +618,7 @@ function DataTableRow<TData>({
   return (
     <tr
       className={cn("border-b border-border/40 hover-elevate group", onRowClick && "cursor-pointer", className)}
-      style={{ height: rowHeight }}
+      style={{ height: rowHeight, ...style }}
       onClick={onRowClick ? () => onRowClick(row.original) : undefined}
       data-testid={`row-${row.id}`}
       data-depth={row.depth}
@@ -635,7 +645,7 @@ function DataTableRow<TData>({
               position: isSticky ? "sticky" : undefined,
               left: isSticky ? 0 : undefined,
               zIndex: isSticky ? 1 : undefined,
-              background: isSticky ? "hsl(var(--background))" : undefined,
+              background: isSticky ? "var(--dt-row-bg, hsl(var(--background)))" : undefined,
               boxShadow: isSticky ? STICKY_SHADOW : undefined,
               paddingLeft: indentPx ? `calc(0.5rem + ${indentPx}px)` : undefined,
             }}
