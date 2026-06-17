@@ -116,7 +116,23 @@ export default function BudgetPage() {
     enabled: !!projectId && canViewActuals,
   });
 
-  // Drill-down: which cost code's Actual is being inspected (null = closed).
+  // Labour cost per cost code (ex-GST cents) — feeds the table's Labour column.
+  // Its total reconciles with actualCosts.timesheetCostCents (margin bar).
+  const { data: labourBreakdown, isLoading: labourLoading } = useQuery<{
+    total: number;
+    byCostCode: Array<{
+      costCodeId: string | null;
+      costCodeTitle: string;
+      categoryTitle: string;
+      labourCents: number;
+    }>;
+  }>({
+    queryKey: ["/api/projects", projectId, "labour-costs"],
+    queryFn: () => apiRequest(`/api/projects/${projectId}/labour-costs`, "GET"),
+    enabled: !!projectId && canViewActuals,
+  });
+
+  // Drill-down: which cost code's Bills are being inspected (null = closed).
   const [actualDrill, setActualDrill] = useState<{ costCodeId: string | null; title: string } | null>(null);
   const { data: drillData, isLoading: drillLoading } = useQuery<{
     total: number;
@@ -138,6 +154,29 @@ export default function BudgetPage() {
         "GET",
       ),
     enabled: !!projectId && !!actualDrill,
+  });
+
+  // Drill-down: which cost code's Labour is being inspected (null = closed).
+  const [labourDrill, setLabourDrill] = useState<{ costCodeId: string | null; title: string } | null>(null);
+  const { data: labourDrillData, isLoading: labourDrillLoading } = useQuery<{
+    total: number;
+    entries: Array<{
+      timesheetId: string;
+      workerName: string;
+      date: string;
+      hours: number;
+      rateCents: number;
+      costCents: number;
+      status: string;
+    }>;
+  }>({
+    queryKey: ["/api/projects", projectId, "labour-actuals", labourDrill?.costCodeId ?? "uncategorized"],
+    queryFn: () =>
+      apiRequest(
+        `/api/projects/${projectId}/labour-actuals${labourDrill?.costCodeId ? `?costCodeId=${labourDrill.costCodeId}` : ""}`,
+        "GET",
+      ),
+    enabled: !!projectId && !!labourDrill,
   });
 
   const recalculateMutation = useMutation({
@@ -166,6 +205,8 @@ export default function BudgetPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/budgets/${budget?.id}/line-items`] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "labour-costs"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "actual-costs"] });
       toast({
         title: "Line items recalculated",
         description: "Budget breakdown has been updated.",
@@ -270,13 +311,85 @@ export default function BudgetPage() {
   const hoursRemaining = totalBudgetedHours - totalActualHours;
   const hoursPercentUsed = totalBudgetedHours > 0 ? Math.round((totalActualHours / totalBudgetedHours) * 100) : 0;
 
+  // A single cost-code row in the table. Actual is split into Labour
+  // (timesheets), Bills (supplier bills = persisted actualAmount), and Internal
+  // (placeholder $0). Total is their sum; the persisted line items are unchanged.
+  type CostItem = {
+    id: string;
+    costCodeId: string | null;
+    costCodeTitle: string;
+    categoryTitle: string;
+    budgeted: number;
+    labour: number;
+    bills: number;
+    internal: number;
+    total: number;
+  };
+
+  // Merge persisted budget line items (budget + bills) with the labour
+  // breakdown (timesheets), then append labour-only cost codes that have no
+  // budget line item yet.
+  const costItems = useMemo<CostItem[]>(() => {
+    const labourByKey = new Map<string, { costCodeId: string | null; costCodeTitle: string; categoryTitle: string; labourCents: number }>();
+    (labourBreakdown?.byCostCode ?? []).forEach((b) => {
+      labourByKey.set(b.costCodeId ? `cc:${b.costCodeId}` : "uncategorized", b);
+    });
+
+    const items: CostItem[] = [];
+    const usedLabourKeys = new Set<string>();
+
+    lineItems.forEach((li) => {
+      // Cost-code and uncategorized line items can carry labour; category-level
+      // budget buckets (null cost code, real category title) cannot.
+      let key: string;
+      if (li.costCodeId) key = `cc:${li.costCodeId}`;
+      else if ((li.costCodeTitle || "") === "Uncategorized") key = "uncategorized";
+      else key = `li:${li.id}`;
+
+      const labourMatch = labourByKey.get(key);
+      if (labourMatch) usedLabourKeys.add(key);
+      const labour = labourMatch?.labourCents ?? 0;
+      const bills = li.actualAmount;
+      const internal = 0;
+      items.push({
+        id: li.id,
+        costCodeId: li.costCodeId,
+        costCodeTitle: li.costCodeTitle || "Uncategorized",
+        categoryTitle: li.categoryTitle || "Uncategorized",
+        budgeted: li.budgetedAmount,
+        labour,
+        bills,
+        internal,
+        total: labour + bills + internal,
+      });
+    });
+
+    (labourBreakdown?.byCostCode ?? []).forEach((b) => {
+      const key = b.costCodeId ? `cc:${b.costCodeId}` : "uncategorized";
+      if (usedLabourKeys.has(key) || b.labourCents === 0) return;
+      items.push({
+        id: `labour-${key}`,
+        costCodeId: b.costCodeId,
+        costCodeTitle: b.costCodeTitle || "Uncategorized",
+        categoryTitle: b.categoryTitle || "Uncategorized",
+        budgeted: 0,
+        labour: b.labourCents,
+        bills: 0,
+        internal: 0,
+        total: b.labourCents,
+      });
+    });
+
+    return items;
+  }, [lineItems, labourBreakdown]);
+
   type CostRow =
-    | { kind: "category"; id: string; categoryTitle: string; count: number; budgeted: number; actual: number }
-    | { kind: "item"; id: string; item: BudgetLineItem; categoryTitle: string; zebra: boolean };
+    | { kind: "category"; id: string; categoryTitle: string; count: number; budgeted: number; labour: number; bills: number; internal: number; total: number }
+    | { kind: "item"; id: string; item: CostItem; categoryTitle: string; zebra: boolean };
 
   const costRows = useMemo<CostRow[]>(() => {
-    const catMap = new Map<string, BudgetLineItem[]>();
-    lineItems.forEach((item) => {
+    const catMap = new Map<string, CostItem[]>();
+    costItems.forEach((item) => {
       const key = item.categoryTitle || "Uncategorized";
       if (!catMap.has(key)) catMap.set(key, []);
       catMap.get(key)!.push(item);
@@ -293,15 +406,21 @@ export default function BudgetPage() {
       const items = [...catItems].sort((a, b) =>
         collator.compare(a.costCodeTitle || "", b.costCodeTitle || ""),
       );
-      const budgeted = items.reduce((s, i) => s + i.budgetedAmount, 0);
-      const actual = items.reduce((s, i) => s + i.actualAmount, 0);
+      const budgeted = items.reduce((s, i) => s + i.budgeted, 0);
+      const labour = items.reduce((s, i) => s + i.labour, 0);
+      const bills = items.reduce((s, i) => s + i.bills, 0);
+      const internal = items.reduce((s, i) => s + i.internal, 0);
+      const total = items.reduce((s, i) => s + i.total, 0);
       rows.push({
         kind: "category",
         id: `cat-${categoryTitle}`,
         categoryTitle,
         count: items.length,
         budgeted,
-        actual,
+        labour,
+        bills,
+        internal,
+        total,
       });
       const isCollapsed = collapsedCategories.has(categoryTitle);
       if (!isCollapsed) {
@@ -312,19 +431,22 @@ export default function BudgetPage() {
       }
     });
     return rows;
-  }, [lineItems, collapsedCategories]);
+  }, [costItems, collapsedCategories]);
 
   const costTotals = useMemo(() => {
-    const budgeted = lineItems.reduce((s, i) => s + i.budgetedAmount, 0);
-    const actual = lineItems.reduce((s, i) => s + i.actualAmount, 0);
-    return { budgeted, actual, difference: budgeted - actual };
-  }, [lineItems]);
+    const budgeted = costItems.reduce((s, i) => s + i.budgeted, 0);
+    const labour = costItems.reduce((s, i) => s + i.labour, 0);
+    const bills = costItems.reduce((s, i) => s + i.bills, 0);
+    const internal = costItems.reduce((s, i) => s + i.internal, 0);
+    const total = costItems.reduce((s, i) => s + i.total, 0);
+    return { budgeted, labour, bills, internal, total, difference: budgeted - total };
+  }, [costItems]);
 
   const allCategoryTitles = useMemo(() => {
     const set = new Set<string>();
-    lineItems.forEach((item) => set.add(item.categoryTitle || "Uncategorized"));
+    costItems.forEach((item) => set.add(item.categoryTitle || "Uncategorized"));
     return Array.from(set);
-  }, [lineItems]);
+  }, [costItems]);
 
   const allCollapsed = allCategoryTitles.length > 0 && allCategoryTitles.every((t) => collapsedCategories.has(t));
 
@@ -364,7 +486,7 @@ export default function BudgetPage() {
       enableSorting: false,
       cell: ({ row }) => {
         const r = row.original;
-        const value = r.kind === "category" ? r.budgeted : r.item.budgetedAmount;
+        const value = r.kind === "category" ? r.budgeted : r.item.budgeted;
         if (r.kind === "category") return renderCategoryAmountChip(value);
         return (
           <span className="text-xs tabular-nums" data-testid={`text-budgeted-${r.id}`}>
@@ -376,16 +498,51 @@ export default function BudgetPage() {
       meta: { defaultWidth: 110, align: "right", headerLabel: "Budgeted" },
     },
     {
-      id: "actual",
-      header: "Actual",
+      id: "labour",
+      header: "Labour",
       enableSorting: false,
       cell: ({ row }) => {
         const r = row.original;
-        const value = r.kind === "category" ? r.actual : r.item.actualAmount;
+        const value = r.kind === "category" ? r.labour : r.item.labour;
         if (r.kind === "category") return renderCategoryAmountChip(value);
         if (value === 0) {
           return (
-            <span className="text-xs tabular-nums text-muted-foreground" data-testid={`text-actual-${r.id}`}>
+            <span className="text-xs tabular-nums text-muted-foreground" data-testid={`text-labour-${r.id}`}>
+              {formatCurrency(value)}
+            </span>
+          );
+        }
+        return (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setLabourDrill({
+                costCodeId: r.item.costCodeId,
+                title: r.item.costCodeTitle || "Uncategorized",
+              });
+            }}
+            className="text-xs tabular-nums text-[hsl(var(--bp-purple))] underline-offset-2 hover:underline"
+            data-testid={`button-labour-${r.id}`}
+          >
+            {formatCurrency(value)}
+          </button>
+        );
+      },
+      size: 110,
+      meta: { defaultWidth: 110, align: "right", headerLabel: "Labour" },
+    },
+    {
+      id: "bills",
+      header: "Bills",
+      enableSorting: false,
+      cell: ({ row }) => {
+        const r = row.original;
+        const value = r.kind === "category" ? r.bills : r.item.bills;
+        if (r.kind === "category") return renderCategoryAmountChip(value);
+        if (value === 0) {
+          return (
+            <span className="text-xs tabular-nums text-muted-foreground" data-testid={`text-bills-${r.id}`}>
               {formatCurrency(value)}
             </span>
           );
@@ -401,14 +558,48 @@ export default function BudgetPage() {
               });
             }}
             className="text-xs tabular-nums text-[hsl(var(--bp-purple))] underline-offset-2 hover:underline"
-            data-testid={`button-actual-${r.id}`}
+            data-testid={`button-bills-${r.id}`}
           >
             {formatCurrency(value)}
           </button>
         );
       },
       size: 110,
-      meta: { defaultWidth: 110, align: "right", headerLabel: "Actual" },
+      meta: { defaultWidth: 110, align: "right", headerLabel: "Bills" },
+    },
+    {
+      id: "internal",
+      header: "Internal",
+      enableSorting: false,
+      cell: ({ row }) => {
+        const r = row.original;
+        const value = r.kind === "category" ? r.internal : r.item.internal;
+        if (r.kind === "category") return renderCategoryAmountChip(value);
+        return (
+          <span className="text-xs tabular-nums text-muted-foreground" data-testid={`text-internal-${r.id}`}>
+            {formatCurrency(value)}
+          </span>
+        );
+      },
+      size: 110,
+      meta: { defaultWidth: 110, align: "right", headerLabel: "Internal" },
+    },
+    {
+      id: "total",
+      header: "Total",
+      enableSorting: false,
+      cell: ({ row }) => {
+        const r = row.original;
+        const value = r.kind === "category" ? r.total : r.item.total;
+        if (r.kind === "category") return renderCategoryAmountChip(value);
+        return (
+          <span className="text-xs tabular-nums font-semibold" data-testid={`text-total-${r.id}`}>
+            {formatCurrency(value)}
+          </span>
+        );
+      },
+      size: 120,
+      meta: { defaultWidth: 120, align: "right", headerLabel: "Total" },
     },
     {
       id: "variance",
@@ -416,7 +607,7 @@ export default function BudgetPage() {
       enableSorting: false,
       cell: ({ row }) => {
         const r = row.original;
-        const value = r.kind === "category" ? r.budgeted - r.actual : r.item.budgetedAmount - r.item.actualAmount;
+        const value = r.kind === "category" ? r.budgeted - r.total : r.item.budgeted - r.item.total;
         if (r.kind === "category") return renderCategoryAmountChip(value, true);
         return (
           <span className={cn("text-xs tabular-nums", getVarianceColor(value))} data-testid={`text-difference-${r.id}`}>
@@ -433,7 +624,7 @@ export default function BudgetPage() {
       enableSorting: false,
       cell: ({ row }) => {
         const r = row.original;
-        const value = r.kind === "category" ? r.budgeted - r.actual : r.item.budgetedAmount - r.item.actualAmount;
+        const value = r.kind === "category" ? r.budgeted - r.total : r.item.budgeted - r.item.total;
         return renderStatusChip(value);
       },
       size: 90,
@@ -918,13 +1109,13 @@ export default function BudgetPage() {
                 </div>
               </CardHeader>
               <CardContent className="p-0 flex-1 min-h-0 flex flex-col">
-                {lineItemsLoading ? (
+                {lineItemsLoading || labourLoading ? (
                   <div className="p-3 space-y-2">
                     {[1, 2, 3, 4, 5].map((i) => (
                       <Skeleton key={i} className="h-10 w-full" />
                     ))}
                   </div>
-                ) : lineItems.length === 0 ? (
+                ) : costItems.length === 0 ? (
                   <div className="text-center py-8">
                     <AlertCircle className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
                     <h3 className="text-sm font-semibold mb-1">No budget breakdown available</h3>
@@ -938,8 +1129,7 @@ export default function BudgetPage() {
                       <DataTable
                         data={costRows}
                         columns={costColumns}
-                        storageKey="budget-costs"
-                        legacyConfigKey="budget-column-config-v1"
+                        storageKey="budget-costs-v2"
                         rowKey={(row) => row.id}
                         onRowClick={(row) => {
                           if (row.kind === "category") {
@@ -960,7 +1150,10 @@ export default function BudgetPage() {
                     </div>
                     {renderTotalsBar([
                       { label: "Budgeted", value: formatCurrency(costTotals.budgeted) },
-                      { label: "Actual", value: formatCurrency(costTotals.actual) },
+                      { label: "Labour", value: formatCurrency(costTotals.labour) },
+                      { label: "Bills", value: formatCurrency(costTotals.bills) },
+                      { label: "Internal", value: formatCurrency(costTotals.internal) },
+                      { label: "Total", value: formatCurrency(costTotals.total) },
                       {
                         label: "Difference",
                         value: formatCurrency(costTotals.difference),
@@ -1114,6 +1307,62 @@ export default function BudgetPage() {
                 <span className="text-sm font-semibold">Total</span>
                 <span className="text-sm font-bold tabular-nums" data-testid="text-drill-total">
                   {formatCurrency(drillData.total)}
+                </span>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!labourDrill} onOpenChange={(o) => { if (!o) setLabourDrill(null); }}>
+        <DialogContent className="max-w-2xl" data-testid="dialog-labour-drill">
+          <DialogHeader>
+            <DialogTitle>Labour costs — {labourDrill?.title}</DialogTitle>
+            <DialogDescription>
+              Timesheets contributing to this cost code's labour spend.
+            </DialogDescription>
+          </DialogHeader>
+          {labourDrillLoading ? (
+            <div className="space-y-2 py-2">
+              {[1, 2, 3].map((i) => (
+                <Skeleton key={i} className="h-12 w-full" />
+              ))}
+            </div>
+          ) : !labourDrillData || labourDrillData.entries.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-4 text-center">
+              No timesheets found for this cost code.
+            </p>
+          ) : (
+            <div className="space-y-2 max-h-[60vh] overflow-y-auto">
+              {labourDrillData.entries.map((e, idx) => (
+                <div
+                  key={`${e.timesheetId}-${idx}`}
+                  className="block p-2.5 border rounded-md"
+                  data-testid={`drill-labour-${e.timesheetId}-${idx}`}
+                >
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="text-sm font-medium">{e.workerName}</span>
+                        {e.status && (
+                          <Badge variant="outline" className="text-data">{e.status}</Badge>
+                        )}
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {e.date ? new Date(e.date).toLocaleDateString("en-AU") : "—"}
+                        {` · ${e.hours} hrs @ ${formatCurrency(e.rateCents)}/hr`}
+                      </p>
+                    </div>
+                    <span className="text-sm font-semibold tabular-nums">
+                      {formatCurrency(e.costCents)}
+                    </span>
+                  </div>
+                </div>
+              ))}
+              <div className="flex items-center justify-between gap-2 pt-2 border-t">
+                <span className="text-sm font-semibold">Total</span>
+                <span className="text-sm font-bold tabular-nums" data-testid="text-labour-drill-total">
+                  {formatCurrency(labourDrillData.total)}
                 </span>
               </div>
             </div>

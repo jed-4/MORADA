@@ -5,6 +5,7 @@
 - [tsc OOM](typecheck-oom.md) — typecheck is `npm run check`; full tsc OOMs here (infra limit); trust the tsx dev boot instead.
 - [Attachment preview mimeType](attachment-preview-mimetype.md) — object-storage attachment URLs are extensionless; preview kind-detection needs the stored mimeType, not the URL extension.
 - [Auto OCR gate](auto-ocr-gate.md) — on-open auto AI bill reader must only fire for empty DRAFT bills; Xero imports have ocrProcessed=false and get clobbered (visual only) otherwise.
+- [Budget Actual split](budget-actual-split.md) — cost-code Actual = Labour(computed endpoint)+Bills(actualAmount, bills-only)+Internal+Total; never fold labour into actualAmount; labour total must reconcile with actual-costs.timesheetCostCents.
 - [Budget actual-cost composition](budget-actual-cost-composition.md) — stored budget actuals are bills-only; any true "actual cost"/gross-margin must ADD timesheet labour separately.
 - [Bill paidAmount is payment-managed](bill-paidamount-payment-managed.md) — paidAmount lives in the bill form as DOLLARS but is payment-managed; never send it from bill save (omit on update) — round-tripping floats into the integer cents column 500s.
 - [Client invoice paid recompute](client-invoice-paid-recompute.md) — clientInvoices paid/balance/status are stored columns; every payment void/delete/create must recompute from non-voided rows like bills.

@@ -1026,6 +1026,23 @@ export interface IStorage {
   updateTimesheetCostCode(id: string, costCode: Partial<InsertTimesheetCostCode>): Promise<TimesheetCostCode | undefined>;
   deleteTimesheetCostCode(id: string): Promise<boolean>;
 
+  // Labour cost breakdown by cost code (for the Budget cost table's Labour column
+  // and its drill-down). Split-aware; reconciles with actual-costs labour total.
+  getProjectLabourCostBreakdown(projectId: string): Promise<{
+    byCostCode: Array<{ costCodeId: string | null; costCodeTitle: string; categoryTitle: string; labourCents: number }>;
+    total: number;
+    entries: Array<{
+      costCodeId: string | null;
+      timesheetId: string;
+      workerName: string;
+      date: Date;
+      hours: number;
+      rateCents: number;
+      costCents: number;
+      status: string;
+    }>;
+  }>;
+
   // Schedule CRUD
   getSchedule(projectId: string, category?: string): Promise<Schedule | undefined>;
   getSchedulesByProject(projectId: string): Promise<Schedule[]>;
@@ -18346,6 +18363,173 @@ export class DbStorage implements IStorage {
       return labourHoursBudget;
     } catch (error) {
       console.error("Database error in recalculateLabourHoursBudget:", error);
+      throw error;
+    }
+  }
+
+  async getProjectLabourCostBreakdown(projectId: string): Promise<{
+    byCostCode: Array<{ costCodeId: string | null; costCodeTitle: string; categoryTitle: string; labourCents: number }>;
+    total: number;
+    entries: Array<{
+      costCodeId: string | null;
+      timesheetId: string;
+      workerName: string;
+      date: Date;
+      hours: number;
+      rateCents: number;
+      costCents: number;
+      status: string;
+    }>;
+  }> {
+    try {
+      // Non-rejected timesheets only — mirrors the actual-costs labour total so
+      // the Budget table's Labour column reconciles with the gross-margin bar.
+      const allTimesheets = await db.select()
+        .from(schema.timesheets)
+        .where(eq(schema.timesheets.projectId, projectId));
+      const timesheets = allTimesheets.filter((t) => t.status !== "rejected");
+      if (timesheets.length === 0) return { byCostCode: [], total: 0, entries: [] };
+
+      const timesheetIds = timesheets.map((t) => t.id);
+      const splits = await db.select()
+        .from(schema.timesheetCostCodes)
+        .where(inArray(schema.timesheetCostCodes.timesheetId, timesheetIds));
+      const splitsByTs = new Map<string, TimesheetCostCode[]>();
+      for (const s of splits) {
+        const arr = splitsByTs.get(s.timesheetId) || [];
+        arr.push(s);
+        splitsByTs.set(s.timesheetId, arr);
+      }
+
+      // Cost code + category titles (load all so deleted/inactive codes still label).
+      const costCodes = await db.select().from(schema.costCodes);
+      const categories = await db.select().from(schema.costCategories);
+      const categoryTitleById = new Map<string, string>(
+        categories.map((c) => [c.id, `${c.code} - ${c.title}`]),
+      );
+      const codeInfo = new Map<string, { title: string; categoryTitle: string }>();
+      for (const cc of costCodes) {
+        codeInfo.set(cc.id, {
+          title: `${cc.code} - ${cc.title}`,
+          categoryTitle: cc.categoryId ? (categoryTitleById.get(cc.categoryId) || "") : "",
+        });
+      }
+
+      // Fallback: direct timesheets with no cost code but linked to an estimate
+      // work item derive their cost code from that item (mirrors labour hours).
+      const workItemIds = Array.from(new Set(timesheets
+        .filter((t) => !t.costCodeId && t.workItemId)
+        .map((t) => t.workItemId as string)));
+      const workItemCostCode = new Map<string, string>();
+      if (workItemIds.length > 0) {
+        const items = await db.select({
+          id: schema.estimateItems.id,
+          costCode: schema.estimateItems.costCode,
+        })
+          .from(schema.estimateItems)
+          .where(inArray(schema.estimateItems.id, workItemIds));
+        for (const it of items) {
+          if (it.costCode) workItemCostCode.set(it.id, it.costCode);
+        }
+      }
+
+      // Worker display names.
+      const userIds = Array.from(new Set(timesheets.map((t) => t.userId)));
+      const workers = userIds.length > 0 ? await db.select({
+        id: schema.users.id,
+        firstName: schema.users.firstName,
+        lastName: schema.users.lastName,
+        email: schema.users.email,
+      }).from(schema.users).where(inArray(schema.users.id, userIds)) : [];
+      const workerName = new Map<string, string>();
+      for (const u of workers) {
+        const name = [u.firstName, u.lastName].filter(Boolean).join(" ").trim() || u.email || "Unknown";
+        workerName.set(u.id, name);
+      }
+
+      // Bucket cents per cost code key ("uncategorized" for null) and collect
+      // per-timesheet detail for the drill-down.
+      const buckets = new Map<string, number>();
+      const entries: Array<{
+        costCodeId: string | null; timesheetId: string; workerName: string;
+        date: Date; hours: number; rateCents: number; costCents: number; status: string;
+      }> = [];
+      const addBucket = (key: string, cents: number) => buckets.set(key, (buckets.get(key) || 0) + cents);
+      const nameFor = (userId: string) => workerName.get(userId) || "Unknown";
+
+      for (const ts of timesheets) {
+        // The timesheet header total is the source of truth for cost so the
+        // per-code sum always equals the actual-costs labour total.
+        const tsCents = Math.round((Number(ts.total) || 0) * 100);
+        if (tsCents === 0) continue;
+
+        const tsSplits = splitsByTs.get(ts.id) || [];
+        if (tsSplits.length > 0) {
+          // Distribute the header total across splits proportional to each
+          // split's dollar total (fallback to hours, then even). The remainder
+          // goes to the last split so the allocation sums exactly to tsCents.
+          let weights = tsSplits.map((s) => Number(s.total) || 0);
+          let weightSum = weights.reduce((a, b) => a + b, 0);
+          if (weightSum <= 0) {
+            weights = tsSplits.map((s) => Number(s.duration) || 0);
+            weightSum = weights.reduce((a, b) => a + b, 0);
+          }
+          if (weightSum <= 0) {
+            weights = tsSplits.map(() => 1);
+            weightSum = tsSplits.length;
+          }
+          let allocated = 0;
+          tsSplits.forEach((s, idx) => {
+            const cents = idx === tsSplits.length - 1
+              ? tsCents - allocated
+              : Math.floor((tsCents * weights[idx]) / weightSum);
+            allocated += cents;
+            addBucket(s.costCodeId, cents);
+            entries.push({
+              costCodeId: s.costCodeId,
+              timesheetId: ts.id,
+              workerName: nameFor(ts.userId),
+              date: ts.date,
+              hours: Number(s.duration) || 0,
+              rateCents: Math.round((Number(s.hourlyRate) || 0) * 100),
+              costCents: cents,
+              status: ts.status,
+            });
+          });
+        } else {
+          const codeKey = ts.costCodeId
+            || (ts.workItemId ? workItemCostCode.get(ts.workItemId) : undefined)
+            || "uncategorized";
+          addBucket(codeKey, tsCents);
+          entries.push({
+            costCodeId: codeKey === "uncategorized" ? null : codeKey,
+            timesheetId: ts.id,
+            workerName: nameFor(ts.userId),
+            date: ts.date,
+            hours: Number(ts.duration) || 0,
+            rateCents: Math.round((Number(ts.hourlyRate) || 0) * 100),
+            costCents: tsCents,
+            status: ts.status,
+          });
+        }
+      }
+
+      const byCostCode = Array.from(buckets.entries()).map(([key, cents]) => {
+        if (key === "uncategorized") {
+          return { costCodeId: null, costCodeTitle: "Uncategorized", categoryTitle: "", labourCents: cents };
+        }
+        const info = codeInfo.get(key);
+        return {
+          costCodeId: key,
+          costCodeTitle: info?.title || key,
+          categoryTitle: info?.categoryTitle || "",
+          labourCents: cents,
+        };
+      });
+      const total = byCostCode.reduce((s, b) => s + b.labourCents, 0);
+      return { byCostCode, total, entries };
+    } catch (error) {
+      console.error("Database error in getProjectLabourCostBreakdown:", error);
       throw error;
     }
   }

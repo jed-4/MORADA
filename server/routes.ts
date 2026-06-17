@@ -14775,6 +14775,49 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Labour cost breakdown by cost code (ex-GST cents) — powers the Budget cost
+  // table's Labour column. Split-aware; its total reconciles with the labour
+  // figure in the gross-margin bar (actual-costs.timesheetCostCents).
+  app.get("/api/projects/:projectId/labour-costs", requireAuth, requirePermission("financial.budget_actuals", "view"), async (req, res) => {
+    try {
+      const { projectId } = req.params;
+      const companyId = (req as any).user?.companyId;
+      const project = await storage.getProject(projectId);
+      if (!project) return res.status(404).json({ error: "Project not found" });
+      if (companyId && (project as any).companyId && (project as any).companyId !== companyId) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+      const breakdown = await storage.getProjectLabourCostBreakdown(projectId);
+      res.json({ projectId, total: breakdown.total, byCostCode: breakdown.byCostCode });
+    } catch (error) {
+      console.error("[GET /api/projects/:projectId/labour-costs] Error:", error);
+      res.status(500).json({ error: "Failed to fetch labour costs" });
+    }
+  });
+
+  // Labour drill-down — the individual timesheets contributing to a cost code's
+  // labour spend. Pass ?costCodeId=; omit it for the uncategorized bucket.
+  app.get("/api/projects/:projectId/labour-actuals", requireAuth, requirePermission("financial.budget_actuals", "view"), async (req, res) => {
+    try {
+      const { projectId } = req.params;
+      const costCodeId = (req.query.costCodeId as string) || null;
+      const companyId = (req as any).user?.companyId;
+      const project = await storage.getProject(projectId);
+      if (!project) return res.status(404).json({ error: "Project not found" });
+      if (companyId && (project as any).companyId && (project as any).companyId !== companyId) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+      const breakdown = await storage.getProjectLabourCostBreakdown(projectId);
+      const matched = breakdown.entries.filter((e) => (e.costCodeId ?? null) === (costCodeId ?? null));
+      matched.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      const total = matched.reduce((s, e) => s + e.costCents, 0);
+      res.json({ projectId, costCodeId, total, entries: matched });
+    } catch (error) {
+      console.error("[GET /api/projects/:projectId/labour-actuals] Error:", error);
+      res.status(500).json({ error: "Failed to fetch labour actuals" });
+    }
+  });
+
   // Get unlinked bill line items (no priceListItemId) for AI review
   app.get("/api/bill-line-items/unlinked", async (req, res) => {
     try {
