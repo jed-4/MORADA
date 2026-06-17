@@ -872,9 +872,14 @@ export default function BudgetPage() {
                 {formatCurrency(grossProfitCents)}
               </span>
             </div>
-            <div className="flex items-center gap-1.5 ml-auto" data-testid="margin-percent">
-              <span className="text-muted-foreground">Margin</span>
-              <span className={cn("font-semibold tabular-nums", getVarianceColor(grossProfitCents))}>
+            <div
+              className="flex items-baseline gap-1.5 ml-auto rounded-md border border-border bg-[hsl(var(--bp-card))] px-2.5 py-1"
+              data-testid="margin-percent"
+            >
+              <span className="text-[9px] uppercase tracking-wide text-muted-foreground font-semibold">
+                Margin
+              </span>
+              <span className={cn("text-base font-bold tabular-nums leading-none", getVarianceColor(grossProfitCents))}>
                 {marginPct.toFixed(1)}%
               </span>
             </div>

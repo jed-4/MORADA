@@ -109,6 +109,25 @@ function formatCurrencyShort(v: number): string {
   return `$${Math.round(dollars)}`;
 }
 
+// Build an evenly-spaced ("nice") axis so the scale always reads top-to-bottom
+// in consistent steps instead of recharts' uneven auto ticks.
+function niceAxis(maxCents: number): { max: number; ticks: number[] } {
+  if (!Number.isFinite(maxCents) || maxCents <= 0) return { max: 0, ticks: [0] };
+  const intervals = 4;
+  const rawStep = maxCents / intervals;
+  const mag = Math.pow(10, Math.floor(Math.log10(rawStep)));
+  const norm = rawStep / mag;
+  const stepMul = norm <= 1 ? 1 : norm <= 2 ? 2 : norm <= 2.5 ? 2.5 : norm <= 5 ? 5 : 10;
+  const step = Math.max(1, stepMul * mag);
+  const niceMax = Math.ceil(maxCents / step) * step;
+  const ticks: number[] = [];
+  for (let v = 0; v <= niceMax + step * 0.5; v += step) {
+    const t = Math.round(v);
+    if (ticks[ticks.length - 1] !== t) ticks.push(t);
+  }
+  return { max: niceMax, ticks };
+}
+
 function CashFlowTooltip({ active, payload }: any) {
   if (!active || !payload || payload.length === 0) return null;
   const row: PeriodRow = payload[0].payload;
@@ -154,7 +173,7 @@ function SCurveTooltip({ active, payload }: any) {
       <p className="font-semibold text-[hsl(var(--bp-card-foreground))] mb-1">{row.label}</p>
       <p className="text-[hsl(var(--bp-green))]">Cumulative received: {formatCurrency(row.cumulativeIn || 0)}</p>
       <p className="text-[hsl(var(--bp-coral))]">Cumulative paid out: {formatCurrency(row.cumulativeOut || 0)}</p>
-      <p className="text-[hsl(var(--bp-purple))]">Planned: {formatCurrency(row.cumulativePlanned || 0)}</p>
+      <p className="text-[hsl(var(--bp-purple))]">Planned income: {formatCurrency(row.cumulativePlanned || 0)}</p>
       <p className={cn("font-medium mt-0.5", gap >= 0 ? "text-[hsl(var(--bp-green))]" : "text-[hsl(var(--bp-coral))]")}>
         {gap >= 0 ? "Ahead by " : "Behind by "}
         {formatCurrency(Math.abs(gap))}
@@ -191,6 +210,26 @@ export default function ProjectCashFlowWidget({ widget, onUpdate, isConfiguring,
       0,
     );
   }, [data]);
+
+  // Even, full-height Y axis: take the tallest value the chart needs to show
+  // (stacked bars or cumulative curves, plus the ceiling lines) and round it
+  // up to clean, evenly-spaced ticks.
+  const axis = useMemo(() => {
+    if (!data) return { max: 0, ticks: [0] };
+    let m = Math.max(data.contractCeiling || 0, data.contractPlusVariationsCeiling || 0);
+    for (const p of data.periods) {
+      if (config.chartType === "bar") {
+        m = Math.max(
+          m,
+          (p.moneyIn || 0) + (p.invoicedNotPaid || 0),
+          (p.moneyOut || 0) + (p.committedNotPaid || 0),
+        );
+      } else {
+        m = Math.max(m, p.cumulativeIn || 0, p.cumulativeOut || 0, p.cumulativePlanned || 0);
+      }
+    }
+    return niceAxis(m * 1.05);
+  }, [data, config.chartType]);
 
   if (isConfiguring) {
     return (
@@ -337,7 +376,9 @@ export default function ProjectCashFlowWidget({ widget, onUpdate, isConfiguring,
                   tickLine={false}
                   tick={{ fontSize: 10, fill: "hsl(var(--bp-muted))" }}
                   width={52}
-                  domain={[0, (dataMax: number) => Math.max(dataMax, data.contractCeiling || 0, data.contractPlusVariationsCeiling || 0) * 1.08]}
+                  domain={[0, axis.max > 0 ? axis.max : "auto"]}
+                  ticks={axis.max > 0 ? axis.ticks : undefined}
+                  allowDecimals={false}
                 />
                 <Tooltip content={<CashFlowTooltip />} cursor={{ fill: "hsl(var(--bp-border))", opacity: 0.2 }} />
                 {/* Received (actual) — solid green, stacked below pending */}
@@ -365,7 +406,7 @@ export default function ProjectCashFlowWidget({ widget, onUpdate, isConfiguring,
                     strokeDasharray="4 4"
                     strokeWidth={1}
                     ifOverflow="extendDomain"
-                    label={{ value: "Contract + Vars", position: "right", fontSize: 9, fill: "hsl(var(--bp-purple))" }}
+                    label={{ value: "Revised", position: "right", fontSize: 9, fill: "hsl(var(--bp-purple))" }}
                   />
                 )}
               </ComposedChart>
@@ -394,7 +435,9 @@ export default function ProjectCashFlowWidget({ widget, onUpdate, isConfiguring,
                   tickLine={false}
                   tick={{ fontSize: 10, fill: "hsl(var(--bp-muted))" }}
                   width={52}
-                  domain={[0, (dataMax: number) => Math.max(dataMax, data.contractCeiling || 0, data.contractPlusVariationsCeiling || 0) * 1.08]}
+                  domain={[0, axis.max > 0 ? axis.max : "auto"]}
+                  ticks={axis.max > 0 ? axis.ticks : undefined}
+                  allowDecimals={false}
                 />
                 <Tooltip content={<SCurveTooltip />} cursor={{ stroke: "hsl(var(--bp-border))", strokeWidth: 1 }} />
                 <Area
@@ -419,7 +462,7 @@ export default function ProjectCashFlowWidget({ widget, onUpdate, isConfiguring,
                   <Line
                     type="monotone"
                     dataKey="cumulativePlanned"
-                    name="Planned"
+                    name="Planned income"
                     stroke="hsl(var(--bp-purple))"
                     strokeWidth={1.5}
                     strokeDasharray="5 3"
@@ -443,7 +486,7 @@ export default function ProjectCashFlowWidget({ widget, onUpdate, isConfiguring,
                     strokeDasharray="4 4"
                     strokeWidth={1}
                     ifOverflow="extendDomain"
-                    label={{ value: "+Variations", position: "right", fontSize: 9, fill: "hsl(var(--bp-purple))" }}
+                    label={{ value: "Revised", position: "right", fontSize: 9, fill: "hsl(var(--bp-purple))" }}
                   />
                 )}
               </ComposedChart>
@@ -465,18 +508,6 @@ export default function ProjectCashFlowWidget({ widget, onUpdate, isConfiguring,
             <span className="text-[hsl(var(--bp-muted))]">Out:</span>
             <span className="font-medium text-[hsl(var(--bp-card-foreground))] tabular-nums">
               {formatCurrency(data.summary.totalMoneyOut)}
-            </span>
-          </div>
-          <div className="flex items-center gap-1">
-            <span className="text-[hsl(var(--bp-muted))]">Net:</span>
-            <span
-              className={cn(
-                "font-semibold tabular-nums",
-                net >= 0 ? "text-[hsl(var(--bp-green))]" : "text-[hsl(var(--bp-coral))]",
-              )}
-              data-testid="chip-net-position"
-            >
-              {formatCurrency(net)}
             </span>
           </div>
         </div>
@@ -515,7 +546,7 @@ export default function ProjectCashFlowWidget({ widget, onUpdate, isConfiguring,
           {config.chartType === "scurve" && config.showPlannedCurve && (
             <span className="flex items-center gap-1">
               <span className="inline-block h-px w-3 border-t border-dashed border-[hsl(var(--bp-purple))]" />
-              Planned
+              Planned income
             </span>
           )}
           {config.showContractCeiling && (
@@ -527,9 +558,24 @@ export default function ProjectCashFlowWidget({ widget, onUpdate, isConfiguring,
           {showVariationsLine && (
             <span className="flex items-center gap-1">
               <span className="inline-block h-px w-3 border-t border-dashed border-[hsl(var(--bp-purple))]" />
-              +Variations
+              Revised
             </span>
           )}
+        </div>
+        <div
+          className="flex items-baseline gap-1.5 rounded-md border border-[hsl(var(--bp-border))] bg-[hsl(var(--bp-card))] px-2 py-0.5"
+          data-testid="chip-net-position"
+          title="Cash position = money received from the client minus money paid to suppliers"
+        >
+          <span className="text-[9px] uppercase tracking-wide text-[hsl(var(--bp-muted))]">Position</span>
+          <span
+            className={cn(
+              "text-xs font-bold tabular-nums",
+              net >= 0 ? "text-[hsl(var(--bp-green))]" : "text-[hsl(var(--bp-coral))]",
+            )}
+          >
+            {(net >= 0 ? "+" : "") + formatCurrency(net)}
+          </span>
         </div>
       </div>
     </div>
