@@ -103,6 +103,19 @@ export default function BudgetPage() {
     enabled: !!projectId && canViewActuals,
   });
 
+  // Actual costs to date (ex-GST, cents): bills + labour (timesheets) + internal (future).
+  // Powers the ACTUAL gross-margin bar below.
+  const { data: actualCosts } = useQuery<{
+    billsCostExGstCents: number;
+    timesheetCostCents: number;
+    internalCostCents: number;
+    actualCostExGstCents: number;
+  }>({
+    queryKey: ["/api/projects", projectId, "actual-costs"],
+    queryFn: () => apiRequest(`/api/projects/${projectId}/actual-costs`, "GET"),
+    enabled: !!projectId && canViewActuals,
+  });
+
   // Drill-down: which cost code's Actual is being inspected (null = closed).
   const [actualDrill, setActualDrill] = useState<{ costCodeId: string | null; title: string } | null>(null);
   const { data: drillData, isLoading: drillLoading } = useQuery<{
@@ -818,29 +831,39 @@ export default function BudgetPage() {
         </div>
       )}
 
-      {/* GROSS MARGIN BAR (ex GST) — costs tab only */}
+      {/* GROSS MARGIN BAR (ex GST) — costs tab only. Shows the ACTUAL gross margin
+          to date: revised contract (ex GST) minus actual costs incurred so far
+          (bills + labour). Note: mid-project this margin looks high because revenue
+          is the full contract while costs are only what has been incurred. */}
       {activeTab === "costs" && canViewActuals && (() => {
-        const contractCents =
+        const revisedCents =
           contractMetrics?.revisedContractPriceExGstCents ?? budgetData.revisedAmount ?? 0;
-        const forecastCents = budgetData.forecastAmount ?? 0;
-        const grossProfitCents = contractCents - forecastCents;
-        const marginPct = contractCents > 0 ? (grossProfitCents / contractCents) * 100 : 0;
+        const billsCents = actualCosts?.billsCostExGstCents ?? 0;
+        const labourCents = actualCosts?.timesheetCostCents ?? 0;
+        const actualCostCents = actualCosts?.actualCostExGstCents ?? 0;
+        const grossProfitCents = revisedCents - actualCostCents;
+        const marginPct = revisedCents > 0 ? (grossProfitCents / revisedCents) * 100 : 0;
+        const costBreakdown = `Bills: ${formatCurrency(billsCents)}  •  Labour: ${formatCurrency(labourCents)}`;
         return (
           <div
             className="flex items-center gap-x-4 gap-y-1 px-3 py-1.5 bg-[hsl(var(--bp-subtle))] border-b border-border flex-shrink-0 flex-wrap text-[11px]"
             data-testid="bar-gross-margin"
           >
             <span className="text-[9px] uppercase tracking-wide text-muted-foreground font-semibold">
-              Gross Margin (ex GST)
+              Gross Margin (ex GST) · to date
             </span>
-            <div className="flex items-center gap-1.5" data-testid="margin-contract">
-              <span className="text-muted-foreground">Contract</span>
-              <span className="font-semibold tabular-nums text-foreground">{formatCurrency(contractCents)}</span>
+            <div className="flex items-center gap-1.5" data-testid="margin-revised">
+              <span className="text-muted-foreground">Revised Contract</span>
+              <span className="font-semibold tabular-nums text-foreground">{formatCurrency(revisedCents)}</span>
             </div>
             <span className="text-muted-foreground">−</span>
-            <div className="flex items-center gap-1.5" data-testid="margin-forecast-cost">
-              <span className="text-muted-foreground">Forecast Cost</span>
-              <span className="font-semibold tabular-nums text-foreground">{formatCurrency(forecastCents)}</span>
+            <div
+              className="flex items-center gap-1.5"
+              data-testid="margin-actual-cost"
+              title={`${costBreakdown}  •  Internal costs not yet included`}
+            >
+              <span className="text-muted-foreground">Actual Costs</span>
+              <span className="font-semibold tabular-nums text-foreground">{formatCurrency(actualCostCents)}</span>
             </div>
             <span className="text-muted-foreground">=</span>
             <div className="flex items-center gap-1.5" data-testid="margin-gross-profit">

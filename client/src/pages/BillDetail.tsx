@@ -893,6 +893,8 @@ export default function BillDetail() {
         subtotal: Math.round(calculateSubtotal() * 100),
         tax: Math.round(calculateTax() * 100),
         total: Math.round(calculateTotal() * 100),
+        // Convert paidAmount (held in the form as dollars) back to integer cents.
+        paidAmount: Math.round((data.paidAmount || 0) * 100),
         taxMode,
         // Persist rich attachment objects when we have them (for files uploaded
         // in this session); fall back to bare object-path strings otherwise.
@@ -1010,8 +1012,14 @@ export default function BillDetail() {
 
   const updateMutation = useMutation({
     mutationFn: async (data: BillFormData) => {
+      // paidAmount is payment-managed (set only by recording payments + syncBillPaidStatus)
+      // and has no input in this form — it is merely carried in defaultValues as DOLLARS.
+      // Spreading it back unconverted sent e.g. $47.50 -> 47.5 into the integer "paid_amount"
+      // column and 500'd the update. It is also a stale value (payments/Xero sync may have
+      // changed it since load), so we omit it entirely from the update payload instead.
+      const { paidAmount: _omitPaidAmount, ...rest } = data;
       const billData = {
-        ...data,
+        ...rest,
         billDate: new Date(data.billDate),
         dueDate: data.dueDate ? new Date(data.dueDate) : undefined,
         subtotal: Math.round(calculateSubtotal() * 100),

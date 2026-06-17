@@ -3291,11 +3291,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Centralised contract metrics for a project (used by PDFs / Xero exports
   // and any consumer that needs the revised contract price server-side).
-  app.get("/api/projects/:id/contract-metrics", async (req, res) => {
+  app.get("/api/projects/:id/contract-metrics", requireAuth, async (req, res) => {
     try {
       const { computeContractMetrics } = await import("@shared/projectMetrics");
       const project = await storage.getProject(req.params.id);
       if (!project) return res.status(404).json({ error: "Project not found" });
+
+      // Company scoping: this endpoint exposes contract financials, so a logged-in
+      // user may only read metrics for projects within their own company.
+      const userCompanyId = (req as any).user?.companyId;
+      if (userCompanyId && (project as any).companyId && (project as any).companyId !== userCompanyId) {
+        return res.status(404).json({ error: "Project not found" });
+      }
 
       const items = project.selectedEstimateId
         ? await storage.getEstimateItems(project.selectedEstimateId)
@@ -3330,6 +3337,70 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ error: "Failed to compute contract metrics" });
     }
   });
+
+  // Actual costs to date for a project, in integer CENTS, EX-GST. This powers the
+  // ACTUAL gross-margin figure on the Budget page (revised contract ex-GST minus
+  // these actual costs). It is intentionally separate from budget.actualAmount
+  // (which is inc-GST and excludes labour) so existing budget semantics are unchanged.
+  //   - bills: sum of bill LINE ITEM totals (already stored ex-GST in cents);
+  //            credit bills subtract. Matches recalculateBudgetLineItems so it
+  //            reconciles with the cost-code breakdown the user already sees.
+  //   - labour: sum of timesheet totals (duration × hourlyRate, dollars, no GST),
+  //             excluding rejected timesheets. Converted to cents.
+  //   - internal: placeholder (0) for future internal-cost tracking.
+  app.get(
+    "/api/projects/:id/actual-costs",
+    requireAuth,
+    requirePermission("financial.budget_actuals", "view"),
+    async (req, res) => {
+      try {
+        const projectId = req.params.id;
+        const companyId = (req as any).user?.companyId;
+
+        const project = await storage.getProject(projectId);
+        if (!project) return res.status(404).json({ error: "Project not found" });
+        if (companyId && (project as any).companyId && (project as any).companyId !== companyId) {
+          return res.status(404).json({ error: "Project not found" });
+        }
+
+        // Bills (ex-GST, cents). Sum line items, not header totals, to stay ex-GST.
+        const bills = await storage.getBills(projectId, undefined, companyId || undefined);
+        let billsCostExGstCents = 0;
+        for (const bill of bills) {
+          const lines = await storage.getBillLineItems(bill.id);
+          const sign = bill.billType === "credit" ? -1 : 1;
+          for (const line of lines) {
+            billsCostExGstCents += Math.round(line.total ?? 0) * sign;
+          }
+        }
+
+        // Labour (timesheets). storage.getTimesheets is NOT view-scope filtered, so
+        // this is the full company-scoped project labour cost (correct for a financial
+        // total gated by the budget_actuals permission). Exclude rejected timesheets.
+        const timesheets = await storage.getTimesheets(projectId);
+        let timesheetCostCents = 0;
+        for (const ts of timesheets) {
+          if (ts.status === "rejected") continue;
+          timesheetCostCents += Math.round((Number(ts.total) || 0) * 100);
+        }
+
+        const internalCostCents = 0; // Placeholder for future internal-cost tracking.
+        const actualCostExGstCents =
+          billsCostExGstCents + timesheetCostCents + internalCostCents;
+
+        res.json({
+          projectId,
+          billsCostExGstCents,
+          timesheetCostCents,
+          internalCostCents,
+          actualCostExGstCents,
+        });
+      } catch (error) {
+        console.error("[GET /api/projects/:id/actual-costs] Error:", error);
+        res.status(500).json({ error: "Failed to compute actual costs" });
+      }
+    },
+  );
 
   app.post("/api/projects", async (req, res) => {
     try {
