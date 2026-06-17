@@ -179,10 +179,44 @@ export default function BudgetPage() {
     return "text-muted-foreground";
   };
 
-  const getVarianceBadgeVariant = (variance: number): "default" | "destructive" | "outline" => {
-    if (variance > 0) return "default";
-    if (variance < 0) return "destructive";
-    return "outline";
+  const renderStatusChip = (value: number) => {
+    const label = value > 0 ? "Under" : value < 0 ? "Over" : "On Track";
+    const tone =
+      value > 0
+        ? "bg-[hsl(var(--status-success-bg))] text-[hsl(var(--status-success-fg))]"
+        : value < 0
+          ? "bg-[hsl(var(--status-danger-bg))] text-[hsl(var(--status-danger-fg))]"
+          : "bg-muted text-muted-foreground";
+    return (
+      <span
+        className={cn(
+          "inline-flex items-center justify-center w-[68px] h-5 rounded-md text-[10px] font-medium",
+          tone,
+        )}
+      >
+        {label}
+      </span>
+    );
+  };
+
+  const renderCategoryAmountChip = (value: number, variance = false) => {
+    const tone = variance
+      ? value > 0
+        ? "bg-[hsl(var(--status-success-bg))] text-[hsl(var(--status-success-fg))]"
+        : value < 0
+          ? "bg-[hsl(var(--status-danger-bg))] text-[hsl(var(--status-danger-fg))]"
+          : "bg-muted text-muted-foreground"
+      : "bg-[hsl(var(--bp-subtle))] text-foreground";
+    return (
+      <span
+        className={cn(
+          "inline-flex items-center justify-center px-2 h-5 rounded-md text-xs font-semibold tabular-nums",
+          tone,
+        )}
+      >
+        {formatCurrency(value)}
+      </span>
+    );
   };
 
   const totalBudgetedHours = labourHours.reduce((sum, item) => sum + parseFloat(item.budgetedHours || "0"), 0);
@@ -287,8 +321,9 @@ export default function BudgetPage() {
       cell: ({ row }) => {
         const r = row.original;
         const value = r.kind === "category" ? r.budgeted : r.item.budgetedAmount;
+        if (r.kind === "category") return renderCategoryAmountChip(value);
         return (
-          <span className={cn("text-xs tabular-nums", r.kind === "category" && "font-semibold")} data-testid={r.kind === "item" ? `text-budgeted-${r.id}` : undefined}>
+          <span className="text-xs tabular-nums" data-testid={`text-budgeted-${r.id}`}>
             {formatCurrency(value)}
           </span>
         );
@@ -303,8 +338,9 @@ export default function BudgetPage() {
       cell: ({ row }) => {
         const r = row.original;
         const value = r.kind === "category" ? r.actual : r.item.actualAmount;
+        if (r.kind === "category") return renderCategoryAmountChip(value);
         return (
-          <span className={cn("text-xs tabular-nums", r.kind === "category" && "font-semibold")} data-testid={r.kind === "item" ? `text-actual-${r.id}` : undefined}>
+          <span className="text-xs tabular-nums" data-testid={`text-actual-${r.id}`}>
             {formatCurrency(value)}
           </span>
         );
@@ -319,8 +355,9 @@ export default function BudgetPage() {
       cell: ({ row }) => {
         const r = row.original;
         const value = r.kind === "category" ? r.budgeted - r.actual : r.item.budgetedAmount - r.item.actualAmount;
+        if (r.kind === "category") return renderCategoryAmountChip(value, true);
         return (
-          <span className={cn("text-xs tabular-nums", r.kind === "category" && "font-semibold", getVarianceColor(value))} data-testid={r.kind === "item" ? `text-difference-${r.id}` : undefined}>
+          <span className={cn("text-xs tabular-nums", getVarianceColor(value))} data-testid={`text-difference-${r.id}`}>
             {formatCurrency(value)}
           </span>
         );
@@ -335,11 +372,7 @@ export default function BudgetPage() {
       cell: ({ row }) => {
         const r = row.original;
         const value = r.kind === "category" ? r.budgeted - r.actual : r.item.budgetedAmount - r.item.actualAmount;
-        return (
-          <Badge variant={getVarianceBadgeVariant(value)} className="h-4 px-1.5 text-data">
-            {value > 0 ? "Under" : value < 0 ? "Over" : "On Track"}
-          </Badge>
-        );
+        return renderStatusChip(value);
       },
       size: 90,
       meta: { defaultWidth: 90, align: "right", headerLabel: "Status" },

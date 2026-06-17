@@ -337,6 +337,7 @@ export default function ProjectCashFlowWidget({ widget, onUpdate, isConfiguring,
                   tickLine={false}
                   tick={{ fontSize: 10, fill: "hsl(var(--bp-muted))" }}
                   width={52}
+                  domain={[0, (dataMax: number) => Math.max(dataMax, data.contractCeiling || 0, data.contractPlusVariationsCeiling || 0) * 1.08]}
                 />
                 <Tooltip content={<CashFlowTooltip />} cursor={{ fill: "hsl(var(--bp-border))", opacity: 0.2 }} />
                 {/* Received (actual) — solid green, stacked below pending */}
@@ -350,11 +351,11 @@ export default function ProjectCashFlowWidget({ widget, onUpdate, isConfiguring,
                 {config.showContractCeiling && data.contractCeiling > 0 && (
                   <ReferenceLine
                     y={data.contractCeiling}
-                    stroke="hsl(var(--bp-muted))"
-                    strokeDasharray="4 4"
-                    strokeWidth={1}
+                    stroke="hsl(var(--foreground) / 0.55)"
+                    strokeDasharray="6 4"
+                    strokeWidth={1.5}
                     ifOverflow="extendDomain"
-                    label={{ value: "Contract", position: "right", fontSize: 9, fill: "hsl(var(--bp-muted))" }}
+                    label={{ value: "Contract", position: "right", fontSize: 9, fontWeight: 600, fill: "hsl(var(--foreground) / 0.7)" }}
                   />
                 )}
                 {showVariationsLine && (
@@ -393,6 +394,7 @@ export default function ProjectCashFlowWidget({ widget, onUpdate, isConfiguring,
                   tickLine={false}
                   tick={{ fontSize: 10, fill: "hsl(var(--bp-muted))" }}
                   width={52}
+                  domain={[0, (dataMax: number) => Math.max(dataMax, data.contractCeiling || 0, data.contractPlusVariationsCeiling || 0) * 1.08]}
                 />
                 <Tooltip content={<SCurveTooltip />} cursor={{ stroke: "hsl(var(--bp-border))", strokeWidth: 1 }} />
                 <Area
@@ -427,11 +429,11 @@ export default function ProjectCashFlowWidget({ widget, onUpdate, isConfiguring,
                 {config.showContractCeiling && data.contractCeiling > 0 && (
                   <ReferenceLine
                     y={data.contractCeiling}
-                    stroke="hsl(var(--bp-muted))"
-                    strokeDasharray="4 4"
-                    strokeWidth={1}
+                    stroke="hsl(var(--foreground) / 0.55)"
+                    strokeDasharray="6 4"
+                    strokeWidth={1.5}
                     ifOverflow="extendDomain"
-                    label={{ value: "Contract", position: "right", fontSize: 9, fill: "hsl(var(--bp-muted))" }}
+                    label={{ value: "Contract", position: "right", fontSize: 9, fontWeight: 600, fill: "hsl(var(--foreground) / 0.7)" }}
                   />
                 )}
                 {showVariationsLine && (
