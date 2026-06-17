@@ -277,6 +277,19 @@ app.use((req, res, next) => {
       console.error('Failed to repair duplicate scope stages:', error);
     }
 
+    // Heal client invoices whose stored paidAmount still counts a voided
+    // payment (pre-fix voids never recomputed the totals). Idempotent and
+    // tightly scoped — only touches invoices where paidAmount provably came
+    // from the payment rows. Exits cheaply when there is nothing to fix.
+    try {
+      const healed = await storage.healVoidedClientInvoicePaidAmounts();
+      if (healed.fixed > 0) {
+        log(`Client invoice paid amounts healed: corrected ${healed.fixed} invoice(s) with voided payments`);
+      }
+    } catch (error) {
+      console.error('Failed to heal voided client invoice paid amounts:', error);
+    }
+
     // Backfill / correct the cached contract price snapshot on every project
     // that has a selected estimate, recomputing it from the canonical estimate
     // summary (per-line markup + project markup + GST). Idempotent and

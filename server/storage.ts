@@ -820,6 +820,8 @@ export interface IStorage {
   createClientInvoicePayment(payment: InsertClientInvoicePayment): Promise<ClientInvoicePayment>;
   deleteClientInvoicePayment(id: string): Promise<boolean>;
   voidClientInvoicePayment(id: string): Promise<ClientInvoicePayment | undefined>;
+  syncClientInvoicePaidStatus(invoiceId: string): Promise<void>;
+  healVoidedClientInvoicePaidAmounts(): Promise<{ fixed: number }>;
 
   // Bill Payments CRUD
   getBillPayments(billId: string): Promise<BillPayment[]>;
@@ -6414,6 +6416,8 @@ export class MemStorage implements IStorage {
   async backfillCompanySettingsCompanyId(): Promise<{ updated: boolean }> { return { updated: false }; }
   async syncCompanyName(): Promise<{ synced: boolean; name?: string }> { return { synced: false }; }
   async repairDuplicateScopeStages(): Promise<{ projectsScanned: number; duplicatesRemoved: number }> { return { projectsScanned: 0, duplicatesRemoved: 0 }; }
+  async syncClientInvoicePaidStatus(_invoiceId: string): Promise<void> {}
+  async healVoidedClientInvoicePaidAmounts(): Promise<{ fixed: number }> { return { fixed: 0 }; }
 }
 
 // Database-backed storage implementation
@@ -16034,8 +16038,13 @@ export class DbStorage implements IStorage {
 
   async deleteClientInvoicePayment(id: string): Promise<boolean> {
     try {
+      const existing = await db.select({ invoiceId: schema.clientInvoicePayments.invoiceId })
+        .from(schema.clientInvoicePayments)
+        .where(eq(schema.clientInvoicePayments.id, id))
+        .limit(1);
       await db.delete(schema.clientInvoicePayments)
         .where(eq(schema.clientInvoicePayments.id, id));
+      if (existing[0]?.invoiceId) await this.syncClientInvoicePaidStatus(existing[0].invoiceId);
       return true;
     } catch (error) {
       console.error("Database error in deleteClientInvoicePayment:", error);
@@ -16049,10 +16058,94 @@ export class DbStorage implements IStorage {
         .set({ isVoided: true, updatedAt: new Date() })
         .where(eq(schema.clientInvoicePayments.id, id))
         .returning();
+      if (result[0]?.invoiceId) await this.syncClientInvoicePaidStatus(result[0].invoiceId);
       return result[0];
     } catch (error) {
       console.error("Database error in voidClientInvoicePayment:", error);
       throw error;
+    }
+  }
+
+  // Recompute clientInvoices.paidAmount, balanceAmount and status from the
+  // non-voided payment history. Mirrors syncBillPaidStatus. A voided payment
+  // must be subtracted from the paid total — otherwise it keeps counting as
+  // "Paid" and the invoice/project balances go negative.
+  async syncClientInvoicePaidStatus(invoiceId: string): Promise<void> {
+    try {
+      const invoiceRows = await db.select().from(schema.clientInvoices)
+        .where(eq(schema.clientInvoices.id, invoiceId)).limit(1);
+      const invoice = invoiceRows[0];
+      if (!invoice) return;
+
+      const payments = await db.select().from(schema.clientInvoicePayments)
+        .where(and(
+          eq(schema.clientInvoicePayments.invoiceId, invoiceId),
+          eq(schema.clientInvoicePayments.isVoided, false),
+        ));
+      const paid = payments.reduce((sum: number, p: ClientInvoicePayment) => sum + (p.amount ?? 0), 0);
+      const total = invoice.totalAmount ?? 0;
+      // Clamp to 0 so a genuine overpayment never produces a negative
+      // "Outstanding" — matches the Xero sync paths (Math.max(0, ...)).
+      const balance = Math.max(0, total - paid);
+
+      let status = invoice.status;
+      if (total > 0 && paid >= total) {
+        status = "paid";
+      } else if (paid > 0) {
+        status = "partial";
+      } else if (invoice.status === "paid" || invoice.status === "partial") {
+        // All payments voided/removed — revert a previously-paid invoice to
+        // "sent" so it isn't stuck showing as paid.
+        status = "sent";
+      }
+
+      await db.update(schema.clientInvoices)
+        .set({ paidAmount: paid, balanceAmount: balance, status, updatedAt: new Date() })
+        .where(eq(schema.clientInvoices.id, invoiceId));
+    } catch (error) {
+      console.error("Database error in syncClientInvoicePaidStatus:", error);
+      throw error;
+    }
+  }
+
+  // One-time, idempotent heal for invoices whose stored paidAmount still counts
+  // a voided payment (the pre-fix void path never recomputed the totals).
+  // Scoped precisely to the bug: only invoices that (a) have at least one voided
+  // payment AND (b) whose stored paidAmount equals the sum of ALL payment rows
+  // (voided + active) are corrected. Condition (b) proves paidAmount was built
+  // purely from payment rows, so recomputing from the non-voided rows is safe.
+  // Invoices that track paidAmount by other means are left untouched.
+  async healVoidedClientInvoicePaidAmounts(): Promise<{ fixed: number }> {
+    try {
+      const voidedInvoiceRows = await db
+        .selectDistinct({ invoiceId: schema.clientInvoicePayments.invoiceId })
+        .from(schema.clientInvoicePayments)
+        .where(eq(schema.clientInvoicePayments.isVoided, true));
+
+      let fixed = 0;
+      for (const { invoiceId } of voidedInvoiceRows) {
+        if (!invoiceId) continue;
+        const invoiceRows = await db.select().from(schema.clientInvoices)
+          .where(eq(schema.clientInvoices.id, invoiceId)).limit(1);
+        const invoice = invoiceRows[0];
+        if (!invoice) continue;
+
+        const allPayments = await db.select().from(schema.clientInvoicePayments)
+          .where(eq(schema.clientInvoicePayments.invoiceId, invoiceId));
+        const allSum = allPayments.reduce((s: number, p: ClientInvoicePayment) => s + (p.amount ?? 0), 0);
+        const activeSum = allPayments
+          .filter((p: ClientInvoicePayment) => !p.isVoided)
+          .reduce((s: number, p: ClientInvoicePayment) => s + (p.amount ?? 0), 0);
+
+        if ((invoice.paidAmount ?? 0) === allSum && allSum !== activeSum) {
+          await this.syncClientInvoicePaidStatus(invoiceId);
+          fixed++;
+        }
+      }
+      return { fixed };
+    } catch (error) {
+      console.error("Database error in healVoidedClientInvoicePaidAmounts:", error);
+      return { fixed: 0 };
     }
   }
 

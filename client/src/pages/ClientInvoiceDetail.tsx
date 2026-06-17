@@ -1167,6 +1167,7 @@ export default function ClientInvoiceDetail() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/client-invoices/${effectiveInvoiceId}/payments`] });
       queryClient.invalidateQueries({ queryKey: [`/api/client-invoices/${effectiveInvoiceId}`] });
+      queryClient.invalidateQueries({ queryKey: ["/api/client-invoices"] });
       toast({ title: "Payment voided" });
     },
     onError: () => {
