@@ -803,6 +803,10 @@ async function syncBillFromXeroInternal(
 
     const billDate = parseXeroDate(invoice.Date);
     const dueDate = parseXeroDate(invoice.DueDate);
+    // Mirror Xero's inclusive/exclusive GST setting (see import handler). Only
+    // applied to draft bills below, whose line items we re-import from Xero.
+    const xeroTaxMode: "inclusive" | "exclusive" =
+      invoice.LineAmountTypes === "Inclusive" ? "inclusive" : "exclusive";
 
     await storage.updateBill(bill.id, {
       status: newStatus as any,
@@ -810,6 +814,9 @@ async function syncBillFromXeroInternal(
       subtotal: subtotalCents,
       tax: taxCents,
       total: totalCents,
+      // Only re-stamp taxMode for draft bills, whose line items get re-imported
+      // below; never flip a submitted/paid bill's tax mode under preserved lines.
+      ...(bill.status === "draft" ? { taxMode: xeroTaxMode } : {}),
       xeroPaidStatus: xeroStatus,
       xeroLastSyncAt: new Date(),
       xeroLastSyncStatus: "success",
@@ -30888,6 +30895,13 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
           const totalCents = Math.round((xeroInvoice.Total || 0) * 100);
           const amountPaidCents = Math.round((xeroInvoice.AmountPaid || 0) * 100);
           const xeroStatus: string = xeroInvoice.Status;
+          // Carry Xero's own inclusive/exclusive GST setting onto the bill so a
+          // "Tax Inclusive" invoice isn't recorded as exclusive — which would
+          // double-count GST whenever the bill is later edited/recomputed.
+          // Exclusive and NoTax both map to exclusive; only "Inclusive" means the
+          // line amounts already include GST.
+          const taxMode: "inclusive" | "exclusive" =
+            xeroInvoice.LineAmountTypes === "Inclusive" ? "inclusive" : "exclusive";
 
           let status: "draft" | "awaiting_approval" | "awaiting_payment" | "paid";
           if (statusChoice === "draft") {
@@ -30923,6 +30937,7 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
             subtotal: subtotalCents,
             tax: taxCents,
             total: totalCents,
+            taxMode,
             paidAmount: amountPaidCents,
             companyId,
             sendToXero: true,

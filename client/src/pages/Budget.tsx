@@ -2,7 +2,8 @@ import { useParams, Link } from "wouter";
 import { useMemo, useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { type ColumnDef } from "@tanstack/react-table";
-import { DataTable, type DataTableColumnMeta } from "@/components/data-table/DataTable";
+import { DataTable, DataTableColumnPicker, type DataTableColumnMeta } from "@/components/data-table/DataTable";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -16,7 +17,7 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { Progress } from "@/components/ui/progress";
-import { RefreshCw, DollarSign, AlertCircle, Clock, ChevronDown, ChevronRight, ChevronsDownUp, ChevronsUpDown } from "lucide-react";
+import { RefreshCw, DollarSign, AlertCircle, Clock, ChevronDown, ChevronRight, ChevronsDownUp, ChevronsUpDown, Columns3 } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -1074,6 +1075,34 @@ export default function BudgetPage() {
                 {marginPct.toFixed(1)}%
               </span>
             </div>
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button
+                  size="icon"
+                  variant="outline"
+                  data-testid="button-columns"
+                  title="Show or hide columns"
+                  aria-label="Show or hide columns"
+                >
+                  <Columns3 className="h-4 w-4" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent align="end" className="w-auto p-0">
+                <DataTableColumnPicker
+                  storageKey="budget-costs-v2"
+                  columns={[
+                    { id: "category", label: "Cost Code", pinned: true },
+                    { id: "budgeted", label: "Budgeted" },
+                    { id: "labour", label: "Labour" },
+                    { id: "bills", label: "Bills" },
+                    { id: "internal", label: "Internal" },
+                    { id: "total", label: "Total" },
+                    { id: "variance", label: "Difference" },
+                    { id: "status", label: "Status" },
+                  ]}
+                />
+              </PopoverContent>
+            </Popover>
           </div>
         );
       })()}
