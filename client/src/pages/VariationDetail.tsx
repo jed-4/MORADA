@@ -228,6 +228,22 @@ export default function VariationDetail() {
   }>({
     queryKey: ["/api/company-settings"],
   });
+
+  const form = useForm<VariationFormData>({
+    resolver: zodResolver(variationFormSchema),
+    defaultValues: {
+      variationNumber: "",
+      projectId: "",
+      name: "",
+      approvalDeadline: undefined,
+      daysChanged: undefined,
+      introductionText: "",
+      closingText: "",
+      termsAndConditions: "",
+      status: "draft",
+    },
+  });
+
   const currentProjectId = form.watch("projectId");
   const currentProject = projects.find((p) => p.id === currentProjectId);
   const { data: approvedProjectVariations = [] } = useQuery<any[]>({
@@ -260,21 +276,6 @@ export default function VariationDetail() {
     id: string; name: string; abn?: string; phone?: string; email?: string; logo?: string;
   }>({
     queryKey: ["/api/company"],
-  });
-
-  const form = useForm<VariationFormData>({
-    resolver: zodResolver(variationFormSchema),
-    defaultValues: {
-      variationNumber: "",
-      projectId: "",
-      name: "",
-      approvalDeadline: undefined,
-      daysChanged: undefined,
-      introductionText: "",
-      closingText: "",
-      termsAndConditions: "",
-      status: "draft",
-    },
   });
 
   const watchedProjectId = form.watch("projectId");
