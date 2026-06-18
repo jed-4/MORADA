@@ -111,21 +111,28 @@ function formatCurrencyShort(v: number): string {
 
 // Build an evenly-spaced ("nice") axis so the scale always reads top-to-bottom
 // in consistent steps instead of recharts' uneven auto ticks.
+//
+// The domain top is decoupled from the tick labels: gridlines stay on clean
+// round numbers, but the chart's top edge is only a small headroom above the
+// tallest value. That way the highest line (e.g. the contract ceiling) sits
+// near the top of the chart rather than stranded mid-height under a coarse,
+// rounded-up maximum.
 function niceAxis(maxCents: number): { max: number; ticks: number[] } {
   if (!Number.isFinite(maxCents) || maxCents <= 0) return { max: 0, ticks: [0] };
-  const intervals = 4;
-  const rawStep = maxCents / intervals;
+  // Domain top: just above the tallest value so the top line nearly touches it.
+  const domainMax = maxCents * 1.06;
+  // Pick a clean step targeting ~5 gridlines across the actual data range.
+  const rawStep = maxCents / 5;
   const mag = Math.pow(10, Math.floor(Math.log10(rawStep)));
   const norm = rawStep / mag;
   const stepMul = norm <= 1 ? 1 : norm <= 2 ? 2 : norm <= 2.5 ? 2.5 : norm <= 5 ? 5 : 10;
   const step = Math.max(1, stepMul * mag);
-  const niceMax = Math.ceil(maxCents / step) * step;
+  // Gridlines from 0 up to the data max only (kept below the headroom top edge,
+  // so the top tick label never clips against the top of the chart).
+  const count = Math.floor(maxCents / step + 1e-9);
   const ticks: number[] = [];
-  for (let v = 0; v <= niceMax + step * 0.5; v += step) {
-    const t = Math.round(v);
-    if (ticks[ticks.length - 1] !== t) ticks.push(t);
-  }
-  return { max: niceMax, ticks };
+  for (let i = 0; i <= count; i++) ticks.push(Math.round(i * step));
+  return { max: Math.round(domainMax), ticks };
 }
 
 function CashFlowTooltip({ active, payload }: any) {
@@ -216,7 +223,13 @@ export default function ProjectCashFlowWidget({ widget, onUpdate, isConfiguring,
   // up to clean, evenly-spaced ticks.
   const axis = useMemo(() => {
     if (!data) return { max: 0, ticks: [0] };
-    let m = Math.max(data.contractCeiling || 0, data.contractPlusVariationsCeiling || 0);
+    // Only let overlays that are actually drawn drive the axis height, so
+    // toggling Contract/Revised off reclaims the headroom they occupied.
+    let m = 0;
+    if (config.showContractCeiling) m = Math.max(m, data.contractCeiling || 0);
+    if (config.showVariationsCeiling && data.contractPlusVariationsCeiling > data.contractCeiling) {
+      m = Math.max(m, data.contractPlusVariationsCeiling || 0);
+    }
     for (const p of data.periods) {
       if (config.chartType === "bar") {
         m = Math.max(
@@ -228,8 +241,8 @@ export default function ProjectCashFlowWidget({ widget, onUpdate, isConfiguring,
         m = Math.max(m, p.cumulativeIn || 0, p.cumulativeOut || 0, p.cumulativePlanned || 0);
       }
     }
-    return niceAxis(m * 1.05);
-  }, [data, config.chartType]);
+    return niceAxis(m);
+  }, [data, config.chartType, config.showContractCeiling, config.showVariationsCeiling]);
 
   if (isConfiguring) {
     return (
