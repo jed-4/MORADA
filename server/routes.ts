@@ -17233,10 +17233,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/invoice-variations/by-project", async (req, res) => {
+  app.get("/api/invoice-variations/by-project", requireAuth, async (req, res) => {
     try {
       const { projectId } = req.query as { projectId?: string };
       if (!projectId) return res.status(400).json({ error: "projectId required" });
+      // Authorization: caller must belong to the same company as the project.
+      const project = await storage.getProject(projectId);
+      if (!project) return res.status(404).json({ error: "Project not found" });
+      const userCompanyId = (req.user as any)?.companyId;
+      if (!userCompanyId || project.companyId !== userCompanyId) {
+        return res.status(403).json({ error: "Forbidden" });
+      }
       const rows = await storage.getInvoiceVariationsByProject(projectId);
       res.json(rows);
     } catch (error) {
@@ -17298,10 +17305,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/invoice-allowances/by-project", async (req, res) => {
+  app.get("/api/invoice-allowances/by-project", requireAuth, async (req, res) => {
     try {
       const { projectId } = req.query as { projectId?: string };
       if (!projectId) return res.status(400).json({ error: "projectId required" });
+      // Authorization: caller must belong to the same company as the project.
+      const project = await storage.getProject(projectId);
+      if (!project) return res.status(404).json({ error: "Project not found" });
+      const userCompanyId = (req.user as any)?.companyId;
+      if (!userCompanyId || project.companyId !== userCompanyId) {
+        return res.status(403).json({ error: "Forbidden" });
+      }
       const rows = await storage.getInvoiceAllowancesByProject(projectId);
       res.json(rows);
     } catch (error) {
