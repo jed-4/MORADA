@@ -17246,6 +17246,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/invoice-allowances/by-project", async (req, res) => {
+    try {
+      const { projectId } = req.query as { projectId?: string };
+      if (!projectId) return res.status(400).json({ error: "projectId required" });
+      const rows = await storage.getInvoiceAllowancesByProject(projectId);
+      res.json(rows);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch invoice allowances by project" });
+    }
+  });
+
   app.patch("/api/invoice-allowances/:id", async (req, res) => {
     try {
       const validationResult = insertInvoiceAllowanceSchema.partial().safeParse(req.body);

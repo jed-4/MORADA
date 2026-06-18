@@ -840,13 +840,14 @@ export interface IStorage {
 
   // Invoice-Variation Junction Table
   getInvoiceVariations(invoiceId: string): Promise<InvoiceVariation[]>;
-  getInvoiceVariationsByProject(projectId: string): Promise<Array<{ variationId: string; invoiceId: string; invoiceNumber: string | null }>>;
+  getInvoiceVariationsByProject(projectId: string): Promise<Array<{ variationId: string; invoiceId: string; invoiceNumber: string | null; claimPercent: number }>>;
   createInvoiceVariation(data: InsertInvoiceVariation): Promise<InvoiceVariation>;
   updateInvoiceVariation(id: string, data: Partial<InsertInvoiceVariation>): Promise<InvoiceVariation | undefined>;
   deleteInvoiceVariation(id: string): Promise<boolean>;
 
   // Invoice-Allowance Junction Table
   getInvoiceAllowances(invoiceId: string): Promise<InvoiceAllowance[]>;
+  getInvoiceAllowancesByProject(projectId: string): Promise<Array<{ estimateItemId: string; invoiceId: string; invoiceNumber: string | null; claimPercent: number }>>;
   createInvoiceAllowance(data: InsertInvoiceAllowance): Promise<InvoiceAllowance>;
   updateInvoiceAllowance(id: string, data: Partial<InsertInvoiceAllowance>): Promise<InvoiceAllowance | undefined>;
   deleteInvoiceAllowance(id: string): Promise<boolean>;
@@ -16236,13 +16237,14 @@ export class DbStorage implements IStorage {
     }
   }
 
-  async getInvoiceVariationsByProject(projectId: string): Promise<Array<{ variationId: string; invoiceId: string; invoiceNumber: string | null }>> {
+  async getInvoiceVariationsByProject(projectId: string): Promise<Array<{ variationId: string; invoiceId: string; invoiceNumber: string | null; claimPercent: number }>> {
     try {
       const rows = await db
         .select({
           variationId: schema.invoiceVariations.variationId,
           invoiceId: schema.invoiceVariations.invoiceId,
           invoiceNumber: schema.clientInvoices.invoiceNumber,
+          claimPercent: schema.invoiceVariations.claimPercent,
         })
         .from(schema.invoiceVariations)
         .innerJoin(schema.clientInvoices, eq(schema.invoiceVariations.invoiceId, schema.clientInvoices.id))
@@ -16298,6 +16300,25 @@ export class DbStorage implements IStorage {
         .where(eq(schema.invoiceAllowances.invoiceId, invoiceId));
     } catch (error) {
       console.error("Database error in getInvoiceAllowances:", error);
+      throw error;
+    }
+  }
+
+  async getInvoiceAllowancesByProject(projectId: string): Promise<Array<{ estimateItemId: string; invoiceId: string; invoiceNumber: string | null; claimPercent: number }>> {
+    try {
+      const rows = await db
+        .select({
+          estimateItemId: schema.invoiceAllowances.estimateItemId,
+          invoiceId: schema.invoiceAllowances.invoiceId,
+          invoiceNumber: schema.clientInvoices.invoiceNumber,
+          claimPercent: schema.invoiceAllowances.claimPercent,
+        })
+        .from(schema.invoiceAllowances)
+        .innerJoin(schema.clientInvoices, eq(schema.invoiceAllowances.invoiceId, schema.clientInvoices.id))
+        .where(eq(schema.clientInvoices.projectId, projectId));
+      return rows;
+    } catch (error) {
+      console.error("Database error in getInvoiceAllowancesByProject:", error);
       throw error;
     }
   }

@@ -426,6 +426,23 @@ export default function ClientInvoiceDetail() {
     enabled: !!selectedProjectId,
   });
 
+  // Cross-invoice claim links for this project. Used to true up the CLOSING
+  // claim (the one whose cumulative claim across all invoices reaches 100%) so
+  // percentage-based progress claims reconcile to the contract to the penny
+  // instead of leaving a phantom rounding cent. claimPercent here is what each
+  // OTHER invoice has billed for the same variation/allowance line.
+  const { data: projectInvoiceVariations = [] } = useQuery<Array<{ variationId: string; invoiceId: string; claimPercent: number }>>({
+    queryKey: ["/api/invoice-variations/by-project", selectedProjectId],
+    queryFn: () => fetch(`/api/invoice-variations/by-project?projectId=${selectedProjectId}`, { credentials: "include" }).then(r => r.json()),
+    enabled: !!selectedProjectId,
+  });
+
+  const { data: projectInvoiceAllowances = [] } = useQuery<Array<{ estimateItemId: string; invoiceId: string; claimPercent: number }>>({
+    queryKey: ["/api/invoice-allowances/by-project", selectedProjectId],
+    queryFn: () => fetch(`/api/invoice-allowances/by-project?projectId=${selectedProjectId}`, { credentials: "include" }).then(r => r.json()),
+    enabled: !!selectedProjectId,
+  });
+
   const { data: bills = [] } = useQuery<Bill[]>({
     queryKey: [`/api/bills?projectId=${selectedProjectId}`],
     enabled: !!selectedProjectId,
@@ -692,26 +709,111 @@ export default function ClientInvoiceDetail() {
       ?? (currentProject as any)?.contractPrice
       ?? null);
 
-  const calculateContractPrice = () => {
-    const baseCents = getEffectiveContractPrice();
-    if (!baseCents) return 0;
-    return contractClaimRows.reduce((sum, row) => {
-      return sum + Math.round((baseCents * row.claimPercent) / 100);
+  // ── Closing-claim true-up ─────────────────────────────────────────────────
+  // Progress claims are percentage-based and each row is rounded to the nearest
+  // cent independently, so several claims that together cover 100% of a line can
+  // fail to add back up to the line total (a phantom rounding cent). The claim
+  // that CLOSES OUT a line — i.e. the cumulative claim across all of the
+  // project's invoices reaches 100% — trues up to the exact remaining balance
+  // instead of its own independently-rounded percentage, so the invoices always
+  // reconcile to the contract (and to each variation/allowance) to the penny.
+  const CLAIM_CLOSE_TOL = 0.005; // percentage-point tolerance for "reaches 100%"
+
+  const baseContractCents = getEffectiveContractPrice() ?? 0;
+
+  // Percent + cents already billed for the contract on the OTHER invoices.
+  const otherInvoicesUsedPercent = projectInvoices
+    .filter(inv => inv.id !== effectiveInvoiceId)
+    .reduce((sum, inv) => {
+      const rows = (inv as any).contractClaimRows as Array<{ claimPercent: number }> | null;
+      if (!rows || !Array.isArray(rows)) return sum;
+      return sum + rows.reduce((s, r) => s + (r.claimPercent || 0), 0);
     }, 0);
+  const otherInvoicesContractCents = projectInvoices
+    .filter(inv => inv.id !== effectiveInvoiceId)
+    .reduce((sum, inv) => {
+      const rows = (inv as any).contractClaimRows as Array<{ claimPercent: number }> | null;
+      if (!rows || !Array.isArray(rows)) return sum;
+      return sum + rows.reduce((s, r) => s + Math.round((baseContractCents * (r.claimPercent || 0)) / 100), 0);
+    }, 0);
+  const remainingClaimPercent = Math.max(0, 100 - otherInvoicesUsedPercent);
+
+  // Returns true when adding `thisPct` to `otherPct` first brings the cumulative
+  // claim to 100% on THIS invoice (and the others have not already closed it).
+  const isClosingClaim = (otherPct: number, thisPct: number) =>
+    thisPct > 0 &&
+    otherPct + thisPct >= 100 - CLAIM_CLOSE_TOL &&
+    otherPct < 100 - CLAIM_CLOSE_TOL;
+
+  // Per-row contract claim cents for THIS invoice. When this invoice closes the
+  // contract, the rounding residual is absorbed into the last claimed row so the
+  // rows and the total reconcile exactly to the remaining contract balance.
+  const getContractClaimRowCents = (): Record<string, number> => {
+    const result: Record<string, number> = {};
+    contractClaimRows.forEach(r => {
+      result[r.id] = baseContractCents
+        ? Math.round((baseContractCents * (r.claimPercent || 0)) / 100)
+        : 0;
+    });
+    if (!baseContractCents) return result;
+    const thisPercent = contractClaimRows.reduce((s, r) => s + (r.claimPercent || 0), 0);
+    if (isClosingClaim(otherInvoicesUsedPercent, thisPercent)) {
+      const target = baseContractCents - otherInvoicesContractCents;
+      const summed = contractClaimRows.reduce((s, r) => s + result[r.id], 0);
+      const delta = target - summed;
+      if (delta !== 0) {
+        const lastClaimed = [...contractClaimRows].reverse().find(r => (r.claimPercent || 0) > 0);
+        if (lastClaimed) result[lastClaimed.id] += delta;
+      }
+    }
+    return result;
+  };
+
+  const calculateContractPrice = () => {
+    const cents = getContractClaimRowCents();
+    return contractClaimRows.reduce((sum, r) => sum + (cents[r.id] || 0), 0);
+  };
+
+  // Contract-claim cents for a single row (used by row display + PDF).
+  const getContractRowCents = (rowId: string) => getContractClaimRowCents()[rowId] ?? 0;
+
+  // Variation claim cents for THIS invoice, trued up when this invoice closes
+  // out the variation (cumulative claim across invoices reaches 100%).
+  const getVariationClaimCents = (variation: any): number => {
+    const target = variation.totalAmount || 0;
+    const thisPct = variationClaims[variation.id] ?? 100;
+    const others = projectInvoiceVariations.filter(
+      r => r.variationId === variation.id && r.invoiceId !== effectiveInvoiceId
+    );
+    const otherPct = others.reduce((s, r) => s + (r.claimPercent || 0), 0);
+    if (isClosingClaim(otherPct, thisPct)) {
+      const otherCents = others.reduce((s, r) => s + Math.round((target * (r.claimPercent || 0)) / 100), 0);
+      return target - otherCents;
+    }
+    return Math.round((target * thisPct) / 100);
   };
 
   const calculateVariationsTotal = () =>
-    getSelectedVariations().reduce((sum, v) => {
-      const pct = variationClaims[v.id] ?? 100;
-      return sum + Math.round((v.totalAmount * pct) / 100);
-    }, 0);
+    getSelectedVariations().reduce((sum, v) => sum + getVariationClaimCents(v), 0);
+
+  // Allowance claim cents for THIS invoice, trued up when this invoice closes
+  // out the allowance (cumulative claim across invoices reaches 100%).
+  const getAllowanceClaimCents = (item: any): number => {
+    const target = Math.round(item.priceIncTax * item.quantity * 100);
+    const thisPct = allowanceClaims[item.id] ?? 100;
+    const others = projectInvoiceAllowances.filter(
+      r => r.estimateItemId === item.id && r.invoiceId !== effectiveInvoiceId
+    );
+    const otherPct = others.reduce((s, r) => s + (r.claimPercent || 0), 0);
+    if (isClosingClaim(otherPct, thisPct)) {
+      const otherCents = others.reduce((s, r) => s + Math.round((target * (r.claimPercent || 0)) / 100), 0);
+      return target - otherCents;
+    }
+    return Math.round((target * thisPct) / 100);
+  };
 
   const calculateAllowancesTotal = () =>
-    getSelectedAllowanceItems().reduce((sum, item) => {
-      const pct = allowanceClaims[item.id] ?? 100;
-      const total = Math.round(item.priceIncTax * item.quantity * 100);
-      return sum + Math.round((total * pct) / 100);
-    }, 0);
+    getSelectedAllowanceItems().reduce((sum, item) => sum + getAllowanceClaimCents(item), 0);
 
   const calculateBillsTotal = () =>
     getSelectedBills().reduce((sum, b) => sum + b.total, 0);
@@ -721,15 +823,6 @@ export default function ClientInvoiceDetail() {
 
   const calculateSelectionsTotal = () =>
     getSelectedSelectionOptions().reduce((sum, o: any) => sum + (o.totalCost || 0), 0);
-
-  const otherInvoicesUsedPercent = projectInvoices
-    .filter(inv => inv.id !== effectiveInvoiceId)
-    .reduce((sum, inv) => {
-      const rows = (inv as any).contractClaimRows as Array<{ claimPercent: number }> | null;
-      if (!rows || !Array.isArray(rows)) return sum;
-      return sum + rows.reduce((s, r) => s + (r.claimPercent || 0), 0);
-    }, 0);
-  const remainingClaimPercent = Math.max(0, 100 - otherInvoicesUsedPercent);
 
   const calculateCustomLinesSubtotal = () =>
     customLines.reduce((sum, item) => sum + item.totalPrice, 0);
@@ -1420,27 +1513,27 @@ export default function ClientInvoiceDetail() {
     const lineItems: Array<{ label: string; description?: string; claimPct?: number; amountExTax: number; gst: number; amountIncTax: number }> = [];
     const GST = 0.1;
     if (invoiceType === "progress_payments") {
-      // Contract claim rows
+      // Contract claim rows (closing row trued up to the exact remaining balance)
+      const contractRowCents = getContractClaimRowCents();
       for (const row of contractClaimRows) {
-        const base = getEffectiveContractPrice();
-        if (!base || !row.claimPercent) continue;
-        const incTax = Math.round((base * row.claimPercent) / 100);
+        if (!baseContractCents || !row.claimPercent) continue;
+        const incTax = contractRowCents[row.id] ?? 0;
         const exTax = Math.round(incTax / (1 + GST));
         const gst = incTax - exTax;
         lineItems.push({ label: row.name || "Contract Claim", description: row.description, claimPct: row.claimPercent, amountExTax: exTax, gst, amountIncTax: incTax });
       }
-      // Selected variations
+      // Selected variations (closing claim trued up)
       for (const v of getSelectedVariations()) {
         const pct = variationClaims[v.id] ?? 100;
-        const incTax = Math.round((v.totalAmount * pct) / 100);
+        const incTax = getVariationClaimCents(v);
         const exTax = Math.round(incTax / (1 + GST));
         const gst = incTax - exTax;
         lineItems.push({ label: `Variation ${v.variationNumber || ""}`, description: v.name || undefined, claimPct: pct, amountExTax: exTax, gst, amountIncTax: incTax });
       }
-      // Selected allowances
+      // Selected allowances (closing claim trued up)
       for (const item of getSelectedAllowanceItems()) {
         const pct = allowanceClaims[item.id] ?? 100;
-        const incTax = Math.round((item.priceIncTax * pct) / 100);
+        const incTax = getAllowanceClaimCents(item);
         const exTax = Math.round(incTax / (1 + GST));
         const gst = incTax - exTax;
         lineItems.push({ label: `Allowance - ${item.name || ""}`, claimPct: pct, amountExTax: exTax, gst, amountIncTax: incTax });
@@ -2214,9 +2307,8 @@ export default function ClientInvoiceDetail() {
                                 {renderLineTableHeader()}
                               </TableHeader>
                               <TableBody>
-                                {contractClaimRows.map((row) => {
-                                  const baseCents = getEffectiveContractPrice() ?? 0;
-                                  const claimCents = Math.round((baseCents * row.claimPercent) / 100);
+                                {(() => { const contractRowCents = getContractClaimRowCents(); return contractClaimRows.map((row) => {
+                                  const claimCents = contractRowCents[row.id] ?? 0;
                                   const claimAmt = claimCents / 100;
                                   const exTax = claimAmt / (1 + GST_RATE);
                                   const tax = claimAmt - exTax;
@@ -2286,7 +2378,7 @@ export default function ClientInvoiceDetail() {
                                       </TableCell>
                                     </TableRow>
                                   );
-                                })}
+                                }); })()}
                               </TableBody>
                             </Table>
                           </>
@@ -2378,8 +2470,7 @@ export default function ClientInvoiceDetail() {
                               <TableBody>
                                 {getSelectedVariations().map((variation) => {
                                   const claimPct = variationClaims[variation.id] ?? 100;
-                                  const claimAmt =
-                                    (variation.totalAmount * claimPct) / 100 / 100;
+                                  const claimAmt = getVariationClaimCents(variation) / 100;
                                   const exTax = claimAmt / (1 + GST_RATE);
                                   const tax = claimAmt - exTax;
                                   return (
@@ -2514,10 +2605,7 @@ export default function ClientInvoiceDetail() {
                               <TableBody>
                                 {getSelectedAllowanceItems().map((item) => {
                                   const claimPct = allowanceClaims[item.id] ?? 100;
-                                  const totalCents = Math.round(
-                                    item.priceIncTax * item.quantity * 100
-                                  );
-                                  const claimAmt = (totalCents * claimPct) / 100 / 100;
+                                  const claimAmt = getAllowanceClaimCents(item) / 100;
                                   const exTax = claimAmt / (1 + GST_RATE);
                                   const tax = claimAmt - exTax;
                                   return (

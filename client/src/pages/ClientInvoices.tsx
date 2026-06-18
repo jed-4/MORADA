@@ -222,7 +222,16 @@ export default function ClientInvoices({ embedded }: { embedded?: boolean } = {}
 
     const projectTotal = contractPriceCents + approvedVariationsTotal;
     const base = projectTotal > 0 ? projectTotal : invoicedTotal;
-    const toInvoiceTotal = Math.max(0, projectTotal - invoicedTotal);
+    // Defensive net on top of the per-invoice closing-claim true-up: percentage
+    // progress claims are rounded per cent, so a few stray cents can remain even
+    // after trueing up. When the project is effectively fully invoiced, treat a
+    // residual of a cent or two as $0.00 so it never surfaces as "To Invoice".
+    const TO_INVOICE_TOLERANCE_CENTS = 5;
+    const rawToInvoice = projectTotal - invoicedTotal;
+    const toInvoiceTotal =
+      projectTotal > 0 && Math.abs(rawToInvoice) <= TO_INVOICE_TOLERANCE_CENTS
+        ? 0
+        : Math.max(0, rawToInvoice);
 
     const paidPct      = base > 0 ? Math.round((paidTotal    / base) * 100) : 0;
     const invoicedPct  = base > 0 ? Math.round((invoicedTotal / base) * 100) : 0;
