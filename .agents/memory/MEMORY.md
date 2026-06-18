@@ -2,6 +2,7 @@
 - [Budget recalc paths](budget-recalc-paths.md) — budget actuals only refresh if EVERY bill/line-item mutation path triggers recalc; some paths bypass the CRUD routes.
 - [PO suggestion paths](po-suggestion-paths.md) — applyPOSuggestionsToBill must fire on EVERY bill create/edit that sets supplier/total (POST+PATCH /api/bills), not just email import.
 - [Xero import mapping](xero-import-mapping.md) — TC1=cost codes / TC2=projects; map by xeroTrackingOptionId (GUID); download attachments via /Invoices/{id}/Attachments/{id} Accept=MimeType.
+- [Xero tax-mode vs authorised bills](xero-taxmode-authorised-push.md) — flipping inclusive/exclusive on a linked awaiting_payment bill auto-pushes; Xero refuses LineAmountTypes change on AUTHORISED invoices → red "failed" icon that looks like a lost connection but link is intact.
 - [tsc OOM](typecheck-oom.md) — typecheck is `npm run check`; full tsc OOMs here (infra limit); trust the tsx dev boot instead.
 - [Attachment preview mimeType](attachment-preview-mimetype.md) — object-storage attachment URLs are extensionless; preview kind-detection needs the stored mimeType, not the URL extension.
 - [Auto OCR gate](auto-ocr-gate.md) — on-open auto AI bill reader must only fire for empty DRAFT bills; Xero imports have ocrProcessed=false and get clobbered (visual only) otherwise.
