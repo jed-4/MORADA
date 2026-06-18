@@ -5,6 +5,7 @@
 - [tsc OOM](typecheck-oom.md) — typecheck is `npm run check`; full tsc OOMs here (infra limit); trust the tsx dev boot instead.
 - [Attachment preview mimeType](attachment-preview-mimetype.md) — object-storage attachment URLs are extensionless; preview kind-detection needs the stored mimeType, not the URL extension.
 - [Auto OCR gate](auto-ocr-gate.md) — on-open auto AI bill reader must only fire for empty DRAFT bills; Xero imports have ocrProcessed=false and get clobbered (visual only) otherwise.
+- [user_view_preferences KV](user-view-preferences-kv.md) — it's the generic per-user key-value store; add new per-user prefs as a new viewKey + JSON blob, never a new table/route.
 - [Adding DB tables](adding-db-tables.md) — full `db:push` here prompts a destructive TRUNCATE (pre-existing drift); use additive SQL in dev + an idempotent ensure-table startup hook for prod (deploy runs no migration).
 - [Budget Actual split](budget-actual-split.md) — cost-code Actual = Labour(computed endpoint)+Bills(actualAmount, bills-only)+Internal+Total; never fold labour into actualAmount; labour total must reconcile with actual-costs.timesheetCostCents.
 - [Budget actual-cost composition](budget-actual-cost-composition.md) — stored budget actuals are bills-only; any true "actual cost"/gross-margin must ADD timesheet labour separately.

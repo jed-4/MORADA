@@ -52,7 +52,7 @@ const moreItems: MoreItem[] = [
   { id: 'checklists', label: 'Checklists', icon: 'checkmark-done', color: '#82C8A2', action: 'navigate', screen: 'Checklists' },
   { id: 'messages', label: 'Messages', icon: 'chatbubbles', color: '#70CAD0', action: 'coming-soon' },
   { id: 'contacts', label: 'Contacts', icon: 'people', color: '#D4B670', action: 'coming-soon' },
-  { id: 'settings', label: 'Settings', icon: 'settings', color: '#8A8680', action: 'coming-soon' },
+  { id: 'settings', label: 'Settings', icon: 'settings', color: '#8A8680', action: 'navigate', screen: 'Settings' },
 ];
 
 const SHEET_HEIGHT = 440;
