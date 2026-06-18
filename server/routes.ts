@@ -4361,12 +4361,42 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Cross-tenant ownership guard for indirectly-scoped resources (estimates,
+  // selections, schedules) that are isolated only via project_id. Loads the
+  // owning project and verifies it belongs to the caller's company. Returns
+  // true when access is allowed; otherwise writes the 404/403 response and
+  // returns false so the caller can `return` immediately. 404 when the
+  // resource/project is missing, 403 on a company mismatch.
+  const enforceProjectCompany = async (
+    req: any,
+    res: any,
+    projectId: string | null | undefined,
+    notFoundMessage = "Not found",
+  ): Promise<boolean> => {
+    if (!projectId) {
+      res.status(404).json({ error: notFoundMessage });
+      return false;
+    }
+    const project = await storage.getProject(projectId);
+    if (!project) {
+      res.status(404).json({ error: notFoundMessage });
+      return false;
+    }
+    const companyId = req.user?.companyId;
+    if (!companyId || project.companyId !== companyId) {
+      res.status(403).json({ error: "Forbidden" });
+      return false;
+    }
+    return true;
+  };
+
   app.get("/api/estimates/:id", async (req, res) => {
     try {
       const estimate = await storage.getEstimate(req.params.id);
       if (!estimate) {
         return res.status(404).json({ error: "Estimate not found" });
       }
+      if (!(await enforceProjectCompany(req, res, estimate.projectId, "Estimate not found"))) return;
       res.json(estimate);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch estimate" });
@@ -4403,6 +4433,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
+      // Ownership check — load the estimate and verify its project belongs to
+      // the caller's company before any mutation.
+      const existingEstimate = await storage.getEstimate(req.params.id);
+      if (!existingEstimate) {
+        return res.status(404).json({ error: "Estimate not found" });
+      }
+      if (!(await enforceProjectCompany(req, res, existingEstimate.projectId, "Estimate not found"))) return;
+
       // Lifecycle status (approved/contract) and lock state are owned by the
       // dedicated /approve, /contract and /revert endpoints — they run the
       // selection, canonical contract-price stamping and lock/freeze guards.
@@ -4411,10 +4449,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { isLocked: _ignoredLock, ...safeUpdate } = validationResult.data as any;
       const incomingStatus = (validationResult.data as any).status as string | undefined;
       if (incomingStatus !== undefined) {
-        const existing = await storage.getEstimate(req.params.id);
-        if (!existing) {
-          return res.status(404).json({ error: "Estimate not found" });
-        }
+        const existing = existingEstimate;
         const norm = (s?: string | null) =>
           s === "approved" || s === "contract" || s === "archived" ? s : "draft";
         const target = norm(incomingStatus);
@@ -4441,6 +4476,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/estimates/:id", async (req, res) => {
     try {
+      const existing = await storage.getEstimate(req.params.id);
+      if (!existing) {
+        return res.status(404).json({ error: "Estimate not found" });
+      }
+      if (!(await enforceProjectCompany(req, res, existing.projectId, "Estimate not found"))) return;
       const deleted = await storage.deleteEstimate(req.params.id);
       if (!deleted) {
         return res.status(404).json({ error: "Estimate not found" });
@@ -11244,6 +11284,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!selection) {
         return res.status(404).json({ error: "Selection not found" });
       }
+      if (!(await enforceProjectCompany(req, res, selection.projectId, "Selection not found"))) return;
       // Lazily generate portal token if missing
       if (!selection.portalToken) {
         const token = randomBytes(24).toString("hex");
@@ -11526,6 +11567,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
+      const existingSelection = await storage.getSelection(req.params.id);
+      if (!existingSelection) {
+        return res.status(404).json({ error: "Selection not found" });
+      }
+      if (!(await enforceProjectCompany(req, res, existingSelection.projectId, "Selection not found"))) return;
+
       const selection = await storage.updateSelection(req.params.id, validationResult.data);
       if (!selection) {
         return res.status(404).json({ error: "Selection not found" });
@@ -11538,6 +11585,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/selections/:id", async (req, res) => {
     try {
+      const existingSelection = await storage.getSelection(req.params.id);
+      if (!existingSelection) {
+        return res.status(404).json({ error: "Selection not found" });
+      }
+      if (!(await enforceProjectCompany(req, res, existingSelection.projectId, "Selection not found"))) return;
       const success = await storage.deleteSelection(req.params.id);
       if (!success) {
         return res.status(404).json({ error: "Selection not found" });
@@ -20305,6 +20357,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Checklist Template routes
+  // Company-scoped ownership helpers for checklist templates. Templates are
+  // now tenant-isolated via their companyId column. These return the resolved
+  // entity when the caller's company owns it, otherwise they write the
+  // 404/403 response and return null so the caller can `return` immediately.
+  const getOwnedTemplate = async (
+    req: any, res: any, templateId: string, notFound = "Template not found",
+  ): Promise<any | null> => {
+    const template = await storage.getChecklistTemplate(templateId);
+    if (!template) { res.status(404).json({ error: notFound }); return null; }
+    const companyId = req.user?.companyId;
+    if (!companyId || template.companyId !== companyId) {
+      res.status(403).json({ error: "Forbidden" });
+      return null;
+    }
+    return template;
+  };
+  const getOwnedGroup = async (req: any, res: any, groupId: string): Promise<any | null> => {
+    const group = await storage.getChecklistTemplateGroup(groupId);
+    if (!group) { res.status(404).json({ error: "Group not found" }); return null; }
+    const template = await getOwnedTemplate(req, res, group.templateId, "Group not found");
+    if (!template) return null;
+    return group;
+  };
+  const getOwnedItem = async (req: any, res: any, itemId: string): Promise<any | null> => {
+    const item = await storage.getChecklistTemplateItem(itemId);
+    if (!item) { res.status(404).json({ error: "Item not found" }); return null; }
+    const group = await getOwnedGroup(req, res, item.groupId);
+    if (!group) return null;
+    return item;
+  };
+
   app.get("/api/checklist-templates", async (req, res) => {
     try {
       const { filterByRole } = req.query;
@@ -20313,7 +20396,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const dbUser = (req.user as any).dbUser;
         roleId = dbUser?.roleId || undefined;
       }
-      const templates = await storage.getChecklistTemplates(roleId);
+      const templates = await storage.getChecklistTemplates(roleId, (req.user as any)?.companyId);
       res.json(templates);
     } catch (error: any) {
       res.status(500).json({ 
@@ -20325,10 +20408,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/checklist-templates/:id", async (req, res) => {
     try {
-      const template = await storage.getChecklistTemplate(req.params.id);
-      if (!template) {
-        return res.status(404).json({ error: "Template not found" });
-      }
+      const template = await getOwnedTemplate(req, res, req.params.id);
+      if (!template) return;
       res.json(template);
     } catch (error: any) {
       res.status(500).json({ 
@@ -20348,7 +20429,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      const template = await storage.createChecklistTemplate(validationResult.data);
+      const template = await storage.createChecklistTemplate({
+        ...validationResult.data,
+        companyId: (req.user as any)?.companyId,
+      });
       res.status(201).json(template);
     } catch (error: any) {
       res.status(500).json({ 
@@ -20368,6 +20452,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
+      const owned = await getOwnedTemplate(req, res, req.params.id);
+      if (!owned) return;
+
       const template = await storage.updateChecklistTemplate(req.params.id, validationResult.data);
       if (!template) {
         return res.status(404).json({ error: "Template not found" });
@@ -20383,6 +20470,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/checklist-templates/:id", async (req, res) => {
     try {
+      const owned = await getOwnedTemplate(req, res, req.params.id);
+      if (!owned) return;
       const success = await storage.deleteChecklistTemplate(req.params.id);
       if (!success) {
         return res.status(404).json({ error: "Template not found" });
@@ -20403,19 +20492,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { id } = req.params;
       
-      // Get original template
-      const templates = await storage.getChecklistTemplates();
-      const originalTemplate = templates.find(t => t.id === id);
+      // Get original template (company-scoped ownership check)
+      const originalTemplate = await getOwnedTemplate(req, res, id);
+      if (!originalTemplate) return;
       
-      if (!originalTemplate) {
-        return res.status(404).json({ error: "Template not found" });
-      }
-      
-      // Create duplicate template
+      // Create duplicate template — stamped with the caller's company
       duplicateTemplate = await storage.createChecklistTemplate({
         name: `${originalTemplate.name} (Copy)`,
         description: originalTemplate.description,
         type: originalTemplate.type as "Task" | "Job" | "Estimation" | "Lead",
+        companyId: (req.user as any)?.companyId,
       });
       
       // Get original groups and items
@@ -20458,6 +20544,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Checklist Template Group routes
   app.get("/api/checklist-templates/:templateId/groups", async (req, res) => {
     try {
+      const owned = await getOwnedTemplate(req, res, req.params.templateId);
+      if (!owned) return;
       const groups = await storage.getChecklistTemplateGroups(req.params.templateId);
       res.json(groups);
     } catch (error: any) {
@@ -20477,6 +20565,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           details: fromZodError(validationResult.error).toString() 
         });
       }
+
+      const ownedTemplate = await getOwnedTemplate(req, res, validationResult.data.templateId);
+      if (!ownedTemplate) return;
 
       const group = await storage.createChecklistTemplateGroup(validationResult.data);
       res.status(201).json(group);
@@ -20498,6 +20589,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
+      const ownedGroup = await getOwnedGroup(req, res, req.params.id);
+      if (!ownedGroup) return;
+      // If moving the group to another template, verify the target is also owned.
+      if (validationResult.data.templateId && validationResult.data.templateId !== ownedGroup.templateId) {
+        const targetTemplate = await getOwnedTemplate(req, res, validationResult.data.templateId);
+        if (!targetTemplate) return;
+      }
+
       const group = await storage.updateChecklistTemplateGroup(req.params.id, validationResult.data);
       if (!group) {
         return res.status(404).json({ error: "Group not found" });
@@ -20513,6 +20612,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/checklist-template-groups/:id", async (req, res) => {
     try {
+      const ownedGroup = await getOwnedGroup(req, res, req.params.id);
+      if (!ownedGroup) return;
       const success = await storage.deleteChecklistTemplateGroup(req.params.id);
       if (!success) {
         return res.status(404).json({ error: "Group not found" });
@@ -20535,15 +20636,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const sourceGroupId = req.params.id;
       
-      const sourceGroup = await storage.getChecklistTemplateGroup(sourceGroupId);
-      if (!sourceGroup) {
-        return res.status(404).json({ error: "Source group not found" });
-      }
+      const sourceGroup = await getOwnedGroup(req, res, sourceGroupId);
+      if (!sourceGroup) return;
 
-      const targetGroup = await storage.getChecklistTemplateGroup(targetGroupId);
-      if (!targetGroup) {
-        return res.status(404).json({ error: "Target group not found" });
-      }
+      const targetGroup = await getOwnedGroup(req, res, targetGroupId);
+      if (!targetGroup) return;
 
       const sourceItems = await storage.getChecklistTemplateItems(sourceGroupId);
 
@@ -20576,15 +20673,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const sourceGroupId = req.params.id;
       
-      const sourceGroup = await storage.getChecklistTemplateGroup(sourceGroupId);
-      if (!sourceGroup) {
-        return res.status(404).json({ error: "Source checklist not found" });
-      }
+      const sourceGroup = await getOwnedGroup(req, res, sourceGroupId);
+      if (!sourceGroup) return;
 
-      const targetTemplate = await storage.getChecklistTemplate(targetTemplateId);
-      if (!targetTemplate) {
-        return res.status(404).json({ error: "Target checklist group not found" });
-      }
+      const targetTemplate = await getOwnedTemplate(req, res, targetTemplateId, "Target checklist group not found");
+      if (!targetTemplate) return;
 
       // Update the group's templateId to move it to the new template
       await storage.updateChecklistTemplateGroup(sourceGroupId, { 
@@ -20612,9 +20705,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const templateId = req.params.templateId;
-      
+
+      const ownedTemplate = await getOwnedTemplate(req, res, templateId);
+      if (!ownedTemplate) return;
+
+      // Only reorder groups that actually belong to this (owned) template,
+      // so a cross-company group id can't be smuggled into the array.
+      const templateGroups = await storage.getChecklistTemplateGroups(templateId);
+      const ownedGroupIds = new Set(templateGroups.map(g => g.id));
+
       // Update each group's order
       for (let i = 0; i < orderedGroupIds.length; i++) {
+        if (!ownedGroupIds.has(orderedGroupIds[i])) continue;
         await storage.updateChecklistTemplateGroup(orderedGroupIds[i], { order: i });
       }
 
@@ -20652,6 +20754,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
+      const ownedGroup = await getOwnedGroup(req, res, validationResult.data.groupId);
+      if (!ownedGroup) return;
+
       const item = await storage.createChecklistTemplateItem(validationResult.data);
       res.status(201).json(item);
     } catch (error: any) {
@@ -20672,6 +20777,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
+      const ownedItem = await getOwnedItem(req, res, req.params.id);
+      if (!ownedItem) return;
+      // If moving the item to another group, verify the target group is owned.
+      if (validationResult.data.groupId && validationResult.data.groupId !== ownedItem.groupId) {
+        const targetGroup = await getOwnedGroup(req, res, validationResult.data.groupId);
+        if (!targetGroup) return;
+      }
+
       const item = await storage.updateChecklistTemplateItem(req.params.id, validationResult.data);
       if (!item) {
         return res.status(404).json({ error: "Item not found" });
@@ -20687,6 +20800,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/checklist-template-items/:id", async (req, res) => {
     try {
+      const ownedItem = await getOwnedItem(req, res, req.params.id);
+      if (!ownedItem) return;
       const success = await storage.deleteChecklistTemplateItem(req.params.id);
       if (!success) {
         return res.status(404).json({ error: "Item not found" });
@@ -20781,11 +20896,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Second pass: create database records
       for (const [, templateData] of Array.from(templateMap)) {
-        // Create template
+        // Create template (stamped with the caller's company)
         const template = await storage.createChecklistTemplate({
           name: templateData.name,
           description: templateData.description,
           type: templateData.type,
+          companyId: (req.user as any)?.companyId,
         });
         templatesCreated++;
 
@@ -20835,7 +20951,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/checklist-templates/export", async (req, res) => {
     try {
-      const templates = await storage.getChecklistTemplates();
+      const templates = await storage.getChecklistTemplates(undefined, (req.user as any)?.companyId);
       const exportData = [];
 
       for (const template of templates) {
@@ -22779,6 +22895,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/schedules/:id/working-days", async (req, res) => {
     if (!req.user) return res.status(401).json({ error: "Not authenticated" });
+    const existingSchedule = await storage.getScheduleById(req.params.id);
+    if (!existingSchedule) return res.status(404).json({ error: "Schedule not found" });
+    if (!(await enforceProjectCompany(req, res, existingSchedule.projectId, "Schedule not found"))) return;
     const { includeSaturday, includeSunday, clientVisibilityWeeks, businessAssignColor, businessAssignStatus } = req.body;
     const setFields: any = { 
       includeSaturday: includeSaturday ?? false, 
@@ -22873,7 +22992,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
           details: fromZodError(validationResult.error).toString() 
         });
       }
-      
+
+      const existingSchedule = await storage.getScheduleById(req.params.id);
+      if (!existingSchedule) {
+        return res.status(404).json({ error: "Schedule not found" });
+      }
+      if (!(await enforceProjectCompany(req, res, existingSchedule.projectId, "Schedule not found"))) return;
+
       const schedule = await storage.updateSchedule(req.params.id, validationResult.data);
       if (!schedule) {
         return res.status(404).json({ error: "Schedule not found" });
@@ -22893,7 +23018,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!["offline", "online", "locked"].includes(status)) {
         return res.status(400).json({ error: "Invalid status. Must be offline, online, or locked" });
       }
-      
+
+      const existingSchedule = await storage.getScheduleById(req.params.id);
+      if (!existingSchedule) {
+        return res.status(404).json({ error: "Schedule not found" });
+      }
+      if (!(await enforceProjectCompany(req, res, existingSchedule.projectId, "Schedule not found"))) return;
+
       const userId = req.user?.id;
       const schedule = await storage.updateScheduleStatus(req.params.id, status, userId);
       if (!schedule) {
@@ -22915,6 +23046,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (typeof isOnline !== "boolean") {
         return res.status(400).json({ error: "isOnline must be a boolean" });
       }
+      const existingSchedule = await storage.getScheduleById(req.params.id);
+      if (!existingSchedule) {
+        return res.status(404).json({ error: "Schedule not found" });
+      }
+      if (!(await enforceProjectCompany(req, res, existingSchedule.projectId, "Schedule not found"))) return;
       const schedule = await storage.updateScheduleOnline(req.params.id, isOnline);
       if (!schedule) {
         return res.status(404).json({ error: "Schedule not found" });
@@ -22930,6 +23066,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/schedules/:id", async (req, res) => {
     try {
+      const existingSchedule = await storage.getScheduleById(req.params.id);
+      if (!existingSchedule) {
+        return res.status(404).json({ error: "Schedule not found" });
+      }
+      if (!(await enforceProjectCompany(req, res, existingSchedule.projectId, "Schedule not found"))) return;
       const success = await storage.deleteSchedule(req.params.id);
       if (!success) {
         return res.status(404).json({ error: "Schedule not found" });

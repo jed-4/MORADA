@@ -42,7 +42,11 @@ export const companies = pgTable("companies", {
   googleDriveConnectedAt: timestamp("google_drive_connected_at"),
   googleDriveConnectedBy: varchar("google_drive_connected_by"),
   googleDriveRootFolderId: text("google_drive_root_folder_id"),
-  
+
+  // Trial / plan tracking (schema-only; no enforcement or gating yet)
+  trialEndsAt: timestamp("trial_ends_at"),
+  planStatus: varchar("plan_status").default("trial"),
+
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -2869,6 +2873,7 @@ export const checklistTemplates = pgTable("checklist_templates", {
   name: text("name").notNull(),
   description: text("description"),
   type: text("type").notNull(), // "Task" | "Job" | "Estimation" | "Lead"
+  companyId: varchar("company_id").references(() => companies.id), // Multi-tenant isolation
   createdBy: varchar("created_by").references(() => users.id),
   createdByName: text("created_by_name"),
   isArchived: boolean("is_archived").notNull().default(false),
@@ -2880,6 +2885,7 @@ export const checklistTemplates = pgTable("checklist_templates", {
 
 export const insertChecklistTemplateSchema = createInsertSchema(checklistTemplates).omit({
   id: true,
+  companyId: true, // Stamped server-side from the authenticated user's company
   createdAt: true,
   updatedAt: true,
 }).extend({

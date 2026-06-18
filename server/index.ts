@@ -184,6 +184,16 @@ app.use((req, res, next) => {
       }
     }
     
+    // Ensure multi-tenancy safety columns exist (additive, idempotent). The
+    // deploy build does not run drizzle push, so this guarantees the company
+    // scoping + trial/plan columns exist the first time production boots after
+    // this hardening ships, and backfills checklist_templates.company_id.
+    try {
+      await storage.ensureTenancyColumns();
+    } catch (error) {
+      console.error('Failed to ensure tenancy columns:', error);
+    }
+
     // Ensure the push_tokens table exists (additive, idempotent). The deploy
     // build does not run drizzle push, so this guarantees device push
     // registration/dispatch works the first time production boots this feature.

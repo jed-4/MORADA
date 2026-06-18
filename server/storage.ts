@@ -939,9 +939,9 @@ export interface IStorage {
   deleteSiteDiaryEntry(id: string): Promise<boolean>;
 
   // Checklist Templates CRUD
-  getChecklistTemplates(roleId?: string): Promise<ChecklistTemplate[]>;
+  getChecklistTemplates(roleId?: string, companyId?: string): Promise<ChecklistTemplate[]>;
   getChecklistTemplate(id: string): Promise<ChecklistTemplate | undefined>;
-  createChecklistTemplate(template: InsertChecklistTemplate): Promise<ChecklistTemplate>;
+  createChecklistTemplate(template: InsertChecklistTemplate & { companyId?: string | null }): Promise<ChecklistTemplate>;
   updateChecklistTemplate(id: string, template: Partial<InsertChecklistTemplate>): Promise<ChecklistTemplate | undefined>;
   deleteChecklistTemplate(id: string): Promise<boolean>;
   hardDeleteChecklistTemplate(id: string): Promise<boolean>;
@@ -1360,6 +1360,9 @@ export interface IStorage {
   markAllNotificationsAsRead(userId: string, companyId: string): Promise<number>;
   deleteNotification(id: string, userId: string): Promise<boolean>;
   getUnreadNotificationCount(userId: string, companyId: string): Promise<number>;
+
+  // Multi-tenancy safety columns (additive, idempotent)
+  ensureTenancyColumns(): Promise<void>;
 
   // Device Push Tokens (Expo push notifications)
   ensurePushTokensTable(): Promise<void>;
@@ -17338,11 +17341,18 @@ export class DbStorage implements IStorage {
   }
 
   // Checklist Templates CRUD
-  async getChecklistTemplates(roleId?: string): Promise<ChecklistTemplate[]> {
+  async getChecklistTemplates(roleId?: string, companyId?: string): Promise<ChecklistTemplate[]> {
     try {
+      const where = companyId
+        ? and(
+            eq(schema.checklistTemplates.isArchived, false),
+            eq(schema.checklistTemplates.companyId, companyId),
+          )
+        : eq(schema.checklistTemplates.isArchived, false);
+
       const rows = await db.select()
         .from(schema.checklistTemplates)
-        .where(eq(schema.checklistTemplates.isArchived, false))
+        .where(where)
         .orderBy(desc(schema.checklistTemplates.createdAt));
 
       if (!roleId) return rows;
@@ -17371,7 +17381,7 @@ export class DbStorage implements IStorage {
     }
   }
 
-  async createChecklistTemplate(template: InsertChecklistTemplate): Promise<ChecklistTemplate> {
+  async createChecklistTemplate(template: InsertChecklistTemplate & { companyId?: string | null }): Promise<ChecklistTemplate> {
     try {
       const result = await db.insert(schema.checklistTemplates)
         .values(template)
@@ -24052,6 +24062,55 @@ export class DbStorage implements IStorage {
     } catch (error) {
       console.error("Database error in getUnreadNotificationCount:", error);
       throw error;
+    }
+  }
+
+  async ensureTenancyColumns(): Promise<void> {
+    // Additive, idempotent safety net for the cross-tenant hardening work. The
+    // deploy build does NOT run drizzle push, so this guarantees the new
+    // columns exist in production the first time the server boots after this
+    // ships. Every statement is ADD COLUMN IF NOT EXISTS / a guarded UPDATE,
+    // all non-destructive and no-ops once applied.
+    try {
+      // companies: non-enforced trial / plan tracking columns.
+      await db.execute(sql`ALTER TABLE companies ADD COLUMN IF NOT EXISTS trial_ends_at timestamp`);
+      await db.execute(sql`ALTER TABLE companies ADD COLUMN IF NOT EXISTS plan_status varchar DEFAULT 'trial'`);
+
+      // checklist_templates: company scoping column.
+      await db.execute(sql`ALTER TABLE checklist_templates ADD COLUMN IF NOT EXISTS company_id varchar`);
+
+      // Backfill company_id from the creating user's company where missing.
+      await db.execute(sql`
+        UPDATE checklist_templates ct
+        SET company_id = u.company_id
+        FROM users u
+        WHERE ct.company_id IS NULL
+          AND ct.created_by = u.id
+          AND u.company_id IS NOT NULL
+      `);
+
+      // Fallback: if any rows are still unscoped AND there is exactly one
+      // company in the system, attribute them to that company. Otherwise leave
+      // them NULL (and report) so a human can decide — never guess across
+      // multiple tenants.
+      const stillNull = await db.execute(sql`
+        SELECT count(*)::int AS cnt FROM checklist_templates WHERE company_id IS NULL
+      `);
+      const nullCount = Number((stillNull.rows?.[0] as any)?.cnt ?? 0);
+      if (nullCount > 0) {
+        const companies = await db.execute(sql`SELECT id FROM companies LIMIT 2`);
+        if ((companies.rows?.length ?? 0) === 1) {
+          const onlyCompanyId = (companies.rows[0] as any).id;
+          await db.execute(sql`
+            UPDATE checklist_templates SET company_id = ${onlyCompanyId} WHERE company_id IS NULL
+          `);
+          console.log(`[tenancy] Backfilled ${nullCount} unscoped checklist_templates to the single existing company.`);
+        } else {
+          console.warn(`[tenancy] ${nullCount} checklist_templates still have NULL company_id and could not be auto-attributed (0 or multiple companies). Manual review required.`);
+        }
+      }
+    } catch (error) {
+      console.error("Failed to ensure tenancy columns:", error);
     }
   }
 
