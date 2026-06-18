@@ -9,8 +9,11 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as Notifications from 'expo-notifications';
+import { useFocusEffect } from '@react-navigation/native';
 import { apiFetch, apiRequest } from '../services/api';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { resolveNotificationTarget } from '../navigation/notificationRouting';
 
 import { useTheme } from '../theme';
 interface Notification {
@@ -21,7 +24,9 @@ interface Notification {
   isRead: boolean;
   createdAt: string;
   projectName?: string;
-  linkUrl?: string;
+  link?: string;
+  entityType?: string;
+  entityId?: string;
 }
 
 type Props = {
@@ -87,9 +92,25 @@ const colors = {
     }
   }, []);
 
-  useEffect(() => {
-    fetchNotifications();
-  }, [fetchNotifications]);
+  // Live updates: refetch whenever the screen regains focus, whenever a push
+  // arrives while the screen is open, and on a light poll as a fallback.
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
+      fetchNotifications();
+      const poll = setInterval(() => {
+        if (active) fetchNotifications();
+      }, 20000);
+      const sub = Notifications.addNotificationReceivedListener(() => {
+        if (active) fetchNotifications();
+      });
+      return () => {
+        active = false;
+        clearInterval(poll);
+        sub.remove();
+      };
+    }, [fetchNotifications]),
+  );
 
   useEffect(() => {
     navigation.setOptions({
@@ -128,12 +149,16 @@ const colors = {
       );
       apiRequest(`/api/notifications/${notif.id}/read`, 'PATCH').catch(() => {});
     }
-    if (notif.type === 'task_assigned' || notif.type === 'task_completed') {
-      navigation.navigate('More', { screen: 'Tasks' });
-    } else if (notif.type === 'reminder') {
-      navigation.navigate('Calendar');
-    } else if (notif.type.startsWith('timesheet_')) {
-      navigation.navigate('Timesheets');
+    const target = resolveNotificationTarget({
+      type: notif.type,
+      link: notif.link,
+      entityType: notif.entityType,
+      entityId: notif.entityId,
+    });
+    if (target.screen) {
+      navigation.navigate(target.tab as any, { screen: target.screen, params: target.params });
+    } else {
+      navigation.navigate(target.tab as any);
     }
   }, [navigation]);
 

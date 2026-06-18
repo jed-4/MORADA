@@ -260,7 +260,11 @@ const colors = {
         </TouchableOpacity>
         <View style={styles.headerCenter}>
           <Text style={[styles.headerTitle, { color: colors.text }]} numberOfLines={1}>
-            {channelName.startsWith('dm-') ? channelName.replace(/^dm-/, '').replace(/-/g, ' ') : `#${channelName}`}
+            {!channelName
+              ? 'Messages'
+              : channelName.startsWith('dm-')
+                ? channelName.replace(/^dm-/, '').replace(/-/g, ' ')
+                : `#${channelName}`}
           </Text>
         </View>
         <View style={{ width: 40 }} />

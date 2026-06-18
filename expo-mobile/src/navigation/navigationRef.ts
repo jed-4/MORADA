@@ -1,29 +1,28 @@
 import { createNavigationContainerRef } from '@react-navigation/native';
+import { resolveNotificationTarget } from './notificationRouting';
 
 export const navigationRef = createNavigationContainerRef<any>();
 
 /**
  * Navigate to the relevant screen based on a push notification's data payload.
- * Mirrors the in-app tap logic in NotificationsScreen so taps land in the same
- * place whether the notification is opened in-app or from a system banner.
+ * Uses the same resolver as the in-app notification list so a tap lands in the
+ * exact same place whether it's opened from a system banner or in-app.
  */
 export function navigateFromPush(data: Record<string, any> | undefined | null) {
   if (!navigationRef.isReady() || !data) return;
-  const type = typeof data.type === 'string' ? data.type : '';
+
+  const target = resolveNotificationTarget(data);
 
   // The container ref's navigate is heavily overloaded; cast to a loose signature.
   const navigate = navigationRef.navigate as (name: string, params?: any) => void;
 
   try {
-    if (type === 'task_assigned' || type === 'task_completed') {
-      navigate('Main', { screen: 'More', params: { screen: 'Tasks' } });
-    } else if (type === 'reminder' || type === 'reminder_due') {
-      navigate('Main', { screen: 'Calendar' });
-    } else if (type.startsWith('timesheet_')) {
-      navigate('Main', { screen: 'More', params: { screen: 'Timesheets' } });
-    } else {
-      navigate('Main', { screen: 'Workspace', params: { screen: 'Notifications' } });
-    }
+    navigate('Main', {
+      screen: target.tab,
+      params: target.screen
+        ? { screen: target.screen, params: target.params }
+        : target.params,
+    });
   } catch {
     // Navigation tree may not be fully ready on cold start; safe to ignore.
   }
