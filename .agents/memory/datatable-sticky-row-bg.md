@@ -24,7 +24,12 @@ the banding visibly breaks at the sticky column.
 
 **How to apply:** When styling row backgrounds in any DataTable instance, pass
 `rowStyle` and set `--dt-row-bg`; don't rely on `rowClassName` background
-utilities alone.
+utilities alone. Financial-table chrome (banding, totals bar, legends, palette,
+theme detection) is centralized in one module — edit styling there, not per page.
+Note: Budget is a DataTable (uses `--dt-row-bg`) while Monthly Actuals is a
+custom div-grid that can't use that contract, so they share theme tokens + the
+module home but keep separate banding mechanisms and intentionally different
+tint values; don't "unify" their values expecting no visual change.
 
 Dark-mode tinting note: dark theme has `--muted ≈ --card`, so muted-based tints
 disappear. Use foreground-alpha overlays (`hsl(var(--foreground)/0.05..0.09)`)

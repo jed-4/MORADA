@@ -4,6 +4,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { type ColumnDef } from "@tanstack/react-table";
 import { DataTable, DataTableColumnPicker, type DataTableColumnMeta } from "@/components/data-table/DataTable";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { useIsDark, financialRowTints, financialRowBgStyle, FinancialTotalsBar, FinancialTableLegend } from "@/components/data-table/financialTableChrome";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -34,20 +35,6 @@ const PHASE_LABELS: Record<string, string> = {
   post_construction: "Post-Construction",
   archive: "Archive",
 };
-
-function useIsDark(): boolean {
-  const [isDark, setIsDark] = useState<boolean>(() =>
-    typeof document !== "undefined" && document.documentElement.classList.contains("dark"));
-  useEffect(() => {
-    if (typeof document === "undefined") return;
-    const obs = new MutationObserver(() => {
-      setIsDark(document.documentElement.classList.contains("dark"));
-    });
-    obs.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
-    return () => obs.disconnect();
-  }, []);
-  return isDark;
-}
 
 export default function BudgetPage() {
   const { projectId } = useParams();
@@ -808,67 +795,8 @@ export default function BudgetPage() {
   };
 
   // Row banding tints — warm muted in light mode, subtle foreground overlay in
-  // dark mode (where --muted ≈ --card). Mirrors the Monthly Actuals approach.
-  const rowTints = {
-    zebra: isDark ? "hsl(var(--foreground) / 0.05)" : "hsl(var(--muted) / 0.5)",
-    category: isDark ? "hsl(var(--foreground) / 0.09)" : "hsl(var(--muted) / 0.85)",
-  };
-
-  // Builds the row style. `--dt-row-bg` is composited over the card so the
-  // sticky first column stays opaque (no bleed-through on horizontal scroll).
-  const rowBgStyle = (tint: string | null): React.CSSProperties => {
-    if (!tint) {
-      return { ["--dt-row-bg"]: "hsl(var(--card))" } as React.CSSProperties;
-    }
-    return {
-      backgroundColor: tint,
-      ["--dt-row-bg"]: `linear-gradient(${tint}, ${tint}), hsl(var(--card))`,
-    } as React.CSSProperties;
-  };
-
-  const renderTotalsBar = (
-    segments: { label: string; value: string; color?: string }[],
-  ) => (
-    <div
-      className="flex-shrink-0 flex flex-wrap items-center justify-between gap-x-4 gap-y-1 px-3 py-2 border-t-2 border-border bg-[hsl(var(--muted)/0.7)] dark:bg-[hsl(var(--foreground)/0.07)]"
-      data-testid="budget-totals-bar"
-    >
-      <span className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
-        Total
-      </span>
-      <div className="flex items-center flex-wrap justify-end gap-y-1">
-        {segments.map((seg, i) => (
-          <div
-            key={seg.label}
-            className={cn("flex flex-col items-end px-3", i > 0 && "border-l border-border/60")}
-            data-testid={`total-${seg.label.toLowerCase().replace(/[^a-z]+/g, "-")}`}
-          >
-            <span className="text-[9px] uppercase tracking-wide text-muted-foreground leading-tight">
-              {seg.label}
-            </span>
-            <span className={cn("text-sm font-bold tabular-nums leading-snug", seg.color ?? "text-foreground")}>
-              {seg.value}
-            </span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-
-  const renderLegend = () => (
-    <div className="flex-shrink-0 flex items-center flex-wrap gap-x-5 gap-y-1 px-3 py-1.5 border-t border-border/50">
-      {[
-        { color: "hsl(var(--bp-green))", label: "Under" },
-        { color: "hsl(var(--muted-foreground) / 0.4)", label: "On Track" },
-        { color: "hsl(var(--bp-coral))", label: "Over" },
-      ].map(({ color, label }) => (
-        <div key={label} className="flex items-center gap-1.5">
-          <span className="w-2 h-2 rounded-full" style={{ backgroundColor: color }} />
-          <span className="text-[10px] text-muted-foreground">{label}</span>
-        </div>
-      ))}
-    </div>
-  );
+  // dark mode (where --muted ≈ --card). Shared with the Monthly Actuals view.
+  const rowTints = financialRowTints(isDark);
 
   return (
     <div className="flex flex-col h-full" data-testid="page-budget">
@@ -1172,24 +1100,26 @@ export default function BudgetPage() {
                         }}
                         rowStyle={(row) =>
                           row.kind === "category"
-                            ? rowBgStyle(rowTints.category)
-                            : rowBgStyle(row.zebra ? rowTints.zebra : null)
+                            ? financialRowBgStyle(rowTints.category)
+                            : financialRowBgStyle(row.zebra ? rowTints.zebra : null)
                         }
                       />
                     </div>
-                    {renderTotalsBar([
-                      { label: "Budgeted", value: formatCurrency(costTotals.budgeted) },
-                      { label: "Labour", value: formatCurrency(costTotals.labour) },
-                      { label: "Bills", value: formatCurrency(costTotals.bills) },
-                      { label: "Internal", value: formatCurrency(costTotals.internal) },
-                      { label: "Total", value: formatCurrency(costTotals.total) },
-                      {
-                        label: "Difference",
-                        value: formatCurrency(costTotals.difference),
-                        color: getVarianceColor(costTotals.difference),
-                      },
-                    ])}
-                    {renderLegend()}
+                    <FinancialTotalsBar
+                      segments={[
+                        { label: "Budgeted", value: formatCurrency(costTotals.budgeted) },
+                        { label: "Labour", value: formatCurrency(costTotals.labour) },
+                        { label: "Bills", value: formatCurrency(costTotals.bills) },
+                        { label: "Internal", value: formatCurrency(costTotals.internal) },
+                        { label: "Total", value: formatCurrency(costTotals.total) },
+                        {
+                          label: "Difference",
+                          value: formatCurrency(costTotals.difference),
+                          color: getVarianceColor(costTotals.difference),
+                        },
+                      ]}
+                    />
+                    <FinancialTableLegend />
                   </>
                 )}
               </CardContent>
@@ -1252,23 +1182,25 @@ export default function BudgetPage() {
                         legacyConfigKey="budget-column-config-v1"
                         rowKey={(row) => row.id}
                         rowStyle={(_row, index) =>
-                          rowBgStyle(index % 2 === 1 ? rowTints.zebra : null)
+                          financialRowBgStyle(index % 2 === 1 ? rowTints.zebra : null)
                         }
                       />
                     </div>
-                    {renderTotalsBar([
-                      { label: "Budgeted", value: formatHours(totalBudgetedHours) },
-                      { label: "Pending", value: formatHours(totalPendingHours), color: "text-[hsl(var(--bp-amber))]" },
-                      { label: "Approved", value: formatHours(totalApprovedHours) },
-                      { label: "Total", value: formatHours(totalActualHours) },
-                      {
-                        label: "Variance",
-                        value: formatHours(hoursRemaining),
-                        color: getVarianceColor(hoursRemaining),
-                      },
-                      { label: "% Used", value: `${hoursPercentUsed}%` },
-                    ])}
-                    {renderLegend()}
+                    <FinancialTotalsBar
+                      segments={[
+                        { label: "Budgeted", value: formatHours(totalBudgetedHours) },
+                        { label: "Pending", value: formatHours(totalPendingHours), color: "text-[hsl(var(--bp-amber))]" },
+                        { label: "Approved", value: formatHours(totalApprovedHours) },
+                        { label: "Total", value: formatHours(totalActualHours) },
+                        {
+                          label: "Variance",
+                          value: formatHours(hoursRemaining),
+                          color: getVarianceColor(hoursRemaining),
+                        },
+                        { label: "% Used", value: `${hoursPercentUsed}%` },
+                      ]}
+                    />
+                    <FinancialTableLegend />
                   </>
                 )}
               </CardContent>

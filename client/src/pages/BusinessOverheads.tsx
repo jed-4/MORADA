@@ -2,6 +2,7 @@ import { useState, useMemo, useRef, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { type ColumnDef } from "@tanstack/react-table";
 import { DataTable, DataTableColumnPicker, type DataTableColumnMeta } from "@/components/data-table/DataTable";
+import { useIsDark, monthlyActualsPalette, MonthlyActualsLegend } from "@/components/data-table/financialTableChrome";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -992,22 +993,6 @@ type ColSpec = {
   stackedPct?: boolean;
 };
 
-// Subscribe to .dark class on <html> so palettes that need higher
-// alpha in dark mode can re-render when the user toggles theme.
-function useIsDark(): boolean {
-  const [isDark, setIsDark] = useState<boolean>(() =>
-    typeof document !== "undefined" && document.documentElement.classList.contains("dark"));
-  useEffect(() => {
-    if (typeof document === "undefined") return;
-    const obs = new MutationObserver(() => {
-      setIsDark(document.documentElement.classList.contains("dark"));
-    });
-    obs.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
-    return () => obs.disconnect();
-  }, []);
-  return isDark;
-}
-
 function MonthlyActualsTab({ data }: { data: OverheadsData }) {
   const { toast } = useToast();
   const [groupBy, setGroupBy] = useState<GroupBy>(() => {
@@ -1512,33 +1497,11 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
   }, [dataColumns, incomeMap]);
 
   // ─── Design tokens ──────────────────────────────────────────────────────────
-  // Every value resolves to a CSS variable so the grid follows the global
-  // light/dark theme automatically (matches Project → Scope visual language).
-  // Muted-row tints get higher alpha in dark mode so the grid still reads
-  // as banded against the warm dark card surface.
+  // Shared financial-table palette (single source of truth lives in
+  // financialTableChrome.tsx) so Monthly Actuals stays in sync with the rest of
+  // the financial tables and future styling is a one-line edit.
   const isDark = useIsDark();
-  const C = {
-    bg:          'hsl(var(--background))',
-    white:       'hsl(var(--card))',
-    purple:      'hsl(var(--primary))',
-    purpleLight: isDark ? 'hsl(var(--primary) / 0.18)' : 'hsl(var(--primary) / 0.08)',
-    purpleTint:  isDark ? 'hsl(var(--primary) / 0.24)' : 'hsl(var(--primary) / 0.12)',
-    coral:       'hsl(var(--destructive))',
-    greenTint:   'hsl(var(--status-success-bg))',
-    greenNum:    'hsl(var(--status-success-fg))',
-    redNum:      'hsl(var(--destructive))',
-    border:      'hsl(var(--border))',
-    text:        'hsl(var(--foreground))',
-    textMid:     'hsl(var(--muted-foreground))',
-    textLight:   isDark ? 'hsl(var(--muted-foreground) / 0.55)' : 'hsl(var(--muted-foreground) / 0.65)',
-    zebraRow:    isDark ? 'hsl(var(--muted) / 0.85)' : 'hsl(var(--muted) / 0.35)',
-    totalRow:    isDark ? 'hsl(var(--muted) / 1)'    : 'hsl(var(--muted) / 0.55)',
-    sectionHdr:  isDark ? 'hsl(var(--muted) / 0.95)' : 'hsl(var(--muted) / 0.5)',
-    amber:       'hsl(var(--amber))',
-    dotGreen:    'hsl(var(--status-success-fg))',
-    dotCoral:    'hsl(var(--destructive))',
-    dotGray:     'hsl(var(--muted-foreground) / 0.35)',
-  };
+  const C = monthlyActualsPalette(isDark);
 
   // Number formatter: 0 → em-dash, otherwise absolute-value k or full dollars
   function fmtCell(cents: number, mode: 'k' | 'dollars'): string {
@@ -2189,19 +2152,7 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
         </div>
 
         {/* Legend */}
-        <div className="flex items-center flex-wrap gap-x-6 gap-y-2 px-4 py-3 border-t border-border/50 bg-card">
-          {[
-            { color: C.dotGreen, label: 'Month confirmed' },
-            { color: C.dotCoral, label: 'Cost drifted from Xero — review needed' },
-            { color: C.dotGray,  label: 'Awaiting confirmation' },
-            { color: C.amber,    label: 'Current month (in progress)' },
-          ].map(({ color, label }) => (
-            <div key={label} className="flex items-center gap-1.5">
-              <div className="w-2 h-2 rounded-full" style={{ backgroundColor: color }} />
-              <span className="text-[11px] text-muted-foreground">{label}</span>
-            </div>
-          ))}
-        </div>
+        <MonthlyActualsLegend palette={C} />
       </div>
 
       {/* Month-confirmation attestation dialog (#226).
