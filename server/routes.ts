@@ -29071,6 +29071,52 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
     }
   });
 
+  // Register a device's Expo push token (mobile). Upserts so re-registration
+  // updates the owning user (handles shared devices / account switches).
+  app.post("/api/notifications/register-device", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.id) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+      const { token, platform, deviceName } = req.body || {};
+      if (!token || typeof token !== "string") {
+        return res.status(400).json({ error: "token is required" });
+      }
+      const saved = await storage.upsertPushToken({
+        userId: user.id,
+        token,
+        platform: typeof platform === "string" ? platform : undefined,
+        deviceName: typeof deviceName === "string" ? deviceName : undefined,
+      });
+      res.json({ success: true, id: saved.id });
+    } catch (error: any) {
+      console.error("Error registering device token:", error);
+      res.status(500).json({ error: "Failed to register device" });
+    }
+  });
+
+  // Unregister a device's Expo push token (mobile logout).
+  app.post("/api/notifications/unregister-device", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.id) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+      const { token } = req.body || {};
+      if (!token || typeof token !== "string") {
+        return res.status(400).json({ error: "token is required" });
+      }
+      // Scope deletion to the authenticated user so a leaked token can't be
+      // used to unregister another user's device.
+      await storage.deletePushToken(token, user.id);
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Error unregistering device token:", error);
+      res.status(500).json({ error: "Failed to unregister device" });
+    }
+  });
+
   // ==========================================
   // Business Schedule API
   // ==========================================

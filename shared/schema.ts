@@ -5704,6 +5704,29 @@ export const insertNotificationSchema = createInsertSchema(notifications).omit({
 export type InsertNotification = z.infer<typeof insertNotificationSchema>;
 export type Notification = typeof notifications.$inferSelect;
 
+// Device Push Tokens (Expo push notifications for the mobile app)
+export const pushTokens = pgTable("push_tokens", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  token: text("token").notNull(), // Expo push token, e.g. ExponentPushToken[...]
+  platform: text("platform").notNull().default("ios"), // "ios" | "android"
+  deviceName: text("device_name"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  userIdx: index("push_tokens_user_idx").on(table.userId),
+  tokenUnique: uniqueIndex("push_tokens_token_unique").on(table.token),
+}));
+
+export const insertPushTokenSchema = createInsertSchema(pushTokens).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertPushToken = z.infer<typeof insertPushTokenSchema>;
+export type PushToken = typeof pushTokens.$inferSelect;
+
 // Google Drive Folder Templates
 export const driveFolderTemplates = pgTable("drive_folder_templates", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

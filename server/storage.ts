@@ -160,6 +160,7 @@ import type { PriceListCategory, InsertPriceListCategory, PriceListItem, InsertP
 import type { DashboardView, InsertDashboardView, DashboardViewPermission, InsertDashboardViewPermission, UserDashboardPreference } from "@shared/schema";
 import type { NoteGroup, InsertNoteGroup } from "@shared/schema";
 import type { Notification as InAppNotification, InsertNotification } from "@shared/schema";
+import type { PushToken, InsertPushToken } from "@shared/schema";
 import type { PaymentTermsOption, InsertPaymentTermsOption } from "@shared/schema";
 
 // modify the interface with any CRUD methods
@@ -1358,6 +1359,13 @@ export interface IStorage {
   markAllNotificationsAsRead(userId: string, companyId: string): Promise<number>;
   deleteNotification(id: string, userId: string): Promise<boolean>;
   getUnreadNotificationCount(userId: string, companyId: string): Promise<number>;
+
+  // Device Push Tokens (Expo push notifications)
+  ensurePushTokensTable(): Promise<void>;
+  upsertPushToken(data: { userId: string; token: string; platform?: string; deviceName?: string }): Promise<PushToken>;
+  getPushTokensForUser(userId: string): Promise<PushToken[]>;
+  deletePushToken(token: string, userId?: string): Promise<boolean>;
+  deletePushTokens(tokens: string[]): Promise<number>;
 
   // Xero Connection operations
   getXeroConnectionByCompanyId(companyId: string): Promise<import("@shared/schema").XeroConnection | undefined>;
@@ -6362,6 +6370,21 @@ export class MemStorage implements IStorage {
     return false;
   }
   async getUnreadNotificationCount(userId: string, companyId: string): Promise<number> {
+    return 0;
+  }
+  async ensurePushTokensTable(): Promise<void> {
+    return;
+  }
+  async upsertPushToken(data: { userId: string; token: string; platform?: string; deviceName?: string }): Promise<PushToken> {
+    throw new Error("Not implemented in MemStorage");
+  }
+  async getPushTokensForUser(userId: string): Promise<PushToken[]> {
+    return [];
+  }
+  async deletePushToken(token: string, userId?: string): Promise<boolean> {
+    return false;
+  }
+  async deletePushTokens(tokens: string[]): Promise<number> {
     return 0;
   }
   async createChecklistAuditEntry(entry: InsertChecklistAuditLog): Promise<ChecklistAuditLog> {
@@ -23927,6 +23950,20 @@ export class DbStorage implements IStorage {
       const [created] = await db.insert(schema.notifications)
         .values(notification)
         .returning();
+
+      // Fire-and-forget device push delivery. Every server path that creates an
+      // in-app notification flows through here, so this is the single hook that
+      // turns a notification record into iPhone/Android banners. It must never
+      // block or fail notification creation.
+      void (async () => {
+        try {
+          const { sendPushForNotification } = await import("./utils/pushNotifications");
+          await sendPushForNotification(created);
+        } catch (err) {
+          console.error("[Push] Failed to dispatch push for notification:", err);
+        }
+      })();
+
       return created;
     } catch (error) {
       console.error("Database error in createNotification:", error);
@@ -23993,6 +24030,92 @@ export class DbStorage implements IStorage {
       return Number(result?.count || 0);
     } catch (error) {
       console.error("Database error in getUnreadNotificationCount:", error);
+      throw error;
+    }
+  }
+
+  async ensurePushTokensTable(): Promise<void> {
+    // Additive, idempotent safety net. The deploy build does NOT run drizzle
+    // push, so this guarantees the push_tokens table exists in production the
+    // first time the server boots after this feature ships. CREATE ... IF NOT
+    // EXISTS is non-destructive and a no-op once the table is present.
+    try {
+      await db.execute(sql`
+        CREATE TABLE IF NOT EXISTS push_tokens (
+          id varchar PRIMARY KEY DEFAULT gen_random_uuid(),
+          user_id varchar NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          token text NOT NULL,
+          platform text NOT NULL DEFAULT 'ios',
+          device_name text,
+          created_at timestamp NOT NULL DEFAULT now(),
+          updated_at timestamp NOT NULL DEFAULT now()
+        )
+      `);
+      await db.execute(sql`CREATE INDEX IF NOT EXISTS push_tokens_user_idx ON push_tokens (user_id)`);
+      await db.execute(sql`CREATE UNIQUE INDEX IF NOT EXISTS push_tokens_token_unique ON push_tokens (token)`);
+    } catch (error) {
+      console.error("Failed to ensure push_tokens table exists:", error);
+    }
+  }
+
+  async upsertPushToken(data: { userId: string; token: string; platform?: string; deviceName?: string }): Promise<PushToken> {
+    try {
+      const [row] = await db.insert(schema.pushTokens)
+        .values({
+          userId: data.userId,
+          token: data.token,
+          platform: data.platform || "ios",
+          deviceName: data.deviceName,
+        })
+        .onConflictDoUpdate({
+          target: schema.pushTokens.token,
+          set: {
+            userId: data.userId,
+            platform: data.platform || "ios",
+            deviceName: data.deviceName,
+            updatedAt: new Date(),
+          },
+        })
+        .returning();
+      return row;
+    } catch (error) {
+      console.error("Database error in upsertPushToken:", error);
+      throw error;
+    }
+  }
+
+  async getPushTokensForUser(userId: string): Promise<PushToken[]> {
+    try {
+      return await db.select()
+        .from(schema.pushTokens)
+        .where(eq(schema.pushTokens.userId, userId));
+    } catch (error) {
+      console.error("Database error in getPushTokensForUser:", error);
+      throw error;
+    }
+  }
+
+  async deletePushToken(token: string, userId?: string): Promise<boolean> {
+    try {
+      const where = userId
+        ? and(eq(schema.pushTokens.token, token), eq(schema.pushTokens.userId, userId))
+        : eq(schema.pushTokens.token, token);
+      const result = await db.delete(schema.pushTokens).where(where);
+      return ((result as any).rowCount || 0) > 0;
+    } catch (error) {
+      console.error("Database error in deletePushToken:", error);
+      throw error;
+    }
+  }
+
+  async deletePushTokens(tokens: string[]): Promise<number> {
+    try {
+      if (!tokens.length) return 0;
+      const result = await db.delete(schema.pushTokens)
+        .where(inArray(schema.pushTokens.token, tokens));
+      return (result as any).rowCount || 0;
+    } catch (error) {
+      console.error("Database error in deletePushTokens:", error);
       throw error;
     }
   }

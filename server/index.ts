@@ -184,6 +184,15 @@ app.use((req, res, next) => {
       }
     }
     
+    // Ensure the push_tokens table exists (additive, idempotent). The deploy
+    // build does not run drizzle push, so this guarantees device push
+    // registration/dispatch works the first time production boots this feature.
+    try {
+      await storage.ensurePushTokensTable();
+    } catch (error) {
+      console.error('Failed to ensure push_tokens table:', error);
+    }
+
     // Auto-seed missing built-in field categories (for production databases)
     try {
       const seedResult = await storage.seedMissingBuiltInCategories();

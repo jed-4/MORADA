@@ -4,8 +4,11 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 import { useColorScheme } from 'react-native';
+import * as Notifications from 'expo-notifications';
 import MorePanel from '../components/MorePanel';
 import { apiFetch } from '../services/api';
+import { navigationRef, navigateFromPush } from './navigationRef';
+import { setAppBadgeCount } from '../services/pushNotifications';
 import { useTheme } from '../theme';
 
 import { useAuth } from '../contexts/AuthContext';
@@ -169,6 +172,48 @@ function MainTabs() {
     return () => clearInterval(interval);
   }, []);
 
+  // Push notification handling: keep the app icon badge synced with the unread
+  // count, and route notification taps to the right screen.
+  useEffect(() => {
+    let cancelled = false;
+
+    const syncBadge = async () => {
+      try {
+        const { count } = await apiFetch<{ count: number }>('/api/notifications/unread-count');
+        if (!cancelled) await setAppBadgeCount(count || 0);
+      } catch {
+        // silently fail
+      }
+    };
+    syncBadge();
+    const badgeInterval = setInterval(syncBadge, 30000);
+
+    const receivedSub = Notifications.addNotificationReceivedListener(() => {
+      syncBadge();
+    });
+    const responseSub = Notifications.addNotificationResponseReceivedListener((response) => {
+      navigateFromPush(response?.notification?.request?.content?.data as any);
+      syncBadge();
+    });
+
+    // Cold start: app launched by tapping a notification banner.
+    Notifications.getLastNotificationResponseAsync().then((response) => {
+      if (response && !cancelled) {
+        setTimeout(
+          () => navigateFromPush(response.notification?.request?.content?.data as any),
+          400,
+        );
+      }
+    });
+
+    return () => {
+      cancelled = true;
+      clearInterval(badgeInterval);
+      receivedSub.remove();
+      responseSub.remove();
+    };
+  }, []);
+
   const colors = {
     bg: theme.background,
     card: theme.card,
@@ -248,6 +293,7 @@ export default function AppNavigator() {
 
   return (
     <NavigationContainer
+      ref={navigationRef}
       theme={{
         dark: isDark,
         colors: {

@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
 import { apiRequest, apiFetch, loadSession, saveSession, clearSession, getSessionId } from '../services/api';
+import { registerForPushNotifications, unregisterPushNotifications } from '../services/pushNotifications';
 
 interface User {
   id: string;
@@ -48,6 +49,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         try {
           const userData = await apiFetch<User>('/api/auth/user');
           setUser(userData);
+          registerForPushNotifications();
         } catch {
           await clearSession();
           setUser(null);
@@ -67,6 +69,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         await saveSession(data.sessionId);
         const userData = await apiFetch<User>('/api/auth/user');
         setUser(userData);
+        registerForPushNotifications();
         return { success: true };
       }
 
@@ -85,6 +88,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await saveSession(sid);
       const userData = await apiFetch<User>('/api/auth/user');
       setUser(userData);
+      registerForPushNotifications();
       return { success: true };
     } catch (error: any) {
       await clearSession();
@@ -93,6 +97,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const logout = async () => {
+    // Unregister this device first, while the session is still valid.
+    await unregisterPushNotifications();
     try {
       await apiRequest('/api/auth/logout', 'POST');
     } catch {}
