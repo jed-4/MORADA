@@ -20406,6 +20406,60 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/checklist-templates/export", async (req, res) => {
+    try {
+      const templates = await storage.getChecklistTemplates(undefined, (req.user as any)?.companyId);
+      const exportData = [];
+
+      for (const template of templates) {
+        const groups = await storage.getChecklistTemplateGroups(template.id);
+        
+        if (groups.length === 0) {
+          // Template with no groups
+          exportData.push({
+            templateName: template.name,
+            templateDescription: template.description || "",
+            type: template.type,
+            groupName: "",
+            itemDescription: "",
+          });
+        } else {
+          for (const group of groups) {
+            const items = await storage.getChecklistTemplateItems(group.id);
+            
+            if (items.length === 0) {
+              // Group with no items
+              exportData.push({
+                templateName: template.name,
+                templateDescription: template.description || "",
+                type: template.type,
+                groupName: group.name,
+                itemDescription: "",
+              });
+            } else {
+              for (const item of items) {
+                exportData.push({
+                  templateName: template.name,
+                  templateDescription: template.description || "",
+                  type: template.type,
+                  groupName: group.name,
+                  itemDescription: item.description,
+                });
+              }
+            }
+          }
+        }
+      }
+
+      res.json(exportData);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to export checklist templates",
+        details: error.message 
+      });
+    }
+  });
+
   app.get("/api/checklist-templates/:id", async (req, res) => {
     try {
       const template = await getOwnedTemplate(req, res, req.params.id);
@@ -20734,6 +20788,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Checklist Template Item routes
   app.get("/api/checklist-template-groups/:groupId/items", async (req, res) => {
     try {
+      const ownedGroup = await getOwnedGroup(req, res, req.params.groupId);
+      if (!ownedGroup) return;
+
       const items = await storage.getChecklistTemplateItems(req.params.groupId);
       res.json(items);
     } catch (error: any) {
@@ -20944,60 +21001,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: any) {
       res.status(500).json({ 
         error: "Failed to import checklist templates",
-        details: error.message 
-      });
-    }
-  });
-
-  app.get("/api/checklist-templates/export", async (req, res) => {
-    try {
-      const templates = await storage.getChecklistTemplates(undefined, (req.user as any)?.companyId);
-      const exportData = [];
-
-      for (const template of templates) {
-        const groups = await storage.getChecklistTemplateGroups(template.id);
-        
-        if (groups.length === 0) {
-          // Template with no groups
-          exportData.push({
-            templateName: template.name,
-            templateDescription: template.description || "",
-            type: template.type,
-            groupName: "",
-            itemDescription: "",
-          });
-        } else {
-          for (const group of groups) {
-            const items = await storage.getChecklistTemplateItems(group.id);
-            
-            if (items.length === 0) {
-              // Group with no items
-              exportData.push({
-                templateName: template.name,
-                templateDescription: template.description || "",
-                type: template.type,
-                groupName: group.name,
-                itemDescription: "",
-              });
-            } else {
-              for (const item of items) {
-                exportData.push({
-                  templateName: template.name,
-                  templateDescription: template.description || "",
-                  type: template.type,
-                  groupName: group.name,
-                  itemDescription: item.description,
-                });
-              }
-            }
-          }
-        }
-      }
-
-      res.json(exportData);
-    } catch (error: any) {
-      res.status(500).json({ 
-        error: "Failed to export checklist templates",
         details: error.message 
       });
     }

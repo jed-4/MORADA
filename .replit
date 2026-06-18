@@ -70,6 +70,10 @@ args = "Expo Mobile"
 task = "workflow.run"
 args = "Start application"
 
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "tenant-isolation"
+
 [[workflows.workflow]]
 name = "Expo Mobile"
 author = "agent"
@@ -93,6 +97,17 @@ waitForPort = 5000
 [workflows.workflow.metadata]
 outputType = "webview"
 isCanvasWorkflow = true
+
+[[workflows.workflow]]
+name = "tenant-isolation"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "NODE_ENV=test npx tsx server/__tests__/tenant-isolation.test.ts"
+
+[workflows.workflow.metadata]
+isValidation = true
 
 [agent]
 integrations = ["javascript_log_in_with_replit:1.0.0", "javascript_database:1.0.0", "javascript_openai_ai_integrations:1.0.0", "google-calendar:1.0.0", "javascript_object_storage:2.0.0"]

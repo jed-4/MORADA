@@ -19,3 +19,4 @@
 - [Global /api auth middleware](api-global-auth-middleware.md) — one app.use('/api') guard protects all routes via allowlist; per-route "unauthenticated" findings are false positives (auth yes, company-scope no).
 - [Two-stage estimate lifecycle](estimate-two-stage-lifecycle.md) — Approve(live)→Mark-as-Contract(lock/freeze)→Revert; approve must refuse status='contract'; approve/contract/revert all need company auth.
 - [Checklist template tenant scoping](checklist-tenant-scoping.md) — company_id lives only on the template; scoping must cover dup/move/reorder/import/export too, not just CRUD by-id.
+- [Integration test harness](integration-test-harness.md) — run HTTP integration tests with NODE_ENV=test (dodges prod DB guard + dev auth bypass); spoof X-Forwarded-Proto:https for secure session cookie.
