@@ -24,6 +24,7 @@ import {
   XCircle,
   ChevronDown,
   ChevronUp,
+  Columns,
   Search,
   Paperclip,
   Eye,
@@ -34,7 +35,6 @@ import {
   ExternalLink,
 } from "lucide-react";
 import { CostCodeSelect } from "@/components/CostCodeSelect";
-import { LineItemTable, type LineItemColumn } from "@/components/LineItemTable";
 import { VariationPreviewContent } from "@/components/variations/VariationPreviewContent";
 import { VariationDocument } from "@/components/variations/pdf/VariationDocument";
 import { Button } from "@/components/ui/button";
@@ -77,6 +77,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { queryClient, apiRequest } from "@/lib/queryClient";
@@ -118,6 +125,48 @@ type AllowanceLine = {
   description: string;
   amount: number;
   sortOrder: number;
+};
+
+type VariationColumnConfig = {
+  id: string;
+  label: string;
+  visible: boolean;
+  widthPx: number;
+};
+
+const DEFAULT_VARIATION_COLUMNS: VariationColumnConfig[] = [
+  { id: "type", label: "Type", visible: true, widthPx: 80 },
+  { id: "name", label: "Name", visible: true, widthPx: 120 },
+  { id: "description", label: "Description", visible: true, widthPx: 200 },
+  { id: "costCode", label: "Cost Code", visible: true, widthPx: 140 },
+  { id: "qty", label: "Qty", visible: true, widthPx: 64 },
+  { id: "unit", label: "Unit", visible: true, widthPx: 64 },
+  { id: "unitCostExTax", label: "Unit Cost (ex)", visible: true, widthPx: 104 },
+  { id: "unitCostIncTax", label: "Unit Cost (inc)", visible: true, widthPx: 104 },
+  { id: "markup", label: "Mkup %", visible: true, widthPx: 72 },
+  { id: "amtExTax", label: "Amt ex Tax", visible: true, widthPx: 100 },
+  { id: "amtIncTax", label: "Amt inc Tax", visible: true, widthPx: 100 },
+  { id: "visible", label: "PDF", visible: true, widthPx: 56 },
+];
+
+const VARIATION_COL_MIN = 48;
+const VARIATION_COL_MAX = 600;
+
+const VARIATION_COL_ALIGN: Record<string, "left" | "right" | "center"> = {
+  qty: "right",
+  unitCostExTax: "right",
+  unitCostIncTax: "right",
+  markup: "right",
+  amtExTax: "right",
+  amtIncTax: "right",
+  visible: "center",
+};
+
+const VARIATION_TYPE_COLORS: Record<string, string> = {
+  Material: "bg-blue-100 text-status-info dark:bg-blue-900/40 dark:text-blue-300",
+  Labour: "bg-green-100 text-status-success dark:bg-green-900/40 dark:text-green-300",
+  Subcontractor: "bg-orange-100 text-status-warning dark:bg-orange-900/40 dark:text-orange-300",
+  Fee: "bg-status-info-bg text-status-info dark:bg-purple-900/40 dark:text-purple-300",
 };
 
 const labelCls = "h-4 leading-none flex items-center text-table text-muted-foreground/70 uppercase tracking-wide font-medium";
@@ -174,13 +223,17 @@ export default function VariationDetail() {
   const [uploadingAttachment, setUploadingAttachment] = useState(false);
   const attachmentInputRef = useRef<HTMLInputElement>(null);
 
-  // Column widths for cost-line table (was draggable; resize removed in #169 in
-  // favour of fixed widths shared via the LineItemTable primitive).
-  const colWidths: Record<string, number> = {
-    type: 80, name: 112, description: 200, costCode: 140,
-    qty: 56, unit: 56, unitCost: 96, markup: 64,
-    amtExTax: 96, amtIncTax: 96, visible: 52,
-  };
+  // Cost-line table column configuration (resize / reorder / visibility),
+  // mirroring EstimateDetail. Persisted per-user via user-view-preferences.
+  const [columns, setColumns] = useState<VariationColumnConfig[]>(() =>
+    DEFAULT_VARIATION_COLUMNS.map((c) => ({ ...c })),
+  );
+  const [columnsLoaded, setColumnsLoaded] = useState(false);
+  const hasUserModifiedColumnsRef = useRef(false);
+  const lastAppliedColumnsRef = useRef<string | null>(null);
+  const [resizingColumn, setResizingColumn] = useState<string | null>(null);
+  const [resizeStartX, setResizeStartX] = useState(0);
+  const [resizeStartWidth, setResizeStartWidth] = useState(0);
 
   // T003: Preview / PDF / Send state
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -227,6 +280,32 @@ export default function VariationDetail() {
     logoUrl?: string;
   }>({
     queryKey: ["/api/company-settings"],
+  });
+
+  // Cost-line column view preferences (visibility + order + widths)
+  const { data: columnPreferences, isError: columnPreferencesError } = useQuery({
+    queryKey: ["/api/user-view-preferences", "variation_detail"],
+    queryFn: async () => {
+      const response = await fetch("/api/user-view-preferences/variation_detail", {
+        credentials: "include",
+      });
+      if (!response.ok) {
+        if (response.status === 404) return null;
+        throw new Error("Failed to fetch view preferences");
+      }
+      return response.json();
+    },
+    staleTime: Infinity,
+    gcTime: 1000 * 60 * 30,
+  });
+
+  const saveColumnPreferencesMutation = useMutation({
+    mutationFn: async (cols: VariationColumnConfig[]) => {
+      return await apiRequest("/api/user-view-preferences", "POST", {
+        viewKey: "variation_detail",
+        preferences: { columns: cols },
+      });
+    },
   });
 
   const form = useForm<VariationFormData>({
@@ -395,6 +474,44 @@ export default function VariationDetail() {
     }
   }, [projects, isEditMode, form, projectIdFromParams]);
 
+  // Apply saved cost-line column preferences once (merge with defaults so new
+  // columns appear and removed columns drop out gracefully).
+  useEffect(() => {
+    if (lastAppliedColumnsRef.current !== null) return;
+    if (columnPreferences === undefined && !columnPreferencesError) return;
+
+    const prefs = columnPreferences?.preferences;
+    if (prefs?.columns) {
+      lastAppliedColumnsRef.current = JSON.stringify(prefs);
+      const saved = prefs.columns as VariationColumnConfig[];
+      const savedIds = new Set(saved.map((c) => c.id));
+      const merged: VariationColumnConfig[] = [];
+      saved.forEach((sc) => {
+        const def = DEFAULT_VARIATION_COLUMNS.find((d) => d.id === sc.id);
+        if (def) merged.push({ ...def, visible: sc.visible, widthPx: sc.widthPx });
+      });
+      DEFAULT_VARIATION_COLUMNS.forEach((def) => {
+        if (!savedIds.has(def.id)) merged.push({ ...def });
+      });
+      if (merged.length > 0) setColumns(merged);
+    } else {
+      lastAppliedColumnsRef.current = "none";
+    }
+    setColumnsLoaded(true);
+  }, [columnPreferences, columnPreferencesError]);
+
+  // Debounced auto-save of column preferences after user changes (not while resizing).
+  useEffect(() => {
+    if (!hasUserModifiedColumnsRef.current) return;
+    if (columnsLoaded && !resizingColumn) {
+      const timer = setTimeout(() => {
+        saveColumnPreferencesMutation.mutate(columns);
+      }, 1000);
+      return () => clearTimeout(timer);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [columns, columnsLoaded, resizingColumn]);
+
   // ── Helpers ───────────────────────────────────────────────────────────────
 
   const getUserName = (userId: string) => {
@@ -466,6 +583,168 @@ export default function VariationDetail() {
     const pct = parseFloat(globalMarkup);
     if (isNaN(pct)) return;
     setCostLines(costLines.map((line) => ({ ...line, markupPercent: pct })));
+  };
+
+  // ── Cost-line column handlers (resize / reorder / visibility) ──────────────
+
+  const toggleColumn = (columnId: string) => {
+    hasUserModifiedColumnsRef.current = true;
+    setColumns((prev) =>
+      prev.map((c) => (c.id === columnId ? { ...c, visible: !c.visible } : c)),
+    );
+  };
+
+  const moveColumnUp = (columnId: string) => {
+    hasUserModifiedColumnsRef.current = true;
+    setColumns((prev) => {
+      const i = prev.findIndex((c) => c.id === columnId);
+      if (i > 0) {
+        const next = [...prev];
+        [next[i - 1], next[i]] = [next[i], next[i - 1]];
+        return next;
+      }
+      return prev;
+    });
+  };
+
+  const moveColumnDown = (columnId: string) => {
+    hasUserModifiedColumnsRef.current = true;
+    setColumns((prev) => {
+      const i = prev.findIndex((c) => c.id === columnId);
+      if (i < prev.length - 1) {
+        const next = [...prev];
+        [next[i + 1], next[i]] = [next[i], next[i + 1]];
+        return next;
+      }
+      return prev;
+    });
+  };
+
+  const handleColumnResizeStart = (e: React.MouseEvent, columnId: string) => {
+    e.preventDefault();
+    const currentWidth = columns.find((c) => c.id === columnId)?.widthPx || 100;
+    setResizingColumn(columnId);
+    setResizeStartX(e.clientX);
+    setResizeStartWidth(currentWidth);
+    document.body.style.userSelect = "none";
+    document.body.style.cursor = "col-resize";
+  };
+
+  useEffect(() => {
+    if (!resizingColumn) return;
+    const handleMouseMove = (e: MouseEvent) => {
+      const diff = e.clientX - resizeStartX;
+      const newWidth = Math.min(
+        VARIATION_COL_MAX,
+        Math.max(VARIATION_COL_MIN, resizeStartWidth + diff),
+      );
+      setColumns((prev) =>
+        prev.map((c) => (c.id === resizingColumn ? { ...c, widthPx: newWidth } : c)),
+      );
+    };
+    const handleMouseUp = () => {
+      hasUserModifiedColumnsRef.current = true;
+      setResizingColumn(null);
+      document.body.style.userSelect = "";
+      document.body.style.cursor = "";
+    };
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
+    return () => {
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, [resizingColumn, resizeStartX, resizeStartWidth]);
+
+  // ── Inc/Ex unit cost helpers (GST 10%; only unitCostExTax is persisted) ────
+
+  const getUnitCostIncTax = (line: CostLine) =>
+    line.taxable
+      ? Math.round(line.unitCostExTax * 1.1 * 100) / 100
+      : line.unitCostExTax;
+
+  const setUnitCostFromInc = (index: number, incVal: number) => {
+    const line = costLines[index];
+    const ex = line.taxable ? Math.round((incVal / 1.1) * 100) / 100 : incVal;
+    updateCostLine(index, "unitCostExTax", ex);
+  };
+
+  const renderCostLineCell = (columnId: string, line: CostLine, index: number) => {
+    switch (columnId) {
+      case "type":
+        return (
+          <Select value={line.type} onValueChange={(val) => updateCostLine(index, "type", val)}>
+            <SelectTrigger className="h-6 text-xs border-0 bg-transparent shadow-none px-1 rounded-sm focus:ring-1 focus:ring-ring w-full">
+              <span className={cn("inline-flex items-center rounded px-1.5 py-0.5 text-data font-medium", VARIATION_TYPE_COLORS[line.type] || VARIATION_TYPE_COLORS.Material)}>{line.type}</span>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="Material">Material</SelectItem>
+              <SelectItem value="Labour">Labour</SelectItem>
+              <SelectItem value="Subcontractor">Subcontractor</SelectItem>
+              <SelectItem value="Fee">Fee</SelectItem>
+            </SelectContent>
+          </Select>
+        );
+      case "name":
+        return (
+          <Input value={line.name} onChange={(e) => updateCostLine(index, "name", e.target.value)} placeholder="Item name" className={cn("h-7 text-sm border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1 rounded-sm font-medium w-full", !line.showInPdf && "line-through")} data-testid={`input-name-${index}`} />
+        );
+      case "description":
+        return (
+          <Input value={line.description} onChange={(e) => updateCostLine(index, "description", e.target.value)} placeholder="Client-facing notes" className="h-7 text-sm border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1 rounded-sm text-muted-foreground w-full" data-testid={`input-description-${index}`} />
+        );
+      case "costCode":
+        return (
+          <CostCodeSelect value={line.costCode || ""} onValueChange={(val) => updateCostLine(index, "costCode", val)} allowNone triggerClassName="h-7 text-xs border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1 rounded-sm text-muted-foreground w-full" data-testid={`select-cost-code-${index}`} />
+        );
+      case "qty":
+        return (
+          <Input type="number" value={line.quantity} onChange={(e) => updateCostLine(index, "quantity", parseFloat(e.target.value) || 0)} onFocus={(e) => e.target.select()} min="0" step="any" className="h-7 text-sm text-right border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1 rounded-sm w-full" data-testid={`input-quantity-${index}`} />
+        );
+      case "unit":
+        return (
+          <Input value={line.unitType} onChange={(e) => updateCostLine(index, "unitType", e.target.value)} placeholder="each" className="h-7 text-xs border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1 rounded-sm text-muted-foreground w-full" data-testid={`input-unit-type-${index}`} />
+        );
+      case "unitCostExTax":
+        return (
+          <Input type="number" value={line.unitCostExTax} onChange={(e) => updateCostLine(index, "unitCostExTax", parseFloat(e.target.value) || 0)} onFocus={(e) => e.target.select()} min="0" step="0.01" className="h-7 text-sm text-right border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1 rounded-sm w-full" data-testid={`input-unit-cost-${index}`} />
+        );
+      case "unitCostIncTax":
+        return (
+          <Input type="number" value={getUnitCostIncTax(line)} onChange={(e) => setUnitCostFromInc(index, parseFloat(e.target.value) || 0)} onFocus={(e) => e.target.select()} min="0" step="0.01" className="h-7 text-sm text-right border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1 rounded-sm w-full" data-testid={`input-unit-cost-inc-${index}`} />
+        );
+      case "markup":
+        return (
+          <Input type="number" value={line.markupPercent ?? ""} onChange={(e) => updateCostLine(index, "markupPercent", e.target.value === "" ? null : parseFloat(e.target.value) || 0)} onFocus={(e) => e.target.select()} min="0" step="1" placeholder="0" className="h-7 text-sm text-right border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1 rounded-sm w-full" data-testid={`input-markup-${index}`} />
+        );
+      case "amtExTax": {
+        const amtExTax = getCostLineAmountExTax(line);
+        return (
+          <span className="text-sm font-medium tabular-nums" data-testid={`text-amt-ex-tax-${index}`}>{formatCurrency(amtExTax)}</span>
+        );
+      }
+      case "amtIncTax": {
+        const amtExTax = getCostLineAmountExTax(line);
+        const amtIncTax = line.taxable ? amtExTax * 1.1 : amtExTax;
+        return (
+          <span className="text-sm tabular-nums text-muted-foreground" data-testid={`text-amt-inc-tax-${index}`}>{formatCurrency(amtIncTax)}</span>
+        );
+      }
+      case "visible":
+        return (
+          <button
+            type="button"
+            onClick={() => updateCostLine(index, "showInPdf", !line.showInPdf)}
+            className={cn("h-6 w-6 flex items-center justify-center rounded-md hover-elevate active-elevate-2 mx-auto", line.showInPdf ? "text-muted-foreground" : "text-muted-foreground/40")}
+            title={line.showInPdf ? "Visible in PDF — click to hide" : "Hidden from PDF — click to show"}
+            data-testid={`button-toggle-visibility-${index}`}
+          >
+            {line.showInPdf ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
+          </button>
+        );
+      default:
+        return null;
+    }
   };
 
   // ── Financial calculations ─────────────────────────────────────────────────
@@ -1276,15 +1555,69 @@ export default function VariationDetail() {
                       dotColor="bg-amber-400/70"
                       label={costLines.length > 0 ? `Cost Lines · ${formatCurrency(calculateCostLinesSubtotal())}` : "Cost Lines"}
                       rightEl={
-                        <button
-                          type="button"
-                          onClick={addCostLine}
-                          className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
-                          data-testid="button-add-cost-line"
-                        >
-                          <Plus className="h-3 w-3" />
-                          <span>Add Item</span>
-                        </button>
+                        <div className="flex items-center gap-1.5">
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <button
+                                type="button"
+                                className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
+                                data-testid="button-column-visibility"
+                              >
+                                <Columns className="h-3 w-3" />
+                                <span>Columns</span>
+                              </button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="w-64">
+                              <div className="px-2 py-1.5 text-sm font-semibold">Columns</div>
+                              {columns.map((column, ci) => (
+                                <DropdownMenuItem
+                                  key={column.id}
+                                  onSelect={(e) => e.preventDefault()}
+                                  className="flex items-center justify-between gap-2"
+                                >
+                                  <div className="flex items-center flex-1 min-w-0">
+                                    <Checkbox
+                                      checked={column.visible}
+                                      onCheckedChange={() => toggleColumn(column.id)}
+                                      className="mr-2 flex-shrink-0"
+                                      data-testid={`checkbox-column-${column.id}`}
+                                    />
+                                    <span className="truncate">{column.label}</span>
+                                  </div>
+                                  <div className="flex items-center gap-0.5 flex-shrink-0">
+                                    <button
+                                      type="button"
+                                      onClick={(e) => { e.stopPropagation(); moveColumnUp(column.id); }}
+                                      disabled={ci === 0}
+                                      className={cn("p-0.5 rounded hover-elevate", ci === 0 && "opacity-30 cursor-not-allowed")}
+                                      data-testid={`button-move-column-up-${column.id}`}
+                                    >
+                                      <ChevronUp className="w-3.5 h-3.5" />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={(e) => { e.stopPropagation(); moveColumnDown(column.id); }}
+                                      disabled={ci === columns.length - 1}
+                                      className={cn("p-0.5 rounded hover-elevate", ci === columns.length - 1 && "opacity-30 cursor-not-allowed")}
+                                      data-testid={`button-move-column-down-${column.id}`}
+                                    >
+                                      <ChevronDown className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+                                </DropdownMenuItem>
+                              ))}
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                          <button
+                            type="button"
+                            onClick={addCostLine}
+                            className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
+                            data-testid="button-add-cost-line"
+                          >
+                            <Plus className="h-3 w-3" />
+                            <span>Add Item</span>
+                          </button>
+                        </div>
                       }
                     />
                     <div className="px-4 py-3 overflow-x-auto">
@@ -1302,117 +1635,91 @@ export default function VariationDetail() {
                           <span className="text-xs text-muted-foreground/50">Items added here appear as a mini estimate</span>
                         </div>
                       ) : (
-                        <div className="min-w-[1050px]">
-                          <LineItemTable
-                            fixedLayout
-                            data={costLines}
-                            rowKey={(_line, index) => index}
-                            rowTestId={(_line, index) => `row-cost-line-${index}`}
-                            rowClassName={(line) => cn("transition-opacity", !line.showInPdf && "opacity-40")}
-                            columns={(() => {
-                              const typeColors: Record<string, string> = {
-                                Material: "bg-blue-100 text-status-info dark:bg-blue-900/40 dark:text-blue-300",
-                                Labour: "bg-green-100 text-status-success dark:bg-green-900/40 dark:text-green-300",
-                                Subcontractor: "bg-orange-100 text-status-warning dark:bg-orange-900/40 dark:text-orange-300",
-                                Fee: "bg-status-info-bg text-status-info dark:bg-purple-900/40 dark:text-purple-300",
-                              };
-                              const cols: LineItemColumn<typeof costLines[number]>[] = [
-                                {
-                                  key: "type", header: "Type", width: colWidths.type, truncate: false,
-                                  cell: (line, index) => (
-                                    <Select value={line.type} onValueChange={(val) => updateCostLine(index, "type", val)}>
-                                      <SelectTrigger className="h-6 text-xs border-0 bg-transparent shadow-none px-1 rounded-sm focus:ring-1 focus:ring-ring w-full">
-                                        <span className={cn("inline-flex items-center rounded px-1.5 py-0.5 text-data font-medium", typeColors[line.type] || typeColors.Material)}>{line.type}</span>
-                                      </SelectTrigger>
-                                      <SelectContent>
-                                        <SelectItem value="Material">Material</SelectItem>
-                                        <SelectItem value="Labour">Labour</SelectItem>
-                                        <SelectItem value="Subcontractor">Subcontractor</SelectItem>
-                                        <SelectItem value="Fee">Fee</SelectItem>
-                                      </SelectContent>
-                                    </Select>
-                                  ),
-                                },
-                                {
-                                  key: "name", header: "Name", width: colWidths.name, truncate: false,
-                                  cell: (line, index) => (
-                                    <Input value={line.name} onChange={(e) => updateCostLine(index, "name", e.target.value)} placeholder="Item name" className={cn("h-7 text-sm border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1 rounded-sm font-medium", !line.showInPdf && "line-through")} data-testid={`input-name-${index}`} />
-                                  ),
-                                },
-                                {
-                                  key: "description", header: "Description", width: colWidths.description, truncate: false,
-                                  cell: (line, index) => (
-                                    <Input value={line.description} onChange={(e) => updateCostLine(index, "description", e.target.value)} placeholder="Client-facing notes" className="h-7 text-sm border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1 rounded-sm text-muted-foreground" data-testid={`input-description-${index}`} />
-                                  ),
-                                },
-                                {
-                                  key: "costCode", header: "Cost Code", width: colWidths.costCode, truncate: false,
-                                  cell: (line, index) => (
-                                    <CostCodeSelect value={line.costCode || ""} onValueChange={(val) => updateCostLine(index, "costCode", val)} allowNone triggerClassName="h-7 text-xs border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1 rounded-sm text-muted-foreground w-full" data-testid={`select-cost-code-${index}`} />
-                                  ),
-                                },
-                                {
-                                  key: "qty", header: "Qty", align: "right", width: colWidths.qty, truncate: false,
-                                  cell: (line, index) => (
-                                    <Input type="number" value={line.quantity} onChange={(e) => updateCostLine(index, "quantity", parseFloat(e.target.value) || 0)} onFocus={(e) => e.target.select()} min="0" step="any" className="h-7 text-sm text-right border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1 rounded-sm" data-testid={`input-quantity-${index}`} />
-                                  ),
-                                },
-                                {
-                                  key: "unit", header: "Unit", width: colWidths.unit, truncate: false,
-                                  cell: (line, index) => (
-                                    <Input value={line.unitType} onChange={(e) => updateCostLine(index, "unitType", e.target.value)} placeholder="each" className="h-7 text-xs border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1 rounded-sm text-muted-foreground" data-testid={`input-unit-type-${index}`} />
-                                  ),
-                                },
-                                {
-                                  key: "unitCost", header: "Unit Cost", align: "right", width: colWidths.unitCost, truncate: false,
-                                  cell: (line, index) => (
-                                    <Input type="number" value={line.unitCostExTax} onChange={(e) => updateCostLine(index, "unitCostExTax", parseFloat(e.target.value) || 0)} onFocus={(e) => e.target.select()} min="0" step="0.01" className="h-7 text-sm text-right border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1 rounded-sm" data-testid={`input-unit-cost-${index}`} />
-                                  ),
-                                },
-                                {
-                                  key: "markup", header: "Mkup %", align: "right", width: colWidths.markup, truncate: false,
-                                  cell: (line, index) => (
-                                    <Input type="number" value={line.markupPercent ?? ""} onChange={(e) => updateCostLine(index, "markupPercent", e.target.value === "" ? null : parseFloat(e.target.value) || 0)} onFocus={(e) => e.target.select()} min="0" step="1" placeholder="0" className="h-7 text-sm text-right border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1 rounded-sm" data-testid={`input-markup-${index}`} />
-                                  ),
-                                },
-                                {
-                                  key: "amtExTax", header: "Amt ex Tax", align: "right", width: colWidths.amtExTax,
-                                  cell: (line, index) => {
-                                    const amtExTax = getCostLineAmountExTax(line);
-                                    return <span className="text-sm font-medium tabular-nums" data-testid={`text-amt-ex-tax-${index}`}>{formatCurrency(amtExTax)}</span>;
-                                  },
-                                },
-                                {
-                                  key: "amtIncTax", header: "Amt inc Tax", align: "right", width: colWidths.amtIncTax,
-                                  cell: (line, index) => {
-                                    const amtExTax = getCostLineAmountExTax(line);
-                                    const amtIncTax = line.taxable ? amtExTax * 1.1 : amtExTax;
-                                    return <span className="text-sm tabular-nums text-muted-foreground" data-testid={`text-amt-inc-tax-${index}`}>{formatCurrency(amtIncTax)}</span>;
-                                  },
-                                },
-                                {
-                                  key: "visible", header: "Visible", align: "center", width: colWidths.visible, truncate: false,
-                                  cell: (line, index) => (
-                                    <button
-                                      type="button"
-                                      onClick={() => updateCostLine(index, "showInPdf", !line.showInPdf)}
-                                      className={cn("h-6 w-6 flex items-center justify-center rounded-md hover-elevate active-elevate-2 mx-auto", line.showInPdf ? "text-muted-foreground" : "text-muted-foreground/40")}
-                                      title={line.showInPdf ? "Visible in PDF — click to hide" : "Hidden from PDF — click to show"}
-                                      data-testid={`button-toggle-visibility-${index}`}
-                                    >
-                                      {line.showInPdf ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
-                                    </button>
-                                  ),
-                                },
-                              ];
-                              return cols;
-                            })()}
-                            actions={(_line, index) => (
-                              <button type="button" onClick={() => deleteCostLine(index)} className="h-6 w-6 flex items-center justify-center rounded-md hover-elevate active-elevate-2 text-muted-foreground" data-testid={`button-delete-${index}`}>
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </button>
-                            )}
-                          />
+                        <div className="min-w-fit">
+                          {(() => {
+                            const visibleCostCols = columns.filter((c) => c.visible);
+                            const ACTIONS_COL_WIDTH = 48;
+                            const costGridTemplate = `${visibleCostCols.map((c) => `${c.widthPx}px`).join(" ")} ${ACTIONS_COL_WIDTH}px`;
+                            const costTableWidth = visibleCostCols.reduce((s, c) => s + c.widthPx, 0) + ACTIONS_COL_WIDTH;
+                            return (
+                              <div style={{ minWidth: `${costTableWidth}px` }}>
+                                <div
+                                  role="row"
+                                  className="grid items-center border-b border-border"
+                                  style={{ gridTemplateColumns: costGridTemplate, width: `${costTableWidth}px` }}
+                                >
+                                  {visibleCostCols.map((column, ci) => {
+                                    const align = VARIATION_COL_ALIGN[column.id] || "left";
+                                    return (
+                                      <div
+                                        key={column.id}
+                                        role="columnheader"
+                                        className={cn(
+                                          "h-8 px-2 flex items-center relative group/header text-table text-muted-foreground/70 uppercase tracking-wide font-medium",
+                                          align === "right" && "justify-end",
+                                          align === "center" && "justify-center",
+                                        )}
+                                      >
+                                        <span className="truncate">{column.label}</span>
+                                        {ci < visibleCostCols.length - 1 && (
+                                          <div
+                                            className={cn(
+                                              "hidden md:block absolute right-0 top-0 h-full w-1 cursor-col-resize z-10",
+                                              resizingColumn === column.id
+                                                ? "opacity-100 bg-primary w-[3px]"
+                                                : "opacity-0 group-hover/header:opacity-100 hover:bg-primary bg-muted",
+                                            )}
+                                            style={{ touchAction: "none" }}
+                                            onMouseDown={(e) => handleColumnResizeStart(e, column.id)}
+                                            data-testid={`resize-handle-${column.id}`}
+                                          />
+                                        )}
+                                      </div>
+                                    );
+                                  })}
+                                  <div role="columnheader" className="h-8 px-2 flex items-center justify-center" />
+                                </div>
+                                {costLines.map((line, index) => (
+                                  <div
+                                    key={index}
+                                    role="row"
+                                    data-testid={`row-cost-line-${index}`}
+                                    className={cn(
+                                      "grid items-center border-b border-border/30 transition-opacity",
+                                      !line.showInPdf && "opacity-40",
+                                    )}
+                                    style={{ gridTemplateColumns: costGridTemplate, width: `${costTableWidth}px` }}
+                                  >
+                                    {visibleCostCols.map((column) => {
+                                      const align = VARIATION_COL_ALIGN[column.id] || "left";
+                                      return (
+                                        <div
+                                          key={column.id}
+                                          className={cn(
+                                            "px-2 py-1 min-w-0",
+                                            align === "right" && "text-right",
+                                            align === "center" && "text-center",
+                                          )}
+                                        >
+                                          {renderCostLineCell(column.id, line, index)}
+                                        </div>
+                                      );
+                                    })}
+                                    <div className="px-1 py-1 flex items-center justify-center">
+                                      <button
+                                        type="button"
+                                        onClick={() => deleteCostLine(index)}
+                                        className="h-6 w-6 flex items-center justify-center rounded-md hover-elevate active-elevate-2 text-muted-foreground"
+                                        data-testid={`button-delete-${index}`}
+                                      >
+                                        <Trash2 className="h-3.5 w-3.5" />
+                                      </button>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            );
+                          })()}
                           <div className="flex items-center justify-end gap-6 pt-2 border-t border-border/30 text-sm">
                             <span className="text-muted-foreground">Ex Tax:</span>
                             <span className="font-semibold tabular-nums">{formatCurrency(calculateCostLinesSubtotal())}</span>
