@@ -117,7 +117,7 @@ import { db } from "./db";
 import { eq, or, and, desc, asc, gte, lte, sql, inArray, isNull, isNotNull, gt, not, ne } from "drizzle-orm";
 import * as schema from "@shared/schema";
 import { computeEstimateItemPrice, computeEstimateSummary } from "@shared/pricing";
-import { computeBillTotalsCents } from "@shared/billTotals";
+import { computeBillTotalsCents, billLineExGstCents } from "@shared/billTotals";
 
 // --- Timezone helpers (used by clockIn/clockOut and backfill) ---
 export function formatHHmmInTz(d: Date, tz: string): string {
@@ -17982,14 +17982,24 @@ export class DbStorage implements IStorage {
         0,
       );
 
-      // Calculate actual from bills
+      // Calculate actual from bills. Sum bill LINE ITEMS (not the inc-GST header
+      // total) and strip GST from tax-inclusive lines so the actual is ex-GST —
+      // matching the ex-GST baseline and the per-cost-code line items.
       const bills: Bill[] = await exec.select()
         .from(schema.bills)
         .where(eq(schema.bills.projectId, projectId));
+      const billIdsForActual = bills.map((b) => b.id);
+      const billLineItemsForActual: BillLineItem[] = billIdsForActual.length > 0
+        ? await exec.select()
+            .from(schema.billLineItems)
+            .where(inArray(schema.billLineItems.billId, billIdsForActual))
+        : [];
+      const billByIdForActual = new Map<string, Bill>(bills.map((b) => [b.id, b]));
 
-      const actualAmount = bills.reduce((sum, bill) => {
-        const amount = bill.total || 0;
-        return sum + (bill.billType === 'credit' ? -amount : amount);
+      const actualAmount = billLineItemsForActual.reduce((sum, li) => {
+        const bill = billByIdForActual.get(li.billId);
+        const exGst = billLineExGstCents(li.total || 0, li.tax, bill?.taxMode);
+        return sum + (bill?.billType === 'credit' ? -exGst : exGst);
       }, 0);
 
       // Calculate variations
@@ -18159,11 +18169,13 @@ export class DbStorage implements IStorage {
         }
       }
 
-      // Actuals from bill line items
+      // Actuals from bill line items. Bill line totals are stored INC-GST for
+      // tax-inclusive bills, so strip GST to keep the actual ex-GST and
+      // comparable with the ex-GST budgeted amounts above.
       for (const billItem of billLineItems) {
         const bill = bills.find((b) => b.id === billItem.billId);
         const multiplier = bill?.billType === "credit" ? -1 : 1;
-        const amount = (billItem.total || 0) * multiplier;
+        const amount = billLineExGstCents(billItem.total || 0, billItem.tax, bill?.taxMode) * multiplier;
         if (billItem.costCodeId) {
           const cc = costCodeMap.get(billItem.costCodeId);
           const catTitle = cc?.categoryId ? (categoryMap.get(cc.categoryId) || "") : "";

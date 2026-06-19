@@ -5,7 +5,7 @@ description: What "actual cost" means in BuildPro's budget, and the trap that ti
 
 The stored budget actuals are **bills-only** and do NOT include timesheet labour:
 - per-cost-code `BudgetLineItem.actualAmount` = sum of bill line-item totals, EX-GST, credits subtracted.
-- project `budget.actualAmount` = sum of bill header totals, INC-GST, no labour.
+- project `budget.actualAmount` = sum of bill **line-item** totals EX-GST (per line via `billLineExGstCents`), no labour. (It used to sum the INC-GST bill *header* totals, which over-stated actuals ~10% for tax-inclusive bills vs the ex-GST budget — see `bill-actuals-ex-gst.md`.)
 
 **Why it matters:** any "actual cost" / gross-margin / profit figure that should reflect
 *total* cost incurred must ADD timesheet labour separately (`timesheets.total` =

@@ -10,6 +10,7 @@
 - [Adding DB tables](adding-db-tables.md) — full `db:push` here prompts a destructive TRUNCATE (pre-existing drift); use additive SQL in dev + an idempotent ensure-table startup hook for prod (deploy runs no migration).
 - [Budget Actual split](budget-actual-split.md) — cost-code Actual = Labour(computed endpoint)+Bills(actualAmount, bills-only)+Internal+Total; never fold labour into actualAmount; labour total must reconcile with actual-costs.timesheetCostCents.
 - [Budget actual-cost composition](budget-actual-cost-composition.md) — stored budget actuals are bills-only; any true "actual cost"/gross-margin must ADD timesheet labour separately.
+- [Bill actuals ex-GST](bill-actuals-ex-gst.md) — inclusive-bill line totals INCLUDE GST; strip per-line via billLineExGstCents before rolling bill spend into the ex-GST budget.
 - [Bill paidAmount is payment-managed](bill-paidamount-payment-managed.md) — paidAmount lives in the bill form as DOLLARS but is payment-managed; never send it from bill save (omit on update) — round-tripping floats into the integer cents column 500s.
 - [Client invoice paid recompute](client-invoice-paid-recompute.md) — clientInvoices paid/balance/status are stored columns; every payment void/delete/create must recompute from non-voided rows like bills.
 - [ErrorBoundary recovery](error-boundary-recovery.md) — router-level boundary must reset on navigation (resetKeys=[location]) + per-widget boundaries + forward render throws to server, or one widget crash wedges every page until hard reload.

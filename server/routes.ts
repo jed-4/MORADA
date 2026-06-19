@@ -167,7 +167,7 @@ import {
   selections,
   selectionOptions
 } from "@shared/schema";
-import { computeBillTotalsCents } from "@shared/billTotals";
+import { computeBillTotalsCents, billLineExGstCents } from "@shared/billTotals";
 import { matchSupplier } from "@shared/supplierMatcher";
 import {
   fuzzyMatchTimesheetCostCode,
@@ -3370,14 +3370,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
           return res.status(404).json({ error: "Project not found" });
         }
 
-        // Bills (ex-GST, cents). Sum line items, not header totals, to stay ex-GST.
+        // Bills (ex-GST, cents). Sum line items and strip GST from tax-inclusive
+        // lines (whose stored totals include GST) so this stays ex-GST.
         const bills = await storage.getBills(projectId, undefined, companyId || undefined);
         let billsCostExGstCents = 0;
         for (const bill of bills) {
           const lines = await storage.getBillLineItems(bill.id);
           const sign = bill.billType === "credit" ? -1 : 1;
           for (const line of lines) {
-            billsCostExGstCents += Math.round(line.total ?? 0) * sign;
+            billsCostExGstCents += billLineExGstCents(line.total ?? 0, line.tax, (bill as any).taxMode) * sign;
           }
         }
 
@@ -14801,7 +14802,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (matched.length === 0) continue;
 
         const sign = bill.billType === "credit" ? -1 : 1;
-        const lineTotal = matched.reduce((s, l) => s + (l.total ?? 0), 0) * sign;
+        const lineTotal = matched.reduce((s, l) => s + billLineExGstCents(l.total ?? 0, (l as any).tax, (bill as any).taxMode), 0) * sign;
 
         let supplierName = "";
         if (bill.supplierId && companyId) {
@@ -14820,7 +14821,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           lines: matched.map((l) => ({
             id: l.id,
             description: (l as any).description ?? "",
-            total: (l.total ?? 0) * sign,
+            total: billLineExGstCents(l.total ?? 0, (l as any).tax, (bill as any).taxMode) * sign,
           })),
         });
       }
@@ -21623,11 +21624,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Budget routes
   app.get("/api/projects/:projectId/budget", requireAuth, requirePermission("financial.budget_actuals", "view"), async (req, res) => {
     try {
-      const budget = await storage.getBudget(req.params.projectId);
+      // Recompute the budget on read so the Budget page reflects current bills
+      // live — including ex-GST bill actuals — matching the recalc that already
+      // runs on bill mutations. Without this, budgets persisted before a pricing
+      // fix keep serving stale figures until the next bill change or manual
+      // recalculate. Best-effort: if the recalc fails, fall back to the persisted
+      // budget (auto-creating one if none exists) so the page still loads.
+      let budget = await storage.getBudget(req.params.projectId);
+      try {
+        const recomputed = await storage.calculateBudget(req.params.projectId);
+        if (recomputed) {
+          budget = recomputed;
+          await storage.recalculateBudgetLineItems(recomputed.id);
+        }
+      } catch (e: any) {
+        console.warn(`[GET budget] live recalc failed for project ${req.params.projectId}:`, e?.message || e);
+      }
       if (!budget) {
-        // Auto-create budget if it doesn't exist
-        const newBudget = await storage.calculateBudget(req.params.projectId);
-        return res.json(newBudget);
+        budget = await storage.calculateBudget(req.params.projectId);
       }
       res.json(budget);
     } catch (error: any) {

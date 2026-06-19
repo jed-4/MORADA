@@ -17,3 +17,8 @@ To refresh a project's budget you must call BOTH `storage.calculateBudget(projec
 - `AutoBillCreatorService.processEmailInvoices()` (server/services/autoBillCreator.ts) — the single entry used by the email webhook route, the manual poll route, AND the background Gmail bill poller. Put recalc here (in the service) so all three callers are covered, not in each route.
 
 Bill amounts are stored in CENTS throughout.
+
+## Existing budgets only refresh on a recalc — reads don't (mostly)
+Budget figures are PERSISTED: the Budget page reads `budget.actualAmount` (header) and per-cost-code `BudgetLineItem.actualAmount` straight from the DB. They change only when a recalc runs (a bill mutation path above, the manual Recalculate button, or budget auto-create). **Consequence:** a change to the *math* of actuals (e.g. an ex-GST fix) does NOT back-fill budgets persisted before the change — they keep serving stale numbers until something triggers a recalc.
+
+To make corrections surface immediately, `GET /api/projects/:projectId/budget` now recomputes on read (`calculateBudget` + `recalculateBudgetLineItems`, best-effort with fallback to the persisted row). The frontend fetches the budget first, then `/api/budgets/:id/line-items` (gated on budget.id), so by the time line-items is fetched the rows are fresh. Note: `/actual-costs` and `/budget-actuals` drill-down already compute LIVE (no persistence), so they reflect math changes without any recalc.

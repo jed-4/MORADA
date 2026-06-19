@@ -41,3 +41,27 @@ export function computeBillTotalsCents(
   const taxCents = Math.round(tax);
   return { subtotal: subtotalCents, tax: taxCents, total: subtotalCents + taxCents };
 }
+
+// Ex-GST value (in cents) of a single bill line, honouring the parent bill's
+// taxMode. Mirrors computeBillTotalsCents' per-line subtotal contribution:
+//   - exclusive bills: the stored line total is already ex-GST.
+//   - inclusive bills: a taxable ("GST on expenses") line total INCLUDES GST,
+//     so strip it (ex = total / (1 + rate)).
+//   - non-taxable ("No GST") lines never carry GST.
+// Use this anywhere bill spend is rolled up as an "actual" so it compares
+// like-for-like against the ex-GST budget (budget line items, budget header
+// rollup, actual-costs summary, budget-actuals drill-down). Australian GST is
+// fixed at 10%, which is the default.
+export function billLineExGstCents(
+  lineTotal: number,
+  lineTax: string | null | undefined,
+  taxMode: BillTaxMode | string | null | undefined,
+  taxRatePercent: number = 10,
+): number {
+  const total = lineTotal || 0;
+  if (taxMode === "inclusive" && lineTax === "GST on expenses") {
+    const rate = (Number(taxRatePercent) || 0) / 100;
+    return Math.round(total / (1 + rate));
+  }
+  return Math.round(total);
+}
