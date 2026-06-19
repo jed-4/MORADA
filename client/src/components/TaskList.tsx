@@ -363,8 +363,7 @@ export default function TaskList({ tasks: propTasks, groupedTasks, groupBy, isLo
   // Update task status mutation
   const updateTaskMutation = useMutation({
     mutationFn: async ({ taskId, newStatus }: { taskId: string; newStatus: string }) => {
-      const response = await apiRequest(`/api/tasks/${taskId}/status`, "PATCH", { status: newStatus });
-      return response.json();
+      return await apiRequest(`/api/tasks/${taskId}/status`, "PATCH", { status: newStatus });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });

@@ -1208,12 +1208,7 @@ export default function BillDetail() {
 
   const syncBillPaymentMutation = useMutation({
     mutationFn: async () => {
-      const res = await apiRequest(`/api/xero/sync-bill-payment/${id}`, "POST");
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error((err as any).error || "Failed to sync from Xero");
-      }
-      return res.json() as Promise<{ synced: boolean; xeroStatus: string; amountPaidCents: number }>;
+      return await apiRequest(`/api/xero/sync-bill-payment/${id}`, "POST") as { synced: boolean; xeroStatus: string; amountPaidCents: number };
     },
     onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/bills", id] });

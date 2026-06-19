@@ -178,8 +178,7 @@ export default function SiteDiaryTemplates() {
       if (!Array.isArray(data)) {
         throw new Error("Expected a JSON array of templates. The file may be in the wrong format.");
       }
-      const response = await apiRequest("/api/site-diary-templates/import-json", "POST", data);
-      return response.json();
+      return await apiRequest("/api/site-diary-templates/import-json", "POST", data);
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/site-diary-templates"] });

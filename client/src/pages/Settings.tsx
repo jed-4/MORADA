@@ -2734,8 +2734,7 @@ function TermsConditionsSection() {
 
   const saveDefaultAccountMutation = useMutation({
     mutationFn: async (accountCode: string | null) => {
-      const res = await apiRequest("/api/company-settings", "PATCH", { clientInvoiceDefaultXeroAccount: accountCode });
-      return res.json();
+      return await apiRequest("/api/company-settings", "PATCH", { clientInvoiceDefaultXeroAccount: accountCode });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/company-settings"] });
@@ -2748,8 +2747,7 @@ function TermsConditionsSection() {
 
   const saveBillDefaultAccountMutation = useMutation({
     mutationFn: async (accountCode: string | null) => {
-      const res = await apiRequest("/api/company-settings", "PATCH", { billDefaultXeroAccount: accountCode });
-      return res.json();
+      return await apiRequest("/api/company-settings", "PATCH", { billDefaultXeroAccount: accountCode });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/company-settings"] });
@@ -2762,8 +2760,7 @@ function TermsConditionsSection() {
 
   const saveTermsMutation = useMutation({
     mutationFn: async (content: string) => {
-      const res = await apiRequest("/api/company-settings", "PATCH", { termsAndConditions: content });
-      return res.json();
+      return await apiRequest("/api/company-settings", "PATCH", { termsAndConditions: content });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/company-settings"] });
@@ -2776,9 +2773,7 @@ function TermsConditionsSection() {
 
   const saveTemplatesMutation = useMutation({
     mutationFn: async (updatedTemplates: Array<{ id: string; name: string; content: string; defaultFor: string[] }>) => {
-      const res = await apiRequest("/api/company-settings", "PATCH", { termsTemplates: updatedTemplates });
-      if (!res.ok) throw new Error("Failed to save");
-      return res.json();
+      return await apiRequest("/api/company-settings", "PATCH", { termsTemplates: updatedTemplates });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/company-settings"] });
@@ -3580,8 +3575,8 @@ function FieldSettingsSection() {
   // Delete custom field mutation
   const deleteFieldMutation = useMutation({
     mutationFn: async (id: string) => {
-      const response = await apiRequest(`/api/custom-field-defs/${id}`, "DELETE");
-      return response.ok;
+      await apiRequest(`/api/custom-field-defs/${id}`, "DELETE");
+      return true;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/custom-field-defs"] });

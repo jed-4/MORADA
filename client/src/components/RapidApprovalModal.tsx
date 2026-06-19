@@ -235,11 +235,10 @@ export function RapidApprovalModal({
       const rateVal = parseFloat(currentTimesheet?.hourlyRate || "0");
       const total = (netHoursCalc * rateVal).toFixed(2);
       
-      const res = await apiRequest(`/api/timesheets/${data.id}`, "PATCH", {
+      return await apiRequest(`/api/timesheets/${data.id}`, "PATCH", {
         ...data,
         total,
       });
-      return await res.json();
     },
   });
 
@@ -268,8 +267,7 @@ export function RapidApprovalModal({
           description: editedDescription,
         });
       }
-      const res = await apiRequest(`/api/timesheets/${timesheetId}/approve`, "POST", {});
-      return await res.json();
+      return await apiRequest(`/api/timesheets/${timesheetId}/approve`, "POST", {});
     },
     onSuccess: (_, timesheetId) => {
       queryClient.invalidateQueries({ queryKey: ["/api/timesheets"] });
@@ -288,10 +286,9 @@ export function RapidApprovalModal({
 
   const rejectMutation = useMutation({
     mutationFn: async (timesheetId: string) => {
-      const res = await apiRequest(`/api/timesheets/${timesheetId}/reject`, "POST", { 
+      return await apiRequest(`/api/timesheets/${timesheetId}/reject`, "POST", { 
         comment: rejectionComment || undefined 
       });
-      return await res.json();
     },
     onSuccess: (_, timesheetId) => {
       queryClient.invalidateQueries({ queryKey: ["/api/timesheets"] });

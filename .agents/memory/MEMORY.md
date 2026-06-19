@@ -21,5 +21,6 @@
 - [Two-stage estimate lifecycle](estimate-two-stage-lifecycle.md) — Approve(live)→Mark-as-Contract(lock/freeze)→Revert; approve must refuse status='contract'; approve/contract/revert all need company auth.
 - [Checklist template tenant scoping](checklist-tenant-scoping.md) — company_id lives only on the template; scoping must cover dup/move/reorder/import/export too, not just CRUD by-id.
 - [Integration test harness](integration-test-harness.md) — run HTTP integration tests with NODE_ENV=test (dodges prod DB guard + dev auth bypass); spoof X-Forwarded-Proto:https for secure session cookie.
+- [apiRequest returns parsed JSON](apirequest-returns-parsed-json.md) — never call .json()/.ok on apiRequest result; doing so throws → save looks failed in UI but server returns 200.
 - [Web queryClient stale defaults](query-client-stale-defaults.md) — global staleTime:Infinity means cross-device/tab views serve a stale cache; override staleTime:0 + refetch on open or a save clobbers newer remote state.
 - [Stale client after redeploy](stale-client-after-redeploy.md) — a "prod crashed" report with render-error + 404s on old hashed assets = stale browser tab on the previous build; check fix-is-ancestor-of-publish before re-fixing.

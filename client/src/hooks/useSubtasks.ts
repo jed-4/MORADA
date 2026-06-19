@@ -16,7 +16,7 @@ export function useCreateSubtask(userId?: string) {
   return useMutation({
     mutationFn: async ({ parentTaskId, subtask }: { parentTaskId: string; subtask: InsertTask }) => {
       const response = await apiRequest(`/api/tasks/${parentTaskId}/subtasks`, "POST", subtask);
-      return response.json();
+      return response;
     },
     onSuccess: (task: Task, { parentTaskId }) => {
       // Invalidate subtasks for the parent task
@@ -46,7 +46,7 @@ export function useUpdateSubtask(userId?: string) {
   return useMutation({
     mutationFn: async ({ taskId, updates }: { taskId: string; updates: Partial<Task> }) => {
       const response = await apiRequest(`/api/tasks/${taskId}`, "PATCH", updates);
-      return response.json();
+      return response;
     },
     onSuccess: (updatedTask: Task) => {
       // Invalidate subtasks for the parent task if it exists

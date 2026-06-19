@@ -45,7 +45,7 @@ export default function EditCategoryDialog({ open, onOpenChange, category }: Edi
     mutationFn: async (data: FormData) => {
       if (!category) throw new Error("No category selected");
       const response = await apiRequest(`/api/cost-categories/${category.id}`, "PATCH", data);
-      return response.json() as Promise<CostCategory>;
+      return response as CostCategory;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/cost-categories"] });

@@ -250,8 +250,7 @@ export default function ChecklistInstanceDetail() {
 
   const updateChecklistMutation = useMutation({
     mutationFn: async (data: Partial<ChecklistInstance>) => {
-      const res = await apiRequest(`/api/checklist-instances/${checklistId}`, "PATCH", data);
-      return res.json();
+      return await apiRequest(`/api/checklist-instances/${checklistId}`, "PATCH", data);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/checklist-instances", checklistId] });
@@ -266,8 +265,7 @@ export default function ChecklistInstanceDetail() {
 
   const updateItemMutation = useMutation({
     mutationFn: async ({ itemId, data }: { itemId: string; data: Partial<ChecklistInstanceItem> }) => {
-      const res = await apiRequest(`/api/checklist-instance-items/${itemId}`, "PATCH", data);
-      return res.json();
+      return await apiRequest(`/api/checklist-instance-items/${itemId}`, "PATCH", data);
     },
     onMutate: async ({ itemId, data }) => {
       await queryClient.cancelQueries({ queryKey: ["/api/checklist-instances", checklistId, "items"] });
@@ -304,12 +302,11 @@ export default function ChecklistInstanceDetail() {
 
   const createItemMutation = useMutation({
     mutationFn: async (data: typeof itemForm) => {
-      const res = await apiRequest(`/api/checklist-instances/${checklistId}/items`, "POST", {
+      return await apiRequest(`/api/checklist-instances/${checklistId}/items`, "POST", {
         ...data,
         order: items.length,
         groupOrder: 0,
       });
-      return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/checklist-instances", checklistId, "items"] });
