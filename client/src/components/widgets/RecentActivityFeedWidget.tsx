@@ -14,7 +14,7 @@ import type { Activity } from "@shared/schema";
 import type { WidgetProps } from "@/types/widgets";
 import { useProject } from "@/contexts/ProjectContext";
 import { WidgetSkeleton, WidgetEmpty, WidgetError } from "@/components/ui/widget-states";
-import { formatRelativeDistance } from "@/lib/formatters";
+import { formatRelativeDistance, stripActivityActor } from "@/lib/formatters";
 
 function iconFor(type: string) {
   switch (type) {
@@ -101,7 +101,7 @@ export default function RecentActivityFeedWidget({ widget }: WidgetProps) {
             <div className="flex-1 min-w-0">
               <p className="text-sm leading-snug">
                 <span className="font-medium">{a.userName || "Someone"}</span>{" "}
-                <span className="text-muted-foreground">{a.description}</span>
+                <span className="text-muted-foreground">{stripActivityActor(a.description, a.userName)}</span>
               </p>
               {a.entityName && (
                 <p className="text-xs text-muted-foreground truncate">{a.entityName}</p>

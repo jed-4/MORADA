@@ -157,3 +157,28 @@ export function formatRelativeDistance(date: Date | string | null | undefined): 
   if (Number.isNaN(d.getTime())) return "—";
   return formatDistanceToNow(d, { addSuffix: true });
 }
+
+/**
+ * Strip a redundant leading actor token from an activity description.
+ * The activity feed already renders the actor's name in bold before the
+ * description, so descriptions that also start with "User " (literal) or
+ * with the actor's own name are shown twice.  This function removes that
+ * leading prefix so the line reads cleanly, e.g.:
+ *   "User created estimate 'X'"  → "created estimate 'X'"
+ *   "Jane Smith updated project" → "updated project"
+ */
+export function stripActivityActor(
+  description: string | null | undefined,
+  userName: string | null | undefined,
+): string {
+  if (!description) return description ?? "";
+  if (/^user\s+/i.test(description)) {
+    return description.replace(/^user\s+/i, "");
+  }
+  const actor = userName?.trim();
+  if (actor && description.toLowerCase().startsWith(actor.toLowerCase())) {
+    const rest = description.slice(actor.length);
+    if (rest.startsWith(" ")) return rest.slice(1);
+  }
+  return description;
+}

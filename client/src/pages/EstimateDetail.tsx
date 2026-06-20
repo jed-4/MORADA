@@ -1805,7 +1805,7 @@ export default function EstimateDetail() {
           userId: user.id,
           activityType: "estimate",
           action: "created",
-          description: `User created estimate '${newEstimate.name}'`,
+          description: `created estimate '${newEstimate.name}'`,
           entityId: newEstimate.id,
           entityName: newEstimate.name,
           metadata: {}
@@ -1928,7 +1928,7 @@ export default function EstimateDetail() {
           userId: user.id,
           activityType: "estimate",
           action: "updated",
-          description: `User updated estimate '${updatedEstimate.name}'`,
+          description: `updated estimate '${updatedEstimate.name}'`,
           entityId: updatedEstimate.id,
           entityName: updatedEstimate.name,
           metadata: {}

@@ -23,6 +23,7 @@ import {
   BookOpen,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
+import { stripActivityActor } from "@/lib/formatters";
 
 export default function ActivityWidget({ widget, onUpdate, isConfiguring, onCloseConfig }: WidgetProps) {
   const { currentProject } = useProject();
@@ -367,7 +368,7 @@ export default function ActivityWidget({ widget, onUpdate, isConfiguring, onClos
         <div className="flex-1 min-w-0">
           <p className="text-sm">
             <span className="font-medium">{activity.userName || "Someone"}</span>{" "}
-            <span className="text-muted-foreground">{activity.description}</span>
+            <span className="text-muted-foreground">{stripActivityActor(activity.description, activity.userName)}</span>
           </p>
           {hasSubItems ? (
             <ul className="mt-1 space-y-0.5 text-sm text-muted-foreground">

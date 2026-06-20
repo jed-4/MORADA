@@ -150,14 +150,14 @@ export default function Estimates() {
         const statusName = statusOption?.name || variables.status;
         
         let action: "approved" | "rejected" | "updated" = "updated";
-        let description = `User updated estimate status to '${statusName}' for estimate '${estimate.name}'`;
+        let description = `updated estimate status to '${statusName}' for estimate '${estimate.name}'`;
 
         if (variables.status === "approved") {
           action = "approved";
-          description = `User approved estimate '${estimate.name}'`;
+          description = `approved estimate '${estimate.name}'`;
         } else if (variables.status === "rejected") {
           action = "rejected";
-          description = `User rejected estimate '${estimate.name}'`;
+          description = `rejected estimate '${estimate.name}'`;
         }
 
         if (user?.id) {

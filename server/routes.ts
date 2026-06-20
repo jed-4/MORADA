@@ -3728,7 +3728,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               userName,
               activityType: "project",
               action: "updated",
-              description: `${userName} updated project ${changeDescriptions}`,
+              description: `updated project ${changeDescriptions}`,
               entityId: project.id,
               entityName: project.name,
               metadata,
@@ -15024,7 +15024,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               userName: userName,
               activityType: "bill",
               action: "updated",
-              description: `${userName} added comment to bill '${billName}'`,
+              description: `added comment to bill '${billName}'`,
               entityId: req.params.id,
               entityName: billName,
               metadata: {}
@@ -15089,7 +15089,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               userName: userName,
               activityType: "bill",
               action: "updated",
-              description: `${userName} added comment to bill '${billName}'`,
+              description: `added comment to bill '${billName}'`,
               entityId: req.params.id,
               entityName: billName,
               metadata: {}
@@ -19454,7 +19454,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             userName,
             activityType: "site_diary",
             action: "created",
-            description: `${userName} created site diary '${entry.title}'`,
+            description: `created site diary '${entry.title}'`,
             entityId: entry.id,
             entityName: entry.title,
             metadata: {}
@@ -19516,7 +19516,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             userName,
             activityType: "site_diary",
             action: "updated",
-            description: `${userName} updated site diary '${entry.title}'`,
+            description: `updated site diary '${entry.title}'`,
             entityId: entry.id,
             entityName: entry.title,
             metadata: {}
@@ -19557,7 +19557,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             userName,
             activityType: "site_diary",
             action: "deleted",
-            description: `${userName} deleted site diary '${entryToDelete.title}'`,
+            description: `deleted site diary '${entryToDelete.title}'`,
             entityId: req.params.id,
             entityName: entryToDelete.title,
             metadata: {}
