@@ -5,7 +5,6 @@ import { useProject } from "@/contexts/ProjectContext";
 import { useFinancialPermission } from "@/hooks/use-permission";
 import { WidgetSkeleton, WidgetEmpty, WidgetError } from "@/components/ui/widget-states";
 import { formatCurrency } from "@/lib/formatters";
-import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -162,21 +161,6 @@ export default function ProjectBudgetVsActualWidget({
       : nearLimit
         ? "bg-bp-amber"
         : "bg-bp-purple";
-  const statusLabel = !hasBudget
-    ? "No budget set"
-    : overBudget
-      ? `Over by ${formatCurrency(actual - budget)}`
-      : nearLimit
-        ? "Near limit"
-        : "On track";
-  const statusClass = !hasBudget
-    ? "bg-bp-amber/15 text-bp-amber border-transparent"
-    : overBudget
-      ? "bg-bp-coral/15 text-bp-coral border-transparent"
-      : nearLimit
-        ? "bg-bp-amber/15 text-bp-amber border-transparent"
-        : "bg-bp-green/15 text-bp-green border-transparent";
-
   // Bullet-bar scale: leave a little headroom so the budget target tick and the
   // spend bar never sit flush against the right edge (and over-budget is visible).
   const scaleMax = Math.max(budget, actual) * 1.08 || 1;
@@ -195,18 +179,6 @@ export default function ProjectBudgetVsActualWidget({
 
   return (
     <div className="flex flex-col h-full p-4 gap-3" data-testid="widget-budget-vs-actual">
-      <div className="flex items-center justify-between gap-2 flex-wrap">
-        <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-          Budget health
-        </span>
-        <Badge
-          className={`${statusClass} no-default-hover-elevate no-default-active-elevate`}
-          data-testid="badge-budget-health"
-        >
-          {statusLabel}
-        </Badge>
-      </div>
-
       <div>
         <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
           {hasBudget ? (remaining >= 0 ? "Remaining" : "Over budget") : "Spent"}
