@@ -22,11 +22,40 @@ function ProgressBar({
   widthPct,
   colorClass,
   testId,
+  overBudgetMarkerPct,
 }: {
   widthPct: number;
   colorClass: string;
   testId?: string;
+  overBudgetMarkerPct?: number;
 }) {
+  if (overBudgetMarkerPct != null) {
+    return (
+      <div
+        className="relative h-2.5 w-full overflow-hidden rounded-full bg-muted"
+        data-testid={testId}
+      >
+        {/* whole track filled = total spend (over budget) */}
+        <div className="absolute inset-0 bg-bp-coral" />
+        {/* striped overage: spend beyond the budget */}
+        <div
+          className="absolute inset-y-0 right-0 bg-bp-coral"
+          style={{
+            left: `${overBudgetMarkerPct}%`,
+            backgroundImage:
+              "repeating-linear-gradient(45deg, rgba(255,255,255,0.4) 0, rgba(255,255,255,0.4) 3px, transparent 3px, transparent 6px)",
+          }}
+          data-testid="bar-overage"
+        />
+        {/* budget marker */}
+        <div
+          className="absolute top-0 bottom-0 w-0.5 -translate-x-1/2 bg-foreground/80"
+          style={{ left: `${overBudgetMarkerPct}%` }}
+          data-testid="bar-budget-marker"
+        />
+      </div>
+    );
+  }
   return (
     <div className="relative h-2.5 w-full overflow-hidden rounded-full bg-muted" data-testid={testId}>
       <div
@@ -61,7 +90,7 @@ function BulletBar({
         data-testid="bullet-measure"
       />
       <div
-        className="absolute top-0 bottom-0 w-0.5 bg-foreground"
+        className="absolute top-0 bottom-0 w-0.5 -translate-x-1/2 bg-foreground"
         style={{ left: `${Math.min(100, Math.max(0, targetPct))}%` }}
         data-testid="bullet-target"
       />
@@ -161,16 +190,18 @@ export default function ProjectBudgetVsActualWidget({
       : nearLimit
         ? "bg-bp-amber"
         : "bg-bp-purple";
-  // Bullet-bar scale: leave a little headroom so the budget target tick and the
-  // spend bar never sit flush against the right edge (and over-budget is visible).
-  const scaleMax = Math.max(budget, actual) * 1.08 || 1;
-  const measurePct = (actual / scaleMax) * 100;
-  const targetPct = (budget / scaleMax) * 100;
-  const safeEndPct = ((budget * 0.9) / scaleMax) * 100;
+  // Bullet-bar scale: scale to the larger of budget/actual so an over-budget
+  // spend bar fills all the way to the right edge. The budget target tick is
+  // clamped a hair inside the track so it stays visible on either edge.
+  const scaleMax = Math.max(budget, actual) || 1;
+  const measurePct = Math.min(100, (actual / scaleMax) * 100);
+  const rawTargetPct = Math.min(100, (budget / scaleMax) * 100);
+  const targetPct = Math.min(98, Math.max(2, rawTargetPct));
+  const safeEndPct = Math.min(100, ((budget * 0.9) / scaleMax) * 100);
   const bands = [
     { widthPct: safeEndPct, className: "bg-bp-green/15" },
-    { widthPct: Math.max(0, targetPct - safeEndPct), className: "bg-bp-amber/15" },
-    { widthPct: Math.max(0, 100 - targetPct), className: "bg-bp-coral/15" },
+    { widthPct: Math.max(0, rawTargetPct - safeEndPct), className: "bg-bp-amber/15" },
+    { widthPct: Math.max(0, 100 - rawTargetPct), className: "bg-bp-coral/15" },
   ];
 
   const completionPct = Math.min(100, Math.max(0, currentProject.percentComplete ?? 0));
@@ -208,7 +239,14 @@ export default function ProjectBudgetVsActualWidget({
             bands={bands}
           />
         ) : (
-          <ProgressBar widthPct={barWidth} colorClass={measureClass} testId="bar-spent" />
+          <ProgressBar
+            widthPct={barWidth}
+            colorClass={measureClass}
+            testId="bar-spent"
+            overBudgetMarkerPct={
+              overBudget ? Math.min(94, Math.max(6, (budget / actual) * 100)) : undefined
+            }
+          />
         )}
         <div className="flex items-center justify-between gap-2 text-[11px]">
           <span className="text-muted-foreground" data-testid="text-actual-amount">
