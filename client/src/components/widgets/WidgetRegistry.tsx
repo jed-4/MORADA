@@ -15,7 +15,6 @@ import {
   Newspaper,
   Wallet,
   TrendingUp,
-  HardHat,
   GanttChart,
   FolderOpen,
   StickyNote,
@@ -41,7 +40,6 @@ import RecentActivityFeedWidget from "./RecentActivityFeedWidget";
 import ProjectBudgetVsActualWidget from "./ProjectBudgetVsActualWidget";
 import ProjectCashFlowWidget from "./ProjectCashFlowWidget";
 import ClientActivityWidget from "./ClientActivityWidget";
-import WhoIsOnSiteWidget from "./WhoIsOnSiteWidget";
 import ProgrammeScheduleWidget from "./ProgrammeScheduleWidget";
 import ProjectDocumentsWidget from "./ProjectDocumentsWidget";
 import QuickNotesWidget from "./QuickNotesWidget";
@@ -229,18 +227,6 @@ export const widgetRegistry: Record<string, WidgetDefinition> = {
     defaultSize: "md",
     configurable: true,
     accent: "purple",
-    defaultColumns: 3,
-    defaultRowSpan: 3,
-  },
-  whoOnSite: {
-    type: "whoOnSite",
-    name: "Who's On Site",
-    description: "People clocked in today with totals and live indicator",
-    icon: HardHat,
-    component: WhoIsOnSiteWidget,
-    defaultSize: "md",
-    configurable: false,
-    accent: "teal",
     defaultColumns: 3,
     defaultRowSpan: 3,
   },
