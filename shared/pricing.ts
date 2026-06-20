@@ -124,6 +124,24 @@ export interface EstimateSummary {
   subtotalWithMarkup: number;
 }
 
+/**
+ * The pure builder COST (ex-tax, NO markup) of a single estimate line — the
+ * cost-only basis used by the Budget page. This is exactly the per-line
+ * contribution to `computeEstimateSummary().builderCostTotal`:
+ *   - priced line (qty * unitCost !== 0): qty * unitCost (ex-tax)
+ *   - fixed-price line (PC sum / provisional allowance, qty * unitCost === 0):
+ *     its cached ex-tax value (priceIncTax - taxAmount)
+ * Excludes BOTH per-line markup and the global project markup, and excludes GST.
+ */
+export function estimateItemBuilderCostExTax(item: EstimateItemSummaryInput): number {
+  const unitCost = Number(item.unitCostExTax ?? 0);
+  const qty = Number(item.quantity ?? 0);
+  if (unitCost * qty !== 0) {
+    return round2(unitCost * qty);
+  }
+  return round2(Number(item.priceIncTax ?? 0) - Number(item.taxAmount ?? 0));
+}
+
 export function computeEstimateSummary(
   items: EstimateItemSummaryInput[],
   options: {

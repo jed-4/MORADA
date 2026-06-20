@@ -292,6 +292,12 @@ export default function BudgetPage() {
     );
   };
 
+  // Full actual COST ex-GST (bills + labour) — the live figure used by the
+  // gross-margin bar and the cost table Total. Used for the header "Spent"/
+  // "Remaining" stats so all three agree on one screen. Falls back to the
+  // bills-only persisted actual while the live actual-costs query loads.
+  const spentActualCents = actualCosts?.actualCostExGstCents ?? (budget?.actualAmount ?? 0);
+
   const totalBudgetedHours = labourHours.reduce((sum, item) => sum + parseFloat(item.budgetedHours || "0"), 0);
   const totalPendingHours = labourHours.reduce((sum, item) => sum + parseFloat(item.pendingHours || "0"), 0);
   const totalApprovedHours = labourHours.reduce((sum, item) => sum + parseFloat(item.approvedHours || "0"), 0);
@@ -846,11 +852,15 @@ export default function BudgetPage() {
           <div className="flex items-center gap-0 text-[11px]">
             {[
               { label: "Budget", value: budgetData.baselineAmount, color: "text-foreground" },
-              { label: "Spent", value: budgetData.actualAmount, color: "text-muted-foreground" },
+              // Spent = full actual COST ex-GST (bills + labour), the same figure
+              // shown in the cost table's Total and the gross-margin bar, so the
+              // screen never contradicts itself. Falls back to the bills-only
+              // persisted actual while the live actual-costs query loads.
+              { label: "Spent", value: spentActualCents, color: "text-muted-foreground" },
               {
                 label: "Remaining",
-                value: (budgetData.revisedAmount ?? 0) - (budgetData.actualAmount ?? 0),
-                color: getVarianceColor((budgetData.revisedAmount ?? 0) - (budgetData.actualAmount ?? 0)),
+                value: (budgetData.revisedAmount ?? 0) - spentActualCents,
+                color: getVarianceColor((budgetData.revisedAmount ?? 0) - spentActualCents),
               },
             ].map((stat, i) => (
               <div

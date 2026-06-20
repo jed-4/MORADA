@@ -116,7 +116,7 @@ import { generateRecurringTaskInstances, getRecurringTaskKey, generateNextRecurr
 import { db } from "./db";
 import { eq, or, and, desc, asc, gte, lte, sql, inArray, isNull, isNotNull, gt, not, ne } from "drizzle-orm";
 import * as schema from "@shared/schema";
-import { computeEstimateItemPrice, computeEstimateSummary } from "@shared/pricing";
+import { computeEstimateItemPrice, computeEstimateSummary, estimateItemBuilderCostExTax } from "@shared/pricing";
 import { computeBillTotalsCents, billLineExGstCents } from "@shared/billTotals";
 
 // --- Timezone helpers (used by clockIn/clockOut and backfill) ---
@@ -17972,13 +17972,16 @@ export class DbStorage implements IStorage {
         .from(schema.estimateItems)
         .where(inArray(schema.estimateItems.estimateId, estimateIds)) : [];
 
-      // estimate_items.priceIncTax is doublePrecision DOLLARS (e.g.
-      // 55653.41) while budgets.baselineAmount is integer CENTS (the UI
-      // divides by 100 for display). Convert per-line to cents and round
-      // before summing to avoid both Postgres integer errors and a 100x
-      // unit drift on the budget page.
+      // COST-ONLY baseline. The Budget page is a pure cost view, so the
+      // baseline must EXCLUDE GST and ALL markup (both per-line markup and the
+      // global project markup). estimateItemBuilderCostExTax returns the raw
+      // builder cost ex-tax per line (qty * unitCost, or the cached ex-tax
+      // value for fixed-price PC-sum lines) — the same cost basis the canonical
+      // estimate summary produces. Convert per-line to integer CENTS and round
+      // before summing (priceIncTax/unitCost are doublePrecision DOLLARS while
+      // budgets.baselineAmount is integer CENTS, and the UI divides by 100).
       const baselineAmount = estimateItems.reduce(
-        (sum, item) => sum + Math.round((((item.priceIncTax || 0) - (item.taxAmount || 0))) * 100),
+        (sum, item) => sum + Math.round(estimateItemBuilderCostExTax(item) * 100),
         0,
       );
 
@@ -18148,11 +18151,12 @@ export class DbStorage implements IStorage {
         return buckets.get(key)!;
       };
 
-      // Budget from estimate items. priceIncTax is doublePrecision DOLLARS
-      // but budget_line_items.budgetedAmount is integer CENTS, so convert
-      // per line.
+      // Budget from estimate items — COST ONLY (ex-tax, no per-line markup, no
+      // global project markup), matching the cost-only baseline in
+      // calculateBudget. estimateItemBuilderCostExTax returns dollars; convert
+      // per line to integer CENTS (budget_line_items.budgetedAmount is integer).
       for (const item of estimateItems) {
-        const amount = Math.round((((item.priceIncTax || 0) - (item.taxAmount || 0))) * 100);
+        const amount = Math.round(estimateItemBuilderCostExTax(item) * 100);
         if (item.costCode) {
           const cc = costCodeMap.get(item.costCode);
           const catTitle = cc?.categoryId ? (categoryMap.get(cc.categoryId) || "") : "";
@@ -18448,12 +18452,14 @@ export class DbStorage implements IStorage {
     }>;
   }> {
     try {
-      // Non-rejected timesheets only — mirrors the actual-costs labour total so
-      // the Budget table's Labour column reconciles with the gross-margin bar.
+      // APPROVED timesheets only — draft/submitted/rejected are excluded from
+      // actual cost. Mirrors the actual-costs labour total so the Budget table's
+      // Labour column reconciles with the gross-margin bar. ($0 approved
+      // subcontractor timesheets are fine — their cost arrives via bills.)
       const allTimesheets = await db.select()
         .from(schema.timesheets)
         .where(eq(schema.timesheets.projectId, projectId));
-      const timesheets = allTimesheets.filter((t) => t.status !== "rejected");
+      const timesheets = allTimesheets.filter((t) => t.status === "approved");
       if (timesheets.length === 0) return { byCostCode: [], total: 0, entries: [] };
 
       const timesheetIds = timesheets.map((t) => t.id);

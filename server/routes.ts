@@ -3384,11 +3384,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
         // Labour (timesheets). storage.getTimesheets is NOT view-scope filtered, so
         // this is the full company-scoped project labour cost (correct for a financial
-        // total gated by the budget_actuals permission). Exclude rejected timesheets.
+        // total gated by the budget_actuals permission). Count ONLY approved
+        // timesheets — draft/submitted/rejected are excluded from actual cost
+        // (mirrors getProjectLabourCostBreakdown so the table Labour column and
+        // the gross-margin bar agree).
         const timesheets = await storage.getTimesheets(projectId);
         let timesheetCostCents = 0;
         for (const ts of timesheets) {
-          if (ts.status === "rejected") continue;
+          if (ts.status !== "approved") continue;
           timesheetCostCents += Math.round((Number(ts.total) || 0) * 100);
         }
 
@@ -15203,7 +15206,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
       if (projectsAffected.size > 0) {
         console.log(
-          `[ContractMetrics] bulk variation status → ${status}; revised contract price will recompute for projects: ${Array.from(projectsAffected).join(", ")}`,
+          `[ContractMetrics] bulk variation status → ${status}; recomputing budget for projects: ${Array.from(projectsAffected).join(", ")}`,
+        );
+        // Same approved-boundary rule as the single PATCH path: a bulk status
+        // change that crosses the approved boundary must refresh each affected
+        // project's persisted budget snapshot so newly approved variations enter
+        // Revised and rejected ones drop out. Best-effort; recalcProjectBudget
+        // try/catches internally and never fails the bulk update.
+        await Promise.all(
+          Array.from(projectsAffected).map((projectId) => recalcProjectBudget(projectId)),
         );
       }
       res.json({ updated: ids.length });
@@ -15279,8 +15290,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const nextApproved = ["approved", "released"].includes((variation as any)?.status ?? "");
       if (prevApproved !== nextApproved && (variation as any).projectId) {
         console.log(
-          `[ContractMetrics] variation ${req.params.id} approved-status changed (${(prevVariation as any)?.status ?? "none"} → ${(variation as any).status}); project ${(variation as any).projectId} revised contract price will recompute`,
+          `[ContractMetrics] variation ${req.params.id} approved-status changed (${(prevVariation as any)?.status ?? "none"} → ${(variation as any).status}); recomputing budget for project ${(variation as any).projectId}`,
         );
+        // Persisted budget snapshot (baseline + approved variations) must
+        // recompute when a variation crosses the approved boundary, so a newly
+        // approved variation enters Revised and a rejected one drops out —
+        // without anyone pressing Recalculate. Best-effort: recalcProjectBudget
+        // try/catches internally and never fails the variation update.
+        await recalcProjectBudget((variation as any).projectId);
       }
 
       // T005: EOT — extend project end date when variation is approved and has daysChanged

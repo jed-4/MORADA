@@ -8,6 +8,7 @@
 - [Auto OCR gate](auto-ocr-gate.md) — on-open auto AI bill reader must only fire for empty DRAFT bills; Xero imports have ocrProcessed=false and get clobbered (visual only) otherwise.
 - [user_view_preferences KV](user-view-preferences-kv.md) — it's the generic per-user key-value store; add new per-user prefs as a new viewKey + JSON blob, never a new table/route.
 - [Adding DB tables](adding-db-tables.md) — full `db:push` here prompts a destructive TRUNCATE (pre-existing drift); use additive SQL in dev + an idempotent ensure-table startup hook for prod (deploy runs no migration).
+- [Budget cost-only view](budget-cost-only-view.md) — Budget column/header = cost only (estimateItemBuilderCostExTax, no per-line/global markup); revenue keeps markup; recompute on approved-boundary variation changes; approved-only timesheets.
 - [Budget Actual split](budget-actual-split.md) — cost-code Actual = Labour(computed endpoint)+Bills(actualAmount, bills-only)+Internal+Total; never fold labour into actualAmount; labour total must reconcile with actual-costs.timesheetCostCents.
 - [Budget actual-cost composition](budget-actual-cost-composition.md) — stored budget actuals are bills-only; any true "actual cost"/gross-margin must ADD timesheet labour separately.
 - [Bill actuals ex-GST](bill-actuals-ex-gst.md) — inclusive-bill line totals INCLUDE GST; strip per-line via billLineExGstCents before rolling bill spend into the ex-GST budget.
