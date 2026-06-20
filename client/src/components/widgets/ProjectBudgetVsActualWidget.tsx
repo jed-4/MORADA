@@ -1,16 +1,91 @@
 import { useQuery } from "@tanstack/react-query";
-import { TrendingUp, TrendingDown } from "lucide-react";
 import type { Budget } from "@shared/schema";
-import type { WidgetProps } from "@/types/widgets";
+import type { WidgetProps, Widget } from "@/types/widgets";
 import { useProject } from "@/contexts/ProjectContext";
 import { useFinancialPermission } from "@/hooks/use-permission";
 import { WidgetSkeleton, WidgetEmpty, WidgetError } from "@/components/ui/widget-states";
 import { formatCurrency } from "@/lib/formatters";
 import { Badge } from "@/components/ui/badge";
+import { Label } from "@/components/ui/label";
+import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
-export default function ProjectBudgetVsActualWidget({ widget }: WidgetProps) {
+type ChartStyle = "bar" | "bullet";
+
+function ProgressBar({
+  widthPct,
+  colorClass,
+  testId,
+}: {
+  widthPct: number;
+  colorClass: string;
+  testId?: string;
+}) {
+  return (
+    <div className="relative h-2.5 w-full overflow-hidden rounded-full bg-muted" data-testid={testId}>
+      <div
+        className={`h-full rounded-full transition-all ${colorClass}`}
+        style={{ width: `${Math.min(100, Math.max(0, widthPct))}%` }}
+      />
+    </div>
+  );
+}
+
+function BulletBar({
+  measurePct,
+  targetPct,
+  measureClass,
+  bands,
+}: {
+  measurePct: number;
+  targetPct: number;
+  measureClass: string;
+  bands: { widthPct: number; className: string }[];
+}) {
+  return (
+    <div className="relative h-3.5 w-full overflow-hidden rounded-full bg-muted" data-testid="bar-spent">
+      <div className="absolute inset-0 flex">
+        {bands.map((b, i) => (
+          <div key={i} className={b.className} style={{ width: `${b.widthPct}%` }} />
+        ))}
+      </div>
+      <div
+        className={`absolute left-0 top-1/2 -translate-y-1/2 h-1.5 rounded-full ${measureClass}`}
+        style={{ width: `${Math.min(100, Math.max(0, measurePct))}%` }}
+        data-testid="bullet-measure"
+      />
+      <div
+        className="absolute top-0 bottom-0 w-0.5 bg-foreground"
+        style={{ left: `${Math.min(100, Math.max(0, targetPct))}%` }}
+        data-testid="bullet-target"
+      />
+    </div>
+  );
+}
+
+export default function ProjectBudgetVsActualWidget({
+  widget,
+  onUpdate,
+  isConfiguring,
+  onCloseConfig,
+}: WidgetProps) {
   const { currentProject } = useProject();
   const allowed = useFinancialPermission();
+
+  const chartStyle: ChartStyle = widget.config?.chartStyle === "bullet" ? "bullet" : "bar";
+  const showCompletion = !!widget.config?.showCompletion;
+
+  const updateConfig = (patch: Record<string, unknown>) => {
+    if (!onUpdate) return;
+    onUpdate({ ...widget, config: { ...(widget.config || {}), ...patch } } as Widget);
+  };
 
   const { data, isLoading, isError, refetch } = useQuery<Budget>({
     queryKey: ["/api/projects", currentProject?.id, "budget"],
@@ -23,6 +98,45 @@ export default function ProjectBudgetVsActualWidget({ widget }: WidgetProps) {
     enabled: !!currentProject?.id && allowed,
   });
 
+  if (isConfiguring) {
+    return (
+      <div className="space-y-4 p-3">
+        <div className="space-y-2">
+          <Label className="text-xs">Budget graph style</Label>
+          <Select value={chartStyle} onValueChange={(v) => updateConfig({ chartStyle: v as ChartStyle })}>
+            <SelectTrigger
+              className="h-8 text-xs"
+              aria-label="Budget graph style"
+              data-testid="select-budget-chart-style"
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="bar" className="text-xs">Progress bar</SelectItem>
+              <SelectItem value="bullet" className="text-xs">Bullet bar</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="flex items-center justify-between gap-2 pt-2 border-t">
+          <Label className="text-xs font-normal">Show build progress bar</Label>
+          <Switch
+            checked={showCompletion}
+            onCheckedChange={(v) => updateConfig({ showCompletion: !!v })}
+            aria-label="Show build progress bar"
+            data-testid="switch-show-completion"
+          />
+        </div>
+
+        <div className="flex items-center justify-end gap-2 pt-2 border-t">
+          <Button size="sm" onClick={onCloseConfig} className="h-7 px-3 text-xs">
+            Done
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   if (!currentProject) return <WidgetEmpty message="Select a project to view its budget" />;
   if (!allowed) return <WidgetEmpty message="You don't have access to financial data" />;
   if (isLoading) return <WidgetSkeleton />;
@@ -31,8 +145,6 @@ export default function ProjectBudgetVsActualWidget({ widget }: WidgetProps) {
 
   const budget = data.revisedAmount || 0;
   const actual = data.actualAmount || 0;
-  const forecast = data.forecastAmount || 0;
-  const variance = data.varianceAmount || 0;
 
   const hasBudget = budget > 0;
   const remaining = budget - actual;
@@ -41,7 +153,7 @@ export default function ProjectBudgetVsActualWidget({ widget }: WidgetProps) {
   const nearLimit = hasBudget && !overBudget && pct >= 90;
   const barWidth = hasBudget ? Math.min(100, Math.max(0, pct)) : actual > 0 ? 100 : 0;
 
-  const barClass = !hasBudget
+  const measureClass = !hasBudget
     ? actual > 0
       ? "bg-bp-amber"
       : "bg-muted-foreground/20"
@@ -65,8 +177,21 @@ export default function ProjectBudgetVsActualWidget({ widget }: WidgetProps) {
         ? "bg-bp-amber/15 text-bp-amber border-transparent"
         : "bg-bp-green/15 text-bp-green border-transparent";
 
-  const VarianceIcon = variance >= 0 ? TrendingUp : TrendingDown;
-  const varianceTone = variance >= 0 ? "text-bp-green" : "text-bp-coral";
+  // Bullet-bar scale: leave a little headroom so the budget target tick and the
+  // spend bar never sit flush against the right edge (and over-budget is visible).
+  const scaleMax = Math.max(budget, actual) * 1.08 || 1;
+  const measurePct = (actual / scaleMax) * 100;
+  const targetPct = (budget / scaleMax) * 100;
+  const safeEndPct = ((budget * 0.9) / scaleMax) * 100;
+  const bands = [
+    { widthPct: safeEndPct, className: "bg-bp-green/15" },
+    { widthPct: Math.max(0, targetPct - safeEndPct), className: "bg-bp-amber/15" },
+    { widthPct: Math.max(0, 100 - targetPct), className: "bg-bp-coral/15" },
+  ];
+
+  const completionPct = Math.min(100, Math.max(0, currentProject.percentComplete ?? 0));
+
+  const useBullet = chartStyle === "bullet" && hasBudget;
 
   return (
     <div className="flex flex-col h-full p-4 gap-3" data-testid="widget-budget-vs-actual">
@@ -82,46 +207,37 @@ export default function ProjectBudgetVsActualWidget({ widget }: WidgetProps) {
         </Badge>
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Budget</p>
-          <p className="text-xl font-bold leading-tight tabular-nums" data-testid="text-budget-amount">
-            {formatCurrency(budget)}
-          </p>
-        </div>
-        {hasBudget ? (
-          <div>
-            <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
-              {remaining >= 0 ? "Remaining" : "Over budget"}
-            </p>
-            <p
-              className={`text-xl font-bold leading-tight tabular-nums ${remaining < 0 ? "text-bp-coral" : "text-bp-green"}`}
-              data-testid="text-remaining-amount"
-            >
-              {formatCurrency(Math.abs(remaining))}
-            </p>
-          </div>
-        ) : (
-          <div>
-            <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Spent</p>
-            <p
-              className={`text-xl font-bold leading-tight tabular-nums ${actual > 0 ? "text-bp-amber" : ""}`}
-              data-testid="text-remaining-amount"
-            >
-              {formatCurrency(actual)}
-            </p>
-          </div>
-        )}
+      <div>
+        <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
+          {hasBudget ? (remaining >= 0 ? "Remaining" : "Over budget") : "Spent"}
+        </p>
+        <p
+          className={`text-2xl font-bold leading-tight tabular-nums ${
+            hasBudget
+              ? remaining < 0
+                ? "text-bp-coral"
+                : "text-bp-green"
+              : actual > 0
+                ? "text-bp-amber"
+                : ""
+          }`}
+          data-testid="text-remaining-amount"
+        >
+          {formatCurrency(hasBudget ? Math.abs(remaining) : actual)}
+        </p>
       </div>
 
       <div className="space-y-1.5">
-        <div className="relative h-2.5 w-full overflow-hidden rounded-full bg-muted">
-          <div
-            className={`h-full rounded-full transition-all ${barClass}`}
-            style={{ width: `${barWidth}%` }}
-            data-testid="bar-spent"
+        {useBullet ? (
+          <BulletBar
+            measurePct={measurePct}
+            targetPct={targetPct}
+            measureClass={measureClass}
+            bands={bands}
           />
-        </div>
+        ) : (
+          <ProgressBar widthPct={barWidth} colorClass={measureClass} testId="bar-spent" />
+        )}
         <div className="flex items-center justify-between gap-2 text-[11px]">
           <span className="text-muted-foreground" data-testid="text-actual-amount">
             {hasBudget ? `Spent ${formatCurrency(actual)}` : "No budget entered"}
@@ -135,23 +251,19 @@ export default function ProjectBudgetVsActualWidget({ widget }: WidgetProps) {
         </div>
       </div>
 
-      <div className="mt-auto grid grid-cols-2 gap-3 border-t border-border pt-2">
-        <div>
-          <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Forecast</p>
-          <p className="text-sm font-semibold tabular-nums">{formatCurrency(forecast)}</p>
+      {showCompletion && (
+        <div className="space-y-1.5">
+          <ProgressBar widthPct={completionPct} colorClass="bg-bp-teal" testId="bar-completion" />
+          <div className="flex items-center justify-between gap-2 text-[11px]">
+            <span className="text-muted-foreground" data-testid="text-completion-label">
+              Build progress
+            </span>
+            <span className="font-medium text-bp-teal" data-testid="text-completion-pct">
+              {completionPct}%
+            </span>
+          </div>
         </div>
-        <div>
-          <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Variance</p>
-          {variance === 0 ? (
-            <p className="text-sm font-semibold text-muted-foreground">On budget</p>
-          ) : (
-            <p className={`flex items-center gap-1 text-sm font-semibold tabular-nums ${varianceTone}`}>
-              <VarianceIcon className="h-3 w-3" />
-              {formatCurrency(Math.abs(variance))}
-            </p>
-          )}
-        </div>
-      </div>
+      )}
     </div>
   );
 }

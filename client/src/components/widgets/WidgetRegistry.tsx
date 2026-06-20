@@ -193,11 +193,11 @@ export const widgetRegistry: Record<string, WidgetDefinition> = {
   budgetVsActual: {
     type: "budgetVsActual",
     name: "Budget vs Actual",
-    description: "Project budget, actual spend, forecast and variance",
+    description: "Spend vs budget with a progress or bullet bar, plus an optional build-progress bar",
     icon: BarChart3,
     component: ProjectBudgetVsActualWidget,
     defaultSize: "md",
-    configurable: false,
+    configurable: true,
     accent: "financial",
     financialGated: true,
     requiredPermission: { key: "financial.budget_actuals", action: "view" },
