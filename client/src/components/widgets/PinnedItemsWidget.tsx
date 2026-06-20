@@ -5,7 +5,6 @@ import {
   Pin,
   PinOff,
   Plus,
-  MoreHorizontal,
   GripVertical,
   X,
   ChevronDown,
@@ -53,21 +52,14 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
+import { Switch } from "@/components/ui/switch";
 import {
-  DropdownMenu,
-  DropdownMenuTrigger,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuCheckboxItem,
-  DropdownMenuSeparator,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
-  DropdownMenuPortal,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
-  DropdownMenuLabel,
-} from "@/components/ui/dropdown-menu";
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
@@ -278,7 +270,7 @@ function SortableRow({ item, index, projectId, config, onUnpin, onNavigate, drag
   );
 }
 
-export default function PinnedItemsWidget({ widget, onUpdate }: WidgetProps) {
+export default function PinnedItemsWidget({ widget, onUpdate, isConfiguring, onCloseConfig }: WidgetProps) {
   const { currentProject } = useProject();
   const { toast } = useToast();
   const [, setLocation] = useLocation();
@@ -378,92 +370,15 @@ export default function PinnedItemsWidget({ widget, onUpdate }: WidgetProps) {
   };
 
   const headerRight = (
-    <>
-      <Button
-        size="sm"
-        className="h-7 px-2 text-xs"
-        onClick={() => setShowPinModal(true)}
-        data-testid="button-pinned-add"
-      >
-        <Plus className="h-3 w-3 mr-1" />
-        Pin
-      </Button>
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button
-            size="icon"
-            variant="ghost"
-            className="h-7 w-7"
-            data-testid="button-pinned-menu"
-          >
-            <MoreHorizontal className="h-3.5 w-3.5" />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-56">
-          <DropdownMenuLabel>Display</DropdownMenuLabel>
-          <DropdownMenuSub>
-            <DropdownMenuSubTrigger>Sort by</DropdownMenuSubTrigger>
-            <DropdownMenuPortal>
-              <DropdownMenuSubContent>
-                <DropdownMenuRadioGroup
-                  value={config.sortOrder}
-                  onValueChange={(v) => updateConfig({ sortOrder: v as PinnedConfig["sortOrder"] })}
-                >
-                  <DropdownMenuRadioItem value="manual">Manual order</DropdownMenuRadioItem>
-                  <DropdownMenuRadioItem value="newest">Newest first</DropdownMenuRadioItem>
-                  <DropdownMenuRadioItem value="oldest">Oldest first</DropdownMenuRadioItem>
-                  <DropdownMenuRadioItem value="az">A–Z</DropdownMenuRadioItem>
-                  <DropdownMenuRadioItem value="byType">By type</DropdownMenuRadioItem>
-                </DropdownMenuRadioGroup>
-              </DropdownMenuSubContent>
-            </DropdownMenuPortal>
-          </DropdownMenuSub>
-          <DropdownMenuSeparator />
-          <DropdownMenuCheckboxItem
-            checked={config.groupByCategory}
-            onCheckedChange={(v) => updateConfig({ groupByCategory: !!v })}
-          >
-            Group by category
-          </DropdownMenuCheckboxItem>
-          <DropdownMenuCheckboxItem
-            checked={config.showTypeLabel}
-            onCheckedChange={(v) => updateConfig({ showTypeLabel: !!v })}
-          >
-            Show type label
-          </DropdownMenuCheckboxItem>
-          <DropdownMenuCheckboxItem
-            checked={config.showDatePinned}
-            onCheckedChange={(v) => updateConfig({ showDatePinned: !!v })}
-          >
-            Show date pinned
-          </DropdownMenuCheckboxItem>
-          <DropdownMenuCheckboxItem
-            checked={config.compactMode}
-            onCheckedChange={(v) => updateConfig({ compactMode: !!v })}
-          >
-            Compact mode
-          </DropdownMenuCheckboxItem>
-          <DropdownMenuSeparator />
-          <DropdownMenuSub>
-            <DropdownMenuSubTrigger>Max visible</DropdownMenuSubTrigger>
-            <DropdownMenuPortal>
-              <DropdownMenuSubContent>
-                <DropdownMenuRadioGroup
-                  value={String(config.maxVisible)}
-                  onValueChange={(v) =>
-                    updateConfig({ maxVisible: Number(v) as PinnedConfig["maxVisible"] })
-                  }
-                >
-                  <DropdownMenuRadioItem value="5">5</DropdownMenuRadioItem>
-                  <DropdownMenuRadioItem value="10">10</DropdownMenuRadioItem>
-                  <DropdownMenuRadioItem value="0">All</DropdownMenuRadioItem>
-                </DropdownMenuRadioGroup>
-              </DropdownMenuSubContent>
-            </DropdownMenuPortal>
-          </DropdownMenuSub>
-        </DropdownMenuContent>
-      </DropdownMenu>
-    </>
+    <Button
+      size="sm"
+      className="h-7 px-2 text-xs"
+      onClick={() => setShowPinModal(true)}
+      data-testid="button-pinned-add"
+    >
+      <Plus className="h-3 w-3 mr-1" />
+      Pin
+    </Button>
   );
 
   const draggable = config.sortOrder === "manual" && !config.groupByCategory;
@@ -484,6 +399,100 @@ export default function PinnedItemsWidget({ widget, onUpdate }: WidgetProps) {
     return Array.from(map.entries());
   }, [visibleItems, config.groupByCategory]);
 
+  if (isConfiguring) {
+    return (
+      <div className="flex flex-col h-full" data-testid="widget-pinned-config">
+        <div className="flex-1 overflow-auto space-y-4 p-3">
+          <h4 className="text-sm font-medium">Display options</h4>
+
+          <div className="space-y-1.5">
+            <Label className="text-xs">Sort by</Label>
+            <Select
+              value={config.sortOrder}
+              onValueChange={(v) => updateConfig({ sortOrder: v as PinnedConfig["sortOrder"] })}
+            >
+              <SelectTrigger className="h-8 text-xs" data-testid="select-pinned-sort">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="manual">Manual order</SelectItem>
+                <SelectItem value="newest">Newest first</SelectItem>
+                <SelectItem value="oldest">Oldest first</SelectItem>
+                <SelectItem value="az">A–Z</SelectItem>
+                <SelectItem value="byType">By type</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label className="text-xs">Max visible</Label>
+            <Select
+              value={String(config.maxVisible)}
+              onValueChange={(v) =>
+                updateConfig({ maxVisible: Number(v) as PinnedConfig["maxVisible"] })
+              }
+            >
+              <SelectTrigger className="h-8 text-xs" data-testid="select-pinned-max">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="5">5</SelectItem>
+                <SelectItem value="10">10</SelectItem>
+                <SelectItem value="0">All</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-3 pt-1">
+            <label className="flex items-center justify-between gap-2 cursor-pointer">
+              <span className="text-xs">Group by category</span>
+              <Switch
+                checked={config.groupByCategory}
+                onCheckedChange={(v) => updateConfig({ groupByCategory: v })}
+                data-testid="switch-pinned-group"
+              />
+            </label>
+            <label className="flex items-center justify-between gap-2 cursor-pointer">
+              <span className="text-xs">Show type label</span>
+              <Switch
+                checked={config.showTypeLabel}
+                onCheckedChange={(v) => updateConfig({ showTypeLabel: v })}
+                data-testid="switch-pinned-type"
+              />
+            </label>
+            <label className="flex items-center justify-between gap-2 cursor-pointer">
+              <span className="text-xs">Show date pinned</span>
+              <Switch
+                checked={config.showDatePinned}
+                onCheckedChange={(v) => updateConfig({ showDatePinned: v })}
+                data-testid="switch-pinned-date"
+              />
+            </label>
+            <label className="flex items-center justify-between gap-2 cursor-pointer">
+              <span className="text-xs">Compact mode</span>
+              <Switch
+                checked={config.compactMode}
+                onCheckedChange={(v) => updateConfig({ compactMode: v })}
+                data-testid="switch-pinned-compact"
+              />
+            </label>
+          </div>
+        </div>
+
+        <div className="flex justify-end gap-2 border-t border-border p-2">
+          <Button
+            size="sm"
+            onClick={() => onCloseConfig?.()}
+            className="h-7 px-3 text-xs"
+            data-testid="button-pinned-config-done"
+          >
+            Done
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   if (!currentProject) {
     return (
       <div className="p-4">
@@ -497,15 +506,7 @@ export default function PinnedItemsWidget({ widget, onUpdate }: WidgetProps) {
 
   return (
     <div className="flex flex-col h-full" data-testid="widget-pinned-items">
-      <div className="flex items-start gap-2 px-3 pt-3 pb-2">
-        <div className="min-w-0 flex-1">
-          <h3 className="text-sm font-semibold text-[hsl(var(--bp-card-foreground))] truncate">
-            Pinned Items
-          </h3>
-          <p className="text-xs text-[hsl(var(--bp-muted))] truncate">
-            Quick access to saved items
-          </p>
-        </div>
+      <div className="flex items-center justify-end gap-2 px-3 pt-3 pb-2">
         <div className="flex items-center gap-1 shrink-0">{headerRight}</div>
       </div>
 
