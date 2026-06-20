@@ -8,7 +8,6 @@ import {
   isToday,
   format,
   differenceInDays,
-  eachWeekOfInterval,
 } from "date-fns";
 import type { ScheduleItem, Note } from "@shared/schema";
 import type { WidgetProps } from "@/types/widgets";
@@ -184,6 +183,10 @@ export default function ProgrammeScheduleWidget({
     config.ganttZoom === "2w" ? 14 : config.ganttZoom === "6w" ? 42 : 28;
   const ganttStart = startOfDay(new Date());
   const ganttEnd = addDays(ganttStart, ganttDays - 1);
+  const ganttWeeks = Array.from(
+    { length: Math.ceil(ganttDays / 7) },
+    (_, i) => addDays(ganttStart, i * 7),
+  );
 
   const groupedItems = useMemo(() => {
     if (config.ganttGroupBy === "none")
@@ -449,6 +452,26 @@ export default function ProgrammeScheduleWidget({
 
   const rowH = config.compactMode ? "h-6" : "h-8";
 
+  const renderDayGrid = (withTint: boolean) => (
+    <div className="absolute inset-0 flex pointer-events-none" aria-hidden>
+      {Array.from({ length: ganttDays }, (_, i) => {
+        const day = addDays(ganttStart, i);
+        const weekend = day.getDay() === 0 || day.getDay() === 6;
+        return (
+          <div
+            key={i}
+            className={cn(
+              "h-full border-r last:border-r-0 border-[hsl(var(--bp-border)/0.5)]",
+              withTint && weekend && "bg-[hsl(var(--bp-muted)/0.05)]",
+              withTint && isToday(day) && "bg-[hsl(var(--bp-purple)/0.06)]",
+            )}
+            style={{ width: `${100 / ganttDays}%` }}
+          />
+        );
+      })}
+    </div>
+  );
+
   return (
     <div className="flex flex-col h-full -mt-1" data-testid="widget-programme">
       {/* Body */}
@@ -620,14 +643,12 @@ export default function ProgrammeScheduleWidget({
         </>
       ) : (
         <>
-          <div className="flex border-b border-[hsl(var(--bp-border))] bg-[hsl(var(--bp-subtle))]">
-            {eachWeekOfInterval({
-              start: ganttStart,
-              end: ganttEnd,
-            }).map((week) => (
+          <div className="relative flex border-b border-[hsl(var(--bp-border))] bg-[hsl(var(--bp-subtle))]">
+            {renderDayGrid(true)}
+            {ganttWeeks.map((week, wi) => (
               <div
-                key={week.toISOString()}
-                className="border-r border-[hsl(var(--bp-border))] px-2 py-1 text-[9px] text-muted-foreground"
+                key={wi}
+                className="relative px-2 py-1 text-[9px] text-muted-foreground"
                 style={{ width: `${(7 / ganttDays) * 100}%` }}
               >
                 {format(week, "d MMM")}
@@ -672,6 +693,7 @@ export default function ProgrammeScheduleWidget({
                         )}
                         data-testid={`gantt-item-${item.id}`}
                       >
+                        {renderDayGrid(true)}
                         <div
                           className="absolute inset-y-1.5 rounded-md flex items-center px-2 text-[9px] font-medium text-white overflow-hidden"
                           style={{
