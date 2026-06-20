@@ -26,3 +26,4 @@
 - [apiRequest returns parsed JSON](apirequest-returns-parsed-json.md) — never call .json()/.ok on apiRequest result; doing so throws → save looks failed in UI but server returns 200.
 - [Web queryClient stale defaults](query-client-stale-defaults.md) — global staleTime:Infinity means cross-device/tab views serve a stale cache; override staleTime:0 + refetch on open or a save clobbers newer remote state.
 - [Stale client after redeploy](stale-client-after-redeploy.md) — a "prod crashed" report with render-error + 404s on old hashed assets = stale browser tab on the previous build; check fix-is-ancestor-of-publish before re-fixing.
+- [Dev permission gating](dev-permission-gating.md) — in dev requirePermission is bypassed; "can't access X" = frontend effectivePermissions gate; admin bypass needs is_built_in=true, so a custom "General Manager" role with no perms = no access.
