@@ -188,7 +188,7 @@ export default function QuickNotesWidget(_: WidgetProps) {
           return (
             <div
               key={n.id}
-              className={`group flex ${rowAlign} gap-2 py-2 first:pt-0`}
+              className={`group/note flex ${rowAlign} gap-2 py-2 first:pt-0`}
               data-testid={`quicknote-${n.id}`}
             >
               {k === "todo" && (
@@ -260,7 +260,7 @@ export default function QuickNotesWidget(_: WidgetProps) {
                     <Button
                       size="icon"
                       variant="ghost"
-                      className="h-6 w-6 text-muted-foreground opacity-0 group-hover:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100"
+                      className="h-6 w-6 text-muted-foreground opacity-0 group-hover/note:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100"
                       title="More"
                       data-testid={`button-quicknote-menu-${n.id}`}
                     >
@@ -297,6 +297,13 @@ export default function QuickNotesWidget(_: WidgetProps) {
           if (draft.trim()) create.mutate({ kind, text: draft });
         }}
       >
+        <Input
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          placeholder={meta.placeholder}
+          className="h-8 text-sm flex-1"
+          data-testid="input-quicknote"
+        />
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button
@@ -310,7 +317,7 @@ export default function QuickNotesWidget(_: WidgetProps) {
               <KindIcon className="h-3.5 w-3.5" />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" side="top">
+          <DropdownMenuContent align="end" side="top">
             {(["text", "heading", "bullet", "todo"] as BlockKind[]).map((kk) => {
               const m = blockMeta(kk);
               const Ico = m.icon;
@@ -328,13 +335,6 @@ export default function QuickNotesWidget(_: WidgetProps) {
             })}
           </DropdownMenuContent>
         </DropdownMenu>
-        <Input
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          placeholder={meta.placeholder}
-          className="h-8 text-sm flex-1"
-          data-testid="input-quicknote"
-        />
         <Button
           type="submit"
           size="icon"
