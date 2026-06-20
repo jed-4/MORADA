@@ -19,7 +19,6 @@ import {
   GanttChart,
   FolderOpen,
   StickyNote,
-  Gauge,
   MailCheck,
   Pin,
 } from "lucide-react";
@@ -46,7 +45,6 @@ import WhoIsOnSiteWidget from "./WhoIsOnSiteWidget";
 import ProgrammeScheduleWidget from "./ProgrammeScheduleWidget";
 import ProjectDocumentsWidget from "./ProjectDocumentsWidget";
 import QuickNotesWidget from "./QuickNotesWidget";
-import ProjectHealthScoreWidget from "./ProjectHealthScoreWidget";
 import PinnedItemsWidget from "./PinnedItemsWidget";
 
 export const widgetRegistry: Record<string, WidgetDefinition> = {
@@ -281,18 +279,6 @@ export const widgetRegistry: Record<string, WidgetDefinition> = {
     accent: "amber",
     defaultColumns: 3,
     defaultRowSpan: 4,
-  },
-  healthScore: {
-    type: "healthScore",
-    name: "Project Health Score",
-    description: "Composite 0-100 score from budget, schedule and quality with month-over-month trend",
-    icon: Gauge,
-    component: ProjectHealthScoreWidget,
-    defaultSize: "md",
-    configurable: false,
-    accent: "green",
-    defaultColumns: 3,
-    defaultRowSpan: 2,
   },
   pinnedItems: {
     type: "pinnedItems",
