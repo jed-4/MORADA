@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import type { Budget } from "@shared/schema";
+import type { Budget, Project } from "@shared/schema";
 import type { WidgetProps, Widget } from "@/types/widgets";
 import { useProject } from "@/contexts/ProjectContext";
 import { useFinancialPermission } from "@/hooks/use-permission";
@@ -204,7 +204,8 @@ export default function ProjectBudgetVsActualWidget({
     { widthPct: Math.max(0, 100 - rawTargetPct), className: "bg-bp-coral/15" },
   ];
 
-  const completionPct = Math.min(100, Math.max(0, currentProject.percentComplete ?? 0));
+  const scheduleProgress = (currentProject as Project & { progress?: number | null }).progress;
+  const completionPct = Math.min(100, Math.max(0, scheduleProgress ?? 0));
 
   const useBullet = chartStyle === "bullet" && hasBudget;
 
@@ -269,7 +270,7 @@ export default function ProjectBudgetVsActualWidget({
               Build progress
             </span>
             <span className="font-medium text-bp-teal" data-testid="text-completion-pct">
-              {completionPct}%
+              {scheduleProgress == null ? "—" : `${completionPct}%`}
             </span>
           </div>
         </div>
