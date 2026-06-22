@@ -63,6 +63,11 @@ export interface ProjectMetricsData extends ContractMetrics {
   pendingVariations: number;
   approvedVariationValue: number;
   pendingVariationValue: number;
+  totalVariationValue: number;
+  activeVariations: number;
+  rejectedVariations: number;
+  actionRequiredVariations: number;
+  invoicedVariationValue: number;
   
   // Invoices Summary
   totalInvoices: number;
@@ -187,7 +192,20 @@ export function useProjectMetrics() {
     enabled: !!projectId,
   });
 
-  const isLoading = estimatesLoading || itemsLoading || billsLoading || variationsLoading || variationItemsLoading || invoicesLoading;
+  const { data: invoiceVariations = [], isLoading: invoiceVariationsLoading } = useQuery<
+    Array<{ variationId: string; invoiceId: string; invoiceNumber: string | null; claimPercent: number }>
+  >({
+    queryKey: ["/api/projects", projectId, "invoice-variations"],
+    queryFn: async () => {
+      if (!projectId) return [];
+      const response = await fetch(`/api/invoice-variations/by-project?projectId=${projectId}`, { credentials: "include" });
+      if (!response.ok) return [];
+      return response.json();
+    },
+    enabled: !!projectId,
+  });
+
+  const isLoading = estimatesLoading || itemsLoading || billsLoading || variationsLoading || variationItemsLoading || invoicesLoading || invoiceVariationsLoading;
 
   // Calculate metrics
   const calculateMetrics = (): ProjectMetricsData => {
@@ -237,6 +255,11 @@ export function useProjectMetrics() {
       pendingVariations: 0,
       approvedVariationValue: 0,
       pendingVariationValue: 0,
+      totalVariationValue: 0,
+      activeVariations: 0,
+      rejectedVariations: 0,
+      actionRequiredVariations: 0,
+      invoicedVariationValue: 0,
       totalInvoices: 0,
       paidInvoicesCount: 0,
       unpaidInvoices: 0,
@@ -297,10 +320,35 @@ export function useProjectMetrics() {
     // Variation status buckets (for counts + pending value)
     const approvedVariationsList = variations.filter(v => v.status === 'approved' || v.status === 'released');
     const pendingVariationsList = variations.filter(v => v.status === 'pending' || v.status === 'draft');
+    const rejectedVariationsList = variations.filter(v => v.status === 'rejected');
+    const actionVariationsList = variations.filter(v => v.status === 'action');
+    // "Active" = everything that still counts toward the contract (i.e. not rejected).
+    const activeVariationsList = variations.filter(v => v.status !== 'rejected');
 
     const approvedChangeOrders = contractMetrics.approvedVariationsIncGst;
     const pendingVariationValue = pendingVariationsList.reduce((sum, v) => {
       return sum + (v.totalIncTax || 0);
+    }, 0) / 100;
+
+    // Inc-GST value in cents, preferring totalAmount (inc-GST) and falling back
+    // to totalIncTax so legacy rows that only populate one field still count.
+    const variationIncGstCents = (v: any) => (v?.totalAmount ?? v?.totalIncTax) || 0;
+
+    // Combined value of all non-rejected variations (inc GST).
+    const totalVariationValue = activeVariationsList.reduce((sum, v) => {
+      return sum + variationIncGstCents(v);
+    }, 0) / 100;
+
+    // How much approved variation value has been raised on a client invoice.
+    // Each invoice_variations row claims a percentage of a variation's value.
+    const variationValueById = new Map<string, number>();
+    for (const v of variations) {
+      variationValueById.set(v.id, variationIncGstCents(v));
+    }
+    const invoicedVariationValue = invoiceVariations.reduce((sum, row) => {
+      const value = variationValueById.get(row.variationId) || 0;
+      const pct = typeof row.claimPercent === 'number' ? row.claimPercent : 100;
+      return sum + (value * pct) / 100;
     }, 0) / 100;
 
     // Change order costs (without markup)
@@ -420,6 +468,11 @@ export function useProjectMetrics() {
       pendingVariations: pendingVariationsList.length,
       approvedVariationValue: approvedChangeOrders,
       pendingVariationValue,
+      totalVariationValue,
+      activeVariations: activeVariationsList.length,
+      rejectedVariations: rejectedVariationsList.length,
+      actionRequiredVariations: actionVariationsList.length,
+      invoicedVariationValue,
       totalInvoices: clientInvoices.length,
       paidInvoicesCount: paidInvoicesList.length,
       unpaidInvoices: unpaidInvoicesList.length,
