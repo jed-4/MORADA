@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import { Link } from "wouter";
 import { useQueries, useQuery } from "@tanstack/react-query";
 import { type ColumnDef } from "@tanstack/react-table";
-import { AlertCircle } from "lucide-react";
+import { AlertCircle, User } from "lucide-react";
 import { DataTable, type DataTableColumnMeta } from "@/components/data-table/DataTable";
 import { Badge } from "@/components/ui/badge";
 import { formatCurrency } from "@/lib/formatters";
@@ -11,6 +11,7 @@ import type { ContractMetrics } from "@shared/projectMetrics";
 interface Project {
   id: string;
   name: string;
+  clientName?: string | null;
   projectStatus: string | null;
   projectSubStatus?: string | null;
   currentSystemPhase?: string | null;
@@ -20,6 +21,7 @@ interface Project {
 export interface ProjectInfoRow {
   id: string;
   name: string;
+  clientName: string | null;
   projectStatus: string | null;
   projectSubStatus: string | null;
   currentSystemPhase: string | null;
@@ -69,6 +71,25 @@ export const PROJECT_INFO_COLUMN_REGISTRY: ProjectInfoColumn[] = [
     ),
     size: 280,
     meta: { defaultWidth: 280, headerLabel: "Project" },
+  },
+  {
+    id: "client",
+    header: "Client",
+    accessorFn: (r) => r.clientName ?? "",
+    cell: ({ row }) =>
+      row.original.clientName ? (
+        <span
+          className="flex items-center gap-1.5 min-w-0 text-xs"
+          data-testid={`text-client-${row.original.id}`}
+        >
+          <User className="h-3 w-3 text-muted-foreground shrink-0" />
+          <span className="truncate">{row.original.clientName}</span>
+        </span>
+      ) : (
+        <span className="text-muted-foreground/40 text-xs">—</span>
+      ),
+    size: 180,
+    meta: { defaultWidth: 180, headerLabel: "Client" },
   },
   {
     id: "status",
@@ -179,6 +200,7 @@ export default function ProjectInfoTab() {
         return {
           id: p.id,
           name: p.name,
+          clientName: p.clientName ?? null,
           projectStatus: p.projectStatus,
           projectSubStatus: p.projectSubStatus ?? null,
           currentSystemPhase: p.currentSystemPhase ?? null,

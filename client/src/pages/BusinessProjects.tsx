@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
-import { Plus, LayoutGrid, List, Eye, Layers, Edit3, Columns3, EyeOff, BookOpen } from "lucide-react";
+import { Plus, LayoutGrid, List, Eye, Layers, Edit3, Columns3, EyeOff, BookOpen, User } from "lucide-react";
 import { type Project, type FieldOption } from "@shared/schema";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { ProjectBoard, type ViewPreferences } from "@/components/ProjectBoard";
@@ -266,6 +266,24 @@ export default function BusinessProjects() {
       },
       size: 300,
       meta: { defaultWidth: 300, headerLabel: "Project" } satisfies DataTableColumnMeta,
+    },
+    {
+      id: "client",
+      header: "Client",
+      accessorFn: (p) => (p as Project & { clientName?: string | null }).clientName || "",
+      cell: ({ row }) => {
+        const clientName = (row.original as Project & { clientName?: string | null }).clientName;
+        return clientName ? (
+          <span className="flex items-center gap-1.5 min-w-0" data-testid={`cell-client-${row.original.id}`}>
+            <User className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+            <span className="truncate">{clientName}</span>
+          </span>
+        ) : (
+          <span className="text-muted-foreground" data-testid={`cell-client-${row.original.id}`}>—</span>
+        );
+      },
+      size: 180,
+      meta: { defaultWidth: 180, headerLabel: "Client" } satisfies DataTableColumnMeta,
     },
     {
       id: "location",

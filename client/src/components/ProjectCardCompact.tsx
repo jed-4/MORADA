@@ -124,7 +124,7 @@ export default function ProjectCardCompact({
   const costValue = revisedContractPriceCents ?? project.contractPrice ?? project.clientBudget ?? project.budget;
 
   const showBudgetRow = (visibleFields.budget && !!costValue) || (visibleFields.progress && project.progress != null);
-  const showClientRow = (visibleFields.client && !!project.clientName) || (visibleFields.foreman);
+  const showClientRow = !!project.clientName || visibleFields.foreman;
   const showBadgeRow = (groupBy === "phase" && !!statusOption) || (visibleFields.dueDate && !!project.endDate);
 
   const hoverClass = isHovered
@@ -174,7 +174,7 @@ export default function ProjectCardCompact({
         {showClientRow && (
           <div className="flex items-center justify-between gap-1.5">
             <span className="text-table text-muted-foreground truncate flex-1 min-w-0">
-              {visibleFields.client && project.clientName ? project.clientName : ''}
+              {project.clientName ? project.clientName : ''}
             </span>
             {visibleFields.foreman && project.foreman ? (
               <Avatar className="h-5 w-5 border border-border/50 shrink-0">
