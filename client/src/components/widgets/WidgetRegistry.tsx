@@ -125,7 +125,7 @@ export const widgetRegistry: Record<string, WidgetDefinition> = {
     icon: FileText,
     component: InvoicesSummaryWidget,
     defaultSize: "md",
-    configurable: false,
+    configurable: true,
   },
   quickActions: {
     type: "quickActions",

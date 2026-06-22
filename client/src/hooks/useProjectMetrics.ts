@@ -74,6 +74,16 @@ export interface ProjectMetricsData extends ContractMetrics {
   paidInvoicesCount: number;
   unpaidInvoices: number;
   overdueInvoices: number;
+  // Per-status dollar amounts (Invoices Summary widget)
+  draftAmount: number;
+  sentAmount: number;
+  partialAmount: number;
+  draftInvoicesCount: number;
+  sentInvoicesCount: number;
+  partialInvoicesCount: number;
+  nonCancelledInvoicesCount: number;
+  overdueAmount: number;
+  oldestOverdueDays: number;
   
   // Area Metrics (if project has area)
   pricePerArea?: number;
@@ -264,6 +274,15 @@ export function useProjectMetrics() {
       paidInvoicesCount: 0,
       unpaidInvoices: 0,
       overdueInvoices: 0,
+      draftAmount: 0,
+      sentAmount: 0,
+      partialAmount: 0,
+      draftInvoicesCount: 0,
+      sentInvoicesCount: 0,
+      partialInvoicesCount: 0,
+      nonCancelledInvoicesCount: 0,
+      overdueAmount: 0,
+      oldestOverdueDays: 0,
     };
 
     if (!projectId) return defaults;
@@ -388,19 +407,40 @@ export function useProjectMetrics() {
     const grossMargin = revisedContractPrice > 0 ? (grossProfit / revisedContractPrice) * 100 : 0;
 
     // Client Invoices calculations
-    const paidInvoicesList = clientInvoices.filter(inv => inv.status === 'paid');
-    const unpaidInvoicesList = clientInvoices.filter(inv => inv.status !== 'paid' && inv.status !== 'cancelled');
-    const overdueInvoicesList = clientInvoices.filter(inv => {
-      if (inv.status === 'paid' || inv.status === 'cancelled') return false;
+    // Invoice rows come from /api/client-invoices (raw ClientInvoice rows), so
+    // money lives in totalAmount / paidAmount / balanceAmount (all in cents).
+    const invTotalCents = (inv: ClientInvoice) => inv.totalAmount || 0;
+    const invBalanceCents = (inv: ClientInvoice) =>
+      inv.balanceAmount || ((inv.totalAmount || 0) - (inv.paidAmount || 0));
+
+    const nonCancelledInvoices = clientInvoices.filter(inv => inv.status !== 'cancelled');
+    const paidInvoicesList = nonCancelledInvoices.filter(inv => inv.status === 'paid');
+    const partialInvoicesList = nonCancelledInvoices.filter(inv => inv.status === 'partial');
+    const draftInvoicesList = nonCancelledInvoices.filter(inv => inv.status === 'draft');
+    // "Outstanding" = sent (incl. explicitly-overdue) but not yet part/fully paid.
+    const sentInvoicesList = nonCancelledInvoices.filter(inv => inv.status === 'sent' || inv.status === 'overdue');
+    const unpaidInvoicesList = nonCancelledInvoices.filter(inv => inv.status !== 'paid');
+    // Overdue = an issued (non-draft, non-paid) invoice past its due date.
+    // Drafts are never "overdue" since they haven't been sent to the client.
+    const overdueInvoicesList = nonCancelledInvoices.filter(inv => {
+      if (inv.status === 'paid' || inv.status === 'draft') return false;
       if (!inv.dueDate) return false;
       return new Date(inv.dueDate) < now;
     });
 
-    const invoicedAmount = clientInvoices
-      .filter(inv => inv.status !== 'cancelled')
-      .reduce((sum, inv) => sum + (inv.totalIncTax || 0), 0) / 100;
+    const invoicedAmount = nonCancelledInvoices.reduce((sum, inv) => sum + invTotalCents(inv), 0) / 100;
+    const paidInvoicesAmount = paidInvoicesList.reduce((sum, inv) => sum + invTotalCents(inv), 0) / 100;
+    const partialAmount = partialInvoicesList.reduce((sum, inv) => sum + invTotalCents(inv), 0) / 100;
+    const draftAmount = draftInvoicesList.reduce((sum, inv) => sum + invTotalCents(inv), 0) / 100;
+    const sentAmount = sentInvoicesList.reduce((sum, inv) => sum + invTotalCents(inv), 0) / 100;
+    const overdueAmount = overdueInvoicesList.reduce((sum, inv) => sum + invBalanceCents(inv), 0) / 100;
 
-    const paidInvoicesAmount = paidInvoicesList.reduce((sum, inv) => sum + (inv.totalIncTax || 0), 0) / 100;
+    let oldestOverdueDays = 0;
+    for (const inv of overdueInvoicesList) {
+      if (!inv.dueDate) continue;
+      const days = Math.floor((now.getTime() - new Date(inv.dueDate).getTime()) / 86400000);
+      if (days > oldestOverdueDays) oldestOverdueDays = days;
+    }
 
     const invoicedPercentage = revisedContractPrice > 0 ? (invoicedAmount / revisedContractPrice) * 100 : 0;
     const paidInvoicesPercentage = revisedContractPrice > 0 ? (paidInvoicesAmount / revisedContractPrice) * 100 : 0;
@@ -477,6 +517,15 @@ export function useProjectMetrics() {
       paidInvoicesCount: paidInvoicesList.length,
       unpaidInvoices: unpaidInvoicesList.length,
       overdueInvoices: overdueInvoicesList.length,
+      draftAmount,
+      sentAmount,
+      partialAmount,
+      draftInvoicesCount: draftInvoicesList.length,
+      sentInvoicesCount: sentInvoicesList.length,
+      partialInvoicesCount: partialInvoicesList.length,
+      nonCancelledInvoicesCount: nonCancelledInvoices.length,
+      overdueAmount,
+      oldestOverdueDays,
       pricePerArea,
       costPerArea,
     };
