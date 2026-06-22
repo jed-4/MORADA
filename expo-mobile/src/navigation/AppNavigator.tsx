@@ -10,6 +10,7 @@ import { apiFetch } from '../services/api';
 import { navigationRef, navigateFromPush } from './navigationRef';
 import { setAppBadgeCount } from '../services/pushNotifications';
 import { useTheme } from '../theme';
+import { navigationIntegration } from '../lib/sentry';
 
 import { useAuth } from '../contexts/AuthContext';
 import LoginScreen from '../screens/LoginScreen';
@@ -302,6 +303,9 @@ export default function AppNavigator() {
   return (
     <NavigationContainer
       ref={navigationRef}
+      onReady={() => {
+        navigationIntegration.registerNavigationContainer(navigationRef);
+      }}
       theme={{
         dark: isDark,
         colors: {

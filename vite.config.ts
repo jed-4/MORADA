@@ -2,6 +2,11 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import path from "path";
 import runtimeErrorOverlay from "@replit/vite-plugin-runtime-error-modal";
+import { sentryVitePlugin } from "@sentry/vite-plugin";
+
+// Source-map upload is gated on SENTRY_AUTH_TOKEN so local/dev builds without
+// the token still succeed. Must be the last plugin per Sentry's guidance.
+const sentryEnabled = Boolean(process.env.SENTRY_AUTH_TOKEN);
 
 export default defineConfig({
   plugins: [
@@ -13,6 +18,15 @@ export default defineConfig({
           await import("@replit/vite-plugin-cartographer").then((m) =>
             m.cartographer(),
           ),
+        ]
+      : []),
+    ...(sentryEnabled
+      ? [
+          sentryVitePlugin({
+            org: process.env.SENTRY_ORG,
+            project: process.env.SENTRY_PROJECT,
+            authToken: process.env.SENTRY_AUTH_TOKEN,
+          }),
         ]
       : []),
   ],
@@ -27,6 +41,8 @@ export default defineConfig({
   build: {
     outDir: path.resolve(import.meta.dirname, "dist/public"),
     emptyOutDir: true,
+    // Emit source maps only when uploading to Sentry, so normal builds stay lean.
+    sourcemap: sentryEnabled,
     rollupOptions: {
       output: {
         manualChunks(id) {

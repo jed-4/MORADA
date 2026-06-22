@@ -28,6 +28,7 @@ module.exports = {
     extra: {
       apiUrl: process.env.EXPO_PUBLIC_API_URL || "https://buildpro4.replit.app",
       googleClientId: process.env.GOOGLE_OAUTH_CLIENT_ID || process.env.GOOGLE_CLIENT_ID || "",
+      sentryDsn: process.env.EXPO_PUBLIC_SENTRY_DSN || "",
       eas: {
         projectId: "d07cc13c-7e47-4be7-bea4-57c7186e65fe",
       },
@@ -43,6 +44,13 @@ module.exports = {
         {
           photosPermission: "BuildPro needs access to your photos to attach images to notes.",
           cameraPermission: "BuildPro needs access to your camera to take photos for notes.",
+        },
+      ],
+      [
+        "@sentry/react-native/expo",
+        {
+          organization: process.env.SENTRY_ORG,
+          project: process.env.SENTRY_PROJECT,
         },
       ],
     ],

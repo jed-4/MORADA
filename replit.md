@@ -8,6 +8,7 @@ BuildPro is a project management software for Australian residential builders, s
 - **Typecheck**: `npm run typecheck`
 - **DB Migrations**: `drizzle-kit push:pg` (additive migrations only, never destructive in deploy build)
 - **Environment Variables**: `DATABASE_URL`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `SESSION_SECRET`, `RESEND_API_KEY`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_BUCKET_NAME`, `S3_ENDPOINT`
+- **Sentry (optional error monitoring)**: `SENTRY_DSN` (Express backend), `VITE_SENTRY_DSN` (web app), `EXPO_PUBLIC_SENTRY_DSN` (Expo mobile), plus `SENTRY_AUTH_TOKEN` + `SENTRY_ORG` + `SENTRY_PROJECT` (build-time source-map upload only). All Sentry init is a no-op when its DSN is absent, so the app runs cleanly without them.
 
 ## Stack
 - **Frontend**: React 18, TypeScript, Vite, Wouter, TanStack Query, Radix UI, shadcn/ui, Tailwind CSS

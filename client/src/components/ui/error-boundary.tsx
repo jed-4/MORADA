@@ -1,5 +1,6 @@
 import { Component, type ReactNode } from "react";
 import { AlertCircle, RefreshCw } from "lucide-react";
+import * as Sentry from "@sentry/react";
 import { Button } from "@/components/ui/button";
 import { isDynamicImportError, attemptChunkReload } from "@/lib/chunk-reload";
 
@@ -38,6 +39,10 @@ export class ErrorBoundary extends Component<Props, State> {
       return;
     }
     console.error("[ErrorBoundary] Caught render error:", error, info.componentStack);
+    Sentry.captureException(error, {
+      tags: { context: this.props.context },
+      contexts: { react: { componentStack: info.componentStack } },
+    });
     // Forward render errors to the server so they show up in deployment logs.
     // React swallows render-time throws into this boundary, so without this they
     // never reach the inline window.onerror reporter in index.html.

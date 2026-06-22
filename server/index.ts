@@ -1,3 +1,7 @@
+// Must be the very first import so Sentry can instrument the runtime before
+// any other module loads. No-op when SENTRY_DSN is unset.
+import { sentryEnabled } from "./instrument";
+import * as Sentry from "@sentry/node";
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
@@ -89,6 +93,14 @@ app.use((req, res, next) => {
 
 (async () => {
   const server = await registerRoutes(app);
+
+  // Register Sentry's Express error handler AFTER all routes/controllers but
+  // BEFORE our own error middleware, so it captures the error and then hands
+  // control back to the custom handler (which preserves the JSON response and
+  // SPA-shell fallback below). No-op when Sentry is not configured.
+  if (sentryEnabled) {
+    Sentry.setupExpressErrorHandler(app);
+  }
 
   app.use((err: any, req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;

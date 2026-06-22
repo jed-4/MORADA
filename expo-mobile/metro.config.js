@@ -1,7 +1,8 @@
-const { getDefaultConfig } = require('expo/metro-config');
+const { getSentryExpoConfig } = require('@sentry/react-native/metro');
 const path = require('path');
 
-const config = getDefaultConfig(__dirname);
+// Sentry's helper wraps Expo's default Metro config so source maps work.
+const config = getSentryExpoConfig(__dirname);
 
 const originalResolveRequest = config.resolver.resolveRequest;
 

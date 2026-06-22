@@ -1,10 +1,31 @@
 import { Component, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
+import * as Sentry from "@sentry/react";
 import App from "./App";
 import "./index.css";
 import { installChunkReloadHandlers, isDynamicImportError, attemptChunkReload } from "./lib/chunk-reload";
 
 installChunkReloadHandlers();
+
+// Initialize Sentry as early as possible, before the app mounts. This is a
+// no-op when VITE_SENTRY_DSN is unset, so local dev without a DSN runs cleanly.
+const sentryDsn = import.meta.env.VITE_SENTRY_DSN as string | undefined;
+if (sentryDsn) {
+  Sentry.init({
+    dsn: sentryDsn,
+    environment: import.meta.env.MODE,
+    release: import.meta.env.VITE_SENTRY_RELEASE as string | undefined,
+    integrations: [
+      Sentry.browserTracingIntegration(),
+      // Session Replay with privacy defaults: never record real text/inputs.
+      Sentry.replayIntegration({ maskAllText: true, maskAllInputs: true }),
+    ],
+    // Performance tracing: sample everything in dev, a fraction in prod.
+    tracesSampleRate: import.meta.env.PROD ? 0.1 : 1.0,
+    replaysSessionSampleRate: import.meta.env.PROD ? 0.1 : 0,
+    replaysOnErrorSampleRate: 1.0,
+  });
+}
 
 class RootErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
   state = { error: null as Error | null };
@@ -18,6 +39,9 @@ class RootErrorBoundary extends Component<{ children: ReactNode }, { error: Erro
       return;
     }
     console.error("[RootErrorBoundary] React tree crashed:", error, info.componentStack);
+    Sentry.captureException(error, {
+      contexts: { react: { componentStack: info.componentStack } },
+    });
   }
   render() {
     if (this.state.error) {
