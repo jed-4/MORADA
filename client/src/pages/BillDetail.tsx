@@ -3132,7 +3132,7 @@ export default function BillDetail() {
                             <SelectItem value="none">None</SelectItem>
                             {allowances.map((allowance) => (
                               <SelectItem key={allowance.id} value={allowance.id}>
-                                {allowance.description} ({allowance.itemType})
+                                {allowance.name || allowance.description} ({allowance.itemType})
                               </SelectItem>
                             ))}
                           </SelectContent>
