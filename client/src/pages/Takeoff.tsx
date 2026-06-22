@@ -5,8 +5,9 @@ import TakeoffPlansTab from "@/components/takeoff/TakeoffPlansTab";
 import TakeoffMeasurementsTab from "@/components/takeoff/TakeoffMeasurementsTab";
 import TakeoffPlanViewer from "@/components/takeoff/TakeoffPlanViewer";
 
-export default function Takeoff() {
-  const { projectId } = useParams<{ projectId?: string }>();
+export default function Takeoff({ projectId: projectIdProp }: { projectId?: string } = {}) {
+  const params = useParams<{ projectId?: string }>();
+  const projectId = projectIdProp ?? params.projectId;
   const [activeTab, setActiveTab] = useState<"plans" | "measurements">("plans");
   const [viewingPlan, setViewingPlan] = useState<{ plan: TakeoffPlan; page: number } | null>(null);
 

@@ -138,6 +138,7 @@ import { EstimateNotesPopover } from "@/components/estimates/EstimateNotesPopove
 import { EstimateChecklistPopover } from "@/components/estimates/EstimateChecklistPopover";
 import EstimateEnotes from "@/components/estimates/EstimateEnotes";
 import { LabourEstimatePanel } from "@/pages/LabourEstimate";
+import Takeoff from "@/pages/Takeoff";
 
 interface EstimateDetailParams {
   id?: string;
@@ -461,7 +462,7 @@ export default function EstimateDetail() {
   // Inline editing state
   const [isEditingName, setIsEditingName] = useState(false);
   const [isSummaryExpanded, setIsSummaryExpanded] = useState(true);
-  const [estimateTab, setEstimateTab] = useState<'estimate' | 'enotes' | 'labour'>('estimate');
+  const [estimateTab, setEstimateTab] = useState<'estimate' | 'enotes' | 'labour' | 'takeoff'>('estimate');
   const [editingName, setEditingName] = useState("");
   const [isEditingMarkup, setIsEditingMarkup] = useState(false);
   const [editingMarkup, setEditingMarkup] = useState("");
@@ -5518,10 +5519,13 @@ export default function EstimateDetail() {
             </button>
           ))}
           <button
-            disabled
-            className="px-4 py-3 text-sm font-medium border-b-2 border-transparent text-muted-foreground/40 cursor-not-allowed"
-            title="Takeoff — coming soon"
-            data-testid="tab-takeoff-disabled"
+            onClick={() => setEstimateTab('takeoff')}
+            className={
+              estimateTab === 'takeoff'
+                ? 'px-4 py-3 text-sm font-semibold border-b-2 border-primary text-primary transition-colors'
+                : 'px-4 py-3 text-sm font-medium border-b-2 border-transparent text-muted-foreground hover:text-foreground transition-colors'
+            }
+            data-testid="tab-takeoff"
           >
             Takeoff
           </button>
@@ -5553,6 +5557,14 @@ export default function EstimateDetail() {
         <div className={estimateTab !== 'labour' ? 'hidden' : 'flex-1 flex flex-col min-h-0'}>
           {project?.id ? (
             <LabourEstimatePanel projectId={project.id} />
+          ) : (
+            <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm">Loading project…</div>
+          )}
+        </div>
+
+        <div className={estimateTab !== 'takeoff' ? 'hidden' : 'flex-1 flex flex-col min-h-0'}>
+          {project?.id ? (
+            <Takeoff projectId={project.id} />
           ) : (
             <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm">Loading project…</div>
           )}

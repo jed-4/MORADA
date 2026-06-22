@@ -100,7 +100,6 @@ const sections: Record<Exclude<SectionId, "projects" | "business">, { label: str
       { title: "Messages", url: "/messages", icon: MessageSquare },
       { title: "Minutes", url: "/minutes", icon: ClipboardList },
       { title: "Notes", url: "/notes", icon: FileText },
-      { title: "Take off", url: "/takeoff", icon: Calculator },
       { title: "Estimates", url: "/estimates", icon: FileBarChart },
       { title: "Proposals", url: "/proposals", icon: File },
     ],
@@ -174,6 +173,37 @@ const sections: Record<Exclude<SectionId, "projects" | "business">, { label: str
 
 const sectionOrder: SectionId[] = ["projects", "system"];
 const favoriteSections: SectionId[] = ["user", "project", "management", "finance"];
+
+// Flat, compact project navigation order. Each entry keeps its source section
+// so the favorites system (keyed by section + url) keeps working after the
+// "Project"/"Management"/"Finance" headings are merged into one list.
+type ProjectFlatSection = "project" | "management" | "finance";
+const projectFlatOrder: { section: ProjectFlatSection; title: string }[] = [
+  { section: "project", title: "Overview" },
+  { section: "project", title: "Messages" },
+  { section: "project", title: "Minutes" },
+  { section: "project", title: "Notes" },
+  { section: "project", title: "Estimates" },
+  { section: "project", title: "Proposals" },
+  { section: "finance", title: "Bills" },
+  { section: "finance", title: "Budget" },
+  { section: "management", title: "Scope" },
+  { section: "management", title: "Schedule" },
+  { section: "management", title: "Tasks" },
+  { section: "management", title: "Checklists" },
+  { section: "management", title: "RFQs" },
+  { section: "management", title: "Selections" },
+  { section: "management", title: "Allowances" },
+  { section: "management", title: "Purchase Orders" },
+  { section: "management", title: "Variations" },
+  { section: "management", title: "Client Invoices" },
+  { section: "management", title: "Defects" },
+  { section: "management", title: "Site Diary" },
+  { section: "management", title: "Timesheets" },
+  { section: "management", title: "Files" },
+  { section: "management", title: "Team" },
+  { section: "management", title: "RFIs" },
+];
 
 
 const HOVER_DELAY_MS = 300;
@@ -1061,59 +1091,49 @@ export function SidebarNav() {
                   <ProjectSwitcher compact />
                 </div>
                 <ScrollArea className="flex-1">
-                  <div className={isMobile ? "p-2" : "p-1.5"}>
-                    {(["project", "management", "finance"] as const).map(sectionId => {
-                      const sec = dynamicSections[sectionId];
+                  <div className={isMobile ? "p-2 space-y-0.5" : "p-1.5 space-y-px"}>
+                    {projectFlatOrder.map(({ section: sectionId, title }) => {
+                      const item = dynamicSections[sectionId].items.find(i => i.title === title);
+                      if (!item) return null;
+                      const url = getItemUrl(sectionId, item);
+                      // Overview (empty baseUrl) must match exactly so it doesn't
+                      // light up on every project subpage. Other items match nested
+                      // routes via the trailing "/" guard.
+                      const isActive = item.url === ""
+                        ? location === url
+                        : location === url || (url !== "/" && location.startsWith(url + "/"));
+                      const itemIsFavorite = isFavorite(sectionId, url);
+                      const projectIdForFav = currentProject && !currentProject.isBusiness ? currentProject.id : undefined;
                       return (
-                        <div key={sectionId}>
-                          <p className="text-label uppercase tracking-wide font-medium text-muted-foreground px-2 pt-2 pb-0.5 select-none">
-                            {sec.label}
-                          </p>
-                          {sec.items.map((item, index) => {
-                            const url = getItemUrl(sectionId, item);
-                            // Overview (empty baseUrl) must match exactly so it doesn't
-                            // light up on every project subpage. Other items match nested
-                            // routes via the trailing "/" guard.
-                            const isActive = item.url === ""
-                              ? location === url
-                              : location === url || (url !== "/" && location.startsWith(url + "/"));
-                            const isFocused = focusedItemIndex === index;
-                            const itemIsFavorite = isFavorite(sectionId, url);
-                            const projectIdForFav = currentProject && !currentProject.isBusiness ? currentProject.id : undefined;
-                            return (
-                              <div key={item.title} className="group flex items-center">
-                                <button
-                                  onClick={() => handleNavClick(url)}
-                                  className={cn(
-                                    "flex items-center flex-1 rounded-md transition-colors",
-                                    "hover-elevate active-elevate-2",
-                                    isMobile ? "gap-3 px-3 py-3 text-sm" : "gap-2 px-2 py-1.5 text-xs",
-                                    isActive
-                                      ? "bg-primary/10 text-primary font-medium"
-                                      : "text-muted-foreground hover:text-foreground",
-                                    isFocused && "ring-2 ring-primary/50 bg-muted/50"
-                                  )}
-                                >
-                                  <item.icon className={isMobile ? "h-5 w-5 flex-shrink-0" : "h-3.5 w-3.5 flex-shrink-0"} />
-                                  <span className="flex-1 text-left">{item.title}</span>
-                                </button>
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    toggleFavorite(sectionId, item, getIconName(item), url, projectIdForFav);
-                                  }}
-                                  className={cn(
-                                    "p-1 rounded transition-opacity",
-                                    itemIsFavorite
-                                      ? "text-yellow-500 opacity-100"
-                                      : "text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-yellow-500"
-                                  )}
-                                >
-                                  <Star className={cn("h-3 w-3", itemIsFavorite && "fill-current")} />
-                                </button>
-                              </div>
-                            );
-                          })}
+                        <div key={`${sectionId}-${item.title}`} className="group flex items-center">
+                          <button
+                            onClick={() => handleNavClick(url)}
+                            className={cn(
+                              "flex items-center flex-1 rounded-md transition-colors",
+                              "hover-elevate active-elevate-2",
+                              isMobile ? "gap-3 px-3 py-2.5 text-sm" : "gap-2 px-2 py-1 text-xs",
+                              isActive
+                                ? "bg-primary/10 text-primary font-medium"
+                                : "text-muted-foreground hover:text-foreground"
+                            )}
+                          >
+                            <item.icon className={isMobile ? "h-5 w-5 flex-shrink-0" : "h-3.5 w-3.5 flex-shrink-0"} />
+                            <span className="flex-1 text-left">{item.title}</span>
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleFavorite(sectionId, item, getIconName(item), url, projectIdForFav);
+                            }}
+                            className={cn(
+                              "p-1 rounded transition-opacity",
+                              itemIsFavorite
+                                ? "text-yellow-500 opacity-100"
+                                : "text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-yellow-500"
+                            )}
+                          >
+                            <Star className={cn("h-3 w-3", itemIsFavorite && "fill-current")} />
+                          </button>
                         </div>
                       );
                     })}
