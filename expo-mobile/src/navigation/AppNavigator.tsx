@@ -18,6 +18,7 @@ import DashboardScreen from '../screens/DashboardScreen';
 import BusinessDashboardScreen from '../screens/BusinessDashboardScreen';
 import ProjectsScreen from '../screens/ProjectsScreen';
 import ProjectDetailScreen from '../screens/ProjectDetailScreen';
+import ClientDetailScreen from '../screens/ClientDetailScreen';
 import ProjectTasksScreen from '../screens/ProjectTasksScreen';
 import TasksScreen from '../screens/TasksScreen';
 import TimesheetsScreen from '../screens/TimesheetsScreen';
@@ -82,6 +83,11 @@ function ProjectsStack() {
         name="ProjectDetail"
         component={ProjectDetailScreen}
         options={({ route }: any) => ({ title: route.params?.projectName || 'Project' })}
+      />
+      <Stack.Screen
+        name="ClientDetail"
+        component={ClientDetailScreen}
+        options={({ route }: any) => ({ headerShown: true, title: route.params?.contactName || 'Client' })}
       />
       <Stack.Screen
         name="SiteDiary"

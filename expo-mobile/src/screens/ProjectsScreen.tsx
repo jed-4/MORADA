@@ -234,6 +234,16 @@ const colors = {
             )}
           </View>
 
+          {/* Client name */}
+          {!!item.clientName && (
+            <View style={[styles.cardRow, { marginTop: 3, justifyContent: 'flex-start' }]}>
+              <Ionicons name="person-outline" size={11} color={colors.secondary} style={{ marginRight: 4 }} />
+              <Text style={[styles.cardClient, { color: colors.secondary }]} numberOfLines={1}>
+                {item.clientName}
+              </Text>
+            </View>
+          )}
+
           {/* Row 2: Status chip + date */}
           <View style={[styles.cardRow, { marginTop: 6 }]}>
             <View style={[styles.chip, { backgroundColor: chip.bg }]}>
@@ -468,6 +478,11 @@ const styles = StyleSheet.create({
   cardValue: {
     fontSize: 13,
     fontWeight: '700',
+  },
+  cardClient: {
+    fontSize: 12,
+    fontWeight: '500',
+    flexShrink: 1,
   },
   cardDate: {
     fontSize: 11,

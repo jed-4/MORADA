@@ -442,13 +442,26 @@ const colors = {
           {!collapsed.projectInfo && (
             <View style={[styles.sectionCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
               {clientContact?.name && (
-                <View style={styles.infoRow}>
-                  <Ionicons name="person-outline" size={16} color={colors.secondary} />
+                <TouchableOpacity
+                  style={[styles.clientRow, { backgroundColor: theme.primaryLight, borderColor: colors.border }]}
+                  activeOpacity={0.6}
+                  onPress={() =>
+                    navigation.navigate('ClientDetail', {
+                      contactId: clientContact.id,
+                      contactName: clientContact.name,
+                    })
+                  }
+                >
+                  <View style={[styles.clientAvatar, { backgroundColor: colors.accent }]}>
+                    <Ionicons name="person" size={18} color="#FFFFFF" />
+                  </View>
                   <View style={styles.infoText}>
                     <Text style={[styles.infoLabel, { color: colors.secondary }]}>Client</Text>
-                    <Text style={[styles.infoValue, { color: colors.text }]}>{clientContact.name}</Text>
+                    <Text style={[styles.clientName, { color: colors.text }]}>{clientContact.name}</Text>
+                    <Text style={[styles.clientHint, { color: colors.accent }]}>Tap to view details</Text>
                   </View>
-                </View>
+                  <Ionicons name="chevron-forward" size={18} color={colors.accent} />
+                </TouchableOpacity>
               )}
               {project.location && (
                 <View style={styles.infoRow}>
@@ -864,6 +877,24 @@ const styles = StyleSheet.create({
   infoText: { flex: 1 },
   infoLabel: { fontSize: 11, fontWeight: '500', marginBottom: 2 },
   infoValue: { fontSize: 14 },
+  clientRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    padding: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    marginBottom: 16,
+  },
+  clientAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  clientName: { fontSize: 16, fontWeight: '700' },
+  clientHint: { fontSize: 11, fontWeight: '500', marginTop: 1 },
   emptySection: {
     borderRadius: 10,
     borderWidth: 1,
