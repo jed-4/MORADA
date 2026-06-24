@@ -15,6 +15,7 @@ import { useLocation, Redirect } from "wouter";
 import { SocketProvider, TaskEventsListener } from "@/lib/socket";
 import { ErrorBoundary } from "@/components/ui/error-boundary";
 import { GlobalMessageNotifier } from "@/components/global-message-notifier";
+import * as Sentry from "@sentry/react";
 
 // All page imports are lazy-loaded so each route gets its own bundle chunk.
 // This eliminates the entire class of "Cannot access '…' before initialization"
@@ -368,6 +369,21 @@ function AuthWrapper() {
     queryKey: ["/api/dashboard-themes/user"],
     enabled: isAuthenticated && !!user?.companyId,
   });
+
+  // Stamp Sentry error reports with the signed-in user + company so we can see
+  // which customer hit an error. No-op when Sentry isn't configured.
+  useEffect(() => {
+    if (!import.meta.env.VITE_SENTRY_DSN) return;
+    if (user) {
+      Sentry.setUser({ id: user.id, email: user.email ?? undefined });
+      Sentry.setTag("company_id", user.companyId ?? undefined);
+      Sentry.setTag("company", user.companyNickname ?? undefined);
+    } else {
+      Sentry.setUser(null);
+      Sentry.setTag("company_id", undefined);
+      Sentry.setTag("company", undefined);
+    }
+  }, [user]);
 
   // Show loading while checking auth
   if (isLoading) {

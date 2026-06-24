@@ -94,20 +94,30 @@ app.use((req, res, next) => {
 (async () => {
   const server = await registerRoutes(app);
 
-  // Register Sentry's Express error handler AFTER all routes/controllers but
-  // BEFORE our own error middleware, so it captures the error and then hands
-  // control back to the custom handler (which preserves the JSON response and
-  // SPA-shell fallback below). No-op when Sentry is not configured.
-  if (sentryEnabled) {
-    Sentry.setupExpressErrorHandler(app);
-  }
-
   app.use((err: any, req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
     const message = err.message || "Internal Server Error";
 
     // Log the error so it still shows in deployment logs.
     console.error(`[error] ${req.method} ${req.path} -> ${status}: ${message}`, err);
+
+    // Report genuine server errors (5xx) to Sentry, stamped with the user and
+    // company that hit them so we know which customer was affected. We skip 4xx
+    // (validation / permission / not-found) since those are expected client
+    // errors, not actionable bugs. withScope keeps the user + company context
+    // scoped to this single event so it never leaks across requests.
+    if (sentryEnabled && status >= 500) {
+      Sentry.withScope((scope) => {
+        const u = (req as any).user;
+        if (u) {
+          scope.setUser({ id: u.id, email: u.email });
+          if (u.companyId) scope.setTag("company_id", u.companyId);
+        }
+        scope.setTag("path", req.path);
+        scope.setContext("request", { method: req.method, path: req.path });
+        Sentry.captureException(err);
+      });
+    }
 
     // For browser navigations to non-API routes, serve the SPA shell so the
     // user sees the React app (which will render its own error UI / login)

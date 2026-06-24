@@ -24,6 +24,14 @@ if (sentryDsn) {
     tracesSampleRate: import.meta.env.PROD ? 0.1 : 1.0,
     replaysSessionSampleRate: import.meta.env.PROD ? 0.1 : 0,
     replaysOnErrorSampleRate: 1.0,
+    // Filter out non-actionable noise: browser-extension crashes and benign
+    // ResizeObserver warnings that aren't real BuildPro bugs.
+    ignoreErrors: [
+      "ResizeObserver loop limit exceeded",
+      "ResizeObserver loop completed with undelivered notifications",
+      "Non-Error promise rejection captured",
+    ],
+    denyUrls: [/^chrome-extension:\/\//i, /^moz-extension:\/\//i, /extensions\//i],
   });
 }
 
