@@ -101,6 +101,12 @@ export const users = pgTable("users", {
   
   // Gmail integration - send BuildPro emails from user's Gmail
   useGmailForSending: boolean("use_gmail_for_sending").notNull().default(false),
+
+  // BuildPro platform staff (super-admin that sits ABOVE individual companies).
+  // Distinct from company-scoped admin/owner roles (isAdminLike). Granted by
+  // directly setting this column on a user row (no self-serve UI). Used to gate
+  // cross-tenant features such as the suggestion review page.
+  isPlatformStaff: boolean("is_platform_staff").notNull().default(false),
   
   // User preferences
   timezone: text("timezone"), // User's preferred display timezone (null = use company timezone)
@@ -5732,6 +5738,55 @@ export const insertPushTokenSchema = createInsertSchema(pushTokens).omit({
 
 export type InsertPushToken = z.infer<typeof insertPushTokenSchema>;
 export type PushToken = typeof pushTokens.$inferSelect;
+
+// Product suggestions / feedback. Submitted by any authenticated user, scoped
+// to their own company on submission, but reviewed across ALL companies by
+// BuildPro platform staff (isPlatformStaff). Identity/company are derived
+// server-side from the session — never trusted from the request body.
+export const suggestions = pgTable("suggestions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  section: text("section").notNull(), // app area, e.g. "bills", "schedule", "general"
+  message: text("message").notNull(),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  companyId: varchar("company_id").references(() => companies.id, { onDelete: "set null" }),
+  roleName: text("role_name"), // submitter's role name at time of submission
+  sourcePage: text("source_page"), // route/path the user was on when submitting
+  platform: text("platform").notNull().default("web"), // "web" | "mobile"
+  appVersion: text("app_version"),
+  status: text("status").notNull().default("new"), // new | reviewing | planned | done | declined
+  priority: text("priority"), // low | medium | high (null until triaged)
+  internalNote: text("internal_note"), // staff-only note
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  statusIdx: index("suggestions_status_idx").on(table.status),
+  sectionIdx: index("suggestions_section_idx").on(table.section),
+  companyIdx: index("suggestions_company_idx").on(table.companyId),
+}));
+
+// Client supplies only section/message/sourcePage/platform/appVersion; the
+// server attaches userId, companyId, roleName, status, priority, note.
+export const insertSuggestionSchema = createInsertSchema(suggestions).omit({
+  id: true,
+  userId: true,
+  companyId: true,
+  roleName: true,
+  status: true,
+  priority: true,
+  internalNote: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertSuggestion = z.infer<typeof insertSuggestionSchema>;
+export type Suggestion = typeof suggestions.$inferSelect;
+
+// Enriched row returned to staff: includes submitter + company display fields.
+export type SuggestionWithMeta = Suggestion & {
+  userName: string | null;
+  userEmail: string | null;
+  companyName: string | null;
+};
 
 // Google Drive Folder Templates
 export const driveFolderTemplates = pgTable("drive_folder_templates", {

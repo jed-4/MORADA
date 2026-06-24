@@ -98,6 +98,7 @@ const TeamManagement = lazy(() => import("@/pages/TeamManagement"));
 const UserProfileView = lazy(() => import("@/pages/UserProfileView"));
 const UserWorkspace = lazy(() => import("@/pages/UserWorkspace"));
 const NotFound = lazy(() => import("@/pages/not-found"));
+const SuggestionsReview = lazy(() => import("@/pages/SuggestionsReview"));
 const PrivacyPolicy = lazy(() => import("@/pages/PrivacyPolicy"));
 const LandingPage = lazy(() => import("@/pages/landing"));
 const OnboardingPage = lazy(() => import("@/pages/onboarding"));
@@ -329,6 +330,9 @@ function Router() {
       <Route path="/cost-codes" component={CostCodes} />
       <Route path="/contacts" component={Contacts} />
       <Route path="/archived-projects" component={ArchivedProjects} />
+      {user?.isPlatformStaff && (
+        <Route path="/suggestions-review" component={SuggestionsReview} />
+      )}
       <Route path="/checklists">{() => <ComingSoonPage section="checklists" />}</Route>
       <Route path="/emails">{() => <ComingSoonPage section="emails" />}</Route>
       <Route path="/crm">{() => <ComingSoonPage section="crm" />}</Route>

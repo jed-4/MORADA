@@ -165,7 +165,8 @@ import {
   userRoles as userRolesTable,
   bills as billsTable,
   selections,
-  selectionOptions
+  selectionOptions,
+  insertSuggestionSchema
 } from "@shared/schema";
 import { computeBillTotalsCents, billLineExGstCents } from "@shared/billTotals";
 import { matchSupplier } from "@shared/supplierMatcher";
@@ -179,7 +180,7 @@ import { z } from "zod";
 import { fromZodError } from "zod-validation-error";
 import { eq, and, asc, desc, or, isNull, isNotNull, sql, min, max, gte, lte, inArray, gt } from "drizzle-orm";
 import { PasswordUtils } from "./utils/auth";
-import { requireAuth, requireAdmin, requireTeamMember, requirePermission, toSafeUser, isAdminRole } from "./middleware/auth";
+import { requireAuth, requireAdmin, requireTeamMember, requirePermission, requirePlatformStaff, toSafeUser, isAdminRole } from "./middleware/auth";
 import multer from "multer";
 import * as XLSX from "xlsx";
 import { initializeSocketManager, emitTaskCreated, emitTaskUpdated, emitTaskDeleted, emitNotification, emitReactionUpdated, getIO, getConnectedUserIdsForCompany } from "./socketManager";
@@ -7313,6 +7314,76 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error fetching user:", error);
       res.status(500).json({ message: "Failed to fetch user" });
+    }
+  });
+
+  // ---- Product suggestions / feedback ----
+  // Allowed enums for staff triage (kept here, validated server-side).
+  const SUGGESTION_STATUSES = ['new', 'reviewing', 'planned', 'done', 'declined'];
+  const SUGGESTION_PRIORITIES = ['low', 'medium', 'high'];
+
+  // Submit a suggestion. Any authenticated user. Identity + company are taken
+  // from the session — NEVER trusted from the request body.
+  app.post('/api/suggestions', requireAuth, async (req: any, res) => {
+    try {
+      const parsed = insertSuggestionSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: 'Invalid suggestion', details: fromZodError(parsed.error).message });
+      }
+      const user = req.user;
+      const suggestion = await storage.createSuggestion({
+        ...parsed.data,
+        userId: user.id,
+        companyId: user.companyId ?? null,
+        roleName: user.roleName ?? null,
+      });
+      res.status(201).json(suggestion);
+    } catch (error) {
+      console.error('Error creating suggestion:', error);
+      res.status(500).json({ error: 'Failed to submit suggestion' });
+    }
+  });
+
+  // List suggestions across ALL companies — BuildPro platform staff only.
+  app.get('/api/suggestions', requireAuth, requirePlatformStaff, async (req: any, res) => {
+    try {
+      const section = typeof req.query.section === 'string' && req.query.section !== 'all' ? req.query.section : undefined;
+      const status = typeof req.query.status === 'string' && req.query.status !== 'all' ? req.query.status : undefined;
+      const list = await storage.getSuggestions({ section, status });
+      res.json(list);
+    } catch (error) {
+      console.error('Error fetching suggestions:', error);
+      res.status(500).json({ error: 'Failed to fetch suggestions' });
+    }
+  });
+
+  // Triage a suggestion (status / priority / internal note) — staff only.
+  app.patch('/api/suggestions/:id', requireAuth, requirePlatformStaff, async (req: any, res) => {
+    try {
+      const updates: { status?: string; priority?: string | null; internalNote?: string | null } = {};
+      if (req.body.status !== undefined) {
+        if (!SUGGESTION_STATUSES.includes(req.body.status)) {
+          return res.status(400).json({ error: `Invalid status. Must be one of: ${SUGGESTION_STATUSES.join(', ')}` });
+        }
+        updates.status = req.body.status;
+      }
+      if (req.body.priority !== undefined) {
+        if (req.body.priority !== null && !SUGGESTION_PRIORITIES.includes(req.body.priority)) {
+          return res.status(400).json({ error: `Invalid priority. Must be one of: ${SUGGESTION_PRIORITIES.join(', ')}` });
+        }
+        updates.priority = req.body.priority;
+      }
+      if (req.body.internalNote !== undefined) {
+        updates.internalNote = req.body.internalNote === '' ? null : req.body.internalNote;
+      }
+      const updated = await storage.updateSuggestion(req.params.id, updates);
+      if (!updated) {
+        return res.status(404).json({ error: 'Suggestion not found' });
+      }
+      res.json(updated);
+    } catch (error) {
+      console.error('Error updating suggestion:', error);
+      res.status(500).json({ error: 'Failed to update suggestion' });
     }
   });
 

@@ -12,10 +12,32 @@ import {
   Platform,
   ActivityIndicator,
   Alert,
+  ScrollView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import Constants from 'expo-constants';
 import { useAuth } from '../contexts/AuthContext';
 import { apiRequest } from '../services/api';
+
+// Keep this list in sync with the web app's client/src/lib/suggestionSections.ts.
+const SUGGESTION_SECTIONS: { value: string; label: string }[] = [
+  { value: 'general', label: 'General / Overall' },
+  { value: 'dashboard', label: 'Dashboard' },
+  { value: 'projects', label: 'Projects' },
+  { value: 'tasks', label: 'Tasks' },
+  { value: 'schedule', label: 'Schedule' },
+  { value: 'estimates', label: 'Estimates & Quotes' },
+  { value: 'selections', label: 'Selections' },
+  { value: 'bills', label: 'Bills & Purchase Orders' },
+  { value: 'invoices', label: 'Client Invoices' },
+  { value: 'budget', label: 'Budget & Financials' },
+  { value: 'site-diary', label: 'Site Diary' },
+  { value: 'checklists', label: 'Checklists' },
+  { value: 'messages', label: 'Messages & Notes' },
+  { value: 'documents', label: 'Documents & Files' },
+  { value: 'mobile', label: 'Mobile App' },
+  { value: 'other', label: 'Something else' },
+];
 
 import { useTheme } from '../theme';
 interface MorePanelProps {
@@ -29,7 +51,7 @@ interface MoreItem {
   label: string;
   icon: keyof typeof Ionicons.glyphMap;
   color: string;
-  action: 'navigate' | 'coming-soon';
+  action: 'navigate' | 'coming-soon' | 'suggestion';
   tab?: string;
   screen?: string;
 }
@@ -55,6 +77,7 @@ const moreItems: MoreItem[] = [
   { id: 'checklists', label: 'Checklists', icon: 'checkmark-done', color: '#82C8A2', action: 'navigate', screen: 'Checklists' },
   { id: 'messages', label: 'Messages', icon: 'chatbubbles', color: '#70CAD0', action: 'navigate', tab: 'Messages' },
   { id: 'contacts', label: 'Contacts', icon: 'people', color: '#D4B670', action: 'coming-soon' },
+  { id: 'suggestion', label: 'Suggest', icon: 'bulb', color: '#D4B670', action: 'suggestion' },
   { id: 'settings', label: 'Settings', icon: 'settings', color: '#8A8680', action: 'coming-soon' },
 ];
 
@@ -74,6 +97,9 @@ export default function MorePanel({ visible, onClose, navigationRef }: MorePanel
   const [noteContent, setNoteContent] = useState('');
   const [taskTitle, setTaskTitle] = useState('');
   const [taskDescription, setTaskDescription] = useState('');
+  const [showSuggestionModal, setShowSuggestionModal] = useState(false);
+  const [suggestionSection, setSuggestionSection] = useState('');
+  const [suggestionMessage, setSuggestionMessage] = useState('');
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -117,6 +143,16 @@ const colors = {
 
   const handleItemPress = (item: MoreItem) => {
     if (item.action === 'coming-soon') return;
+    if (item.action === 'suggestion') {
+      // Close the panel first — two simultaneous Modals freeze iOS.
+      onClose();
+      setTimeout(() => {
+        setSuggestionSection('');
+        setSuggestionMessage('');
+        setShowSuggestionModal(true);
+      }, 350);
+      return;
+    }
     if (item.tab) {
       closeAndNavigate(() => nav()?.navigate(item.tab!));
       return;
@@ -195,6 +231,38 @@ const colors = {
       Alert.alert('Saved', 'Task created successfully.');
     } catch {
       Alert.alert('Error', 'Failed to save task. Please try again.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const saveSuggestion = async () => {
+    if (!suggestionSection) {
+      Alert.alert('Required', 'Please choose an area.');
+      return;
+    }
+    if (!suggestionMessage.trim()) {
+      Alert.alert('Required', 'Please write your suggestion.');
+      return;
+    }
+    setSaving(true);
+    try {
+      const response = await apiRequest('/api/suggestions', 'POST', {
+        section: suggestionSection,
+        message: suggestionMessage.trim(),
+        platform: 'mobile',
+        sourcePage: 'more-panel',
+        appVersion: Constants.expoConfig?.version ?? undefined,
+      });
+      if (!response.ok) {
+        throw new Error('Request failed');
+      }
+      setShowSuggestionModal(false);
+      setSuggestionSection('');
+      setSuggestionMessage('');
+      Alert.alert('Thanks!', 'Your suggestion has been sent to the BuildPro team.');
+    } catch {
+      Alert.alert('Error', 'Failed to send suggestion. Please try again.');
     } finally {
       setSaving(false);
     }
@@ -372,6 +440,58 @@ const colors = {
           />
         </>,
       )}
+
+      {renderQuickAddModal(
+        showSuggestionModal,
+        () => setShowSuggestionModal(false),
+        'Send a Suggestion',
+        saveSuggestion,
+        <>
+          <Text style={[styles.qaFieldLabel, { color: colors.secondary }]}>Which area?</Text>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={styles.chipRow}
+            contentContainerStyle={styles.chipRowContent}
+          >
+            {SUGGESTION_SECTIONS.map((s) => {
+              const selected = suggestionSection === s.value;
+              return (
+                <TouchableOpacity
+                  key={s.value}
+                  onPress={() => setSuggestionSection(s.value)}
+                  activeOpacity={0.7}
+                  style={[
+                    styles.chip,
+                    {
+                      backgroundColor: selected ? colors.accent : colors.inputBg,
+                      borderColor: selected ? colors.accent : colors.border,
+                    },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.chipText,
+                      { color: selected ? '#ffffff' : colors.text },
+                    ]}
+                  >
+                    {s.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+          <TextInput
+            style={[styles.qaTextArea, { backgroundColor: colors.inputBg, color: colors.text, borderColor: colors.border, marginTop: 16 }]}
+            value={suggestionMessage}
+            onChangeText={setSuggestionMessage}
+            placeholder="What would make BuildPro better?"
+            placeholderTextColor={colors.muted}
+            multiline
+            textAlignVertical="top"
+          />
+        </>,
+      )}
     </>
   );
 }
@@ -540,5 +660,27 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     fontSize: 16,
     height: 120,
+  },
+  qaFieldLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    marginBottom: 8,
+  },
+  chipRow: {
+    flexGrow: 0,
+  },
+  chipRowContent: {
+    paddingRight: 8,
+    gap: 8,
+  },
+  chip: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 18,
+    borderWidth: 1,
+  },
+  chipText: {
+    fontSize: 14,
+    fontWeight: '500',
   },
 });

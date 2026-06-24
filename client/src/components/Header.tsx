@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import ThemeToggle from "./ThemeToggle";
+import SuggestionPopover from "./SuggestionPopover";
 import { TimeClockWidget } from "./TimeClockWidget";
 import { UserCalendarDialog } from "./UserCalendarDialog";
 import { MessagesDropdown } from "./MessagesDropdown";
@@ -601,6 +602,9 @@ export default function Header() {
 
         {/* Time Clock Widget */}
         <TimeClockWidget />
+
+        {/* Suggestion Box */}
+        <SuggestionPopover />
 
         {/* Dark Mode Toggle */}
         <ThemeToggle />

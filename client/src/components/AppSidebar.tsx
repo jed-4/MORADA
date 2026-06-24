@@ -61,6 +61,8 @@ import {
 import { Link, useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { useProject } from "@/contexts/ProjectContext";
+import { useAuth } from "@/hooks/use-auth";
+import { Lightbulb } from "lucide-react";
 import { Project } from "@shared/schema";
 import { useState, useEffect } from "react";
 import { ProjectSwitcher } from "./ProjectSwitcher";
@@ -132,6 +134,7 @@ const settingsItems = [
 export function AppSidebar() {
   const [location] = useLocation();
   const { currentProject, setCurrentProject } = useProject();
+  const { user } = useAuth();
 
   // The Costings page (read-only contract costings) should only appear once the
   // selected estimate is LOCKED as a contract. While it is merely "approved"
@@ -554,6 +557,21 @@ export function AppSidebar() {
                       </SidebarMenuButton>
                     </SidebarMenuItem>
                   ))}
+                  {user?.isPlatformStaff && (
+                    <SidebarMenuItem>
+                      <SidebarMenuButton
+                        asChild
+                        tooltip="Suggestions"
+                        data-testid="nav-system-suggestions"
+                        data-active={location === "/suggestions-review"}
+                      >
+                        <Link href="/suggestions-review">
+                          <Lightbulb className="h-4 w-4" />
+                          <span className="group-data-[collapsible=icon]:hidden">Suggestions</span>
+                        </Link>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  )}
                 </SidebarMenu>
               </SidebarGroupContent>
             </CollapsibleContent>

@@ -161,6 +161,7 @@ import type { DashboardView, InsertDashboardView, DashboardViewPermission, Inser
 import type { NoteGroup, InsertNoteGroup } from "@shared/schema";
 import type { Notification as InAppNotification, InsertNotification } from "@shared/schema";
 import type { PushToken, InsertPushToken } from "@shared/schema";
+import type { Suggestion, InsertSuggestion, SuggestionWithMeta } from "@shared/schema";
 import type { PaymentTermsOption, InsertPaymentTermsOption } from "@shared/schema";
 
 // modify the interface with any CRUD methods
@@ -1370,6 +1371,12 @@ export interface IStorage {
   getPushTokensForUser(userId: string): Promise<PushToken[]>;
   deletePushToken(token: string, userId?: string): Promise<boolean>;
   deletePushTokens(tokens: string[]): Promise<number>;
+
+  // Product suggestions (feedback). Identity/company derived server-side.
+  ensureSuggestionsTable(): Promise<void>;
+  createSuggestion(data: InsertSuggestion & { userId: string; companyId: string | null; roleName: string | null }): Promise<Suggestion>;
+  getSuggestions(filters?: { section?: string; status?: string }): Promise<SuggestionWithMeta[]>;
+  updateSuggestion(id: string, updates: { status?: string; priority?: string | null; internalNote?: string | null }): Promise<Suggestion | undefined>;
 
   // Xero Connection operations
   getXeroConnectionByCompanyId(companyId: string): Promise<import("@shared/schema").XeroConnection | undefined>;
@@ -6390,6 +6397,18 @@ export class MemStorage implements IStorage {
   }
   async deletePushTokens(tokens: string[]): Promise<number> {
     return 0;
+  }
+  async ensureSuggestionsTable(): Promise<void> {
+    return;
+  }
+  async createSuggestion(data: InsertSuggestion & { userId: string; companyId: string | null; roleName: string | null }): Promise<Suggestion> {
+    throw new Error("Not implemented in MemStorage");
+  }
+  async getSuggestions(filters?: { section?: string; status?: string }): Promise<SuggestionWithMeta[]> {
+    return [];
+  }
+  async updateSuggestion(id: string, updates: { status?: string; priority?: string | null; internalNote?: string | null }): Promise<Suggestion | undefined> {
+    return undefined;
   }
   async createChecklistAuditEntry(entry: InsertChecklistAuditLog): Promise<ChecklistAuditLog> {
     return { id: '', ...entry, createdAt: new Date() } as ChecklistAuditLog;
@@ -24214,6 +24233,109 @@ export class DbStorage implements IStorage {
       return (result as any).rowCount || 0;
     } catch (error) {
       console.error("Database error in deletePushTokens:", error);
+      throw error;
+    }
+  }
+
+  async ensureSuggestionsTable(): Promise<void> {
+    // Additive, idempotent safety net. The deploy build does NOT run drizzle
+    // push, so this guarantees the suggestions table + the users.is_platform_staff
+    // column exist in production the first time the server boots after this
+    // feature ships. CREATE/ALTER ... IF NOT EXISTS is non-destructive.
+    try {
+      await db.execute(sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS is_platform_staff boolean NOT NULL DEFAULT false`);
+      await db.execute(sql`
+        CREATE TABLE IF NOT EXISTS suggestions (
+          id varchar PRIMARY KEY DEFAULT gen_random_uuid(),
+          section text NOT NULL,
+          message text NOT NULL,
+          user_id varchar NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          company_id varchar REFERENCES companies(id) ON DELETE SET NULL,
+          role_name text,
+          source_page text,
+          platform text NOT NULL DEFAULT 'web',
+          app_version text,
+          status text NOT NULL DEFAULT 'new',
+          priority text,
+          internal_note text,
+          created_at timestamp NOT NULL DEFAULT now(),
+          updated_at timestamp NOT NULL DEFAULT now()
+        )
+      `);
+      await db.execute(sql`CREATE INDEX IF NOT EXISTS suggestions_status_idx ON suggestions (status)`);
+      await db.execute(sql`CREATE INDEX IF NOT EXISTS suggestions_section_idx ON suggestions (section)`);
+      await db.execute(sql`CREATE INDEX IF NOT EXISTS suggestions_company_idx ON suggestions (company_id)`);
+    } catch (error) {
+      console.error("Failed to ensure suggestions table exists:", error);
+    }
+  }
+
+  async createSuggestion(data: InsertSuggestion & { userId: string; companyId: string | null; roleName: string | null }): Promise<Suggestion> {
+    try {
+      const [row] = await db.insert(schema.suggestions)
+        .values({
+          section: data.section,
+          message: data.message,
+          userId: data.userId,
+          companyId: data.companyId,
+          roleName: data.roleName,
+          sourcePage: data.sourcePage,
+          platform: data.platform || "web",
+          appVersion: data.appVersion,
+        })
+        .returning();
+      return row;
+    } catch (error) {
+      console.error("Database error in createSuggestion:", error);
+      throw error;
+    }
+  }
+
+  async getSuggestions(filters?: { section?: string; status?: string }): Promise<SuggestionWithMeta[]> {
+    try {
+      const conditions = [];
+      if (filters?.section) conditions.push(eq(schema.suggestions.section, filters.section));
+      if (filters?.status) conditions.push(eq(schema.suggestions.status, filters.status));
+
+      const rows = await db.select({
+        suggestion: schema.suggestions,
+        userFirst: schema.users.firstName,
+        userLast: schema.users.lastName,
+        userEmail: schema.users.email,
+        companyName: schema.companies.name,
+      })
+        .from(schema.suggestions)
+        .leftJoin(schema.users, eq(schema.suggestions.userId, schema.users.id))
+        .leftJoin(schema.companies, eq(schema.suggestions.companyId, schema.companies.id))
+        .where(conditions.length ? and(...conditions) : undefined)
+        .orderBy(desc(schema.suggestions.createdAt));
+
+      return rows.map((r) => ({
+        ...r.suggestion,
+        userName: [r.userFirst, r.userLast].filter(Boolean).join(" ") || null,
+        userEmail: r.userEmail ?? null,
+        companyName: r.companyName ?? null,
+      }));
+    } catch (error) {
+      console.error("Database error in getSuggestions:", error);
+      throw error;
+    }
+  }
+
+  async updateSuggestion(id: string, updates: { status?: string; priority?: string | null; internalNote?: string | null }): Promise<Suggestion | undefined> {
+    try {
+      const set: Record<string, any> = { updatedAt: new Date() };
+      if (updates.status !== undefined) set.status = updates.status;
+      if (updates.priority !== undefined) set.priority = updates.priority;
+      if (updates.internalNote !== undefined) set.internalNote = updates.internalNote;
+
+      const [row] = await db.update(schema.suggestions)
+        .set(set)
+        .where(eq(schema.suggestions.id, id))
+        .returning();
+      return row;
+    } catch (error) {
+      console.error("Database error in updateSuggestion:", error);
       throw error;
     }
   }

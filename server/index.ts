@@ -225,6 +225,16 @@ app.use((req, res, next) => {
       console.error('Failed to ensure push_tokens table:', error);
     }
 
+    // Ensure the suggestions table + users.is_platform_staff column exist
+    // (additive, idempotent). The deploy build does not run drizzle push, so
+    // this guarantees the suggestion box works the first time production boots
+    // this feature.
+    try {
+      await storage.ensureSuggestionsTable();
+    } catch (error) {
+      console.error('Failed to ensure suggestions table:', error);
+    }
+
     // Auto-seed missing built-in field categories (for production databases)
     try {
       const seedResult = await storage.seedMissingBuiltInCategories();

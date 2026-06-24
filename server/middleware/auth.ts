@@ -200,3 +200,25 @@ export function requireTeamMember(req: Request, res: Response, next: NextFunctio
 
   next();
 }
+
+/**
+ * BuildPro platform-staff (super-admin) middleware. Gates cross-tenant features
+ * that intentionally cross company isolation (e.g. the suggestion review page).
+ * This is deliberately NOT bypassed in development — staff status is a real
+ * server-side flag on the user record (`isPlatformStaff`) so the gate behaves
+ * identically in dev and production. Grant access by setting the column on a
+ * user row directly (no self-serve UI).
+ */
+export function requirePlatformStaff(req: Request, res: Response, next: NextFunction): void {
+  if (!req.user) {
+    res.status(401).json({ error: 'Authentication required' });
+    return;
+  }
+
+  if (!req.user.isPlatformStaff) {
+    res.status(403).json({ error: 'BuildPro staff access required' });
+    return;
+  }
+
+  next();
+}

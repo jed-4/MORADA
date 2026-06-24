@@ -25,3 +25,10 @@ logs show a 2xx for that endpoint, grep for the leftover anti-pattern:
 `rg "= await apiRequest" client/src -A8 | rg "\.(json|ok)\b"` and remove the `.json()`/`.ok`.
 Defensive `response.json?.() || response` is fine (returns the parsed object); raw
 `fetch(...).json()` is fine (real Response).
+
+**Argument ORDER differs from older Express templates:** web `apiRequest(url, method, data)`
+— URL FIRST, then method. Calling it method-first (`apiRequest("GET", "/api/...")`) silently
+hits the wrong URL/method and the query resolves empty (looks like "no data" / a backend bug)
+rather than erroring loudly. Mobile (`expo-mobile/src/services/api.ts`) is also `(path, method, body)`
+BUT returns a raw `Response` and does NOT throw on non-2xx — mobile callers must check
+`response.ok` themselves or a failed POST still shows a success Alert.
