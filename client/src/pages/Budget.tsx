@@ -1,5 +1,5 @@
 import { useParams, Link } from "wouter";
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState, useEffect, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { type ColumnDef } from "@tanstack/react-table";
 import { DataTable, DataTableColumnPicker, type DataTableColumnMeta } from "@/components/data-table/DataTable";
@@ -24,9 +24,9 @@ import { Label } from "@/components/ui/label";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { Budget, BudgetLineItem, LabourHoursBudget, Project } from "@shared/schema";
 import type { ContractMetrics } from "@shared/projectMetrics";
-import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { usePermission } from "@/hooks/use-permission";
+import { useAuth } from "@/hooks/use-auth";
 
 const PHASE_LABELS: Record<string, string> = {
   lead: "Lead",
@@ -38,8 +38,8 @@ const PHASE_LABELS: Record<string, string> = {
 
 export default function BudgetPage() {
   const { projectId } = useParams();
-  const { toast } = useToast();
   const pageTitle = usePageTitle({ pageName: "Budget" });
+  const { isLoading: authLoading } = useAuth();
   const canViewLabour = usePermission("financial.budget_labour", "view");
   const canViewActuals = usePermission("financial.budget_actuals", "view");
   const isDark = useIsDark();
@@ -59,6 +59,14 @@ export default function BudgetPage() {
   const [hideEmptyCostCodes, setHideEmptyCostCodes] = useState<boolean>(() => {
     try {
       const saved = localStorage.getItem('budget-hide-empty-cost-codes');
+      return saved ? JSON.parse(saved) : false;
+    } catch { return false; }
+  });
+  // Whether the financial header is expanded to show full detail. Persisted in
+  // localStorage, mirroring the "hide empty cost codes" toggle.
+  const [headerExpanded, setHeaderExpanded] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('budget-header-expanded');
       return saved ? JSON.parse(saved) : false;
     } catch { return false; }
   });
@@ -173,18 +181,10 @@ export default function BudgetPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/budget`] });
-      toast({
-        title: "Budget recalculated",
-        description: "Budget has been updated with latest data from estimates and bills.",
-      });
     },
-    onError: (error: any) => {
-      toast({
-        title: "Failed to recalculate",
-        description: error.message || "Something went wrong",
-        variant: "destructive",
-      });
-    }
+    // Auto-recalc runs silently on open; on failure the page keeps its last
+    // known figures rather than surfacing a toast on every visit.
+    onError: () => {},
   });
 
   const recalculateLineItemsMutation = useMutation({
@@ -195,18 +195,8 @@ export default function BudgetPage() {
       queryClient.invalidateQueries({ queryKey: [`/api/budgets/${budget?.id}/line-items`] });
       queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "labour-costs"] });
       queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "actual-costs"] });
-      toast({
-        title: "Line items recalculated",
-        description: "Budget breakdown has been updated.",
-      });
     },
-    onError: (error: any) => {
-      toast({
-        title: "Failed to recalculate",
-        description: error.message || "Something went wrong",
-        variant: "destructive",
-      });
-    }
+    onError: () => {},
   });
 
   const recalculateLabourHoursMutation = useMutation({
@@ -215,18 +205,8 @@ export default function BudgetPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/labour-hours-budget`] });
-      toast({
-        title: "Labour hours recalculated",
-        description: "Hours budget has been updated from labour estimate items.",
-      });
     },
-    onError: (error: any) => {
-      toast({
-        title: "Failed to recalculate hours",
-        description: error.message || "Something went wrong",
-        variant: "destructive",
-      });
-    }
+    onError: () => {},
   });
 
   const formatCurrency = (cents: number) => {
@@ -743,20 +723,56 @@ export default function BudgetPage() {
     try { localStorage.setItem('budget-hide-empty-cost-codes', JSON.stringify(checked)); } catch {}
   };
 
-  const handleRecalculate = () => {
-    if (activeTab === "costs" && canViewActuals) {
+  const toggleHeaderExpanded = () => {
+    setHeaderExpanded((prev) => {
+      const next = !prev;
+      try { localStorage.setItem('budget-header-expanded', JSON.stringify(next)); } catch {}
+      return next;
+    });
+  };
+
+  // Always-live budget: recalculate automatically when the page opens so the
+  // figures are always current (replaces the old manual Recalculate button).
+  // Fires once per mount. If a recalc fails, the queries keep their last known
+  // values so the page still renders rather than breaking.
+  // Tracks the project we've already auto-recalculated for. Keyed by projectId
+  // (rather than a plain boolean) so navigating between projects re-triggers a
+  // fresh recalc, and so an early render with permissions still resolving never
+  // permanently suppresses the recalc.
+  const autoRecalcProjectId = useRef<string | null>(null);
+  useEffect(() => {
+    // Wait until auth (and therefore the permission flags) has resolved —
+    // otherwise the first render runs with both perms false and would mark this
+    // project "done" without ever recalculating.
+    if (authLoading) return;
+    if (!projectId) return;
+    if (autoRecalcProjectId.current === projectId) return;
+    // For cost-viewers wait for the budget query to settle so we know whether a
+    // budget record already exists before deciding to run the line-item recalc.
+    if (canViewActuals && budgetLoading) return;
+    // Nothing to recalc if the user can't view either surface.
+    if (!canViewActuals && !canViewLabour) return;
+
+    if (canViewActuals) {
+      // Always run the project-level recalc — this is what generates a budget
+      // breakdown when none exists yet, so it must NOT be gated on budget?.id.
       recalculateMutation.mutate();
+      // Line-item recalc only makes sense once a budget record exists.
       if (budget?.id) {
         recalculateLineItemsMutation.mutate();
       }
-    } else if (activeTab === "hours" && canViewLabour) {
+    }
+    if (canViewLabour) {
       recalculateLabourHoursMutation.mutate();
     }
-  };
+    autoRecalcProjectId.current = projectId;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authLoading, projectId, budgetLoading, budget?.id, canViewActuals, canViewLabour]);
 
-  const isRecalculating = activeTab === "costs"
-    ? (recalculateMutation.isPending || recalculateLineItemsMutation.isPending)
-    : recalculateLabourHoursMutation.isPending;
+  const isRecalculating =
+    recalculateMutation.isPending ||
+    recalculateLineItemsMutation.isPending ||
+    recalculateLabourHoursMutation.isPending;
 
   if (budgetLoading) {
     return (
@@ -804,215 +820,124 @@ export default function BudgetPage() {
   // dark mode (where --muted ≈ --card). Shared with the Monthly Actuals view.
   const rowTints = financialRowTints(isDark);
 
+  // ── Financial header figures (ex GST) ──────────────────────────────────────
+  // Computed once so the collapsed centre summary and the expanded detail panel
+  // both read from the same numbers. Nothing is recomputed client-side; these
+  // just re-shape the already-fetched contract/actual-cost figures.
+  const originalContractCents =
+    contractMetrics?.originalContractPriceExGstCents ?? budgetData.baselineAmount ?? 0;
+  const variationsCents = contractMetrics?.approvedVariationsExGstCents ?? 0;
+  const revisedContractCents =
+    contractMetrics?.revisedContractPriceExGstCents ?? budgetData.revisedAmount ?? 0;
+  const billsCostCents = actualCosts?.billsCostExGstCents ?? 0;
+  const labourCostCents = actualCosts?.timesheetCostCents ?? 0;
+  const actualCostCents = actualCosts?.actualCostExGstCents ?? 0;
+  const grossProfitCents = revisedContractCents - actualCostCents;
+  const marginPct = revisedContractCents > 0 ? (grossProfitCents / revisedContractCents) * 100 : 0;
+  const remainingCents = (budgetData.revisedAmount ?? 0) - spentActualCents;
+
   return (
     <div className="flex flex-col h-full" data-testid="page-budget">
       {/* TAB ROW */}
-      <div className="h-9 bg-background flex items-center justify-between px-2 border-b border-border flex-shrink-0">
-        <div className="flex items-stretch h-full">
-          {canViewActuals && (
-            <button
-              onClick={() => setActiveTab("costs")}
-              className={cn(
-                "relative h-full px-3 text-[12px] font-medium transition-colors flex items-center gap-1",
-                activeTab === "costs"
-                  ? "text-[hsl(var(--bp-purple))]"
-                  : "text-muted-foreground hover:text-foreground",
-              )}
-              data-testid="tab-costs"
-            >
-              <DollarSign className="w-3 h-3" />
-              <span>Costs</span>
-              {activeTab === "costs" && (
-                <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-[hsl(var(--bp-purple))] rounded-t-sm" />
-              )}
-            </button>
-          )}
-          {canViewLabour && (
-            <button
-              onClick={() => setActiveTab("hours")}
-              className={cn(
-                "relative h-full px-3 text-[12px] font-medium transition-colors flex items-center gap-1",
-                activeTab === "hours"
-                  ? "text-[hsl(var(--bp-purple))]"
-                  : "text-muted-foreground hover:text-foreground",
-              )}
-              data-testid="tab-labour-hours"
-            >
-              <Clock className="w-3 h-3" />
-              <span>Labour Hours</span>
-              {activeTab === "hours" && (
-                <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-[hsl(var(--bp-purple))] rounded-t-sm" />
-              )}
-            </button>
-          )}
-        </div>
-
-        <div className="flex items-center gap-2">
-        {activeTab === "costs" && budgetData && (
-          <div className="flex items-center gap-0 text-[11px]">
-            {[
-              { label: "Budget", value: budgetData.baselineAmount, color: "text-foreground" },
-              // Spent = full actual COST ex-GST (bills + labour), the same figure
-              // shown in the cost table's Total and the gross-margin bar, so the
-              // screen never contradicts itself. Falls back to the bills-only
-              // persisted actual while the live actual-costs query loads.
-              { label: "Spent", value: spentActualCents, color: "text-muted-foreground" },
-              {
-                label: "Remaining",
-                value: (budgetData.revisedAmount ?? 0) - spentActualCents,
-                color: getVarianceColor((budgetData.revisedAmount ?? 0) - spentActualCents),
-              },
-            ].map((stat, i) => (
-              <div
-                key={stat.label}
-                className={cn("flex flex-col px-3", i > 0 && "border-l border-border")}
-                data-testid={`stat-${stat.label.toLowerCase()}`}
+      <div className="bg-background border-b border-border flex-shrink-0">
+        <div className="flex h-10 items-stretch justify-between gap-2 px-2">
+          {/* LEFT: tabs */}
+          <div className="flex items-stretch">
+            {canViewActuals && (
+              <button
+                onClick={() => setActiveTab("costs")}
+                className={cn(
+                  "relative h-full px-3 text-[12px] font-medium transition-colors flex items-center gap-1",
+                  activeTab === "costs"
+                    ? "text-[hsl(var(--bp-purple))]"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+                data-testid="tab-costs"
               >
-                <span className="text-[9px] text-muted-foreground leading-tight">{stat.label}</span>
-                <span className={cn("font-semibold leading-snug tabular-nums", stat.color)}>
-                  {formatCurrency(stat.value)}
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {activeTab === "hours" && (
-          <div className="flex items-center gap-0 text-[11px]">
-            {[
-              { label: "Budgeted", value: formatHours(totalBudgetedHours), color: "text-foreground" },
-              { label: "Pending", value: formatHours(totalPendingHours), color: "text-[hsl(var(--bp-amber))]" },
-              { label: "Approved", value: formatHours(totalApprovedHours), color: "text-foreground" },
-              {
-                label: "Remaining",
-                value: formatHours(hoursRemaining),
-                color: getVarianceColor(hoursRemaining),
-              },
-              { label: "Efficiency", value: `${hoursPercentUsed}%`, color: "text-foreground" },
-            ].map((stat, i) => (
-              <div
-                key={stat.label}
-                className={cn("flex flex-col px-3", i > 0 && "border-l border-border")}
-                data-testid={`stat-hours-${stat.label.toLowerCase()}`}
+                <DollarSign className="w-3 h-3" />
+                <span>Costs</span>
+                {activeTab === "costs" && (
+                  <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-[hsl(var(--bp-purple))] rounded-t-sm" />
+                )}
+              </button>
+            )}
+            {canViewLabour && (
+              <button
+                onClick={() => setActiveTab("hours")}
+                className={cn(
+                  "relative h-full px-3 text-[12px] font-medium transition-colors flex items-center gap-1",
+                  activeTab === "hours"
+                    ? "text-[hsl(var(--bp-purple))]"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+                data-testid="tab-labour-hours"
               >
-                <span className="text-[9px] text-muted-foreground leading-tight">{stat.label}</span>
-                <span className={cn("font-semibold leading-snug tabular-nums", stat.color)}>
-                  {stat.value}
-                </span>
-              </div>
-            ))}
+                <Clock className="w-3 h-3" />
+                <span>Labour Hours</span>
+                {activeTab === "hours" && (
+                  <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-[hsl(var(--bp-purple))] rounded-t-sm" />
+                )}
+              </button>
+            )}
           </div>
-        )}
-        <Button
-          size="icon"
-          variant="ghost"
-          onClick={handleRecalculate}
-          disabled={isRecalculating}
-          className="h-7 w-7 text-[hsl(var(--bp-purple))]"
-          data-testid="button-recalculate"
-          title="Recalculate"
-          aria-label="Recalculate"
-        >
-          <RefreshCw size={14} className={cn(isRecalculating && "animate-spin")} />
-        </Button>
-        </div>
-      </div>
 
-      {/* CONTRACT CHIPS (ex GST) — only visible to users with financial.budget_actuals */}
-      {canViewActuals && (
-        <div className="flex items-center gap-2 px-2 py-2 bg-background border-b border-border flex-shrink-0">
-          {[
-            {
-              label: "Contract",
-              ex:
-                contractMetrics?.originalContractPriceExGstCents ??
-                budgetData.baselineAmount ??
-                0,
-              testid: "chip-contract-original",
-            },
-            {
-              label: "Variations",
-              ex: contractMetrics?.approvedVariationsExGstCents ?? 0,
-              testid: "chip-contract-variations",
-            },
-            {
-              label: "Revised",
-              ex:
-                contractMetrics?.revisedContractPriceExGstCents ??
-                budgetData.revisedAmount ??
-                0,
-              testid: "chip-contract-revised",
-            },
-          ].map((chip) => (
-            <div
-              key={chip.label}
-              className="flex items-baseline gap-2 px-3 py-1 rounded-md border border-border bg-[hsl(var(--bp-subtle))]"
-              data-testid={chip.testid}
-            >
-              <span className="text-[9px] text-muted-foreground uppercase tracking-wide">
-                {chip.label}
-              </span>
-              <span className="text-[12px] font-semibold text-foreground tabular-nums">
-                {formatCurrency(chip.ex)}
-              </span>
-              <span className="text-[9px] font-normal text-muted-foreground">ex GST</span>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* GROSS MARGIN BAR (ex GST) — costs tab only. Shows the ACTUAL gross margin
-          to date: revised contract (ex GST) minus actual costs incurred so far
-          (bills + labour). Note: mid-project this margin looks high because revenue
-          is the full contract while costs are only what has been incurred. */}
-      {activeTab === "costs" && canViewActuals && (() => {
-        const revisedCents =
-          contractMetrics?.revisedContractPriceExGstCents ?? budgetData.revisedAmount ?? 0;
-        const billsCents = actualCosts?.billsCostExGstCents ?? 0;
-        const labourCents = actualCosts?.timesheetCostCents ?? 0;
-        const actualCostCents = actualCosts?.actualCostExGstCents ?? 0;
-        const grossProfitCents = revisedCents - actualCostCents;
-        const marginPct = revisedCents > 0 ? (grossProfitCents / revisedCents) * 100 : 0;
-        const costBreakdown = `Bills: ${formatCurrency(billsCents)}  •  Labour: ${formatCurrency(labourCents)}`;
-        return (
-          <div
-            className="flex items-center gap-x-4 gap-y-1 px-3 py-1.5 bg-[hsl(var(--bp-subtle))] border-b border-border flex-shrink-0 flex-wrap text-[11px]"
-            data-testid="bar-gross-margin"
+          {/* CENTRE: key figures — doubles as the expand/collapse affordance */}
+          <button
+            type="button"
+            onClick={toggleHeaderExpanded}
+            className="flex items-center gap-3 sm:gap-4 px-2 rounded-md hover-elevate min-w-0"
+            data-testid="button-header-toggle"
+            aria-expanded={headerExpanded}
+            title={headerExpanded ? "Hide detail" : "Show detail"}
           >
-            <span className="text-[9px] uppercase tracking-wide text-muted-foreground font-semibold">
-              Gross Margin (ex GST) · to date
-            </span>
-            <div className="flex items-center gap-1.5" data-testid="margin-revised">
-              <span className="text-muted-foreground">Revised Contract</span>
-              <span className="font-semibold tabular-nums text-foreground">{formatCurrency(revisedCents)}</span>
-            </div>
-            <span className="text-muted-foreground">−</span>
-            <div
-              className="flex items-center gap-1.5"
-              data-testid="margin-actual-cost"
-              title={`${costBreakdown}  •  Internal costs not yet included`}
-            >
-              <span className="text-muted-foreground">Actual Costs</span>
-              <span className="font-semibold tabular-nums text-foreground">{formatCurrency(actualCostCents)}</span>
-            </div>
-            <span className="text-muted-foreground">=</span>
-            <div className="flex items-center gap-1.5" data-testid="margin-gross-profit">
-              <span className="text-muted-foreground">Gross Profit</span>
-              <span className={cn("font-semibold tabular-nums", getVarianceColor(grossProfitCents))}>
-                {formatCurrency(grossProfitCents)}
-              </span>
-            </div>
-            <div
-              className="flex items-baseline gap-1.5 ml-auto rounded-md border border-border bg-[hsl(var(--bp-card))] px-2.5 py-1"
-              data-testid="margin-percent"
-            >
-              <span className="text-[9px] uppercase tracking-wide text-muted-foreground font-semibold">
-                Margin
-              </span>
-              <span className={cn("text-base font-bold tabular-nums leading-none", getVarianceColor(grossProfitCents))}>
-                {marginPct.toFixed(1)}%
-              </span>
-            </div>
+            {activeTab === "costs" && canViewActuals && (
+              <>
+                <div className="flex flex-col items-end leading-tight">
+                  <span className="text-[9px] uppercase tracking-wide text-muted-foreground">Revised Contract</span>
+                  <span className="text-[12px] font-semibold tabular-nums text-foreground">{formatCurrency(revisedContractCents)}</span>
+                </div>
+                <div className="flex flex-col items-end leading-tight">
+                  <span className="text-[9px] uppercase tracking-wide text-muted-foreground">Actual Costs</span>
+                  <span className="text-[12px] font-semibold tabular-nums text-foreground">{formatCurrency(actualCostCents)}</span>
+                </div>
+                <div className="flex flex-col items-end leading-tight">
+                  <span className="text-[9px] uppercase tracking-wide text-muted-foreground">Gross Profit</span>
+                  <span className={cn("text-[12px] font-semibold tabular-nums", getVarianceColor(grossProfitCents))}>{formatCurrency(grossProfitCents)}</span>
+                </div>
+                <div className="flex flex-col items-end leading-tight" data-testid="header-margin-percent">
+                  <span className="text-[9px] uppercase tracking-wide text-muted-foreground">GP %</span>
+                  <span className={cn("text-base font-bold tabular-nums leading-none", getVarianceColor(grossProfitCents))}>{marginPct.toFixed(1)}%</span>
+                </div>
+              </>
+            )}
+            {activeTab === "hours" && (
+              <>
+                <div className="flex flex-col items-end leading-tight">
+                  <span className="text-[9px] uppercase tracking-wide text-muted-foreground">Budgeted</span>
+                  <span className="text-[12px] font-semibold tabular-nums text-foreground">{formatHours(totalBudgetedHours)}</span>
+                </div>
+                <div className="flex flex-col items-end leading-tight">
+                  <span className="text-[9px] uppercase tracking-wide text-muted-foreground">Approved</span>
+                  <span className="text-[12px] font-semibold tabular-nums text-foreground">{formatHours(totalApprovedHours)}</span>
+                </div>
+                <div className="flex flex-col items-end leading-tight">
+                  <span className="text-[9px] uppercase tracking-wide text-muted-foreground">Remaining</span>
+                  <span className={cn("text-[12px] font-semibold tabular-nums", getVarianceColor(hoursRemaining))}>{formatHours(hoursRemaining)}</span>
+                </div>
+                <div className="flex flex-col items-end leading-tight" data-testid="header-efficiency-percent">
+                  <span className="text-[9px] uppercase tracking-wide text-muted-foreground">Efficiency</span>
+                  <span className="text-base font-bold tabular-nums leading-none text-foreground">{hoursPercentUsed}%</span>
+                </div>
+              </>
+            )}
+            <ChevronDown className={cn("h-4 w-4 text-muted-foreground transition-transform flex-shrink-0", headerExpanded && "rotate-180")} />
+          </button>
+
+          {/* RIGHT: refresh indicator + columns picker */}
+          <div className="flex items-center gap-2">
+            {isRecalculating && (
+              <RefreshCw className="h-3.5 w-3.5 animate-spin text-muted-foreground" data-testid="indicator-recalculating" />
+            )}
             <Popover>
               <PopoverTrigger asChild>
                 <Button
@@ -1026,24 +951,146 @@ export default function BudgetPage() {
                 </Button>
               </PopoverTrigger>
               <PopoverContent align="end" className="w-auto p-0">
-                <DataTableColumnPicker
-                  storageKey="budget-costs-v2"
-                  columns={[
-                    { id: "category", label: "Cost Code", pinned: true },
-                    { id: "budgeted", label: "Budgeted" },
-                    { id: "labour", label: "Labour" },
-                    { id: "bills", label: "Bills" },
-                    { id: "internal", label: "Internal" },
-                    { id: "total", label: "Total" },
-                    { id: "variance", label: "Difference" },
-                    { id: "status", label: "Status" },
-                  ]}
-                />
+                {activeTab === "costs" ? (
+                  <DataTableColumnPicker
+                    storageKey="budget-costs-v2"
+                    columns={[
+                      { id: "category", label: "Cost Code", pinned: true },
+                      { id: "budgeted", label: "Budgeted" },
+                      { id: "labour", label: "Labour" },
+                      { id: "bills", label: "Bills" },
+                      { id: "internal", label: "Internal" },
+                      { id: "total", label: "Total" },
+                      { id: "variance", label: "Difference" },
+                      { id: "status", label: "Status" },
+                    ]}
+                  />
+                ) : (
+                  <DataTableColumnPicker
+                    storageKey="budget-hours"
+                    columns={[
+                      { id: "costCode", label: "Cost Code", pinned: true },
+                      { id: "budgeted", label: "Budgeted" },
+                      { id: "pending", label: "Pending" },
+                      { id: "approved", label: "Approved" },
+                      { id: "total", label: "Total" },
+                      { id: "variance", label: "Variance" },
+                      { id: "percentUsed", label: "% Used" },
+                    ]}
+                  />
+                )}
               </PopoverContent>
             </Popover>
           </div>
-        );
-      })()}
+        </div>
+
+        {/* EXPANDED DETAIL — Costs */}
+        {headerExpanded && activeTab === "costs" && canViewActuals && (
+          <div
+            className="px-3 pb-2.5 pt-1.5 flex flex-col gap-2 text-[11px] bg-[hsl(var(--bp-subtle))] border-t border-border"
+            data-testid="header-detail-costs"
+          >
+            {/* Contract */}
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="w-16 flex-shrink-0 text-[9px] uppercase tracking-wide text-muted-foreground font-semibold">
+                Contract
+              </span>
+              {[
+                { label: "Contract", ex: originalContractCents, testid: "chip-contract-original" },
+                { label: "Variations", ex: variationsCents, testid: "chip-contract-variations" },
+                { label: "Revised", ex: revisedContractCents, testid: "chip-contract-revised" },
+              ].map((chip) => (
+                <div
+                  key={chip.label}
+                  className="flex items-baseline gap-2 px-3 py-1 rounded-md border border-border bg-[hsl(var(--bp-card))]"
+                  data-testid={chip.testid}
+                >
+                  <span className="text-[9px] text-muted-foreground uppercase tracking-wide">{chip.label}</span>
+                  <span className="text-[12px] font-semibold text-foreground tabular-nums">{formatCurrency(chip.ex)}</span>
+                  <span className="text-[9px] font-normal text-muted-foreground">ex GST</span>
+                </div>
+              ))}
+            </div>
+
+            {/* Margin math */}
+            <div className="flex items-center gap-x-3 gap-y-1 flex-wrap" data-testid="bar-gross-margin">
+              <span className="w-16 flex-shrink-0 text-[9px] uppercase tracking-wide text-muted-foreground font-semibold">
+                Margin
+              </span>
+              <div className="flex items-center gap-1.5" data-testid="margin-revised">
+                <span className="text-muted-foreground">Revised Contract</span>
+                <span className="font-semibold tabular-nums text-foreground">{formatCurrency(revisedContractCents)}</span>
+              </div>
+              <span className="text-muted-foreground">−</span>
+              <div
+                className="flex items-center gap-1.5"
+                data-testid="margin-actual-cost"
+                title="Internal costs not yet included"
+              >
+                <span className="text-muted-foreground">Actual Costs</span>
+                <span className="font-semibold tabular-nums text-foreground">{formatCurrency(actualCostCents)}</span>
+                <span className="text-[10px] text-muted-foreground">
+                  (Bills {formatCurrency(billsCostCents)} · Labour {formatCurrency(labourCostCents)})
+                </span>
+              </div>
+              <span className="text-muted-foreground">=</span>
+              <div className="flex items-center gap-1.5" data-testid="margin-gross-profit">
+                <span className="text-muted-foreground">Gross Profit</span>
+                <span className={cn("font-semibold tabular-nums", getVarianceColor(grossProfitCents))}>
+                  {formatCurrency(grossProfitCents)}
+                </span>
+              </div>
+              <div className="flex items-baseline gap-1.5" data-testid="margin-percent">
+                <span className="text-muted-foreground">GP %</span>
+                <span className={cn("font-bold tabular-nums", getVarianceColor(grossProfitCents))}>
+                  {marginPct.toFixed(1)}%
+                </span>
+              </div>
+            </div>
+
+            {/* Budget */}
+            <div className="flex items-center gap-x-3 gap-y-1 flex-wrap">
+              <span className="w-16 flex-shrink-0 text-[9px] uppercase tracking-wide text-muted-foreground font-semibold">
+                Budget
+              </span>
+              {[
+                { label: "Budget", value: budgetData.baselineAmount, color: "text-foreground", testid: "stat-budget" },
+                { label: "Spent", value: spentActualCents, color: "text-muted-foreground", testid: "stat-spent" },
+                { label: "Remaining", value: remainingCents, color: getVarianceColor(remainingCents), testid: "stat-remaining" },
+              ].map((stat) => (
+                <div key={stat.label} className="flex items-center gap-1.5" data-testid={stat.testid}>
+                  <span className="text-muted-foreground">{stat.label}</span>
+                  <span className={cn("font-semibold tabular-nums", stat.color)}>{formatCurrency(stat.value)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* EXPANDED DETAIL — Labour Hours */}
+        {headerExpanded && activeTab === "hours" && canViewLabour && (
+          <div
+            className="px-3 pb-2.5 pt-1.5 flex items-center gap-x-3 gap-y-1 flex-wrap text-[11px] bg-[hsl(var(--bp-subtle))] border-t border-border"
+            data-testid="header-detail-hours"
+          >
+            <span className="w-16 flex-shrink-0 text-[9px] uppercase tracking-wide text-muted-foreground font-semibold">
+              Hours
+            </span>
+            {[
+              { label: "Budgeted", value: formatHours(totalBudgetedHours), color: "text-foreground", testid: "stat-hours-budgeted" },
+              { label: "Pending", value: formatHours(totalPendingHours), color: "text-[hsl(var(--bp-amber))]", testid: "stat-hours-pending" },
+              { label: "Approved", value: formatHours(totalApprovedHours), color: "text-foreground", testid: "stat-hours-approved" },
+              { label: "Remaining", value: formatHours(hoursRemaining), color: getVarianceColor(hoursRemaining), testid: "stat-hours-remaining" },
+              { label: "Efficiency", value: `${hoursPercentUsed}%`, color: "text-foreground", testid: "stat-hours-efficiency" },
+            ].map((stat) => (
+              <div key={stat.label} className="flex items-center gap-1.5" data-testid={stat.testid}>
+                <span className="text-muted-foreground">{stat.label}</span>
+                <span className={cn("font-semibold tabular-nums", stat.color)}>{stat.value}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
 
       {/* Content */}
       <div className="flex-1 min-h-0 overflow-hidden p-2">
@@ -1087,7 +1134,7 @@ export default function BudgetPage() {
                     <AlertCircle className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
                     <h3 className="text-sm font-semibold mb-1">No budget breakdown available</h3>
                     <p className="text-xs text-muted-foreground mb-3">
-                      Click "Recalculate" to generate budget breakdown from your estimates and bills.
+                      The budget breakdown is generated automatically from your estimates and bills.
                     </p>
                   </div>
                 ) : (
@@ -1173,7 +1220,7 @@ export default function BudgetPage() {
                     <Clock className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
                     <h3 className="text-sm font-semibold mb-1">No labour hours budget</h3>
                     <p className="text-xs text-muted-foreground mb-3">
-                      Click "Recalculate" to generate hours budget from estimates and timesheets.
+                      The hours budget is generated automatically from estimates and timesheets.
                     </p>
                   </div>
                 ) : filteredLabourHours.length === 0 ? (
