@@ -40,14 +40,14 @@ app.use((req, res, next) => {
   res.setHeader(
     'Content-Security-Policy',
     "default-src 'self'; " +
-    "script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:; " +
+    "script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: https://client.crisp.chat; " +
     "worker-src 'self' blob:; " +
     "child-src 'self' blob:; " +
-    "style-src 'self' 'unsafe-inline'; " +
-    "img-src 'self' data: blob:; " +
-    "font-src 'self' data:; " +
-    "connect-src 'self' ws: wss: blob: data:; " +
-    "frame-src 'self' blob:; " +
+    "style-src 'self' 'unsafe-inline' https://client.crisp.chat; " +
+    "img-src 'self' data: blob: https://client.crisp.chat https://image.crisp.chat; " +
+    "font-src 'self' data: https://client.crisp.chat; " +
+    "connect-src 'self' ws: wss: blob: data: https://client.crisp.chat wss://client.relay.crisp.chat; " +
+    "frame-src 'self' blob: https://client.crisp.chat; " +
     "object-src 'self' blob:; " +
     "frame-ancestors *;"
   );

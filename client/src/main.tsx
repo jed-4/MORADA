@@ -1,11 +1,19 @@
 import { Component, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import * as Sentry from "@sentry/react";
+import { Crisp } from "crisp-sdk-web";
 import App from "./App";
 import "./index.css";
 import { installChunkReloadHandlers, isDynamicImportError, attemptChunkReload } from "./lib/chunk-reload";
 
 installChunkReloadHandlers();
+
+// Initialize the Crisp support chat widget before React mounts. This is a no-op
+// when VITE_CRISP_WEBSITE_ID is unset, so local dev without it runs cleanly.
+const crispWebsiteId = import.meta.env.VITE_CRISP_WEBSITE_ID as string | undefined;
+if (crispWebsiteId) {
+  Crisp.configure(crispWebsiteId);
+}
 
 // Initialize Sentry as early as possible, before the app mounts. This is a
 // no-op when VITE_SENTRY_DSN is unset, so local dev without a DSN runs cleanly.

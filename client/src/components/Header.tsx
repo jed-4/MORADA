@@ -1,5 +1,6 @@
 import { Calendar, User, Settings, LogOut, Building2, Plus, FileText, CheckSquare, Folder, Palette, ChevronDown, Home, MessageSquare, Clock, Calculator, FileBarChart, FileSearch, HelpCircle, File, DollarSign, Receipt, BookOpen, Timer, PiggyBank, FolderOpen, Users, ClipboardList, Kanban, Search, ChevronLeft, ChevronRight, Star, GanttChart, HardDrive, Clipboard, LayoutDashboard, Check } from "lucide-react";
 import { useLocation } from "wouter";
+import { Crisp } from "crisp-sdk-web";
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -258,6 +259,9 @@ export default function Header() {
   };
 
   const handleLogout = () => {
+    if (import.meta.env.VITE_CRISP_WEBSITE_ID) {
+      Crisp.session.reset();
+    }
     logout();
   };
 

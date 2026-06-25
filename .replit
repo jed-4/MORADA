@@ -115,3 +115,8 @@ integrations = ["javascript_log_in_with_replit:1.0.0", "javascript_database:1.0.
 [postMerge]
 path = "scripts/post-merge.sh"
 timeoutMs = 90000
+
+[userenv]
+
+[userenv.shared]
+VITE_CRISP_WEBSITE_ID = "e3620629-080d-4b1e-88b5-821e2adac0fd"

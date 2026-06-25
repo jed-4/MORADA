@@ -16,6 +16,7 @@ import { SocketProvider, TaskEventsListener } from "@/lib/socket";
 import { ErrorBoundary } from "@/components/ui/error-boundary";
 import { GlobalMessageNotifier } from "@/components/global-message-notifier";
 import * as Sentry from "@sentry/react";
+import { Crisp } from "crisp-sdk-web";
 
 // All page imports are lazy-loaded so each route gets its own bundle chunk.
 // This eliminates the entire class of "Cannot access '…' before initialization"
@@ -388,6 +389,41 @@ function AuthWrapper() {
       Sentry.setTag("company", undefined);
     }
   }, [user]);
+
+  // Crisp support chat: identify the signed-in user with account metadata only.
+  // Never pass financial figures, client names, or bill amounts here. No-op when
+  // VITE_CRISP_WEBSITE_ID is unset.
+  useEffect(() => {
+    if (!import.meta.env.VITE_CRISP_WEBSITE_ID) return;
+    if (!user) {
+      // Signed out (logout or expired session): clear the Crisp identity so the
+      // next visitor on this browser starts a fresh, anonymous chat session.
+      Crisp.session.reset();
+      return;
+    }
+    if (user.email) Crisp.user.setEmail(user.email);
+    const nickname = [user.firstName, user.lastName].filter(Boolean).join(" ") || user.email || "";
+    if (nickname) Crisp.user.setNickname(nickname);
+    Crisp.session.setData({
+      user_id: String(user.id),
+      company_id: String(user.companyId ?? ""),
+      company_name: user.companyNickname ?? "",
+      plan_status: user.planStatus ?? "unknown",
+      role: user.roleName ?? "",
+    });
+  }, [user]);
+
+  // Crisp support chat: hide the widget during onboarding, show it everywhere
+  // else (including /auth). No-op when VITE_CRISP_WEBSITE_ID is unset.
+  useEffect(() => {
+    if (!import.meta.env.VITE_CRISP_WEBSITE_ID) return;
+    const onOnboarding = location.startsWith("/onboarding") || (!!user && !user.companyId);
+    if (onOnboarding) {
+      Crisp.chat.hide();
+    } else {
+      Crisp.chat.show();
+    }
+  }, [location, user]);
 
   // Show loading while checking auth
   if (isLoading) {

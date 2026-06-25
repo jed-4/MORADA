@@ -29,3 +29,4 @@
 - [Stale client after redeploy](stale-client-after-redeploy.md) — a "prod crashed" report with render-error + 404s on old hashed assets = stale browser tab on the previous build; check fix-is-ancestor-of-publish before re-fixing.
 - [Dev permission gating](dev-permission-gating.md) — in dev requirePermission is bypassed; "can't access X" = frontend effectivePermissions gate; admin bypass needs is_built_in=true, so a custom "General Manager" role with no perms = no access.
 - [Sentry ESM express instrumentation](sentry-esm-express-instrumentation.md) — "express is not instrumented" warning under ESM needs `--import` (package.json); error capture still works, only auto route-tracing degraded.
+- [Third-party widget CSP](thirdparty-widget-csp.md) — server/index.ts sets a strict manual CSP; any embedded SaaS widget (e.g. Crisp) needs its script/style/img/font/connect/frame origins whitelisted or it silently fails to load.
