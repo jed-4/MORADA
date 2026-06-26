@@ -30,3 +30,4 @@
 - [Dev permission gating](dev-permission-gating.md) — in dev requirePermission is bypassed; "can't access X" = frontend effectivePermissions gate; admin bypass needs is_built_in=true, so a custom "General Manager" role with no perms = no access.
 - [Sentry ESM express instrumentation](sentry-esm-express-instrumentation.md) — "express is not instrumented" warning under ESM needs `--import` (package.json); error capture still works, only auto route-tracing degraded.
 - [Third-party widget CSP](thirdparty-widget-csp.md) — server/index.ts sets a strict manual CSP; any embedded SaaS widget (e.g. Crisp) needs its script/style/img/font/connect/frame origins whitelisted or it silently fails to load.
+- [Tenant isolation convention](tenant-isolation-convention.md) — by-ID routes return 404 (not 403) cross-tenant; enforce via getOwned* route helpers; nested sub-resources resolve parent FK then delegate.

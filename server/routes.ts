@@ -1460,8 +1460,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/docs/:id", requireAuth, async (req, res) => {
     try {
-      const doc = await storage.getDoc(req.params.id);
-      if (!doc) return res.status(404).json({ error: "Doc not found" });
+      const doc = await getOwnedDoc(req, res, req.params.id, "Doc not found");
+      if (!doc) return;
       res.json(doc);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch doc" });
@@ -1486,6 +1486,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/docs/:id", requireAuth, async (req, res) => {
     try {
+      const owned = await getOwnedDoc(req, res, req.params.id, "Doc not found");
+      if (!owned) return;
       const doc = await storage.updateDoc(req.params.id, req.body);
       if (!doc) return res.status(404).json({ error: "Doc not found" });
       res.json(doc);
@@ -1496,6 +1498,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/docs/:id", requireAuth, async (req, res) => {
     try {
+      const owned = await getOwnedDoc(req, res, req.params.id, "Doc not found");
+      if (!owned) return;
       await storage.deleteDoc(req.params.id);
       res.status(204).end();
     } catch (error) {
@@ -1660,10 +1664,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/tasks/:id", async (req, res) => {
     try {
-      const task = await storage.getTask(req.params.id);
-      if (!task) {
-        return res.status(404).json({ error: "Task not found" });
-      }
+      const task = await getOwnedTask(req, res, req.params.id);
+      if (!task) return;
       res.json(task);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch task" });
@@ -1768,13 +1770,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // First, verify the task exists and belongs to the user's company
-      const existingTask = await storage.getTask(req.params.id);
-      if (!existingTask) {
-        return res.status(404).json({ error: "Task not found" });
-      }
-      if (existingTask.companyId !== user.companyId) {
-        return res.status(403).json({ error: "Forbidden - task belongs to another company" });
-      }
+      const existingTask = await getOwnedTask(req, res, req.params.id);
+      if (!existingTask) return;
 
       // Preprocess: remove empty/null date/time/assignee fields to avoid validation errors
       const body = { ...req.body };
@@ -1862,8 +1859,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "Invalid status" });
       }
 
-      // Get existing task to check previous status
-      const existingTask = await storage.getTask(req.params.id, user.companyId);
+      // Get existing task to check previous status (also enforces company ownership)
+      const existingTask = await getOwnedTask(req, res, req.params.id);
+      if (!existingTask) return;
       
       const task = await storage.updateTaskStatus(req.params.id, status);
       if (!task) {
@@ -1905,6 +1903,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const taskId = req.params.id;
       
       console.log(`[DELETE /api/tasks/${taskId}] User: ${user?.id}, Company: ${user?.companyId}`);
+      
+      // Enforce company ownership before deleting (cross-tenant / non-existent -> 404)
+      const ownedTask = await getOwnedTask(req, res, taskId);
+      if (!ownedTask) return;
       
       const success = await storage.deleteTask(taskId);
       if (!success) {
@@ -2110,10 +2112,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/defects/:id", async (req, res) => {
     try {
-      const defect = await storage.getDefectById(req.params.id);
-      if (!defect) {
-        return res.status(404).json({ error: "Defect not found" });
-      }
+      const defect = await getOwnedDefect(req, res, req.params.id);
+      if (!defect) return;
       res.json(defect);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch defect" });
@@ -2148,6 +2148,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
+      const owned = await getOwnedDefect(req, res, req.params.id);
+      if (!owned) return;
       const defect = await storage.updateDefect(req.params.id, validationResult.data);
       if (!defect) {
         return res.status(404).json({ error: "Defect not found" });
@@ -2160,6 +2162,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/defects/:id", async (req, res) => {
     try {
+      const owned = await getOwnedDefect(req, res, req.params.id);
+      if (!owned) return;
       await storage.deleteDefect(req.params.id);
       res.status(204).send();
     } catch (error) {
@@ -2180,10 +2184,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/minutes/:id", async (req, res) => {
     try {
-      const minute = await storage.getMinute(req.params.id);
-      if (!minute) {
-        return res.status(404).json({ error: "Minute not found" });
-      }
+      const minute = await getOwnedMinute(req, res, req.params.id);
+      if (!minute) return;
       res.json(minute);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch minute" });
@@ -2218,6 +2220,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
+      const owned = await getOwnedMinute(req, res, req.params.id);
+      if (!owned) return;
       const minute = await storage.updateMinute(req.params.id, validationResult.data);
       if (!minute) {
         return res.status(404).json({ error: "Minute not found" });
@@ -2230,6 +2234,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/minutes/:id", async (req, res) => {
     try {
+      const owned = await getOwnedMinute(req, res, req.params.id);
+      if (!owned) return;
       await storage.deleteMinute(req.params.id);
       res.status(204).send();
     } catch (error) {
@@ -2240,10 +2246,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // AI Summary endpoint for minutes
   app.post("/api/minutes/:id/summarize", async (req, res) => {
     try {
-      const minute = await storage.getMinute(req.params.id);
-      if (!minute) {
-        return res.status(404).json({ error: "Minute not found" });
-      }
+      const minute = await getOwnedMinute(req, res, req.params.id);
+      if (!minute) return;
 
       // Use OpenAI to generate summary
       const OpenAI = (await import('openai')).default;
@@ -2303,10 +2307,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "No file uploaded" });
       }
 
-      const minute = await storage.getMinute(req.params.id);
-      if (!minute) {
-        return res.status(404).json({ error: "Minute not found" });
-      }
+      const minute = await getOwnedMinute(req, res, req.params.id);
+      if (!minute) return;
 
       // Update status to processing
       await storage.updateMinute(req.params.id, { 
@@ -3290,6 +3292,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.log(`[GET /api/projects/:id] Project not found, returning 404`);
         return res.status(404).json({ error: "Project not found" });
       }
+      // Company scoping: only return a project within the caller's company.
+      // 404 (not 403) on mismatch so existence isn't confirmed.
+      const userCompanyId = (req as any).user?.companyId;
+      if (!userCompanyId || ((project as any).companyId && (project as any).companyId !== userCompanyId)) {
+        return res.status(404).json({ error: "Project not found" });
+      }
       res.json(project);
     } catch (error) {
       console.error(`[GET /api/projects/:id] Error:`, error);
@@ -3546,7 +3554,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       console.log("[PATCH /api/projects/:id] Project ID:", req.params.id);
       console.log("[PATCH /api/projects/:id] Request body:", JSON.stringify(req.body, null, 2));
-      
+
+      // Unconditional cross-tenant ownership gate: applies to EVERY patch
+      // (with or without a name change). Returns 404 on company mismatch or
+      // missing id so existence is never confirmed to an unauthorized caller.
+      if (!(await enforceProjectCompany(req, res, req.params.id, "Project not found"))) return;
+
       const updateSchema = insertProjectSchema.partial();
       const validationResult = updateSchema.safeParse(req.body);
       if (!validationResult.success) {
@@ -3652,11 +3665,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
         
         const currentProject = await storage.getProject(req.params.id);
-        if (!currentProject) {
+        // Ownership already enforced by the unconditional gate above; this
+        // re-fetch is only for the duplicate-name lookup. Use 404 (not 403) to
+        // stay consistent with the masking convention.
+        if (!currentProject || currentProject.companyId !== user.companyId) {
           return res.status(404).json({ error: "Project not found" });
-        }
-        if (currentProject.companyId !== user.companyId) {
-          return res.status(403).json({ error: "Access denied" });
         }
         
         const normalizedName = updateData.name!.trim().toLowerCase();
@@ -3819,6 +3832,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/projects/:id", async (req, res) => {
     try {
+      // Company scoping: only delete a project within the caller's company.
+      const existingProject = await storage.getProject(req.params.id);
+      const userCompanyId = (req as any).user?.companyId;
+      if (!existingProject || !userCompanyId ||
+          ((existingProject as any).companyId && (existingProject as any).companyId !== userCompanyId)) {
+        return res.status(404).json({ error: "Project not found" });
+      }
       const success = await storage.deleteProject(req.params.id);
       if (!success) {
         return res.status(404).json({ error: "Project not found" });
@@ -4030,6 +4050,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       const project = await storage.getProject(req.params.id);
       if (!project) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+      // Company scoping: only transition a project within the caller's company.
+      if (!user?.companyId || ((project as any).companyId && (project as any).companyId !== user.companyId)) {
         return res.status(404).json({ error: "Project not found" });
       }
       
@@ -4331,6 +4355,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Subtasks API Routes
   app.get("/api/tasks/:id/subtasks", async (req, res) => {
     try {
+      const owned = await getOwnedTask(req, res, req.params.id);
+      if (!owned) return;
       const subtasks = await storage.getSubtasks(req.params.id);
       res.json(subtasks);
     } catch (error) {
@@ -4340,6 +4366,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/tasks/:id/subtasks", async (req, res) => {
     try {
+      const owned = await getOwnedTask(req, res, req.params.id);
+      if (!owned) return;
+
       const validationResult = insertTaskSchema.safeParse(req.body);
       if (!validationResult.success) {
         return res.status(400).json({ 
@@ -4389,10 +4418,235 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
     const companyId = req.user?.companyId;
     if (!companyId || project.companyId !== companyId) {
-      res.status(403).json({ error: "Forbidden" });
+      // Return 404 (not 403) on a company mismatch so we don't confirm the
+      // record's existence to an unauthorized caller. Unauthenticated requests
+      // are already handled upstream by the auth middleware (401).
+      res.status(404).json({ error: notFoundMessage });
       return false;
     }
     return true;
+  };
+
+  // -------------------------------------------------------------------------
+  // Tenant-isolation ownership helpers. Each loads a record by id and verifies
+  // it belongs to the caller's company, returning the record when owned or
+  // sending a 404 (NOT 403 — so existence is never confirmed to an
+  // unauthorized caller) and returning null otherwise. Unauthenticated
+  // requests are already handled upstream by the auth middleware (401).
+  // -------------------------------------------------------------------------
+  const getOwnedBill = async (
+    req: any, res: any, billId: string, notFound = "Bill not found",
+  ): Promise<any | null> => {
+    if (!billId) { res.status(404).json({ error: notFound }); return null; }
+    const bill = await storage.getBillById(billId);
+    if (!bill) { res.status(404).json({ error: notFound }); return null; }
+    const companyId = req.user?.companyId;
+    if (!companyId) { res.status(404).json({ error: notFound }); return null; }
+    // Newer bills carry a direct companyId; older bills only have a projectId.
+    if ((bill as any).companyId) {
+      if ((bill as any).companyId !== companyId) {
+        res.status(404).json({ error: notFound }); return null;
+      }
+      return bill;
+    }
+    if ((bill as any).projectId) {
+      if (!(await enforceProjectCompany(req, res, (bill as any).projectId, notFound))) return null;
+      return bill;
+    }
+    res.status(404).json({ error: notFound }); return null;
+  };
+
+  const getOwnedVariation = async (
+    req: any, res: any, variationId: string, notFound = "Variation not found",
+  ): Promise<any | null> => {
+    if (!variationId) { res.status(404).json({ error: notFound }); return null; }
+    const variation = await storage.getVariation(variationId);
+    if (!variation) { res.status(404).json({ error: notFound }); return null; }
+    if (!(await enforceProjectCompany(req, res, (variation as any).projectId, notFound))) return null;
+    return variation;
+  };
+
+  const getOwnedEstimate = async (
+    req: any, res: any, estimateId: string, notFound = "Estimate not found",
+  ): Promise<any | null> => {
+    if (!estimateId) { res.status(404).json({ error: notFound }); return null; }
+    const estimate = await storage.getEstimate(estimateId);
+    if (!estimate) { res.status(404).json({ error: notFound }); return null; }
+    if (!(await enforceProjectCompany(req, res, (estimate as any).projectId, notFound))) return null;
+    return estimate;
+  };
+
+  const getOwnedEstimateItem = async (
+    req: any, res: any, itemId: string, notFound = "Estimate item not found",
+  ): Promise<any | null> => {
+    if (!itemId) { res.status(404).json({ error: notFound }); return null; }
+    const item = await storage.getEstimateItem(itemId);
+    if (!item) { res.status(404).json({ error: notFound }); return null; }
+    if (!(await getOwnedEstimate(req, res, (item as any).estimateId, notFound))) return null;
+    return item;
+  };
+
+  const getOwnedEstimateGroup = async (
+    req: any, res: any, groupId: string, notFound = "Group not found",
+  ): Promise<any | null> => {
+    if (!groupId) { res.status(404).json({ error: notFound }); return null; }
+    const group = await storage.getEstimateGroup(groupId);
+    if (!group) { res.status(404).json({ error: notFound }); return null; }
+    if (!(await getOwnedEstimate(req, res, (group as any).estimateId, notFound))) return null;
+    return group;
+  };
+
+  const getOwnedScheduleItem = async (
+    req: any, res: any, itemId: string, notFound = "Schedule item not found",
+  ): Promise<any | null> => {
+    if (!itemId) { res.status(404).json({ error: notFound }); return null; }
+    const item = await storage.getScheduleItem(itemId);
+    if (!item) { res.status(404).json({ error: notFound }); return null; }
+    const schedule = await storage.getScheduleById((item as any).scheduleId);
+    if (!schedule) { res.status(404).json({ error: notFound }); return null; }
+    if (!(await enforceProjectCompany(req, res, (schedule as any).projectId, notFound))) return null;
+    return item;
+  };
+
+  const getOwnedSupplier = async (
+    req: any, res: any, supplierId: string, notFound = "Supplier not found",
+  ): Promise<any | null> => {
+    if (!supplierId) { res.status(404).json({ error: notFound }); return null; }
+    const supplier = await storage.getSupplierById(supplierId);
+    if (!supplier) { res.status(404).json({ error: notFound }); return null; }
+    const companyId = req.user?.companyId;
+    if (!companyId || (supplier as any).companyId !== companyId) {
+      res.status(404).json({ error: notFound }); return null;
+    }
+    return supplier;
+  };
+
+  const getOwnedDefect = async (
+    req: any, res: any, defectId: string, notFound = "Defect not found",
+  ): Promise<any | null> => {
+    if (!defectId) { res.status(404).json({ error: notFound }); return null; }
+    const defect = await storage.getDefectById(defectId);
+    if (!defect) { res.status(404).json({ error: notFound }); return null; }
+    if (!(await enforceProjectCompany(req, res, (defect as any).projectId, notFound))) return null;
+    return defect;
+  };
+
+  const getOwnedSiteDiaryEntry = async (
+    req: any, res: any, entryId: string, notFound = "Site diary entry not found",
+  ): Promise<any | null> => {
+    if (!entryId) { res.status(404).json({ error: notFound }); return null; }
+    const entry = await storage.getSiteDiaryEntry(entryId);
+    if (!entry) { res.status(404).json({ error: notFound }); return null; }
+    if (!(await enforceProjectCompany(req, res, (entry as any).projectId, notFound))) return null;
+    return entry;
+  };
+
+  const getOwnedTimesheet = async (
+    req: any, res: any, timesheetId: string, notFound = "Timesheet not found",
+  ): Promise<any | null> => {
+    if (!timesheetId) { res.status(404).json({ error: notFound }); return null; }
+    const timesheet = await storage.getTimesheet(timesheetId);
+    if (!timesheet) { res.status(404).json({ error: notFound }); return null; }
+    const companyId = req.user?.companyId;
+    if (!companyId) { res.status(404).json({ error: notFound }); return null; }
+    // Timesheets resolve company through their owning user; projectId is nullable.
+    const owner = (timesheet as any).userId ? await storage.getUser((timesheet as any).userId) : null;
+    if (owner && (owner as any).companyId === companyId) return timesheet;
+    if ((timesheet as any).projectId) {
+      if (!(await enforceProjectCompany(req, res, (timesheet as any).projectId, notFound))) return null;
+      return timesheet;
+    }
+    res.status(404).json({ error: notFound }); return null;
+  };
+
+  const getOwnedMinute = async (
+    req: any, res: any, minuteId: string, notFound = "Minute not found",
+  ): Promise<any | null> => {
+    if (!minuteId) { res.status(404).json({ error: notFound }); return null; }
+    const minute = await storage.getMinute(minuteId);
+    if (!minute) { res.status(404).json({ error: notFound }); return null; }
+    const companyId = req.user?.companyId;
+    if (!companyId) { res.status(404).json({ error: notFound }); return null; }
+    // Minutes may be project-scoped (projectId) or business-level (ownerId only).
+    if ((minute as any).projectId) {
+      if (!(await enforceProjectCompany(req, res, (minute as any).projectId, notFound))) return null;
+      return minute;
+    }
+    const owner = (minute as any).ownerId ? await storage.getUser((minute as any).ownerId) : null;
+    if (owner && (owner as any).companyId === companyId) return minute;
+    res.status(404).json({ error: notFound }); return null;
+  };
+
+  const getOwnedDoc = async (
+    req: any, res: any, docId: string, notFound = "Document not found",
+  ): Promise<any | null> => {
+    if (!docId) { res.status(404).json({ error: notFound }); return null; }
+    const doc = await storage.getDoc(docId);
+    if (!doc) { res.status(404).json({ error: notFound }); return null; }
+    const companyId = req.user?.companyId;
+    if (!companyId || (doc as any).companyId !== companyId) {
+      res.status(404).json({ error: notFound }); return null;
+    }
+    return doc;
+  };
+
+  const getOwnedProposal = async (
+    req: any, res: any, proposalId: string, notFound = "Proposal not found",
+  ): Promise<any | null> => {
+    if (!proposalId) { res.status(404).json({ error: notFound }); return null; }
+    const proposal = await storage.getProposal(proposalId);
+    if (!proposal) { res.status(404).json({ error: notFound }); return null; }
+    if (!(await enforceProjectCompany(req, res, (proposal as any).projectId, notFound))) return null;
+    return proposal;
+  };
+
+  const getOwnedClientInvoice = async (
+    req: any, res: any, invoiceId: string, notFound = "Invoice not found",
+  ): Promise<any | null> => {
+    if (!invoiceId) { res.status(404).json({ error: notFound }); return null; }
+    const invoice = await storage.getClientInvoice(invoiceId);
+    if (!invoice) { res.status(404).json({ error: notFound }); return null; }
+    if (!(await enforceProjectCompany(req, res, (invoice as any).projectId, notFound))) return null;
+    return invoice;
+  };
+
+  const getOwnedRFQ = async (
+    req: any, res: any, rfqId: string, notFound = "RFQ not found",
+  ): Promise<any | null> => {
+    if (!rfqId) { res.status(404).json({ error: notFound }); return null; }
+    const rfq = await storage.getRFQ(rfqId);
+    if (!rfq) { res.status(404).json({ error: notFound }); return null; }
+    const companyId = req.user?.companyId;
+    if (!companyId || (rfq as any).companyId !== companyId) {
+      res.status(404).json({ error: notFound }); return null;
+    }
+    return rfq;
+  };
+
+  const getOwnedTask = async (
+    req: any, res: any, taskId: string, notFound = "Task not found",
+  ): Promise<any | null> => {
+    if (!taskId) { res.status(404).json({ error: notFound }); return null; }
+    const task = await storage.getTask(taskId);
+    if (!task) { res.status(404).json({ error: notFound }); return null; }
+    const companyId = req.user?.companyId;
+    if (!companyId || (task as any).companyId !== companyId) {
+      res.status(404).json({ error: notFound }); return null;
+    }
+    return task;
+  };
+
+  const getOwnedRFI = async (
+    req: any, res: any, rfiId: string, notFound = "RFI not found",
+  ): Promise<any | null> => {
+    if (!rfiId) { res.status(404).json({ error: notFound }); return null; }
+    const rfi = await storage.getRFI(rfiId);
+    if (!rfi) { res.status(404).json({ error: notFound }); return null; }
+    const companyId = req.user?.companyId;
+    if (!companyId || (rfi as any).companyId !== companyId) {
+      res.status(404).json({ error: notFound }); return null;
+    }
+    return rfi;
   };
 
   app.get("/api/estimates/:id", async (req, res) => {
@@ -4543,6 +4797,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Estimate Items API Routes
   app.get("/api/estimates/:id/items", async (req, res) => {
     try {
+      const owned = await getOwnedEstimate(req, res, req.params.id);
+      if (!owned) return;
       const items = await storage.getEstimateItems(req.params.id);
       res.json(items);
     } catch (error) {
@@ -4552,10 +4808,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/estimate-items/:id", async (req, res) => {
     try {
-      const item = await storage.getEstimateItem(req.params.id);
-      if (!item) {
-        return res.status(404).json({ error: "Estimate item not found" });
-      }
+      const item = await getOwnedEstimateItem(req, res, req.params.id);
+      if (!item) return;
       res.json(item);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch estimate item" });
@@ -4566,11 +4820,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const estimateId = req.params.id;
       
-      // Get estimate for project markup and tax rate
-      const estimate = await storage.getEstimate(estimateId);
-      if (!estimate) {
-        return res.status(404).json({ error: "Estimate not found" });
-      }
+      // Get estimate for project markup and tax rate (company-scoped)
+      const estimate = await getOwnedEstimate(req, res, estimateId);
+      if (!estimate) return;
 
       const unitCostExTax = req.body.unitCostExTax || 0;
       const quantity = req.body.quantity ?? 0;
@@ -4622,11 +4874,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "Items array is required and must not be empty" });
       }
 
-      // Get estimate for project markup and tax rate
-      const estimate = await storage.getEstimate(estimateId);
-      if (!estimate) {
-        return res.status(404).json({ error: "Estimate not found" });
-      }
+      // Get estimate for project markup and tax rate (company-scoped)
+      const estimate = await getOwnedEstimate(req, res, estimateId);
+      if (!estimate) return;
 
       // Get company cost codes to validate against
       const companyCostCodes = await storage.getCostCodes();
@@ -5214,11 +5464,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/estimate-items/:id", async (req, res) => {
     try {
-      // Get existing item to access estimate
-      const existingItem = await storage.getEstimateItem(req.params.id);
-      if (!existingItem) {
-        return res.status(404).json({ error: "Estimate item not found" });
-      }
+      // Get existing item to access estimate (company-scoped)
+      const existingItem = await getOwnedEstimateItem(req, res, req.params.id);
+      if (!existingItem) return;
       
       // Get estimate for project markup and tax rate
       const estimate = await storage.getEstimate(existingItem.estimateId);
@@ -5277,7 +5525,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/estimate-items/:id", async (req, res) => {
     try {
-      const existingItem = await storage.getEstimateItem(req.params.id);
+      const existingItem = await getOwnedEstimateItem(req, res, req.params.id);
+      if (!existingItem) return;
       const deleted = await storage.deleteEstimateItem(req.params.id);
       if (!deleted) {
         return res.status(404).json({ error: "Estimate item not found" });
@@ -5297,6 +5546,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Duplicate estimate item
   app.post("/api/estimate-items/:id/duplicate", async (req, res) => {
     try {
+      const sourceItem = await getOwnedEstimateItem(req, res, req.params.id);
+      if (!sourceItem) return;
       const newItem = await storage.duplicateEstimateItem(req.params.id);
       
       if (!newItem) {
@@ -5335,6 +5586,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
+      // Company scoping: both the source item and the target estimate must belong to the caller.
+      const sourceItem = await getOwnedEstimateItem(req, res, req.params.id);
+      if (!sourceItem) return;
+      const targetEstimate = await getOwnedEstimate(req, res, validationResult.data.targetEstimateId);
+      if (!targetEstimate) return;
+
       const newItem = await storage.copyItemToEstimate(req.params.id, validationResult.data.targetEstimateId);
       
       if (!newItem) {
@@ -5358,6 +5615,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Estimate Groups API Routes
   app.get("/api/estimates/:id/groups", async (req, res) => {
     try {
+      const owned = await getOwnedEstimate(req, res, req.params.id);
+      if (!owned) return;
       const groups = await storage.getEstimateGroups(req.params.id);
       res.json(groups);
     } catch (error) {
@@ -5367,6 +5626,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/estimates/:id/groups", async (req, res) => {
     try {
+      const ownedEstimate = await getOwnedEstimate(req, res, req.params.id);
+      if (!ownedEstimate) return;
       const validationResult = insertEstimateGroupSchema.safeParse({
         ...req.body,
         estimateId: req.params.id
@@ -5418,6 +5679,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
+      // Company scoping: every group in the batch must belong to the caller's
+      // company. Verify all up-front (sequentially) before any mutation so a
+      // cross-tenant id can't slip through. Resolve company via estimate→project.
+      const callerCompanyId = (req as any).user?.companyId;
+      if (!callerCompanyId) {
+        return res.status(404).json({ error: "Estimate group not found" });
+      }
+      for (const { id } of groups) {
+        const g = await storage.getEstimateGroup(id);
+        if (!g) {
+          return res.status(404).json({ error: "Estimate group not found" });
+        }
+        const est = await storage.getEstimate((g as any).estimateId);
+        const proj = est?.projectId ? await storage.getProject(est.projectId) : null;
+        if (!proj || (proj as any).companyId !== callerCompanyId) {
+          return res.status(404).json({ error: "Estimate group not found" });
+        }
+      }
+
       // Update each group's order and verify success
       const results = await Promise.all(
         groups.map(async ({ id, order }) => {
@@ -5460,6 +5740,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
+      const owned = await getOwnedEstimateGroup(req, res, req.params.id, "Estimate group not found");
+      if (!owned) return;
       const group = await storage.updateEstimateGroup(req.params.id, validationResult.data);
       if (!group) {
         return res.status(404).json({ error: "Estimate group not found" });
@@ -5475,6 +5757,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/estimate-groups/:id", async (req, res) => {
     try {
+      const owned = await getOwnedEstimateGroup(req, res, req.params.id, "Estimate group not found");
+      if (!owned) return;
       const deleted = await storage.deleteEstimateGroup(req.params.id);
       if (!deleted) {
         return res.status(404).json({ error: "Estimate group not found" });
@@ -5491,6 +5775,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Duplicate estimate group
   app.post("/api/estimate-groups/:id/duplicate", async (req, res) => {
     try {
+      const ownedGroup = await getOwnedEstimateGroup(req, res, req.params.id, "Estimate group not found");
+      if (!ownedGroup) return;
       const newGroup = await storage.duplicateEstimateGroup(req.params.id);
       
       if (!newGroup) {
@@ -5513,10 +5799,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Bulk-apply group cost code and/or category to all items in the group
   app.post("/api/estimate-groups/:id/apply-cost-code", requireAuth, async (req, res) => {
     try {
-      const group = await storage.getEstimateGroup(req.params.id);
-      if (!group) {
-        return res.status(404).json({ error: "Estimate group not found" });
-      }
+      const group = await getOwnedEstimateGroup(req, res, req.params.id, "Estimate group not found");
+      if (!group) return;
       if (!group.defaultCostCode && !group.defaultCostCategoryId) {
         return res.status(400).json({ error: "Group has no default cost code or category set" });
       }
@@ -5543,6 +5827,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
           details: fromZodError(validationResult.error).toString() 
         });
       }
+
+      // Company scoping: both the source group and target estimate must belong to the caller.
+      const sourceGroup = await getOwnedEstimateGroup(req, res, req.params.id, "Estimate group not found");
+      if (!sourceGroup) return;
+      const targetEstimate = await getOwnedEstimate(req, res, validationResult.data.targetEstimateId);
+      if (!targetEstimate) return;
 
       const newGroup = await storage.copyGroupToEstimate(req.params.id, validationResult.data.targetEstimateId);
       
@@ -11707,8 +11997,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/selection-options/:id", async (req, res) => {
     try {
-      const existing = await storage.getSelectionOption(req.params.id);
-      if (!existing) return res.status(404).json({ error: "Selection option not found" });
+      const existing = await assertOptionAccess(req, res, req.params.id);
+      if (!existing) return;
       if (existing.lockedAt) {
         return res.status(403).json({ error: "This option is locked and cannot be edited." });
       }
@@ -11735,8 +12025,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/selection-options/:id", async (req, res) => {
     try {
-      const existing = await storage.getSelectionOption(req.params.id);
-      if (!existing) return res.status(404).json({ error: "Selection option not found" });
+      const existing = await assertOptionAccess(req, res, req.params.id);
+      if (!existing) return;
       if (existing.lockedAt) {
         return res.status(403).json({ error: "This option is locked and cannot be deleted." });
       }
@@ -11808,7 +12098,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const project = await storage.getProject(selection.projectId);
     const userCompanyId: string | undefined = req.user?.companyId ?? req.user?.dbUser?.companyId;
     if (!project || !userCompanyId || project.companyId !== userCompanyId) {
-      res.status(403).json({ error: "Access denied" }); return null;
+      // 404 (not 403) on a company mismatch so existence is never confirmed.
+      res.status(404).json({ error: "Selection option not found" }); return null;
     }
     return option;
   }
@@ -12245,10 +12536,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/suppliers/:id", requireAuth, requireTeamMember, async (req, res) => {
     try {
-      const supplier = await storage.getSupplierById(req.params.id);
-      if (!supplier) {
-        return res.status(404).json({ error: "Supplier not found" });
-      }
+      const supplier = await getOwnedSupplier(req, res, req.params.id);
+      if (!supplier) return;
       res.json(supplier);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch supplier" });
@@ -12283,6 +12572,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
+      const owned = await getOwnedSupplier(req, res, req.params.id);
+      if (!owned) return;
       const supplier = await storage.updateSupplier(req.params.id, validationResult.data);
       res.json(supplier);
     } catch (error) {
@@ -12295,6 +12586,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/suppliers/:id", requireAuth, requireTeamMember, async (req, res) => {
     try {
+      const owned = await getOwnedSupplier(req, res, req.params.id);
+      if (!owned) return;
       await storage.deleteSupplier(req.params.id);
       res.status(204).send();
     } catch (error) {
@@ -13117,6 +13410,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // RFQ Items API Routes
   app.get("/api/rfqs/:rfqId/items", requireAuth, requireTeamMember, async (req, res) => {
     try {
+      const owned = await getOwnedRFQ(req, res, req.params.rfqId);
+      if (!owned) return;
       const items = await storage.getRFQItems(req.params.rfqId);
       res.json(items);
     } catch (error) {
@@ -13300,14 +13595,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // RFQ Follow-ups API Routes
   app.get("/api/rfqs/:rfqId/follow-ups", requireAuth, requireTeamMember, async (req, res) => {
     try {
-      // Company isolation check - verify RFQ ownership
-      const rfq = await storage.getRFQ(req.params.rfqId);
-      if (!rfq) {
-        return res.status(404).json({ error: "RFQ not found" });
-      }
-      if (rfq.companyId !== req.user!.companyId) {
-        return res.status(403).json({ error: "Access denied" });
-      }
+      // Company isolation check - verify RFQ ownership (404 to avoid existence disclosure)
+      const owned = await getOwnedRFQ(req, res, req.params.rfqId);
+      if (!owned) return;
 
       const followUps = await storage.getRFQFollowUps(req.params.rfqId);
       res.json(followUps);
@@ -13718,13 +14008,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/rfis/:id", requireAuth, requireTeamMember, async (req, res) => {
     try {
-      const rfi = await storage.getRFI(req.params.id);
-      if (!rfi) {
-        return res.status(404).json({ error: "RFI not found" });
-      }
-      if (rfi.companyId !== req.user!.companyId) {
-        return res.status(403).json({ error: "Access denied" });
-      }
+      const rfi = await getOwnedRFI(req, res, req.params.id);
+      if (!rfi) return;
       res.json(rfi);
     } catch (error) {
       console.error("Error fetching RFI:", error);
@@ -13757,13 +14042,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/rfis/:id", requireAuth, requireTeamMember, async (req, res) => {
     try {
-      const existingRfi = await storage.getRFI(req.params.id);
-      if (!existingRfi) {
-        return res.status(404).json({ error: "RFI not found" });
-      }
-      if (existingRfi.companyId !== req.user!.companyId) {
-        return res.status(403).json({ error: "Access denied" });
-      }
+      const existingRfi = await getOwnedRFI(req, res, req.params.id);
+      if (!existingRfi) return;
 
       const validationResult = insertRfiSchema.partial().safeParse(req.body);
       if (!validationResult.success) {
@@ -13783,13 +14063,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/rfis/:id", requireAuth, requireTeamMember, async (req, res) => {
     try {
-      const existingRfi = await storage.getRFI(req.params.id);
-      if (!existingRfi) {
-        return res.status(404).json({ error: "RFI not found" });
-      }
-      if (existingRfi.companyId !== req.user!.companyId) {
-        return res.status(403).json({ error: "Access denied" });
-      }
+      const existingRfi = await getOwnedRFI(req, res, req.params.id);
+      if (!existingRfi) return;
 
       const deleted = await storage.deleteRFI(req.params.id);
       if (!deleted) {
@@ -13805,13 +14080,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // RFI Comments Routes
   app.get("/api/rfis/:rfiId/comments", requireAuth, requireTeamMember, async (req, res) => {
     try {
-      const rfi = await storage.getRFI(req.params.rfiId);
-      if (!rfi) {
-        return res.status(404).json({ error: "RFI not found" });
-      }
-      if (rfi.companyId !== req.user!.companyId) {
-        return res.status(403).json({ error: "Access denied" });
-      }
+      const rfi = await getOwnedRFI(req, res, req.params.rfiId);
+      if (!rfi) return;
       const comments = await storage.getRFIComments(req.params.rfiId);
       res.json(comments);
     } catch (error) {
@@ -13823,14 +14093,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/rfi-comments", requireAuth, requireTeamMember, async (req, res) => {
     try {
       const { rfiId, content, attachmentUrls, attachmentFileNames, isExternalResponse } = req.body;
-      
-      const rfi = await storage.getRFI(rfiId);
-      if (!rfi) {
-        return res.status(404).json({ error: "RFI not found" });
-      }
-      if (rfi.companyId !== req.user!.companyId) {
-        return res.status(403).json({ error: "Access denied" });
-      }
+
+      const rfi = await getOwnedRFI(req, res, rfiId);
+      if (!rfi) return;
 
       const comment = await storage.createRFIComment({
         rfiId,
@@ -13953,10 +14218,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/bills/:id", requireAuth, async (req, res) => {
     try {
-      const bill = await storage.getBillById(req.params.id);
-      if (!bill) {
-        return res.status(404).json({ error: "Bill not found" });
-      }
+      const bill = await getOwnedBill(req, res, req.params.id);
+      if (!bill) return;
       res.json(bill);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch bill" });
@@ -14038,12 +14301,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      const previous = await storage.getBillById(req.params.id);
-      if (!previous) return res.status(404).json({ error: "Bill not found" });
-      const userCompanyId = (req as any).user?.companyId;
-      if (userCompanyId && (previous as any).companyId && (previous as any).companyId !== userCompanyId) {
-        return res.status(403).json({ error: "Forbidden" });
-      }
+      const previous = await getOwnedBill(req, res, req.params.id);
+      if (!previous) return;
 
       // New payment flow: a bill becomes "paid" only by recording payments that
       // cover the total (POST /api/bills/:id/payments), never by flipping the
@@ -14167,10 +14426,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/bills/:id/duplicate", async (req, res) => {
     try {
-      const originalBill = await storage.getBillById(req.params.id);
-      if (!originalBill) {
-        return res.status(404).json({ error: "Bill not found" });
-      }
+      const originalBill = await getOwnedBill(req, res, req.params.id);
+      if (!originalBill) return;
 
       const newBillNumber = await storage.getNextBillNumber();
       const newBill = await storage.createBill({
@@ -14279,8 +14536,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const isAdminLike = roleName.includes("admin") || roleName.includes("owner") || roleName.includes("general manager");
       if (!isAdminLike) return res.status(403).json({ error: "Forbidden" });
 
-      const bill = await storage.getBillById(req.params.id);
-      if (!bill) return res.status(404).json({ error: "Bill not found" });
+      const bill = await getOwnedBill(req, res, req.params.id);
+      if (!bill) return;
       if (!(bill as any).paidByEmployee) return res.status(400).json({ error: "Bill is not a reimbursement claim" });
 
       const updated = await storage.updateBill(req.params.id, {
@@ -14324,8 +14581,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const isAdminLike = roleName.includes("admin") || roleName.includes("owner") || roleName.includes("general manager");
       if (!isAdminLike) return res.status(403).json({ error: "Forbidden" });
 
-      const bill = await storage.getBillById(req.params.id);
-      if (!bill) return res.status(404).json({ error: "Bill not found" });
+      const bill = await getOwnedBill(req, res, req.params.id);
+      if (!bill) return;
 
       const { method, notes } = req.body;
       const allowedMethods = ["bank_transfer", "added_to_wages", "cash"];
@@ -14378,8 +14635,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const isAdminLike = roleName.includes("admin") || roleName.includes("owner") || roleName.includes("general manager");
       if (!isAdminLike) return res.status(403).json({ error: "Forbidden" });
 
-      const bill = await storage.getBillById(req.params.id);
-      if (!bill) return res.status(404).json({ error: "Bill not found" });
+      const bill = await getOwnedBill(req, res, req.params.id);
+      if (!bill) return;
 
       const { reason } = req.body;
       const updated = await storage.updateBill(req.params.id, {
@@ -14422,20 +14679,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!objectPath || typeof objectPath !== "string") {
         return res.status(400).json({ error: "objectPath is required" });
       }
-      const bill = await storage.getBillById(req.params.id);
-      if (!bill) return res.status(404).json({ error: "Bill not found" });
-      const userCompanyId = (req as any).user?.companyId;
-      const userRole = (req as any).user?.role;
-      if (!userCompanyId && userRole !== "admin") return res.status(403).json({ error: "Forbidden" });
-      if (bill.projectId) {
-        const project = await storage.getProject(bill.projectId);
-        if (!project) return res.status(403).json({ error: "Forbidden" });
-        if (userRole !== "admin" && project.companyId !== userCompanyId) {
-          return res.status(403).json({ error: "Forbidden" });
-        }
-      } else if (userRole !== "admin") {
-        return res.status(403).json({ error: "Forbidden" });
-      }
+      const bill = await getOwnedBill(req, res, req.params.id);
+      if (!bill) return;
       const updated = await storage.removeBillAttachment(req.params.id, objectPath);
       res.json({ bill: updated });
     } catch (error: any) {
@@ -14446,12 +14691,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/bills/:id", requireAuth, async (req, res) => {
     try {
-      const previous = await storage.getBillById(req.params.id);
-      if (!previous) return res.status(404).json({ error: "Bill not found" });
-      const userCompanyId = (req as any).user?.companyId;
-      if (userCompanyId && (previous as any).companyId && (previous as any).companyId !== userCompanyId) {
-        return res.status(403).json({ error: "Forbidden" });
-      }
+      const previous = await getOwnedBill(req, res, req.params.id);
+      if (!previous) return;
       await storage.deleteBill(req.params.id);
       if ((previous as any)?.matchedSitePOId) {
         await recomputePOStatusFromBills((previous as any).matchedSitePOId);
@@ -14612,6 +14853,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/bills/:id/line-items", async (req, res) => {
     try {
+      const owned = await getOwnedBill(req, res, req.params.id);
+      if (!owned) return;
       const lineItems = await storage.getBillLineItems(req.params.id);
       res.json(lineItems);
     } catch (error) {
@@ -14632,6 +14875,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/bills/:billId/line-items", async (req, res) => {
     try {
+      const ownedBill = await getOwnedBill(req, res, req.params.billId);
+      if (!ownedBill) return;
       const validationResult = insertBillLineItemSchema.safeParse(req.body);
       if (!validationResult.success) {
         return res.status(400).json({ 
@@ -14651,6 +14896,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/bills/:billId/line-items/:id", async (req, res) => {
     try {
+      // Resolve the line item by its OWN id first, then authorize against the
+      // bill it actually belongs to (not the :billId from the URL). This blocks
+      // the IDOR where company B owns :billId but passes company A's line-item id.
+      const { billLineItems } = await import("@shared/schema");
+      const [existing] = await db.select().from(billLineItems)
+        .where(eq(billLineItems.id, req.params.id)).limit(1);
+      if (!existing) return res.status(404).json({ error: "Bill line item not found" });
+      const parentBillId = (existing as any).billId as string;
+      const ownedBill = await getOwnedBill(req, res, parentBillId, "Bill line item not found");
+      if (!ownedBill) return;
       const validationResult = insertBillLineItemSchema.partial().safeParse(req.body);
       if (!validationResult.success) {
         return res.status(400).json({ 
@@ -14660,8 +14915,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const lineItem = await storage.updateBillLineItem(req.params.id, validationResult.data);
-      void maybeAutoPushParentBill(req.params.billId, (req as any).user?.companyId);
-      await recalcBudgetForBill(req.params.billId);
+      void maybeAutoPushParentBill(parentBillId, (req as any).user?.companyId);
+      await recalcBudgetForBill(parentBillId);
       res.json(lineItem);
     } catch (error) {
       if (error instanceof Error && error.message === "Bill line item not found") {
@@ -14673,9 +14928,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/bills/:billId/line-items/:id", async (req, res) => {
     try {
+      // Resolve the line item by its OWN id first, then authorize against the
+      // bill it actually belongs to (not the :billId from the URL). Blocks the
+      // IDOR where company B owns :billId but passes company A's line-item id.
+      const { billLineItems } = await import("@shared/schema");
+      const [existing] = await db.select().from(billLineItems)
+        .where(eq(billLineItems.id, req.params.id)).limit(1);
+      if (!existing) return res.status(404).json({ error: "Bill line item not found" });
+      const parentBillId = (existing as any).billId as string;
+      const ownedBill = await getOwnedBill(req, res, parentBillId, "Bill line item not found");
+      if (!ownedBill) return;
       await storage.deleteBillLineItem(req.params.id);
-      void maybeAutoPushParentBill(req.params.billId, (req as any).user?.companyId);
-      await recalcBudgetForBill(req.params.billId);
+      void maybeAutoPushParentBill(parentBillId, (req as any).user?.companyId);
+      await recalcBudgetForBill(parentBillId);
       res.status(204).send();
     } catch (error) {
       res.status(500).json({ error: "Failed to delete bill line item" });
@@ -14688,12 +14953,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Amounts are in CENTS.
   app.get("/api/bills/:id/payments", requireAuth, async (req, res) => {
     try {
-      const bill = await storage.getBillById(req.params.id);
-      if (!bill) return res.status(404).json({ error: "Bill not found" });
-      const companyId = (req as any).user?.companyId;
-      if (companyId && (bill as any).companyId && (bill as any).companyId !== companyId) {
-        return res.status(403).json({ error: "Forbidden" });
-      }
+      const bill = await getOwnedBill(req, res, req.params.id);
+      if (!bill) return;
       const payments = await storage.getBillPayments(req.params.id);
       res.json(payments);
     } catch (error) {
@@ -14704,12 +14965,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/bills/:id/payments", requireAuth, async (req, res) => {
     try {
-      const bill = await storage.getBillById(req.params.id);
-      if (!bill) return res.status(404).json({ error: "Bill not found" });
-      const companyId = (req as any).user?.companyId;
-      if (companyId && (bill as any).companyId && (bill as any).companyId !== companyId) {
-        return res.status(403).json({ error: "Forbidden" });
-      }
+      const bill = await getOwnedBill(req, res, req.params.id);
+      if (!bill) return;
 
       const validationResult = insertBillPaymentSchema.safeParse({
         ...req.body,
@@ -14771,12 +15028,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const payment = await storage.getBillPaymentById(req.params.id);
       if (!payment) return res.status(404).json({ error: "Bill payment not found" });
-      const bill = await storage.getBillById(payment.billId);
-      if (!bill) return res.status(404).json({ error: "Bill not found" });
-      const companyId = (req as any).user?.companyId;
-      if (companyId && (bill as any).companyId && (bill as any).companyId !== companyId) {
-        return res.status(403).json({ error: "Forbidden" });
-      }
+      // Resolve payment -> bill -> getOwnedBill (handles companyId or legacy
+      // project fallback, and masks cross-tenant / missing as 404).
+      const bill = await getOwnedBill(req, res, payment.billId, "Bill payment not found");
+      if (!bill) return;
       const result = await storage.voidBillPayment(req.params.id);
       if (!result) return res.status(404).json({ error: "Bill payment not found" });
       res.json(result);
@@ -14790,12 +15045,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const payment = await storage.getBillPaymentById(req.params.id);
       if (!payment) return res.status(404).json({ error: "Bill payment not found" });
-      const bill = await storage.getBillById(payment.billId);
-      if (!bill) return res.status(404).json({ error: "Bill not found" });
-      const companyId = (req as any).user?.companyId;
-      if (companyId && (bill as any).companyId && (bill as any).companyId !== companyId) {
-        return res.status(403).json({ error: "Forbidden" });
-      }
+      const bill = await getOwnedBill(req, res, payment.billId, "Bill payment not found");
+      if (!bill) return;
       const deleted = await storage.deleteBillPayment(req.params.id);
       if (!deleted) return res.status(404).json({ error: "Bill payment not found" });
       res.status(204).send();
@@ -14970,6 +15221,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Link a bill line item to a price list item
   app.patch("/api/bill-line-items/:id/link-price-item", async (req, res) => {
     try {
+      const { billLineItems: billLineItemsTbl } = await import("@shared/schema");
+      const [existing] = await db
+        .select({ billId: billLineItemsTbl.billId })
+        .from(billLineItemsTbl)
+        .where(eq(billLineItemsTbl.id, req.params.id));
+      if (!existing) return res.status(404).json({ error: "Bill line item not found" });
+      const ownedBill = await getOwnedBill(req, res, existing.billId, "Bill line item not found");
+      if (!ownedBill) return;
       const { priceListItemId } = req.body;
       const lineItem = await storage.updateBillLineItem(req.params.id, { priceListItemId });
       res.json(lineItem);
@@ -14984,6 +15243,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Bill Line Item Allowances routes
   app.get("/api/bills/:billId/line-item-allowances", async (req, res) => {
     try {
+      const owned = await getOwnedBill(req, res, req.params.billId);
+      if (!owned) return;
       const allowances = await storage.getBillLineItemAllowancesByBillId(req.params.billId);
       res.json(allowances);
     } catch (error) {
@@ -15010,6 +15271,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/bill-line-item-allowances/:id", async (req, res) => {
     try {
+      const { billLineItemAllowances: aTbl, billLineItems: bliTbl } = await import("@shared/schema");
+      const [aRow] = await db
+        .select({ billId: bliTbl.billId })
+        .from(aTbl)
+        .innerJoin(bliTbl, eq(aTbl.billLineItemId, bliTbl.id))
+        .where(eq(aTbl.id, req.params.id));
+      if (!aRow) return res.status(404).json({ error: "Bill line item allowance not found" });
+      if (!(await getOwnedBill(req, res, aRow.billId, "Bill line item allowance not found"))) return;
+
       const validationResult = insertBillLineItemAllowanceSchema.partial().safeParse(req.body);
       if (!validationResult.success) {
         return res.status(400).json({ 
@@ -15030,6 +15300,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/bill-line-item-allowances/:id", async (req, res) => {
     try {
+      const { billLineItemAllowances: aTbl, billLineItems: bliTbl } = await import("@shared/schema");
+      const [aRow] = await db
+        .select({ billId: bliTbl.billId })
+        .from(aTbl)
+        .innerJoin(bliTbl, eq(aTbl.billLineItemId, bliTbl.id))
+        .where(eq(aTbl.id, req.params.id));
+      if (!aRow) return res.status(404).json({ error: "Bill line item allowance not found" });
+      if (!(await getOwnedBill(req, res, aRow.billId, "Bill line item allowance not found"))) return;
       await storage.deleteBillLineItemAllowance(req.params.id);
       res.status(204).send();
     } catch (error) {
@@ -15040,6 +15318,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Bill Approvals routes
   app.get("/api/bills/:id/approvals", async (req, res) => {
     try {
+      const owned = await getOwnedBill(req, res, req.params.id);
+      if (!owned) return;
       const approvals = await storage.getBillApprovals(req.params.id);
       res.json(approvals);
     } catch (error) {
@@ -15057,6 +15337,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!canApprove) {
         return res.status(403).json({ error: "You do not have permission to approve bills" });
       }
+
+      const ownedBill = await getOwnedBill(req, res, req.params.id);
+      if (!ownedBill) return;
 
       const validationResult = insertBillApprovalSchema.safeParse({
         billId: req.params.id,
@@ -15122,6 +15405,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!canApprove) {
         return res.status(403).json({ error: "You do not have permission to reject bills" });
       }
+
+      const ownedBill = await getOwnedBill(req, res, req.params.id);
+      if (!ownedBill) return;
 
       const validationResult = insertBillApprovalSchema.safeParse({
         billId: req.params.id,
@@ -15296,10 +15582,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/variations/:id", async (req, res) => {
     try {
-      const variation = await storage.getVariation(req.params.id);
-      if (!variation) {
-        return res.status(404).json({ error: "Variation not found" });
-      }
+      const variation = await getOwnedVariation(req, res, req.params.id);
+      if (!variation) return;
       res.json(variation);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch variation" });
@@ -15346,8 +15630,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      // T005: Get pre-update variation to detect status transition
-      const prevVariation = await storage.getVariation(req.params.id);
+      // T005: Get pre-update variation to detect status transition (company-scoped)
+      const prevVariation = await getOwnedVariation(req, res, req.params.id);
+      if (!prevVariation) return;
 
       const variation = await storage.updateVariation(req.params.id, validationResult.data);
       if (!variation) {
@@ -15401,6 +15686,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/variations/:id", async (req, res) => {
     try {
+      const owned = await getOwnedVariation(req, res, req.params.id);
+      if (!owned) return;
       const deleted = await storage.deleteVariation(req.params.id);
       if (!deleted) {
         return res.status(404).json({ error: "Variation not found" });
@@ -15414,6 +15701,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Variation Items API Routes
   app.get("/api/variations/:id/items", async (req, res) => {
     try {
+      const owned = await getOwnedVariation(req, res, req.params.id);
+      if (!owned) return;
       const items = await storage.getVariationItems(req.params.id);
       res.json(items);
     } catch (error) {
@@ -15423,6 +15712,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/variations/:id/items", async (req, res) => {
     try {
+      const ownedVariation = await getOwnedVariation(req, res, req.params.id);
+      if (!ownedVariation) return;
       const validationResult = insertVariationItemSchema.safeParse({
         ...req.body,
         variationId: req.params.id
@@ -15443,6 +15734,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/variation-items/:id", async (req, res) => {
     try {
+      const { variationItems: viTbl } = await import("@shared/schema");
+      const [viRow] = await db.select({ variationId: viTbl.variationId }).from(viTbl).where(eq(viTbl.id, req.params.id));
+      if (!viRow) return res.status(404).json({ error: "Variation item not found" });
+      if (!(await getOwnedVariation(req, res, viRow.variationId, "Variation item not found"))) return;
+
       const validationResult = insertVariationItemSchema.partial().safeParse(req.body);
       if (!validationResult.success) {
         return res.status(400).json({ 
@@ -15463,6 +15759,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/variation-items/:id", async (req, res) => {
     try {
+      const { variationItems: viTbl } = await import("@shared/schema");
+      const [viRow] = await db.select({ variationId: viTbl.variationId }).from(viTbl).where(eq(viTbl.id, req.params.id));
+      if (!viRow) return res.status(404).json({ error: "Variation item not found" });
+      if (!(await getOwnedVariation(req, res, viRow.variationId, "Variation item not found"))) return;
       const deleted = await storage.deleteVariationItem(req.params.id);
       if (!deleted) {
         return res.status(404).json({ error: "Variation item not found" });
@@ -15476,6 +15776,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Variation Bills Routes
   app.get("/api/variations/:id/bills", async (req, res) => {
     try {
+      const owned = await getOwnedVariation(req, res, req.params.id);
+      if (!owned) return;
       const bills = await storage.getVariationBills(req.params.id);
       res.json(bills);
     } catch (error) {
@@ -15485,6 +15787,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/variations/:id/bills", async (req, res) => {
     try {
+      const ownedVariation = await getOwnedVariation(req, res, req.params.id);
+      if (!ownedVariation) return;
       const { billIds } = req.body as { billIds: string[] };
       await storage.deleteVariationBillsByVariationId(req.params.id);
       const results = [];
@@ -15501,6 +15805,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Variation Timesheets Routes
   app.get("/api/variations/:id/timesheets", async (req, res) => {
     try {
+      const owned = await getOwnedVariation(req, res, req.params.id);
+      if (!owned) return;
       const timesheets = await storage.getVariationTimesheets(req.params.id);
       res.json(timesheets);
     } catch (error) {
@@ -15510,6 +15816,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/variations/:id/timesheets", async (req, res) => {
     try {
+      const ownedVariation = await getOwnedVariation(req, res, req.params.id);
+      if (!ownedVariation) return;
       const { timesheetIds } = req.body as { timesheetIds: string[] };
       await storage.deleteVariationTimesheetsByVariationId(req.params.id);
       const results = [];
@@ -15583,8 +15891,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Generate / retrieve portal token for a variation
   app.post("/api/variations/:id/portal-token", requireAuth, requireTeamMember, async (req: any, res) => {
     try {
-      const variation = await storage.getVariation(req.params.id);
-      if (!variation) return res.status(404).json({ error: "Variation not found" });
+      const variation = await getOwnedVariation(req, res, req.params.id);
+      if (!variation) return;
 
       let token = (variation as any).portalToken;
       if (!token) {
@@ -15676,8 +15984,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/variations/:id/send", requireAuth, requireTeamMember, async (req: any, res) => {
     try {
       const userId = req.user.id;
-      const variation = await storage.getVariation(req.params.id);
-      if (!variation) return res.status(404).json({ error: "Variation not found" });
+      const variation = await getOwnedVariation(req, res, req.params.id);
+      if (!variation) return;
 
       const { to, subject, body, pdfBase64, pdfFilename } = req.body as {
         to: string;
@@ -17038,10 +17346,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/client-invoices/:id", async (req, res) => {
     try {
-      const invoice = await storage.getClientInvoice(req.params.id);
-      if (!invoice) {
-        return res.status(404).json({ error: "Client invoice not found" });
-      }
+      const invoice = await getOwnedClientInvoice(req, res, req.params.id, "Client invoice not found");
+      if (!invoice) return;
       res.json(invoice);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch client invoice" });
@@ -17112,6 +17418,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Cumulative claim % is allowed to exceed 100% on update as well; the
       // remaining-% figure shown in the UI is informational only.
 
+      const owned = await getOwnedClientInvoice(req, res, req.params.id, "Client invoice not found");
+      if (!owned) return;
       const invoice = await storage.updateClientInvoice(req.params.id, data);
       if (!invoice) {
         return res.status(404).json({ error: "Client invoice not found" });
@@ -17124,6 +17432,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/client-invoices/:id", async (req, res) => {
     try {
+      const owned = await getOwnedClientInvoice(req, res, req.params.id, "Client invoice not found");
+      if (!owned) return;
       const deleted = await storage.deleteClientInvoice(req.params.id);
       if (!deleted) {
         return res.status(404).json({ error: "Client invoice not found" });
@@ -17137,6 +17447,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Client Invoice Items API Routes
   app.get("/api/client-invoices/:id/items", async (req, res) => {
     try {
+      const owned = await getOwnedClientInvoice(req, res, req.params.id, "Client invoice not found");
+      if (!owned) return;
       const items = await storage.getClientInvoiceItems(req.params.id);
       res.json(items);
     } catch (error) {
@@ -17146,6 +17458,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/client-invoices/:id/items", async (req, res) => {
     try {
+      const ownedInvoice = await getOwnedClientInvoice(req, res, req.params.id, "Client invoice not found");
+      if (!ownedInvoice) return;
       const validationResult = insertClientInvoiceItemSchema.safeParse({
         ...req.body,
         invoiceId: req.params.id
@@ -17656,10 +17970,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/proposals/:id", async (req, res) => {
     try {
-      const proposal = await storage.getProposal(req.params.id);
-      if (!proposal) {
-        return res.status(404).json({ error: "Proposal not found" });
-      }
+      const proposal = await getOwnedProposal(req, res, req.params.id);
+      if (!proposal) return;
       res.json(proposal);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch proposal" });
@@ -17704,6 +18016,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           details: fromZodError(validationResult.error).toString() 
         });
       }
+      const ownedProposal = await getOwnedProposal(req, res, req.params.id);
+      if (!ownedProposal) return;
       const proposal = await storage.updateProposal(req.params.id, validationResult.data);
       if (!proposal) {
         return res.status(404).json({ error: "Proposal not found" });
@@ -17716,6 +18030,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/proposals/:id", async (req, res) => {
     try {
+      const ownedProposal = await getOwnedProposal(req, res, req.params.id);
+      if (!ownedProposal) return;
       const deleted = await storage.deleteProposal(req.params.id);
       if (!deleted) {
         return res.status(404).json({ error: "Proposal not found" });
@@ -17729,6 +18045,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Proposal Sections API Routes
   app.get("/api/proposals/:id/sections", async (req, res) => {
     try {
+      const owned = await getOwnedProposal(req, res, req.params.id);
+      if (!owned) return;
       const sections = await storage.getProposalSections(req.params.id);
       res.json(sections);
     } catch (error) {
@@ -17738,6 +18056,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/proposals/:id/sections", async (req, res) => {
     try {
+      const ownedProposal = await getOwnedProposal(req, res, req.params.id);
+      if (!ownedProposal) return;
       const validationResult = insertProposalSectionSchema.safeParse({
         ...req.body,
         proposalId: req.params.id
@@ -17757,6 +18077,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/proposal-sections/:id", async (req, res) => {
     try {
+      const { proposalSections: psTbl } = await import("@shared/schema");
+      const [psRow] = await db.select({ proposalId: psTbl.proposalId }).from(psTbl).where(eq(psTbl.id, req.params.id));
+      if (!psRow) return res.status(404).json({ error: "Proposal section not found" });
+      if (!(await getOwnedProposal(req, res, psRow.proposalId, "Proposal section not found"))) return;
+
       const validationResult = insertProposalSectionSchema.partial().safeParse(req.body);
       if (!validationResult.success) {
         return res.status(400).json({ 
@@ -17776,6 +18101,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/proposal-sections/:id", async (req, res) => {
     try {
+      const { proposalSections: psTbl } = await import("@shared/schema");
+      const [psRow] = await db.select({ proposalId: psTbl.proposalId }).from(psTbl).where(eq(psTbl.id, req.params.id));
+      if (!psRow) return res.status(404).json({ error: "Proposal section not found" });
+      if (!(await getOwnedProposal(req, res, psRow.proposalId, "Proposal section not found"))) return;
       const deleted = await storage.deleteProposalSection(req.params.id);
       if (!deleted) {
         return res.status(404).json({ error: "Proposal section not found" });
@@ -17789,6 +18118,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Proposal Items API Routes
   app.get("/api/proposals/:id/items", async (req, res) => {
     try {
+      const owned = await getOwnedProposal(req, res, req.params.id);
+      if (!owned) return;
       const items = await storage.getProposalItems(req.params.id);
       res.json(items);
     } catch (error) {
@@ -17798,6 +18129,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/proposals/:id/items", async (req, res) => {
     try {
+      const ownedProposal = await getOwnedProposal(req, res, req.params.id);
+      if (!ownedProposal) return;
       const validationResult = insertProposalItemSchema.safeParse({
         ...req.body,
         proposalId: req.params.id
@@ -17817,6 +18150,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/proposal-items/:id", async (req, res) => {
     try {
+      const { proposalItems: piTbl } = await import("@shared/schema");
+      const [piRow] = await db.select({ proposalId: piTbl.proposalId }).from(piTbl).where(eq(piTbl.id, req.params.id));
+      if (!piRow) return res.status(404).json({ error: "Proposal item not found" });
+      if (!(await getOwnedProposal(req, res, piRow.proposalId, "Proposal item not found"))) return;
+
       const validationResult = insertProposalItemSchema.partial().safeParse(req.body);
       if (!validationResult.success) {
         return res.status(400).json({ 
@@ -17836,6 +18174,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/proposal-items/:id", async (req, res) => {
     try {
+      const { proposalItems: piTbl } = await import("@shared/schema");
+      const [piRow] = await db.select({ proposalId: piTbl.proposalId }).from(piTbl).where(eq(piTbl.id, req.params.id));
+      if (!piRow) return res.status(404).json({ error: "Proposal item not found" });
+      if (!(await getOwnedProposal(req, res, piRow.proposalId, "Proposal item not found"))) return;
       const deleted = await storage.deleteProposalItem(req.params.id);
       if (!deleted) {
         return res.status(404).json({ error: "Proposal item not found" });
@@ -18260,6 +18602,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Proposal Payment Milestones
   app.get("/api/proposals/:id/milestones", async (req, res) => {
     try {
+      const owned = await getOwnedProposal(req, res, req.params.id);
+      if (!owned) return;
       const items = await storage.getProposalPaymentMilestones(req.params.id);
       res.json(items);
     } catch (error) {
@@ -18269,6 +18613,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/proposals/:id/milestones", async (req, res) => {
     try {
+      const ownedProposal = await getOwnedProposal(req, res, req.params.id);
+      if (!ownedProposal) return;
       const validated = insertProposalPaymentMilestoneSchema.safeParse({
         ...req.body,
         proposalId: req.params.id,
@@ -18286,6 +18632,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Bulk replace milestones (used by the schedule editor)
   app.put("/api/proposals/:id/milestones", async (req, res) => {
     try {
+      const ownedProposal = await getOwnedProposal(req, res, req.params.id);
+      if (!ownedProposal) return;
       const list = z.array(insertProposalPaymentMilestoneSchema.omit({ proposalId: true })).parse(req.body?.milestones ?? []);
       const withProp: InsertProposalPaymentMilestone[] = list.map((m) => ({ ...m, proposalId: req.params.id }));
       const created = await storage.replaceProposalPaymentMilestones(req.params.id, withProp);
@@ -18298,6 +18646,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/proposal-milestones/:id", async (req, res) => {
     try {
+      const { proposalPaymentMilestones: pmTbl } = await import("@shared/schema");
+      const [pmRow] = await db.select({ proposalId: pmTbl.proposalId }).from(pmTbl).where(eq(pmTbl.id, req.params.id));
+      if (!pmRow) return res.status(404).json({ error: "Milestone not found" });
+      if (!(await getOwnedProposal(req, res, pmRow.proposalId, "Milestone not found"))) return;
+
       const validated = insertProposalPaymentMilestoneSchema.partial().safeParse(req.body);
       if (!validated.success) {
         return res.status(400).json({ error: "Validation failed", details: fromZodError(validated.error).toString() });
@@ -18312,6 +18665,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/proposal-milestones/:id", async (req, res) => {
     try {
+      const { proposalPaymentMilestones: pmTbl } = await import("@shared/schema");
+      const [pmRow] = await db.select({ proposalId: pmTbl.proposalId }).from(pmTbl).where(eq(pmTbl.id, req.params.id));
+      if (!pmRow) return res.status(404).json({ error: "Milestone not found" });
+      if (!(await getOwnedProposal(req, res, pmRow.proposalId, "Milestone not found"))) return;
       const ok = await storage.deleteProposalPaymentMilestone(req.params.id);
       if (!ok) return res.status(404).json({ error: "Milestone not found" });
       res.status(204).send();
@@ -18330,6 +18687,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "Validation failed", details: fromZodError(parsed.error).toString() });
       }
       const { orderedIds } = parsed.data;
+
+      const ownedProposal = await getOwnedProposal(req, res, req.params.id);
+      if (!ownedProposal) return;
 
       // Reject duplicate IDs in payload
       if (new Set(orderedIds).size !== orderedIds.length) {
@@ -18665,20 +19025,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/bills/:id/ocr-from-attachment", requireAuth, async (req, res) => {
     try {
-      const bill = await storage.getBillById(req.params.id);
-      if (!bill) return res.status(404).json({ error: "Bill not found" });
-
-      const userCompanyId = (req as any).user?.companyId;
-      const userRole = (req as any).user?.role;
-      if (bill.projectId) {
-        const project = await storage.getProject(bill.projectId);
-        if (!project) return res.status(403).json({ error: "Forbidden" });
-        if (userRole !== "admin" && project.companyId !== userCompanyId) {
-          return res.status(403).json({ error: "Forbidden" });
-        }
-      } else if (userRole !== "admin") {
-        return res.status(403).json({ error: "Forbidden" });
-      }
+      const bill = await getOwnedBill(req, res, req.params.id);
+      if (!bill) return;
 
       // Find first processable attachment (PDF or image)
       type Att = string | { objectPath?: string; filename?: string; mimeType?: string };
@@ -18775,20 +19123,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // to `awaiting_approval` (in the approver's queue).
   app.post("/api/bills/:id/confirm-extraction", requireAuth, async (req, res) => {
     try {
-      const bill = await storage.getBillById(req.params.id);
-      if (!bill) return res.status(404).json({ error: "Bill not found" });
-
-      const userCompanyId = (req as any).user?.companyId;
-      const userRole = (req as any).user?.role;
-      if (bill.projectId) {
-        const project = await storage.getProject(bill.projectId);
-        if (!project) return res.status(403).json({ error: "Forbidden" });
-        if (userRole !== "admin" && project.companyId !== userCompanyId) {
-          return res.status(403).json({ error: "Forbidden" });
-        }
-      } else if (userRole !== "admin") {
-        return res.status(403).json({ error: "Forbidden" });
-      }
+      const bill = await getOwnedBill(req, res, req.params.id);
+      if (!bill) return;
 
       if (bill.status !== "needs_review") {
         return res.status(400).json({
@@ -19476,10 +19812,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/site-diary-entries/:id", async (req, res) => {
     try {
-      const entry = await storage.getSiteDiaryEntry(req.params.id);
-      if (!entry) {
-        return res.status(404).json({ error: "Entry not found" });
-      }
+      const entry = await getOwnedSiteDiaryEntry(req, res, req.params.id, "Entry not found");
+      if (!entry) return;
       res.json(entry);
     } catch (error: any) {
       res.status(500).json({ 
@@ -19570,6 +19904,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
+      const owned = await getOwnedSiteDiaryEntry(req, res, req.params.id, "Entry not found");
+      if (!owned) return;
       const entry = await storage.updateSiteDiaryEntry(req.params.id, validationResult.data);
       if (!entry) {
         return res.status(404).json({ error: "Entry not found" });
@@ -19608,8 +19944,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/site-diary-entries/:id", requireAuth, requireTeamMember, requirePermission("projects.site_diary", "delete"), async (req, res) => {
     try {
-      // Fetch entry before deleting so we have metadata for the activity log
-      const entryToDelete = await storage.getSiteDiaryEntry(req.params.id);
+      // Fetch entry before deleting so we have metadata for the activity log (company-scoped)
+      const entryToDelete = await getOwnedSiteDiaryEntry(req, res, req.params.id, "Entry not found");
+      if (!entryToDelete) return;
 
       const success = await storage.deleteSiteDiaryEntry(req.params.id);
       if (!success) {
@@ -20471,7 +20808,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     if (!template) { res.status(404).json({ error: notFound }); return null; }
     const companyId = req.user?.companyId;
     if (!companyId || template.companyId !== companyId) {
-      res.status(403).json({ error: "Forbidden" });
+      // 404 (not 403) on company mismatch so existence isn't confirmed.
+      res.status(404).json({ error: notFound });
       return null;
     }
     return template;
@@ -22283,10 +22621,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/timesheets/:id", async (req, res) => {
     try {
-      const timesheet = await storage.getTimesheet(req.params.id);
-      if (!timesheet) {
-        return res.status(404).json({ error: "Timesheet not found" });
-      }
+      const timesheet = await getOwnedTimesheet(req, res, req.params.id);
+      if (!timesheet) return;
       // Strip confidential pay-rate fields for non-admin users
       let result: any = timesheet;
       if (req.user) {
@@ -22689,6 +23025,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ error: "You do not have permission to approve timesheets" });
       }
 
+      const ownedTimesheet = await getOwnedTimesheet(req, res, req.params.id);
+      if (!ownedTimesheet) return;
+
       if (req.user.companyId) {
         const settings = await storage.getCompanySettings();
         if (settings?.timesheetAutoRound) {
@@ -22751,6 +23090,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!canApprove) {
         return res.status(403).json({ error: "You do not have permission to reject timesheets" });
       }
+
+      const ownedTimesheet = await getOwnedTimesheet(req, res, req.params.id);
+      if (!ownedTimesheet) return;
 
       const rejectionReason = req.body.comment || req.body.rejectionReason || null;
 
@@ -23390,10 +23732,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/schedule-items/:id", async (req, res) => {
     try {
-      const item = await storage.getScheduleItem(req.params.id);
-      if (!item) {
-        return res.status(404).json({ error: "Schedule item not found" });
-      }
+      const item = await getOwnedScheduleItem(req, res, req.params.id);
+      if (!item) return;
       res.json(item);
     } catch (error: any) {
       res.status(500).json({ 
@@ -23555,8 +23895,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
       
-      // Get original item to track changes
-      const originalItem = await storage.getScheduleItem(req.params.id);
+      // Get original item to track changes (company-scoped)
+      const originalItem = await getOwnedScheduleItem(req, res, req.params.id);
+      if (!originalItem) return;
       
       // Handle business assignee (company:xxx format)
       const updateData = { ...validationResult.data } as any;
@@ -24238,8 +24579,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/schedule-items/:id", requireAuth, async (req, res) => {
     try {
-      // Get item info before deletion for activity logging
-      const item = await storage.getScheduleItem(req.params.id);
+      // Get item info before deletion for activity logging (company-scoped)
+      const item = await getOwnedScheduleItem(req, res, req.params.id);
+      if (!item) return;
       
       const success = await storage.deleteScheduleItem(req.params.id);
       if (!success) {
@@ -24284,10 +24626,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Duplicate schedule item
   app.post("/api/schedule-items/:id/duplicate", requireAuth, async (req, res) => {
     try {
-      const item = await storage.getScheduleItem(req.params.id);
-      if (!item) {
-        return res.status(404).json({ error: "Schedule item not found" });
-      }
+      const item = await getOwnedScheduleItem(req, res, req.params.id);
+      if (!item) return;
       const { id, createdAt, updatedAt, ...itemData } = item;
       const [duplicated] = await db.insert(scheduleItems).values({
         ...itemData,
@@ -24491,7 +24831,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "Invalid dependency type. Must be FS, SS, FF, or SF" });
       }
 
-      const item = await storage.getScheduleItem(req.params.id);
+      const item = await getOwnedScheduleItem(req, res, req.params.id);
       if (!item) {
         return res.status(404).json({ error: "Schedule item not found" });
       }
@@ -24630,10 +24970,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { type, lag } = req.body;
       
-      const item = await storage.getScheduleItem(req.params.id);
-      if (!item) {
-        return res.status(404).json({ error: "Schedule item not found" });
-      }
+      const item = await getOwnedScheduleItem(req, res, req.params.id);
+      if (!item) return;
 
       const dependencies = (item.dependencies as any[]) || [];
       const depIndex = dependencies.findIndex(d => d.id === req.params.predecessorId);
@@ -24747,10 +25085,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/schedule-items/:id/dependencies/:predecessorId", async (req, res) => {
     try {
-      const item = await storage.getScheduleItem(req.params.id);
-      if (!item) {
-        return res.status(404).json({ error: "Schedule item not found" });
-      }
+      const item = await getOwnedScheduleItem(req, res, req.params.id);
+      if (!item) return;
 
       const dependencies = (item.dependencies as any[]) || [];
       const updatedDependencies = dependencies.filter(d => d.id !== req.params.predecessorId);
@@ -26592,10 +26928,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/defects/:id", async (req, res) => {
     try {
-      const defect = await storage.getDefectById(req.params.id);
-      if (!defect) {
-        return res.status(404).json({ error: "Defect not found" });
-      }
+      const defect = await getOwnedDefect(req, res, req.params.id);
+      if (!defect) return;
       res.json(defect);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch defect" });
@@ -26629,6 +26963,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
+      const owned = await getOwnedDefect(req, res, req.params.id);
+      if (!owned) return;
       const defect = await storage.updateDefect(req.params.id, validationResult.data);
       res.json(defect);
     } catch (error) {
@@ -26641,6 +26977,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/defects/:id", async (req, res) => {
     try {
+      const owned = await getOwnedDefect(req, res, req.params.id);
+      if (!owned) return;
       await storage.deleteDefect(req.params.id);
       res.status(204).send();
     } catch (error) {
