@@ -1,13 +1,12 @@
 import { useState } from "react";
 import { useLocation } from "wouter";
-import { Lightbulb } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import {
   Popover,
+  PopoverAnchor,
   PopoverContent,
-  PopoverTrigger,
 } from "@/components/ui/popover";
 import {
   Select,
@@ -20,10 +19,21 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { SUGGESTION_SECTIONS } from "@/lib/suggestionSections";
 
-export default function SuggestionPopover() {
+interface SuggestionPopoverProps {
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+}
+
+export default function SuggestionPopover({ open: openProp, onOpenChange }: SuggestionPopoverProps = {}) {
   const [location] = useLocation();
   const { toast } = useToast();
-  const [open, setOpen] = useState(false);
+  const [internalOpen, setInternalOpen] = useState(false);
+  const isControlled = openProp !== undefined;
+  const open = isControlled ? openProp : internalOpen;
+  const setOpen = (next: boolean) => {
+    if (!isControlled) setInternalOpen(next);
+    onOpenChange?.(next);
+  };
   const [section, setSection] = useState<string>("");
   const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -75,17 +85,7 @@ export default function SuggestionPopover() {
         if (!next) reset();
       }}
     >
-      <PopoverTrigger asChild>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-7 w-7"
-          data-testid="button-suggestion"
-          title="Send a suggestion"
-        >
-          <Lightbulb className="h-3.5 w-3.5" />
-        </Button>
-      </PopoverTrigger>
+      <PopoverAnchor className="fixed top-12 right-4" />
       <PopoverContent align="end" className="w-80">
         <div className="space-y-3">
           <div className="space-y-1">

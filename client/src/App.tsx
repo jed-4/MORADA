@@ -417,16 +417,13 @@ function AuthWrapper() {
     });
   }, [user]);
 
-  // Crisp support chat: hide the widget during onboarding, show it everywhere
-  // else (including /auth). No-op when VITE_CRISP_WEBSITE_ID is unset.
+  // Crisp support chat: keep the floating bubble hidden at all times. It is only
+  // shown on demand via "Chat with Support" in the user menu, and re-hides itself
+  // when the user closes the chat window (see main.tsx onChatClosed). No-op when
+  // VITE_CRISP_WEBSITE_ID is unset.
   useEffect(() => {
     if (!import.meta.env.VITE_CRISP_WEBSITE_ID) return;
-    const onOnboarding = location.startsWith("/onboarding") || (!!user && !user.companyId);
-    if (onOnboarding) {
-      Crisp.chat.hide();
-    } else {
-      Crisp.chat.show();
-    }
+    Crisp.chat.hide();
   }, [location, user]);
 
   // Show loading while checking auth

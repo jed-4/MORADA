@@ -7633,6 +7633,40 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Report a bug / issue. Any authenticated user. Sends an email to the Morada
+  // team. Identity is taken from the session — never trusted from the body.
+  app.post('/api/report-issue', requireAuth, async (req: any, res) => {
+    try {
+      const area = typeof req.body?.area === 'string' ? req.body.area.trim().slice(0, 100) : '';
+      const description = typeof req.body?.description === 'string' ? req.body.description.trim().slice(0, 5000) : '';
+      if (!area || !description) {
+        return res.status(400).json({ error: 'Area and description are required' });
+      }
+
+      const user = req.user;
+      const name = [user.firstName, user.lastName].filter(Boolean).join(' ').trim() || user.email || 'Unknown user';
+      const email = user.email || 'unknown';
+
+      const esc = (s: string) =>
+        s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+      const subject = `[Bug Report] ${description.slice(0, 60)}${description.length > 60 ? '...' : ''} — ${email}`;
+      const html = `
+        <h2>Bug Report</h2>
+        <p><strong>From:</strong> ${esc(name)} (${esc(email)})</p>
+        <p><strong>Area:</strong> ${esc(area)}</p>
+        <p><strong>Description:</strong></p>
+        <p>${esc(description).replace(/\n/g, '<br>')}</p>
+      `;
+
+      await sendGenericEmail({ to: 'hello@moradaco.com.au', subject, html, replyTo: email });
+      res.json({ success: true });
+    } catch (error) {
+      console.error('Error sending issue report:', error);
+      res.status(500).json({ error: 'Failed to send issue report' });
+    }
+  });
+
   // List suggestions across ALL companies — BuildPro platform staff only.
   app.get('/api/suggestions', requireAuth, requirePlatformStaff, async (req: any, res) => {
     try {

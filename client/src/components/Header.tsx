@@ -1,4 +1,4 @@
-import { Calendar, User, Settings, LogOut, Building2, Plus, FileText, CheckSquare, Folder, Palette, ChevronDown, Home, MessageSquare, Clock, Calculator, FileBarChart, FileSearch, HelpCircle, File, DollarSign, Receipt, BookOpen, Timer, PiggyBank, FolderOpen, Users, ClipboardList, Kanban, Search, ChevronLeft, ChevronRight, Star, GanttChart, HardDrive, Clipboard, LayoutDashboard, Check } from "lucide-react";
+import { Calendar, User, Settings, LogOut, Building2, Plus, FileText, CheckSquare, Folder, Palette, ChevronDown, Home, MessageSquare, Clock, Calculator, FileBarChart, FileSearch, HelpCircle, File, DollarSign, Receipt, BookOpen, Timer, PiggyBank, FolderOpen, Users, ClipboardList, Kanban, Search, ChevronLeft, ChevronRight, Star, GanttChart, HardDrive, Clipboard, LayoutDashboard, Check, Lightbulb, Bug, LifeBuoy } from "lucide-react";
 import { useLocation } from "wouter";
 import { Crisp } from "crisp-sdk-web";
 import { useState, useEffect, useMemo, useCallback } from "react";
@@ -20,6 +20,7 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import ThemeToggle from "./ThemeToggle";
 import SuggestionPopover from "./SuggestionPopover";
+import ReportIssueModal from "./ReportIssueModal";
 import { TimeClockWidget } from "./TimeClockWidget";
 import { UserCalendarDialog } from "./UserCalendarDialog";
 import { MessagesDropdown } from "./MessagesDropdown";
@@ -56,6 +57,8 @@ export default function Header() {
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
   const [isGlobalSearchOpen, setIsGlobalSearchOpen] = useState(false);
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
+  const [suggestionOpen, setSuggestionOpen] = useState(false);
+  const [reportIssueOpen, setReportIssueOpen] = useState(false);
 
   const [searchQuery, setSearchQuery] = useState("");
   const [isProjectSearchOpen, setIsProjectSearchOpen] = useState(false);
@@ -279,6 +282,18 @@ export default function Header() {
 
   const handleNewSelection = () => {
     navigate('/selections');
+  };
+
+  const handleChatWithSupport = () => {
+    if (typeof window !== "undefined" && (window as any).$crisp) {
+      Crisp.chat.show();
+      Crisp.chat.open();
+    } else {
+      toast({
+        title: "Support chat unavailable",
+        description: "Email us at hello@moradaco.com.au",
+      });
+    }
   };
 
   
@@ -607,9 +622,6 @@ export default function Header() {
         {/* Time Clock Widget */}
         <TimeClockWidget />
 
-        {/* Suggestion Box */}
-        <SuggestionPopover />
-
         {/* Dark Mode Toggle */}
         <ThemeToggle />
 
@@ -674,6 +686,19 @@ export default function Header() {
               {toolbarVisible && <Check className="h-3.5 w-3.5 ml-2 text-muted-foreground" />}
             </DropdownMenuItem>
             <DropdownMenuSeparator />
+            <DropdownMenuItem onSelect={handleChatWithSupport} data-testid="menu-chat-support">
+              <LifeBuoy className="h-4 w-4 mr-2" />
+              Chat with Support
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => setSuggestionOpen(true)} data-testid="menu-send-suggestion">
+              <Lightbulb className="h-4 w-4 mr-2" />
+              Send a Suggestion
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => setReportIssueOpen(true)} data-testid="menu-report-issue">
+              <Bug className="h-4 w-4 mr-2" />
+              Report an Issue
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
             <DropdownMenuItem onClick={handleLogout} data-testid="menu-logout">
               <LogOut className="h-4 w-4 mr-2" />
               Log out
@@ -702,6 +727,10 @@ export default function Header() {
         onOpenChange={setIsTaskModalOpen}
         defaultScope="personal"
       />
+      {/* Suggestion Box (controlled from the user menu) */}
+      <SuggestionPopover open={suggestionOpen} onOpenChange={setSuggestionOpen} />
+      {/* Report an Issue Modal (controlled from the user menu) */}
+      <ReportIssueModal open={reportIssueOpen} onOpenChange={setReportIssueOpen} />
     </header>
   );
 }

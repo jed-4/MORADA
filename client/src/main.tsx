@@ -13,6 +13,10 @@ installChunkReloadHandlers();
 const crispWebsiteId = import.meta.env.VITE_CRISP_WEBSITE_ID as string | undefined;
 if (crispWebsiteId) {
   Crisp.configure(crispWebsiteId);
+  // Keep the floating bubble hidden by default; it is only shown on demand via
+  // "Chat with Support". Re-hide it whenever the user closes the chat window.
+  Crisp.chat.hide();
+  Crisp.chat.onChatClosed(() => Crisp.chat.hide());
 }
 
 // Initialize Sentry as early as possible, before the app mounts. This is a
