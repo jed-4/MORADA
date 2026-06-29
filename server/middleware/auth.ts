@@ -216,7 +216,7 @@ export function requirePlatformStaff(req: Request, res: Response, next: NextFunc
   }
 
   if (!req.user.isPlatformStaff) {
-    res.status(403).json({ error: 'BuildPro staff access required' });
+    res.status(403).json({ error: 'Morada staff access required' });
     return;
   }
 

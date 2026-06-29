@@ -279,7 +279,7 @@ export default function RFQDetail() {
             rfq={rfq}
             items={items}
             companyLogo={companySettings?.logo}
-            companyName={companySettings?.companyName || "BuildPro"}
+            companyName={companySettings?.companyName || "Morada"}
             companyEmail={companySettings?.email}
             companyPhone={companySettings?.phone}
             primaryColor="#215E35"
@@ -992,7 +992,7 @@ export default function RFQDetail() {
             )}
             {!formData.isExternal && (
               <p className="text-data text-muted-foreground px-3 py-2">
-                Track RFQ sent outside BuildPro
+                Track RFQ sent outside Morada
               </p>
             )}
           </Card>

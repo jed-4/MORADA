@@ -685,7 +685,7 @@ function RegisterTab({ data, xeroConnected }: { data: OverheadsData; xeroConnect
     },
     {
       id: "buildproGroup",
-      header: "BuildPro Group",
+      header: "Morada Group",
       accessorFn: (r) => r.buildproGroup || "",
       cell: ({ row }) => {
         const item = row.original;
@@ -709,7 +709,7 @@ function RegisterTab({ data, xeroConnected }: { data: OverheadsData; xeroConnect
         );
       },
       size: 130,
-      meta: { defaultWidth: 130, headerLabel: "BuildPro Group" } satisfies DataTableColumnMeta,
+      meta: { defaultWidth: 130, headerLabel: "Morada Group" } satisfies DataTableColumnMeta,
     },
     {
       id: "monthly",
@@ -757,7 +757,7 @@ function RegisterTab({ data, xeroConnected }: { data: OverheadsData; xeroConnect
     { id: "budget", label: "Budget" },
     { id: "xeroCode", label: "Xero Code" },
     { id: "xeroGroup", label: "Xero Group" },
-    { id: "buildproGroup", label: "BuildPro Group" },
+    { id: "buildproGroup", label: "Morada Group" },
     { id: "monthly", label: "Monthly Equiv." },
     { id: "annual", label: "Annual Budget" },
     { id: "actions", label: "Actions", pinned: true },
@@ -1754,7 +1754,7 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="xero" data-testid="select-source-xero">Xero</SelectItem>
-            <SelectItem value="buildpro" data-testid="select-source-buildpro">BuildPro</SelectItem>
+            <SelectItem value="buildpro" data-testid="select-source-buildpro">Morada</SelectItem>
           </SelectContent>
         </Select>
 

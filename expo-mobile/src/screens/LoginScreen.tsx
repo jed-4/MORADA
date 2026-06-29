@@ -185,7 +185,7 @@ export default function LoginScreen({ navigation }: { navigation: any }) {
     >
       <View style={styles.inner}>
         <View style={styles.header}>
-          <Text style={styles.logo}>BuildPro</Text>
+          <Text style={styles.logo}>Morada</Text>
           <Text style={styles.subtitle}>Project Management for Builders</Text>
         </View>
 

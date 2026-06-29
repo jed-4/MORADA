@@ -252,7 +252,7 @@ function ImportFromXeroDialog({
         .find(Boolean);
       toast({
         title: "Import complete",
-        description: `${data.imported} imported${data.skipped ? `, ${data.skipped} already in BuildPro` : ""}.${attachmentWarning ? ` ${attachmentWarning}` : ""}`,
+        description: `${data.imported} imported${data.skipped ? `, ${data.skipped} already in Morada` : ""}.${attachmentWarning ? ` ${attachmentWarning}` : ""}`,
         ...(attachmentWarning ? { variant: "default" as const } : {}),
       });
       setSelectedIds(new Set());
@@ -446,7 +446,7 @@ function ImportFromXeroDialog({
                   </TableHead>
                   <TableHead className="text-xs">Invoice #</TableHead>
                   <TableHead className="text-xs">Supplier</TableHead>
-                  <TableHead className="text-xs">BuildPro supplier</TableHead>
+                  <TableHead className="text-xs">Morada supplier</TableHead>
                   <TableHead className="text-xs">Reference</TableHead>
                   <TableHead className="text-xs w-10 text-center" title="Source document attached in Xero">
                     <Paperclip className="h-3 w-3 inline" />
@@ -491,7 +491,7 @@ function ImportFromXeroDialog({
                       ) : (
                         <div className="flex items-center gap-1.5">
                           {needsSupplier && (
-                            <span title="Not matched to a BuildPro supplier — link or create one">
+                            <span title="Not matched to a Morada supplier — link or create one">
                               <AlertCircle className="w-3.5 h-3.5 text-amber-600 dark:text-amber-500 shrink-0" />
                             </span>
                           )}

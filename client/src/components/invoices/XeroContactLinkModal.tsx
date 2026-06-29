@@ -93,7 +93,7 @@ export function XeroContactLinkModal({
 
   const linkMutation = useMutation({
     mutationFn: async () => {
-      if (!clientId) throw new Error("No BuildPro contact provided");
+      if (!clientId) throw new Error("No Morada contact provided");
       if (!selectedId) throw new Error("Please select a Xero contact");
 
       let xeroContactId: string;
@@ -280,7 +280,7 @@ export function XeroContactLinkModal({
 
           {!clientId && (
             <p className="text-sm text-destructive">
-              No BuildPro contact selected. Please assign a contact first.
+              No Morada contact selected. Please assign a contact first.
             </p>
           )}
         </div>

@@ -302,7 +302,7 @@ export function VariationPreviewContent({
               </div>
             )}
             <div>
-              <p className="text-white font-bold text-xl leading-tight">{company?.name || "BuildPro"}</p>
+              <p className="text-white font-bold text-xl leading-tight">{company?.name || "Morada"}</p>
               {company?.phone && (
                 <p className="text-white/80 text-sm mt-0.5">{company.phone}</p>
               )}
@@ -618,7 +618,7 @@ export function VariationPreviewContent({
 
       {/* Footer */}
       <div className="border-t border-border px-8 py-4 text-center">
-        <p className="text-xs text-muted">Powered by BuildPro</p>
+        <p className="text-xs text-muted">Powered by Morada</p>
       </div>
     </div>
   );

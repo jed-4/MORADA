@@ -577,7 +577,7 @@ export default function CreateRFQ() {
               </div>
             ) : (
               <p className="text-data text-muted-foreground px-3 py-2">
-                Track RFQ sent outside BuildPro
+                Track RFQ sent outside Morada
               </p>
             )}
           </Card>

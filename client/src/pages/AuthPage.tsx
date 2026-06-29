@@ -123,7 +123,7 @@ export default function AuthPage() {
       }
 
       queryClient.invalidateQueries({ queryKey: ['/api/auth/user'] });
-      toast({ title: 'Account created!', description: 'Welcome to BuildPro.' });
+      toast({ title: 'Account created!', description: 'Welcome to Morada.' });
       setLocation('/');
     } catch (error: any) {
       toast({
@@ -149,7 +149,7 @@ export default function AuthPage() {
               <Building2 className="h-8 w-8 text-primary" />
             </div>
           </div>
-          <h1 className="text-2xl font-bold">BuildPro</h1>
+          <h1 className="text-2xl font-bold">Morada</h1>
           <p className="text-muted-foreground">Project management for builders</p>
         </div>
 

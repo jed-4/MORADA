@@ -380,7 +380,7 @@ export function TimesheetImportDialog({
                 )}
                 {fileName && formatDetected !== "unknown" && (
                   <Badge variant="secondary" className="text-xs">
-                    {formatDetected === "buildern" ? "Buildern" : "BuildPro"} format detected
+                    {formatDetected === "buildern" ? "Buildern" : "Morada"} format detected
                   </Badge>
                 )}
               </div>

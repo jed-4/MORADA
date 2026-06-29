@@ -85,7 +85,7 @@ export class ErrorBoundary extends Component<Props, State> {
         return (
           <div className="flex flex-col items-center justify-center h-64 gap-2 p-8 text-center">
             <RefreshCw className="w-6 h-6 text-muted-foreground animate-spin" />
-            <p className="text-sm text-muted-foreground">Updating BuildPro to the latest version…</p>
+            <p className="text-sm text-muted-foreground">Updating Morada to the latest version…</p>
           </div>
         );
       }

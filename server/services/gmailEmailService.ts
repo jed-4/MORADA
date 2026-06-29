@@ -101,7 +101,7 @@ export class GmailEmailService {
         throw new Error('Google email address not found for user');
       }
       
-      const fromName = [user.firstName, user.lastName].filter(Boolean).join(' ') || 'BuildPro';
+      const fromName = [user.firstName, user.lastName].filter(Boolean).join(' ') || 'Morada';
       const fromAddress = `${fromName} <${fromEmail}>`;
       
       const gmail = await this.googleOAuthService.getGmailClient(userId);

@@ -260,7 +260,7 @@ const colors = {
       setShowSuggestionModal(false);
       setSuggestionSection('');
       setSuggestionMessage('');
-      Alert.alert('Thanks!', 'Your suggestion has been sent to the BuildPro team.');
+      Alert.alert('Thanks!', 'Your suggestion has been sent to the Morada team.');
     } catch {
       Alert.alert('Error', 'Failed to send suggestion. Please try again.');
     } finally {
@@ -485,7 +485,7 @@ const colors = {
             style={[styles.qaTextArea, { backgroundColor: colors.inputBg, color: colors.text, borderColor: colors.border, marginTop: 16 }]}
             value={suggestionMessage}
             onChangeText={setSuggestionMessage}
-            placeholder="What would make BuildPro better?"
+            placeholder="What would make Morada better?"
             placeholderTextColor={colors.muted}
             multiline
             textAlignVertical="top"

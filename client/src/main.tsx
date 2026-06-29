@@ -73,7 +73,7 @@ class RootErrorBoundary extends Component<{ children: ReactNode }, { error: Erro
             background: "#FAF8F5",
           }}>
             <div style={{ maxWidth: 560, textAlign: "center", color: "#6b7280", fontSize: 14 }}>
-              Updating BuildPro to the latest version…
+              Updating Morada to the latest version…
             </div>
           </div>
         );
@@ -90,7 +90,7 @@ class RootErrorBoundary extends Component<{ children: ReactNode }, { error: Erro
         }}>
           <div style={{ maxWidth: 560, textAlign: "center" }}>
             <h1 style={{ fontSize: 20, fontWeight: 600, marginBottom: 8 }}>
-              BuildPro hit an unexpected error
+              Morada hit an unexpected error
             </h1>
             <p style={{ color: "#6b7280", marginBottom: 16, fontSize: 14 }}>
               {this.state.error.message || "An unexpected error occurred while loading the app."}

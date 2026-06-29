@@ -2,7 +2,7 @@ import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
   appId: 'com.lighthouseprojects.buildpro',
-  appName: 'BuildPro',
+  appName: 'Morada',
   webDir: 'dist/mobile',
   bundledWebRuntime: false,
   server: {

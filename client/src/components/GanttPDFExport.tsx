@@ -147,7 +147,7 @@ const GanttPDFDocument = ({ stages, subtasksByStage, projectName }: GanttPDFProp
 
       {/* Footer */}
       <Text style={styles.footer}>
-        BuildPro - Project Management Software | Page 1 of 1
+        Morada - Project Management Software | Page 1 of 1
       </Text>
     </Page>
   </Document>

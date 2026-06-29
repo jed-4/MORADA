@@ -52,7 +52,7 @@ export default function SuggestionPopover() {
       });
       toast({
         title: "Thanks for the suggestion!",
-        description: "The BuildPro team will take a look.",
+        description: "The Morada team will take a look.",
       });
       reset();
       setOpen(false);
@@ -91,7 +91,7 @@ export default function SuggestionPopover() {
           <div className="space-y-1">
             <h4 className="font-medium leading-none">Send a suggestion</h4>
             <p className="text-sm text-muted-foreground">
-              Tell us what would make BuildPro better.
+              Tell us what would make Morada better.
             </p>
           </div>
 

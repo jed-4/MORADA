@@ -1,6 +1,6 @@
 module.exports = {
   expo: {
-    name: "Build-Pro",
+    name: "Morada",
     slug: "buildpro-mobile",
     version: "1.0.0",
     scheme: "buildpro",
@@ -42,8 +42,8 @@ module.exports = {
       [
         "expo-image-picker",
         {
-          photosPermission: "BuildPro needs access to your photos to attach images to notes.",
-          cameraPermission: "BuildPro needs access to your camera to take photos for notes.",
+          photosPermission: "Morada needs access to your photos to attach images to notes.",
+          cameraPermission: "Morada needs access to your camera to take photos for notes.",
         },
       ],
       [

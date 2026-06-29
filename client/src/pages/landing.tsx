@@ -12,7 +12,7 @@ export default function LandingPage() {
         <header className="flex items-center justify-between py-6">
           <div className="flex items-center gap-2">
             <Building2 className="h-8 w-8 text-primary" data-testid="logo-icon" />
-            <span className="text-2xl font-bold text-foreground" data-testid="text-logo">BuildPro</span>
+            <span className="text-2xl font-bold text-foreground" data-testid="text-logo">Morada</span>
           </div>
           <div className="flex items-center gap-3">
             <Button 
@@ -116,7 +116,7 @@ export default function LandingPage() {
 
         <footer className="border-t py-8 mt-20">
           <p className="text-center text-sm text-muted-foreground" data-testid="text-footer">
-            BuildPro &copy; {new Date().getFullYear()} - Project Management for Australian Residential Builders
+            Morada &copy; {new Date().getFullYear()} - Project Management for Australian Residential Builders
           </p>
         </footer>
       </div>

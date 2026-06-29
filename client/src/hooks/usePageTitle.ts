@@ -59,7 +59,7 @@ export function usePageTitle({ pageName, overrideContext }: PageTitleOptions): s
   }
 
   useEffect(() => {
-    document.title = "BuildPro";
+    document.title = "Morada";
   }, [title]);
 
   return title;

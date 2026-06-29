@@ -592,7 +592,7 @@ const colors = {
           <Text style={[styles.topBarGreeting, { color: colors.accent }]} numberOfLines={1}>
             {greeting}, {firstName || fullDisplayName}
           </Text>
-          <Text style={styles.topBarBrand} numberOfLines={1}>BuildPro</Text>
+          <Text style={styles.topBarBrand} numberOfLines={1}>Morada</Text>
         </View>
         <View style={styles.topBarRight}>
           <TouchableOpacity

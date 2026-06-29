@@ -242,7 +242,7 @@ export default function BulkXeroContactMappingDialog({
             <thead className="sticky top-0 bg-background z-10">
               <tr className="border-b">
                 <th className="text-left py-2 px-2 font-medium text-muted-foreground">
-                  BuildPro {contactType === "supplier" ? "Supplier" : "Trade"}
+                  Morada {contactType === "supplier" ? "Supplier" : "Trade"}
                 </th>
                 <th className="text-left py-2 px-2 font-medium text-muted-foreground">
                   Email

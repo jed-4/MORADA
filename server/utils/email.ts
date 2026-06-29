@@ -70,7 +70,7 @@ async function sendEmailWithFallback(params: SendEmailParams): Promise<{ success
   }));
 
   const sendParams: any = {
-    from: from || 'BuildPro <onboarding@resend.dev>',
+    from: from || 'Morada <noreply@moradaco.com.au>',
     to: toAddresses,
     subject,
     html,
@@ -115,7 +115,7 @@ export async function sendInvitationEmail({
       <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>BuildPro Invitation</title>
+        <title>Morada Invitation</title>
       </head>
       <body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #f5f5f5;">
         <table role="presentation" style="width: 100%; border-collapse: collapse;">
@@ -125,7 +125,7 @@ export async function sendInvitationEmail({
                 <!-- Header -->
                 <tr>
                   <td style="padding: 40px 40px 20px; text-align: center; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 8px 8px 0 0;">
-                    <h1 style="margin: 0; color: #ffffff; font-size: 28px; font-weight: 600;">BuildPro</h1>
+                    <h1 style="margin: 0; color: #ffffff; font-size: 28px; font-weight: 600;">Morada</h1>
                   </td>
                 </tr>
                 
@@ -137,7 +137,7 @@ export async function sendInvitationEmail({
                     </h2>
                     
                     <p style="margin: 0 0 24px; color: #4a5568; font-size: 16px; line-height: 1.6;">
-                      <strong>${inviterName}</strong> has invited you to join <strong>${companyName}</strong> on BuildPro, the construction project management platform.
+                      <strong>${inviterName}</strong> has invited you to join <strong>${companyName}</strong> on Morada, the construction project management platform.
                     </p>
                     
                     <p style="margin: 0 0 32px; color: #4a5568; font-size: 16px; line-height: 1.6;">
@@ -173,7 +173,7 @@ export async function sendInvitationEmail({
                 <tr>
                   <td style="padding: 24px 40px; text-align: center; background-color: #f7fafc; border-radius: 0 0 8px 8px;">
                     <p style="margin: 0; color: #a0aec0; font-size: 12px;">
-                      © ${new Date().getFullYear()} BuildPro. All rights reserved.
+                      © ${new Date().getFullYear()} Morada. All rights reserved.
                     </p>
                   </td>
                 </tr>
@@ -188,7 +188,7 @@ export async function sendInvitationEmail({
   try {
     const result = await sendEmailWithFallback({
       to,
-      subject: `You've been invited to join ${companyName} on BuildPro`,
+      subject: `You've been invited to join ${companyName} on Morada`,
       html,
       userId,
     });
@@ -244,7 +244,7 @@ export async function sendReminderEmail({
       <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>BuildPro Reminder</title>
+        <title>Morada Reminder</title>
       </head>
       <body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #f5f5f5;">
         <table role="presentation" style="width: 100%; border-collapse: collapse;">
@@ -254,7 +254,7 @@ export async function sendReminderEmail({
                 <!-- Header -->
                 <tr>
                   <td style="padding: 32px 40px 16px; text-align: center; background: linear-gradient(135deg, #A890D4 0%, #9b87c4 100%); border-radius: 8px 8px 0 0;">
-                    <h1 style="margin: 0; color: #ffffff; font-size: 24px; font-weight: 600;">BuildPro Reminder</h1>
+                    <h1 style="margin: 0; color: #ffffff; font-size: 24px; font-weight: 600;">Morada Reminder</h1>
                   </td>
                 </tr>
                 
@@ -284,7 +284,7 @@ export async function sendReminderEmail({
                     <hr style="margin: 24px 0; border: none; border-top: 1px solid #e2e8f0;">
                     
                     <p style="margin: 0; color: #94a3b8; font-size: 13px; line-height: 1.5;">
-                      This is an automated reminder from BuildPro. Log in to your account to manage your reminders.
+                      This is an automated reminder from Morada. Log in to your account to manage your reminders.
                     </p>
                   </td>
                 </tr>
@@ -293,7 +293,7 @@ export async function sendReminderEmail({
                 <tr>
                   <td style="padding: 20px 40px; text-align: center; background-color: #f8fafc; border-radius: 0 0 8px 8px;">
                     <p style="margin: 0; color: #94a3b8; font-size: 12px;">
-                      © ${new Date().getFullYear()} BuildPro. All rights reserved.
+                      © ${new Date().getFullYear()} Morada. All rights reserved.
                     </p>
                   </td>
                 </tr>

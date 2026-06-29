@@ -136,8 +136,8 @@ export default function UserProfile() {
       toast({
         title: enabled ? "Gmail sending enabled" : "Gmail sending disabled",
         description: enabled 
-          ? "BuildPro emails will now be sent from your Gmail address."
-          : "BuildPro will use the default email service.",
+          ? "Morada emails will now be sent from your Gmail address."
+          : "Morada will use the default email service.",
       });
     },
     onError: (error: any) => {
@@ -337,7 +337,7 @@ export default function UserProfile() {
                 Google Calendar Integration
               </CardTitle>
               <CardDescription>
-                Connect your Google Calendar to sync BuildPro tasks and events
+                Connect your Google Calendar to sync Morada tasks and events
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -405,7 +405,7 @@ export default function UserProfile() {
                     <ul className="text-sm text-status-info dark:text-blue-300 space-y-1">
                       <li>• Tasks with due dates sync to Google Calendar</li>
                       <li>• Schedule items appear as calendar events</li>
-                      <li>• Changes in BuildPro update your Google Calendar</li>
+                      <li>• Changes in Morada update your Google Calendar</li>
                       <li>• Automatic sync every hour</li>
                     </ul>
                   </div>
@@ -435,7 +435,7 @@ export default function UserProfile() {
                       <div className="bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800 rounded-lg p-3">
                         <p className="text-sm text-status-success dark:text-green-300">
                           <Check className="h-4 w-4 inline mr-1" />
-                          Emails sent by BuildPro will come from your Gmail. Replies go straight to your inbox.
+                          Emails sent by Morada will come from your Gmail. Replies go straight to your inbox.
                         </p>
                       </div>
                     )}
@@ -455,7 +455,7 @@ export default function UserProfile() {
                     <div className="flex-1">
                       <h4 className="font-medium mb-1">Connect Your Google Calendar</h4>
                       <p className="text-sm text-muted-foreground mb-4">
-                        Link your Google account to automatically sync tasks and schedule items to your personal calendar. You'll be able to see all your BuildPro events alongside your other appointments.
+                        Link your Google account to automatically sync tasks and schedule items to your personal calendar. You'll be able to see all your Morada events alongside your other appointments.
                       </p>
                       <Button
                         onClick={handleConnectGoogleCalendar}

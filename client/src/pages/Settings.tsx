@@ -502,7 +502,7 @@ export default function Settings() {
                 <p className="text-sm text-muted-foreground mb-4">
                   {driveStatus?.credentialsConfigured 
                     ? "Your custom credentials are configured. You can update them below or connect using these credentials."
-                    : "Optionally provide your own Google Cloud OAuth 2.0 credentials for complete control over your Drive integration. If not configured, BuildPro's shared credentials will be used."
+                    : "Optionally provide your own Google Cloud OAuth 2.0 credentials for complete control over your Drive integration. If not configured, Morada's shared credentials will be used."
                   }
                   {" "}
                   <a 
@@ -593,7 +593,7 @@ export default function Settings() {
                 <p className="text-sm text-muted-foreground mb-4">
                   {driveStatus?.credentialsConfigured 
                     ? "Your custom credentials are saved. Click below to authorize access to your Google Drive."
-                    : "Click below to connect to Google Drive using BuildPro's shared credentials."
+                    : "Click below to connect to Google Drive using Morada's shared credentials."
                   }
                 </p>
                 <Button
@@ -737,7 +737,7 @@ export default function Settings() {
     useEffect(() => {
       const params = new URLSearchParams(window.location.search);
       if (params.get("bill_inbox_success")) {
-        toast({ title: "Bill inbox connected", description: "BuildPro will now check this inbox every 5 minutes for new invoices." });
+        toast({ title: "Bill inbox connected", description: "Morada will now check this inbox every 5 minutes for new invoices." });
         refetch();
         window.history.replaceState({}, "", window.location.pathname + "?tab=integrations");
       }
@@ -774,7 +774,7 @@ export default function Settings() {
                 )}
               </CardTitle>
               <p className="text-sm text-muted-foreground mt-1">
-                Forward supplier invoices to a Gmail address — BuildPro polls it every 5 minutes and creates draft bills automatically
+                Forward supplier invoices to a Gmail address — Morada polls it every 5 minutes and creates draft bills automatically
               </p>
             </div>
           </div>
@@ -787,7 +787,7 @@ export default function Settings() {
                 <ol className="text-sm text-muted-foreground space-y-1 list-decimal list-inside">
                   <li>Connect a Gmail account below (e.g. <code className="bg-background px-1 rounded">bills@gmail.com</code>)</li>
                   <li>Give that address to your suppliers to forward invoices to</li>
-                  <li>BuildPro checks the inbox every 5 minutes and runs the AI Bill Reader on any PDF or image attachments</li>
+                  <li>Morada checks the inbox every 5 minutes and runs the AI Bill Reader on any PDF or image attachments</li>
                   <li>New bills appear in your Bills list as drafts, ready to review</li>
                 </ol>
               </div>

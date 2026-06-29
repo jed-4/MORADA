@@ -166,7 +166,7 @@ export default function AcceptInvitation() {
       } else {
         // Auto-login succeeded
         toast({
-          title: "Welcome to BuildPro!",
+          title: "Welcome to Morada!",
           description: "Your account has been created successfully.",
         });
         // Redirect to dashboard (user is now logged in via session)
@@ -230,7 +230,7 @@ export default function AcceptInvitation() {
           <div className="text-center space-y-2">
             <CardTitle className="text-2xl">You're Invited!</CardTitle>
             <CardDescription className="text-base">
-              Join <span className="font-semibold text-foreground">{invitation.company || "the team"}</span> on BuildPro
+              Join <span className="font-semibold text-foreground">{invitation.company || "the team"}</span> on Morada
             </CardDescription>
           </div>
         </CardHeader>
@@ -356,7 +356,7 @@ export default function AcceptInvitation() {
           </Form>
 
           <p className="text-xs text-center text-muted-foreground">
-            By accepting this invitation, you agree to join {invitation.company || "the team"} on BuildPro.
+            By accepting this invitation, you agree to join {invitation.company || "the team"} on Morada.
           </p>
         </CardContent>
       </Card>

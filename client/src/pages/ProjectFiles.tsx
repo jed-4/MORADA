@@ -514,7 +514,7 @@ export default function ProjectFiles() {
             <SiGoogledrive className="w-16 h-16 mx-auto text-muted-foreground mb-4" />
             <h3 className="text-lg font-semibold mb-2">Connect Google Drive</h3>
             <p className="text-sm text-muted-foreground mb-6">
-              Connect your company's Google Drive to browse, upload, and manage project files directly from BuildPro.
+              Connect your company's Google Drive to browse, upload, and manage project files directly from Morada.
             </p>
             <Button
               onClick={() => connectMutation.mutate()}

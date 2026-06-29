@@ -359,7 +359,7 @@ export default function CreateRFI() {
               <div>
                 <Label className="text-xs font-medium">Track Only Mode</Label>
                 <p className="text-data text-muted-foreground">
-                  Track RFI sent outside BuildPro
+                  Track RFI sent outside Morada
                 </p>
               </div>
               <Switch

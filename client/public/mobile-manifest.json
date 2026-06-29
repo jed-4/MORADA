@@ -1,6 +1,6 @@
 {
-  "name": "BuildPro Mobile",
-  "short_name": "BuildPro",
+  "name": "Morada Mobile",
+  "short_name": "Morada",
   "description": "Project management for residential builders",
   "start_url": "/mobile",
   "scope": "/mobile",

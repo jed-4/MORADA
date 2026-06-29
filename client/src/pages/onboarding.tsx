@@ -120,10 +120,10 @@ export default function OnboardingPage() {
         <div className="text-center mb-8">
           <div className="flex items-center justify-center gap-2 mb-4">
             <Building2 className="h-10 w-10 text-primary" data-testid="logo-icon-onboarding" />
-            <span className="text-3xl font-bold text-foreground" data-testid="text-logo-onboarding">BuildPro</span>
+            <span className="text-3xl font-bold text-foreground" data-testid="text-logo-onboarding">Morada</span>
           </div>
           <h1 className="text-2xl font-bold text-foreground mb-2" data-testid="text-onboarding-title">
-            {step === 1 ? "Welcome to BuildPro!" : "Create Your Company"}
+            {step === 1 ? "Welcome to Morada!" : "Create Your Company"}
           </h1>
           <p className="text-muted-foreground mb-1" data-testid="text-onboarding-subtitle">
             {step === 1 

@@ -274,7 +274,7 @@ export function ChecklistPdfDocument({ checklist, groups, projectName, exportDat
         ))}
 
         <View style={styles.footer} fixed>
-          <Text>BuildPro - Checklist Report</Text>
+          <Text>Morada - Checklist Report</Text>
           <Text render={({ pageNumber, totalPages }) => `Page ${pageNumber} of ${totalPages}`} />
         </View>
       </Page>

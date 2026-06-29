@@ -297,7 +297,7 @@ export function ImportFullEstimateDialog({
           <DialogTitle>Import Estimate</DialogTitle>
           <DialogDescription>
             {step === "upload" && "Upload a buildern or wunderbuild estimate export file"}
-            {step === "map" && `Match your columns to BuildPro fields (${formatLabel} format detected)`}
+            {step === "map" && `Match your columns to Morada fields (${formatLabel} format detected)`}
             {step === "name" && "Review and name your imported estimate"}
           </DialogDescription>
         </DialogHeader>
@@ -342,7 +342,7 @@ export function ImportFullEstimateDialog({
         {step === "map" && (
           <div className="space-y-4">
             <div className="p-4 bg-muted/50 rounded-md">
-              <p className="text-sm font-medium mb-3">Map your file columns to BuildPro fields</p>
+              <p className="text-sm font-medium mb-3">Map your file columns to Morada fields</p>
               <div className="grid grid-cols-3 gap-3">
                 <div>
                   <Label htmlFor="map-name" className="text-xs mb-1">Name*</Label>

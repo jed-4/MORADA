@@ -218,7 +218,7 @@ export default function Header() {
   }, [currentProject?.id, currentProject?.currentSystemPhase]);
 
   // Prioritize: company nickname (Display Name) > company name > fallback
-  const companyDisplayName = company?.nickname || company?.name || "BuildPro";
+  const companyDisplayName = company?.nickname || company?.name || "Morada";
 
 
   // Keyboard shortcut for global search (Cmd+K / Ctrl+K)

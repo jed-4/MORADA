@@ -314,7 +314,7 @@ export default function SelectionPortal() {
         </div>
 
         <p className="text-center text-xs text-muted-foreground pb-4">
-          Powered by BuildPro
+          Powered by Morada
         </p>
       </div>
     </div>

@@ -235,7 +235,7 @@ export function SiteDiaryPdfDocument({
         )}
 
         <View style={styles.footer} fixed>
-          <Text style={styles.footerText}>BuildPro Site Diary</Text>
+          <Text style={styles.footerText}>Morada Site Diary</Text>
           <Text
             style={styles.footerText}
             render={({ pageNumber, totalPages }) => `Page ${pageNumber} of ${totalPages}`}

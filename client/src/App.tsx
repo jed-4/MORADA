@@ -435,7 +435,7 @@ function AuthWrapper() {
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="loading-enhanced text-center">
           <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4" data-testid="loading-spinner"></div>
-          <p className="text-muted-foreground" data-testid="text-loading">Loading BuildPro...</p>
+          <p className="text-muted-foreground" data-testid="text-loading">Loading Morada...</p>
         </div>
       </div>
     );

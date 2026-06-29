@@ -403,7 +403,7 @@ async function pushBillToXeroInternal(
     // the bill doesn't keep showing a red sync error for a change we
     // intentionally don't push.
     if (bill.xeroInvoiceId && (bill.status === "paid" || (bill.paidAmount || 0) > 0)) {
-      const msg = "This bill is paid in Xero, so Xero won't accept changes to its line items. Your edit was saved in BuildPro.";
+      const msg = "This bill is paid in Xero, so Xero won't accept changes to its line items. Your edit was saved in Morada.";
       try {
         await storage.updateBill(billId, {
           xeroLastSyncStatus: null,
@@ -14369,7 +14369,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 amount: (bill.paidAmount || bill.total || 0) / 100,
                 date: new Date().toISOString().slice(0, 10),
                 accountCode: process.env.XERO_DEFAULT_BANK_CODE || "090",
-                reference: `BuildPro bill ${bill.billNumber || bill.id}`,
+                reference: `Morada bill ${bill.billNumber || bill.id}`,
               });
               await storage.updateBill(bill.id, {
                 xeroLastSyncAt: new Date(),
@@ -14997,7 +14997,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               amount: (updated.paidAmount || updated.total || 0) / 100,
               date: new Date().toISOString().slice(0, 10),
               accountCode: process.env.XERO_DEFAULT_BANK_CODE || "090",
-              reference: `BuildPro bill ${updated.billNumber || updated.id}`,
+              reference: `Morada bill ${updated.billNumber || updated.id}`,
             });
             await storage.updateBill(updated.id, {
               xeroLastSyncAt: new Date(),
@@ -16009,13 +16009,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }] : undefined;
 
       const settings = await storage.getCompanySettings();
-      const fromName = settings?.companyName || "BuildPro";
+      const fromName = settings?.companyName || "Morada";
 
       await sendGenericEmail({
         to,
         subject,
         html: body.replace(/\n/g, "<br>"),
-        from: `${fromName} via BuildPro <onboarding@resend.dev>`,
+        from: `${fromName} via Morada <noreply@moradaco.com.au>`,
         replyTo: req.user.email,
         userId,
         attachments,
@@ -16361,13 +16361,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       if (to) {
         const settings = await storage.getCompanySettings();
-        const fromName = settings?.companyName || "BuildPro";
+        const fromName = settings?.companyName || "Morada";
 
         await sendGenericEmail({
           to,
           subject: subject || `Purchase Order ${(po as any).poNumber}`,
           html: body ? body.replace(/\n/g, "<br>") : `<p>Please find attached Purchase Order ${(po as any).poNumber}.</p>`,
-          from: `${fromName} via BuildPro <onboarding@resend.dev>`,
+          from: `${fromName} via Morada <noreply@moradaco.com.au>`,
           replyTo: req.user.email,
           userId: req.user.id,
           attachments: pdfBase64 ? [{
@@ -17894,13 +17894,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }] : undefined;
 
       const settings = await storage.getCompanySettings();
-      const fromName = settings?.companyName || "BuildPro";
+      const fromName = settings?.companyName || "Morada";
 
       await sendGenericEmail({
         to,
         subject,
         html: body.replace(/\n/g, "<br>"),
-        from: `${fromName} via BuildPro <onboarding@resend.dev>`,
+        from: `${fromName} via Morada <noreply@moradaco.com.au>`,
         replyTo: req.user.email,
         userId,
         attachments,
@@ -27716,7 +27716,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         await storage.createMessage({
           channelId: generalChannel.id,
           userId,
-          content: "Welcome to BuildPro Communications!"
+          content: "Welcome to Morada Communications!"
         });
         
         await storage.createMessage({

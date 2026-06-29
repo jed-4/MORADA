@@ -66,8 +66,8 @@ export const KPI_DEFINITIONS: Record<KPIKey, KPIDefinition> = {
   revenue_buildpro: {
     key: "revenue_buildpro",
     label: "Revenue",
-    labelDetail: "BuildPro",
-    description: "Total revenue from sent/paid invoices in BuildPro",
+    labelDetail: "Morada",
+    description: "Total revenue from sent/paid invoices in Morada",
     format: "currency",
     accent: "green",
     financialGated: true,
@@ -89,8 +89,8 @@ export const KPI_DEFINITIONS: Record<KPIKey, KPIDefinition> = {
   outstanding_buildpro: {
     key: "outstanding_buildpro",
     label: "Outstanding",
-    labelDetail: "BuildPro",
-    description: "Total value of unpaid invoices in BuildPro",
+    labelDetail: "Morada",
+    description: "Total value of unpaid invoices in Morada",
     format: "currency",
     accent: "amber",
     financialGated: true,

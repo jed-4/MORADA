@@ -339,7 +339,7 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
   });
   
   useEffect(() => {
-    document.title = "BuildPro";
+    document.title = "Morada";
   }, []);
 
   // Merge new attachments into an existing list, deduplicating by id

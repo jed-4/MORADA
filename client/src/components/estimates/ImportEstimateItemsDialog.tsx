@@ -475,7 +475,7 @@ export function ImportEstimateItemsDialog({
                 <span className="px-2 py-1 bg-primary/10 text-primary rounded text-xs font-medium">
                   Working
                 </span>
-                <span className="text-muted-foreground">and match your columns to BuildPro</span>
+                <span className="text-muted-foreground">and match your columns to Morada</span>
                 <Button
                   variant="ghost"
                   size="sm"
