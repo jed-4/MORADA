@@ -101,6 +101,7 @@ const UserWorkspace = lazy(() => import("@/pages/UserWorkspace"));
 const NotFound = lazy(() => import("@/pages/not-found"));
 const SuggestionsReview = lazy(() => import("@/pages/SuggestionsReview"));
 const PrivacyPolicy = lazy(() => import("@/pages/PrivacyPolicy"));
+const TermsOfService = lazy(() => import("@/pages/TermsOfService"));
 const LandingPage = lazy(() => import("@/pages/landing"));
 const OnboardingPage = lazy(() => import("@/pages/onboarding"));
 const AcceptInvitation = lazy(() => import("@/pages/AcceptInvitation"));
@@ -136,6 +137,7 @@ function Router() {
       <Route path="/auth" component={AuthPage} />
       <Route path="/reset-password" component={ResetPassword} />
       <Route path="/privacy" component={PrivacyPolicy} />
+      <Route path="/terms" component={TermsOfService} />
       <Route path="/portal/rfq/:token" component={RFQPortal} />
       <Route path="/portal/variation/:token" component={VariationPortal} />
       <Route path="/portal/proposal/:id" component={ProposalPortal} />
@@ -351,6 +353,8 @@ function UnauthenticatedRoutes() {
     <Suspense fallback={<div className="flex items-center justify-center h-screen"><div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" /></div>}>
       <Switch>
         <Route path="/auth" component={AuthPage} />
+        <Route path="/privacy" component={PrivacyPolicy} />
+        <Route path="/terms" component={TermsOfService} />
         <Route path="/accept-invite/:token" component={AcceptInvitation} />
         <Route path="/portal/rfq/:token" component={RFQPortal} />
         <Route path="/portal/variation/:token" component={VariationPortal} />

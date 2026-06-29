@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Checkbox } from '@/components/ui/checkbox';
 import { useToast } from '@/hooks/use-toast';
 import { queryClient } from '@/lib/queryClient';
 import { Building2, Mail, Lock, User, Loader2, CheckCircle2, ArrowLeft } from 'lucide-react';
@@ -23,6 +24,9 @@ const registerSchema = z.object({
   confirmPassword: z.string(),
   firstName: z.string().min(1, 'First name is required'),
   lastName: z.string().min(1, 'Last name is required'),
+  agreeToTerms: z.boolean().refine((v) => v === true, {
+    message: 'You must agree to the Terms of Service and Privacy Policy to create an account.',
+  }),
 }).refine((data) => data.password === data.confirmPassword, {
   message: "Passwords don't match",
   path: ['confirmPassword'],
@@ -64,7 +68,7 @@ export default function AuthPage() {
 
   const registerForm = useForm<RegisterFormValues>({
     resolver: zodResolver(registerSchema),
-    defaultValues: { email: '', password: '', confirmPassword: '', firstName: '', lastName: '' },
+    defaultValues: { email: '', password: '', confirmPassword: '', firstName: '', lastName: '', agreeToTerms: false },
   });
 
   const handleLogin = async (values: LoginFormValues) => {
@@ -384,6 +388,45 @@ export default function AuthPage() {
                               />
                             </div>
                           </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={registerForm.control}
+                      name="agreeToTerms"
+                      render={({ field }) => (
+                        <FormItem>
+                          <div className="flex items-start gap-2">
+                            <FormControl>
+                              <Checkbox
+                                checked={field.value}
+                                onCheckedChange={field.onChange}
+                                className="mt-0.5"
+                                data-testid="checkbox-register-terms"
+                              />
+                            </FormControl>
+                            <FormLabel className="text-sm font-normal leading-snug text-muted-foreground">
+                              I agree to the{' '}
+                              <a
+                                href="/terms"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-primary underline"
+                              >
+                                Terms of Service
+                              </a>{' '}
+                              and{' '}
+                              <a
+                                href="/privacy"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-primary underline"
+                              >
+                                Privacy Policy
+                              </a>
+                            </FormLabel>
+                          </div>
                           <FormMessage />
                         </FormItem>
                       )}
