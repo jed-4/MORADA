@@ -1089,6 +1089,30 @@ export default function CustomizableProjectOverview() {
           </DropdownMenu>
         </div>
       )}
+      <div className="flex items-center pl-1 self-stretch">
+        {currentProject.clientId && currentProject.clientName ? (
+          <Badge
+            variant="outline"
+            className="text-xs gap-1 max-w-[180px] cursor-pointer"
+            onClick={() => clientContact && setClientDialogOpen(true)}
+            title={currentProject.clientName}
+            data-testid="badge-project-client"
+          >
+            <User className="h-3 w-3 shrink-0" />
+            <span className="truncate">{currentProject.clientName}</span>
+          </Badge>
+        ) : (
+          <Badge
+            variant="outline"
+            className="text-xs gap-1 cursor-pointer text-muted-foreground"
+            onClick={() => navigate('/project-settings')}
+            data-testid="badge-add-client"
+          >
+            <UserPlus className="h-3 w-3 shrink-0" />
+            <span>Add client</span>
+          </Badge>
+        )}
+      </div>
       <div className="flex items-center pl-1 pr-1 self-stretch">
         <Tooltip>
           <TooltipTrigger asChild>
@@ -1142,28 +1166,6 @@ export default function CustomizableProjectOverview() {
             >
               {phaseDisplayName}
             </Badge>
-            {currentProject.clientId && currentProject.clientName ? (
-              <Badge
-                variant="outline"
-                className="text-xs gap-1 max-w-[180px] cursor-pointer"
-                onClick={() => clientContact && setClientDialogOpen(true)}
-                title={currentProject.clientName}
-                data-testid="badge-project-client"
-              >
-                <User className="h-3 w-3 shrink-0" />
-                <span className="truncate">{currentProject.clientName}</span>
-              </Badge>
-            ) : (
-              <Badge
-                variant="outline"
-                className="text-xs gap-1 cursor-pointer text-muted-foreground"
-                onClick={() => navigate('/project-settings')}
-                data-testid="badge-add-client"
-              >
-                <UserPlus className="h-3 w-3 shrink-0" />
-                <span>Add client</span>
-              </Badge>
-            )}
           </div>
 
           {/* Right: View | + | Settings (Scope-style) */}
@@ -1211,29 +1213,6 @@ export default function CustomizableProjectOverview() {
             <span className="font-semibold text-foreground truncate" data-testid="text-page-title">{currentProject.name}</span>
             <span>·</span>
             <span className="font-medium text-foreground/70 truncate">{PROJECT_TABS.find(t => t.id === activeTab)?.label ?? activeTab}</span>
-            <span>·</span>
-            {currentProject.clientId && currentProject.clientName ? (
-              <button
-                type="button"
-                onClick={() => clientContact && setClientDialogOpen(true)}
-                className="flex items-center gap-1 min-w-0 text-foreground/70 hover:text-foreground"
-                title={currentProject.clientName}
-                data-testid="button-client-collapsed"
-              >
-                <User className="h-3 w-3 shrink-0" />
-                <span className="truncate font-medium">{currentProject.clientName}</span>
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={() => navigate('/project-settings')}
-                className="flex items-center gap-1 min-w-0 hover:text-foreground"
-                data-testid="button-add-client-collapsed"
-              >
-                <UserPlus className="h-3 w-3 shrink-0" />
-                <span className="font-medium">Add client</span>
-              </button>
-            )}
           </div>
           {dashboardControls}
         </div>
