@@ -7477,20 +7477,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const resetUrl = `${baseUrl}/reset-password?token=${plainToken}&email=${encodeURIComponent(user.email)}`;
 
       try {
-        const { sendEmail } = require('./utils/emailService');
-        await sendEmail({
+        await sendGenericEmail({
           to: user.email,
-          subject: 'Reset Your BuildPro Password',
+          subject: 'Reset Your Morada Password',
+          from: 'Morada <noreply@moradaco.com.au>',
           html: `
             <h2>Password Reset Request</h2>
             <p>Hi ${user.firstName || 'there'},</p>
-            <p>We received a request to reset your BuildPro password.</p>
+            <p>We received a request to reset your Morada password.</p>
             <p>Click the button below to choose a new password. This link expires in 1 hour.</p>
             <p><a href="${resetUrl}" style="display:inline-block;padding:12px 24px;background-color:#9b7fc4;color:white;text-decoration:none;border-radius:6px;font-weight:600;">Reset Password</a></p>
             <p>If you didn't request this, you can safely ignore this email — your password won't change.</p>
-            <p>Thanks,<br>The BuildPro Team</p>
+            <p>Thanks,<br>The Morada Team</p>
           `,
-          text: `Reset your BuildPro password by visiting: ${resetUrl}\n\nThis link expires in 1 hour. If you didn't request this, ignore this email.`,
         });
       } catch (emailErr) {
         console.error('[forgot-password] Failed to send reset email:', emailErr);
@@ -9264,21 +9263,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const resetUrl = `${baseUrl}/reset-password?token=${plainToken}&email=${encodeURIComponent(targetUser.email)}`;
       
       try {
-        const { sendEmail } = require("./utils/emailService");
-        await sendEmail({
+        await sendGenericEmail({
           to: targetUser.email,
-          subject: "Reset Your BuildPro Password",
+          subject: "Reset Your Morada Password",
+          from: 'Morada <noreply@moradaco.com.au>',
           html: `
             <h2>Password Reset Request</h2>
             <p>Hi ${targetUser.firstName || 'there'},</p>
-            <p>Your team administrator has requested a password reset for your BuildPro account.</p>
+            <p>Your team administrator has requested a password reset for your Morada account.</p>
             <p>Click the link below to set a new password:</p>
             <p><a href="${resetUrl}" style="display: inline-block; padding: 12px 24px; background-color: #A890D4; color: white; text-decoration: none; border-radius: 6px;">Reset Password</a></p>
             <p>This link will expire in 24 hours.</p>
             <p>If you did not request this, please ignore this email or contact your administrator.</p>
-            <p>Thanks,<br>The BuildPro Team</p>
+            <p>Thanks,<br>The Morada Team</p>
           `,
-          text: `Password Reset Request\n\nYour team administrator has requested a password reset. Visit this link to set a new password: ${resetUrl}\n\nThis link will expire in 24 hours.`,
         });
         
         res.json({ message: "Password reset email sent successfully" });
