@@ -599,9 +599,22 @@ const colors = {
     }
   };
 
+  const buildDefaultTitle = (t: SiteDiaryTemplate | null, projectId: string): string => {
+    const now = new Date();
+    const day = String(now.getDate()).padStart(2, '0');
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const dateStr = `${day}/${month}`;
+    const templateName = t?.name || '';
+    const projName = projectId ? (projectMap.get(projectId)?.name || '') : '';
+    return projName ? `${projName} - ${templateName} - ${dateStr}` : `${templateName} - ${dateStr}`;
+  };
+
   const switchTemplate = (t: SiteDiaryTemplate) => {
     setActiveTemplate(t);
     applyTemplateDefaults(t);
+    if (!isEditMode) {
+      setFormTitle(buildDefaultTitle(t, formProjectId));
+    }
     setShowTemplatePicker(false);
   };
 
@@ -610,6 +623,7 @@ const colors = {
     const defaultTpl = allTemplates.find(t => t.isDefault) || allTemplates[0] || template;
     setActiveTemplate(defaultTpl);
     applyTemplateDefaults(defaultTpl);
+    setFormTitle(buildDefaultTitle(defaultTpl, ''));
     setShowEntryModal(true);
   };
 
@@ -1793,6 +1807,9 @@ const colors = {
                         style={[styles.projectPickerRow, { borderBottomColor: isDark ? '#334155' : '#f1f5f9' }]}
                         onPress={() => {
                           setFormProjectId(item.id);
+                          if (!isEditMode) {
+                            setFormTitle(buildDefaultTitle(activeTemplate, item.id));
+                          }
                           setShowProjectPicker(false);
                         }}
                       >
@@ -1860,8 +1877,9 @@ const colors = {
             </TouchableOpacity>
             <Text style={[styles.modalHeaderTitle, { color: colors.text }]} numberOfLines={1}>Entry Details</Text>
             <View style={styles.detailActions}>
-              <TouchableOpacity onPress={() => selectedEntry && openEditModal(selectedEntry)} style={styles.detailActionBtn}>
-                <Ionicons name="create-outline" size={22} color={colors.accent} />
+              <TouchableOpacity onPress={() => selectedEntry && openEditModal(selectedEntry)} style={[styles.detailEditBtn, { backgroundColor: colors.accent }]}>
+                <Ionicons name="create-outline" size={18} color="#ffffff" />
+                <Text style={styles.detailEditBtnText}>Edit</Text>
               </TouchableOpacity>
               <TouchableOpacity onPress={() => selectedEntry && handleDeleteEntry(selectedEntry)} style={styles.detailActionBtn}>
                 <Ionicons name="trash-outline" size={22} color={colors.danger} />
@@ -2543,6 +2561,19 @@ const styles = StyleSheet.create({
   },
   detailActionBtn: {
     padding: 4,
+  },
+  detailEditBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 8,
+  },
+  detailEditBtnText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '600',
   },
   detailContent: {
     padding: 16,
