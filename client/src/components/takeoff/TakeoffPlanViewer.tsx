@@ -41,6 +41,10 @@ interface Props {
 const STANDARD_SCALES = [10, 20, 50, 100, 200];
 
 export default function TakeoffPlanViewer({ plan, initialPage, projectId, onClose }: Props) {
+  // Configure the pdf.js worker before rendering any <Document>. Without this
+  // pdf.js falls back to a "fake worker" that fails in production builds,
+  // surfacing as "Failed to load PDF".
+  ensurePdfWorker();
   const { toast } = useToast();
   const containerRef = useRef<HTMLDivElement>(null);
   const [pdfPageCount, setPdfPageCount] = useState(plan.pageCount || 1);
@@ -48,6 +52,7 @@ export default function TakeoffPlanViewer({ plan, initialPage, projectId, onClos
   const [openPages, setOpenPages] = useState<number[]>([initialPage]);
   const [pagesPopoverOpen, setPagesPopoverOpen] = useState(false);
   const [scalePopoverOpen, setScalePopoverOpen] = useState(false);
+  const [pdfReloadKey, setPdfReloadKey] = useState(0);
 
   // If parent navigates to a different starting page (new click from grid),
   // adopt it as the active tab and ensure it's in the open list.
@@ -804,6 +809,7 @@ export default function TakeoffPlanViewer({ plan, initialPage, projectId, onClos
             onClick={handleSelectClick}
           >
             <Document
+              key={`main-${pdfReloadKey}`}
               file={documentFile}
               onLoadSuccess={({ numPages }) => setPdfPageCount(numPages)}
               loading={
@@ -811,7 +817,23 @@ export default function TakeoffPlanViewer({ plan, initialPage, projectId, onClos
                   <Loader2 className="h-4 w-4 animate-spin" /> Loading PDF…
                 </div>
               }
-              error={<div className="p-8 text-sm text-destructive">Failed to load PDF</div>}
+              error={
+                <div className="p-8 flex flex-col items-start gap-3">
+                  <div className="text-sm text-destructive">
+                    The plan couldn't be loaded. This is usually a temporary
+                    network hiccup — try again.
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setPdfReloadKey((k) => k + 1)}
+                    data-testid="button-retry-pdf"
+                  >
+                    <RotateCw className="h-4 w-4" />
+                    Try again
+                  </Button>
+                </div>
+              }
             >
               <Page
                 pageNumber={currentPage}

@@ -33,7 +33,7 @@ import {
 } from "@/components/ui/dialog";
 import {
   Loader2, MoreVertical, Plus, Upload, FileText, Trash2, Pencil,
-  ChevronRight, ChevronDown,
+  ChevronRight, ChevronDown, RotateCw,
 } from "lucide-react";
 import type { TakeoffPlan, TakeoffPlanPage, TakeoffMeasurement } from "@shared/schema";
 
@@ -51,6 +51,10 @@ async function getPdfPageCount(file: File): Promise<number> {
 }
 
 export default function TakeoffPlansTab({ projectId, onOpenPlan }: Props) {
+  // Configure the pdf.js worker before any <Document> renders. Without this
+  // pdf.js falls back to a "fake worker" that fails in production builds,
+  // surfacing as "Failed to load PDF".
+  ensurePdfWorker();
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [pendingDelete, setPendingDelete] = useState<TakeoffPlan | null>(null);
@@ -371,6 +375,7 @@ function PlanGroup({
   const pagesKey = ["/api/projects", projectId, "takeoff/plans", plan.id, "pages"];
   const { data: pages = [] } = useQuery<TakeoffPlanPage[]>({ queryKey: pagesKey });
   const [pdfPageCount, setPdfPageCount] = useState<number>(plan.pageCount || 1);
+  const [pdfReloadKey, setPdfReloadKey] = useState(0);
 
   const measurementsByPageId = useMemo(() => {
     const map = new Map<string, number>();
@@ -474,6 +479,7 @@ function PlanGroup({
       {!collapsed && (
         <div className="pl-10">
           <Document
+            key={`group-${pdfReloadKey}`}
             file={documentFile}
             onLoadSuccess={({ numPages }) => setPdfPageCount(numPages)}
             loading={
@@ -482,7 +488,21 @@ function PlanGroup({
               </div>
             }
             error={
-              <div className="p-8 text-sm text-destructive">Failed to load PDF</div>
+              <div className="p-8 flex flex-col items-start gap-3">
+                <div className="text-sm text-destructive">
+                  The plan couldn't be loaded. This is usually a temporary
+                  network hiccup — try again.
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setPdfReloadKey((k) => k + 1)}
+                  data-testid="button-retry-pdf-group"
+                >
+                  <RotateCw className="h-4 w-4" />
+                  Try again
+                </Button>
+              </div>
             }
           >
             <div

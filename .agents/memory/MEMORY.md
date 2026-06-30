@@ -31,3 +31,4 @@
 - [Sentry ESM express instrumentation](sentry-esm-express-instrumentation.md) — "express is not instrumented" warning under ESM needs `--import` (package.json); error capture still works, only auto route-tracing degraded.
 - [Third-party widget CSP](thirdparty-widget-csp.md) — server/index.ts sets a strict manual CSP; any embedded SaaS widget (e.g. Crisp) needs its script/style/img/font/connect/frame origins whitelisted or it silently fails to load.
 - [Tenant isolation convention](tenant-isolation-convention.md) — by-ID routes return 404 (not 403) cross-tenant; enforce via getOwned* route helpers; nested sub-resources resolve parent FK then delegate.
+- [react-pdf worker must be called](pdf-worker-must-be-called.md) — every <Document> surface must CALL ensurePdfWorker(), not just import it; else "fake worker" fails → intermittent prod-only "Failed to load PDF" when it's first PDF view in a session.
