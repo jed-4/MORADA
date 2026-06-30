@@ -74,6 +74,10 @@ args = "Start application"
 task = "workflow.run"
 args = "tenant-isolation"
 
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "note-title-autosave"
+
 [[workflows.workflow]]
 name = "Expo Mobile"
 author = "agent"
@@ -105,6 +109,17 @@ author = "agent"
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "NODE_ENV=test npx tsx server/__tests__/tenant-isolation.test.ts"
+
+[workflows.workflow.metadata]
+isValidation = true
+
+[[workflows.workflow]]
+name = "note-title-autosave"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "NODE_ENV=test npx tsx server/__tests__/note-title-autosave.test.ts"
 
 [workflows.workflow.metadata]
 isValidation = true
