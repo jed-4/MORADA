@@ -7660,6 +7660,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
       `;
 
       await sendGenericEmail({ to: 'hello@moradaco.com.au', subject, html, replyTo: email });
+
+      // Secondary delivery: post to Slack #morada-triage. Email is primary, so
+      // any Slack failure is logged but never breaks the response.
+      const slackWebhookUrl = process.env.SLACK_WEBHOOK_URL;
+      if (slackWebhookUrl) {
+        try {
+          const slackText = `🐛 *New Bug Report*\n*From:* ${name} (${email})\n*Area:* ${area}\n*Description:* ${description}`;
+          const slackResponse = await fetch(slackWebhookUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text: slackText }),
+          });
+          if (!slackResponse.ok) {
+            console.error('Slack notification failed:', slackResponse.status, await slackResponse.text().catch(() => ''));
+          }
+        } catch (slackError) {
+          console.error('Slack notification error:', slackError);
+        }
+      }
+
       res.json({ success: true });
     } catch (error) {
       console.error('Error sending issue report:', error);
