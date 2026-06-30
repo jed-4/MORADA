@@ -2,7 +2,7 @@ module.exports = {
   expo: {
     name: "Morada",
     slug: "buildpro-mobile",
-    version: "1.0.0",
+    version: "1.0.1",
     scheme: "buildpro",
     orientation: "portrait",
     icon: "./assets/icon.png",
@@ -10,10 +10,21 @@ module.exports = {
     splash: {
       backgroundColor: "#1e40af",
     },
+    // Over-the-air (OTA) updates via EAS Update. The update URL is tied to the
+    // existing EAS project (extra.eas.projectId). runtimeVersion uses the
+    // appVersion policy so a published update only reaches native builds whose
+    // version matches — bump `version` whenever a change requires a new build.
+    runtimeVersion: {
+      policy: "appVersion",
+    },
+    updates: {
+      url: "https://u.expo.dev/d07cc13c-7e47-4be7-bea4-57c7186e65fe",
+      fallbackToCacheTimeout: 0,
+    },
     ios: {
       supportsTablet: true,
       bundleIdentifier: "com.buildpro.mobile",
-      buildNumber: "6",
+      buildNumber: "7",
       infoPlist: {
         ITSAppUsesNonExemptEncryption: false,
       },
@@ -24,6 +35,7 @@ module.exports = {
         backgroundColor: "#1e3a5f",
       },
       package: "com.buildpro.mobile",
+      versionCode: 7,
     },
     extra: {
       apiUrl: process.env.EXPO_PUBLIC_API_URL || "https://buildpro4.replit.app",
