@@ -78,6 +78,10 @@ args = "tenant-isolation"
 task = "workflow.run"
 args = "note-title-autosave"
 
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "xero-bill-dedup"
+
 [[workflows.workflow]]
 name = "Expo Mobile"
 author = "agent"
@@ -120,6 +124,17 @@ author = "agent"
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "NODE_ENV=test npx tsx server/__tests__/note-title-autosave.test.ts"
+
+[workflows.workflow.metadata]
+isValidation = true
+
+[[workflows.workflow]]
+name = "xero-bill-dedup"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "NODE_ENV=test npx tsx server/__tests__/xero-bill-dedup.test.ts"
 
 [workflows.workflow.metadata]
 isValidation = true

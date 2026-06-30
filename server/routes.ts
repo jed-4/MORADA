@@ -13,6 +13,7 @@ import { ObjectStorageService } from "./replit_integrations/object_storage";
 import { xeroService, XeroValidationError, type XeroValidationIssue } from "./services/xeroService";
 import { recomputePOStatusFromBills, recomputePOStatusForLinks } from "./services/poStatusFromBills";
 import { applyPOSuggestionsToBill } from "./services/poSuggestions";
+import { dedupXeroBills } from "./services/xeroBillDedup";
 import { 
   insertNoteSchema,
   insertTaskSchema,
@@ -14871,6 +14872,63 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (err) {
       console.error("[backfill-po-suggestions]", err);
       res.status(500).json({ error: "Failed to backfill PO suggestions" });
+    }
+  });
+
+  // ── Clean up duplicate Xero bills (Task #366) ─────────────────────────────
+  // Collapses every (company_id, xero_invoice_id) group down to the OLDEST bill,
+  // after moving payments/attachments/links/PO-matches onto the kept original.
+  // Database-wide and cross-tenant, so gated by platform-staff. Dry-run by
+  // default: an admin runs the report first, reviews it, then POSTs
+  // { dryRun: false } to actually delete. Idempotent — a clean DB is a no-op.
+  app.post("/api/admin/xero-bills/dedup", requireAuth, requirePlatformStaff, async (req, res) => {
+    try {
+      // Safety: only ever perform a destructive run when dryRun is *explicitly*
+      // false. Anything else (missing, true, non-boolean) stays a dry-run.
+      const dryRun = req.body?.dryRun !== false;
+      // Full per-row backup can be large; only echo it back when asked.
+      const includeBackup = req.body?.includeBackup === true;
+
+      const result = await dedupXeroBills({ dryRun });
+
+      // Recompute budget actuals for every affected project (real-run only) so
+      // spend figures drop back to the correct value after duplicates are gone.
+      let projectsRecomputed = 0;
+      if (!dryRun) {
+        for (const projectId of result.affectedProjectIds) {
+          await recalcProjectBudget(projectId);
+          projectsRecomputed++;
+        }
+      }
+
+      console.log(
+        JSON.stringify({
+          event: "xero.bill.dedup.summary",
+          dryRun,
+          groupsFound: result.groupsFound,
+          copiesToDelete: result.copiesToDelete,
+          paymentsMoved: result.paymentsMoved,
+          attachmentsMergedCount: result.attachmentsMergedCount,
+          invoiceLinksMoved: result.invoiceLinksMoved,
+          invoiceLinksDropped: result.invoiceLinksDropped,
+          variationLinksMoved: result.variationLinksMoved,
+          variationLinksDropped: result.variationLinksDropped,
+          poMatchesRepointed: result.poMatchesRepointed,
+          affectedProjects: result.affectedProjectIds.length,
+          projectsRecomputed,
+          ts: new Date().toISOString(),
+        }),
+      );
+
+      const { backup, ...summary } = result;
+      res.json({
+        ...summary,
+        projectsRecomputed,
+        ...(includeBackup ? { backup } : {}),
+      });
+    } catch (err) {
+      console.error("[xero-bills/dedup]", err);
+      res.status(500).json({ error: "Failed to dedup Xero bills" });
     }
   });
 

@@ -32,3 +32,4 @@
 - [Third-party widget CSP](thirdparty-widget-csp.md) — server/index.ts sets a strict manual CSP; any embedded SaaS widget (e.g. Crisp) needs its script/style/img/font/connect/frame origins whitelisted or it silently fails to load.
 - [Tenant isolation convention](tenant-isolation-convention.md) — by-ID routes return 404 (not 403) cross-tenant; enforce via getOwned* route helpers; nested sub-resources resolve parent FK then delegate.
 - [react-pdf worker must be called](pdf-worker-must-be-called.md) — every <Document> surface must CALL ensurePdfWorker(), not just import it; else "fake worker" fails → intermittent prod-only "Failed to load PDF" when it's first PDF view in a session.
+- [Xero duplicate-bill cleanup](xero-bill-dedup.md) — collapse (company,xero_invoice_id) to OLDEST; move payments/attachments/invoice+variation links/PO matched_bill_id first, never reparent line items, recompute budgets, dry-run+idempotent.
