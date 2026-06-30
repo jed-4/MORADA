@@ -725,6 +725,28 @@ export default function TaskListCompact({
   const bulkActionMutation = useMutation({
     mutationFn: (data: { ids: string[]; action: string; status?: string; projectId?: string }) =>
       apiRequest("/api/tasks/bulk-action", "POST", data),
+    // Optimistically remove deleted tasks / restatus tasks so bulk actions feel
+    // instant. Copy actions don't change the current list, so skip those.
+    onMutate: async (variables) => {
+      if (variables.action !== "delete" && variables.action !== "changeStatus") {
+        return { previousData: undefined };
+      }
+      await queryClient.cancelQueries({ queryKey: ["/api/tasks"], exact: false });
+      const previousData = queryClient
+        .getQueriesData<Task[]>({ queryKey: ["/api/tasks"] })
+        .map(([key, data]) => ({ key, data }));
+      const idSet = new Set(variables.ids);
+      queryClient.setQueriesData<Task[]>({ queryKey: ["/api/tasks"] }, (old) => {
+        if (!old) return old;
+        if (variables.action === "delete") {
+          return old.filter((task) => !idSet.has(task.id));
+        }
+        return old.map((task) =>
+          idSet.has(task.id) && variables.status ? { ...task, status: variables.status } : task
+        );
+      });
+      return { previousData };
+    },
     onSuccess: (result: { success: number; errors: string[] }, variables) => {
       queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
       setSelectedTasks([]);
@@ -740,10 +762,22 @@ export default function TaskListCompact({
         description: result.errors.length > 0 ? `${result.errors.length} failed` : undefined,
       });
     },
-    onError: () => {
+    onError: (_error, _variables, context: any) => {
+      // Roll back the optimistic removal/restatus on failure.
+      if (context?.previousData) {
+        context.previousData.forEach(({ key, data }: { key: any; data: any }) => {
+          queryClient.setQueryData(key, data);
+        });
+      }
       toast({
         title: "Bulk action failed",
         variant: "destructive",
+      });
+    },
+    onSettled: () => {
+      // Reconcile with the server after success or rollback.
+      queryClient.invalidateQueries({
+        predicate: (query) => query.queryKey[0] === "/api/tasks",
       });
     },
   });
@@ -856,17 +890,35 @@ export default function TaskListCompact({
     mutationFn: async ({ taskId, updates }: { taskId: string; updates: Partial<Task> }) => {
       return apiRequest(`/api/tasks/${taskId}`, "PATCH", updates);
     },
-    onSuccess: () => {
-      // Invalidate all task queries including assignee-scoped ones
-      queryClient.invalidateQueries({ 
-        predicate: (query) => query.queryKey[0] === "/api/tasks"
-      });
+    // Optimistically apply the change so completing/editing a task in the list
+    // updates instantly instead of waiting for the server round-trip.
+    onMutate: async ({ taskId, updates }) => {
+      await queryClient.cancelQueries({ queryKey: ["/api/tasks"], exact: false });
+      const previousData = queryClient
+        .getQueriesData<Task[]>({ queryKey: ["/api/tasks"] })
+        .map(([key, data]) => ({ key, data }));
+      queryClient.setQueriesData<Task[]>({ queryKey: ["/api/tasks"] }, (old) =>
+        old ? old.map((task) => (task.id === taskId ? { ...task, ...updates } : task)) : old
+      );
+      return { previousData };
     },
-    onError: (error) => {
+    onError: (error, _variables, context: any) => {
+      // Roll back the optimistic change on failure.
+      if (context?.previousData) {
+        context.previousData.forEach(({ key, data }: { key: any; data: any }) => {
+          queryClient.setQueryData(key, data);
+        });
+      }
       toast({
         title: "Failed to update task",
         description: error.message,
         variant: "destructive",
+      });
+    },
+    onSettled: () => {
+      // Reconcile with the server (covers all task queries, incl. assignee-scoped).
+      queryClient.invalidateQueries({
+        predicate: (query) => query.queryKey[0] === "/api/tasks",
       });
     },
   });

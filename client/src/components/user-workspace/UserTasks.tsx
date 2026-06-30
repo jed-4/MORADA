@@ -456,14 +456,33 @@ export default function UserTasks({ user, isOwnPage }: UserTasksProps) {
       const response = await apiRequest(`/api/tasks/${taskId}`, "DELETE");
       return response;
     },
+    // Optimistically drop the task from every task list so it disappears
+    // immediately instead of after the server round-trip.
+    onMutate: async (taskId: string) => {
+      await queryClient.cancelQueries({ queryKey: ["/api/tasks"], exact: false });
+      const previousData = queryClient
+        .getQueriesData<Task[]>({ queryKey: ["/api/tasks"] })
+        .map(([key, data]) => ({ key, data }));
+      queryClient.setQueriesData<Task[]>({ queryKey: ["/api/tasks"] }, (old) =>
+        old ? old.filter((task) => task.id !== taskId) : old
+      );
+      return { previousData };
+    },
+    onError: (_error, _taskId, context: any) => {
+      if (context?.previousData) {
+        context.previousData.forEach(({ key, data }: { key: any; data: any }) => {
+          queryClient.setQueryData(key, data);
+        });
+      }
+      toast({ title: "Failed to delete task", variant: "destructive" });
+    },
     onSuccess: () => {
-      queryClient.invalidateQueries({ 
-        predicate: (query) => Array.isArray(query.queryKey) && query.queryKey[0] === "/api/tasks"
-      });
       toast({ title: "Task deleted" });
     },
-    onError: () => {
-      toast({ title: "Failed to delete task", variant: "destructive" });
+    onSettled: () => {
+      queryClient.invalidateQueries({
+        predicate: (query) => Array.isArray(query.queryKey) && query.queryKey[0] === "/api/tasks",
+      });
     },
   });
 
