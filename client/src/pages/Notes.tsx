@@ -197,8 +197,9 @@ export default function Notes({ projectId: propProjectId, embedded }: NotesProps
   const [editTitle, setEditTitle] = useState("");
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved">("idle");
   const saveTimerRef = useRef<ReturnType<typeof setTimeout>>();
-  const lastSavedRef = useRef<{ title: string; html: string }>({ title: "", html: "" });
   const isCreatingRef = useRef(false);
+  // Tracks which note id we've already loaded into the editor fields (see sync effect).
+  const syncedNoteIdRef = useRef<string | null>(null);
 
   // ── ui state ───────────────────────────────────────────────────────────────
   const [searchTerm, setSearchTerm] = useState("");
@@ -317,7 +318,7 @@ export default function Notes({ projectId: propProjectId, embedded }: NotesProps
       invalidateNotes();
       setSelectedNoteId(newNote.id);
       setEditTitle(newNote.title || "");
-      lastSavedRef.current = { title: newNote.title || "", html: newNote.contentHtml || "" };
+      syncedNoteIdRef.current = newNote.id;
       setSaveState("idle");
       isCreatingRef.current = false;
     },
@@ -487,51 +488,84 @@ export default function Notes({ projectId: propProjectId, embedded }: NotesProps
     [notes, selectedNoteId]
   );
 
+  // Sync the editor fields from the loaded note once its data actually arrives
+  // (even if selectedNoteId was set before the data loaded), but do NOT re-sync
+  // (and clobber in-progress edits) when the same note simply refetches.
   useEffect(() => {
-    if (selectedNote && !isCreatingRef.current) {
+    if (isCreatingRef.current) return;
+    if (!selectedNoteId) {
+      syncedNoteIdRef.current = null;
+      return;
+    }
+    if (selectedNote && selectedNote.id !== syncedNoteIdRef.current) {
+      syncedNoteIdRef.current = selectedNote.id;
       setEditTitle(selectedNote.title || "");
-      lastSavedRef.current = {
-        title: selectedNote.title || "",
-        html: selectedNote.contentHtml || "",
-      };
       setEditVisibility(selectedNote.visibility || "team_only");
     }
-  }, [selectedNoteId]); // only re-sync when selection changes
+  }, [selectedNoteId, selectedNote]);
 
   // ── auto-save ─────────────────────────────────────────────────────────────
 
+  // The debounced save is bound to the note id it was scheduled for, so a
+  // delayed save always lands on the right note even if the user switches notes
+  // before the 800ms timer fires. Fields accumulate per note so editing the
+  // title and body in quick succession doesn't drop either one.
+  const pendingSaveRef = useRef<{ noteId: string; data: Partial<InsertNote> } | null>(null);
+
+  const flushPendingSave = useCallback(() => {
+    clearTimeout(saveTimerRef.current);
+    const pending = pendingSaveRef.current;
+    pendingSaveRef.current = null;
+    if (pending) {
+      silentUpdateMutation.mutate({ id: pending.noteId, data: pending.data });
+    }
+  }, []);
+
   const scheduleAutoSave = useCallback(
-    (title: string, html: string) => {
-      if (!selectedNoteId) return;
+    (data: Partial<InsertNote>) => {
+      const noteId = selectedNoteId;
+      if (!noteId) return;
+      // If a save is still pending for a different note, commit it first so its
+      // fields never bleed into this note's payload.
+      if (pendingSaveRef.current && pendingSaveRef.current.noteId !== noteId) {
+        flushPendingSave();
+      }
+      pendingSaveRef.current = {
+        noteId,
+        data: { ...(pendingSaveRef.current?.data ?? {}), ...data },
+      };
       clearTimeout(saveTimerRef.current);
       setSaveState("saving");
       saveTimerRef.current = setTimeout(() => {
-        const contentText = html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
-        silentUpdateMutation.mutate({
-          id: selectedNoteId,
-          data: { title, contentHtml: html, contentText, content: contentText },
-        });
-        lastSavedRef.current = { title, html };
+        const pending = pendingSaveRef.current;
+        pendingSaveRef.current = null;
+        if (pending) {
+          silentUpdateMutation.mutate({ id: pending.noteId, data: pending.data });
+        }
       }, 800);
     },
-    [selectedNoteId]
+    [selectedNoteId, flushPendingSave]
   );
 
   const handleTitleChange = (value: string) => {
     setEditTitle(value);
-    scheduleAutoSave(value, lastSavedRef.current.html);
+    // Title-only save (PATCH is partial), so it can never disturb the content and
+    // a content edit can never disturb the title.
+    scheduleAutoSave({ title: value });
   };
 
   const handleContentChange = useCallback(
     (html: string) => {
-      scheduleAutoSave(lastSavedRef.current.title !== editTitle ? editTitle : lastSavedRef.current.title, html);
-      lastSavedRef.current = { ...lastSavedRef.current, html };
+      const contentText = html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+      // Content-only save — crucially omits `title`, so a stale/empty editTitle
+      // can never overwrite the stored title.
+      scheduleAutoSave({ contentHtml: html, contentText, content: contentText });
     },
-    [scheduleAutoSave, editTitle]
+    [scheduleAutoSave]
   );
 
-  // flush on unmount
-  useEffect(() => () => clearTimeout(saveTimerRef.current), []);
+  // Commit any pending edit when the page unmounts so nothing is lost.
+  useEffect(() => () => flushPendingSave(), [flushPendingSave]);
 
   // ── handlers ──────────────────────────────────────────────────────────────
 
