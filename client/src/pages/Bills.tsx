@@ -789,6 +789,21 @@ export default function Bills({ embedded }: { embedded?: boolean } = {}) {
     return totals;
   }, [bills]);
 
+  const displayedTotal = useMemo(() => {
+    return filteredBills.reduce((sum, bill) => {
+      const rawAmount = bill.total / 100;
+      return sum + (bill.billType === "credit" ? -rawAmount : rawAmount);
+    }, 0);
+  }, [filteredBills]);
+
+  const selectedTotal = useMemo(() => {
+    return filteredBills.reduce((sum, bill) => {
+      if (!selectedBills.has(bill.id)) return sum;
+      const rawAmount = bill.total / 100;
+      return sum + (bill.billType === "credit" ? -rawAmount : rawAmount);
+    }, 0);
+  }, [filteredBills, selectedBills]);
+
   const getStatusBadge = (status: string, _size: "sm" | "md" = "md") => {
     // The new soft pill StatusBadge is already a fixed compact size, so the
     // legacy `size` parameter is intentionally ignored.
@@ -1339,7 +1354,7 @@ export default function Bills({ embedded }: { embedded?: boolean } = {}) {
       {selectedBills.size > 0 && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-3 py-2 rounded-xl shadow-lg border border-border bg-popover text-popover-foreground">
           <span className="text-xs font-medium text-muted-foreground pr-1 border-r border-border mr-1">
-            {selectedBills.size} selected
+            {selectedBills.size} selected · <span className="text-foreground">{formatCurrency(selectedTotal * 100)}</span>
           </span>
           <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setChangeProjectDialogOpen(true)}>
             Change Project
@@ -1512,6 +1527,14 @@ export default function Bills({ embedded }: { embedded?: boolean } = {}) {
         {/* Amounts summary — sits below the bills list table */}
         {!billsLoading && (
           <div className="hidden md:flex flex-wrap items-center justify-end gap-3 text-xs text-muted-foreground mt-2 px-1">
+            <span data-testid="text-total-count">
+              {filteredBills.length} {filteredBills.length === 1 ? "bill" : "bills"}
+            </span>
+            <div className="w-px h-4 bg-border" />
+            <span data-testid="text-total-grand">
+              Total <span className="font-medium text-foreground">{formatCurrency(displayedTotal * 100)}</span>
+            </span>
+            <div className="w-px h-4 bg-border" />
             <span data-testid="text-total-draft">
               Draft <span className="font-medium text-foreground">{formatCurrency(statusTotals.draft * 100)}</span>
             </span>
