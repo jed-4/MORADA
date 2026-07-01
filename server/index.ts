@@ -29,6 +29,35 @@ app.use('/api/xero/webhook', express.raw({ type: 'application/json', limit: '1mb
   next();
 });
 
+// Stripe webhook — must receive the raw body for signature verification, so it
+// is mounted BEFORE express.json(). No-op (200) when Stripe is not configured
+// so the app boots and Stripe can ping without keys present.
+app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async (req: Request, res: Response) => {
+  const { getStripe, getStripeWebhookSecret } = await import('./stripe');
+  const { handleStripeEvent } = await import('./stripeWebhook');
+  const stripe = getStripe();
+  const webhookSecret = getStripeWebhookSecret();
+  if (!stripe || !webhookSecret) {
+    return res.status(200).json({ received: true, skipped: 'stripe_not_configured' });
+  }
+  const sigHeader = req.headers['stripe-signature'];
+  if (!sigHeader) return res.status(400).json({ error: 'Missing stripe-signature header' });
+  const sig = Array.isArray(sigHeader) ? sigHeader[0] : sigHeader;
+  let event;
+  try {
+    event = stripe.webhooks.constructEvent(req.body as Buffer, sig, webhookSecret);
+  } catch (err) {
+    console.error('[stripe webhook] signature verification failed:', (err as Error).message);
+    return res.status(400).json({ error: 'Webhook signature verification failed' });
+  }
+  try {
+    await handleStripeEvent(event);
+  } catch (err) {
+    console.error('[stripe webhook] handler error (non-fatal):', err);
+  }
+  return res.json({ received: true });
+});
+
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: false, limit: '50mb' }));
 
@@ -249,6 +278,20 @@ app.use((req, res, next) => {
     startReminderProcessor(1);
     startScheduledMessageProcessor(1);
     startGmailBillPoller(5);
+
+    // Trial-expiry sweep: flip lapsed 'trialing' companies to 'expired'.
+    // Runs once on boot and hourly thereafter. Guarded so a failure never
+    // takes down startup.
+    const trialExpirySweep = async () => {
+      try {
+        const r = await storage.expireLapsedTrials();
+        if (r.expired > 0) log(`[billing] expired ${r.expired} lapsed trial(s)`);
+      } catch (err) {
+        console.error('[billing] trial expiry sweep failed (non-fatal):', err);
+      }
+    };
+    trialExpirySweep();
+    setInterval(trialExpirySweep, 60 * 60 * 1000);
 
     // One-time data heal for trade/supplier contacts whose `name` was
     // overwritten by the old key-person fallback. Idempotent — safe to

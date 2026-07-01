@@ -43,9 +43,17 @@ export const companies = pgTable("companies", {
   googleDriveConnectedBy: varchar("google_drive_connected_by"),
   googleDriveRootFolderId: text("google_drive_root_folder_id"),
 
-  // Trial / plan tracking (schema-only; no enforcement or gating yet)
+  // Trial / plan / billing tracking.
+  // chosenPlan = tier picked at signup; plan = effective tier for gating
+  // (always 'builder' during trial, switches to chosenPlan at expiry);
+  // planStatus = trialing | active | expired | cancelled (legacy: 'trial').
   trialEndsAt: timestamp("trial_ends_at"),
   planStatus: varchar("plan_status").default("trial"),
+  chosenPlan: varchar("chosen_plan").default("builder"),
+  plan: varchar("plan").default("builder"),
+  billingCycle: varchar("billing_cycle").default("monthly"),
+  stripeCustomerId: text("stripe_customer_id"),
+  stripeSubscriptionId: text("stripe_subscription_id"),
 
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),

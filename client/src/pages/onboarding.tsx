@@ -4,9 +4,10 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import { Building2, LogOut, User } from "lucide-react";
+import { Building2, LogOut, User, Check } from "lucide-react";
 import { useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -29,10 +30,59 @@ const companyFormSchema = z.object({
 type UserProfileValues = z.infer<typeof userProfileSchema>;
 type CompanyFormValues = z.infer<typeof companyFormSchema>;
 
+type PlanKey = "subbie" | "solo" | "builder" | "studio";
+type BillingCycle = "monthly" | "annual";
+
+const PLAN_CARDS: {
+  key: PlanKey;
+  name: string;
+  monthly: number;
+  annual: number;
+  popular?: boolean;
+  tagline: string;
+  highlights: string[];
+}[] = [
+  {
+    key: "subbie",
+    name: "Subbie",
+    monthly: 35,
+    annual: 350,
+    tagline: "For solo trades getting started",
+    highlights: ["1 active project", "1 user included", "5 GB storage"],
+  },
+  {
+    key: "solo",
+    name: "Solo",
+    monthly: 149,
+    annual: 1490,
+    tagline: "For small teams running a few jobs",
+    highlights: ["3 active projects", "2 users included", "25 GB storage"],
+  },
+  {
+    key: "builder",
+    name: "Builder",
+    monthly: 249,
+    annual: 2490,
+    popular: true,
+    tagline: "For growing residential builders",
+    highlights: ["10 active projects", "5 users included", "100 GB storage"],
+  },
+  {
+    key: "studio",
+    name: "Studio",
+    monthly: 349,
+    annual: 3490,
+    tagline: "For established multi-project builders",
+    highlights: ["Unlimited projects", "15 users included", "Unlimited storage"],
+  },
+];
+
 export default function OnboardingPage() {
   const { toast } = useToast();
   const { logout, user } = useAuth();
-  const [step, setStep] = useState<1 | 2>(1);
+  const [step, setStep] = useState<1 | 2 | 3>(1);
+  const [billingCycle, setBillingCycle] = useState<BillingCycle>("monthly");
+  const [selectedPlan, setSelectedPlan] = useState<PlanKey>("builder");
   
   const userProfileForm = useForm<UserProfileValues>({
     resolver: zodResolver(userProfileSchema),
@@ -77,17 +127,39 @@ export default function OnboardingPage() {
       return await apiRequest('/api/companies', 'POST', values);
     },
     onSuccess: () => {
+      // Do NOT invalidate the user cache here — that would give the client a
+      // companyId and route it out of onboarding before the plan is chosen.
+      // Move to the plan step and only refresh once a plan is selected.
+      setStep(3);
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to create company",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const selectPlanMutation = useMutation({
+    mutationFn: async () => {
+      return await apiRequest('/api/billing/select-plan', 'POST', {
+        planKey: selectedPlan,
+        billingCycle,
+      });
+    },
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/auth/user'] });
       toast({
-        title: "Success",
-        description: "Your company has been set up successfully!",
+        title: "You're all set!",
+        description: "Your 14-day free trial has started.",
       });
       window.location.reload();
     },
     onError: (error: Error) => {
       toast({
         title: "Error",
-        description: error.message || "Failed to create company",
+        description: error.message || "Failed to start your trial",
         variant: "destructive",
       });
     },
@@ -103,7 +175,7 @@ export default function OnboardingPage() {
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
-      <div className="w-full max-w-2xl">
+      <div className={`w-full ${step === 3 ? "max-w-5xl" : "max-w-2xl"}`}>
         <div className="flex justify-end mb-4">
           <Button
             type="button"
@@ -123,15 +195,17 @@ export default function OnboardingPage() {
             <span className="text-3xl font-bold text-foreground" data-testid="text-logo-onboarding">Morada</span>
           </div>
           <h1 className="text-2xl font-bold text-foreground mb-2" data-testid="text-onboarding-title">
-            {step === 1 ? "Welcome to Morada!" : "Create Your Company"}
+            {step === 1 ? "Welcome to Morada!" : step === 2 ? "Create Your Company" : "Choose Your Plan"}
           </h1>
           <p className="text-muted-foreground mb-1" data-testid="text-onboarding-subtitle">
-            {step === 1 
-              ? "Let's start by completing your profile" 
-              : "Now let's set up your company details"}
+            {step === 1
+              ? "Let's start by completing your profile"
+              : step === 2
+                ? "Now let's set up your company details"
+                : "Start with a 14-day free trial. No charge today — pick the plan that fits."}
           </p>
           <p className="text-xs text-muted-foreground" data-testid="text-step-indicator">
-            Step {step} of 2
+            Step {step} of 3
           </p>
         </div>
 
@@ -348,6 +422,100 @@ export default function OnboardingPage() {
               </Form>
             </CardContent>
           </Card>
+        )}
+
+        {step === 3 && (
+          <div className="space-y-6">
+            <div className="flex items-center justify-center">
+              <div className="inline-flex items-center gap-1 rounded-md border p-1" role="tablist" aria-label="Billing cycle">
+                <Button
+                  type="button"
+                  variant={billingCycle === "monthly" ? "default" : "ghost"}
+                  size="sm"
+                  onClick={() => setBillingCycle("monthly")}
+                  data-testid="button-cycle-monthly"
+                >
+                  Monthly
+                </Button>
+                <Button
+                  type="button"
+                  variant={billingCycle === "annual" ? "default" : "ghost"}
+                  size="sm"
+                  onClick={() => setBillingCycle("annual")}
+                  data-testid="button-cycle-annual"
+                >
+                  Annual
+                  <Badge variant="secondary" className="ml-2">2 months free</Badge>
+                </Button>
+              </div>
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              {PLAN_CARDS.map((plan) => {
+                const isSelected = selectedPlan === plan.key;
+                const price = billingCycle === "monthly" ? plan.monthly : plan.annual;
+                const perMonth = billingCycle === "annual" ? Math.round(plan.annual / 12) : plan.monthly;
+                return (
+                  <Card
+                    key={plan.key}
+                    onClick={() => setSelectedPlan(plan.key)}
+                    className={`relative flex flex-col cursor-pointer hover-elevate ${isSelected ? "border-primary ring-1 ring-primary" : ""}`}
+                    data-testid={`card-plan-${plan.key}`}
+                  >
+                    {plan.popular && (
+                      <Badge className="absolute -top-2 right-3">Most Popular</Badge>
+                    )}
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-lg">{plan.name}</CardTitle>
+                      <CardDescription>{plan.tagline}</CardDescription>
+                    </CardHeader>
+                    <CardContent className="flex flex-1 flex-col gap-4">
+                      <div>
+                        <div className="flex items-baseline gap-1">
+                          <span className="text-2xl font-bold text-foreground">${price.toLocaleString()}</span>
+                          <span className="text-sm text-muted-foreground">/{billingCycle === "monthly" ? "mo" : "yr"}</span>
+                        </div>
+                        {billingCycle === "annual" && (
+                          <p className="text-xs text-muted-foreground mt-1">
+                            ${perMonth.toLocaleString()}/mo billed annually
+                          </p>
+                        )}
+                      </div>
+                      <ul className="space-y-2">
+                        {plan.highlights.map((h) => (
+                          <li key={h} className="flex items-start gap-2 text-sm text-foreground">
+                            <Check className="h-4 w-4 text-primary mt-0.5 shrink-0" />
+                            <span>{h}</span>
+                          </li>
+                        ))}
+                      </ul>
+                      <div className="mt-auto pt-2">
+                        <Badge variant={isSelected ? "default" : "outline"} className="w-full justify-center">
+                          {isSelected ? "Selected" : "Select"}
+                        </Badge>
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
+
+            <p className="text-center text-xs text-muted-foreground">
+              Your card won't be charged during the 14-day trial. You can change or cancel your plan anytime.
+            </p>
+
+            <div className="flex justify-center pt-2">
+              <Button
+                type="button"
+                size="lg"
+                onClick={() => selectPlanMutation.mutate()}
+                disabled={selectPlanMutation.isPending}
+                data-testid="button-start-trial"
+              >
+                {selectPlanMutation.isPending ? "Starting your trial..." : "Start 14-day free trial"}
+              </Button>
+            </div>
+          </div>
         )}
       </div>
     </div>

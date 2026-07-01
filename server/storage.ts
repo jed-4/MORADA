@@ -556,8 +556,10 @@ export interface IStorage {
 
   // Company CRUD
   getCompany(id: string): Promise<import("@shared/schema").Company | undefined>;
+  getCompanyByStripeCustomerId(customerId: string): Promise<import("@shared/schema").Company | undefined>;
   createCompany(company: import("@shared/schema").InsertCompany, ownerId: string): Promise<import("@shared/schema").Company>;
   updateCompany(id: string, company: Partial<import("@shared/schema").InsertCompany>): Promise<import("@shared/schema").Company | undefined>;
+  expireLapsedTrials(): Promise<{ expired: number }>;
   
   // Company Settings
   getCompanySettings(): Promise<CompanySettings | undefined>;
@@ -5327,6 +5329,23 @@ export class MemStorage implements IStorage {
     };
     this.companies.set(id, updated);
     return updated;
+  }
+
+  async getCompanyByStripeCustomerId(customerId: string): Promise<import("@shared/schema").Company | undefined> {
+    return Array.from(this.companies.values()).find((c: any) => c.stripeCustomerId === customerId);
+  }
+
+  async expireLapsedTrials(): Promise<{ expired: number }> {
+    let expired = 0;
+    const now = Date.now();
+    for (const [id, company] of Array.from(this.companies.entries())) {
+      const c = company as any;
+      if (c.planStatus === "trialing" && c.trialEndsAt && new Date(c.trialEndsAt).getTime() < now) {
+        this.companies.set(id, { ...c, planStatus: "expired", plan: c.chosenPlan || "builder", updatedAt: new Date() });
+        expired++;
+      }
+    }
+    return { expired };
   }
 
   // Company Settings
@@ -13247,6 +13266,29 @@ export class DbStorage implements IStorage {
       .where(eq(schema.companies.id, id))
       .returning();
     return updated;
+  }
+
+  async getCompanyByStripeCustomerId(customerId: string): Promise<import("@shared/schema").Company | undefined> {
+    const [company] = await db.select().from(schema.companies)
+      .where(eq(schema.companies.stripeCustomerId, customerId))
+      .limit(1);
+    return company;
+  }
+
+  async expireLapsedTrials(): Promise<{ expired: number }> {
+    // Flip companies whose trial has lapsed to 'expired' and drop their
+    // effective plan to what they chose at signup. Only touches 'trialing'
+    // rows with a past trial_ends_at — idempotent and non-destructive.
+    const result = await db.execute(sql`
+      UPDATE companies
+      SET plan_status = 'expired',
+          plan = COALESCE(chosen_plan, 'builder'),
+          updated_at = now()
+      WHERE plan_status = 'trialing'
+        AND trial_ends_at IS NOT NULL
+        AND trial_ends_at < now()
+    `);
+    return { expired: result.rowCount ?? 0 };
   }
 
   async getCompanySettings(): Promise<CompanySettings | undefined> { 
@@ -24121,9 +24163,14 @@ export class DbStorage implements IStorage {
     // ships. Every statement is ADD COLUMN IF NOT EXISTS / a guarded UPDATE,
     // all non-destructive and no-ops once applied.
     try {
-      // companies: non-enforced trial / plan tracking columns.
+      // companies: trial / plan / billing tracking columns.
       await db.execute(sql`ALTER TABLE companies ADD COLUMN IF NOT EXISTS trial_ends_at timestamp`);
       await db.execute(sql`ALTER TABLE companies ADD COLUMN IF NOT EXISTS plan_status varchar DEFAULT 'trial'`);
+      await db.execute(sql`ALTER TABLE companies ADD COLUMN IF NOT EXISTS chosen_plan varchar DEFAULT 'builder'`);
+      await db.execute(sql`ALTER TABLE companies ADD COLUMN IF NOT EXISTS plan varchar DEFAULT 'builder'`);
+      await db.execute(sql`ALTER TABLE companies ADD COLUMN IF NOT EXISTS billing_cycle varchar DEFAULT 'monthly'`);
+      await db.execute(sql`ALTER TABLE companies ADD COLUMN IF NOT EXISTS stripe_customer_id text`);
+      await db.execute(sql`ALTER TABLE companies ADD COLUMN IF NOT EXISTS stripe_subscription_id text`);
 
       // checklist_templates: company scoping column.
       await db.execute(sql`ALTER TABLE checklist_templates ADD COLUMN IF NOT EXISTS company_id varchar`);

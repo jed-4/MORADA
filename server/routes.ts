@@ -182,6 +182,9 @@ import { fromZodError } from "zod-validation-error";
 import { eq, and, asc, desc, or, isNull, isNotNull, sql, min, max, gte, lte, inArray, gt } from "drizzle-orm";
 import { PasswordUtils } from "./utils/auth";
 import { requireAuth, requireAdmin, requireTeamMember, requirePermission, requirePlatformStaff, toSafeUser, isAdminRole } from "./middleware/auth";
+import { requireActivePlan } from "./middleware/plan";
+import { getStripe } from "./stripe";
+import { isPlanKey } from "./config/plans";
 import multer from "multer";
 import * as XLSX from "xlsx";
 import { initializeSocketManager, emitTaskCreated, emitTaskUpdated, emitTaskDeleted, emitNotification, emitReactionUpdated, getIO, getConnectedUserIdsForCompany } from "./socketManager";
@@ -1078,6 +1081,74 @@ export async function registerRoutes(app: Express): Promise<Server> {
     
     // PRODUCTION - Require authentication for all other routes
     return requireAuth(req, res, next);
+  });
+
+  // Trial / subscription enforcement. Runs after auth so req.user is populated.
+  // No-op when Stripe is not configured (billing not live) and skips auth,
+  // public, billing and stripe endpoints via its own allowlist.
+  app.use('/api', requireActivePlan);
+
+  // ---- Billing: select a plan (starts the 14-day trial) ----
+  // Called at the end of onboarding once the company exists. Sets the chosen
+  // tier, keeps the effective plan at 'builder' for the trial, stamps a 14-day
+  // trial window, and (when Stripe is configured) creates a Stripe customer.
+  app.post('/api/billing/select-plan', requireAuth, async (req: any, res) => {
+    try {
+      const user = req.user;
+      const companyId = user?.companyId || (req.session as any)?.companyId;
+      if (!companyId) {
+        return res.status(401).json({ error: 'No company context' });
+      }
+      const { planKey, billingCycle } = req.body || {};
+      if (!isPlanKey(planKey)) {
+        return res.status(400).json({ error: 'Invalid planKey' });
+      }
+      const cycle = billingCycle === 'annual' ? 'annual' : 'monthly';
+
+      const company = await storage.getCompany(companyId);
+      if (!company) {
+        return res.status(404).json({ error: 'Company not found' });
+      }
+
+      // Create (or reuse) a Stripe customer when Stripe is configured.
+      let stripeCustomerId = (company as any).stripeCustomerId || null;
+      const stripe = getStripe();
+      if (stripe && !stripeCustomerId) {
+        try {
+          const customer = await stripe.customers.create({
+            email: (company as any).email || user?.email || undefined,
+            name: company.name || undefined,
+            metadata: { companyId: String(companyId) },
+          });
+          stripeCustomerId = customer.id;
+        } catch (stripeErr) {
+          console.error('[billing] Stripe customer creation failed (continuing with trial):', stripeErr);
+        }
+      }
+
+      // Idempotent: never reset an existing trial clock (prevents replay from
+      // perpetually extending the trial) and never downgrade an active
+      // subscription back to trialing. A repeat call only records the newly
+      // chosen plan / billing cycle.
+      const existingTrialEndsAt = (company as any).trialEndsAt
+        ? new Date((company as any).trialEndsAt)
+        : null;
+      const trialEndsAt = existingTrialEndsAt ?? new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
+      const nextStatus = (company as any).planStatus === 'active' ? 'active' : 'trialing';
+      await storage.updateCompany(companyId, {
+        chosenPlan: planKey,
+        plan: 'builder',
+        planStatus: nextStatus,
+        billingCycle: cycle,
+        trialEndsAt,
+        ...(stripeCustomerId ? { stripeCustomerId } : {}),
+      } as any);
+
+      return res.json({ success: true, chosenPlan: planKey, billingCycle: cycle, trialEndsAt });
+    } catch (error) {
+      console.error('[billing] select-plan failed:', error);
+      return res.status(500).json({ error: 'Failed to select plan' });
+    }
   });
 
   // use storage to perform CRUD operations on the storage interface
@@ -7563,11 +7634,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       const safeUser = toSafeUser(user);
       
-      // Fetch company nickname if user has a company
+      // Fetch company nickname + plan/billing info if user has a company
       let companyNickname = null;
+      let planInfo: {
+        plan: string | null;
+        chosenPlan: string | null;
+        planStatus: string | null;
+        billingCycle: string | null;
+        trialEndsAt: Date | null;
+      } = { plan: null, chosenPlan: null, planStatus: null, billingCycle: null, trialEndsAt: null };
       if (user.companyId) {
         const company = await storage.getCompany(user.companyId);
         companyNickname = company?.nickname || company?.name || null;
+        if (company) {
+          planInfo = {
+            plan: (company as any).plan ?? null,
+            chosenPlan: (company as any).chosenPlan ?? null,
+            planStatus: company.planStatus ?? null,
+            billingCycle: (company as any).billingCycle ?? null,
+            trialEndsAt: company.trialEndsAt ?? null,
+          };
+        }
       }
 
       // Build the user's effective permission map: { [permissionKey]: actions[] }
@@ -7610,7 +7697,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         companyNickname,
         isAdminLike,
       });
-      res.json({ ...safeUser, companyNickname, effectivePermissions, isAdminLike });
+      res.json({ ...safeUser, companyNickname, effectivePermissions, isAdminLike, ...planInfo });
     } catch (error) {
       console.error("Error fetching user:", error);
       res.status(500).json({ message: "Failed to fetch user" });
@@ -8992,7 +9079,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Create company
       const company = await storage.createCompany(req.body, userId);
-      res.status(201).json(company);
+
+      // Start the 14-day trial clock at creation so a new company always has a
+      // non-null trial_ends_at. This closes the bypass where a user could skip
+      // onboarding's plan step and never be gated (a null trial_ends_at is only
+      // ever a legacy, pre-billing company). The plan step still records the
+      // chosen plan but never resets this clock.
+      let created = company;
+      try {
+        if (!(company as any).trialEndsAt) {
+          const trialEndsAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
+          const updated = await storage.updateCompany(company.id, {
+            planStatus: 'trialing',
+            trialEndsAt,
+          } as any);
+          if (updated) created = updated;
+        }
+      } catch (trialErr) {
+        console.error('[billing] failed to start trial at company creation:', trialErr);
+      }
+
+      res.status(201).json(created);
     } catch (error) {
       console.error("Error creating company:", error);
       res.status(500).json({ message: "Failed to create company" });
