@@ -82,6 +82,10 @@ args = "note-title-autosave"
 task = "workflow.run"
 args = "xero-bill-dedup"
 
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "iOS TestFlight Build"
+
 [[workflows.workflow]]
 name = "Expo Mobile"
 author = "agent"
@@ -138,6 +142,17 @@ args = "NODE_ENV=test npx tsx server/__tests__/xero-bill-dedup.test.ts"
 
 [workflows.workflow.metadata]
 isValidation = true
+
+[[workflows.workflow]]
+name = "iOS TestFlight Build"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "cd expo-mobile && EAS_NO_VCS=1 npx --no-install eas build -p ios --profile preview --auto-submit --non-interactive"
+
+[workflows.workflow.metadata]
+outputType = "console"
 
 [agent]
 integrations = ["javascript_log_in_with_replit:1.0.0", "javascript_database:1.0.0", "javascript_openai_ai_integrations:1.0.0", "google-calendar:1.0.0", "javascript_object_storage:2.0.0"]
