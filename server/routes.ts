@@ -183,8 +183,8 @@ import { eq, and, asc, desc, or, isNull, isNotNull, sql, min, max, gte, lte, inA
 import { PasswordUtils } from "./utils/auth";
 import { requireAuth, requireAdmin, requireTeamMember, requirePermission, requirePlatformStaff, toSafeUser, isAdminRole } from "./middleware/auth";
 import { requireActivePlan } from "./middleware/plan";
-import { getStripe } from "./stripe";
-import { isPlanKey } from "./config/plans";
+import { getStripe, isStripeConfigured } from "./stripe";
+import { isPlanKey, getPlan, PLANS, PLAN_KEYS, type PlanKey, type BillingCycle } from "./config/plans";
 import multer from "multer";
 import * as XLSX from "xlsx";
 import { initializeSocketManager, emitTaskCreated, emitTaskUpdated, emitTaskDeleted, emitNotification, emitReactionUpdated, getIO, getConnectedUserIdsForCompany } from "./socketManager";
@@ -1149,6 +1149,229 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.error('[billing] select-plan failed:', error);
       return res.status(500).json({ error: 'Failed to select plan' });
     }
+  });
+
+  // Base URL for Stripe redirect URLs. Prefers APP_URL, falls back to the
+  // request's own protocol/host (same approach as invitation links).
+  function getBillingBaseUrl(req: any): string {
+    if (process.env.APP_URL) return process.env.APP_URL.replace(/\/$/, '');
+    const proto = req.get('x-forwarded-proto') || (req.secure ? 'https' : 'http');
+    const host = req.get('host');
+    return `${proto}://${host}`;
+  }
+
+  // Billing management endpoints are OWNER-ONLY. Returns the company when the
+  // caller is the owner, otherwise writes the appropriate error response and
+  // returns null.
+  async function getOwnedCompanyOrDeny(req: any, res: any) {
+    const user = req.user;
+    const companyId = user?.companyId || (req.session as any)?.companyId;
+    if (!companyId) {
+      res.status(401).json({ error: 'No company context' });
+      return null;
+    }
+    const company = await storage.getCompany(companyId);
+    if (!company) {
+      res.status(404).json({ error: 'Company not found' });
+      return null;
+    }
+    // ownerId may be null on legacy companies — treat null as "owner allowed".
+    if ((company as any).ownerId && (company as any).ownerId !== user.id) {
+      res.status(403).json({ error: 'owner_only', message: 'Only the company owner can manage billing.' });
+      return null;
+    }
+    return company;
+  }
+
+  // ---- Billing: create a Stripe Checkout session (subscribe / change plan) ----
+  app.post('/api/billing/create-checkout-session', requireAuth, async (req: any, res) => {
+    try {
+      const company = await getOwnedCompanyOrDeny(req, res);
+      if (!company) return;
+      const stripe = getStripe();
+      if (!stripe) {
+        return res.status(503).json({ error: 'billing_unavailable', message: 'Billing is not configured yet.' });
+      }
+      const { planKey, billingCycle } = req.body || {};
+      if (!isPlanKey(planKey)) {
+        return res.status(400).json({ error: 'Invalid planKey' });
+      }
+      const cycle: BillingCycle = billingCycle === 'annual' ? 'annual' : 'monthly';
+      const plan = getPlan(planKey);
+      const priceId = cycle === 'annual' ? plan.annualPriceId : plan.monthlyPriceId;
+
+      // Ensure the company has a Stripe customer.
+      let stripeCustomerId = (company as any).stripeCustomerId || null;
+      if (!stripeCustomerId) {
+        const customer = await stripe.customers.create({
+          email: (company as any).email || req.user?.email || undefined,
+          name: company.name || undefined,
+          metadata: { companyId: String(company.id) },
+        });
+        stripeCustomerId = customer.id;
+        await storage.updateCompany(company.id, { stripeCustomerId } as any);
+      }
+
+      const status = (company as any).planStatus;
+      const isTrialing = status === 'trialing' || status === 'trial';
+      const baseUrl = getBillingBaseUrl(req);
+      const session = await stripe.checkout.sessions.create({
+        customer: stripeCustomerId,
+        mode: 'subscription',
+        line_items: [{ price: priceId, quantity: 1 }],
+        success_url: `${baseUrl}/billing/success?session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url: `${baseUrl}/billing/cancelled`,
+        // If they've already used their trial, start billing immediately.
+        // If they're still trialing, let the trial run out naturally.
+        subscription_data: isTrialing ? undefined : { trial_end: 'now' },
+        metadata: { companyId: String(company.id), planKey, billingCycle: cycle },
+      });
+
+      // Record the intended plan/cycle so the webhook can apply it on activation.
+      await storage.updateCompany(company.id, { chosenPlan: planKey, billingCycle: cycle } as any);
+      return res.json({ url: session.url });
+    } catch (error) {
+      console.error('[billing] create-checkout-session failed:', error);
+      return res.status(500).json({ error: 'Failed to create checkout session' });
+    }
+  });
+
+  // ---- Billing: cancel at period end ----
+  app.post('/api/billing/cancel', requireAuth, async (req: any, res) => {
+    try {
+      const company = await getOwnedCompanyOrDeny(req, res);
+      if (!company) return;
+      const stripe = getStripe();
+      const subId = (company as any).stripeSubscriptionId;
+      if (!stripe || !subId) {
+        return res.status(400).json({ error: 'no_active_subscription', message: 'There is no active subscription to cancel.' });
+      }
+      const sub = await stripe.subscriptions.update(subId, { cancel_at_period_end: true });
+      const cancelAt = (sub as any).current_period_end
+        ? new Date((sub as any).current_period_end * 1000).toISOString()
+        : null;
+      return res.json({ success: true, cancelAt });
+    } catch (error) {
+      console.error('[billing] cancel failed:', error);
+      return res.status(500).json({ error: 'Failed to cancel subscription' });
+    }
+  });
+
+  // ---- Billing: summary for the settings page (owner-only) ----
+  app.get('/api/billing/summary', requireAuth, async (req: any, res) => {
+    try {
+      const company = await getOwnedCompanyOrDeny(req, res);
+      if (!company) return;
+      const planKey = (isPlanKey((company as any).chosenPlan)
+        ? (company as any).chosenPlan
+        : (isPlanKey((company as any).plan) ? (company as any).plan : 'builder')) as PlanKey;
+      const plan = getPlan(planKey);
+
+      const { rows: projRows } = await pool.query(
+        `SELECT COUNT(*)::int AS c FROM projects WHERE company_id = $1 AND is_archived = false`,
+        [company.id],
+      );
+      const { rows: userRows } = await pool.query(
+        `SELECT COUNT(*)::int AS c FROM users u
+           LEFT JOIN user_roles r ON r.id = u.role_id
+          WHERE u.company_id = $1 AND u.is_active = true
+            AND u.user_category = 'team' AND COALESCE(r.is_mobile_only, false) = false`,
+        [company.id],
+      );
+      const activeProjects = projRows[0]?.c ?? 0;
+      const fullUsers = userRows[0]?.c ?? 0;
+
+      let renewalDate: string | null = null;
+      let cancelAtPeriodEnd = false;
+      const stripe = getStripe();
+      const subId = (company as any).stripeSubscriptionId;
+      if (stripe && subId) {
+        try {
+          const sub = await stripe.subscriptions.retrieve(subId);
+          renewalDate = (sub as any).current_period_end
+            ? new Date((sub as any).current_period_end * 1000).toISOString()
+            : null;
+          cancelAtPeriodEnd = !!(sub as any).cancel_at_period_end;
+        } catch (subErr) {
+          console.error('[billing] summary: failed to retrieve subscription:', subErr);
+        }
+      }
+
+      return res.json({
+        plan: planKey,
+        planName: plan.name,
+        billingCycle: (company as any).billingCycle || 'monthly',
+        planStatus: (company as any).planStatus || null,
+        trialEndsAt: company.trialEndsAt || null,
+        renewalDate,
+        cancelAtPeriodEnd,
+        limits: plan.limits,
+        usage: { activeProjects, fullUsers, storageUsedGB: null },
+        stripeConfigured: isStripeConfigured(),
+      });
+    } catch (error) {
+      console.error('[billing] summary failed:', error);
+      return res.status(500).json({ error: 'Failed to load billing summary' });
+    }
+  });
+
+  // ---- Billing: lightweight plan status for the global paywall ----
+  // Available to ANY authenticated user (not just the owner) and exempt from
+  // requireActivePlan (it lives under /api/billing/), so an expired company can
+  // still load it to render the paywall.
+  app.get('/api/billing/status', requireAuth, async (req: any, res) => {
+    try {
+      const user = req.user;
+      const companyId = user?.companyId || (req.session as any)?.companyId;
+      if (!companyId) {
+        return res.json({ planStatus: null, trialEndsAt: null, plan: null, isOwner: false, blocked: false, stripeConfigured: isStripeConfigured() });
+      }
+      const company = await storage.getCompany(companyId);
+      if (!company) {
+        return res.json({ planStatus: null, trialEndsAt: null, plan: null, isOwner: false, blocked: false, stripeConfigured: isStripeConfigured() });
+      }
+      const status = (company as any).planStatus || null;
+      const trialEndsAt = company.trialEndsAt || null;
+      const trialExpired = !!trialEndsAt && new Date(trialEndsAt).getTime() <= Date.now();
+      // Mirror requireActivePlan's logic: only "blocked" once billing is live
+      // and the company is neither active nor in a live trial.
+      let blocked = false;
+      if (isStripeConfigured()) {
+        if (status === 'active') blocked = false;
+        else if ((status === 'trialing' || status === 'trial') && !trialExpired) blocked = false;
+        else if (status === null) blocked = false; // no explicit lapsed state
+        else blocked = true;
+      }
+      const isOwner = !(company as any).ownerId || (company as any).ownerId === user.id;
+      return res.json({
+        planStatus: status,
+        trialEndsAt,
+        plan: (company as any).plan || null,
+        chosenPlan: (company as any).chosenPlan || null,
+        isOwner,
+        blocked,
+        stripeConfigured: isStripeConfigured(),
+      });
+    } catch (error) {
+      console.error('[billing] status failed:', error);
+      return res.status(500).json({ error: 'Failed to load billing status' });
+    }
+  });
+
+  // ---- Billing: public plan catalogue for the paywall / change-plan UI ----
+  app.get('/api/billing/plans', requireAuth, async (_req: any, res) => {
+    const plans = PLAN_KEYS.map((k) => {
+      const p = PLANS[k];
+      return {
+        key: p.key,
+        name: p.name,
+        monthlyPrice: p.monthlyPrice,
+        annualPrice: p.annualPrice,
+        mostPopular: !!p.mostPopular,
+        limits: p.limits,
+      };
+    });
+    return res.json({ plans, stripeConfigured: isStripeConfigured() });
   });
 
   // use storage to perform CRUD operations on the storage interface
@@ -3527,6 +3750,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
           details: "Project names must be unique within your company",
           code: "DUPLICATE_NAME"
         });
+      }
+
+      // Plan enforcement: active (non-archived) project limit. Only enforced
+      // once billing is live (Stripe configured) so dev / pre-billing keep
+      // working. -1 = unlimited.
+      if (isStripeConfigured()) {
+        const companyForPlan = await storage.getCompany(user.companyId);
+        const planKey = (isPlanKey((companyForPlan as any)?.plan)
+          ? (companyForPlan as any).plan : 'builder') as PlanKey;
+        const limit = getPlan(planKey).limits.activeProjects;
+        if (limit !== -1) {
+          const { rows } = await pool.query(
+            `SELECT COUNT(*)::int AS c FROM projects WHERE company_id = $1 AND is_archived = false`,
+            [user.companyId],
+          );
+          const current = rows[0]?.c ?? 0;
+          if (current >= limit) {
+            return res.status(403).json({ error: 'project_limit_reached', limit });
+          }
+        }
       }
 
       // Automatically set companyId and ownerId for multi-tenant isolation
@@ -11246,7 +11489,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      const role = await storage.updateUserRole(req.params.id, validationResult.data, companyId);
+      // Guard the seat rule: built-in roles (owner/admin etc.) must always count
+      // as full users, so they can never be flipped to mobile-only.
+      const existingRole = await storage.getUserRole(req.params.id, companyId);
+      if (!existingRole) {
+        return res.status(404).json({ error: "User role not found" });
+      }
+      const updateData = { ...validationResult.data };
+      if (existingRole.isBuiltIn) {
+        delete (updateData as any).isMobileOnly;
+      }
+
+      const role = await storage.updateUserRole(req.params.id, updateData, companyId);
       if (!role) {
         return res.status(404).json({ error: "User role not found" });
       }
@@ -11553,6 +11807,42 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const companyId = validationResult.data.companyId;
       const company = await storage.getCompany(companyId);
       const companyDisplayName = company?.nickname || company?.name || null;
+
+      // Plan enforcement: Full User seat limit. Only team members with a
+      // non-mobile-only role consume a seat (mobile-only field staff and
+      // client/supplier users are free/unlimited). Only enforced once billing
+      // is live (Stripe configured). -1 = unlimited.
+      if (isStripeConfigured() && validationResult.data.userCategory === 'team') {
+        const invitedRole = validationResult.data.roleId
+          ? await storage.getUserRole(validationResult.data.roleId)
+          : null;
+        const isMobileOnly = !!(invitedRole as any)?.isMobileOnly;
+        if (!isMobileOnly) {
+          const planKey = (isPlanKey((company as any)?.plan)
+            ? (company as any).plan : 'builder') as PlanKey;
+          const limit = getPlan(planKey).limits.fullUsers;
+          if (limit !== -1) {
+            const { rows: activeRows } = await pool.query(
+              `SELECT COUNT(*)::int AS c FROM users u
+                 LEFT JOIN user_roles r ON r.id = u.role_id
+                WHERE u.company_id = $1 AND u.is_active = true
+                  AND u.user_category = 'team' AND COALESCE(r.is_mobile_only, false) = false`,
+              [companyId],
+            );
+            const { rows: pendingRows } = await pool.query(
+              `SELECT COUNT(*)::int AS c FROM user_invitations i
+                 LEFT JOIN user_roles r ON r.id = i.role_id
+                WHERE i.company_id = $1 AND i.status = 'pending'
+                  AND i.user_category = 'team' AND COALESCE(r.is_mobile_only, false) = false`,
+              [companyId],
+            );
+            const current = (activeRows[0]?.c ?? 0) + (pendingRows[0]?.c ?? 0);
+            if (current >= limit) {
+              return res.status(403).json({ error: 'user_limit_reached', limit, current });
+            }
+          }
+        }
+      }
       
       // Storage layer will auto-generate inviteToken and expiresAt
       // Include company name in the invitation record

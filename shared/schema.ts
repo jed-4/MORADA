@@ -66,6 +66,10 @@ export const userRoles = pgTable("user_roles", {
   name: text("name").notNull(),
   description: text("description"),
   userCategory: text("user_category").notNull(), // "team" | "supplier" | "client"
+  // Billing: a mobile-only (field app) team role does NOT consume a paid Full
+  // User seat. Full Users = active team users whose role is not mobile-only.
+  // Only meaningful for team roles; client/supplier are always free.
+  isMobileOnly: boolean("is_mobile_only").notNull().default(false),
   isBuiltIn: boolean("is_built_in").notNull().default(false), // System-defined roles
   isActive: boolean("is_active").notNull().default(true),
   displayOrder: integer("display_order").notNull().default(0), // Custom sort order

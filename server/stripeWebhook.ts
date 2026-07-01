@@ -48,7 +48,24 @@ function mapSubscriptionStatus(status: Stripe.Subscription.Status): string {
 // stripe_subscription_id. Matching is by stripe_customer_id.
 export async function handleStripeEvent(event: Stripe.Event): Promise<void> {
   switch (event.type) {
-    case "customer.subscription.created":
+    case "customer.subscription.created": {
+      // Trial-to-paid transition: also promote the effective plan to the tier
+      // the company chose at checkout (recorded on the company row).
+      const sub = event.data.object as Stripe.Subscription;
+      const custId = customerId(sub.customer);
+      const company = custId ? await storage.getCompanyByStripeCustomerId(custId) : null;
+      if (company) {
+        const fields: Record<string, unknown> = {
+          planStatus: mapSubscriptionStatus(sub.status),
+          stripeSubscriptionId: sub.id,
+        };
+        if ((company as any).chosenPlan) fields.plan = (company as any).chosenPlan;
+        await storage.updateCompany(company.id, fields as any);
+      } else if (custId) {
+        console.warn(`[stripe webhook] no company matched stripe_customer_id=${custId}`);
+      }
+      break;
+    }
     case "customer.subscription.updated": {
       const sub = event.data.object as Stripe.Subscription;
       await setPlanStatusByCustomer(sub.customer, {

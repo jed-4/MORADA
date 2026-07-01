@@ -15,6 +15,7 @@ import { useLocation, Redirect } from "wouter";
 import { SocketProvider, TaskEventsListener } from "@/lib/socket";
 import { ErrorBoundary } from "@/components/ui/error-boundary";
 import { GlobalMessageNotifier } from "@/components/global-message-notifier";
+import { PlanGate } from "@/components/billing/PlanGate";
 import * as Sentry from "@sentry/react";
 import { Crisp } from "crisp-sdk-web";
 
@@ -127,6 +128,7 @@ const ChecklistInstanceDetail = lazy(() => import("@/pages/ChecklistInstanceDeta
 const ProjectFiles = lazy(() => import("@/pages/ProjectFiles"));
 const ProjectActivity = lazy(() => import("@/pages/ProjectActivity"));
 const LabourEstimate = lazy(() => import("@/pages/LabourEstimate"));
+const BillingResult = lazy(() => import("@/pages/BillingResult"));
 
 function Router() {
   const { user } = useAuth();
@@ -165,6 +167,8 @@ function Router() {
       <Route path="/minutes" component={Minutes} />
       <Route path="/minutes/:id" component={MinuteDetail} />
       <Route path="/project-settings" component={ProjectSettings} />
+      <Route path="/billing/success" component={BillingResult} />
+      <Route path="/billing/cancelled" component={BillingResult} />
       
       {/* User Workspace - /me redirects to current user */}
       <Route path="/me">
@@ -527,6 +531,7 @@ function AuthWrapper() {
         <SocketProvider>
           <TaskEventsListener />
           <GlobalMessageNotifier />
+          <PlanGate />
           <SidebarProvider style={style as React.CSSProperties}>
           <div 
             className="flex flex-col h-screen w-full bg-[hsl(var(--page-background))] px-2 pb-2 gap-0"

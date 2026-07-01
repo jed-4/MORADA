@@ -33,6 +33,7 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
+import { Switch } from "@/components/ui/switch";
 import {
   Select,
   SelectContent,
@@ -949,6 +950,7 @@ function EditRoleDialog({
       name: role.name,
       description: role.description || "",
       userCategory: role.userCategory,
+      isMobileOnly: (role as any).isMobileOnly ?? false,
     },
   });
 
@@ -1013,6 +1015,30 @@ function EditRoleDialog({
                     <Input {...field} data-testid="input-edit-role-description" />
                   </FormControl>
                   <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="isMobileOnly"
+              render={({ field }) => (
+                <FormItem className="flex flex-row items-center justify-between gap-4 rounded-md border p-3">
+                  <div className="space-y-0.5">
+                    <FormLabel>Mobile-only role</FormLabel>
+                    <p className="text-sm text-muted-foreground">
+                      Users with this role only use the mobile app and don't count as a
+                      full user seat on your plan.
+                    </p>
+                  </div>
+                  <FormControl>
+                    <Switch
+                      checked={!!field.value}
+                      onCheckedChange={field.onChange}
+                      disabled={role.isBuiltIn}
+                      data-testid="switch-role-mobile-only"
+                    />
+                  </FormControl>
                 </FormItem>
               )}
             />

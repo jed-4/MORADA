@@ -107,9 +107,13 @@ export default function InviteUserDialog({
       });
     },
     onError: (error: any) => {
+      const code = error?.payload?.error || error?.body?.error;
+      const isSeatLimit = error?.status === 403 && code === "user_limit_reached";
       toast({
-        title: "Failed to send invitation",
-        description: error.message || "Something went wrong",
+        title: isSeatLimit ? "User limit reached" : "Failed to send invitation",
+        description: isSeatLimit
+          ? "You've used all the full-user seats on your current plan. Upgrade your plan in Settings → Plan & Billing to invite more team members."
+          : error?.payload?.message || error?.message || "Something went wrong",
         variant: "destructive",
       });
     },

@@ -24172,6 +24172,10 @@ export class DbStorage implements IStorage {
       await db.execute(sql`ALTER TABLE companies ADD COLUMN IF NOT EXISTS stripe_customer_id text`);
       await db.execute(sql`ALTER TABLE companies ADD COLUMN IF NOT EXISTS stripe_subscription_id text`);
 
+      // user_roles: billing seat classification. A mobile-only team role does
+      // not consume a paid Full User seat.
+      await db.execute(sql`ALTER TABLE user_roles ADD COLUMN IF NOT EXISTS is_mobile_only boolean NOT NULL DEFAULT false`);
+
       // checklist_templates: company scoping column.
       await db.execute(sql`ALTER TABLE checklist_templates ADD COLUMN IF NOT EXISTS company_id varchar`);
 

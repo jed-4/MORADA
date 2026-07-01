@@ -13,6 +13,7 @@ import { LineItemTable } from "@/components/LineItemTable";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { BillingSection } from "@/components/billing/BillingSection";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -62,6 +63,7 @@ import {
   MoreHorizontal,
   Clock,
   Copy,
+  CreditCard,
   Link,
 } from "lucide-react";
 import {
@@ -191,6 +193,14 @@ const SETTINGS_CATEGORIES = [
     icon: Bell,
     description: "Control which items appear in the activity feed",
     group: "activity"
+  },
+  // Billing section
+  {
+    id: "billing",
+    label: "Plan & Billing",
+    icon: CreditCard,
+    description: "View your plan, usage, and manage your subscription",
+    group: "billing"
   },
   // Maintenance section
   {
@@ -1793,9 +1803,10 @@ export default function Settings() {
             {activeSection === "terms-conditions" && <TermsConditionsSection />}
             {activeSection === "activity" && <ActivitySection />}
             {activeSection === "maintenance" && <MaintenanceSection />}
+            {activeSection === "billing" && <BillingSection />}
             
             {/* Coming Soon placeholder for unimplemented sections */}
-            {!["branding", "timesheet-settings", "field-settings", "integrations", "schedule-settings", "default-values", "terms-conditions", "activity", "maintenance"].includes(activeSection) && (
+            {!["branding", "timesheet-settings", "field-settings", "integrations", "schedule-settings", "default-values", "terms-conditions", "activity", "maintenance", "billing"].includes(activeSection) && (
               <Card className="border-2">
                 <CardContent className="text-center py-16">
                   <div className="mx-auto w-16 h-16 bg-muted rounded-full flex items-center justify-center mb-4">
