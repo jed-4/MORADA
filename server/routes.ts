@@ -2258,7 +2258,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
 
       const completion = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
+        model: "gpt-5-mini",
         messages: [
           {
             role: "system",
@@ -29228,7 +29228,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
 
       const completion = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
+        model: "gpt-5-mini",
         messages: [
           {
             role: "system",
@@ -29283,7 +29283,7 @@ Keep each item under 15 words. Be specific and practical. Don't include empty ar
       });
 
       const completion = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
+        model: "gpt-5-mini",
         messages: [
           {
             role: "system",
