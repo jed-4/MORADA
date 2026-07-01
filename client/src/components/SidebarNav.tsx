@@ -421,10 +421,19 @@ function useIsMobile() {
   const [isMobile, setIsMobile] = useState(false);
   
   useEffect(() => {
-    const checkMobile = () => setIsMobile(window.innerWidth < MOBILE_BREAKPOINT);
+    // Only treat as "mobile" (bottom-sheet drawer + larger touch targets) on an
+    // actual touch/coarse-pointer device. A narrow desktop window (fine pointer)
+    // should keep the normal side-panel drawer regardless of width.
+    const coarsePointer = window.matchMedia("(pointer: coarse)");
+    const checkMobile = () =>
+      setIsMobile(window.innerWidth < MOBILE_BREAKPOINT && coarsePointer.matches);
     checkMobile();
     window.addEventListener("resize", checkMobile);
-    return () => window.removeEventListener("resize", checkMobile);
+    coarsePointer.addEventListener("change", checkMobile);
+    return () => {
+      window.removeEventListener("resize", checkMobile);
+      coarsePointer.removeEventListener("change", checkMobile);
+    };
   }, []);
   
   return isMobile;
