@@ -1,3 +1,4 @@
+import type { LucideIcon } from "lucide-react";
 import {
   Home,
   MessageSquare,
@@ -51,6 +52,7 @@ import {
   SidebarMenuItem,
   SidebarHeader,
   SidebarFooter,
+  SidebarSeparator,
   useSidebar,
 } from "@/components/ui/sidebar";
 import {
@@ -64,7 +66,7 @@ import { useProject } from "@/contexts/ProjectContext";
 import { useAuth } from "@/hooks/use-auth";
 import { Lightbulb } from "lucide-react";
 import { Project } from "@shared/schema";
-import { useState, useEffect } from "react";
+import { useState, useEffect, Fragment } from "react";
 import { ProjectSwitcher } from "./ProjectSwitcher";
 import { ProjectIcon } from "./ProjectIcon";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -85,11 +87,18 @@ interface FavoritePage {
 }
 
 // Project sections base configuration
-const projectItemsBase = [
+type ProjectNavItem = {
+  title: string;
+  baseUrl: string;
+  icon: LucideIcon;
+  dividerAfter?: boolean;
+};
+
+const projectItemsBase: ProjectNavItem[] = [
   { title: "Overview", baseUrl: "", icon: Home },
   { title: "Scope", baseUrl: "/scope", icon: ListTree },
   { title: "Messages", baseUrl: "/messages", icon: MessageSquare },
-  { title: "Notes", baseUrl: "/notes", icon: FileText },
+  { title: "Notes", baseUrl: "/notes", icon: FileText, dividerAfter: true },
   { title: "Minutes", baseUrl: "/minutes", icon: ClipboardList },
   { title: "Schedule", baseUrl: "/schedule", icon: Clock },
   { title: "Tasks", baseUrl: "/tasks", icon: CheckSquare },
@@ -98,14 +107,14 @@ const projectItemsBase = [
   { title: "Estimates", baseUrl: "/estimates", icon: FileBarChart },
   { title: "Request For Quotes", baseUrl: "/rfqs", icon: FileSearch },
   { title: "Request For Information", baseUrl: "/rfis", icon: HelpCircle },
-  { title: "Proposals", baseUrl: "/proposals", icon: File },
+  { title: "Proposals", baseUrl: "/proposals", icon: File, dividerAfter: true },
   { title: "Selections", baseUrl: "/selections", icon: CheckCircle },
   { title: "Allowances", baseUrl: "/allowances", icon: DollarSign },
   { title: "Defects", baseUrl: "/defects", icon: AlertCircle },
   { title: "Purchase Orders", baseUrl: "/purchase-orders", icon: Receipt },
   { title: "Variations", baseUrl: "/variations", icon: FileText },
   { title: "Bills", baseUrl: "/bills", icon: Receipt },
-  { title: "Client Invoices", baseUrl: "/client-invoices", icon: Receipt },
+  { title: "Client Invoices", baseUrl: "/client-invoices", icon: Receipt, dividerAfter: true },
   { title: "Site Diary", baseUrl: "/site-diary", icon: BookOpen },
   { title: "Timesheets", baseUrl: "/timesheets", icon: Timer },
   { title: "Budget", baseUrl: "/budget", icon: PiggyBank },
@@ -494,28 +503,33 @@ export function AppSidebar() {
                 };
                 
                 return (
-                  <SidebarMenuItem key={item.title} className="group/item">
-                    <SidebarMenuButton 
-                      asChild 
-                      tooltip={item.title}
-                      data-testid={`nav-${item.title.toLowerCase().replace(/\s+/g, '-')}`}
-                      data-active={location === item.url}
-                    >
-                      <Link href={item.url}>
-                        <item.icon className="h-4 w-4" />
-                        <span className="group-data-[collapsible=icon]:hidden flex-1">{item.title}</span>
-                        <button
-                          onClick={toggleFavorite}
-                          className={`h-4 w-4 group-data-[collapsible=icon]:hidden transition-opacity ${
-                            isFavorite ? 'opacity-100' : 'opacity-0 group-hover/item:opacity-50 hover:!opacity-100'
-                          }`}
-                          data-testid={`favorite-page-${item.title.toLowerCase().replace(/\s+/g, '-')}`}
-                        >
-                          <Star className={`h-3.5 w-3.5 ${isFavorite ? 'text-primary fill-current' : 'text-muted-foreground'}`} />
-                        </button>
-                      </Link>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
+                  <Fragment key={item.title}>
+                    <SidebarMenuItem className="group/item">
+                      <SidebarMenuButton 
+                        asChild 
+                        tooltip={item.title}
+                        data-testid={`nav-${item.title.toLowerCase().replace(/\s+/g, '-')}`}
+                        data-active={location === item.url}
+                      >
+                        <Link href={item.url}>
+                          <item.icon className="h-4 w-4" />
+                          <span className="group-data-[collapsible=icon]:hidden flex-1">{item.title}</span>
+                          <button
+                            onClick={toggleFavorite}
+                            className={`h-4 w-4 group-data-[collapsible=icon]:hidden transition-opacity ${
+                              isFavorite ? 'opacity-100' : 'opacity-0 group-hover/item:opacity-50 hover:!opacity-100'
+                            }`}
+                            data-testid={`favorite-page-${item.title.toLowerCase().replace(/\s+/g, '-')}`}
+                          >
+                            <Star className={`h-3.5 w-3.5 ${isFavorite ? 'text-primary fill-current' : 'text-muted-foreground'}`} />
+                          </button>
+                        </Link>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                    {baseItem?.dividerAfter && (
+                      <SidebarSeparator className="my-1.5 group-data-[collapsible=icon]:hidden" />
+                    )}
+                  </Fragment>
                 );
               })}
             </SidebarMenu>
