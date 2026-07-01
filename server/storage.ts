@@ -116,7 +116,7 @@ import { generateRecurringTaskInstances, getRecurringTaskKey, generateNextRecurr
 import { db } from "./db";
 import { eq, or, and, desc, asc, gte, lte, sql, inArray, isNull, isNotNull, gt, not, ne } from "drizzle-orm";
 import * as schema from "@shared/schema";
-import { computeEstimateItemPrice, computeEstimateSummary, estimateItemBuilderCostExTax } from "@shared/pricing";
+import { computeEstimateItemPrice, computeEstimateSummary, estimateItemBuilderCostExTax, resolveEstimateStoredPrice } from "@shared/pricing";
 import { computeBillTotalsCents, billLineExGstCents } from "@shared/billTotals";
 
 // --- Timezone helpers (used by clockIn/clockOut and backfill) ---
@@ -4242,13 +4242,15 @@ export class MemStorage implements IStorage {
       throw new Error("Cannot create item in locked estimate. Unlock the estimate first.");
     }
     
-    // Single source of truth: shared/pricing.ts
-    const { taxAmount, lineIncTax: priceIncTax } = computeEstimateItemPrice({
+    // Single source of truth: shared/pricing.ts. Preserves a flat/fixed-price
+    // allowance line's typed priceIncTax instead of recomputing it to $0.
+    const { taxAmount, priceIncTax } = resolveEstimateStoredPrice({
       unitCostExTax: insertItem.unitCostExTax,
       quantity: insertItem.quantity,
       markupPercent: insertItem.markupPercent,
       projectMarkupPercent: estimate?.projectMarkupPercent,
       taxRate: estimate?.taxRate,
+      existingPriceIncTax: insertItem.priceIncTax,
     });
 
     try {
@@ -4310,12 +4312,13 @@ export class MemStorage implements IStorage {
 
     // Prepare all items with calculated tax via the shared function
     const preparedItems = insertItems.map(insertItem => {
-      const { taxAmount, lineIncTax: priceIncTax } = computeEstimateItemPrice({
+      const { taxAmount, priceIncTax } = resolveEstimateStoredPrice({
         unitCostExTax: insertItem.unitCostExTax,
         quantity: insertItem.quantity,
         markupPercent: insertItem.markupPercent,
         projectMarkupPercent: estimate?.projectMarkupPercent,
         taxRate: estimate?.taxRate,
+        existingPriceIncTax: insertItem.priceIncTax,
       });
 
       return {
@@ -4384,16 +4387,19 @@ export class MemStorage implements IStorage {
     };
 
     // Always recompute via the single source of truth — guarantees no drift
-    // regardless of which fields were patched.
-    const { taxAmount, lineIncTax } = computeEstimateItemPrice({
+    // regardless of which fields were patched. resolveEstimateStoredPrice
+    // preserves a flat/fixed-price allowance line's typed amount instead of
+    // wiping it to $0 on a non-price patch (e.g. allowance/status toggle).
+    const { taxAmount, priceIncTax } = resolveEstimateStoredPrice({
       unitCostExTax: updatedItem.unitCostExTax,
       quantity: updatedItem.quantity,
       markupPercent: updatedItem.markupPercent,
       projectMarkupPercent: estimate?.projectMarkupPercent,
       taxRate: estimate?.taxRate,
+      existingPriceIncTax: updatedItem.priceIncTax,
     });
     updatedItem.taxAmount = taxAmount;
-    updatedItem.priceIncTax = lineIncTax;
+    updatedItem.priceIncTax = priceIncTax;
 
     this.estimateItems.set(id, updatedItem);
     return updatedItem;
@@ -4637,12 +4643,13 @@ export class MemStorage implements IStorage {
       .filter(item => item.groupId === groupId);
     
     for (const item of items) {
-      const { taxAmount, lineIncTax: priceIncTax } = computeEstimateItemPrice({
+      const { taxAmount, priceIncTax } = resolveEstimateStoredPrice({
         unitCostExTax: item.unitCostExTax,
         quantity: item.quantity,
         markupPercent: item.markupPercent,
         projectMarkupPercent: targetEstimate.projectMarkupPercent,
         taxRate: targetEstimate.taxRate,
+        existingPriceIncTax: item.priceIncTax,
       });
       const newItem: EstimateItem = {
         ...item,
@@ -4714,12 +4721,13 @@ export class MemStorage implements IStorage {
       throw new Error("Cannot copy to locked estimate. Unlock the estimate first.");
     }
 
-    const { taxAmount, lineIncTax: priceIncTax } = computeEstimateItemPrice({
+    const { taxAmount, priceIncTax } = resolveEstimateStoredPrice({
       unitCostExTax: item.unitCostExTax,
       quantity: item.quantity,
       markupPercent: item.markupPercent,
       projectMarkupPercent: targetEstimate.projectMarkupPercent,
       taxRate: targetEstimate.taxRate,
+      existingPriceIncTax: item.priceIncTax,
     });
 
     // Create copy in target estimate (without group assignment)
@@ -9955,12 +9963,13 @@ export class DbStorage implements IStorage {
         throw new Error("Cannot create item in locked estimate. Unlock the estimate first.");
       }
       
-      const { taxAmount, lineIncTax: priceIncTax } = computeEstimateItemPrice({
+      const { taxAmount, priceIncTax } = resolveEstimateStoredPrice({
         unitCostExTax: insertItem.unitCostExTax,
         quantity: insertItem.quantity,
         markupPercent: insertItem.markupPercent,
         projectMarkupPercent: estimate?.projectMarkupPercent,
         taxRate: estimate?.taxRate,
+        existingPriceIncTax: insertItem.priceIncTax,
       });
 
       const estimateItem = {
@@ -9993,12 +10002,13 @@ export class DbStorage implements IStorage {
       }
 
       const preparedItems = insertItems.map(insertItem => {
-        const { taxAmount, lineIncTax: priceIncTax } = computeEstimateItemPrice({
+        const { taxAmount, priceIncTax } = resolveEstimateStoredPrice({
           unitCostExTax: insertItem.unitCostExTax,
           quantity: insertItem.quantity,
           markupPercent: insertItem.markupPercent,
           projectMarkupPercent: estimate?.projectMarkupPercent,
           taxRate: estimate?.taxRate,
+          existingPriceIncTax: insertItem.priceIncTax,
         });
 
         return {
@@ -10429,12 +10439,13 @@ export class DbStorage implements IStorage {
       for (const item of items) {
         // Recompute price against the TARGET estimate's project markup + tax
         // rate so cloned items don't carry stale cached cache values.
-        const { taxAmount, lineIncTax: priceIncTax } = computeEstimateItemPrice({
+        const { taxAmount, priceIncTax } = resolveEstimateStoredPrice({
           unitCostExTax: item.unitCostExTax,
           quantity: item.quantity,
           markupPercent: item.markupPercent,
           projectMarkupPercent: targetEstimate.projectMarkupPercent,
           taxRate: targetEstimate.taxRate,
+          existingPriceIncTax: item.priceIncTax,
         });
 
         const newItemData = {
@@ -11214,12 +11225,13 @@ export class DbStorage implements IStorage {
 
       // Recompute price against the TARGET estimate's project markup + tax
       // rate so cloned items don't carry stale cached values.
-      const { taxAmount, lineIncTax: priceIncTax } = computeEstimateItemPrice({
+      const { taxAmount, priceIncTax } = resolveEstimateStoredPrice({
         unitCostExTax: item[0].unitCostExTax,
         quantity: item[0].quantity,
         markupPercent: item[0].markupPercent,
         projectMarkupPercent: targetEstimate.projectMarkupPercent,
         taxRate: targetEstimate.taxRate,
+        existingPriceIncTax: item[0].priceIncTax,
       });
 
       // Create copy in target estimate (without group assignment)

@@ -176,7 +176,7 @@ import {
   fuzzyMatchTimesheetUser,
   readTimesheetBreakFromRow,
 } from "@shared/import";
-import { computeEstimateItemPrice } from "@shared/pricing";
+import { computeEstimateItemPrice, resolveEstimateStoredPrice } from "@shared/pricing";
 import { z } from "zod";
 import { fromZodError } from "zod-validation-error";
 import { eq, and, asc, desc, or, isNull, isNotNull, sql, min, max, gte, lte, inArray, gt } from "drizzle-orm";
@@ -4829,12 +4829,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const quantity = req.body.quantity ?? 0;
       const markupPercent = req.body.markupPercent ?? null;
 
-      const { taxAmount, lineIncTax } = computeEstimateItemPrice({
+      const { taxAmount, priceIncTax } = resolveEstimateStoredPrice({
         unitCostExTax,
         quantity,
         markupPercent,
         projectMarkupPercent: estimate.projectMarkupPercent,
         taxRate: estimate.taxRate,
+        existingPriceIncTax: req.body.priceIncTax,
       });
 
       const itemData = {
@@ -4844,7 +4845,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         quantity,
         markupPercent,
         taxAmount,
-        priceIncTax: lineIncTax,
+        priceIncTax,
       };
       
       const validationResult = insertEstimateItemSchema.safeParse(itemData);
@@ -4983,12 +4984,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const quantity = item.quantity ?? 0;
         const markupPercent = item.markupPercent ?? null;
 
-        const { taxAmount, lineIncTax } = computeEstimateItemPrice({
+        const { taxAmount, priceIncTax } = resolveEstimateStoredPrice({
           unitCostExTax,
           quantity,
           markupPercent,
           projectMarkupPercent: estimate.projectMarkupPercent,
           taxRate: estimate.taxRate,
+          existingPriceIncTax: item.priceIncTax,
         });
 
         const itemData = {
@@ -5007,7 +5009,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           unitCostExTax,
           markupPercent,
           taxAmount,
-          priceIncTax: lineIncTax,
+          priceIncTax,
           description: item.description || undefined,
           notes: item.notes || undefined,
           attachmentUrl: undefined,
@@ -5183,12 +5185,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const quantity = item.quantity ?? 0;
           const markupPercent = item.markupPercent ?? null;
 
-          const { taxAmount, lineIncTax } = computeEstimateItemPrice({
+          const { taxAmount, priceIncTax } = resolveEstimateStoredPrice({
             unitCostExTax,
             quantity,
             markupPercent,
             projectMarkupPercent: estimate.projectMarkupPercent,
             taxRate: estimate.taxRate,
+            existingPriceIncTax: item.priceIncTax,
           });
 
           const itemData = {
@@ -5202,7 +5205,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             unitCostExTax,
             markupPercent,
             taxAmount,
-            priceIncTax: lineIncTax,
+            priceIncTax,
             allowance: item.allowance || "None",
             notes: item.notes || "",
             costCode: item.costCode || null,
@@ -5327,15 +5330,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const unitCostExTax = next.unitCostExTax !== undefined ? Number(next.unitCostExTax) : Number(item.unitCostExTax);
         const quantity = next.quantity !== undefined ? Number(next.quantity) : Number(item.quantity);
         const markupPercent = next.markupPercent !== undefined ? next.markupPercent : item.markupPercent;
-        const { taxAmount, lineIncTax } = computeEstimateItemPrice({
+        const { taxAmount, priceIncTax } = resolveEstimateStoredPrice({
           unitCostExTax,
           quantity,
           markupPercent,
           projectMarkupPercent: estimate?.projectMarkupPercent,
           taxRate: estimate?.taxRate,
+          existingPriceIncTax: item.priceIncTax,
         });
         next.taxAmount = taxAmount;
-        next.priceIncTax = lineIncTax;
+        next.priceIncTax = priceIncTax;
 
         await storage.updateEstimateItem(itemId, next);
         updated++;
@@ -5374,18 +5378,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const item = items.find(i => i.id === itemId);
         if (!item) continue;
 
-        const { taxAmount, lineIncTax } = computeEstimateItemPrice({
+        const { taxAmount, priceIncTax } = resolveEstimateStoredPrice({
           unitCostExTax: item.unitCostExTax,
           quantity: item.quantity,
           markupPercent,
           projectMarkupPercent: estimate?.projectMarkupPercent,
           taxRate: estimate?.taxRate,
+          existingPriceIncTax: item.priceIncTax,
         });
 
         await storage.updateEstimateItem(itemId, {
           markupPercent,
           taxAmount,
-          priceIncTax: lineIncTax,
+          priceIncTax,
         });
         updated++;
       }
@@ -5487,19 +5492,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
         ? updateData.markupPercent
         : existingItem.markupPercent;
 
-      // Single source of truth: shared/pricing.ts. This handles the
-      // project-markup fallback so partial patches (status, costCode,
-      // allowance, proposalVisible) never drift the price.
-      const { taxAmount, lineIncTax } = computeEstimateItemPrice({
+      // Single source of truth: shared/pricing.ts. resolveEstimateStoredPrice
+      // handles the project-markup fallback for priced lines AND preserves the
+      // typed amount of a flat/fixed-price allowance line (qty × unitCost === 0)
+      // so partial patches (status, costCode, allowance, proposalVisible) never
+      // drift the price or wipe a flat allowance to $0.
+      const { taxAmount, priceIncTax } = resolveEstimateStoredPrice({
         unitCostExTax,
         quantity,
         markupPercent,
         projectMarkupPercent: estimate.projectMarkupPercent,
         taxRate: estimate.taxRate,
+        existingPriceIncTax: updateData.priceIncTax !== undefined
+          ? updateData.priceIncTax
+          : existingItem.priceIncTax,
       });
 
       updateData.taxAmount = taxAmount;
-      updateData.priceIncTax = lineIncTax;
+      updateData.priceIncTax = priceIncTax;
       
       const updateSchema = insertEstimateItemSchema.partial();
       const validationResult = updateSchema.safeParse(updateData);

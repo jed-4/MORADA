@@ -6,15 +6,30 @@
 //   estimate ex tax = sum(line ex tax) * (1 + projectMarkup%/100)
 //   estimate inc tax = estimate ex tax * (1 + tax%/100)
 //
+// The two markups are SEPARATE and both apply to allowance (PC/PS) lines:
+//   - Line-item markup belongs to one line only (qty × unitCost × (1+lineMarkup%)).
+//   - Builder's margin (project/global markup) applies ONCE to the ex-GST
+//     subtotal of ALL lines, then GST on top.
+//
 // Cost code, status, allowance and proposalVisible NEVER affect price.
+// Allowance type (None / Prime Cost / Provisional Sum) is METADATA ONLY — it
+// must never change any computed amount.
 //
 // Fixed-price lines (PC sums / provisional allowances):
 //   When qty * unitCostExTax === 0, we treat the line as a fixed-price entry:
-//     - the stored priceIncTax is taken as authoritative line inc tax
+//     - the stored/typed priceIncTax is AUTHORITATIVE line inc tax and must be
+//       PRESERVED across every write path — never recomputed to $0
 //     - the line contributes its full cached amount to the builder cost total
 //     - the line contributes ZERO line-item markup (markup is for materials/labour)
 //   This is intentional and matches how Australian builders enter PC sums:
 //   you punch in a $5,000 fixed allowance, not a unit rate × quantity.
+//
+//   IMPORTANT for every write path (create / update / import / duplicate / copy /
+//   reorder / bulk edit, on web, mobile, routes AND storage): route the stored
+//   { priceIncTax, taxAmount } through `resolveEstimateStoredPrice` below.
+//   Recomputing blindly via `computeEstimateItemPrice` produces 0 for a flat
+//   line and silently wipes the typed allowance amount, dropping the estimate
+//   total. That is a bug — the resolver preserves the flat amount.
 //
 // All money values are dollars rounded to 2 decimals. Percentages are
 // percentages (10 = 10%, 7.5 = 7.5%).
@@ -82,6 +97,68 @@ export function computeEstimateItemPrice(input: EstimateItemPriceInput): Estimat
     unitCostIncTax,
     builderCostIncTax,
   };
+}
+
+/**
+ * A line is "fixed-price" (a flat PC sum / provisional allowance) when
+ * qty × unitCost === 0. In that case the typed priceIncTax is the authoritative
+ * amount and must be preserved, not derived from qty × unitCost × markup.
+ */
+export function isFixedPriceLine(
+  unitCostExTax: number | null | undefined,
+  quantity: number | null | undefined,
+): boolean {
+  return (Number(unitCostExTax) || 0) * (Number(quantity) || 0) === 0;
+}
+
+export interface StoredPriceResolveInput {
+  unitCostExTax: number | null | undefined;
+  quantity: number | null | undefined;
+  markupPercent: number | null | undefined;
+  projectMarkupPercent: number | null | undefined;
+  taxRate: number | null | undefined;
+  /**
+   * The line's existing/typed priceIncTax. Authoritative for fixed-price
+   * (qty × unitCost === 0) lines — this is what must NOT be wiped to 0.
+   */
+  existingPriceIncTax?: number | null;
+}
+
+/**
+ * The ONE place every write path (create / update / import / duplicate / copy /
+ * reorder / bulk edit, in routes.ts AND storage.ts) should use to decide the
+ * stored { priceIncTax, taxAmount } for an estimate line.
+ *
+ *  - Priced line (qty × unitCost !== 0): fully re-derived from
+ *    qty × unitCost × markup via computeEstimateItemPrice (with project-markup
+ *    fallback). This keeps normal lines recalculating correctly.
+ *  - Fixed-price line (qty × unitCost === 0, a flat PC/PS allowance): the typed
+ *    priceIncTax is PRESERVED and a correct GST split is re-derived from it, so
+ *    a stale taxAmount self-heals on the next write WITHOUT ever wiping the
+ *    typed amount to $0. Toggling allowance / status / cost code / any non-price
+ *    field therefore never changes the line price or the estimate total.
+ */
+export function resolveEstimateStoredPrice(
+  input: StoredPriceResolveInput,
+): { priceIncTax: number; taxAmount: number } {
+  const taxRate = Number(input.taxRate ?? 10);
+
+  if (!isFixedPriceLine(input.unitCostExTax, input.quantity)) {
+    const { taxAmount, lineIncTax } = computeEstimateItemPrice({
+      unitCostExTax: input.unitCostExTax ?? 0,
+      quantity: input.quantity ?? 0,
+      markupPercent: input.markupPercent,
+      projectMarkupPercent: input.projectMarkupPercent,
+      taxRate,
+    });
+    return { priceIncTax: lineIncTax, taxAmount };
+  }
+
+  // Fixed-price line: preserve the typed inc-tax amount, re-derive the GST split.
+  const priceIncTax = round2(Number(input.existingPriceIncTax ?? 0));
+  const exTax = round2(priceIncTax / (1 + taxRate / 100));
+  const taxAmount = round2(priceIncTax - exTax);
+  return { priceIncTax, taxAmount };
 }
 
 /**
