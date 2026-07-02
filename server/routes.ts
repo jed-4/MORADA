@@ -31918,18 +31918,17 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
         return {};
       };
 
-      // When filtering by a job (tracking category), Xero cannot do the filtering
-      // server-side, so we must page through EVERY bill and filter locally —
-      // otherwise only the 100 most-recent bills are considered and a job's older
-      // bills silently never appear. Without a tracking filter we keep the fast
-      // single-page behaviour for the default view.
+      // Always page through EVERY Xero bill (100 per page) — a single-page
+      // fetch silently hides bills beyond the 100 most recent from the import
+      // list. The tracking-category filter also depends on the full set since
+      // Xero cannot filter by tracking server-side.
       // Fail fast (maxRetries: 0) — the interactive preview must never sit in a
       // 60s 429 retry wait (that is what made prod "never load"). If Xero is
-      // rate-limited we return immediately with a clear message so the user can
-      // retry in a moment instead of staring at a spinner.
-      let xeroBills = trackingOptionIdFilter
-        ? await xeroService.listAllBills(connection.id, { modifiedSince, maxRetries: 0 })
-        : await xeroService.listBills(connection.id, { page, modifiedSince, maxRetries: 0 });
+      // rate-limited (even mid-pagination) listBills throws immediately with a
+      // clear message so the user can retry in a moment instead of staring at
+      // a spinner or getting a silently partial list.
+      let xeroBills = await xeroService.listAllBills(connection.id, { modifiedSince, maxRetries: 0 });
+      const totalFetched = xeroBills.length;
       if (supplierContactId) {
         xeroBills = xeroBills.filter((xb: any) => xb.Contact?.ContactID === supplierContactId);
       }
@@ -32003,6 +32002,12 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
             localBillId: localBill?.id || null,
           };
         }),
+      );
+
+      const alreadyImportedCount = enriched.filter((b: any) => b.alreadyImported).length;
+      console.log(
+        `[Xero] import-preview: ${totalFetched} bill(s) fetched, ${enriched.length} after filters, ` +
+        `${alreadyImportedCount} already imported, ${enriched.length - alreadyImportedCount} importable`
       );
 
       res.json({ bills: enriched, page, trackingOptions });

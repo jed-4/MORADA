@@ -1087,6 +1087,7 @@ export class XeroService {
   ): Promise<any[]> {
     const maxPages = opts.maxPages ?? 50;
     const all: any[] = [];
+    let pagesFetched = 0;
     for (let page = 1; page <= maxPages; page++) {
       // Pace successive pages so a deep ledger doesn't burst Xero's ~60/min
       // limit; listBills also retries on 429 as a safety net.
@@ -1097,9 +1098,11 @@ export class XeroService {
         page,
         maxRetries: opts.maxRetries,
       });
+      pagesFetched = page;
       all.push(...batch);
       if (batch.length < 100) break;
     }
+    console.log(`[Xero] listAllBills: fetched ${pagesFetched} page(s), ${all.length} bill(s) total`);
     return all;
   }
 
