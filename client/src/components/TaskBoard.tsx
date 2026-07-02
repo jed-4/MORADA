@@ -161,7 +161,7 @@ function DroppableColumn({
   return (
     <div
       ref={setNodeRef}
-      className={`rounded-xl border transition-all duration-200 ${
+      className={`flex flex-col h-full rounded-xl border transition-all duration-200 ${
         isHighlighted ? 'border-2 border-primary border-dashed bg-primary/10' : 'border-border/50'
       }`}
       style={!isHighlighted ? bgStyle : undefined}
@@ -173,8 +173,8 @@ function DroppableColumn({
         </div>
       </div>
 
-      {/* Cards Container - max height with scroll for 6-8 cards */}
-      <div className="p-2 space-y-1.5 max-h-[calc(100vh-300px)] overflow-y-auto">
+      {/* Cards Container - fills column height, scrolls internally when overflowing */}
+      <div className="flex-1 min-h-0 p-2 space-y-1.5 overflow-y-auto">
         <SortableContext items={tasks.map(task => task.id)} strategy={verticalListSortingStrategy}>
           {tasks.map((task) => (
             <DraggableTaskCard key={task.id} task={task} onTaskClick={onTaskClick} displaySettings={displaySettings} onDelete={onDelete} showActions={showActions} />
@@ -666,10 +666,10 @@ export default function TaskBoard({ tasks: propTasks, isLoading: propIsLoading, 
       onDragOver={handleDragOver}
       onDragEnd={handleDragEnd}
     >
-      <div className="px-2 pb-6" data-testid="task-board">
+      <div className="flex flex-col h-full px-2 pb-6" data-testid="task-board">
         <div 
           ref={scrollContainerRef}
-          className="flex gap-4 overflow-x-auto pb-4 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100"
+          className="flex flex-1 min-h-0 gap-4 overflow-x-auto pb-4 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100"
           style={{ 
             scrollbarWidth: 'thin', 
             scrollBehavior: 'smooth'
@@ -678,7 +678,7 @@ export default function TaskBoard({ tasks: propTasks, isLoading: propIsLoading, 
               const columnTasks = tasksByGroup[column.status] || [];
               
               return (
-                <div key={column.id} className={`${getColumnWidthClass()} flex-shrink-0`}>
+                <div key={column.id} className={`${getColumnWidthClass()} flex-shrink-0 h-full`}>
                   <DroppableColumn
                     column={column}
                     tasks={columnTasks}
