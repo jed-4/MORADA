@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
+import { BulkActionBar } from "@/components/BulkActionBar";
 import {
   Table,
   TableBody,
@@ -61,7 +62,6 @@ import {
   AlertCircle,
   MoreHorizontal,
   RefreshCw,
-  X,
   Banknote,
 } from "lucide-react";
 import {
@@ -1351,34 +1351,25 @@ export default function Bills({ embedded }: { embedded?: boolean } = {}) {
       )}
 
       {/* ── Floating bulk action bar (fixed at bottom, doesn't push layout) ── */}
-      {selectedBills.size > 0 && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-3 py-2 rounded-xl shadow-lg border border-border bg-popover text-popover-foreground">
-          <span className="text-xs font-medium text-muted-foreground pr-1 border-r border-border mr-1">
-            {selectedBills.size} selected · <span className="text-foreground">{formatCurrency(selectedTotal * 100)}</span>
-          </span>
-          <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setChangeProjectDialogOpen(true)}>
-            Change Project
-          </Button>
-          <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setChangeSupplierDialogOpen(true)}>
-            Change Supplier
-          </Button>
-          <Button size="sm" className="h-7 text-xs bg-status-success text-white" disabled={bulkApproveMutation.isPending} onClick={() => bulkApproveMutation.mutate(Array.from(selectedBills))}>
-            <CheckCircle2 className="w-3 h-3 mr-1" />{bulkApproveMutation.isPending ? "Approving…" : "Approve"}
-          </Button>
-          <Button size="sm" variant="outline" className="h-7 text-xs text-destructive border-destructive/30" onClick={() => setDeleteDialogOpen(true)}>
-            <Trash2 className="w-3 h-3 mr-1" />Delete
-          </Button>
-          <Button
-            size="icon"
-            variant="ghost"
-            className="h-7 w-7 ml-0.5"
-            onClick={() => setSelectedBills(new Set())}
-            aria-label="Clear selection"
-          >
-            <X className="w-3.5 h-3.5" />
-          </Button>
-        </div>
-      )}
+      <BulkActionBar
+        count={selectedBills.size}
+        summary={formatCurrency(selectedTotal * 100)}
+        onClear={() => setSelectedBills(new Set())}
+        data-testid="bulk-action-bar-bills"
+      >
+        <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setChangeProjectDialogOpen(true)}>
+          Change Project
+        </Button>
+        <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setChangeSupplierDialogOpen(true)}>
+          Change Supplier
+        </Button>
+        <Button size="sm" className="h-7 text-xs bg-status-success text-white" disabled={bulkApproveMutation.isPending} onClick={() => bulkApproveMutation.mutate(Array.from(selectedBills))}>
+          <CheckCircle2 className="w-3 h-3 mr-1" />{bulkApproveMutation.isPending ? "Approving…" : "Approve"}
+        </Button>
+        <Button size="sm" variant="outline" className="h-7 text-xs text-destructive border-destructive/30" onClick={() => setDeleteDialogOpen(true)}>
+          <Trash2 className="w-3 h-3 mr-1" />Delete
+        </Button>
+      </BulkActionBar>
 
       {/* ── Dialogs ── */}
       <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>

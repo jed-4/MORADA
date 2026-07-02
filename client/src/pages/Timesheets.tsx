@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/breadcrumb";
 import { Plus, Clock, Search, Calendar as CalendarIcon, X, CalendarRange, Download, Upload, ChevronDown, Settings2, Table2, Users2, CalendarDays, ChevronLeft, ChevronRight, Zap, Play, Square, CircleCheck, Trash2, HardHat, MoreHorizontal, Pencil, Copy, Filter } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { BulkActionBar } from "@/components/BulkActionBar";
 import * as XLSX from "xlsx";
 import { Input } from "@/components/ui/input";
 import {
@@ -2125,125 +2126,120 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
 
       {filteredTimesheets.length > 0 && (
         <div className="flex-none sticky bottom-0 z-50 border-t border-border bg-muted/30">
-          {selectedTimesheets.length > 0 ? (
-            <div className="flex items-center justify-between gap-4 px-3 py-2">
-              <div className="flex items-center gap-2">
-                <Badge variant="secondary" className="text-table">
-                  {selectedTimesheets.length} selected
-                </Badge>
-              </div>
-              <div className="flex items-center gap-2">
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button size="sm" variant="outline">
-                      <CircleCheck className="h-3.5 w-3.5 mr-1" />
-                      Change Status
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent>
-                    <DropdownMenuItem onClick={() => bulkActionMutation.mutate({ ids: selectedTimesheets, action: "changeStatus", status: "submitted" })}>
-                      <div className="w-2 h-2 rounded-full mr-2 bg-muted-foreground" />
-                      Submitted
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => bulkActionMutation.mutate({ ids: selectedTimesheets, action: "changeStatus", status: "approved" })}>
-                      <div className="w-2 h-2 rounded-full mr-2 bg-green-500" />
-                      Approved
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => bulkActionMutation.mutate({ ids: selectedTimesheets, action: "changeStatus", status: "rejected" })}>
-                      <div className="w-2 h-2 rounded-full mr-2 bg-red-500" />
-                      Rejected
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-                <AlertDialog>
-                  <AlertDialogTrigger asChild>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={bulkActionMutation.isPending}
-                      data-testid="button-bulk-delete-timesheets"
-                    >
-                      <Trash2 className="h-3.5 w-3.5 mr-1" />
-                      Delete
-                    </Button>
-                  </AlertDialogTrigger>
-                  <AlertDialogContent>
-                    <AlertDialogHeader>
-                      <AlertDialogTitle>
-                        Delete {selectedTimesheets.length} timesheet{selectedTimesheets.length === 1 ? "" : "s"}?
-                      </AlertDialogTitle>
-                      <AlertDialogDescription>
-                        This permanently removes the selected {selectedTimesheets.length === 1 ? "entry" : "entries"} and cannot be undone.
-                      </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                      <AlertDialogCancel data-testid="button-bulk-delete-cancel">Cancel</AlertDialogCancel>
-                      <AlertDialogAction
-                        onClick={() => bulkActionMutation.mutate({ ids: selectedTimesheets, action: "delete" })}
-                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                        data-testid="button-bulk-delete-confirm"
-                      >
-                        Delete
-                      </AlertDialogAction>
-                    </AlertDialogFooter>
-                  </AlertDialogContent>
-                </AlertDialog>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => setSelectedTimesheets([])}
-                >
-                  <X className="h-3.5 w-3.5" />
-                </Button>
-              </div>
-            </div>
-          ) : (
-            (() => {
-              const submittedEntries = filteredTimesheets.filter(ts => ts.status === "submitted");
-              const approvedEntries  = filteredTimesheets.filter(ts => ts.status === "approved");
-              const rejectedEntries  = filteredTimesheets.filter(ts => ts.status === "rejected");
-              const submittedHrs = submittedEntries.reduce((s, ts) => s + getNetHours(ts), 0);
-              const approvedHrs  = approvedEntries.reduce((s, ts) => s + getNetHours(ts), 0);
-              const rejectedHrs  = rejectedEntries.reduce((s, ts) => s + getNetHours(ts), 0);
-              const totalHrs     = filteredTimesheets.reduce((s, ts) => s + getNetHours(ts), 0);
-              const entryCount   = filteredTimesheets.length;
-              return (
-                <div className="flex items-center justify-between gap-4 h-11 px-4">
-                  <span className="text-table text-muted-foreground">
-                    {entryCount} {entryCount === 1 ? "entry" : "entries"}
-                  </span>
-                  <div className="flex items-center gap-4">
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-data uppercase tracking-wider text-muted-foreground">Submitted</span>
-                      <span className="text-table tabular-nums text-primary font-medium">
-                        {submittedEntries.length} &middot; {formatDuration(submittedHrs)}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-data uppercase tracking-wider text-muted-foreground">Approved</span>
-                      <span className="text-table tabular-nums text-[hsl(var(--sage))] font-medium">
-                        {approvedEntries.length} &middot; {formatDuration(approvedHrs)}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-data uppercase tracking-wider text-muted-foreground">Rejected</span>
-                      <span className="text-table tabular-nums text-[hsl(var(--coral))] font-medium">
-                        {rejectedEntries.length} &middot; {formatDuration(rejectedHrs)}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-data uppercase tracking-wider text-muted-foreground">Total</span>
-                      <span className="text-table tabular-nums font-semibold text-foreground">
-                        {formatDuration(totalHrs)}
-                      </span>
-                    </div>
+          {(() => {
+            const submittedEntries = filteredTimesheets.filter(ts => ts.status === "submitted");
+            const approvedEntries  = filteredTimesheets.filter(ts => ts.status === "approved");
+            const rejectedEntries  = filteredTimesheets.filter(ts => ts.status === "rejected");
+            const submittedHrs = submittedEntries.reduce((s, ts) => s + getNetHours(ts), 0);
+            const approvedHrs  = approvedEntries.reduce((s, ts) => s + getNetHours(ts), 0);
+            const rejectedHrs  = rejectedEntries.reduce((s, ts) => s + getNetHours(ts), 0);
+            const totalHrs     = filteredTimesheets.reduce((s, ts) => s + getNetHours(ts), 0);
+            const entryCount   = filteredTimesheets.length;
+            return (
+              <div className="flex items-center justify-between gap-4 h-11 px-4">
+                <span className="text-table text-muted-foreground">
+                  {entryCount} {entryCount === 1 ? "entry" : "entries"}
+                </span>
+                <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-data uppercase tracking-wider text-muted-foreground">Submitted</span>
+                    <span className="text-table tabular-nums text-primary font-medium">
+                      {submittedEntries.length} &middot; {formatDuration(submittedHrs)}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-data uppercase tracking-wider text-muted-foreground">Approved</span>
+                    <span className="text-table tabular-nums text-[hsl(var(--sage))] font-medium">
+                      {approvedEntries.length} &middot; {formatDuration(approvedHrs)}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-data uppercase tracking-wider text-muted-foreground">Rejected</span>
+                    <span className="text-table tabular-nums text-[hsl(var(--coral))] font-medium">
+                      {rejectedEntries.length} &middot; {formatDuration(rejectedHrs)}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-data uppercase tracking-wider text-muted-foreground">Total</span>
+                    <span className="text-table tabular-nums font-semibold text-foreground">
+                      {formatDuration(totalHrs)}
+                    </span>
                   </div>
                 </div>
-              );
-            })()
-          )}
+              </div>
+            );
+          })()}
         </div>
       )}
+
+      {/* ── Floating bulk action bar (fixed at bottom, doesn't push layout) ── */}
+      <BulkActionBar
+        count={selectedTimesheets.length}
+        summary={formatDuration(
+          filteredTimesheets
+            .filter(ts => selectedTimesheets.includes(ts.id))
+            .reduce((s, ts) => s + getNetHours(ts), 0)
+        )}
+        onClear={() => setSelectedTimesheets([])}
+        data-testid="bulk-action-bar-timesheets"
+      >
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button size="sm" variant="outline" className="h-7 text-xs">
+              <CircleCheck className="h-3.5 w-3.5 mr-1" />
+              Change Status
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent>
+            <DropdownMenuItem onClick={() => bulkActionMutation.mutate({ ids: selectedTimesheets, action: "changeStatus", status: "submitted" })}>
+              <div className="w-2 h-2 rounded-full mr-2 bg-muted-foreground" />
+              Submitted
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => bulkActionMutation.mutate({ ids: selectedTimesheets, action: "changeStatus", status: "approved" })}>
+              <div className="w-2 h-2 rounded-full mr-2 bg-green-500" />
+              Approved
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => bulkActionMutation.mutate({ ids: selectedTimesheets, action: "changeStatus", status: "rejected" })}>
+              <div className="w-2 h-2 rounded-full mr-2 bg-red-500" />
+              Rejected
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+        <AlertDialog>
+          <AlertDialogTrigger asChild>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 text-xs text-destructive border-destructive/30"
+              disabled={bulkActionMutation.isPending}
+              data-testid="button-bulk-delete-timesheets"
+            >
+              <Trash2 className="h-3.5 w-3.5 mr-1" />
+              Delete
+            </Button>
+          </AlertDialogTrigger>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>
+                Delete {selectedTimesheets.length} timesheet{selectedTimesheets.length === 1 ? "" : "s"}?
+              </AlertDialogTitle>
+              <AlertDialogDescription>
+                This permanently removes the selected {selectedTimesheets.length === 1 ? "entry" : "entries"} and cannot be undone.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel data-testid="button-bulk-delete-cancel">Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => bulkActionMutation.mutate({ ids: selectedTimesheets, action: "delete" })}
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                data-testid="button-bulk-delete-confirm"
+              >
+                Delete
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </BulkActionBar>
 
       <TimesheetDialog
         open={isDialogOpen}
