@@ -31,6 +31,8 @@
 - [Sentry ESM express instrumentation](sentry-esm-express-instrumentation.md) — "express is not instrumented" warning under ESM needs `--import` (package.json); error capture still works, only auto route-tracing degraded.
 - [Third-party widget CSP](thirdparty-widget-csp.md) — server/index.ts sets a strict manual CSP; any embedded SaaS widget (e.g. Crisp) needs its script/style/img/font/connect/frame origins whitelisted or it silently fails to load.
 - [Tenant isolation convention](tenant-isolation-convention.md) — by-ID routes return 404 (not 403) cross-tenant; enforce via getOwned* route helpers; nested sub-resources resolve parent FK then delegate.
+- [EAS iOS push/profile regen](eas-ios-push-profile-regen.md) — aps-environment failures: enable push via ASC API POST, then delete BOTH EAS + Apple profile records to force a fresh profile.
+- [EAS Sentry sourcemap upload](eas-sentry-sourcemap-upload.md) — build fails at fastlane on sentry-cli "org required"; set SENTRY_DISABLE_AUTO_UPLOAD=true in eas.json build env.
 - [Webhook money idempotency](webhook-money-idempotency.md) — Stripe-webhook-created financial rows need unique index + ON CONFLICT (retries race); company creation whitelists profile fields, billing cols server-managed.
 - [Billing enforcement & paywall UI](billing-enforcement-ui.md) — seat rule (built-in roles always full users, never mobile-only); limit error code lives in `.error` not `.code`; PlanGate must exempt /billing/ routes; client plans come from /api/billing/plans.
 - [Billing trial & plan-status model](billing-trial-model.md) — trial clock starts at company creation; null trialEndsAt = legacy only + lenient (no upgrade UI yet); select-plan never resets clock; webhook maps subscription.status, payment_failed→past_due.
