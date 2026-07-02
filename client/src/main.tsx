@@ -120,6 +120,11 @@ class RootErrorBoundary extends Component<{ children: ReactNode }, { error: Erro
   }
 }
 
+// Signal to the startup error guard in index.html that React has mounted. Past
+// this point the in-app RootErrorBoundary owns error handling, so the raw
+// "failed to load" screen must not paint over a running app.
+(window as unknown as { __moradaAppMounted?: boolean }).__moradaAppMounted = true;
+
 createRoot(document.getElementById("root")!).render(
   <RootErrorBoundary>
     <App />

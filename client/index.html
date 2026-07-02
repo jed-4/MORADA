@@ -47,6 +47,17 @@
             }).catch(function(){});
           } catch(_){}
         }
+        // Benign browser warnings that are NOT real app crashes. These must never
+        // paint the fatal "failed to load" screen (they are also ignored by
+        // Sentry in client/src/main.tsx — keep the two lists in sync). The most
+        // common offender is the ResizeObserver loop notification, which fires
+        // during normal layout re-measurement (e.g. editing an estimate row).
+        function isBenignMessage(msg) {
+          if (!msg) return false;
+          var s = String(msg);
+          return s.indexOf('ResizeObserver loop limit exceeded') !== -1 ||
+            s.indexOf('ResizeObserver loop completed with undelivered notifications') !== -1;
+        }
         window.addEventListener('error', function(ev) {
           // Ignore resource load errors (img/link/script/etc failed to load).
           // Those fire on the element itself, not on window, and have no useful message.
@@ -60,19 +71,31 @@
           }
           var err = ev.error || ev;
           var msg = err && (err.message || err.reason);
+          // Benign browser noise (e.g. ResizeObserver loop) — never paint or report.
+          if (isBenignMessage(msg) || isBenignMessage(ev.message)) {
+            return;
+          }
           // If we have no message and no stack, it's not actionable — don't paint over the app.
           if (!msg && !(err && err.stack)) {
             report('window-error-no-message', { type: ev.type, filename: ev.filename, lineno: ev.lineno });
             return;
           }
           report('uncaught-error', { message: String(msg), stack: String((err&&err.stack)||''), filename: ev.filename, lineno: ev.lineno });
+          // Once the React app has mounted, the in-app RootErrorBoundary owns
+          // error handling. Don't paint the raw startup screen over a running app.
+          if (window.__moradaAppMounted) {
+            return;
+          }
           paint('Uncaught error during startup', err);
         }, true);
         window.addEventListener('unhandledrejection', function(ev) {
           var r = ev.reason;
           var msg = r && (r.message || r);
+          if (isBenignMessage(msg)) {
+            return;
+          }
           report('unhandled-rejection', { message: String(msg), stack: String((r&&r.stack)||'') });
-          if (msg) paint('Unhandled promise rejection during startup', r);
+          if (msg && !window.__moradaAppMounted) paint('Unhandled promise rejection during startup', r);
         });
         try {
           // Optional URL override (?theme=dark|light) — does not persist, used

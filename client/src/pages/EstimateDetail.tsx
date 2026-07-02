@@ -2558,7 +2558,9 @@ export default function EstimateDetail() {
     // Set initial value based on field type
     switch (field) {
       case 'quantity':
-        setEditingValue(item.quantity.toFixed(2));
+        // Preserve up to 4 decimals so editing a small fractional qty (e.g.
+        // 0.0065) doesn't pre-fill a rounded "0.01" and silently corrupt it.
+        setEditingValue(parseFloat(item.quantity.toFixed(4)).toString());
         break;
       case 'unitCostExTax':
         setEditingValue(parseFloat(item.unitCostExTax.toFixed(2)).toString());
@@ -2966,7 +2968,7 @@ export default function EstimateDetail() {
             row.push(escapeCsvField(item.shownAs || ''));
             break;
           case 'quantity':
-            row.push((item.quantity || 0).toFixed(2));
+            row.push(parseFloat((item.quantity || 0).toFixed(4)).toString());
             break;
           case 'allowance':
             row.push(escapeCsvField(item.allowance || 'None'));
@@ -3225,7 +3227,11 @@ export default function EstimateDetail() {
   };
 
   const formatQuantity = (quantity: number, unitType: string | null) => {
-    const actualQty = quantity.toFixed(2).replace(/\.?0+$/, '');
+    // Display up to 4 decimals (the precision the qty input accepts) so small
+    // fractional quantities like 0.0065 aren't misleadingly rounded to "0.01".
+    // Trailing zeros are stripped so whole numbers stay clean (e.g. "2").
+    const safeQty = Number.isFinite(quantity) ? quantity : 0;
+    const actualQty = safeQty.toFixed(4).replace(/\.?0+$/, '');
     return `${actualQty}${unitType ? ` ${unitType}` : ''}`;
   };
 
