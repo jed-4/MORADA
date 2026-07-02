@@ -40,8 +40,20 @@ const PUSH_GROUPS: PushGroup[] = [
   {
     key: 'messages',
     label: 'Messages & mentions',
-    description: 'When someone mentions you in a chat or message.',
+    description: 'New chat messages and when someone mentions you.',
     icon: 'at-outline',
+  },
+  {
+    key: 'notes',
+    label: 'Notes & site diary',
+    description: "When you're assigned to or mentioned in a note or site diary entry.",
+    icon: 'document-text-outline',
+  },
+  {
+    key: 'schedule',
+    label: 'Schedule',
+    description: 'When a schedule item is assigned to you or changes.',
+    icon: 'calendar-outline',
   },
   {
     key: 'timesheets',

@@ -1,6 +1,7 @@
 import { Server, Socket } from "socket.io";
 import { storage } from "../storage";
 import type { InsertMessage, Message } from "@shared/schema";
+import { dispatchChatMessageNotifications } from "../utils/chatNotifications";
 
 export function setupMessagingHandlers(io: Server) {
   io.on("connection", (socket: Socket) => {
@@ -89,6 +90,23 @@ export function setupMessagingHandlers(io: Server) {
         
         // Update last read for sender
         await storage.updateChannelMemberLastRead(channelId, userId);
+
+        // Fan out mention + new-message notifications (same helper as the REST
+        // create route, so both transports notify identically).
+        try {
+          const sender = await storage.getUser(userId);
+          const senderName = sender?.firstName && sender?.lastName
+            ? `${sender.firstName} ${sender.lastName}`
+            : sender?.email || "Someone";
+          await dispatchChatMessageNotifications({
+            message: { id: message.id, channelId, content, mentions: message.mentions },
+            senderId: userId,
+            companyId,
+            senderName,
+          });
+        } catch (notifyErr) {
+          console.error("Error dispatching socket message notifications:", notifyErr);
+        }
       } catch (error) {
         console.error("Error sending message:", error);
         socket.emit("error", { message: "Failed to send message" });

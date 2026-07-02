@@ -189,6 +189,15 @@ import { ensureCompanyReferralCode, getCompanyIdByReferralCode, getReferralStats
 import multer from "multer";
 import * as XLSX from "xlsx";
 import { initializeSocketManager, emitTaskCreated, emitTaskUpdated, emitTaskDeleted, emitNotification, emitReactionUpdated, getIO, getConnectedUserIdsForCompany } from "./socketManager";
+import { dispatchChatMessageNotifications } from "./utils/chatNotifications";
+import {
+  notifyTaskCompleted,
+  notifyTimesheetSubmitted,
+  notifyTimesheetApproved,
+  notifyNoteAssignmentAndMentions,
+  notifySiteDiaryAssignmentAndMentions,
+  notifyScheduleItemChange,
+} from "./utils/domainNotifications";
 
 async function fetchNonWorkingDaySet(companyId: string, scheduleId?: string): Promise<Set<string>> {
   const rows = scheduleId
@@ -1627,6 +1636,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       };
 
       const note = await storage.createNote(noteData);
+
+      const actorName = user?.firstName && user?.lastName
+        ? `${user.firstName} ${user.lastName}`
+        : user?.email || "Someone";
+      await notifyNoteAssignmentAndMentions({
+        note,
+        actorUserId: user?.id,
+        companyId,
+        actorName,
+      });
+
       res.status(201).json(note);
     } catch (error) {
       res.status(500).json({ error: "Failed to create note" });
@@ -1675,6 +1695,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!note) {
         return res.status(404).json({ error: "Note not found" });
       }
+
+      const actorName = user?.firstName && user?.lastName
+        ? `${user.firstName} ${user.lastName}`
+        : user?.email || "Someone";
+      await notifyNoteAssignmentAndMentions({
+        note,
+        previous: currentNote,
+        actorUserId: user?.id,
+        companyId,
+        actorName,
+      });
+
       res.json(note);
     } catch (error) {
       res.status(500).json({ error: "Failed to update note" });
@@ -2275,6 +2307,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
+      // Notify the task owner/assigner when it's newly completed by someone else.
+      if (wasNotDone && nowDone) {
+        const actorName = user.firstName && user.lastName
+          ? `${user.firstName} ${user.lastName}`
+          : user.email || "Someone";
+        await notifyTaskCompleted({ task, actorUserId: user.id, companyId: user.companyId, actorName });
+      }
+
       // Create notification when task is assigned to a different user
       const assigneeChanged = existingTask.assigneeId !== task.assigneeId;
       const assignedToSomeoneElse = task.assigneeId && task.assigneeId !== user.id;
@@ -2347,6 +2387,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
             console.error("Failed to create next standard recurring task:", err);
           }
         }
+      }
+
+      // Notify the task owner/assigner when it's newly completed by someone else.
+      if (wasNotDone && nowDone) {
+        const actorName = user.firstName && user.lastName
+          ? `${user.firstName} ${user.lastName}`
+          : user.email || "Someone";
+        await notifyTaskCompleted({ task, actorUserId: user.id, companyId: user.companyId, actorName });
       }
       
       res.json(task);
@@ -20590,6 +20638,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.error("Failed to log site diary create activity:", activityError);
       }
 
+      if (req.user) {
+        const actorName = req.user.firstName && req.user.lastName
+          ? `${req.user.firstName} ${req.user.lastName}`
+          : req.user.email || "Someone";
+        await notifySiteDiaryAssignmentAndMentions({
+          entry,
+          actorUserId: req.user.id,
+          companyId: req.user.companyId!,
+          actorName,
+        });
+      }
+
       res.status(201).json(entry);
     } catch (error: any) {
       res.status(500).json({ 
@@ -20652,6 +20712,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       } catch (activityError) {
         console.error("Failed to log site diary update activity:", activityError);
+      }
+
+      if (req.user) {
+        const actorName = req.user.firstName && req.user.lastName
+          ? `${req.user.firstName} ${req.user.lastName}`
+          : req.user.email || "Someone";
+        await notifySiteDiaryAssignmentAndMentions({
+          entry,
+          previous: owned,
+          actorUserId: req.user.id,
+          companyId: req.user.companyId!,
+          actorName,
+        });
       }
 
       res.json(entry);
@@ -23398,6 +23471,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // hourly_rate is NOT NULL in DB — treat missing/empty as 0 rather than null
       if (body.hourlyRate === "" || body.hourlyRate === null || body.hourlyRate === undefined) body.hourlyRate = "0";
       const timesheet = await storage.createTimesheet(body);
+
+      const actorId = reqDbUser?.id || reqUser?.id;
+      const companyId = reqDbUser?.companyId || reqUser?.companyId;
+      if (actorId && companyId) {
+        const actorName = reqDbUser?.firstName && reqDbUser?.lastName
+          ? `${reqDbUser.firstName} ${reqDbUser.lastName}`
+          : reqDbUser?.email || reqUser?.email || "Someone";
+        await notifyTimesheetSubmitted({ timesheet, actorUserId: actorId, companyId, actorName });
+      }
+
       res.json(timesheet);
     } catch (error: any) {
       res.status(500).json({
@@ -23790,6 +23873,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (timesheetUser?.isSubcontractor) {
         await storage.updateTimesheet(req.params.id, { poStatus: "awaiting_po" });
         timesheet.poStatus = "awaiting_po";
+      }
+
+      {
+        const actorName = req.user.firstName && req.user.lastName
+          ? `${req.user.firstName} ${req.user.lastName}`
+          : req.user.email || "Someone";
+        await notifyTimesheetApproved({
+          timesheet,
+          actorUserId: req.user.id,
+          companyId: req.user.companyId!,
+          actorName,
+        });
       }
 
       res.json(timesheet);
@@ -24990,6 +25085,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       } catch (activityError) {
         console.error("Failed to log schedule item update activity:", activityError);
+      }
+
+      if (req.user) {
+        const actorName = req.user.firstName && req.user.lastName
+          ? `${req.user.firstName} ${req.user.lastName}`
+          : req.user.email || "Someone";
+        await notifyScheduleItemChange({
+          item,
+          previous: originalItem,
+          actorUserId: req.user.id,
+          companyId: req.user.companyId!,
+          actorName,
+        });
       }
       
       res.json(item);
@@ -28768,52 +28876,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
-      // @channel / @here mention broadcast notifications
-      if (/@(?:channel|here)\b/.test(content)) {
-        try {
-          const hasChannelMention = /@channel\b/.test(content);
-          const companyId = req.user!.companyId!;
-          const senderName = req.user!.firstName && req.user!.lastName
-            ? `${req.user!.firstName} ${req.user!.lastName}`
-            : req.user!.email || 'Someone';
-
-          const channelData = await storage.getChannel(channelId, companyId);
-          const channelDisplayName = channelData?.name || 'a channel';
-          const allMembers = await storage.getChannelMembers(channelId);
-
-          let targetUserIds: string[];
-          if (hasChannelMention) {
-            // @channel: notify all channel members except the sender
-            targetUserIds = allMembers.map(m => m.userId).filter(id => id !== userId);
-          } else {
-            // @here: notify channel members who are currently connected anywhere in the app
-            const connectedIds = new Set(getConnectedUserIdsForCompany(companyId));
-            targetUserIds = allMembers.map(m => m.userId).filter(id => id !== userId && connectedIds.has(id));
-          }
-
-          const mentionToken = hasChannelMention ? '@channel' : '@here';
-          for (const targetId of targetUserIds) {
-            try {
-              const notification = await storage.createNotification({
-                userId: targetId,
-                companyId,
-                type: 'mention',
-                title: `${mentionToken} in #${channelDisplayName}`,
-                message: `${senderName} mentioned ${mentionToken}`,
-                link: `/messages?channel=${channelId}`,
-                entityType: 'message',
-                entityId: message.id,
-                isRead: false,
-                createdByUserId: userId,
-              });
-              emitNotification(targetId, notification);
-            } catch {
-              // Non-critical — skip failed individual notification
-            }
-          }
-        } catch (notifError) {
-          console.error('[Messages] @channel/@here notification error:', notifError);
-        }
+      // Fan out mention + new-message notifications (skips the sender, dedupes
+      // so a mention beats the generic new-message push). Shared with the
+      // socket send path so both transports notify identically.
+      {
+        const senderName = req.user!.firstName && req.user!.lastName
+          ? `${req.user!.firstName} ${req.user!.lastName}`
+          : req.user!.email || 'Someone';
+        await dispatchChatMessageNotifications({
+          message: { id: message.id, channelId, content, mentions },
+          senderId: userId,
+          companyId,
+          senderName,
+        });
       }
 
       res.status(201).json(messageWithAttachments);

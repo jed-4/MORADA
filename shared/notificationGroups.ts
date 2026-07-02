@@ -8,6 +8,8 @@
 export type PushNotificationGroupKey =
   | "tasks"
   | "messages"
+  | "notes"
+  | "schedule"
   | "timesheets"
   | "payments"
   | "projects"
@@ -36,8 +38,20 @@ export const PUSH_NOTIFICATION_GROUPS: PushNotificationGroup[] = [
   {
     key: "messages",
     label: "Messages & mentions",
-    description: "When someone mentions you in a chat or message.",
-    types: ["mention"],
+    description: "New chat messages and when someone mentions you.",
+    types: ["mention", "message_new"],
+  },
+  {
+    key: "notes",
+    label: "Notes & site diary",
+    description: "When you're assigned to or mentioned in a note or site diary entry.",
+    types: ["note_assigned", "note_mention"],
+  },
+  {
+    key: "schedule",
+    label: "Schedule",
+    description: "When a schedule item is assigned to you or changes.",
+    types: ["schedule_assigned", "schedule_changed"],
   },
   {
     key: "timesheets",
