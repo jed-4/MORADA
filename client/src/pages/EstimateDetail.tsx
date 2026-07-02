@@ -4601,6 +4601,8 @@ export default function EstimateDetail() {
                 onChange={(e) => setEditingValue(e.target.value)}
                 onKeyDown={(e) => handleCellKeyDown(e, item, 'quantity')}
                 onBlur={() => handleCellSave(item, 'quantity')}
+                onFocus={(e) => e.target.select()}
+                onDoubleClick={(e) => e.stopPropagation()}
                 className="h-full w-full bg-transparent border-0 shadow-none focus-visible:ring-0 text-sm"
                 autoFocus
                 min="0"
@@ -4727,6 +4729,8 @@ export default function EstimateDetail() {
                 onChange={(e) => setEditingValue(e.target.value)}
                 onKeyDown={(e) => handleCellKeyDown(e, item, 'unitCostExTax')}
                 onBlur={() => handleCellSave(item, 'unitCostExTax')}
+                onFocus={(e) => e.target.select()}
+                onDoubleClick={(e) => e.stopPropagation()}
                 className="h-full w-full bg-transparent border-0 shadow-none focus-visible:ring-0 text-sm"
                 autoFocus
                 min="0"
@@ -4763,6 +4767,8 @@ export default function EstimateDetail() {
                 onChange={(e) => setEditingValue(e.target.value)}
                 onKeyDown={(e) => handleCellKeyDown(e, item, 'unitCostIncTax')}
                 onBlur={() => handleCellSave(item, 'unitCostIncTax')}
+                onFocus={(e) => e.target.select()}
+                onDoubleClick={(e) => e.stopPropagation()}
                 className="h-full w-full bg-transparent border-0 shadow-none focus-visible:ring-0 text-sm"
                 autoFocus
                 min="0"
@@ -4811,6 +4817,8 @@ export default function EstimateDetail() {
                 onChange={(e) => setEditingValue(e.target.value)}
                 onKeyDown={(e) => handleCellKeyDown(e, item, 'markup')}
                 onBlur={() => handleCellSave(item, 'markup')}
+                onFocus={(e) => e.target.select()}
+                onDoubleClick={(e) => e.stopPropagation()}
                 className="h-full w-full bg-transparent border-0 shadow-none focus-visible:ring-0 text-sm"
                 autoFocus
                 min="0"
