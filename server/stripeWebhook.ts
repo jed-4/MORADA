@@ -1,5 +1,10 @@
 import type Stripe from "stripe";
 import { storage } from "./storage";
+import {
+  cancelPendingCreditForInvoice,
+  createPendingReferralCredit,
+  referrerMonthlyPriceCents,
+} from "./referrals";
 
 function customerId(customer: string | { id: string } | null | undefined): string | null {
   if (!customer) return null;
@@ -82,6 +87,58 @@ export async function handleStripeEvent(event: Stripe.Event): Promise<void> {
     case "invoice.payment_succeeded": {
       const invoice = event.data.object as Stripe.Invoice;
       await setPlanStatusByCustomer(invoice.customer, { planStatus: "active" });
+
+      // Referral credit: when a REFERRED company pays its FIRST subscription
+      // invoice, create a pending credit for the referrer with a 7-day hold.
+      // The hourly sweep issues it after re-checking for refunds.
+      try {
+        if (invoice.billing_reason === "subscription_create") {
+          const custId = customerId(invoice.customer);
+          const company = custId ? await storage.getCompanyByStripeCustomerId(custId) : null;
+          const referrerId = (company as any)?.referredByCompanyId || null;
+          if (company && referrerId) {
+            const referrer = await storage.getCompany(referrerId);
+            if (referrer) {
+              const amountCents = referrerMonthlyPriceCents(
+                (referrer as any).plan || (referrer as any).chosenPlan,
+              );
+              const created = await createPendingReferralCredit({
+                referrerCompanyId: referrer.id,
+                refereeCompanyId: company.id,
+                amountCents,
+                refereeInvoiceId: invoice.id || null,
+              });
+              if (created) {
+                console.log(
+                  `[referrals] pending credit created: referrer=${referrer.id} referee=${company.id} amount=${amountCents}c (7-day hold)`,
+                );
+              }
+            }
+          }
+        }
+      } catch (refErr) {
+        console.error("[referrals] failed to create pending credit from invoice.payment_succeeded:", refErr);
+      }
+      break;
+    }
+    case "charge.refunded": {
+      // If the refunded charge belongs to a referee's first invoice with a
+      // pending referral credit, cancel the credit — the referrer gets nothing.
+      const charge = event.data.object as Stripe.Charge;
+      const invoiceId =
+        typeof (charge as any).invoice === "string"
+          ? (charge as any).invoice
+          : (charge as any).invoice?.id || null;
+      if (invoiceId) {
+        try {
+          const cancelled = await cancelPendingCreditForInvoice(invoiceId);
+          if (cancelled > 0) {
+            console.log(`[referrals] cancelled ${cancelled} pending credit(s) after refund of invoice ${invoiceId}`);
+          }
+        } catch (refErr) {
+          console.error("[referrals] failed to cancel credit on charge.refunded:", refErr);
+        }
+      }
       break;
     }
     case "invoice.payment_failed": {

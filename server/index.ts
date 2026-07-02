@@ -9,6 +9,7 @@ import { startReminderProcessor } from "./utils/reminderProcessor";
 import { startScheduledMessageProcessor } from "./utils/scheduledMessageProcessor";
 import { startGmailBillPoller } from "./services/gmailBillPoller";
 import { healContactNames } from "./utils/healContactNames";
+import { ensureReferralTables, processReferralCredits } from "./referrals";
 import { storage } from "./storage";
 import path from "path";
 import fs from "fs";
@@ -264,6 +265,16 @@ app.use((req, res, next) => {
       console.error('Failed to ensure suggestions table:', error);
     }
 
+    // Ensure the referral columns + referral_credits table exist (additive,
+    // idempotent). The deploy build does not run drizzle push, so this
+    // guarantees the referral system works the first time production boots
+    // this feature.
+    try {
+      await ensureReferralTables();
+    } catch (error) {
+      console.error('Failed to ensure referral tables:', error);
+    }
+
     // Auto-seed missing built-in field categories (for production databases)
     try {
       const seedResult = await storage.seedMissingBuiltInCategories();
@@ -292,6 +303,22 @@ app.use((req, res, next) => {
     };
     trialExpirySweep();
     setInterval(trialExpirySweep, 60 * 60 * 1000);
+
+    // Referral-credit sweep: issues pending referral credits past their 7-day
+    // hold (after re-checking the referee's invoice wasn't refunded). Runs
+    // hourly alongside the trial sweep. No-op while Stripe is unconfigured.
+    const referralCreditSweep = async () => {
+      try {
+        const r = await processReferralCredits();
+        if (r.issued > 0 || r.cancelled > 0) {
+          log(`[referrals] issued ${r.issued} credit(s), cancelled ${r.cancelled}`);
+        }
+      } catch (err) {
+        console.error('[referrals] credit sweep failed (non-fatal):', err);
+      }
+    };
+    referralCreditSweep();
+    setInterval(referralCreditSweep, 60 * 60 * 1000);
 
     // One-time data heal for trade/supplier contacts whose `name` was
     // overwritten by the old key-person fallback. Idempotent — safe to

@@ -185,6 +185,7 @@ import { requireAuth, requireAdmin, requireTeamMember, requirePermission, requir
 import { requireActivePlan } from "./middleware/plan";
 import { getStripe, isStripeConfigured } from "./stripe";
 import { isPlanKey, getPlan, PLANS, PLAN_KEYS, type PlanKey, type BillingCycle } from "./config/plans";
+import { ensureCompanyReferralCode, getCompanyIdByReferralCode, getReferralStats } from "./referrals";
 import multer from "multer";
 import * as XLSX from "xlsx";
 import { initializeSocketManager, emitTaskCreated, emitTaskUpdated, emitTaskDeleted, emitNotification, emitReactionUpdated, getIO, getConnectedUserIdsForCompany } from "./socketManager";
@@ -1192,13 +1193,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!stripe) {
         return res.status(503).json({ error: 'billing_unavailable', message: 'Billing is not configured yet.' });
       }
-      const { planKey, billingCycle } = req.body || {};
+      const { planKey, billingCycle, promoCode } = req.body || {};
       if (!isPlanKey(planKey)) {
         return res.status(400).json({ error: 'Invalid planKey' });
       }
       const cycle: BillingCycle = billingCycle === 'annual' ? 'annual' : 'monthly';
       const plan = getPlan(planKey);
       const priceId = cycle === 'annual' ? plan.annualPriceId : plan.monthlyPriceId;
+
+      // Resolve a human promo code string (e.g. "FOUNDING") to an active
+      // Stripe Promotion Code ID.
+      const resolvePromoCode = async (code: string): Promise<string> => {
+        const results = await stripe.promotionCodes.list({ code, active: true, limit: 1 });
+        if (!results.data.length) {
+          const err: any = new Error('Invalid promo code');
+          err.invalidPromo = true;
+          throw err;
+        }
+        return results.data[0].id;
+      };
 
       // Ensure the company has a Stripe customer.
       let stripeCustomerId = (company as any).stripeCustomerId || null;
@@ -1215,6 +1228,74 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const status = (company as any).planStatus;
       const isTrialing = status === 'trialing' || status === 'trial';
       const baseUrl = getBillingBaseUrl(req);
+
+      // ---- Discounts (in priority order — they never stack) ----
+      // 1. An explicit promo code entered at checkout.
+      // 2. Founding member upgrade: a FOUNDING-SOLO subscriber moving up to
+      //    Builder/Studio carries their $50-off-forever discount across via
+      //    the FOUNDING promo code.
+      // 3. Referee discount: a referred company's FIRST subscription gets the
+      //    50%-off-first-month coupon.
+      let discounts: Array<{ promotion_code?: string; coupon?: string }> | undefined;
+      let oldSubToCancel: string | null = null;
+
+      if (promoCode && typeof promoCode === 'string' && promoCode.trim()) {
+        try {
+          discounts = [{ promotion_code: await resolvePromoCode(promoCode.trim()) }];
+        } catch (promoErr: any) {
+          if (promoErr?.invalidPromo) {
+            return res.status(400).json({ error: 'invalid_promo_code', message: 'Invalid promo code' });
+          }
+          throw promoErr;
+        }
+      }
+
+      const existingSubId = (company as any).stripeSubscriptionId || null;
+
+      // Founding member upgrade policy (only when no explicit promo given).
+      if (!discounts && existingSubId && (planKey === 'builder' || planKey === 'studio')) {
+        try {
+          const existingSub = await stripe.subscriptions.retrieve(existingSubId, {
+            expand: ['discounts.promotion_code'],
+          });
+          const subDiscounts: any[] = Array.isArray((existingSub as any).discounts)
+            ? (existingSub as any).discounts
+            : (existingSub as any).discount
+              ? [(existingSub as any).discount]
+              : [];
+          const hasFoundingSolo = subDiscounts.some((d: any) => {
+            if (!d || typeof d === 'string') return false;
+            const promo = d.promotion_code;
+            const promoCodeStr = typeof promo === 'string' ? '' : promo?.code || '';
+            const couponName = d.coupon?.name || '';
+            return promoCodeStr.toUpperCase() === 'FOUNDING-SOLO' || couponName.toUpperCase() === 'FOUNDING-SOLO';
+          });
+          if (hasFoundingSolo) {
+            try {
+              discounts = [{ promotion_code: await resolvePromoCode('FOUNDING') }];
+              oldSubToCancel = existingSubId;
+            } catch (foundingErr) {
+              // FOUNDING promo missing/inactive in Stripe — proceed without the
+              // swap rather than blocking the upgrade.
+              console.error('[billing] FOUNDING promo code unavailable for founding upgrade:', foundingErr);
+            }
+          }
+        } catch (subErr) {
+          console.error('[billing] could not inspect existing subscription for founding upgrade:', subErr);
+        }
+      }
+
+      // Referee discount: only on the FIRST subscription, and never stacked
+      // with another discount.
+      if (
+        !discounts &&
+        !existingSubId &&
+        (company as any).referredByCompanyId &&
+        process.env.STRIPE_REFEREE_COUPON_ID
+      ) {
+        discounts = [{ coupon: process.env.STRIPE_REFEREE_COUPON_ID }];
+      }
+
       const session = await stripe.checkout.sessions.create({
         customer: stripeCustomerId,
         mode: 'subscription',
@@ -1224,8 +1305,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // If they've already used their trial, start billing immediately.
         // If they're still trialing, let the trial run out naturally.
         subscription_data: isTrialing ? undefined : { trial_end: 'now' },
+        ...(discounts ? { discounts, allow_promotion_codes: false } : {}),
         metadata: { companyId: String(company.id), planKey, billingCycle: cycle },
       });
+
+      // Founding upgrade: wind down the old Solo subscription at period end —
+      // the webhook picks up the new subscription when checkout completes.
+      if (oldSubToCancel) {
+        try {
+          await stripe.subscriptions.update(oldSubToCancel, { cancel_at_period_end: true });
+        } catch (cancelErr) {
+          console.error('[billing] failed to schedule old subscription cancellation for founding upgrade:', cancelErr);
+        }
+      }
 
       // Record the intended plan/cycle so the webhook can apply it on activation.
       await storage.updateCompany(company.id, { chosenPlan: planKey, billingCycle: cycle } as any);
@@ -1283,15 +1375,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       let renewalDate: string | null = null;
       let cancelAtPeriodEnd = false;
+      let foundingSoloDiscount = false;
       const stripe = getStripe();
       const subId = (company as any).stripeSubscriptionId;
       if (stripe && subId) {
         try {
-          const sub = await stripe.subscriptions.retrieve(subId);
+          const sub = await stripe.subscriptions.retrieve(subId, {
+            expand: ['discounts.promotion_code'],
+          });
           renewalDate = (sub as any).current_period_end
             ? new Date((sub as any).current_period_end * 1000).toISOString()
             : null;
           cancelAtPeriodEnd = !!(sub as any).cancel_at_period_end;
+          // Founding member on Solo? Their $50-off-for-life discount carries
+          // across when upgrading to Builder/Studio — the UI shows a note.
+          const subDiscounts: any[] = Array.isArray((sub as any).discounts)
+            ? (sub as any).discounts
+            : (sub as any).discount
+              ? [(sub as any).discount]
+              : [];
+          foundingSoloDiscount = subDiscounts.some((d: any) => {
+            if (!d || typeof d === 'string') return false;
+            const promo = d.promotion_code;
+            const promoCodeStr = typeof promo === 'string' ? '' : promo?.code || '';
+            const couponName = d.coupon?.name || '';
+            return promoCodeStr.toUpperCase() === 'FOUNDING-SOLO' || couponName.toUpperCase() === 'FOUNDING-SOLO';
+          });
         } catch (subErr) {
           console.error('[billing] summary: failed to retrieve subscription:', subErr);
         }
@@ -1307,6 +1416,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         cancelAtPeriodEnd,
         limits: plan.limits,
         usage: { activeProjects, fullUsers, storageUsedGB: null },
+        foundingSoloDiscount,
         stripeConfigured: isStripeConfigured(),
       });
     } catch (error) {
@@ -1355,6 +1465,59 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error('[billing] status failed:', error);
       return res.status(500).json({ error: 'Failed to load billing status' });
+    }
+  });
+
+  // ---- Billing: validate a promo code before checkout (inline "Apply") ----
+  app.post('/api/billing/validate-promo-code', requireAuth, async (req: any, res) => {
+    try {
+      const stripe = getStripe();
+      if (!stripe) {
+        return res.status(503).json({ error: 'billing_unavailable', message: 'Billing is not configured yet.' });
+      }
+      const code = typeof req.body?.promoCode === 'string' ? req.body.promoCode.trim() : '';
+      if (!code) {
+        return res.status(400).json({ error: 'invalid_promo_code', message: 'Invalid promo code' });
+      }
+      const results = await stripe.promotionCodes.list({ code, active: true, limit: 1 });
+      if (!results.data.length) {
+        return res.status(400).json({ error: 'invalid_promo_code', message: 'Invalid promo code' });
+      }
+      const promo = results.data[0];
+      const coupon: any = promo.coupon || {};
+      let discountLabel = '';
+      if (coupon.percent_off) discountLabel = `${coupon.percent_off}% off`;
+      else if (coupon.amount_off) discountLabel = `$${(coupon.amount_off / 100).toFixed(0)} off`;
+      if (coupon.duration === 'forever') discountLabel += ' forever';
+      else if (coupon.duration === 'once') discountLabel += ' (first payment)';
+      else if (coupon.duration === 'repeating' && coupon.duration_in_months) {
+        discountLabel += ` for ${coupon.duration_in_months} months`;
+      }
+      return res.json({ valid: true, code: promo.code, discountLabel });
+    } catch (error) {
+      console.error('[billing] validate-promo-code failed:', error);
+      return res.status(500).json({ error: 'Failed to validate promo code' });
+    }
+  });
+
+  // ---- Billing: referral stats for the "Refer a Builder" panel ----
+  // Available to any authenticated team user with a company (not owner-only).
+  app.get('/api/billing/referral-stats', requireAuth, async (req: any, res) => {
+    try {
+      const user = req.user;
+      const companyId = user?.companyId || (req.session as any)?.companyId;
+      if (!companyId) {
+        return res.status(401).json({ error: 'No company context' });
+      }
+      const stats = await getReferralStats(companyId);
+      const baseUrl = getBillingBaseUrl(req);
+      return res.json({
+        ...stats,
+        referralLink: stats.referralCode ? `${baseUrl}/auth?ref=${stats.referralCode}` : null,
+      });
+    } catch (error) {
+      console.error('[billing] referral-stats failed:', error);
+      return res.status(500).json({ error: 'Failed to load referral stats' });
     }
   });
 
@@ -7886,6 +8049,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         billingCycle: string | null;
         trialEndsAt: Date | null;
       } = { plan: null, chosenPlan: null, planStatus: null, billingCycle: null, trialEndsAt: null };
+      let referralCode: string | null = null;
       if (user.companyId) {
         const company = await storage.getCompany(user.companyId);
         companyNickname = company?.nickname || company?.name || null;
@@ -7897,6 +8061,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
             billingCycle: (company as any).billingCycle ?? null,
             trialEndsAt: company.trialEndsAt ?? null,
           };
+          // Referral code for the "Refer a Builder" panel — generated lazily
+          // so legacy companies get one on first load.
+          referralCode = (company as any).referralCode ?? null;
+          if (!referralCode) {
+            try {
+              referralCode = await ensureCompanyReferralCode(company.id);
+            } catch (refErr) {
+              console.error('[referrals] failed to ensure referral code:', refErr);
+            }
+          }
         }
       }
 
@@ -7940,7 +8114,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         companyNickname,
         isAdminLike,
       });
-      res.json({ ...safeUser, companyNickname, effectivePermissions, isAdminLike, ...planInfo });
+      res.json({ ...safeUser, companyNickname, effectivePermissions, isAdminLike, ...planInfo, referralCode });
     } catch (error) {
       console.error("Error fetching user:", error);
       res.status(500).json({ message: "Failed to fetch user" });
@@ -9320,8 +9494,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "User already belongs to a company" });
       }
       
+      // Referral code (from a ?ref= signup link) rides along in the body but
+      // is server-managed — pull it out, then whitelist only the company
+      // profile fields a new signup may set. Billing/referral/integration
+      // columns (planStatus, stripeCustomerId, referredByCompanyId, …) are
+      // server-managed and must never be client-writable here.
+      const body = req.body || {};
+      const refInput = body.referralCode;
+      if (!body.name || typeof body.name !== 'string' || !body.name.trim()) {
+        return res.status(400).json({ message: "Company name is required" });
+      }
+      const companyBody: Record<string, unknown> = { name: body.name.trim() };
+      for (const field of ['nickname', 'abn', 'address', 'phone', 'email', 'website', 'logo'] as const) {
+        if (typeof body[field] === 'string') companyBody[field] = body[field];
+      }
+
       // Create company
-      const company = await storage.createCompany(req.body, userId);
+      const company = await storage.createCompany(companyBody as any, userId);
+
+      // Resolve the referral: if the code is valid, record who referred this
+      // company. Invalid/missing codes are silently ignored — never block
+      // signup. Also give the new company its own referral code.
+      try {
+        if (refInput && typeof refInput === 'string') {
+          const referrerId = await getCompanyIdByReferralCode(refInput);
+          if (referrerId && referrerId !== company.id) {
+            await storage.updateCompany(company.id, { referredByCompanyId: referrerId } as any);
+          }
+        }
+        await ensureCompanyReferralCode(company.id);
+      } catch (refErr) {
+        console.error('[referrals] failed to record referral at company creation:', refErr);
+      }
 
       // Start the 14-day trial clock at creation so a new company always has a
       // non-null trial_ends_at. This closes the bypass where a user could skip

@@ -46,6 +46,17 @@ export default function AuthPage() {
   const urlParams = new URLSearchParams(window.location.search);
   const errorParam = urlParams.get('error');
 
+  // Referral link support: /auth?ref=M-XXXX-XXXX. Save the code so it can be
+  // attached when the new user creates their company during onboarding.
+  const refParam = urlParams.get('ref');
+  if (refParam && refParam.trim()) {
+    try {
+      localStorage.setItem('morada_referral_code', refParam.trim());
+    } catch {
+      // localStorage unavailable (private mode) — referral tracking is best-effort
+    }
+  }
+
   const handleForgotPassword = async () => {
     if (!forgotEmail.trim()) return;
     setForgotStatus('loading');

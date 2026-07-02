@@ -4,8 +4,9 @@ import { apiRequest } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
-import { Check, Loader2 } from "lucide-react";
+import { Check, Loader2, TicketPercent } from "lucide-react";
 
 export type BillingCycle = "monthly" | "annual";
 
@@ -40,17 +41,47 @@ function fmtLimit(n: number): string {
 export function PlanChooser({
   currentPlan,
   ctaLabel = "Choose plan",
+  foundingSoloDiscount = false,
 }: {
   currentPlan?: string | null;
   ctaLabel?: string;
+  foundingSoloDiscount?: boolean;
 }) {
   const { toast } = useToast();
   const [cycle, setCycle] = useState<BillingCycle>("monthly");
   const [pendingKey, setPendingKey] = useState<string | null>(null);
+  const [promoInput, setPromoInput] = useState("");
+  const [appliedPromo, setAppliedPromo] = useState<{ code: string; discountLabel: string } | null>(null);
+  const [promoError, setPromoError] = useState<string | null>(null);
+  const [promoChecking, setPromoChecking] = useState(false);
 
   const { data, isLoading } = useQuery<PlansResponse>({
     queryKey: ["/api/billing/plans"],
   });
+
+  const applyPromo = async () => {
+    const code = promoInput.trim();
+    if (!code) return;
+    setPromoChecking(true);
+    setPromoError(null);
+    try {
+      const res = await apiRequest("/api/billing/validate-promo-code", "POST", {
+        promoCode: code,
+      });
+      setAppliedPromo({ code: res.code, discountLabel: res.discountLabel });
+    } catch (e: any) {
+      setAppliedPromo(null);
+      setPromoError(e?.payload?.message || "Invalid promo code");
+    } finally {
+      setPromoChecking(false);
+    }
+  };
+
+  const clearPromo = () => {
+    setAppliedPromo(null);
+    setPromoInput("");
+    setPromoError(null);
+  };
 
   const subscribe = async (planKey: string) => {
     setPendingKey(planKey);
@@ -58,6 +89,7 @@ export function PlanChooser({
       const res = await apiRequest("/api/billing/create-checkout-session", "POST", {
         planKey,
         billingCycle: cycle,
+        ...(appliedPromo ? { promoCode: appliedPromo.code } : {}),
       });
       if (res?.url) {
         window.location.href = res.url;
@@ -65,6 +97,10 @@ export function PlanChooser({
       }
       throw new Error("No checkout link was returned.");
     } catch (e: any) {
+      if (e?.payload?.error === "invalid_promo_code") {
+        setAppliedPromo(null);
+        setPromoError("That promo code is no longer valid.");
+      }
       toast({
         title: "Couldn't start checkout",
         description: e?.payload?.message || e?.message || "Please try again in a moment.",
@@ -115,6 +151,65 @@ export function PlanChooser({
           Annual
         </Button>
         <span className="text-xs text-muted-foreground">2 months free on annual</span>
+      </div>
+
+      {foundingSoloDiscount && (
+        <Card className="p-3" data-testid="note-founding-discount">
+          <p className="text-sm text-muted-foreground">
+            As a founding member, your $50/month discount carries across when you
+            upgrade to Builder or Studio.
+          </p>
+        </Card>
+      )}
+
+      <div className="space-y-1.5">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative w-56">
+            <TicketPercent className="absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={promoInput}
+              onChange={(e) => {
+                setPromoInput(e.target.value);
+                setPromoError(null);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  applyPromo();
+                }
+              }}
+              placeholder="Promo code"
+              disabled={!!appliedPromo}
+              className="pl-8"
+              data-testid="input-promo-code"
+            />
+          </div>
+          {appliedPromo ? (
+            <Button size="sm" variant="outline" onClick={clearPromo} data-testid="button-remove-promo">
+              Remove
+            </Button>
+          ) : (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={applyPromo}
+              disabled={promoChecking || !promoInput.trim()}
+              data-testid="button-apply-promo"
+            >
+              {promoChecking ? <Loader2 className="h-4 w-4 animate-spin" /> : "Apply"}
+            </Button>
+          )}
+        </div>
+        {appliedPromo && (
+          <p className="text-xs text-muted-foreground" data-testid="text-promo-applied">
+            Code {appliedPromo.code} applied — {appliedPromo.discountLabel}.
+          </p>
+        )}
+        {promoError && (
+          <p className="text-xs text-destructive" data-testid="text-promo-error">
+            {promoError}
+          </p>
+        )}
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">

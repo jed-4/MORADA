@@ -124,9 +124,13 @@ export default function OnboardingPage() {
 
   const createCompanyMutation = useMutation({
     mutationFn: async (values: CompanyFormValues) => {
-      return await apiRequest('/api/companies', 'POST', values);
+      // Pass along a saved referral code (captured from a ?ref= signup link)
+      // so the new company is linked to whoever referred them.
+      const referralCode = localStorage.getItem('morada_referral_code') || undefined;
+      return await apiRequest('/api/companies', 'POST', { ...values, referralCode });
     },
     onSuccess: () => {
+      localStorage.removeItem('morada_referral_code');
       // Do NOT invalidate the user cache here — that would give the client a
       // companyId and route it out of onboarding before the plan is chosen.
       // Move to the plan step and only refresh once a plan is selected.

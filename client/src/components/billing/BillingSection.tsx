@@ -205,7 +205,11 @@ export function BillingSection() {
             <CardTitle className="text-base">Choose a different plan</CardTitle>
           </CardHeader>
           <CardContent>
-            <PlanChooser currentPlan={data.plan} ctaLabel="Switch to this plan" />
+            <PlanChooser
+              currentPlan={data.plan}
+              ctaLabel="Switch to this plan"
+              foundingSoloDiscount={(data as any).foundingSoloDiscount === true}
+            />
           </CardContent>
         </Card>
       )}

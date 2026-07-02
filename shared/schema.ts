@@ -55,6 +55,11 @@ export const companies = pgTable("companies", {
   stripeCustomerId: text("stripe_customer_id"),
   stripeSubscriptionId: text("stripe_subscription_id"),
 
+  // Referral system: every company gets a unique shareable code, and a company
+  // that signed up through someone's link records who referred them.
+  referralCode: varchar("referral_code", { length: 20 }).unique(),
+  referredByCompanyId: varchar("referred_by_company_id"),
+
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -322,7 +327,25 @@ export const insertCompanySchema = createInsertSchema(companies).omit({
   id: true,
   createdAt: true,
   updatedAt: true,
+  // Referral fields are server-managed — never client-writable.
+  referralCode: true,
+  referredByCompanyId: true,
 });
+
+// Referral credits: a pending "1 free month" credit for the referrer, created
+// when a referred company pays its first invoice and issued after a 7-day hold.
+export const referralCredits = pgTable("referral_credits", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  referrerCompanyId: varchar("referrer_company_id").notNull(),
+  refereeCompanyId: varchar("referee_company_id").notNull(),
+  amountCents: integer("amount_cents").notNull(),
+  status: varchar("status", { length: 20 }).notNull().default("pending"), // pending | issued | cancelled
+  refereeInvoiceId: text("referee_invoice_id"),
+  fireAfter: timestamp("fire_after"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export type ReferralCredit = typeof referralCredits.$inferSelect;
 
 // Schema for user creation/updates (Replit Auth compatible)
 export const upsertUserSchema = z.object({
