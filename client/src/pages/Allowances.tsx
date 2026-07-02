@@ -52,6 +52,7 @@ type EstimateItem = {
   estimateName: string;
   estimateVersion: number;
   groupName?: string | null;
+  groupOrder?: number | null;
   notes?: string | null;
   description?: string | null;
 };
@@ -358,15 +359,26 @@ export default function Allowances() {
   // Group items
   const grouped = useMemo(() => {
     const groups = new Map<string, AllowanceWithCosts[]>();
+    // Track the estimate order of each group so we can sort groups to match the estimate
+    const groupOrder = new Map<string, number>();
     filtered.forEach((a) => {
       const key = a.item.groupName?.trim() || "Ungrouped";
       if (!groups.has(key)) groups.set(key, []);
       groups.get(key)!.push(a);
+      const order = a.item.groupOrder;
+      if (typeof order === "number" && !groupOrder.has(key)) {
+        groupOrder.set(key, order);
+      }
     });
-    // Sort groups alphabetically (Ungrouped last)
+    // Sort groups by estimate order (Ungrouped last)
     const entries = Array.from(groups.entries()).sort((a, b) => {
       if (a[0] === "Ungrouped") return 1;
       if (b[0] === "Ungrouped") return -1;
+      const oa = groupOrder.get(a[0]);
+      const ob = groupOrder.get(b[0]);
+      if (oa != null && ob != null && oa !== ob) return oa - ob;
+      if (oa != null && ob == null) return -1;
+      if (oa == null && ob != null) return 1;
       return a[0].localeCompare(b[0]);
     });
     // Sort items within each group: status priority, then name
