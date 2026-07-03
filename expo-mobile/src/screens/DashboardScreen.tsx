@@ -3,6 +3,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import {
   View,
   Text,
+  Image,
   StyleSheet,
   ScrollView,
   RefreshControl,
@@ -592,7 +593,14 @@ const colors = {
           <Text style={[styles.topBarGreeting, { color: colors.accent }]} numberOfLines={1}>
             {greeting}, {firstName || fullDisplayName}
           </Text>
-          <Text style={styles.topBarBrand} numberOfLines={1}>Morada</Text>
+          <View style={styles.topBarBrandRow}>
+            <Image
+              source={require('../../assets/icon.png')}
+              style={styles.topBarBrandLogo}
+              resizeMode="contain"
+            />
+            <Text style={styles.topBarBrand} numberOfLines={1}>Morada</Text>
+          </View>
         </View>
         <View style={styles.topBarRight}>
           <TouchableOpacity
@@ -2152,6 +2160,16 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     letterSpacing: 0.2,
     marginBottom: 2,
+  },
+  topBarBrandRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  topBarBrandLogo: {
+    width: 26,
+    height: 26,
+    borderRadius: 6,
   },
   topBarBrand: {
     fontSize: 22,
