@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react';
 import {
   View,
   Text,
+  Image,
   TextInput,
   TouchableOpacity,
   StyleSheet,
@@ -39,6 +40,12 @@ export default function LoginScreen({ navigation }: { navigation: any }) {
     header: {
       alignItems: 'center',
       marginBottom: 40,
+    },
+    logoImage: {
+      width: 88,
+      height: 88,
+      borderRadius: 20,
+      marginBottom: 16,
     },
     logo: {
       fontSize: 36,
@@ -185,6 +192,11 @@ export default function LoginScreen({ navigation }: { navigation: any }) {
     >
       <View style={styles.inner}>
         <View style={styles.header}>
+          <Image
+            source={require('../../assets/icon.png')}
+            style={styles.logoImage}
+            resizeMode="contain"
+          />
           <Text style={styles.logo}>Morada</Text>
           <Text style={styles.subtitle}>Project Management for Builders</Text>
         </View>
