@@ -60,6 +60,7 @@ import {
   Download,
   Loader2,
   AlertCircle,
+  AlertTriangle,
   MoreHorizontal,
   RefreshCw,
   Banknote,
@@ -118,6 +119,8 @@ type XeroBillPreview = {
   amountPaid?: number;
   trackingOptionId?: string;
   trackingOptionName?: string;
+  multipleTrackingOptions?: boolean;
+  trackingOptionNames?: string[];
   supplierId?: string | null;
   supplierName?: string | null;
   suggestedSupplierId?: string | null;
@@ -156,29 +159,46 @@ function ImportFromXeroDialog({
   // Tracks which rows the user explicitly overrode (so bulk default changes don't clobber them)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
-  const { data: previewData, isLoading, error, refetch } = useQuery<{
+  // Filter-first search: the bills query is gated behind an explicit Search
+  // press. `search` holds the committed filter values (null = not searched yet).
+  // A nonce lets pressing Search re-run even with identical filters.
+  const [search, setSearch] = useState<{ since: string; trackingOptionId: string; nonce: number } | null>(null);
+
+  // Tracking (project) options are fetched independently of the bills preview so
+  // the dropdown is ready the moment the modal opens — no waiting on a bills load.
+  const { data: trackingData } = useQuery<{ trackingOptions: XeroTrackingOption[] }>({
+    queryKey: ["/api/xero/project-tracking-options"],
+    enabled: open,
+  });
+  const trackingOptions: XeroTrackingOption[] = trackingData?.trackingOptions || [];
+
+  const { data: previewData, isLoading, isFetching, error } = useQuery<{
     bills: XeroBillPreview[];
     page: number;
     trackingOptions: XeroTrackingOption[];
   }>({
-    queryKey: ["/api/xero/bills/import-preview", sinceDate, trackingFilter],
+    queryKey: ["/api/xero/bills/import-preview", search?.since, search?.trackingOptionId, search?.nonce],
     queryFn: async () => {
       const params = new URLSearchParams();
-      if (sinceDate) params.set("since", sinceDate);
+      if (search?.since) params.set("since", search.since);
       // When a job is selected, ask the server to page through every Xero bill
       // and filter by tracking category — otherwise only the most-recent 100
       // bills are searched and the job's older bills go missing.
-      if (trackingFilter !== "__all__") params.set("trackingOptionId", trackingFilter);
+      if (search && search.trackingOptionId !== "__all__") params.set("trackingOptionId", search.trackingOptionId);
       const qs = params.toString() ? `?${params.toString()}` : "";
       const res = await fetch(`/api/xero/bills/import-preview${qs}`, { credentials: "include" });
       if (!res.ok) throw new Error((await res.text()) || "Failed to load Xero bills");
       return res.json();
     },
-    enabled: open,
+    enabled: open && !!search,
   });
 
+  const hasSearched = !!search;
   const allXeroBills = previewData?.bills || [];
-  const trackingOptions: XeroTrackingOption[] = previewData?.trackingOptions || [];
+
+  const runSearch = () => {
+    setSearch({ since: sinceDate, trackingOptionId: trackingFilter, nonce: Date.now() });
+  };
 
   // Seed projectMap when bills load or defaultProjectId changes.
   useEffect(() => {
@@ -210,7 +230,8 @@ function ImportFromXeroDialog({
     });
   }, [allXeroBills]);
 
-  // When the dialog opens, reset state.
+  // When the dialog opens, reset state — including the gated search, so the
+  // results area starts on the prompt/empty state and no bills query runs.
   useEffect(() => {
     if (open) {
       setSelectedIds(new Set());
@@ -218,6 +239,8 @@ function ImportFromXeroDialog({
       setSupplierMap(new Map());
       setSupplierFilter("");
       setTrackingFilter("__all__");
+      setSinceDate("");
+      setSearch(null);
     }
   }, [open]);
 
@@ -264,13 +287,17 @@ function ImportFromXeroDialog({
   });
 
   const visibleBills = useMemo(() => {
-    const selectedTrackingName = trackingFilter !== "__all__"
-      ? trackingOptions.find(o => o.id === trackingFilter)?.name
+    // Tracking is filtered server-side at Search time; the client filter mirrors
+    // the COMMITTED search value (not the live dropdown) so changing the dropdown
+    // without pressing Search does not silently reshuffle the results.
+    const committedTracking = search?.trackingOptionId ?? "__all__";
+    const selectedTrackingName = committedTracking !== "__all__"
+      ? trackingOptions.find(o => o.id === committedTracking)?.name
       : undefined;
     return allXeroBills.filter(b => {
       if (supplierFilter && !(b.contactName || "").toLowerCase().includes(supplierFilter.toLowerCase())) return false;
-      if (trackingFilter !== "__all__") {
-        const matchById = b.trackingOptionId === trackingFilter;
+      if (committedTracking !== "__all__") {
+        const matchById = b.trackingOptionId === committedTracking;
         const matchByName = !b.trackingOptionId && selectedTrackingName
           ? b.trackingOptionName === selectedTrackingName
           : false;
@@ -278,7 +305,7 @@ function ImportFromXeroDialog({
       }
       return true;
     });
-  }, [allXeroBills, supplierFilter, trackingFilter, trackingOptions]);
+  }, [allXeroBills, supplierFilter, search, trackingOptions]);
 
   const importableBills = visibleBills.filter(b => !b.alreadyImported);
 
@@ -413,16 +440,21 @@ function ImportFromXeroDialog({
               </SelectContent>
             </Select>
           </div>
-          <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isLoading} className="ml-auto">
-            {isLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : "Refresh"}
+          <Button size="sm" onClick={runSearch} disabled={isFetching} className="ml-auto" data-testid="button-search-xero-bills">
+            {isFetching ? <><Loader2 className="w-3 h-3 mr-2 animate-spin" /> Searching…</> : <><Search className="w-3 h-3 mr-2" /> Search</>}
           </Button>
         </div>
 
         <div className="flex-1 overflow-auto border rounded-md min-h-[200px]">
-          {isLoading ? (
+          {!hasSearched ? (
+            <div className="flex flex-col items-center justify-center h-full gap-2 p-6 text-center text-sm text-muted-foreground" data-testid="text-import-prompt">
+              <Search className="w-6 h-6 opacity-60" />
+              <span>Set your filters and press Search to load bills from Xero.</span>
+            </div>
+          ) : isLoading || isFetching ? (
             <div className="flex items-center justify-center h-32 text-sm text-muted-foreground">
               <Loader2 className="w-4 h-4 animate-spin mr-2" />
-              {trackingFilter !== "__all__"
+              {search && search.trackingOptionId !== "__all__"
                 ? "Searching all Xero bills for this job…"
                 : "Loading Xero bills..."}
             </div>
@@ -531,7 +563,21 @@ function ImportFromXeroDialog({
                       )}
                     </TableCell>
                     {trackingOptions.length > 0 && (
-                      <TableCell className="text-xs text-muted-foreground">{b.trackingOptionName || "—"}</TableCell>
+                      <TableCell className="text-xs text-muted-foreground">
+                        {b.multipleTrackingOptions ? (
+                          <span
+                            className="inline-flex items-center gap-1 text-amber-600 dark:text-amber-500"
+                            title={`This bill's line items span multiple projects (${(b.trackingOptionNames || []).join(", ")}). Only one project will be assigned — choose it below.`}
+                            data-testid={`badge-split-project-${b.xeroInvoiceId}`}
+                          >
+                            <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                            {b.trackingOptionName || "—"}
+                            <span className="ml-0.5">+{Math.max(0, (b.trackingOptionNames?.length || 1) - 1)}</span>
+                          </span>
+                        ) : (
+                          b.trackingOptionName || "—"
+                        )}
+                      </TableCell>
                     )}
                     <TableCell className="text-xs">{formatDate(b.date)}</TableCell>
                     <TableCell>

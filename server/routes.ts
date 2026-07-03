@@ -31976,9 +31976,17 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
         }
       }
 
-      // Helper: extract TC2 tracking option from the first line item that has it.
-      const extractTrackingOption = (xb: any): { trackingOptionId?: string; trackingOptionName?: string } => {
-        if (!tc2Id) return {};
+      // Helper: extract TC2 tracking option(s) referenced by a bill's line items.
+      // A BuildPro bill belongs to ONE project, so we assign it to the FIRST TC2
+      // option found — but we also detect when the line items span MORE THAN ONE
+      // distinct TC2 option so the UI can flag the bill for the user to decide.
+      const extractTrackingOption = (
+        xb: any,
+      ): { trackingOptionId?: string; trackingOptionName?: string; multipleTrackingOptions: boolean; trackingOptionNames: string[] } => {
+        if (!tc2Id) return { multipleTrackingOptions: false, trackingOptionNames: [] };
+        let first: { trackingOptionId?: string; trackingOptionName?: string } | undefined;
+        // Distinct TC2 options keyed by resolved id (falling back to the option name).
+        const distinct = new Map<string, string>();
         for (const line of (xb.LineItems || [])) {
           for (const tc of (line.Tracking || [])) {
             if (tc.TrackingCategoryID === tc2Id) {
@@ -31986,11 +31994,18 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
               // trackingOptions list by matching the option name when it is absent.
               const resolvedId = tc.TrackingOptionID ||
                 trackingOptions.find((o: any) => o.name === tc.Option)?.id;
-              return { trackingOptionId: resolvedId, trackingOptionName: tc.Option };
+              const key = resolvedId || tc.Option;
+              if (key) distinct.set(key, tc.Option);
+              if (!first) first = { trackingOptionId: resolvedId, trackingOptionName: tc.Option };
             }
           }
         }
-        return {};
+        return {
+          trackingOptionId: first?.trackingOptionId,
+          trackingOptionName: first?.trackingOptionName,
+          multipleTrackingOptions: distinct.size > 1,
+          trackingOptionNames: Array.from(distinct.values()),
+        };
       };
 
       // Always page through EVERY Xero bill (100 per page) — a single-page
@@ -32068,6 +32083,8 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
             currencyCode: xb.CurrencyCode,
             trackingOptionId: tracking.trackingOptionId,
             trackingOptionName: tracking.trackingOptionName,
+            multipleTrackingOptions: tracking.multipleTrackingOptions,
+            trackingOptionNames: tracking.trackingOptionNames,
             // HasAttachments comes back on the Invoices list response itself —
             // so we can flag "this bill has a source document" with ZERO extra
             // Xero calls. The file itself is only downloaded later, when the
@@ -32574,6 +32591,35 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
     } catch (error: any) {
       console.error("Error fetching Xero tracking categories:", error);
       res.status(500).json({ error: error.message || "Failed to fetch tracking categories" });
+    }
+  });
+
+  // Xero: Fast list of the TC2 (project) tracking options for the import filter
+  // dropdown. Decoupled from the slow bills preview so the modal's Tracking
+  // filter is ready as soon as it opens — no bills fetch required.
+  app.get("/api/xero/project-tracking-options", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+
+      const connection = await storage.getXeroConnectionByCompanyId(companyId);
+      if (!connection) return res.status(400).json({ error: "Xero is not connected" });
+
+      const tc2Id = (connection as any).trackingCategory2Id as string | null | undefined;
+      if (!tc2Id) return res.json({ trackingOptions: [] });
+
+      const allCategories = await xeroService.getTrackingCategories(connection.id);
+      const tc2 = allCategories.find((tc: any) => tc.TrackingCategoryID === tc2Id);
+      const trackingOptions = tc2
+        ? ((tc2.Options || []) as any[])
+            .filter((o: any) => o.Status === "ACTIVE")
+            .map((o: any) => ({ id: o.TrackingOptionID, name: o.Name }))
+        : [];
+      res.json({ trackingOptions });
+    } catch (error: any) {
+      console.error("Error fetching Xero project tracking options:", error);
+      res.status(500).json({ error: error.message || "Failed to fetch tracking options" });
     }
   });
 
