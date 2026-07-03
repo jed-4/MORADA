@@ -161,7 +161,7 @@ function DroppableColumn({
   return (
     <div
       ref={setNodeRef}
-      className={`flex flex-col h-full rounded-xl border transition-all duration-200 ${
+      className={`flex flex-col flex-1 min-h-0 rounded-xl border transition-all duration-200 ${
         isHighlighted ? 'border-2 border-primary border-dashed bg-primary/10' : 'border-border/50'
       }`}
       style={!isHighlighted ? bgStyle : undefined}
@@ -678,7 +678,7 @@ export default function TaskBoard({ tasks: propTasks, isLoading: propIsLoading, 
               const columnTasks = tasksByGroup[column.status] || [];
               
               return (
-                <div key={column.id} className={`${getColumnWidthClass()} flex-shrink-0 max-h-full`}>
+                <div key={column.id} className={`${getColumnWidthClass()} flex-shrink-0 flex flex-col max-h-full`}>
                   <DroppableColumn
                     column={column}
                     tasks={columnTasks}
