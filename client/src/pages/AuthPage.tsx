@@ -11,7 +11,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useToast } from '@/hooks/use-toast';
 import { queryClient } from '@/lib/queryClient';
-import { Building2, Mail, Lock, User, Loader2, CheckCircle2, ArrowLeft } from 'lucide-react';
+import { Mail, Lock, User, Loader2, CheckCircle2, ArrowLeft } from 'lucide-react';
+import moradaLogo from "@assets/icon_1783074833445.png";
 
 const loginSchema = z.object({
   email: z.string().email('Please enter a valid email'),
@@ -156,9 +157,7 @@ export default function AuthPage() {
       <div className="w-full max-w-md space-y-6">
         <div className="text-center space-y-2">
           <div className="flex justify-center">
-            <div className="bg-primary/10 p-3 rounded-xl">
-              <Building2 className="h-8 w-8 text-primary" />
-            </div>
+            <img src={moradaLogo} alt="Morada" className="h-16 w-16 rounded-xl object-contain" />
           </div>
           <h1 className="text-2xl font-bold">Morada</h1>
           <p className="text-muted-foreground">Project management for builders</p>

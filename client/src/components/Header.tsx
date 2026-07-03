@@ -1,4 +1,5 @@
-import { Calendar, User, Settings, LogOut, Building2, Plus, FileText, CheckSquare, Folder, Palette, ChevronDown, Home, MessageSquare, Clock, Calculator, FileBarChart, FileSearch, HelpCircle, File, DollarSign, Receipt, BookOpen, Timer, PiggyBank, FolderOpen, Users, ClipboardList, Kanban, Search, ChevronLeft, ChevronRight, Star, GanttChart, HardDrive, Clipboard, LayoutDashboard, Check, Lightbulb, Bug, LifeBuoy, Gift } from "lucide-react";
+import { Calendar, User, Settings, LogOut, Plus, FileText, CheckSquare, Folder, Palette, ChevronDown, Home, MessageSquare, Clock, Calculator, FileBarChart, FileSearch, HelpCircle, File, DollarSign, Receipt, BookOpen, Timer, PiggyBank, FolderOpen, Users, ClipboardList, Kanban, Search, ChevronLeft, ChevronRight, Star, GanttChart, HardDrive, Clipboard, LayoutDashboard, Check, Lightbulb, Bug, LifeBuoy, Gift } from "lucide-react";
+import moradaLogo from "@assets/icon_1783074833445.png";
 import { useLocation } from "wouter";
 import { Crisp } from "crisp-sdk-web";
 import { useState, useEffect, useMemo, useCallback } from "react";
@@ -303,9 +304,7 @@ export default function Header() {
     <header className="flex items-center justify-between px-3 py-0 sticky top-0 z-50 flex-shrink-0">
       <div className="flex items-center gap-2">
         {/* Logo */}
-        <div className="flex items-center justify-center w-6 h-6 bg-primary rounded" data-testid="company-logo">
-          <Building2 className="h-3.5 w-3.5 text-primary-foreground" />
-        </div>
+        <img src={moradaLogo} alt="Morada" className="w-6 h-6 rounded object-contain" data-testid="company-logo" />
 
         {/* Business Name Button (link only — section dropdown removed; sections live in the sidebar) */}
         <button

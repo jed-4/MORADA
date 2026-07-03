@@ -2,6 +2,7 @@ import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Building2, CheckCircle2, Calendar, FileText, DollarSign, Users, ArrowRight } from "lucide-react";
+import moradaLogo from "@assets/icon_1783074833445.png";
 
 export default function LandingPage() {
   const [, navigate] = useLocation();
@@ -11,7 +12,7 @@ export default function LandingPage() {
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <header className="flex items-center justify-between py-6">
           <div className="flex items-center gap-2">
-            <Building2 className="h-8 w-8 text-primary" data-testid="logo-icon" />
+            <img src={moradaLogo} alt="Morada" className="h-8 w-8 rounded object-contain" data-testid="logo-icon" />
             <span className="text-2xl font-bold text-foreground" data-testid="text-logo">Morada</span>
           </div>
           <div className="flex items-center gap-3">
