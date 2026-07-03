@@ -669,7 +669,7 @@ export default function TaskBoard({ tasks: propTasks, isLoading: propIsLoading, 
       <div className="flex flex-col h-full px-2 pb-6" data-testid="task-board">
         <div 
           ref={scrollContainerRef}
-          className="flex flex-1 min-h-0 gap-4 overflow-x-auto pb-4 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100"
+          className="flex flex-1 min-h-0 items-start gap-4 overflow-x-auto pb-4 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100"
           style={{ 
             scrollbarWidth: 'thin', 
             scrollBehavior: 'smooth'
@@ -678,7 +678,7 @@ export default function TaskBoard({ tasks: propTasks, isLoading: propIsLoading, 
               const columnTasks = tasksByGroup[column.status] || [];
               
               return (
-                <div key={column.id} className={`${getColumnWidthClass()} flex-shrink-0 h-full`}>
+                <div key={column.id} className={`${getColumnWidthClass()} flex-shrink-0 max-h-full`}>
                   <DroppableColumn
                     column={column}
                     tasks={columnTasks}
