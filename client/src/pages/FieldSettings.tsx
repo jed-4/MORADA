@@ -308,7 +308,7 @@ export default function FieldSettings() {
 
   // Fetch field options for selected category
   const { data: allOptions = [] } = useQuery<FieldOption[]>({
-    queryKey: ['/api/field-options'],
+    queryKey: ['/api/field-options', selectedCategoryId],
     enabled: !!selectedCategoryId,
     queryFn: async () => {
       if (!selectedCategoryId) return [];
