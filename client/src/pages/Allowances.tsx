@@ -867,39 +867,6 @@ export default function Allowances() {
                         </div>
                       );
                     })}
-
-                    {/* Group subtotal row (36px) */}
-                    <div
-                      className={`${colGrid} h-9 px-4 bg-muted/20 border-y border-border`}
-                      data-testid={`group-subtotal-${groupIdx}`}
-                    >
-                      <div></div>
-                      <div className="text-[11px] font-semibold text-muted-foreground pl-6 truncate">
-                        Subtotal — {groupName}
-                      </div>
-                      <div></div>
-                      <div></div>
-                      <div className="text-[12px] font-semibold text-foreground tabular-nums text-right">
-                        {formatCurrency(groupEst)}
-                      </div>
-                      <div></div>
-                      <div className="text-[12px] font-semibold text-foreground tabular-nums text-right">
-                        {groupAct > 0 ? formatCurrency(groupAct) : "—"}
-                      </div>
-                      <div
-                        className={`text-[12px] font-semibold tabular-nums text-right ${
-                          groupVar.tone === "under"
-                            ? "text-[hsl(var(--sage))]"
-                            : groupVar.tone === "over"
-                              ? "text-[hsl(var(--coral))]"
-                              : "text-muted-foreground"
-                        }`}
-                      >
-                        {groupAct > 0 ? groupVar.text : "—"}
-                      </div>
-                      <div></div>
-                      <div></div>
-                    </div>
                   </>
                 )}
               </div>
