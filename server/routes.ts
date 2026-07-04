@@ -2470,7 +2470,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
           switch (action) {
             case "changeStatus":
               if (!status) throw new Error("Status required");
-              await storage.updateTask(taskId, { status });
+              const existingBulkTask = await storage.getTask(taskId);
+              const updatedBulkTask = await storage.updateTask(taskId, { status });
+              if (existingBulkTask && updatedBulkTask) {
+                await recordTaskActivity(req, existingBulkTask, updatedBulkTask);
+              }
               success++;
               break;
               
