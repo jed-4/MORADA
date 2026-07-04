@@ -49,6 +49,11 @@ const STATUS_LABEL: Record<string, string> = {
   draft: "Draft", sent: "Sent", partial: "Partial", paid: "Paid", overdue: "Overdue",
 };
 
+// An invoice only carries a real amount "Due" once it has been issued. Drafts are
+// not yet a receivable; paid invoices have a zero balance (and show "Paid").
+const ISSUED_INVOICE_STATUSES = new Set(["sent", "partial", "overdue"]);
+const isIssuedInvoice = (status: string) => ISSUED_INVOICE_STATUSES.has(status);
+
 function StatusChip({ status }: { status: string }) {
   return <StatusBadge status={status} label={STATUS_LABEL[status]} />;
 }
@@ -198,7 +203,9 @@ export default function ClientInvoices({ embedded }: { embedded?: boolean } = {}
   const financials = useMemo(() => {
     const invoicedTotal = filteredInvoices.reduce((s, i) => s + i.totalAmount, 0);
     const paidTotal     = filteredInvoices.reduce((s, i) => s + i.paidAmount, 0);
-    const balanceTotal  = filteredInvoices.reduce((s, i) => s + i.balanceAmount, 0);
+    // Only issued invoices are a real receivable — drafts (not yet owed) and paid
+    // (zero balance) are excluded so this reconciles with the per-row "Due" column.
+    const balanceTotal  = filteredInvoices.reduce((s, i) => s + (isIssuedInvoice(i.status) ? i.balanceAmount : 0), 0);
 
     // Original contract = LIVE total from the selected estimate (inc-GST cents),
     // falling back to the stamped snapshot if metrics haven't loaded.
@@ -325,7 +332,11 @@ export default function ClientInvoices({ embedded }: { embedded?: boolean } = {}
         );
         break;
       case "due":
-        content = (
+        content = invoice.status === "draft" ? (
+          <span className="text-xs font-medium tabular-nums text-muted-foreground" data-testid={`cell-due-${invoice.id}`}>
+            —
+          </span>
+        ) : (
           <span
             className={cn("text-xs font-medium tabular-nums", invoice.balanceAmount <= 0 ? "text-emerald-600 dark:text-emerald-400" : "")}
             data-testid={`cell-due-${invoice.id}`}
@@ -376,7 +387,7 @@ export default function ClientInvoices({ embedded }: { embedded?: boolean } = {}
           case "due_date":       return inv.dueDate ? new Date(inv.dueDate).getTime() : 0;
           case "total":          return inv.totalAmount;
           case "paid":           return inv.paidAmount;
-          case "due":            return inv.balanceAmount;
+          case "due":            return isIssuedInvoice(inv.status) ? inv.balanceAmount : 0;
           default:               return "";
         }
       },

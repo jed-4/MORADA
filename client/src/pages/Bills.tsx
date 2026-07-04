@@ -1068,10 +1068,16 @@ export default function Bills({ embedded }: { embedded?: boolean } = {}) {
       {
         id: "due",
         header: "Due",
-        accessorFn: (b) => b.total - b.paidAmount,
-        cell: ({ row }) => (
-          <span className="font-medium">{formatCurrency(row.original.total - row.original.paidAmount)}</span>
-        ),
+        // An amount is only "Due" once the bill is issued for payment. Drafts,
+        // needs-review and awaiting-approval bills are not yet real payables, so
+        // they show a dash and sort as zero.
+        accessorFn: (b) => (b.status === "awaiting_payment" ? b.total - b.paidAmount : 0),
+        cell: ({ row }) =>
+          row.original.status === "awaiting_payment" ? (
+            <span className="font-medium">{formatCurrency(row.original.total - row.original.paidAmount)}</span>
+          ) : (
+            <span className="text-muted-foreground">—</span>
+          ),
         size: 100,
         meta: { defaultWidth: 100, align: "right", headerLabel: "Due" },
       },
