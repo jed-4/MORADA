@@ -27,6 +27,7 @@ interface TaskCardCompactProps {
     showDueDate?: boolean;
     showPriority?: boolean;
     showProject?: boolean;
+    showTags?: boolean;
   };
   onDelete?: (task: Task) => void;
   showActions?: boolean;
@@ -106,10 +107,12 @@ export default function TaskCardCompact({ task, onClick, isDragging = false, dis
   const statusColor = getStatusColor(task.status, isCompleted);
   const priorityColor = getPriorityColor(task.priority);
   const hasCostOrUnits = task.estimatedCost || task.estimatedUnits;
+  const taskTags = Array.isArray((task as any).tags) ? ((task as any).tags as string[]) : [];
+  const showTags = displaySettings?.showTags !== false && taskTags.length > 0;
 
   return (
     <Card
-      className={`h-[90px] transition-all duration-200 cursor-pointer rounded-xl border-border/50 ${
+      className={`min-h-[90px] transition-all duration-200 cursor-pointer rounded-xl border-border/50 ${
         isHovered ? 'shadow-lg scale-[1.02]' : 'shadow-sm'
       } ${isDragging ? 'opacity-80 shadow-xl' : ''} group`}
       onClick={onClick}
@@ -155,6 +158,25 @@ export default function TaskCardCompact({ task, onClick, isDragging = false, dis
                 )}
                 {task.estimatedUnits && (
                   <span>{task.estimatedUnits} units</span>
+                )}
+              </div>
+            )}
+
+            {/* Tags - small row below title */}
+            {showTags && (
+              <div className="flex flex-wrap items-center gap-1 mt-1">
+                {taskTags.slice(0, 3).map((tag, index) => (
+                  <Badge
+                    key={index}
+                    variant="secondary"
+                    className="text-data px-1.5 py-0 h-4 rounded-full no-default-hover-elevate no-default-active-elevate max-w-[90px]"
+                    data-testid={`tag-${task.id}-${index}`}
+                  >
+                    <span className="truncate">{tag}</span>
+                  </Badge>
+                ))}
+                {taskTags.length > 3 && (
+                  <span className="text-data text-muted-foreground">+{taskTags.length - 3}</span>
                 )}
               </div>
             )}

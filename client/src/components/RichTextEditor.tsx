@@ -1,5 +1,5 @@
 import { useEditor, EditorContent } from '@tiptap/react';
-import { useEffect, useRef } from 'react';
+import { Fragment, useEffect, useRef } from 'react';
 import StarterKit from '@tiptap/starter-kit';
 import { TextStyle } from '@tiptap/extension-text-style';
 import { Underline } from '@tiptap/extension-underline';
@@ -34,6 +34,8 @@ interface RichTextEditorProps {
   disabled?: boolean;
   'data-testid'?: string;
   placeholders?: RichTextPlaceholder[];
+  /** Render the formatting buttons as a single vertical column on the left. */
+  verticalToolbar?: boolean;
 }
 
 const extensions = [
@@ -52,6 +54,7 @@ export function RichTextEditor({
   disabled = false,
   'data-testid': testId,
   placeholders,
+  verticalToolbar = false,
 }: RichTextEditorProps) {
   const initialContentRef = useRef(content);
   const isInternalChange = useRef(false);
@@ -121,68 +124,85 @@ export function RichTextEditor({
     editor.chain().focus().insertContent(token).run();
   };
 
+  const toolItems = [
+    {
+      key: 'bold',
+      icon: Bold,
+      onClick: () => editor.chain().focus().toggleBold().run(),
+      isActive: editor.isActive('bold'),
+      group: 0,
+      testId: testId ? `${testId}-bold-button` : undefined,
+    },
+    {
+      key: 'italic',
+      icon: Italic,
+      onClick: () => editor.chain().focus().toggleItalic().run(),
+      isActive: editor.isActive('italic'),
+      group: 0,
+      testId: testId ? `${testId}-italic-button` : undefined,
+    },
+    {
+      key: 'underline',
+      icon: UnderlineIcon,
+      onClick: () => editor.chain().focus().toggleUnderline().run(),
+      isActive: editor.isActive('underline'),
+      group: 0,
+      testId: testId ? `${testId}-underline-button` : undefined,
+    },
+    {
+      key: 'bulletList',
+      icon: List,
+      onClick: () => editor.chain().focus().toggleBulletList().run(),
+      isActive: editor.isActive('bulletList'),
+      group: 1,
+      testId: testId ? `${testId}-bullet-list-button` : undefined,
+    },
+    {
+      key: 'orderedList',
+      icon: ListOrdered,
+      onClick: () => editor.chain().focus().toggleOrderedList().run(),
+      isActive: editor.isActive('orderedList'),
+      group: 1,
+      testId: testId ? `${testId}-ordered-list-button` : undefined,
+    },
+    {
+      key: 'clear',
+      icon: Type,
+      onClick: () => editor.chain().focus().clearNodes().unsetAllMarks().run(),
+      isActive: false,
+      group: 2,
+      testId: testId ? `${testId}-clear-format-button` : undefined,
+    },
+  ];
+
+  const toolButtons = toolItems.map((item, index) => {
+    const Icon = item.icon;
+    const prev = toolItems[index - 1];
+    // In horizontal mode we keep the subtle dividers between button groups;
+    // the vertical minimalist rail drops them for a clean single column.
+    const showDivider = !verticalToolbar && !!prev && prev.group !== item.group;
+    return (
+      <Fragment key={item.key}>
+        {showDivider && <div className="w-px h-6 bg-border mx-1" />}
+        <ToolbarButton onClick={item.onClick} isActive={item.isActive} testId={item.testId}>
+          <Icon className="h-4 w-4" />
+        </ToolbarButton>
+      </Fragment>
+    );
+  });
+
   return (
-    <div className={cn('border rounded-md', className)} data-testid={testId}>
-      <div className="border-b p-2 flex items-center gap-1 flex-wrap">
-        <div className="flex items-center gap-1">
-          <ToolbarButton
-            onClick={() => editor.chain().focus().toggleBold().run()}
-            isActive={editor.isActive('bold')}
-            testId={testId ? `${testId}-bold-button` : undefined}
-          >
-            <Bold className="h-4 w-4" />
-          </ToolbarButton>
+    <div className={cn('border rounded-md', verticalToolbar && 'flex', className)} data-testid={testId}>
+      <div
+        className={cn(
+          verticalToolbar
+            ? 'border-r p-1.5 flex flex-col items-center gap-1 shrink-0'
+            : 'border-b p-2 flex items-center gap-1 flex-wrap'
+        )}
+      >
+        {toolButtons}
 
-          <ToolbarButton
-            onClick={() => editor.chain().focus().toggleItalic().run()}
-            isActive={editor.isActive('italic')}
-            testId={testId ? `${testId}-italic-button` : undefined}
-          >
-            <Italic className="h-4 w-4" />
-          </ToolbarButton>
-
-          <ToolbarButton
-            onClick={() => editor.chain().focus().toggleUnderline().run()}
-            isActive={editor.isActive('underline')}
-            testId={testId ? `${testId}-underline-button` : undefined}
-          >
-            <UnderlineIcon className="h-4 w-4" />
-          </ToolbarButton>
-        </div>
-
-        <div className="w-px h-6 bg-border mx-1" />
-
-        <div className="flex items-center gap-1">
-          <ToolbarButton
-            onClick={() => editor.chain().focus().toggleBulletList().run()}
-            isActive={editor.isActive('bulletList')}
-            testId={testId ? `${testId}-bullet-list-button` : undefined}
-          >
-            <List className="h-4 w-4" />
-          </ToolbarButton>
-
-          <ToolbarButton
-            onClick={() => editor.chain().focus().toggleOrderedList().run()}
-            isActive={editor.isActive('orderedList')}
-            testId={testId ? `${testId}-ordered-list-button` : undefined}
-          >
-            <ListOrdered className="h-4 w-4" />
-          </ToolbarButton>
-        </div>
-
-        <div className="w-px h-6 bg-border mx-1" />
-
-        <div className="flex items-center gap-1">
-          <ToolbarButton
-            onClick={() => editor.chain().focus().clearNodes().unsetAllMarks().run()}
-            isActive={false}
-            testId={testId ? `${testId}-clear-format-button` : undefined}
-          >
-            <Type className="h-4 w-4" />
-          </ToolbarButton>
-        </div>
-
-        {placeholders && placeholders.length > 0 && (
+        {!verticalToolbar && placeholders && placeholders.length > 0 && (
           <>
             <div className="w-px h-6 bg-border mx-1" />
             <Select
@@ -208,7 +228,7 @@ export function RichTextEditor({
         )}
       </div>
 
-      <div className="relative">
+      <div className={cn('relative', verticalToolbar && 'flex-1 min-w-0')}>
         <EditorContent
           editor={editor}
           className={cn(

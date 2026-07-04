@@ -72,7 +72,6 @@ import {
   MoreHorizontal,
   Plus,
   GripVertical,
-  Pencil,
   Bell,
   FileText,
   ExternalLink,
@@ -98,6 +97,7 @@ import { useUpload } from "@/hooks/use-upload";
 import { SetReminderDialog, PendingReminderData } from "@/components/SetReminderDialog";
 import { DriveFilePicker } from "@/components/DriveFilePicker";
 import { Switch } from "@/components/ui/switch";
+import { logActivity } from "@/lib/activityLogger";
 
 const taskFormSchema = z.object({
   title: z.string().min(1, "Title is required"),
@@ -146,6 +146,7 @@ interface SortableChecklistItemProps {
   item: ChecklistItemData;
   onToggle: (id: string) => void;
   onRemove: (id: string) => void;
+  onEdit: (id: string, newText: string) => void;
   onAssigneeChange: (id: string, userId: string | undefined, userName: string | undefined) => void;
   assignees: any[];
   getUserDisplayName: (user: any) => string;
@@ -156,6 +157,7 @@ function SortableChecklistItem({
   item, 
   onToggle, 
   onRemove, 
+  onEdit,
   onAssigneeChange,
   assignees,
   getUserDisplayName,
@@ -169,6 +171,35 @@ function SortableChecklistItem({
     transition,
     isDragging,
   } = useSortable({ id: item.id || '' });
+
+  const [isEditing, setIsEditing] = useState(false);
+  const [editValue, setEditValue] = useState(item.text);
+  const editInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (isEditing) {
+      editInputRef.current?.focus();
+      editInputRef.current?.select();
+    }
+  }, [isEditing]);
+
+  const startEditing = () => {
+    setEditValue(item.text);
+    setIsEditing(true);
+  };
+
+  const commitEdit = () => {
+    const trimmed = editValue.trim();
+    if (trimmed && trimmed !== item.text) {
+      onEdit(item.id!, trimmed);
+    }
+    setIsEditing(false);
+  };
+
+  const cancelEdit = () => {
+    setEditValue(item.text);
+    setIsEditing(false);
+  };
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -196,9 +227,34 @@ function SortableChecklistItem({
         onCheckedChange={() => onToggle(item.id!)}
         data-testid={`checkbox-checklist-${item.id}`}
       />
-      <span className={`text-sm flex-1 ${item.completed ? 'line-through text-muted-foreground' : ''}`}>
-        {item.text}
-      </span>
+      {isEditing ? (
+        <Input
+          ref={editInputRef}
+          value={editValue}
+          onChange={(e) => setEditValue(e.target.value)}
+          onBlur={commitEdit}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              commitEdit();
+            }
+            if (e.key === "Escape") {
+              e.preventDefault();
+              cancelEdit();
+            }
+          }}
+          className="h-6 flex-1 text-sm border-0 shadow-none p-0 focus-visible:ring-0"
+          data-testid={`input-edit-checklist-${item.id}`}
+        />
+      ) : (
+        <span
+          className={`text-sm flex-1 cursor-text ${item.completed ? 'line-through text-muted-foreground' : ''}`}
+          onDoubleClick={startEditing}
+          data-testid={`text-checklist-${item.id}`}
+        >
+          {item.text}
+        </span>
+      )}
       
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
@@ -291,9 +347,7 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
   const task = effectiveTaskId ? (fetchedTask || propTask) : undefined;
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [titleValue, setTitleValue] = useState(task?.title || "");
-  const [subtaskInput, setSubtaskInput] = useState("");
   const [showReminderDialog, setShowReminderDialog] = useState(false);
-  const [showSubtaskInput, setShowSubtaskInput] = useState(false);
   const [checklistItems, setChecklistItems] = useState<Array<{ id?: string; text: string; completed: boolean; assigneeId?: string; assigneeName?: string }>>([]);
   const [checklistInput, setChecklistInput] = useState("");
   const [showChecklistInput, setShowChecklistInput] = useState(false);
@@ -307,6 +361,7 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [pendingReminder, setPendingReminder] = useState<PendingReminderData | null>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
+  const checklistInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
   const { user } = useAuth();
   const businessLabel = (user as any)?.companyNickname || "Business";
@@ -321,11 +376,6 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
 
   const { data: projects = [] } = useQuery<Project[]>({
     queryKey: ["/api/projects"],
-  });
-
-  const { data: subtasks = [] } = useQuery<Task[]>({
-    queryKey: ["/api/tasks", task?.id, "subtasks"],
-    enabled: !!task?.id,
   });
 
   // Fetch checklists for linking to tasks
@@ -718,23 +768,6 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
     },
   });
 
-  const addSubtaskMutation = useMutation({
-    mutationFn: async (title: string) => {
-      return await apiRequest("/api/tasks", "POST", {
-        title,
-        type: "task",
-        parentTaskId: task?.id,
-        projectId: form.watch("projectId"),
-        status: "todo",
-      });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
-      setSubtaskInput("");
-      setShowSubtaskInput(false);
-    },
-  });
-
   // Get default status for reverting (from field categories or fallback)
   const defaultStatusOption = statusOptions.find(opt => opt.isDefault);
   const defaultStatus = defaultStatusOption?.key || "todo";
@@ -803,8 +836,9 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
       if (task) {
         updateChecklistMutation.mutate(newChecklist);
       }
+      // Keep the input open and focused for rapid entry of the next item
       setChecklistInput("");
-      setShowChecklistInput(false);
+      requestAnimationFrame(() => checklistInputRef.current?.focus());
     }
   };
 
@@ -842,6 +876,31 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
     // Only call API mutation for existing tasks
     if (task) {
       updateChecklistMutation.mutate(newChecklist);
+    }
+  };
+
+  const handleEditChecklistItem = (itemId: string, newText: string) => {
+    const previous = checklistItems.find(item => item.id === itemId);
+    if (!previous || previous.text === newText) return;
+    const newChecklist = checklistItems.map(item =>
+      item.id === itemId ? { ...item, text: newText } : item
+    );
+    setChecklistItems(newChecklist);
+    // Only call API mutation for existing tasks
+    if (task) {
+      updateChecklistMutation.mutate(newChecklist);
+      // Record the change in the project activity feed
+      if (task.projectId) {
+        const actorName = user ? getUserDisplayName(user as any) : "Someone";
+        logActivity({
+          projectId: task.projectId,
+          activityType: "task",
+          action: "updated",
+          description: `${actorName} edited checklist item on task '${task.title}' from "${previous.text}" to "${newText}"`,
+          entityId: task.id,
+          entityName: task.title,
+        });
+      }
     }
   };
 
@@ -891,12 +950,6 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
       form.handleSubmit(onSubmit)();
     } else if (e.key === "Escape") {
       onOpenChange(false);
-    }
-  };
-
-  const handleAddSubtask = () => {
-    if (subtaskInput.trim() && task) {
-      addSubtaskMutation.mutate(subtaskInput);
     }
   };
 
@@ -1119,7 +1172,7 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
                       setIsEditingTitle(false);
                     }
                   }}
-                  className="text-xl font-semibold border-0 shadow-none p-0 h-auto leading-tight focus-visible:ring-0"
+                  className="text-xl md:text-xl font-semibold border-0 shadow-none p-0 h-auto leading-tight focus-visible:ring-0"
                   data-testid="input-task-title"
                 />
               ) : (
@@ -1148,6 +1201,7 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
                     onChange={(html) => field.onChange(html)}
                     placeholder="Add a description..."
                     className="min-h-[120px]"
+                    verticalToolbar
                     data-testid="editor-description"
                   />
                 )}
@@ -1184,64 +1238,6 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
                       </span>
                     </div>
                   ))}
-                </div>
-              </div>
-            )}
-
-            {/* Subtasks */}
-            {task && (
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <label className="text-sm font-medium text-muted-foreground">Subtasks</label>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 px-2 text-xs"
-                    onClick={() => setShowSubtaskInput(true)}
-                    data-testid="button-add-subtask"
-                  >
-                    <Plus className="h-3 w-3 mr-1" />
-                    Add
-                  </Button>
-                </div>
-                
-                <div className="space-y-1">
-                  {subtasks.map((subtask) => (
-                    <div
-                      key={subtask.id}
-                      className="flex items-center gap-2 p-2 rounded-md hover:bg-muted/50 group"
-                      data-testid={`subtask-${subtask.id}`}
-                    >
-                      <GripVertical className="h-3 w-3 text-muted-foreground opacity-0 group-hover:opacity-100" />
-                      <Checkbox className="h-4 w-4" />
-                      <span className="text-sm flex-1">{subtask.title}</span>
-                      <Pencil className="h-3 w-3 text-muted-foreground opacity-0 group-hover:opacity-100 cursor-pointer" />
-                    </div>
-                  ))}
-
-                  {showSubtaskInput && (
-                    <div className="flex items-center gap-2 p-2">
-                      <Input
-                        value={subtaskInput}
-                        onChange={(e) => setSubtaskInput(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") handleAddSubtask();
-                          if (e.key === "Escape") {
-                            setShowSubtaskInput(false);
-                            setSubtaskInput("");
-                          }
-                        }}
-                        placeholder="Subtask name..."
-                        className="h-8 text-sm"
-                        autoFocus
-                        data-testid="input-add-subtask"
-                      />
-                    </div>
-                  )}
-
-                  {subtasks.length === 0 && !showSubtaskInput && (
-                    <p className="text-xs text-muted-foreground italic py-2">No subtasks yet</p>
-                  )}
                 </div>
               </div>
             )}
@@ -1351,6 +1347,7 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
                             item={item}
                             onToggle={handleToggleChecklistItem}
                             onRemove={handleRemoveChecklistItem}
+                            onEdit={handleEditChecklistItem}
                             onAssigneeChange={handleChecklistAssigneeChange}
                             assignees={assignees}
                             getUserDisplayName={getUserDisplayName}
@@ -1363,11 +1360,18 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
                     {showChecklistInput && (
                       <div className="flex items-center gap-2 p-2">
                         <Input
+                          ref={checklistInputRef}
                           value={checklistInput}
                           onChange={(e) => setChecklistInput(e.target.value)}
                           onKeyDown={(e) => {
                             if (e.key === "Enter") handleAddChecklistItem();
                             if (e.key === "Escape") {
+                              setShowChecklistInput(false);
+                              setChecklistInput("");
+                            }
+                          }}
+                          onBlur={() => {
+                            if (!checklistInput.trim()) {
                               setShowChecklistInput(false);
                               setChecklistInput("");
                             }

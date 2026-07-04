@@ -500,6 +500,7 @@ export default function TaskBoard({ tasks: propTasks, isLoading: propIsLoading, 
     showStatus: groupBy === 'status' ? false : displaySettings?.showStatus,
     showPriority: groupBy === 'priority' ? false : displaySettings?.showPriority,
     showLabels: groupBy === 'labels' ? false : displaySettings?.showLabels,
+    showTags: groupBy === 'tags' ? false : displaySettings?.showTags,
   };
 
   // Group tasks by the selected groupBy field

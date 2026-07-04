@@ -1683,6 +1683,18 @@ export default function Tasks({ embedded }: { embedded?: boolean } = {}) {
                               />
                               <span>Priority</span>
                             </label>
+                            <label className="flex items-center gap-2 cursor-pointer text-xs">
+                              <Checkbox
+                                checked={cardDisplaySettings.showTags !== false}
+                                onCheckedChange={(checked) =>
+                                  setCardDisplaySettings({
+                                    ...cardDisplaySettings,
+                                    showTags: checked as boolean,
+                                  })
+                                }
+                              />
+                              <span>Tags</span>
+                            </label>
                           </div>
                         </div>
                       )}
