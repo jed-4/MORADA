@@ -42,5 +42,6 @@
 - [Notification push groups](notification-push-groups.md) — createNotification auto-pushes; new type→map in shared/notificationGroups.ts AND mirror group in mobile SettingsScreen PUSH_GROUPS (hardcoded); chat fan-out shared REST+socket via chatNotifications.ts.
 - [Kanban column cap+scroll](kanban-column-cap-scroll.md) — shrink-to-content but cap at board height + scroll: max-h-full on direct child of definite-height row, then flex-1 min-h-0 chain; never height:100% against a max-height-only parent.
 - [Expo/iOS app icon alpha](expo-app-icon-alpha.md) — native icon.png must be flattened (no alpha) or iOS rejects it; icon/splash changes need a fresh EAS build + version bump.
+- [Schedule Save/Discard model](schedule-save-discard-model.md) — editSnapshot json + begin/commit/discard; discard is a diff-restore (detach→delete→reinsert-orig-id→update); each op atomic in ONE tx; client must check res.ok before navigating.
 - [Task activity feed](task-activity-feed.md) — task audit lines share the comment feed; recordTaskActivity must fire on EVERY task-mutation path or logging silently stops; no notifications.
 - [Mention notif tenant validation](mention-notif-tenant-validation.md) — @mention markup carries raw userId; notify-mentions helpers MUST filter IDs through getUsersByCompany before createNotification or a crafted mention pushes to another company.

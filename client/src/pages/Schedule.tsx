@@ -187,7 +187,7 @@ export default function Schedule() {
   const [calendarView, setCalendarView] = useState<"month" | "week" | "day" | "agenda">("month");
   const [calendarDate, setCalendarDate] = useState(new Date());
   const [showItemDialog, setShowItemDialog] = useState(false);
-  const [showLockConfirm, setShowLockConfirm] = useState(false);
+  const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
   const [showOfflineConfirm, setShowOfflineConfirm] = useState(false);
   const [editingItem, setEditingItem] = useState<ScheduleItem | null>(null);
   const [pendingAutoLink, setPendingAutoLink] = useState<{ successorId?: string; predecessorId?: string; insertAfterItemId?: string; lag?: number } | null>(null);
@@ -302,23 +302,25 @@ export default function Schedule() {
   useEffect(() => { scheduleRef.current = schedule; }, [schedule]);
   useEffect(() => { isUnlockedRef.current = isUnlocked; }, [isUnlocked]);
 
-  const lockScheduleAndNavigate = useCallback(async (targetUrl: string) => {
+  const finishEditAndNavigate = useCallback(async (targetUrl: string, mode: "commit" | "discard") => {
     if (schedule && isUnlocked) {
       try {
-        await fetch(`/api/schedules/${schedule.id}/status`, {
-          method: "PUT",
+        const res = await fetch(`/api/schedules/${schedule.id}/edit-${mode}`, {
+          method: "POST",
           headers: { "Content-Type": "application/json" },
           credentials: "include",
-          body: JSON.stringify({ status: "locked" }),
         });
+        if (!res.ok) throw new Error(`Request failed (${res.status})`);
         isUnlockedRef.current = false;
         queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "schedule"] });
         queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "schedules"] });
+        invalidateScheduleItems();
         navigate(targetUrl);
       } catch (e) {
+        // Keep the user on the page so they don't lose work when Save/Discard fails.
         toast({
-          title: "Failed to lock schedule",
-          description: "Please try again.",
+          title: mode === "commit" ? "Failed to save schedule" : "Failed to discard changes",
+          description: "You're still on the schedule — please try again.",
           variant: "destructive",
         });
       }
@@ -326,7 +328,7 @@ export default function Schedule() {
       isUnlockedRef.current = false;
       navigate(targetUrl);
     }
-  }, [schedule, isUnlocked, projectId, navigate, toast]);
+  }, [schedule, isUnlocked, projectId, navigate, toast, invalidateScheduleItems]);
 
   useEffect(() => {
     if (!isUnlocked) return;
@@ -348,11 +350,10 @@ export default function Schedule() {
     const handlePopState = () => {
       if (isUnlockedRef.current && scheduleRef.current) {
         const s = scheduleRef.current;
-        fetch(`/api/schedules/${s.id}/status`, {
-          method: "PUT",
+        fetch(`/api/schedules/${s.id}/edit-commit`, {
+          method: "POST",
           headers: { "Content-Type": "application/json" },
           credentials: "include",
-          body: JSON.stringify({ status: "locked" }),
         }).then(() => {
           queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "schedule"] });
         }).catch(() => {});
@@ -388,13 +389,12 @@ export default function Schedule() {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
       if (isUnlockedRef.current && scheduleRef.current) {
         e.preventDefault();
-        e.returnValue = "Your schedule is unlocked. Leaving will auto-lock it.";
+        e.returnValue = "Your schedule is still being edited. Leaving will save your changes.";
         const s = scheduleRef.current;
-        fetch(`/api/schedules/${s.id}/status`, {
-          method: "PUT",
+        fetch(`/api/schedules/${s.id}/edit-commit`, {
+          method: "POST",
           headers: { "Content-Type": "application/json" },
           credentials: "include",
-          body: JSON.stringify({ status: "locked" }),
         }).catch(() => {});
       }
     };
@@ -403,11 +403,10 @@ export default function Schedule() {
       window.removeEventListener("beforeunload", handleBeforeUnload);
       if (isUnlockedRef.current && scheduleRef.current) {
         const s = scheduleRef.current;
-        fetch(`/api/schedules/${s.id}/status`, {
-          method: "PUT",
+        fetch(`/api/schedules/${s.id}/edit-commit`, {
+          method: "POST",
           headers: { "Content-Type": "application/json" },
           credentials: "include",
-          body: JSON.stringify({ status: "locked" }),
         }).then(() => {
           queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "schedule"] });
         }).catch(() => {});
@@ -534,6 +533,54 @@ export default function Schedule() {
         description: error.message,
         variant: "destructive",
       });
+    },
+  });
+
+  // Save / Discard editing model.
+  // "Edit" snapshots the schedule and unlocks; "Save" commits live edits and
+  // locks; "Discard" reverts every change back to the snapshot and locks.
+  const editBeginMutation = useMutation({
+    mutationFn: async () => {
+      if (!schedule) throw new Error("No schedule found");
+      return await apiRequest(`/api/schedules/${schedule.id}/edit-begin`, "POST");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "schedule"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "schedules"] });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Failed to start editing", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const editCommitMutation = useMutation({
+    mutationFn: async () => {
+      if (!schedule) throw new Error("No schedule found");
+      return await apiRequest(`/api/schedules/${schedule.id}/edit-commit`, "POST");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "schedule"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "schedules"] });
+      toast({ title: "Schedule saved", description: "Your changes have been saved and the schedule is locked." });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Failed to save schedule", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const editDiscardMutation = useMutation({
+    mutationFn: async () => {
+      if (!schedule) throw new Error("No schedule found");
+      return await apiRequest(`/api/schedules/${schedule.id}/edit-discard`, "POST");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "schedule"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "schedules"] });
+      invalidateScheduleItems();
+      toast({ title: "Changes discarded", description: "The schedule has been reverted to how it was before editing." });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Failed to discard changes", description: error.message, variant: "destructive" });
     },
   });
 
@@ -2001,25 +2048,38 @@ export default function Schedule() {
 
                 <div className="w-px h-4 bg-border" />
 
-                {/* Lock/Unlock */}
+                {/* Edit / Save / Discard */}
                 {schedule?.status === 'locked' ? (
                   <button
-                    onClick={() => updateStatusMutation.mutate('online')}
-                    className="h-6 inline-flex items-center gap-1 px-2 rounded-md bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 text-xs font-medium hover-elevate active-elevate-2"
-                    data-testid="button-unlock-schedule"
-                  >
-                    <Lock className="w-3 h-3" />
-                    Locked
-                  </button>
-                ) : (
-                  <button
-                    onClick={() => setShowLockConfirm(true)}
-                    className="h-6 inline-flex items-center gap-1 px-2 rounded-md bg-green-100 dark:bg-green-900/30 text-status-success dark:text-green-400 text-xs font-medium hover-elevate active-elevate-2"
-                    data-testid="button-lock-schedule"
+                    onClick={() => editBeginMutation.mutate()}
+                    disabled={editBeginMutation.isPending}
+                    className="h-6 inline-flex items-center gap-1 px-2 rounded-md bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 text-xs font-medium hover-elevate active-elevate-2 disabled:opacity-60 disabled:pointer-events-none"
+                    data-testid="button-edit-schedule"
                   >
                     <Unlock className="w-3 h-3" />
-                    Unlocked
+                    Edit
                   </button>
+                ) : (
+                  <div className="inline-flex items-center gap-1">
+                    <button
+                      onClick={() => editCommitMutation.mutate()}
+                      disabled={editCommitMutation.isPending || editDiscardMutation.isPending}
+                      className="h-6 inline-flex items-center gap-1 px-2 rounded-md bg-green-100 dark:bg-green-900/30 text-status-success dark:text-green-400 text-xs font-medium hover-elevate active-elevate-2 disabled:opacity-60 disabled:pointer-events-none"
+                      data-testid="button-save-schedule"
+                    >
+                      <Lock className="w-3 h-3" />
+                      Save
+                    </button>
+                    <button
+                      onClick={() => setShowDiscardConfirm(true)}
+                      disabled={editCommitMutation.isPending || editDiscardMutation.isPending}
+                      className="h-6 inline-flex items-center gap-1 px-2 rounded-md bg-red-100 dark:bg-red-900/30 text-destructive dark:text-red-400 text-xs font-medium hover-elevate active-elevate-2 disabled:opacity-60 disabled:pointer-events-none"
+                      data-testid="button-discard-schedule"
+                    >
+                      <X className="w-3 h-3" />
+                      Discard
+                    </button>
+                  </div>
                 )}
 
                 {/* Add Item primary */}
@@ -2282,18 +2342,22 @@ export default function Schedule() {
         </div>
       </div>
 
-      <AlertDialog open={showLockConfirm} onOpenChange={setShowLockConfirm}>
+      <AlertDialog open={showDiscardConfirm} onOpenChange={setShowDiscardConfirm}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Lock Schedule</AlertDialogTitle>
+            <AlertDialogTitle>Discard changes?</AlertDialogTitle>
             <AlertDialogDescription>
-              This will make the schedule read-only and visible to clients. Any unsaved changes will be committed.
+              This will undo every change you've made since you started editing and lock the schedule. This can't be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={() => { updateStatusMutation.mutate("locked"); setShowLockConfirm(false); }}>
-              Lock Schedule
+            <AlertDialogCancel>Keep Editing</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => { editDiscardMutation.mutate(); setShowDiscardConfirm(false); }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive"
+              data-testid="button-confirm-discard"
+            >
+              Discard Changes
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -2627,12 +2691,17 @@ export default function Schedule() {
                         onValueChange={(value) => setFormData({ ...formData, status: value })}
                       >
                         <SelectTrigger id="item-status" data-testid="select-item-status">
-                          <SelectValue />
+                          <SelectValue placeholder="Select status" />
                         </SelectTrigger>
                         <SelectContent>
                           {statusOptions.map((option: any) => (
-                            <SelectItem key={option.id} value={option.key}>
-                              {option.name}
+                            <SelectItem key={option.id} value={option.value}>
+                              <div className="flex items-center gap-2">
+                                {option.color && (
+                                  <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: option.color }} />
+                                )}
+                                {option.label}
+                              </div>
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -3711,9 +3780,9 @@ export default function Schedule() {
       <Dialog open={showLeaveGuardDialog} onOpenChange={setShowLeaveGuardDialog}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Unsaved Schedule Changes</DialogTitle>
+            <DialogTitle>You're still editing this schedule</DialogTitle>
             <DialogDescription>
-              Your schedule is currently unlocked. If you leave this page, your schedule will be locked to prevent unintended changes.
+              You're in the middle of editing. Would you like to save your changes or discard them before leaving?
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -3727,17 +3796,32 @@ export default function Schedule() {
               Stay on Page
             </Button>
             <Button
+              variant="destructive"
+              onClick={() => {
+                setShowLeaveGuardDialog(false);
+                const target = pendingNavigationRef.current;
+                pendingNavigationRef.current = null;
+                if (target) {
+                  finishEditAndNavigate(target, "discard");
+                }
+              }}
+              data-testid="button-discard-leave"
+            >
+              Discard & Leave
+            </Button>
+            <Button
               variant="default"
               onClick={() => {
                 setShowLeaveGuardDialog(false);
                 const target = pendingNavigationRef.current;
                 pendingNavigationRef.current = null;
                 if (target) {
-                  lockScheduleAndNavigate(target);
+                  finishEditAndNavigate(target, "commit");
                 }
               }}
+              data-testid="button-save-leave"
             >
-              Lock & Leave
+              Save & Leave
             </Button>
           </DialogFooter>
         </DialogContent>

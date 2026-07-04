@@ -3387,6 +3387,9 @@ export const schedules = pgTable("schedules", {
   clientVisibilityWeeks: integer("client_visibility_weeks").default(null),
   businessAssignColor: text("business_assign_color"),
   businessAssignStatus: text("business_assign_status"),
+  // Snapshot of all schedule items captured when an editing session begins.
+  // Used to revert-all on Discard. Null when not in an editing session.
+  editSnapshot: json("edit_snapshot"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -6314,6 +6317,9 @@ export const businessScheduleProjects = pgTable("business_schedule_projects", {
   contractEndDate: timestamp("contract_end_date"),
   milestoneStartItemId: varchar("milestone_start_item_id"),
   milestoneEndItemId: varchar("milestone_end_item_id"),
+  // How the Gantt "Build End" divider date is calculated:
+  // 'auto' (project end → milestone-end item → last schedule item), 'project', 'milestone', 'lastItem'
+  buildEndMode: text("build_end_mode").notNull().default("auto"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 }, (table) => ({
   uniqueProjectCompany: uniqueIndex("bsp_project_company_unique").on(table.projectId, table.companyId),

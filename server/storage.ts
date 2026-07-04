@@ -24328,6 +24328,12 @@ export class DbStorage implements IStorage {
       // checklist_templates: company scoping column.
       await db.execute(sql`ALTER TABLE checklist_templates ADD COLUMN IF NOT EXISTS company_id varchar`);
 
+      // business_schedule_projects: Gantt "Build End" divider calculation mode.
+      await db.execute(sql`ALTER TABLE business_schedule_projects ADD COLUMN IF NOT EXISTS build_end_mode text NOT NULL DEFAULT 'auto'`);
+
+      // schedules: per-session snapshot for the Save/Discard editing model.
+      await db.execute(sql`ALTER TABLE schedules ADD COLUMN IF NOT EXISTS edit_snapshot json`);
+
       // Backfill company_id from the creating user's company where missing.
       await db.execute(sql`
         UPDATE checklist_templates ct

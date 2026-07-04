@@ -2370,6 +2370,27 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
     queryKey: ["/api/business-schedule/projects"],
   });
   const bspProject = (bspProjects as any[]).find((p: any) => p.id === projectId);
+
+  // Right-click menu for choosing how the "Build End" divider date is calculated
+  const [buildEndMenu, setBuildEndMenu] = useState<{ x: number; y: number } | null>(null);
+  const setBuildEndModeMutation = useMutation({
+    mutationFn: async (mode: string) => {
+      return apiRequest(`/api/business-schedule/projects/${projectId}`, "PATCH", { buildEndMode: mode });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/business-schedule/projects"] });
+    },
+  });
+  useEffect(() => {
+    if (!buildEndMenu) return;
+    const close = () => setBuildEndMenu(null);
+    window.addEventListener("click", close);
+    window.addEventListener("scroll", close, true);
+    return () => {
+      window.removeEventListener("click", close);
+      window.removeEventListener("scroll", close, true);
+    };
+  }, [buildEndMenu]);
   const milestoneLines = useMemo(() => {
     if (!bspProject) return [];
     const pos = (date: Date) => differenceInDays(date, timelineStart) * pixelsPerDay;
@@ -2387,11 +2408,25 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
       bspProject.milestoneStartDate ? bspProject.milestoneStartDate :
       bspProject.itemStartDate ? bspProject.itemStartDate : null;
 
-    // Build End: hierarchy — project settings → selected item → last schedule item
-    const buildEndRaw =
-      bspProject.projectEndDate ? bspProject.projectEndDate :
-      bspProject.milestoneEndDate ? bspProject.milestoneEndDate :
-      bspProject.itemEndDate ? bspProject.itemEndDate : null;
+    // Build End: calculation source is chosen via right-click menu (buildEndMode).
+    //  - 'project':   project settings end date (fallback: last schedule item)
+    //  - 'milestone': chosen milestone-end item (fallback: last schedule item)
+    //  - 'lastItem':  last schedule item
+    //  - 'auto'/default: project settings → chosen milestone item → last schedule item
+    const buildEndMode = bspProject.buildEndMode || "auto";
+    let buildEndRaw: string | Date | null;
+    if (buildEndMode === "project") {
+      buildEndRaw = bspProject.projectEndDate || bspProject.itemEndDate || null;
+    } else if (buildEndMode === "milestone") {
+      buildEndRaw = bspProject.milestoneEndDate || bspProject.itemEndDate || null;
+    } else if (buildEndMode === "lastItem") {
+      buildEndRaw = bspProject.itemEndDate || null;
+    } else {
+      buildEndRaw =
+        bspProject.projectEndDate ? bspProject.projectEndDate :
+        bspProject.milestoneEndDate ? bspProject.milestoneEndDate :
+        bspProject.itemEndDate ? bspProject.itemEndDate : null;
+    }
 
     if (buildStartRaw) {
       lines.push({ pos: pos(parseLocalMidnight(buildStartRaw)), label: "Build Start", solid: true, color: bspProject.color || "hsl(var(--primary))" });
@@ -3118,8 +3153,10 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
                   }}
                 >
                   <span
-                    className="absolute top-1 left-1 text-label font-semibold whitespace-nowrap rounded px-1 py-0.5"
+                    className={`sticky top-[62px] ml-1 inline-block text-label font-semibold whitespace-nowrap rounded px-1 py-0.5 z-30 ${line.label === "Build End" ? "pointer-events-auto cursor-context-menu" : ""}`}
                     style={{ color: line.color, backgroundColor: "hsl(var(--background) / 0.85)" }}
+                    onContextMenu={line.label === "Build End" ? (e) => { e.preventDefault(); e.stopPropagation(); setBuildEndMenu({ x: e.clientX, y: e.clientY }); } : undefined}
+                    title={line.label === "Build End" ? "Right-click to choose how Build End is calculated" : undefined}
                   >
                     {line.label}
                   </span>
@@ -3688,8 +3725,10 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
                   }}
                 >
                   <span
-                    className="absolute top-1 left-1 text-label font-semibold whitespace-nowrap rounded px-1 py-0.5"
+                    className={`sticky top-[62px] ml-1 inline-block text-label font-semibold whitespace-nowrap rounded px-1 py-0.5 z-30 ${line.label === "Build End" ? "pointer-events-auto cursor-context-menu" : ""}`}
                     style={{ color: line.color, backgroundColor: "hsl(var(--background) / 0.85)" }}
+                    onContextMenu={line.label === "Build End" ? (e) => { e.preventDefault(); e.stopPropagation(); setBuildEndMenu({ x: e.clientX, y: e.clientY }); } : undefined}
+                    title={line.label === "Build End" ? "Right-click to choose how Build End is calculated" : undefined}
                   >
                     {line.label}
                   </span>
@@ -3709,6 +3748,39 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
             top: ripple.y - 24,
           }}
         />
+      )}
+
+      {/* Build End calculation-source right-click menu */}
+      {buildEndMenu && createPortal(
+        <div
+          className="fixed z-[100] min-w-[220px] rounded-md border bg-popover text-popover-foreground shadow-md p-1"
+          style={{ left: buildEndMenu.x, top: buildEndMenu.y }}
+          onClick={(e) => e.stopPropagation()}
+          onContextMenu={(e) => e.preventDefault()}
+          data-testid="menu-build-end-source"
+        >
+          <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">Build End calculated from</div>
+          {[
+            { mode: "auto", label: "Automatic (recommended)" },
+            { mode: "project", label: "Project end date" },
+            { mode: "milestone", label: "Chosen milestone item" },
+            { mode: "lastItem", label: "Last schedule item" },
+          ].map((opt) => {
+            const current = (bspProject?.buildEndMode || "auto") === opt.mode;
+            return (
+              <button
+                key={opt.mode}
+                className="w-full flex items-center gap-2 rounded-sm px-2 py-1.5 text-sm text-left hover-elevate"
+                onClick={() => { setBuildEndModeMutation.mutate(opt.mode); setBuildEndMenu(null); }}
+                data-testid={`menu-build-end-${opt.mode}`}
+              >
+                <Check className={`h-4 w-4 flex-shrink-0 ${current ? "opacity-100" : "opacity-0"}`} />
+                <span className="flex-1">{opt.label}</span>
+              </button>
+            );
+          })}
+        </div>,
+        document.body
       )}
 
       {/* Task Detail Modal */}

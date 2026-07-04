@@ -24591,6 +24591,144 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ---------------------------------------------------------------------------
+  // Save / Discard editing model
+  //
+  // "edit-begin" snapshots every schedule item into schedules.editSnapshot and
+  // unlocks the schedule for live editing. Edits still persist immediately.
+  // "edit-commit" (Save) clears the snapshot and locks — the live edits stand.
+  // "edit-discard" reverts the item set back to the snapshot (a minimal diff so
+  // notes/timesheets on surviving items are preserved), clears the snapshot,
+  // and locks.
+  // ---------------------------------------------------------------------------
+  const SNAPSHOT_REQ_DATE_FIELDS = ["startDate", "endDate", "createdAt", "updatedAt"];
+  const SNAPSHOT_OPT_DATE_FIELDS = ["actualStartDate", "actualEndDate", "completedAt", "baselineStartDate", "baselineEndDate"];
+  const coerceSnapshotRow = (s: any): any => {
+    const row: any = { ...s };
+    for (const f of SNAPSHOT_REQ_DATE_FIELDS) {
+      row[f] = row[f] ? new Date(row[f]) : new Date();
+    }
+    for (const f of SNAPSHOT_OPT_DATE_FIELDS) {
+      row[f] = row[f] ? new Date(row[f]) : null;
+    }
+    return row;
+  };
+  // Compute the lock/status columns the way storage.updateScheduleStatus does,
+  // so the whole begin/commit/discard flow can be applied inside one atomic
+  // transaction instead of two separate writes.
+  const buildScheduleStatusUpdate = async (status: "online" | "locked", userId?: string): Promise<any> => {
+    const updates: any = { status, updatedAt: new Date() };
+    if (status === "locked" && userId) {
+      const user = await db.select().from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+      updates.lockedBy = userId;
+      if (user[0]) {
+        const firstName = user[0].firstName || "";
+        const lastName = user[0].lastName || "";
+        updates.lockedByName = `${firstName} ${lastName}`.trim() || user[0].username || null;
+      } else {
+        updates.lockedByName = null;
+      }
+      updates.lockedAt = new Date();
+    } else if (status !== "locked") {
+      updates.lockedBy = null;
+      updates.lockedByName = null;
+      updates.lockedAt = null;
+    }
+    return updates;
+  };
+
+  app.post("/api/schedules/:id/edit-begin", requireAuth, async (req, res) => {
+    try {
+      const existingSchedule = await storage.getScheduleById(req.params.id);
+      if (!existingSchedule) return res.status(404).json({ error: "Schedule not found" });
+      if (!(await enforceProjectCompany(req, res, existingSchedule.projectId, "Schedule not found"))) return;
+
+      const statusUpdate = await buildScheduleStatusUpdate("online", req.user?.id);
+      const schedule = await db.transaction(async (tx) => {
+        const items = await tx.select().from(scheduleItems).where(eq(scheduleItems.scheduleId, req.params.id));
+        const result = await tx.update(schedules)
+          .set({ ...statusUpdate, editSnapshot: items as any })
+          .where(eq(schedules.id, req.params.id))
+          .returning();
+        return result[0];
+      });
+      res.json(schedule);
+    } catch (error: any) {
+      res.status(500).json({ error: "Failed to begin editing", details: error.message });
+    }
+  });
+
+  app.post("/api/schedules/:id/edit-commit", requireAuth, async (req, res) => {
+    try {
+      const existingSchedule = await storage.getScheduleById(req.params.id);
+      if (!existingSchedule) return res.status(404).json({ error: "Schedule not found" });
+      if (!(await enforceProjectCompany(req, res, existingSchedule.projectId, "Schedule not found"))) return;
+
+      const statusUpdate = await buildScheduleStatusUpdate("locked", req.user?.id);
+      const result = await db.update(schedules)
+        .set({ ...statusUpdate, editSnapshot: null })
+        .where(eq(schedules.id, req.params.id))
+        .returning();
+      res.json(result[0]);
+    } catch (error: any) {
+      res.status(500).json({ error: "Failed to save schedule", details: error.message });
+    }
+  });
+
+  app.post("/api/schedules/:id/edit-discard", requireAuth, async (req, res) => {
+    try {
+      const existingSchedule = await storage.getScheduleById(req.params.id);
+      if (!existingSchedule) return res.status(404).json({ error: "Schedule not found" });
+      if (!(await enforceProjectCompany(req, res, existingSchedule.projectId, "Schedule not found"))) return;
+
+      const snapshot = (existingSchedule as any).editSnapshot as any[] | null;
+      const statusUpdate = await buildScheduleStatusUpdate("locked", req.user?.id);
+      // Restore, clear snapshot and lock all in one transaction so a failure at
+      // any step rolls back the whole discard (never leaves a half-reverted,
+      // still-unlocked schedule).
+      const schedule = await db.transaction(async (tx) => {
+        if (snapshot && Array.isArray(snapshot)) {
+          const current = await tx.select().from(scheduleItems).where(eq(scheduleItems.scheduleId, req.params.id));
+          const snapById = new Map(snapshot.map((s) => [s.id, s]));
+          const curById = new Map(current.map((c) => [c.id, c]));
+
+          // Detach all hierarchy first so deleting session-created items can never
+          // cascade-delete an item we intend to keep (e.g. re-parented rows).
+          await tx.update(scheduleItems).set({ parentItemId: null }).where(eq(scheduleItems.scheduleId, req.params.id));
+
+          // Delete items created during the session (present now, absent in snapshot).
+          const toDelete = current.filter((c) => !snapById.has(c.id)).map((c) => c.id);
+          if (toDelete.length) {
+            await tx.delete(scheduleItems).where(inArray(scheduleItems.id, toDelete));
+          }
+
+          // Re-insert items deleted during the session (in snapshot, gone now) with
+          // their original id so dependency graphs stay consistent. parentItemId is
+          // set in the update pass below once every row exists again.
+          const toInsert = snapshot.filter((s) => !curById.has(s.id));
+          for (const s of toInsert) {
+            await tx.insert(scheduleItems).values({ ...coerceSnapshotRow(s), parentItemId: null });
+          }
+
+          // Restore every snapshot row to its original values (incl. hierarchy).
+          for (const s of snapshot) {
+            const { id, ...rest } = coerceSnapshotRow(s);
+            await tx.update(scheduleItems).set(rest).where(eq(scheduleItems.id, id));
+          }
+        }
+
+        const result = await tx.update(schedules)
+          .set({ ...statusUpdate, editSnapshot: null })
+          .where(eq(schedules.id, req.params.id))
+          .returning();
+        return result[0];
+      });
+      res.json(schedule);
+    } catch (error: any) {
+      res.status(500).json({ error: "Failed to discard changes", details: error.message });
+    }
+  });
+
   // Toggle schedule online/offline (separate from lock state)
   app.patch("/api/schedules/:id/online", requireAuth, async (req, res) => {
     try {
@@ -24853,7 +24991,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
           createData.assignedToName = company.nickname || company.name;
         }
         createData.assignedToId = null;
-        createData.assignedToColor = null;
+        // Apply schedule-level business auto-assign colour and status (mirror PATCH path)
+        let businessSchedule: any = null;
+        if (createData.scheduleId) {
+          businessSchedule = await storage.getScheduleById(createData.scheduleId);
+        }
+        createData.assignedToColor = (businessSchedule as any)?.businessAssignColor || null;
+        if ((businessSchedule as any)?.businessAssignStatus && createData.status === undefined) {
+          createData.status = (businessSchedule as any).businessAssignStatus;
+        }
       }
       
       // Copy contact's scheduleColor and name to assignedTo fields when assigning a contact
@@ -30921,6 +31067,7 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
           milestoneEndItemId: bsp?.milestoneEndItemId || null,
           milestoneStartDate: milestoneStartItem?.startDate || null,
           milestoneEndDate: milestoneEndItem?.endDate || null,
+          buildEndMode: (bsp as any)?.buildEndMode || "auto",
         };
       });
 
@@ -30949,7 +31096,7 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
       if (!companyId) return res.status(400).json({ error: "No company" });
 
       const { projectId } = req.params;
-      const { dateMode, customStartDate, customWeeks, isVisible, sortOrder, contractStartDate, contractEndDate, milestoneStartItemId, milestoneEndItemId } = req.body;
+      const { dateMode, customStartDate, customWeeks, isVisible, sortOrder, contractStartDate, contractEndDate, milestoneStartItemId, milestoneEndItemId, buildEndMode } = req.body;
 
       const existing = await db.select().from(businessScheduleProjects)
         .where(and(
@@ -30968,6 +31115,7 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
         if (contractEndDate !== undefined) updates.contractEndDate = contractEndDate ? new Date(contractEndDate) : null;
         if (milestoneStartItemId !== undefined) updates.milestoneStartItemId = milestoneStartItemId || null;
         if (milestoneEndItemId !== undefined) updates.milestoneEndItemId = milestoneEndItemId || null;
+        if (buildEndMode !== undefined) updates.buildEndMode = buildEndMode || "auto";
 
         const [updated] = await db.update(businessScheduleProjects)
           .set(updates)
@@ -30987,6 +31135,7 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
           contractEndDate: contractEndDate ? new Date(contractEndDate) : null,
           milestoneStartItemId: milestoneStartItemId || null,
           milestoneEndItemId: milestoneEndItemId || null,
+          buildEndMode: buildEndMode || "auto",
         }).returning();
         return res.json(created);
       }
