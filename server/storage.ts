@@ -40,6 +40,7 @@ import {
   type RfqPortalToken, type InsertRfqPortalToken,
   type Rfi, type InsertRfi,
   type RfiComment, type InsertRfiComment,
+  type TaskComment, type InsertTaskComment,
   type Bill, type InsertBill,
   type BillLineItem, type InsertBillLineItem,
   type BillPayment, type InsertBillPayment,
@@ -735,6 +736,12 @@ export interface IStorage {
   createRFIComment(comment: InsertRfiComment): Promise<RfiComment>;
   updateRFIComment(id: string, comment: Partial<InsertRfiComment>): Promise<RfiComment | undefined>;
   deleteRFIComment(id: string): Promise<boolean>;
+  ensureTaskCommentsTable(): Promise<void>;
+  getTaskComments(taskId: string): Promise<TaskComment[]>;
+  getTaskCommentById(id: string): Promise<TaskComment | undefined>;
+  createTaskComment(comment: InsertTaskComment): Promise<TaskComment>;
+  updateTaskComment(id: string, content: string): Promise<TaskComment | undefined>;
+  deleteTaskComment(id: string): Promise<boolean>;
 
   syncCompanyName(): Promise<{ synced: boolean; name?: string }>;
   backfillCompanySettingsCompanyId(): Promise<{ updated: boolean }>;
@@ -14753,6 +14760,91 @@ export class DbStorage implements IStorage {
       return deletedComments.length > 0;
     } catch (error) {
       console.error("Database error in deleteRFIComment:", error);
+      throw error;
+    }
+  }
+
+  async ensureTaskCommentsTable(): Promise<void> {
+    // Additive, idempotent safety net. The deploy build does NOT run drizzle
+    // push, so this guarantees the task_comments table exists in production the
+    // first time the server boots after this feature ships. CREATE ... IF NOT
+    // EXISTS is non-destructive and a no-op once the table is present.
+    try {
+      await db.execute(sql`
+        CREATE TABLE IF NOT EXISTS task_comments (
+          id varchar PRIMARY KEY DEFAULT gen_random_uuid(),
+          task_id varchar NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
+          content text NOT NULL,
+          created_by_id varchar NOT NULL REFERENCES users(id),
+          created_by_name text NOT NULL,
+          created_at timestamp NOT NULL DEFAULT now(),
+          updated_at timestamp NOT NULL DEFAULT now(),
+          edited_at timestamp
+        )
+      `);
+      await db.execute(sql`CREATE INDEX IF NOT EXISTS task_comments_task_idx ON task_comments (task_id)`);
+    } catch (error) {
+      console.error("Failed to ensure task_comments table exists:", error);
+    }
+  }
+
+  async getTaskComments(taskId: string): Promise<TaskComment[]> {
+    try {
+      return await db.select()
+        .from(schema.taskComments)
+        .where(eq(schema.taskComments.taskId, taskId))
+        .orderBy(asc(schema.taskComments.createdAt));
+    } catch (error) {
+      console.error("Database error in getTaskComments:", error);
+      throw error;
+    }
+  }
+
+  async getTaskCommentById(id: string): Promise<TaskComment | undefined> {
+    try {
+      const [row] = await db.select()
+        .from(schema.taskComments)
+        .where(eq(schema.taskComments.id, id))
+        .limit(1);
+      return row;
+    } catch (error) {
+      console.error("Database error in getTaskCommentById:", error);
+      throw error;
+    }
+  }
+
+  async createTaskComment(comment: InsertTaskComment): Promise<TaskComment> {
+    try {
+      const [row] = await db.insert(schema.taskComments).values(comment).returning();
+      return row;
+    } catch (error) {
+      console.error("Database error in createTaskComment:", error);
+      throw error;
+    }
+  }
+
+  async updateTaskComment(id: string, content: string): Promise<TaskComment | undefined> {
+    try {
+      const now = new Date();
+      const [row] = await db.update(schema.taskComments)
+        .set({ content, updatedAt: now, editedAt: now })
+        .where(eq(schema.taskComments.id, id))
+        .returning();
+      return row;
+    } catch (error) {
+      console.error("Database error in updateTaskComment:", error);
+      throw error;
+    }
+  }
+
+  async deleteTaskComment(id: string): Promise<boolean> {
+    try {
+      const deleted = await db.delete(schema.taskComments)
+        .where(eq(schema.taskComments.id, id))
+        .returning();
+      return deleted.length > 0;
+    } catch (error) {
+      console.error("Database error in deleteTaskComment:", error);
       throw error;
     }
   }

@@ -1,0 +1,352 @@
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  ActivityIndicator,
+  Alert,
+  StyleSheet,
+} from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { apiFetch, apiRequest } from '../services/api';
+
+interface TaskComment {
+  id: string;
+  taskId: string;
+  content: string;
+  createdById: string;
+  createdByName: string;
+  createdAt: string;
+  editedAt?: string | null;
+}
+
+interface MentionUser {
+  id: string;
+  firstName?: string | null;
+  lastName?: string | null;
+  email?: string | null;
+}
+
+interface ThemeColors {
+  bg: string;
+  card: string;
+  text: string;
+  secondary: string;
+  border: string;
+  accent: string;
+  muted: string;
+}
+
+interface TaskCommentsProps {
+  taskId: string;
+  currentUserId?: string;
+  colors: ThemeColors;
+  isDark: boolean;
+}
+
+const MENTION_MARKUP = /@\[([^\]]+)\]\(userId:([^)]+)\)/g;
+
+function displayName(u: MentionUser): string {
+  const name = `${u.firstName || ''} ${u.lastName || ''}`.trim();
+  return name || u.email || 'Unknown';
+}
+
+function initials(name: string): string {
+  return (
+    name
+      ?.split(' ')
+      .map((n) => n[0])
+      .join('')
+      .toUpperCase()
+      .slice(0, 2) || '?'
+  );
+}
+
+function relativeTime(iso: string): string {
+  const then = new Date(iso).getTime();
+  const diff = Date.now() - then;
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  return new Date(iso).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' });
+}
+
+// Render @[Name](userId:x) markup as readable, highlighted text.
+function renderContent(content: string, accent: string, textColor: string) {
+  const parts: React.ReactNode[] = [];
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+  MENTION_MARKUP.lastIndex = 0;
+  let key = 0;
+  while ((match = MENTION_MARKUP.exec(content)) !== null) {
+    if (match.index > lastIndex) {
+      parts.push(content.slice(lastIndex, match.index));
+    }
+    parts.push(
+      <Text key={`m-${key++}`} style={{ color: accent, fontWeight: '600' }}>
+        @{match[1]}
+      </Text>,
+    );
+    lastIndex = match.index + match[0].length;
+  }
+  if (lastIndex < content.length) parts.push(content.slice(lastIndex));
+  return <Text style={{ color: textColor, fontSize: 14, lineHeight: 20 }}>{parts}</Text>;
+}
+
+export default function TaskComments({ taskId, currentUserId, colors, isDark }: TaskCommentsProps) {
+  const [comments, setComments] = useState<TaskComment[]>([]);
+  const [users, setUsers] = useState<MentionUser[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [input, setInput] = useState('');
+  const [posting, setPosting] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editValue, setEditValue] = useState('');
+
+  const [mentionActive, setMentionActive] = useState(false);
+  const [mentionQuery, setMentionQuery] = useState('');
+  const [mentionStart, setMentionStart] = useState(-1);
+
+  const inputBg = isDark ? '#0f172a' : '#f1f5f9';
+
+  const loadComments = useCallback(async () => {
+    try {
+      const data = await apiFetch<TaskComment[]>(`/api/tasks/${taskId}/comments`);
+      setComments(data);
+    } catch {
+      setComments([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [taskId]);
+
+  useEffect(() => {
+    setLoading(true);
+    loadComments();
+    apiFetch<MentionUser[]>('/api/users')
+      .then(setUsers)
+      .catch(() => setUsers([]));
+  }, [loadComments]);
+
+  const filteredMentions = useMemo(() => {
+    if (!mentionActive) return [];
+    const q = mentionQuery.toLowerCase();
+    return users.filter((u) => displayName(u).toLowerCase().includes(q)).slice(0, 6);
+  }, [mentionActive, mentionQuery, users]);
+
+  const onChangeInput = (text: string) => {
+    setInput(text);
+    const atMatch = text.match(/(?:^|\s)@([\w'-]*)$/);
+    if (atMatch) {
+      setMentionActive(true);
+      setMentionQuery(atMatch[1] || '');
+      setMentionStart(text.length - (atMatch[1]?.length || 0) - 1);
+    } else {
+      setMentionActive(false);
+    }
+  };
+
+  const pickMention = (u: MentionUser) => {
+    const before = input.slice(0, mentionStart);
+    const inserted = `@[${displayName(u)}](userId:${u.id}) `;
+    setInput(`${before}${inserted}`);
+    setMentionActive(false);
+  };
+
+  const submit = async () => {
+    const content = input.trim();
+    if (!content) return;
+    setPosting(true);
+    try {
+      const res = await apiRequest('/api/task-comments', 'POST', { taskId, content });
+      if (!res.ok) throw new Error('failed');
+      setInput('');
+      await loadComments();
+    } catch {
+      Alert.alert('Error', "Couldn't post comment. Please try again.");
+    } finally {
+      setPosting(false);
+    }
+  };
+
+  const saveEdit = async (id: string) => {
+    const content = editValue.trim();
+    if (!content) return;
+    try {
+      const res = await apiRequest(`/api/task-comments/${id}`, 'PATCH', { content });
+      if (!res.ok) throw new Error('failed');
+      setEditingId(null);
+      setEditValue('');
+      await loadComments();
+    } catch {
+      Alert.alert('Error', "Couldn't save changes. Please try again.");
+    }
+  };
+
+  const remove = (id: string) => {
+    Alert.alert('Delete comment', 'Are you sure you want to delete this comment?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            const res = await apiRequest(`/api/task-comments/${id}`, 'DELETE');
+            if (!res.ok) throw new Error('failed');
+            await loadComments();
+          } catch {
+            Alert.alert('Error', "Couldn't delete comment. Please try again.");
+          }
+        },
+      },
+    ]);
+  };
+
+  return (
+    <View style={styles.section}>
+      <Text style={[styles.sectionLabel, { color: colors.secondary }]}>
+        Comments{comments.length > 0 ? ` (${comments.length})` : ''}
+      </Text>
+
+      {loading ? (
+        <ActivityIndicator color={colors.accent} style={{ marginVertical: 12 }} />
+      ) : comments.length === 0 ? (
+        <Text style={{ color: colors.muted, fontSize: 14, marginBottom: 8 }}>
+          No comments yet. Start the conversation.
+        </Text>
+      ) : (
+        comments.map((c) => {
+          const isOwn = !!currentUserId && c.createdById === currentUserId;
+          const isEditing = editingId === c.id;
+          return (
+            <View key={c.id} style={styles.commentRow}>
+              <View style={[styles.avatar, { backgroundColor: colors.accent }]}>
+                <Text style={styles.avatarText}>{initials(c.createdByName)}</Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <View style={styles.commentHeader}>
+                  <Text style={[styles.commentAuthor, { color: colors.text }]}>{c.createdByName}</Text>
+                  <Text style={[styles.commentTime, { color: colors.muted }]}>
+                    {relativeTime(c.createdAt)}
+                    {c.editedAt ? ' (edited)' : ''}
+                  </Text>
+                </View>
+
+                {isEditing ? (
+                  <View>
+                    <TextInput
+                      value={editValue}
+                      onChangeText={setEditValue}
+                      multiline
+                      style={[
+                        styles.input,
+                        { backgroundColor: inputBg, color: colors.text, borderColor: colors.border },
+                      ]}
+                      placeholderTextColor={colors.muted}
+                    />
+                    <View style={styles.editActions}>
+                      <TouchableOpacity onPress={() => saveEdit(c.id)} style={[styles.btn, { backgroundColor: colors.accent }]}>
+                        <Text style={styles.btnText}>Save</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        onPress={() => {
+                          setEditingId(null);
+                          setEditValue('');
+                        }}
+                        style={styles.btnGhost}
+                      >
+                        <Text style={{ color: colors.secondary, fontWeight: '600' }}>Cancel</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                ) : (
+                  renderContent(c.content, colors.accent, colors.text)
+                )}
+
+                {isOwn && !isEditing && (
+                  <View style={styles.ownActions}>
+                    <TouchableOpacity
+                      onPress={() => {
+                        setEditingId(c.id);
+                        setEditValue(c.content);
+                      }}
+                      style={styles.iconAction}
+                    >
+                      <Ionicons name="pencil" size={14} color={colors.secondary} />
+                      <Text style={[styles.iconActionText, { color: colors.secondary }]}>Edit</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={() => remove(c.id)} style={styles.iconAction}>
+                      <Ionicons name="trash-outline" size={14} color="#ef4444" />
+                      <Text style={[styles.iconActionText, { color: '#ef4444' }]}>Delete</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+              </View>
+            </View>
+          );
+        })
+      )}
+
+      {/* Composer */}
+      <View style={{ marginTop: 8 }}>
+        {mentionActive && filteredMentions.length > 0 && (
+          <View style={[styles.mentionList, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            {filteredMentions.map((u) => (
+              <TouchableOpacity key={u.id} style={styles.mentionItem} onPress={() => pickMention(u)}>
+                <View style={[styles.mentionAvatar, { backgroundColor: colors.accent }]}>
+                  <Text style={styles.avatarText}>{initials(displayName(u))}</Text>
+                </View>
+                <Text style={{ color: colors.text, fontSize: 14 }}>{displayName(u)}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
+        <TextInput
+          value={input}
+          onChangeText={onChangeInput}
+          multiline
+          placeholder="Add a comment… use @ to mention"
+          placeholderTextColor={colors.muted}
+          style={[styles.input, { backgroundColor: inputBg, color: colors.text, borderColor: colors.border }]}
+        />
+        <TouchableOpacity
+          onPress={submit}
+          disabled={!input.trim() || posting}
+          style={[
+            styles.postBtn,
+            { backgroundColor: colors.accent, opacity: !input.trim() || posting ? 0.5 : 1 },
+          ]}
+        >
+          <Text style={styles.btnText}>{posting ? 'Posting…' : 'Comment'}</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  section: { marginTop: 20 },
+  sectionLabel: { fontSize: 13, fontWeight: '600', textTransform: 'uppercase', marginBottom: 10, letterSpacing: 0.5 },
+  commentRow: { flexDirection: 'row', gap: 10, marginBottom: 14 },
+  avatar: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
+  avatarText: { color: '#fff', fontSize: 11, fontWeight: '700' },
+  commentHeader: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 2 },
+  commentAuthor: { fontSize: 14, fontWeight: '600' },
+  commentTime: { fontSize: 12 },
+  input: { borderWidth: 1, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14, minHeight: 40 },
+  editActions: { flexDirection: 'row', gap: 8, marginTop: 8 },
+  ownActions: { flexDirection: 'row', gap: 16, marginTop: 6 },
+  iconAction: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  iconActionText: { fontSize: 13, fontWeight: '500' },
+  btn: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 8 },
+  btnGhost: { paddingHorizontal: 16, paddingVertical: 8 },
+  btnText: { color: '#fff', fontWeight: '600', fontSize: 14 },
+  postBtn: { alignSelf: 'flex-end', paddingHorizontal: 20, paddingVertical: 10, borderRadius: 8, marginTop: 8 },
+  mentionList: { borderWidth: 1, borderRadius: 8, marginBottom: 6, overflow: 'hidden' },
+  mentionItem: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, paddingVertical: 8 },
+  mentionAvatar: { width: 24, height: 24, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+});

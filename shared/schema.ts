@@ -5116,6 +5116,28 @@ export const insertRfiCommentSchema = createInsertSchema(rfiComments).omit({
 export type InsertRfiComment = z.infer<typeof insertRfiCommentSchema>;
 export type RfiComment = typeof rfiComments.$inferSelect;
 
+// Task Comments (conversation thread on a task; tasks are notes with type="task")
+export const taskComments = pgTable("task_comments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  taskId: varchar("task_id").notNull().references(() => notes.id, { onDelete: "cascade" }),
+  content: text("content").notNull(), // may contain @[Name](userId:uuid) mention markup
+  createdById: varchar("created_by_id").notNull().references(() => users.id),
+  createdByName: text("created_by_name").notNull(), // cached for display
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  editedAt: timestamp("edited_at"), // null until the author edits the comment
+});
+
+export const insertTaskCommentSchema = createInsertSchema(taskComments).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  editedAt: true,
+});
+
+export type InsertTaskComment = z.infer<typeof insertTaskCommentSchema>;
+export type TaskComment = typeof taskComments.$inferSelect;
+
 // ============================================
 // PURCHASE ORDERS
 // ============================================

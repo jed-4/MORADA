@@ -192,6 +192,7 @@ import { initializeSocketManager, emitTaskCreated, emitTaskUpdated, emitTaskDele
 import { dispatchChatMessageNotifications } from "./utils/chatNotifications";
 import {
   notifyTaskCompleted,
+  notifyTaskCommentMentions,
   notifyTimesheetSubmitted,
   notifyTimesheetApproved,
   notifyNoteAssignmentAndMentions,
@@ -14834,6 +14835,112 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(204).send();
     } catch (error: any) {
       console.error("Error deleting RFI comment:", error);
+      res.status(500).json({ error: "Failed to delete comment" });
+    }
+  });
+
+  // Task Comments (thread on a task; tasks are notes with type="task")
+  const actorNameOf = (u: any) =>
+    (u?.firstName && u?.lastName ? `${u.firstName} ${u.lastName}` : "").trim() ||
+    u?.email || "Someone";
+
+  app.get("/api/tasks/:taskId/comments", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const task = await getOwnedTask(req, res, req.params.taskId);
+      if (!task) return;
+      const comments = await storage.getTaskComments(req.params.taskId);
+      res.json(comments);
+    } catch (error) {
+      console.error("Error fetching task comments:", error);
+      res.status(500).json({ error: "Failed to fetch comments" });
+    }
+  });
+
+  app.post("/api/task-comments", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const { taskId, content } = req.body || {};
+      const trimmed = typeof content === "string" ? content.trim() : "";
+      if (!taskId || !trimmed) {
+        return res.status(400).json({ error: "taskId and content are required" });
+      }
+
+      const task = await getOwnedTask(req, res, taskId);
+      if (!task) return;
+
+      const comment = await storage.createTaskComment({
+        taskId,
+        content: trimmed,
+        createdById: req.user!.id,
+        createdByName: actorNameOf(req.user),
+      });
+
+      await notifyTaskCommentMentions({
+        task,
+        content: trimmed,
+        actorUserId: req.user!.id,
+        companyId: req.user!.companyId,
+        actorName: actorNameOf(req.user),
+      });
+
+      res.status(201).json(comment);
+    } catch (error: any) {
+      console.error("Error creating task comment:", error);
+      res.status(500).json({ error: "Failed to create comment" });
+    }
+  });
+
+  app.patch("/api/task-comments/:id", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const { content } = req.body || {};
+      const trimmed = typeof content === "string" ? content.trim() : "";
+      if (!trimmed) {
+        return res.status(400).json({ error: "content is required" });
+      }
+
+      const existing = await storage.getTaskCommentById(req.params.id);
+      if (!existing) {
+        return res.status(404).json({ error: "Comment not found" });
+      }
+      const task = await getOwnedTask(req, res, existing.taskId);
+      if (!task) return;
+      if (existing.createdById !== req.user!.id) {
+        return res.status(403).json({ error: "You can only edit your own comments" });
+      }
+
+      const updated = await storage.updateTaskComment(req.params.id, trimmed);
+
+      // Only notify users newly mentioned by this edit.
+      await notifyTaskCommentMentions({
+        task,
+        content: trimmed,
+        actorUserId: req.user!.id,
+        companyId: req.user!.companyId,
+        actorName: actorNameOf(req.user),
+        alreadyNotifiedUserIds: [],
+      });
+
+      res.json(updated);
+    } catch (error: any) {
+      console.error("Error updating task comment:", error);
+      res.status(500).json({ error: "Failed to update comment" });
+    }
+  });
+
+  app.delete("/api/task-comments/:id", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const existing = await storage.getTaskCommentById(req.params.id);
+      if (!existing) {
+        return res.status(404).json({ error: "Comment not found" });
+      }
+      const task = await getOwnedTask(req, res, existing.taskId);
+      if (!task) return;
+      if (existing.createdById !== req.user!.id) {
+        return res.status(403).json({ error: "You can only delete your own comments" });
+      }
+      await storage.deleteTaskComment(req.params.id);
+      res.status(204).send();
+    } catch (error: any) {
+      console.error("Error deleting task comment:", error);
       res.status(500).json({ error: "Failed to delete comment" });
     }
   });

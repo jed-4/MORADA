@@ -20,6 +20,8 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { apiFetch, apiRequest } from '../services/api';
+import { useAuth } from '../contexts/AuthContext';
+import TaskComments from '../components/TaskComments';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RouteProp } from '@react-navigation/native';
 
@@ -126,6 +128,7 @@ export default function ProjectTasksScreen({ navigation, route }: Props) {
   const { projectId, projectName } = route.params as { projectId: string; projectName: string };
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
+  const { user } = useAuth();
   const insets = useSafeAreaInsets();
 
   const theme = useTheme();
@@ -756,6 +759,14 @@ const colors = {
                         </View>
                       </View>
                     ) : null}
+
+                    <TaskComments
+                      taskId={selectedTask.id}
+                      currentUserId={user?.id}
+                      colors={colors}
+                      isDark={isDark}
+                    />
+
                     <TouchableOpacity
                       style={[styles.deleteBtn, { borderColor: '#ef444440' }]}
                       onPress={handleDeleteTask}

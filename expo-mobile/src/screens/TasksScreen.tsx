@@ -21,6 +21,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../contexts/AuthContext';
 import { apiFetch, apiRequest } from '../services/api';
+import TaskComments from '../components/TaskComments';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
 import { useTheme } from '../theme';
@@ -826,6 +827,13 @@ const colors = {
                         </View>
                       </View>
                     )}
+
+                    <TaskComments
+                      taskId={selectedTask.id}
+                      currentUserId={user?.id}
+                      colors={colors}
+                      isDark={isDark}
+                    />
                   </>
                 )}
 

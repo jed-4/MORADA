@@ -70,6 +70,55 @@ export async function notifyTaskCompleted(params: {
   }
 }
 
+export async function notifyTaskCommentMentions(params: {
+  task: any;
+  content: string;
+  actorUserId: string;
+  companyId: string;
+  actorName: string;
+  alreadyNotifiedUserIds?: string[];
+}): Promise<void> {
+  const { task, content, actorUserId, companyId, actorName, alreadyNotifiedUserIds = [] } = params;
+  try {
+    if (!task || !companyId || !content) return;
+    const already = new Set(alreadyNotifiedUserIds);
+    const mentionedIds = parseMentionUserIds(content).filter(
+      (id) => id !== actorUserId && !already.has(id),
+    );
+    if (mentionedIds.length === 0) return;
+
+    // Tenant isolation: only notify users who belong to the same company as the
+    // task/actor. A crafted @mention markup could otherwise reference a UUID in
+    // another company and leak the task title/preview via notification + push.
+    const companyUsers = await storage.getUsersByCompany(companyId);
+    const allowedIds = new Set(companyUsers.map((u) => u.id));
+    const safeMentionedIds = uniqueDefined(mentionedIds).filter((id) =>
+      allowedIds.has(id),
+    );
+    if (safeMentionedIds.length === 0) return;
+
+    const link = task.projectId
+      ? `/projects/${task.projectId}/tasks`
+      : `/workspace/tasks`;
+    const preview = buildContentPreview(content);
+    for (const userId of safeMentionedIds) {
+      await safeCreate({
+        userId,
+        companyId,
+        type: "task_mentioned",
+        title: "Mentioned in a task comment",
+        message: `${actorName} mentioned you on "${task.title}"${preview ? `: ${preview}` : ""}`,
+        link,
+        entityType: "task",
+        entityId: task.id,
+        createdByUserId: actorUserId,
+      });
+    }
+  } catch (err) {
+    console.error("[Notify] notifyTaskCommentMentions failed:", err);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Timesheets
 // ---------------------------------------------------------------------------

@@ -5,6 +5,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import TaskComments from "@/components/TaskComments";
 import { type Task, type FieldCategoryWithOptions, type Project, type Reminder } from "@shared/schema";
 import { z } from "zod";
 import { format, addDays } from "date-fns";
@@ -1443,6 +1444,13 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
                     </div>
                   ))}
                 </div>
+              </div>
+            )}
+
+            {/* Comments thread (only for saved tasks) */}
+            {task?.id && (
+              <div className="pt-2">
+                <TaskComments taskId={task.id} users={users} currentUserId={user?.id} />
               </div>
             )}
           </div>

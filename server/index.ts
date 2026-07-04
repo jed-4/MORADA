@@ -265,6 +265,15 @@ app.use((req, res, next) => {
       console.error('Failed to ensure suggestions table:', error);
     }
 
+    // Ensure the task_comments table exists (additive, idempotent). The deploy
+    // build does not run drizzle push, so this guarantees the task comment
+    // thread works the first time production boots this feature.
+    try {
+      await storage.ensureTaskCommentsTable();
+    } catch (error) {
+      console.error('Failed to ensure task_comments table:', error);
+    }
+
     // Ensure the referral columns + referral_credits table exist (additive,
     // idempotent). The deploy build does not run drizzle push, so this
     // guarantees the referral system works the first time production boots
