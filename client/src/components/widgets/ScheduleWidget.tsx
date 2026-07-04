@@ -773,16 +773,19 @@ export default function ScheduleWidget({ widget, onUpdate, isConfiguring, onClos
         <div className="grid grid-cols-7 border-b flex-shrink-0" style={{ marginLeft: displayMode === "timeline" ? "40px" : "0" }}>
           {weekDays.map((day, idx) => {
             const isTodayDate = isToday(day);
+            const isWeekend = getDay(day) === 0 || getDay(day) === 6;
             return (
               <div 
                 key={idx}
-                className={`text-center py-1 border-r last:border-r-0 ${isTodayDate ? 'bg-primary/10' : ''} ${getDay(day) === 0 || getDay(day) === 6 ? 'bg-muted/30' : ''}`}
+                className={`text-center py-1 border-r last:border-r-0 ${isTodayDate ? 'bg-primary text-primary-foreground' : isWeekend ? 'bg-muted/30' : ''}`}
               >
-                <div className="text-label text-muted-foreground uppercase">
-                  {format(day, "EEE")}
-                </div>
-                <div className={`text-xs font-medium ${isTodayDate ? 'text-primary' : ''}`}>
-                  {format(day, "d")}
+                <div className="flex items-center justify-center gap-1">
+                  <span className={`text-xs font-semibold ${isTodayDate ? 'text-primary-foreground' : ''}`}>
+                    {format(day, "d")}
+                  </span>
+                  <span className={`text-xs ${isTodayDate ? 'text-primary-foreground/90 font-medium' : 'text-muted-foreground'}`}>
+                    {format(day, "EEE")}
+                  </span>
                 </div>
               </div>
             );
