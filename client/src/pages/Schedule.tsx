@@ -293,6 +293,15 @@ export default function Schedule() {
   const isUnlocked = schedule?.status !== "locked" && !!schedule;
   const [showLeaveGuardDialog, setShowLeaveGuardDialog] = useState(false);
   const pendingNavigationRef = useRef<string | null>(null);
+  // Sentinel used by pendingNavigationRef when the user triggered a browser Back
+  // (there is no URL to navigate to — we step back through history instead).
+  const BACK_NAV = "__browser_back__";
+  // When true, the very next popstate is one WE triggered programmatically (after
+  // the user chose Save/Discard for a Back press) and must be allowed through.
+  const bypassGuardRef = useRef(false);
+  // When true, the next popstate is the forward step we made to cancel a Back
+  // press (history.go(1)); we ignore it so the cancel doesn't re-open the dialog.
+  const cancelingBackRef = useRef(false);
   const [, navigate] = useLocation();
 
   const scheduleRef = useRef(schedule);
@@ -301,6 +310,17 @@ export default function Schedule() {
   const insertAfterItemRef = useRef<((newItemId: string, afterItemId: string) => void) | null>(null);
   useEffect(() => { scheduleRef.current = schedule; }, [schedule]);
   useEffect(() => { isUnlockedRef.current = isUnlocked; }, [isUnlocked]);
+
+  const leaveTo = useCallback((targetUrl: string) => {
+    if (targetUrl === BACK_NAV) {
+      // The user chose Save/Discard for a Back press. Allow the next popstate
+      // through and actually go back one entry to the page they came from.
+      bypassGuardRef.current = true;
+      window.history.back();
+    } else {
+      navigate(targetUrl);
+    }
+  }, [navigate]);
 
   const finishEditAndNavigate = useCallback(async (targetUrl: string, mode: "commit" | "discard") => {
     if (schedule && isUnlocked) {
@@ -315,7 +335,7 @@ export default function Schedule() {
         queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "schedule"] });
         queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "schedules"] });
         invalidateScheduleItems();
-        navigate(targetUrl);
+        leaveTo(targetUrl);
       } catch (e) {
         // Keep the user on the page so they don't lose work when Save/Discard fails.
         toast({
@@ -326,9 +346,9 @@ export default function Schedule() {
       }
     } else {
       isUnlockedRef.current = false;
-      navigate(targetUrl);
+      leaveTo(targetUrl);
     }
-  }, [schedule, isUnlocked, projectId, navigate, toast, invalidateScheduleItems]);
+  }, [schedule, isUnlocked, projectId, navigate, toast, invalidateScheduleItems, leaveTo]);
 
   useEffect(() => {
     if (!isUnlocked) return;
@@ -348,15 +368,24 @@ export default function Schedule() {
     };
 
     const handlePopState = () => {
+      // The forward step we made to cancel a Back press — ignore it.
+      if (cancelingBackRef.current) {
+        cancelingBackRef.current = false;
+        return;
+      }
+      // A back navigation we triggered ourselves after the user chose Save/Discard.
+      if (bypassGuardRef.current) {
+        bypassGuardRef.current = false;
+        return;
+      }
       if (isUnlockedRef.current && scheduleRef.current) {
-        const s = scheduleRef.current;
-        fetch(`/api/schedules/${s.id}/edit-commit`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          credentials: "include",
-        }).then(() => {
-          queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "schedule"] });
-        }).catch(() => {});
+        // Cancel the back navigation by stepping forward to this page again, then
+        // prompt the user to Save or Discard. Never commit silently. This adds no
+        // history entries, so normal Back behaviour is unaffected once editing ends.
+        cancelingBackRef.current = true;
+        window.history.go(1);
+        pendingNavigationRef.current = BACK_NAV;
+        setShowLeaveGuardDialog(true);
       }
     };
 
@@ -386,33 +415,21 @@ export default function Schedule() {
   }, [isUnlocked, projectId]);
 
   useEffect(() => {
+    // Refresh / tab-close can only use the browser's native "leave site?" prompt;
+    // a custom Save/Discard dialog isn't possible here. We warn the user and do
+    // NOT commit or discard silently — their edits stay pending (snapshot intact),
+    // so nothing is lost and they can Save or Discard next time they open it.
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
       if (isUnlockedRef.current && scheduleRef.current) {
         e.preventDefault();
-        e.returnValue = "Your schedule is still being edited. Leaving will save your changes.";
-        const s = scheduleRef.current;
-        fetch(`/api/schedules/${s.id}/edit-commit`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          credentials: "include",
-        }).catch(() => {});
+        e.returnValue = "You're still editing this schedule. Your changes are kept as unsaved edits until you Save or Discard.";
       }
     };
     window.addEventListener("beforeunload", handleBeforeUnload);
     return () => {
       window.removeEventListener("beforeunload", handleBeforeUnload);
-      if (isUnlockedRef.current && scheduleRef.current) {
-        const s = scheduleRef.current;
-        fetch(`/api/schedules/${s.id}/edit-commit`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          credentials: "include",
-        }).then(() => {
-          queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "schedule"] });
-        }).catch(() => {});
-      }
     };
-  }, [projectId]);
+  }, []);
 
   // Fetch schedule items - when we have a schedule, fetch by scheduleId for category-specific items
   const { data: scheduleItems = [], isLoading: itemsLoading } = useQuery<ScheduleItem[]>({
