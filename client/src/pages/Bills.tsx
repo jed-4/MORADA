@@ -92,6 +92,18 @@ const STATUS_OPTIONS = [
   { key: "paid", label: "Paid" },
 ];
 
+// Outstanding amount owed on a bill, in cents. An amount is only "Due" once the
+// bill is issued for payment (status `awaiting_payment`); drafts / needs-review /
+// awaiting-approval bills are not yet payables, and paid bills owe nothing.
+// Credit notes reduce what is owed, so their due is negated to match the Amount
+// column and the summary totals. Shared by the Due column and the footer total so
+// the two can never drift apart.
+const billDueCents = (bill: Pick<Bill, "status" | "total" | "paidAmount" | "billType">) => {
+  if (bill.status !== "awaiting_payment") return 0;
+  const outstanding = bill.total - bill.paidAmount;
+  return bill.billType === "credit" ? -outstanding : outstanding;
+};
+
 const BILL_COLUMN_LABELS: { id: string; label: string; pinned?: boolean }[] = [
   { id: "checkbox", label: "Select", pinned: true },
   { id: "billNumber", label: "ID" },
@@ -829,7 +841,9 @@ export default function Bills({ embedded }: { embedded?: boolean } = {}) {
       const amount = bill.billType === "credit" ? -rawAmount : rawAmount;
       if (bill.status === "draft" || bill.status === "needs_review") totals.draft += amount;
       else if (bill.status === "awaiting_approval") totals.awaiting_approval += amount;
-      else if (bill.status === "awaiting_payment") totals.awaiting_payment += amount;
+      // Awaiting Payment footer must reflect the outstanding amount DUE (total −
+      // already-paid), matching the per-row Due column so the two reconcile.
+      else if (bill.status === "awaiting_payment") totals.awaiting_payment += billDueCents(bill) / 100;
       else if (bill.status === "paid") totals.paid += amount;
     });
     return totals;
@@ -1071,10 +1085,10 @@ export default function Bills({ embedded }: { embedded?: boolean } = {}) {
         // An amount is only "Due" once the bill is issued for payment. Drafts,
         // needs-review and awaiting-approval bills are not yet real payables, so
         // they show a dash and sort as zero.
-        accessorFn: (b) => (b.status === "awaiting_payment" ? b.total - b.paidAmount : 0),
+        accessorFn: (b) => billDueCents(b),
         cell: ({ row }) =>
           row.original.status === "awaiting_payment" ? (
-            <span className="font-medium">{formatCurrency(row.original.total - row.original.paidAmount)}</span>
+            <span className="font-medium">{formatCurrency(billDueCents(row.original))}</span>
           ) : (
             <span className="text-muted-foreground">—</span>
           ),
