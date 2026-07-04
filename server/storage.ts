@@ -24344,6 +24344,39 @@ export class DbStorage implements IStorage {
           AND u.company_id IS NOT NULL
       `);
 
+      // Targeted heal: a batch of legacy checklist_templates were left with
+      // NULL company_id (they have created_by IS NULL, and this DB has multiple
+      // companies, so neither the created_by backfill above nor the single-company
+      // fallback below can attribute them). The account owner confirmed these
+      // templates belong to "Lighthouse Projects & Construction" (the 7-user
+      // company). Assign any remaining unscoped templates to that company, but
+      // only if that exact company still exists. Idempotent: only touches NULL
+      // rows, so it is a no-op once healed. Production-only: this is an
+      // incident-specific recovery for the live database — gating on NODE_ENV
+      // prevents dev/staging clones (which contain the same company id) from
+      // silently attributing unrelated test rows to Lighthouse.
+      const LIGHTHOUSE_COMPANY_ID = "a23a0e7b-8f73-4b63-957d-5f74ae191294";
+      const lighthouseExists =
+        process.env.NODE_ENV === "production"
+          ? await db.execute(sql`
+              SELECT 1 FROM companies WHERE id = ${LIGHTHOUSE_COMPANY_ID} LIMIT 1
+            `)
+          : { rows: [] as unknown[] };
+      if ((lighthouseExists.rows?.length ?? 0) > 0) {
+        const orphaned = await db.execute(sql`
+          SELECT count(*)::int AS cnt FROM checklist_templates WHERE company_id IS NULL
+        `);
+        const orphanCount = Number((orphaned.rows?.[0] as any)?.cnt ?? 0);
+        if (orphanCount > 0) {
+          await db.execute(sql`
+            UPDATE checklist_templates
+            SET company_id = ${LIGHTHOUSE_COMPANY_ID}
+            WHERE company_id IS NULL
+          `);
+          console.log(`[tenancy] Healed ${orphanCount} unscoped checklist_templates → Lighthouse Projects & Construction (${LIGHTHOUSE_COMPANY_ID}).`);
+        }
+      }
+
       // Fallback: if any rows are still unscoped AND there is exactly one
       // company in the system, attribute them to that company. Otherwise leave
       // them NULL (and report) so a human can decide — never guess across
