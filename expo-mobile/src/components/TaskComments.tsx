@@ -21,6 +21,19 @@ interface TaskComment {
   editedAt?: string | null;
 }
 
+interface TaskActivityItem {
+  id: string;
+  taskId: string;
+  actorName: string;
+  eventType: string;
+  summary: string;
+  createdAt: string;
+}
+
+type FeedEntry =
+  | { kind: 'comment'; at: number; comment: TaskComment }
+  | { kind: 'activity'; at: number; activity: TaskActivityItem };
+
 interface MentionUser {
   id: string;
   firstName?: string | null;
@@ -100,6 +113,8 @@ function renderContent(content: string, accent: string, textColor: string) {
 
 export default function TaskComments({ taskId, currentUserId, colors, isDark }: TaskCommentsProps) {
   const [comments, setComments] = useState<TaskComment[]>([]);
+  const [activity, setActivity] = useState<TaskActivityItem[]>([]);
+  const [showActivity, setShowActivity] = useState(true);
   const [users, setUsers] = useState<MentionUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [input, setInput] = useState('');
@@ -124,13 +139,34 @@ export default function TaskComments({ taskId, currentUserId, colors, isDark }: 
     }
   }, [taskId]);
 
+  const loadActivity = useCallback(async () => {
+    try {
+      const data = await apiFetch<TaskActivityItem[]>(`/api/tasks/${taskId}/activity`);
+      setActivity(data);
+    } catch {
+      setActivity([]);
+    }
+  }, [taskId]);
+
   useEffect(() => {
     setLoading(true);
     loadComments();
+    loadActivity();
     apiFetch<MentionUser[]>('/api/users')
       .then(setUsers)
       .catch(() => setUsers([]));
-  }, [loadComments]);
+  }, [loadComments, loadActivity]);
+
+  // Merge comments + activity into one chronological (oldest-first) stream.
+  const feed = useMemo<FeedEntry[]>(() => {
+    const items: FeedEntry[] = [
+      ...comments.map((c) => ({ kind: 'comment' as const, at: new Date(c.createdAt).getTime(), comment: c })),
+      ...(showActivity
+        ? activity.map((a) => ({ kind: 'activity' as const, at: new Date(a.createdAt).getTime(), activity: a }))
+        : []),
+    ];
+    return items.sort((a, b) => a.at - b.at);
+  }, [comments, activity, showActivity]);
 
   const filteredMentions = useMemo(() => {
     if (!mentionActive) return [];
@@ -208,18 +244,45 @@ export default function TaskComments({ taskId, currentUserId, colors, isDark }: 
 
   return (
     <View style={styles.section}>
-      <Text style={[styles.sectionLabel, { color: colors.secondary }]}>
-        Comments{comments.length > 0 ? ` (${comments.length})` : ''}
-      </Text>
+      <View style={styles.sectionHeader}>
+        <Text style={[styles.sectionLabel, { color: colors.secondary }]}>
+          Activity & Comments{comments.length > 0 ? ` (${comments.length})` : ''}
+        </Text>
+        {activity.length > 0 && (
+          <TouchableOpacity
+            onPress={() => setShowActivity((v) => !v)}
+            style={styles.activityToggle}
+          >
+            <Ionicons name="pulse-outline" size={14} color={colors.secondary} />
+            <Text style={[styles.activityToggleText, { color: colors.secondary }]}>
+              {showActivity ? 'Hide activity' : 'Show activity'}
+            </Text>
+          </TouchableOpacity>
+        )}
+      </View>
 
       {loading ? (
         <ActivityIndicator color={colors.accent} style={{ marginVertical: 12 }} />
-      ) : comments.length === 0 ? (
+      ) : feed.length === 0 ? (
         <Text style={{ color: colors.muted, fontSize: 14, marginBottom: 8 }}>
           No comments yet. Start the conversation.
         </Text>
       ) : (
-        comments.map((c) => {
+        feed.map((entry) => {
+          if (entry.kind === 'activity') {
+            const a = entry.activity;
+            return (
+              <View key={`a-${a.id}`} style={styles.activityRow}>
+                <Ionicons name="pulse-outline" size={14} color={colors.muted} style={{ marginTop: 2 }} />
+                <Text style={[styles.activityText, { color: colors.muted }]}>
+                  <Text style={{ fontWeight: '600', color: colors.secondary }}>{a.actorName}</Text>
+                  {' '}{a.summary}
+                  <Text style={{ color: colors.muted }}>{'  ·  '}{relativeTime(a.createdAt)}</Text>
+                </Text>
+              </View>
+            );
+          }
+          const c = entry.comment;
           const isOwn = !!currentUserId && c.createdById === currentUserId;
           const isEditing = editingId === c.id;
           return (
@@ -330,7 +393,12 @@ export default function TaskComments({ taskId, currentUserId, colors, isDark }: 
 
 const styles = StyleSheet.create({
   section: { marginTop: 20 },
-  sectionLabel: { fontSize: 13, fontWeight: '600', textTransform: 'uppercase', marginBottom: 10, letterSpacing: 0.5 },
+  sectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, marginBottom: 10 },
+  sectionLabel: { fontSize: 13, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5 },
+  activityToggle: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  activityToggleText: { fontSize: 12, fontWeight: '500' },
+  activityRow: { flexDirection: 'row', gap: 8, marginBottom: 12, paddingLeft: 2 },
+  activityText: { flex: 1, fontSize: 12, lineHeight: 17 },
   commentRow: { flexDirection: 'row', gap: 10, marginBottom: 14 },
   avatar: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
   avatarText: { color: '#fff', fontSize: 11, fontWeight: '700' },

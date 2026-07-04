@@ -1,13 +1,13 @@
 import { useMemo, useRef, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { formatDistanceToNow } from "date-fns";
-import { MessageSquare, Pencil, Trash2, X, Check } from "lucide-react";
+import { MessageSquare, Pencil, Trash2, X, Check, Activity } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import type { TaskComment } from "@shared/schema";
+import type { TaskComment, TaskActivity } from "@shared/schema";
 
 interface TaskCommentsProps {
   taskId: string;
@@ -122,17 +122,39 @@ function useMentionComposer(users: any[]) {
   return { value, setValue, mention, filtered, handleChange, selectUser, reset, textareaRef };
 }
 
+type FeedItem =
+  | { kind: "comment"; at: number; comment: TaskComment }
+  | { kind: "activity"; at: number; activity: TaskActivity };
+
 export default function TaskComments({ taskId, users, currentUserId }: TaskCommentsProps) {
   const { toast } = useToast();
   const composer = useMentionComposer(users);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
+  const [showActivity, setShowActivity] = useState(true);
 
   const { data: comments = [], isLoading } = useQuery<TaskComment[]>({
     queryKey: ["/api/tasks", taskId, "comments"],
     enabled: !!taskId,
     staleTime: 0,
   });
+
+  const { data: activity = [] } = useQuery<TaskActivity[]>({
+    queryKey: ["/api/tasks", taskId, "activity"],
+    enabled: !!taskId,
+    staleTime: 0,
+  });
+
+  // Merge comments + activity into one chronological (oldest-first) stream.
+  const feed = useMemo<FeedItem[]>(() => {
+    const items: FeedItem[] = [
+      ...comments.map((c) => ({ kind: "comment" as const, at: new Date(c.createdAt).getTime(), comment: c })),
+      ...(showActivity
+        ? activity.map((a) => ({ kind: "activity" as const, at: new Date(a.createdAt).getTime(), activity: a }))
+        : []),
+    ];
+    return items.sort((a, b) => a.at - b.at);
+  }, [comments, activity, showActivity]);
 
   const invalidate = () =>
     queryClient.invalidateQueries({ queryKey: ["/api/tasks", taskId, "comments"] });
@@ -175,19 +197,52 @@ export default function TaskComments({ taskId, users, currentUserId }: TaskComme
 
   return (
     <div className="space-y-3">
-      <label className="text-sm font-medium text-muted-foreground flex items-center gap-1.5">
-        <MessageSquare className="h-3.5 w-3.5" />
-        Comments {comments.length > 0 && `(${comments.length})`}
-      </label>
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <label className="text-sm font-medium text-muted-foreground flex items-center gap-1.5">
+          <MessageSquare className="h-3.5 w-3.5" />
+          Activity &amp; Comments {comments.length > 0 && `(${comments.length})`}
+        </label>
+        {activity.length > 0 && (
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 px-2 text-xs text-muted-foreground"
+            onClick={() => setShowActivity((v) => !v)}
+            data-testid="button-toggle-activity"
+          >
+            <Activity className="h-3 w-3" />
+            {showActivity ? "Hide activity" : "Show activity"}
+          </Button>
+        )}
+      </div>
 
       {/* Thread (oldest first) */}
       {isLoading ? (
         <p className="text-sm text-muted-foreground">Loading comments…</p>
-      ) : comments.length === 0 ? (
+      ) : feed.length === 0 ? (
         <p className="text-sm text-muted-foreground">No comments yet. Start the conversation.</p>
       ) : (
         <div className="space-y-3">
-          {comments.map((comment) => {
+          {feed.map((item) => {
+            if (item.kind === "activity") {
+              const a = item.activity;
+              return (
+                <div key={`a-${a.id}`} className="flex gap-2.5 items-start" data-testid={`activity-${a.id}`}>
+                  <div className="w-7 shrink-0 flex justify-center pt-0.5">
+                    <Activity className="h-3.5 w-3.5 text-muted-foreground/60" />
+                  </div>
+                  <p className="flex-1 min-w-0 text-xs text-muted-foreground leading-snug">
+                    <span className="font-medium text-foreground/70">{a.actorName}</span>{" "}
+                    {a.summary}
+                    <span className="text-muted-foreground/70">
+                      {" · "}
+                      {formatDistanceToNow(new Date(a.createdAt), { addSuffix: true })}
+                    </span>
+                  </p>
+                </div>
+              );
+            }
+            const comment = item.comment;
             const isOwn = !!currentUserId && comment.createdById === currentUserId;
             const isEditing = editingId === comment.id;
             return (

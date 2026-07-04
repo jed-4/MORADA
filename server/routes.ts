@@ -2342,6 +2342,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
+      // Record auto-activity for meaningful field changes (best-effort).
+      await recordTaskActivity(req, existingTask, task);
+
       emitTaskUpdated(user.companyId, task, user.id);
       res.json(task);
     } catch (error) {
@@ -2397,7 +2400,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
           : user.email || "Someone";
         await notifyTaskCompleted({ task, actorUserId: user.id, companyId: user.companyId, actorName });
       }
-      
+
+      // Record auto-activity for the status change (best-effort).
+      await recordTaskActivity(req, existingTask, task);
+
       res.json(task);
     } catch (error) {
       res.status(500).json({ error: "Failed to update task status" });
@@ -5161,6 +5167,152 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(404).json({ error: notFound }); return null;
     }
     return task;
+  };
+
+  // ---- Task activity (audit lines merged into the comment feed) ----
+  const taskStatusLabel = (s?: string | null): string => {
+    switch (s) {
+      case "todo": return "To Do";
+      case "in-progress": return "In Progress";
+      case "done": return "Done";
+      default: return s ? s.charAt(0).toUpperCase() + s.slice(1) : "None";
+    }
+  };
+  const taskPriorityLabel = (p?: string | null): string => {
+    if (!p) return "None";
+    return p.charAt(0).toUpperCase() + p.slice(1);
+  };
+  const formatActivityDate = (d: Date | string | null | undefined): string => {
+    if (!d) return "";
+    const date = new Date(d);
+    if (isNaN(date.getTime())) return "";
+    return date.toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" });
+  };
+  const assigneeNamesOf = (task: any): string[] => {
+    const names = task?.assigneeNames;
+    if (!Array.isArray(names)) return [];
+    return names.filter((n: any) => typeof n === "string" && n.trim()).map((n: string) => n.trim());
+  };
+
+  // Diff the meaningful fields of a task before/after an update and persist one
+  // activity entry per change. Best-effort: failures never break the request.
+  const recordTaskActivity = async (req: any, existingTask: any, updatedTask: any): Promise<void> => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      if (!companyId || !existingTask || !updatedTask) return;
+      const actorId = user?.id || null;
+      const actorName =
+        (user?.firstName && user?.lastName ? `${user.firstName} ${user.lastName}` : "").trim() ||
+        user?.email || "Someone";
+      const taskId = updatedTask.id;
+
+      type Entry = { eventType: string; summary: string; previousValue?: string | null; newValue?: string | null; detail?: string | null };
+      const entries: Entry[] = [];
+
+      // Status
+      if (existingTask.status !== updatedTask.status) {
+        entries.push({
+          eventType: "status",
+          summary: `changed status from ${taskStatusLabel(existingTask.status)} to ${taskStatusLabel(updatedTask.status)}`,
+          previousValue: existingTask.status ?? null,
+          newValue: updatedTask.status ?? null,
+        });
+      }
+
+      // Priority
+      if ((existingTask.priority || "") !== (updatedTask.priority || "")) {
+        entries.push({
+          eventType: "priority",
+          summary: `changed priority from ${taskPriorityLabel(existingTask.priority)} to ${taskPriorityLabel(updatedTask.priority)}`,
+          previousValue: existingTask.priority ?? null,
+          newValue: updatedTask.priority ?? null,
+        });
+      }
+
+      // Title
+      if ((existingTask.title || "") !== (updatedTask.title || "")) {
+        entries.push({
+          eventType: "title",
+          summary: `renamed task to "${updatedTask.title || "Untitled"}"`,
+          previousValue: existingTask.title ?? null,
+          newValue: updatedTask.title ?? null,
+        });
+      }
+
+      // Due date
+      const prevDue = existingTask.dueDate ? new Date(existingTask.dueDate).getTime() : null;
+      const newDue = updatedTask.dueDate ? new Date(updatedTask.dueDate).getTime() : null;
+      if (prevDue !== newDue) {
+        let summary: string;
+        if (prevDue == null && newDue != null) summary = `set due date to ${formatActivityDate(updatedTask.dueDate)}`;
+        else if (prevDue != null && newDue == null) summary = `removed the due date`;
+        else summary = `changed due date to ${formatActivityDate(updatedTask.dueDate)}`;
+        entries.push({
+          eventType: "due_date",
+          summary,
+          previousValue: existingTask.dueDate ? new Date(existingTask.dueDate).toISOString() : null,
+          newValue: updatedTask.dueDate ? new Date(updatedTask.dueDate).toISOString() : null,
+        });
+      }
+
+      // Assignees (cached display names)
+      const prevAssignees = assigneeNamesOf(existingTask);
+      const newAssignees = assigneeNamesOf(updatedTask);
+      if (prevAssignees.slice().sort().join("|") !== newAssignees.slice().sort().join("|")) {
+        let summary: string;
+        if (newAssignees.length === 0) summary = `removed all assignees`;
+        else if (prevAssignees.length === 0) summary = `assigned to ${newAssignees.join(", ")}`;
+        else summary = `changed assignees to ${newAssignees.join(", ")}`;
+        entries.push({
+          eventType: "assignee",
+          summary,
+          previousValue: prevAssignees.join(", ") || null,
+          newValue: newAssignees.join(", ") || null,
+        });
+      }
+
+      // Checklist add / remove / complete / reopen (diff by item id)
+      const prevList = Array.isArray(existingTask.checklist) ? existingTask.checklist : [];
+      const newList = Array.isArray(updatedTask.checklist) ? updatedTask.checklist : [];
+      const prevById = new Map<string, any>(prevList.filter((i: any) => i?.id).map((i: any) => [i.id, i]));
+      const newById = new Map<string, any>(newList.filter((i: any) => i?.id).map((i: any) => [i.id, i]));
+      for (const item of newList) {
+        if (!item?.id) continue;
+        const before = prevById.get(item.id);
+        const label = item.text || "item";
+        if (!before) {
+          entries.push({ eventType: "checklist_add", summary: `added checklist item "${label}"`, detail: label });
+        } else if (!before.completed && item.completed) {
+          entries.push({ eventType: "checklist_complete", summary: `completed checklist item "${label}"`, detail: label });
+        } else if (before.completed && !item.completed) {
+          entries.push({ eventType: "checklist_uncomplete", summary: `reopened checklist item "${label}"`, detail: label });
+        }
+      }
+      for (const item of prevList) {
+        if (!item?.id) continue;
+        if (!newById.has(item.id)) {
+          const label = item.text || "item";
+          entries.push({ eventType: "checklist_remove", summary: `removed checklist item "${label}"`, detail: label });
+        }
+      }
+
+      for (const e of entries) {
+        await storage.createTaskActivity({
+          taskId,
+          companyId,
+          actorId,
+          actorName,
+          eventType: e.eventType,
+          summary: e.summary,
+          previousValue: e.previousValue ?? null,
+          newValue: e.newValue ?? null,
+          detail: e.detail ?? null,
+        });
+      }
+    } catch (err) {
+      console.error("Failed to record task activity:", err);
+    }
   };
 
   const getOwnedRFI = async (
@@ -14853,6 +15005,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error fetching task comments:", error);
       res.status(500).json({ error: "Failed to fetch comments" });
+    }
+  });
+
+  app.get("/api/tasks/:taskId/activity", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const task = await getOwnedTask(req, res, req.params.taskId);
+      if (!task) return;
+      const activity = await storage.getTaskActivity(req.params.taskId);
+      res.json(activity);
+    } catch (error) {
+      console.error("Error fetching task activity:", error);
+      res.status(500).json({ error: "Failed to fetch activity" });
     }
   });
 

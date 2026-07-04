@@ -41,6 +41,7 @@ import {
   type Rfi, type InsertRfi,
   type RfiComment, type InsertRfiComment,
   type TaskComment, type InsertTaskComment,
+  type TaskActivity, type InsertTaskActivity,
   type Bill, type InsertBill,
   type BillLineItem, type InsertBillLineItem,
   type BillPayment, type InsertBillPayment,
@@ -742,6 +743,10 @@ export interface IStorage {
   createTaskComment(comment: InsertTaskComment): Promise<TaskComment>;
   updateTaskComment(id: string, content: string): Promise<TaskComment | undefined>;
   deleteTaskComment(id: string): Promise<boolean>;
+
+  ensureTaskActivityTable(): Promise<void>;
+  getTaskActivity(taskId: string): Promise<TaskActivity[]>;
+  createTaskActivity(entry: InsertTaskActivity): Promise<TaskActivity>;
 
   syncCompanyName(): Promise<{ synced: boolean; name?: string }>;
   backfillCompanySettingsCompanyId(): Promise<{ updated: boolean }>;
@@ -14845,6 +14850,55 @@ export class DbStorage implements IStorage {
       return deleted.length > 0;
     } catch (error) {
       console.error("Database error in deleteTaskComment:", error);
+      throw error;
+    }
+  }
+
+  async ensureTaskActivityTable(): Promise<void> {
+    // Additive, idempotent safety net. The deploy build does NOT run drizzle
+    // push, so this guarantees the task_activity table exists in production the
+    // first time the server boots after this feature ships.
+    try {
+      await db.execute(sql`
+        CREATE TABLE IF NOT EXISTS task_activity (
+          id varchar PRIMARY KEY DEFAULT gen_random_uuid(),
+          task_id varchar NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
+          company_id varchar NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+          actor_id varchar REFERENCES users(id) ON DELETE SET NULL,
+          actor_name text NOT NULL,
+          event_type text NOT NULL,
+          summary text NOT NULL,
+          previous_value text,
+          new_value text,
+          detail text,
+          created_at timestamp NOT NULL DEFAULT now()
+        )
+      `);
+      await db.execute(sql`CREATE INDEX IF NOT EXISTS task_activity_task_idx ON task_activity (task_id)`);
+      await db.execute(sql`CREATE INDEX IF NOT EXISTS task_activity_created_at_idx ON task_activity (created_at)`);
+    } catch (error) {
+      console.error("Failed to ensure task_activity table exists:", error);
+    }
+  }
+
+  async getTaskActivity(taskId: string): Promise<TaskActivity[]> {
+    try {
+      return await db.select()
+        .from(schema.taskActivity)
+        .where(eq(schema.taskActivity.taskId, taskId))
+        .orderBy(asc(schema.taskActivity.createdAt));
+    } catch (error) {
+      console.error("Database error in getTaskActivity:", error);
+      throw error;
+    }
+  }
+
+  async createTaskActivity(entry: InsertTaskActivity): Promise<TaskActivity> {
+    try {
+      const [row] = await db.insert(schema.taskActivity).values(entry).returning();
+      return row;
+    } catch (error) {
+      console.error("Database error in createTaskActivity:", error);
       throw error;
     }
   }

@@ -274,6 +274,14 @@ app.use((req, res, next) => {
       console.error('Failed to ensure task_comments table:', error);
     }
 
+    // Ensure the task_activity table exists (additive, idempotent). Powers the
+    // auto-generated activity lines merged into the task comment feed.
+    try {
+      await storage.ensureTaskActivityTable();
+    } catch (error) {
+      console.error('Failed to ensure task_activity table:', error);
+    }
+
     // Ensure the referral columns + referral_credits table exist (additive,
     // idempotent). The deploy build does not run drizzle push, so this
     // guarantees the referral system works the first time production boots

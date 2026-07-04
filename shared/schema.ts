@@ -5138,6 +5138,35 @@ export const insertTaskCommentSchema = createInsertSchema(taskComments).omit({
 export type InsertTaskComment = z.infer<typeof insertTaskCommentSchema>;
 export type TaskComment = typeof taskComments.$inferSelect;
 
+// Task Activity — auto-generated audit lines merged into the task comment feed.
+// System-generated, not editable/deletable, no notifications. eventType examples:
+// "status" | "priority" | "title" | "due_date" | "assignee" |
+// "checklist_add" | "checklist_remove" | "checklist_complete" | "checklist_uncomplete"
+export const taskActivity = pgTable("task_activity", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  taskId: varchar("task_id").notNull().references(() => notes.id, { onDelete: "cascade" }),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  actorId: varchar("actor_id").references(() => users.id, { onDelete: "set null" }),
+  actorName: text("actor_name").notNull(), // cached for display
+  eventType: text("event_type").notNull(),
+  summary: text("summary").notNull(), // server-rendered human phrasing (no actor prefix)
+  previousValue: text("previous_value"),
+  newValue: text("new_value"),
+  detail: text("detail"), // e.g. checklist item text
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  taskIdx: index("task_activity_task_idx").on(table.taskId),
+  createdAtIdx: index("task_activity_created_at_idx").on(table.createdAt),
+}));
+
+export const insertTaskActivitySchema = createInsertSchema(taskActivity).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertTaskActivity = z.infer<typeof insertTaskActivitySchema>;
+export type TaskActivity = typeof taskActivity.$inferSelect;
+
 // ============================================
 // PURCHASE ORDERS
 // ============================================
