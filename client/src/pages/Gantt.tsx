@@ -65,6 +65,55 @@ import { useWeekStartDay } from "@/hooks/useWeekStartDay";
 type ZoomLevel = 'day' | 'week' | 'month';
 const ROW_HEIGHT = 32;
 
+// Given a flat sequence of visible item ids plus a parent lookup, produce a
+// normalized order where every group (parent + its children) is contiguous:
+// each top-level item appears in `flatOrder` sequence, immediately followed by
+// its children (also in `flatOrder` sequence). This guarantees a stray item can
+// never sit between a parent and its children — regardless of drag state — so
+// the mid-drag view always matches what persists after a refresh.
+// Groups are one level deep; any accidental grandchild is flattened to
+// top-level so no visible row is ever dropped.
+function buildNormalizedOrder(
+  flatOrder: string[],
+  parentIdOf: Map<string, string | null | undefined>,
+  collapsedItems: Set<string>,
+): string[] {
+  const visible = new Set(flatOrder);
+  const effParent = (id: string): string | null => {
+    const p = parentIdOf.get(id);
+    if (!p || !visible.has(p)) return null;
+    const pp = parentIdOf.get(p);
+    if (pp && visible.has(pp)) return null; // parent is itself a child → flatten
+    return p;
+  };
+
+  const topLevel: string[] = [];
+  const kidsByParent = new Map<string, string[]>();
+  for (const id of flatOrder) {
+    const p = effParent(id);
+    if (p) {
+      let arr = kidsByParent.get(p);
+      if (!arr) {
+        arr = [];
+        kidsByParent.set(p, arr);
+      }
+      arr.push(id);
+    } else {
+      topLevel.push(id);
+    }
+  }
+
+  const result: string[] = [];
+  for (const pid of topLevel) {
+    result.push(pid);
+    if (!collapsedItems.has(pid)) {
+      const kids = kidsByParent.get(pid);
+      if (kids) for (const k of kids) result.push(k);
+    }
+  }
+  return result;
+}
+
 interface GanttProps {
   onEditItem?: (item: ScheduleItem) => void;
   baselineItems?: any[];
@@ -126,6 +175,7 @@ function useGanttRowDrag(
   allItems: ScheduleItem[],
   projectId: string | undefined,
   toast: any,
+  collapsedItems: Set<string>,
   itemsCacheKey?: string,
   scrollContainerRef?: React.RefObject<HTMLDivElement>,
 ) {
@@ -144,6 +194,9 @@ function useGanttRowDrag(
   const [nestHighlightId, setNestHighlightId] = useState<string | null>(null);
   const rowDragScrollRafRef = useRef<number | null>(null);
   const rowDragMouseYRef = useRef<number>(0);
+  // The dragged item plus (if it is a parent) all of its children — excluded
+  // from drop-target detection so a group never drops onto its own rows.
+  const dragBlockRef = useRef<Set<string>>(new Set());
 
   const registerRowRef = useCallback((id: string, el: HTMLDivElement | null) => {
     if (el) {
@@ -165,6 +218,7 @@ function useGanttRowDrag(
 
     for (const id of sortableItemIds) {
       if (id === draggingId) continue;
+      if (dragBlockRef.current.has(id)) continue;
       const el = rowRefsMap.current.get(id);
       if (!el) continue;
       const rect = el.getBoundingClientRect();
@@ -177,6 +231,65 @@ function useGanttRowDrag(
     }
     return closest ? { targetId: closest.id, position: closest.position } : { targetId: null, position: 'below' };
   }, [sortableItemIds]);
+
+  // Unified drop resolution: given where the item lands relative to the visible
+  // rows, determine the dragged block, the flat insertion index, and the
+  // resulting parent — inside a group's span → child of that group; above the
+  // parent or below the last child → top-level. This drives both the live drop
+  // feedback and the committed re-parent/reorder so they always agree.
+  const resolveDrop = useCallback((
+    draggingId: string,
+    targetId: string | null,
+    position: 'above' | 'below',
+  ): {
+    base: string[];
+    insertIndex: number;
+    blockIds: string[];
+    newParentId: string | null;
+    draggedIsParent: boolean;
+  } | null => {
+    const dragged = allItems.find(i => i.id === draggingId);
+    if (!dragged) return null;
+    const draggedIsParent = !dragged.parentItemId && allItems.some(i => i.parentItemId === draggingId);
+    const childIds = draggedIsParent
+      ? sortableItemIds.filter(id => allItems.some(i => i.id === id && i.parentItemId === draggingId))
+      : [];
+    const blockIds = [draggingId, ...childIds];
+    const blockSet = new Set(blockIds);
+    const base = sortableItemIds.filter(id => !blockSet.has(id));
+
+    let insertIndex: number;
+    if (!targetId) {
+      insertIndex = base.length;
+    } else {
+      const targetIdx = base.indexOf(targetId);
+      insertIndex = targetIdx === -1 ? base.length : (position === 'below' ? targetIdx + 1 : targetIdx);
+    }
+
+    const prevId = insertIndex > 0 ? base[insertIndex - 1] : null;
+    const nextId = insertIndex < base.length ? base[insertIndex] : null;
+    const prev = prevId ? allItems.find(i => i.id === prevId) : null;
+    const next = nextId ? allItems.find(i => i.id === nextId) : null;
+
+    let newParentId: string | null = null;
+    if (!draggedIsParent && prev) {
+      const prevHasChildren = !prev.parentItemId && allItems.some(i => i.parentItemId === prev.id);
+      const prevCollapsed = collapsedItems.has(prev.id);
+      if (prevHasChildren && !prevCollapsed) {
+        // Gap directly beneath a group parent → first child slot of that group
+        newParentId = prev.id;
+      } else if (prev.parentItemId) {
+        // Inside a group: between two of its children → stay in the group;
+        // below the group's last child → become a top-level item
+        const groupId = prev.parentItemId;
+        newParentId = next && next.parentItemId === groupId ? groupId : null;
+      } else {
+        newParentId = null;
+      }
+    }
+
+    return { base, insertIndex, blockIds, newParentId, draggedIsParent };
+  }, [sortableItemIds, allItems, collapsedItems]);
 
   const handleDragHandleMouseDown = useCallback((e: React.MouseEvent, itemId: string) => {
     e.preventDefault();
@@ -231,6 +344,13 @@ function useGanttRowDrag(
         startRowDragAutoScroll();
         setRowDragItemId(itemId);
 
+        // Capture the whole block (item + its children if it is a group parent)
+        // so drop detection never targets a row that is being dragged.
+        const dItem = allItems.find(i => i.id === itemId);
+        const dIsParent = dItem && !dItem.parentItemId && allItems.some(i => i.parentItemId === itemId);
+        const kids = dIsParent ? allItems.filter(i => i.parentItemId === itemId).map(i => i.id) : [];
+        dragBlockRef.current = new Set([itemId, ...kids]);
+
         const rowEl = rowRefsMap.current.get(itemId);
         if (rowEl) {
           const rect = rowEl.getBoundingClientRect();
@@ -274,33 +394,36 @@ function useGanttRowDrag(
 
       if (targetId) {
         const targetEl = rowRefsMap.current.get(targetId);
-        const targetItem = allItems.find(i => i.id === targetId);
-        const draggedItem = allItems.find(i => i.id === itemId);
-        const isParentTarget = targetItem && !targetItem.parentItemId && allItems.some(i => i.parentItemId === targetId);
         const nestIndent = 24;
-        const targetIsChild = !!targetItem?.parentItemId;
-        const draggedIsParentWithChildren = draggedItem && !draggedItem.parentItemId && allItems.some(i => i.parentItemId === draggedItem.id);
-        // Only show indented drop indicator when reordering within same group (siblings)
-        const canAdoptIntoGroup = targetIsChild && !draggedIsParentWithChildren && targetItem?.parentItemId === draggedItem?.parentItemId;
+        // Resolve the outcome from the drop position (child vs. top-level) so
+        // feedback matches exactly what the drop will commit.
+        const resolution = resolveDrop(itemId, targetId, position);
+        const willNest = !!resolution && !!resolution.newParentId;
 
         if (targetEl) {
           const rect = targetEl.getBoundingClientRect();
           setRowDragIndicator({
             top: position === 'above' ? rect.top : rect.bottom,
-            left: rect.left + (canAdoptIntoGroup ? nestIndent : 0),
-            width: rect.width - (canAdoptIntoGroup ? nestIndent : 0),
-            indent: canAdoptIntoGroup ? nestIndent : 0,
+            left: rect.left + (willNest ? nestIndent : 0),
+            width: rect.width - (willNest ? nestIndent : 0),
+            indent: willNest ? nestIndent : 0,
           });
         }
 
+        // Highlight the group that will receive the item (position-based nest).
+        setNestHighlightId(willNest ? (resolution!.newParentId as string) : null);
+
+        // Hover-nest: create a NEW group under a childless parent. Only offered
+        // when the position wouldn't already nest into an existing group.
         if (nestTimerRef.current) clearTimeout(nestTimerRef.current);
-        if (position === 'below' || position === 'above') {
+        nestTargetRef.current = null;
+        if (!willNest && canNestItem(itemId, targetId)) {
           const el = rowRefsMap.current.get(targetId);
           if (el) {
             const rect = el.getBoundingClientRect();
             const midY = rect.top + rect.height / 2;
             const distFromMid = Math.abs(moveEvent.clientY - midY);
-            if (distFromMid < rect.height * 0.25 && canNestItem(itemId, targetId)) {
+            if (distFromMid < rect.height * 0.35) {
               nestTimerRef.current = setTimeout(() => {
                 nestTargetRef.current = targetId;
                 setNestHighlightId(targetId);
@@ -311,9 +434,6 @@ function useGanttRowDrag(
                   indent: nestIndent,
                 });
               }, 750);
-            } else {
-              nestTargetRef.current = null;
-              setNestHighlightId(null);
             }
           }
         }
@@ -333,139 +453,76 @@ function useGanttRowDrag(
       document.body.style.userSelect = '';
       document.body.style.cursor = '';
 
-      if (dragStartedRef.current) {
-        if (nestTargetRef.current && canNestItem(itemId, nestTargetRef.current)) {
-          const activeItem = allItems.find(i => i.id === itemId);
-          const targetItem = allItems.find(i => i.id === nestTargetRef.current);
-          if (activeItem && targetItem) {
-            const newParentId = nestTargetRef.current;
-            const invalidate = () => {
-              queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
-              if (itemsCacheKey) queryClient.invalidateQueries({ queryKey: [itemsCacheKey] });
-            };
-            // Reorder session: move nested item to sit right after parent's last existing child
-            const reorderedIds = [...sortableItemIds];
-            const fromIdx = reorderedIds.indexOf(itemId);
-            if (fromIdx !== -1) reorderedIds.splice(fromIdx, 1);
-            const parentIdx = reorderedIds.indexOf(newParentId!);
-            let insertAfterIdx = parentIdx;
-            for (let i = parentIdx + 1; i < reorderedIds.length; i++) {
-              const candidate = allItems.find(x => x.id === reorderedIds[i]);
-              if (candidate && candidate.parentItemId === newParentId) {
-                insertAfterIdx = i;
-              } else {
-                break;
-              }
-            }
-            reorderedIds.splice(insertAfterIdx + 1, 0, itemId);
-            setSessionItemOrder(reorderedIds);
-            // Optimistic update — move item under parent instantly
-            const applyOptimistic = (old: any) => {
-              if (!Array.isArray(old)) return old;
-              return old.map((i: any) => i.id === itemId ? { ...i, parentItemId: newParentId } : i);
-            };
-            queryClient.setQueryData([`/api/projects/${projectId}/schedule-items`], applyOptimistic);
-            if (itemsCacheKey) queryClient.setQueryData([itemsCacheKey], applyOptimistic);
-            apiRequest(`/api/schedule-items/${itemId}`, "PATCH", {
-              parentItemId: newParentId,
-            }).then(() => {
-              invalidate();
-            }).catch((err: any) => {
-              // Revert optimistic update
-              invalidate();
-              console.error("[Gantt] Nest failed:", err);
-              toast({
-                title: "Failed to nest item",
-                description: err?.message || String(err),
-                variant: "destructive",
-              });
-            });
+      if (dragStartedRef.current && (dropTargetIdRef.current || nestTargetRef.current)) {
+        const draggingId = itemId;
+        const draggedItem = allItems.find(i => i.id === draggingId);
+
+        // Resolve where the item lands from its drop position.
+        let resolution = resolveDrop(draggingId, dropTargetIdRef.current, dropPositionRef.current);
+        let newParentId: string | null = resolution ? resolution.newParentId : null;
+
+        // Hover-nest wins: user held over a childless parent to create a group.
+        if (nestTargetRef.current && canNestItem(draggingId, nestTargetRef.current)) {
+          newParentId = nestTargetRef.current;
+          if (!resolution) {
+            resolution = resolveDrop(draggingId, nestTargetRef.current, 'below');
           }
-        } else if (dropTargetIdRef.current) {
-          const targetId = dropTargetIdRef.current;
-          const position = dropPositionRef.current;
-          const activeItem = allItems.find(i => i.id === itemId);
-          const targetItem = allItems.find(i => i.id === targetId);
+        }
 
-          const targetIsChild = !!targetItem?.parentItemId;
-          const targetParentId = targetItem?.parentItemId;
-          const draggedParentId = activeItem?.parentItemId;
-          const draggedIsParentWithChildren = activeItem && !activeItem.parentItemId && allItems.some(i => i.parentItemId === activeItem.id);
-          // Children of the dragged item (if it's a parent)
-          const draggedChildren = draggedIsParentWithChildren
-            ? allItems.filter(i => i.parentItemId === activeItem!.id).map(i => i.id)
-            : [];
+        if (resolution) {
+          const oldParentId = draggedItem?.parentItemId ?? null;
+          const parentChanged = oldParentId !== newParentId;
 
-          // Determine effective drop target (redirect drops into foreign groups to group boundary)
-          let effectiveTargetId = targetId;
-          let effectivePosition = position;
-
-          if (targetIsChild && targetParentId !== draggedParentId) {
-            // Item dragged near a group it doesn't belong to — redirect to group boundary
-            const groupParent = allItems.find(i => i.id === targetParentId);
-            // Get siblings in current session order
-            const groupSiblingIds = sortableItemIds.filter(id =>
-              allItems.find(i => i.id === id && i.parentItemId === targetParentId)
-            );
-            if (position === 'above') {
-              // Snap above the parent row
-              effectiveTargetId = groupParent?.id || targetId;
-              effectivePosition = 'above';
-            } else {
-              // Snap below the last sibling in the group
-              effectiveTargetId = groupSiblingIds.length > 0
-                ? groupSiblingIds[groupSiblingIds.length - 1]
-                : groupParent?.id || targetId;
-              effectivePosition = 'below';
-            }
-          } else if (activeItem?.parentItemId && !targetIsChild && targetItem?.id !== activeItem.parentItemId) {
-            // Child dragged to top level (outside its group) — un-parent it
-            const invalidate = () => {
-              queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
-              if (itemsCacheKey) queryClient.invalidateQueries({ queryKey: [itemsCacheKey] });
-            };
-            const applyOptimistic = (old: any) => {
-              if (!Array.isArray(old)) return old;
-              return old.map((i: any) => i.id === itemId ? { ...i, parentItemId: null } : i);
-            };
-            queryClient.setQueryData([`/api/projects/${projectId}/schedule-items`], applyOptimistic);
-            if (itemsCacheKey) queryClient.setQueryData([itemsCacheKey], applyOptimistic);
-            apiRequest(`/api/schedule-items/${itemId}`, "PATCH", {
-              parentItemId: null,
-            }).then(() => {
-              invalidate();
-            }).catch(() => {
-              invalidate();
-              toast({ title: "Failed to remove from group", variant: "destructive" });
-            });
-          }
-
-          // Move item (+ any children) together as a contiguous block
-          // Use sortableItemIds (always fresh via useCallback deps) as the base order
-          const newOrder = [...sortableItemIds];
-          const childrenInOrder = draggedChildren.filter(id => newOrder.includes(id))
-            .sort((a, b) => newOrder.indexOf(a) - newOrder.indexOf(b));
-          const idsToMove = [itemId, ...childrenInOrder];
-
-          idsToMove.forEach(id => {
-            const idx = newOrder.indexOf(id);
-            if (idx !== -1) newOrder.splice(idx, 1);
-          });
-
-          let targetIndex = newOrder.indexOf(effectiveTargetId);
-          if (targetIndex === -1) {
-            newOrder.push(...idsToMove);
-          } else {
-            const insertAt = effectivePosition === 'below' ? targetIndex + 1 : targetIndex;
-            newOrder.splice(insertAt, 0, ...idsToMove);
-          }
+          // Build the committed order: splice the block in at the drop point,
+          // then normalize so groups stay contiguous. This is exactly what the
+          // component will render, so mid-drag view == post-refresh view.
+          const flat = [...resolution.base];
+          flat.splice(resolution.insertIndex, 0, ...resolution.blockIds);
+          const parentIdOf = new Map<string, string | null | undefined>();
+          allItems.forEach(i => parentIdOf.set(i.id, i.parentItemId ?? null));
+          parentIdOf.set(draggingId, newParentId);
+          const newOrder = buildNormalizedOrder(flat, parentIdOf, collapsedItems);
 
           setSessionItemOrder(newOrder);
 
-          // Persist sortOrder for ALL items so no stale zeros cause tiebreaks on refresh
-          newOrder.forEach((id, newIdx) => {
-            apiRequest(`/api/schedule-items/${id}`, "PATCH", { sortOrder: newIdx }).catch(() => {});
-          });
+          const invalidate = () => {
+            queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
+            if (itemsCacheKey) queryClient.invalidateQueries({ queryKey: [itemsCacheKey] });
+          };
+
+          // Persist sortOrder for ALL rows so no stale values cause tiebreaks on refresh.
+          const persistSortOrders = () => {
+            newOrder.forEach((id, newIdx) => {
+              apiRequest(`/api/schedule-items/${id}`, "PATCH", { sortOrder: newIdx }).catch(() => {});
+            });
+          };
+
+          if (parentChanged) {
+            // Optimistically move the item under its new parent (or to top level).
+            const applyOptimistic = (old: any) => {
+              if (!Array.isArray(old)) return old;
+              return old.map((i: any) => i.id === draggingId ? { ...i, parentItemId: newParentId } : i);
+            };
+            queryClient.setQueryData([`/api/projects/${projectId}/schedule-items`], applyOptimistic);
+            if (itemsCacheKey) queryClient.setQueryData([itemsCacheKey], applyOptimistic);
+
+            apiRequest(`/api/schedule-items/${draggingId}`, "PATCH", { parentItemId: newParentId })
+              .then(() => {
+                persistSortOrders();
+                invalidate();
+              })
+              .catch((err: any) => {
+                invalidate();
+                console.error("[Gantt] Re-parent failed:", err);
+                toast({
+                  title: newParentId ? "Failed to nest item" : "Failed to remove from group",
+                  description: err?.message || String(err),
+                  variant: "destructive",
+                });
+              });
+          } else {
+            persistSortOrders();
+          }
         }
       }
 
@@ -484,7 +541,7 @@ function useGanttRowDrag(
     activeListenersRef.current = { move: onMouseMove, up: onMouseUp };
     document.addEventListener('mousemove', onMouseMove);
     document.addEventListener('mouseup', onMouseUp);
-  }, [sortableItemIds, findDropTarget, setSessionItemOrder, canNestItem, allItems, projectId, toast, removeGhost]);
+  }, [sortableItemIds, findDropTarget, resolveDrop, setSessionItemOrder, canNestItem, allItems, collapsedItems, projectId, toast, itemsCacheKey, removeGhost]);
 
   useEffect(() => {
     return () => {
@@ -959,24 +1016,35 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
     return ids;
   }, [parentItems, childItemsByParent, collapsedItems]);
 
-  // Use session order if user has dragged, otherwise use default date-sorted order
+  // Parent lookup from the current items — the source of truth for grouping.
+  const parentIdOf = useMemo(() => {
+    const map = new Map<string, string | null | undefined>();
+    allItems.forEach(i => map.set(i.id, i.parentItemId ?? null));
+    return map;
+  }, [allItems]);
+
+  // Use session order if user has dragged, otherwise use default date-sorted
+  // order — then ALWAYS normalize into a contiguous parent→children tree so a
+  // stray item can never sit between a parent and its children, and so the
+  // mid-drag view matches what persists after a refresh.
   const sortableItemIds = useMemo(() => {
-    if (sessionItemOrder.length === 0) return defaultItemIds;
-    
-    // Filter session order to only include items that still exist
-    const validIds = new Set(defaultItemIds);
-    const filtered = sessionItemOrder.filter(id => validIds.has(id));
-    
-    // Add any new items that aren't in the session order
-    const sessionSet = new Set(filtered);
-    defaultItemIds.forEach(id => {
-      if (!sessionSet.has(id)) {
-        filtered.push(id);
-      }
-    });
-    
-    return filtered;
-  }, [sessionItemOrder, defaultItemIds]);
+    let baseFlat: string[];
+    if (sessionItemOrder.length === 0) {
+      baseFlat = defaultItemIds;
+    } else {
+      // Filter session order to only include items that still exist
+      const validIds = new Set(defaultItemIds);
+      const filtered = sessionItemOrder.filter(id => validIds.has(id));
+      // Append any new items (e.g. a freshly created child) that aren't in the
+      // session order yet — normalization will slot them into their group.
+      const sessionSet = new Set(filtered);
+      defaultItemIds.forEach(id => {
+        if (!sessionSet.has(id)) filtered.push(id);
+      });
+      baseFlat = filtered;
+    }
+    return buildNormalizedOrder(baseFlat, parentIdOf, collapsedItems);
+  }, [sessionItemOrder, defaultItemIds, parentIdOf, collapsedItems]);
 
   // Build ordered items list for rendering based on sortableItemIds
   const orderedItems = useMemo(() => {
@@ -995,7 +1063,7 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
     nestHighlightId,
     registerRowRef,
     handleDragHandleMouseDown,
-  } = useGanttRowDrag(sortableItemIds, setSessionItemOrder, canNestItem, allItems, projectId, toast, itemsCacheKey, leftPanelRef);
+  } = useGanttRowDrag(sortableItemIds, setSessionItemOrder, canNestItem, allItems, projectId, toast, collapsedItems, itemsCacheKey, leftPanelRef);
 
   // Build ordered parent items list for rendering (respects session order)
   const orderedParentItems = useMemo(() => {

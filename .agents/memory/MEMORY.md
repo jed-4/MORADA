@@ -46,3 +46,4 @@
 - [Schedule Save/Discard model](schedule-save-discard-model.md) — editSnapshot json + begin/commit/discard; discard is a diff-restore (detach→delete→reinsert-orig-id→update); each op atomic in ONE tx; client must check res.ok before navigating.
 - [Task activity feed](task-activity-feed.md) — task audit lines share the comment feed; recordTaskActivity must fire on EVERY task-mutation path or logging silently stops; no notifications.
 - [Mention notif tenant validation](mention-notif-tenant-validation.md) — @mention markup carries raw userId; notify-mentions helpers MUST filter IDs through getUsersByCompany before createNotification or a crafted mention pushes to another company.
+- [Gantt row grouping normalization](gantt-row-grouping-normalization.md) — one shared buildNormalizedOrder + resolveDrop drives BOTH render and drop-commit so groups stay contiguous and mid-drag view == post-refresh.
