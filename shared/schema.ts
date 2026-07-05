@@ -6829,3 +6829,81 @@ export const productImages = pgTable("product_images", {
 export const insertProductImageSchema = createInsertSchema(productImages).omit({ id: true, createdAt: true });
 export type InsertProductImage = z.infer<typeof insertProductImageSchema>;
 export type ProductImage = typeof productImages.$inferSelect;
+
+// ── Circuit Sessions ────────────────────────────────
+export const circuitSessions = pgTable("circuit_sessions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  mode: text("mode").notNull().default("full"), // "full" | "quick" | "brain_dump"
+  currentStop: integer("current_stop").notNull().default(1),
+  completedAt: timestamp("completed_at"),
+  summary: json("summary").default({}),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+// ── Circuit Blocked Items ───────────────────────────
+export const circuitBlockedItems = pgTable("circuit_blocked_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  sessionId: varchar("session_id").references(() => circuitSessions.id),
+  stop: integer("stop").notNull(),
+  stopName: text("stop_name").notNull(),
+  description: text("description").notNull(),
+  reason: text("reason"),
+  ownedBy: text("owned_by"),
+  relatedProjectId: varchar("related_project_id").references(() => projects.id, { onDelete: "set null" }),
+  resolvedAt: timestamp("resolved_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+// ── Circuit Messages (conversation history) ─────────
+export const circuitMessages = pgTable("circuit_messages", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  sessionId: varchar("session_id").notNull().references(() => circuitSessions.id, { onDelete: "cascade" }),
+  role: text("role").notNull(), // "assistant" | "user"
+  content: text("content").notNull(),
+  stop: integer("stop"),
+  quickReplies: json("quick_replies").default([]), // string[]
+  action: json("action").default(null), // { type: "create_task" | "log_blocked", payload: {...} }
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export type CircuitSession = typeof circuitSessions.$inferSelect;
+export type CircuitBlockedItem = typeof circuitBlockedItems.$inferSelect;
+export type CircuitMessage = typeof circuitMessages.$inferSelect;
+export type InsertCircuitSession = typeof circuitSessions.$inferInsert;
+export type InsertCircuitBlockedItem = typeof circuitBlockedItems.$inferInsert;
+export type InsertCircuitMessage = typeof circuitMessages.$inferInsert;
+
+// Live business snapshot Circuit feeds to the AI when building a session.
+export interface CircuitContext {
+  activeProjects: Array<{
+    id: string; name: string; status: string; subStatus: string;
+    percentComplete: number; startDate: string | null; endDate: string | null;
+    clientName: string | null; contractCost: number | null;
+  }>;
+  overdueTasks: Array<{
+    id: string; title: string; dueDate: string; assigneeName: string | null;
+    projectName: string | null; status: string;
+  }>;
+  tasksDueThisWeek: Array<{
+    id: string; title: string; dueDate: string; assigneeName: string | null;
+    projectName: string | null;
+  }>;
+  unpaidBills: Array<{
+    id: string; billNumber: string; supplierName: string | null;
+    total: number; dueDate: string | null; projectName: string | null;
+    daysOverdue: number;
+  }>;
+  overdueClientInvoices: Array<{
+    id: string; invoiceNumber: string | null; name: string;
+    totalAmount: number; dueDate: string | null; projectName: string;
+    daysSinceSent: number;
+  }>;
+  openBlockedItems: CircuitBlockedItem[];
+  leadProjects: Array<{ id: string; name: string; subStatus: string; }>;
+}

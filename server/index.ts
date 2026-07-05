@@ -273,6 +273,15 @@ app.use((req, res, next) => {
       console.error('Failed to ensure push_tokens table:', error);
     }
 
+    // Ensure the circuit_* tables exist (additive, idempotent). The deploy
+    // build does not run drizzle push, so this guarantees the Circuit AI chat
+    // widget works the first time production boots this feature.
+    try {
+      await storage.ensureCircuitTables();
+    } catch (error) {
+      console.error('Failed to ensure circuit tables:', error);
+    }
+
     // Ensure the suggestions table + users.is_platform_staff column exist
     // (additive, idempotent). The deploy build does not run drizzle push, so
     // this guarantees the suggestion box works the first time production boots

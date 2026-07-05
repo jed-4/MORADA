@@ -116,10 +116,11 @@ import { randomUUID } from "crypto";
 import { PasswordUtils } from "./utils/auth";
 import { generateRecurringTaskInstances, getRecurringTaskKey, generateNextRecurringInstance } from "./utils/recurringTasks";
 import { db } from "./db";
-import { eq, or, and, desc, asc, gte, lte, sql, inArray, isNull, isNotNull, gt, not, ne } from "drizzle-orm";
+import { eq, or, and, desc, asc, gte, lte, sql, inArray, isNull, isNotNull, gt, lt, not, ne } from "drizzle-orm";
 import * as schema from "@shared/schema";
 import { computeEstimateItemPrice, computeEstimateSummary, estimateItemBuilderCostExTax, resolveEstimateStoredPrice } from "@shared/pricing";
 import { computeBillTotalsCents, billLineExGstCents } from "@shared/billTotals";
+import type { CircuitSession, InsertCircuitSession, CircuitBlockedItem, InsertCircuitBlockedItem, CircuitMessage, InsertCircuitMessage, CircuitContext } from "@shared/schema";
 
 // --- Timezone helpers (used by clockIn/clockOut and backfill) ---
 export function formatHHmmInTz(d: Date, tz: string): string {
@@ -1385,6 +1386,18 @@ export interface IStorage {
   getPushTokensForUser(userId: string): Promise<PushToken[]>;
   deletePushToken(token: string, userId?: string): Promise<boolean>;
   deletePushTokens(tokens: string[]): Promise<number>;
+
+  // Circuit AI Chat
+  ensureCircuitTables(): Promise<void>;
+  createCircuitSession(session: InsertCircuitSession): Promise<CircuitSession>;
+  getCircuitSession(id: string): Promise<CircuitSession | undefined>;
+  updateCircuitSession(id: string, data: Partial<InsertCircuitSession>): Promise<CircuitSession | undefined>;
+  getCircuitMessages(sessionId: string): Promise<CircuitMessage[]>;
+  createCircuitMessage(message: InsertCircuitMessage): Promise<CircuitMessage>;
+  getCircuitBlockedItems(companyId: string, resolved?: boolean): Promise<CircuitBlockedItem[]>;
+  createCircuitBlockedItem(item: InsertCircuitBlockedItem): Promise<CircuitBlockedItem>;
+  resolveCircuitBlockedItem(id: string, companyId: string): Promise<CircuitBlockedItem | undefined>;
+  getCircuitContext(companyId: string): Promise<CircuitContext>;
 
   // Product suggestions (feedback). Identity/company derived server-side.
   ensureSuggestionsTable(): Promise<void>;
@@ -24426,6 +24439,234 @@ export class DbStorage implements IStorage {
     } catch (error) {
       console.error("Failed to ensure push_tokens table exists:", error);
     }
+  }
+
+  // ── Circuit AI Chat ─────────────────────────────────
+  // Additive, idempotent safety net. The deploy build does NOT run drizzle
+  // push, so this guarantees the circuit_* tables exist in production the first
+  // time the server boots after this feature ships. CREATE ... IF NOT EXISTS is
+  // non-destructive and a no-op once the tables are present.
+  async ensureCircuitTables(): Promise<void> {
+    try {
+      await db.execute(sql`
+        CREATE TABLE IF NOT EXISTS circuit_sessions (
+          id varchar PRIMARY KEY DEFAULT gen_random_uuid(),
+          company_id varchar NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+          user_id varchar NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          mode text NOT NULL DEFAULT 'full',
+          current_stop integer NOT NULL DEFAULT 1,
+          completed_at timestamp,
+          summary json DEFAULT '{}'::json,
+          created_at timestamp NOT NULL DEFAULT now(),
+          updated_at timestamp NOT NULL DEFAULT now()
+        )
+      `);
+      await db.execute(sql`
+        CREATE TABLE IF NOT EXISTS circuit_blocked_items (
+          id varchar PRIMARY KEY DEFAULT gen_random_uuid(),
+          company_id varchar NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+          user_id varchar NOT NULL REFERENCES users(id),
+          session_id varchar REFERENCES circuit_sessions(id),
+          stop integer NOT NULL,
+          stop_name text NOT NULL,
+          description text NOT NULL,
+          reason text,
+          owned_by text,
+          related_project_id varchar REFERENCES projects(id) ON DELETE SET NULL,
+          resolved_at timestamp,
+          created_at timestamp NOT NULL DEFAULT now(),
+          updated_at timestamp NOT NULL DEFAULT now()
+        )
+      `);
+      await db.execute(sql`
+        CREATE TABLE IF NOT EXISTS circuit_messages (
+          id varchar PRIMARY KEY DEFAULT gen_random_uuid(),
+          session_id varchar NOT NULL REFERENCES circuit_sessions(id) ON DELETE CASCADE,
+          role text NOT NULL,
+          content text NOT NULL,
+          stop integer,
+          quick_replies json DEFAULT '[]'::json,
+          action json,
+          created_at timestamp NOT NULL DEFAULT now()
+        )
+      `);
+      await db.execute(sql`CREATE INDEX IF NOT EXISTS circuit_sessions_company_idx ON circuit_sessions (company_id)`);
+      await db.execute(sql`CREATE INDEX IF NOT EXISTS circuit_blocked_company_idx ON circuit_blocked_items (company_id)`);
+      await db.execute(sql`CREATE INDEX IF NOT EXISTS circuit_messages_session_idx ON circuit_messages (session_id)`);
+    } catch (error) {
+      console.error("Failed to ensure circuit tables exist:", error);
+    }
+  }
+
+  async createCircuitSession(session: InsertCircuitSession): Promise<CircuitSession> {
+    const [row] = await db.insert(schema.circuitSessions).values(session).returning();
+    return row;
+  }
+
+  async getCircuitSession(id: string): Promise<CircuitSession | undefined> {
+    const [row] = await db.select().from(schema.circuitSessions)
+      .where(eq(schema.circuitSessions.id, id))
+      .limit(1);
+    return row;
+  }
+
+  async updateCircuitSession(id: string, data: Partial<InsertCircuitSession>): Promise<CircuitSession | undefined> {
+    const [row] = await db.update(schema.circuitSessions)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(schema.circuitSessions.id, id))
+      .returning();
+    return row;
+  }
+
+  async getCircuitMessages(sessionId: string): Promise<CircuitMessage[]> {
+    return await db.select().from(schema.circuitMessages)
+      .where(eq(schema.circuitMessages.sessionId, sessionId))
+      .orderBy(asc(schema.circuitMessages.createdAt));
+  }
+
+  async createCircuitMessage(message: InsertCircuitMessage): Promise<CircuitMessage> {
+    const [row] = await db.insert(schema.circuitMessages).values(message).returning();
+    return row;
+  }
+
+  async getCircuitBlockedItems(companyId: string, resolved?: boolean): Promise<CircuitBlockedItem[]> {
+    const conditions = [eq(schema.circuitBlockedItems.companyId, companyId)];
+    if (resolved === true) {
+      conditions.push(isNotNull(schema.circuitBlockedItems.resolvedAt));
+    } else if (resolved === false) {
+      conditions.push(isNull(schema.circuitBlockedItems.resolvedAt));
+    }
+    return await db.select().from(schema.circuitBlockedItems)
+      .where(and(...conditions))
+      .orderBy(desc(schema.circuitBlockedItems.createdAt));
+  }
+
+  async createCircuitBlockedItem(item: InsertCircuitBlockedItem): Promise<CircuitBlockedItem> {
+    const [row] = await db.insert(schema.circuitBlockedItems).values(item).returning();
+    return row;
+  }
+
+  async resolveCircuitBlockedItem(id: string, companyId: string): Promise<CircuitBlockedItem | undefined> {
+    const [row] = await db.update(schema.circuitBlockedItems)
+      .set({ resolvedAt: new Date(), updatedAt: new Date() })
+      .where(and(
+        eq(schema.circuitBlockedItems.id, id),
+        eq(schema.circuitBlockedItems.companyId, companyId),
+      ))
+      .returning();
+    return row;
+  }
+
+  async getCircuitContext(companyId: string): Promise<CircuitContext> {
+    const now = new Date();
+    const sevenDaysFromNow = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+
+    // Active projects (not archived, active, not leads)
+    const allProjects = await db.select().from(schema.projects)
+      .where(and(
+        eq(schema.projects.companyId, companyId),
+        eq(schema.projects.isArchived, false),
+        eq(schema.projects.isActive, true),
+        not(eq(schema.projects.projectStatus, "lead")),
+      ));
+
+    // Lead / pipeline projects
+    const leadProjects = await db.select().from(schema.projects)
+      .where(and(
+        eq(schema.projects.companyId, companyId),
+        eq(schema.projects.isArchived, false),
+        eq(schema.projects.projectStatus, "lead"),
+      ));
+
+    // Overdue tasks (notes with type=task, status!=done, dueDate < now)
+    const overdueTasks = await db.select().from(schema.notes)
+      .where(and(
+        eq(schema.notes.companyId, companyId),
+        eq(schema.notes.type, "task"),
+        not(eq(schema.notes.status, "done")),
+        lt(schema.notes.dueDate, now),
+        isNull(schema.notes.archivedAt),
+      ))
+      .limit(20);
+
+    // Tasks due this week
+    const tasksDueThisWeek = await db.select().from(schema.notes)
+      .where(and(
+        eq(schema.notes.companyId, companyId),
+        eq(schema.notes.type, "task"),
+        not(eq(schema.notes.status, "done")),
+        gte(schema.notes.dueDate, now),
+        lte(schema.notes.dueDate, sevenDaysFromNow),
+        isNull(schema.notes.archivedAt),
+      ))
+      .limit(20);
+
+    // Unpaid bills (anything not yet paid). The bill_status enum has no
+    // "unpaid" value, so "unpaid" == everything except "paid".
+    const unpaidBills = await db.select().from(schema.bills)
+      .where(and(
+        eq(schema.bills.companyId, companyId),
+        not(eq(schema.bills.status, "paid")),
+      ))
+      .limit(20);
+
+    // Overdue client invoices (join to projects for company scoping + name)
+    const overdueInvoices = await db.select().from(schema.clientInvoices)
+      .innerJoin(schema.projects, eq(schema.clientInvoices.projectId, schema.projects.id))
+      .where(and(
+        eq(schema.projects.companyId, companyId),
+        not(eq(schema.clientInvoices.status, "paid")),
+        not(eq(schema.clientInvoices.status, "draft")),
+        lt(schema.clientInvoices.dueDate, now),
+      ))
+      .limit(10);
+
+    // Open blocked items from previous circuits
+    const openBlockedItems = await db.select().from(schema.circuitBlockedItems)
+      .where(and(
+        eq(schema.circuitBlockedItems.companyId, companyId),
+        isNull(schema.circuitBlockedItems.resolvedAt),
+      ))
+      .orderBy(desc(schema.circuitBlockedItems.createdAt))
+      .limit(20);
+
+    return {
+      activeProjects: allProjects.map((p: any) => ({
+        id: p.id, name: p.name, status: p.projectStatus || p.status,
+        subStatus: p.projectSubStatus, percentComplete: p.percentComplete,
+        startDate: p.startDate, endDate: p.endDate,
+        clientName: null, contractCost: p.contractCost,
+      })),
+      overdueTasks: overdueTasks.map((t: any) => ({
+        id: t.id, title: t.title,
+        dueDate: t.dueDate?.toISOString() || "",
+        assigneeName: t.assigneeName, projectName: null,
+        status: t.status || "todo",
+      })),
+      tasksDueThisWeek: tasksDueThisWeek.map((t: any) => ({
+        id: t.id, title: t.title,
+        dueDate: t.dueDate?.toISOString() || "",
+        assigneeName: t.assigneeName, projectName: null,
+      })),
+      unpaidBills: unpaidBills.map((b: any) => ({
+        id: b.id, billNumber: b.billNumber, supplierName: null,
+        total: b.total, dueDate: b.dueDate?.toISOString() || null,
+        projectName: null,
+        daysOverdue: b.dueDate ? Math.floor((now.getTime() - b.dueDate.getTime()) / 86400000) : 0,
+      })),
+      overdueClientInvoices: overdueInvoices.map((row: any) => {
+        const inv = row.client_invoices;
+        const proj = row.projects;
+        return {
+          id: inv.id, invoiceNumber: inv.invoiceNumber, name: inv.name,
+          totalAmount: inv.totalAmount, dueDate: inv.dueDate?.toISOString() || null,
+          projectName: proj.name,
+          daysSinceSent: inv.sentDate ? Math.floor((now.getTime() - inv.sentDate.getTime()) / 86400000) : 0,
+        };
+      }),
+      openBlockedItems,
+      leadProjects: leadProjects.map((p: any) => ({ id: p.id, name: p.name, subStatus: p.projectSubStatus })),
+    };
   }
 
   async upsertPushToken(data: { userId: string; token: string; platform?: string; deviceName?: string }): Promise<PushToken> {

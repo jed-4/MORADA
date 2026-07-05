@@ -27,6 +27,7 @@ import { TimeClockWidget } from "./TimeClockWidget";
 import { UserCalendarDialog } from "./UserCalendarDialog";
 import { MessagesDropdown } from "./MessagesDropdown";
 import { NotificationBell } from "./NotificationBell";
+import { CircuitWidget } from "./CircuitWidget";
 import { ProjectIcon } from "./ProjectIcon";
 import { GlobalSearch } from "./GlobalSearch";
 import { useProject } from "@/contexts/ProjectContext";
@@ -616,6 +617,9 @@ export default function Header() {
 
         {/* Messages Dropdown */}
         <MessagesDropdown />
+
+        {/* Circuit AI Chat */}
+        <CircuitWidget />
 
         {/* Notifications Bell */}
         <NotificationBell />
