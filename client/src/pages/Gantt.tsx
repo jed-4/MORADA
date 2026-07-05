@@ -680,6 +680,12 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
   const [colorPickerOpen, setColorPickerOpen] = useState<string | null>(null);
   const colorPickerTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [showOnlineConfirmDialog, setShowOnlineConfirmDialog] = useState(false);
+  const [deleteDialog, setDeleteDialog] = useState<{
+    item: ScheduleItem;
+    directChildIds: string[];
+    descendantCount: number;
+  } | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
   
   // Column width state for resizable columns
   const [columnWidths, setColumnWidths] = useState({
@@ -1102,23 +1108,6 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
     },
     onSuccess: () => {
       invalidateScheduleItems();
-    },
-  });
-
-  const deleteItemMutation = useMutation({
-    mutationFn: async (id: string) => {
-      return apiRequest(`/api/schedule-items/${id}`, "DELETE");
-    },
-    onSuccess: () => {
-      invalidateScheduleItems();
-      
-    },
-    onError: (error: any) => {
-      toast({ 
-        title: "Failed to delete", 
-        description: error?.message || "Could not delete the task",
-        variant: "destructive",
-      });
     },
   });
 
@@ -1644,37 +1633,6 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
         }
       };
 
-      // When a resize-right extends/shrinks the predecessor's end but leaves successors
-      // in place, we update the stored lag so future drags preserve the new gap.
-      const recalcLagForSuccessors = (predecessorId: string | number, predNewEnd: Date, items: ScheduleItem[]) => {
-        const successors = items.filter(item =>
-          (item.dependencies as any[] || []).some((dep: any) => String(dep.id) === String(predecessorId))
-        );
-        const MS_PER_DAY = 1000 * 60 * 60 * 24;
-        for (const succ of successors) {
-          const deps = succ.dependencies as any[];
-          const updatedDeps = deps.map((dep: any) => {
-            if (String(dep.id) !== String(predecessorId)) return dep;
-            const type = dep.type || 'FS';
-            if (type === 'FS') {
-              return { ...dep, lag: calcFsLag(predNewEnd, new Date(succ.startDate as any)) };
-            } else if (type === 'FF') {
-              const succEnd = new Date(succ.endDate as any); succEnd.setHours(0,0,0,0);
-              const newLag = Math.round((succEnd.getTime() - predNewEnd.getTime()) / MS_PER_DAY);
-              return { ...dep, lag: newLag };
-            }
-            // SS and SF are not affected by predecessor end change
-            return dep;
-          });
-          const changed = deps.some((d: any, i: number) => d.lag !== updatedDeps[i].lag);
-          if (changed) {
-            apiRequest(`/api/schedule-items/${succ.id}`, "PATCH", { dependencies: updatedDeps })
-              .then(() => invalidateScheduleItems())
-              .catch(() => {});
-          }
-        }
-      };
-
       // When a child item is dragged and its new end date changes the parent's
       // effective end date, cascade to the parent's dependents (successors).
       const cascadeParentSuccessors = (childId: number | string, childNewEnd: Date) => {
@@ -1827,14 +1785,40 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
           
           if (newEnd >= drag.originalStart) {
             updateCacheOptimistically(drag.id, drag.originalStart, newEnd);
-            
+
+            // Cascade successors symmetrically (grow → push later, shrink → pull
+            // earlier) while preserving each successor's stored lag — mirrors the
+            // move path and the server cascade so the persisted result matches.
+            const cascadeUpdates = computeMoveCascade({
+              movedItemId: drag.id,
+              originalStart: drag.originalStart,
+              originalEnd: drag.originalEnd,
+              newStart: drag.originalStart,
+              newEnd,
+              allItems: currentItems,
+              isNonWorking: isNonWorkingDayRef.current,
+            });
+
+            for (const u of cascadeUpdates) {
+              const parsedStart = parseLocalMidnight(u.startDate);
+              const parsedEnd = parseLocalMidnight(u.endDate);
+              updateCacheOptimistically(u.id, parsedStart, parsedEnd);
+            }
+
             mutate.mutate({
               id: drag.id,
               startDate: format(drag.originalStart, 'yyyy-MM-dd') as any,
               endDate: format(newEnd, 'yyyy-MM-dd') as any,
             });
 
-            recalcLagForSuccessors(drag.id, newEnd, currentItems);
+            for (const u of cascadeUpdates) {
+              mutate.mutate({
+                id: u.id,
+                startDate: u.startDate as any,
+                endDate: u.endDate as any,
+              });
+            }
+
             cascadeParentSuccessors(drag.id, newEnd);
           }
         }
@@ -2269,15 +2253,54 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
     }
   };
 
-  const handleDeleteItem = async (item: ScheduleItem) => {
-    if (!confirm(`Are you sure you want to delete "${item.name}"?`)) return;
-    
+  const handleDeleteItem = (item: ScheduleItem) => {
+    const directChildIds = allItems
+      .filter(i => String(i.parentItemId) === String(item.id))
+      .map(i => String(i.id));
+
+    // Count all descendants (children, grandchildren, ...) for the confirmation copy.
+    let descendantCount = 0;
+    const stack = [...directChildIds];
+    const seen = new Set<string>();
+    while (stack.length) {
+      const id = stack.pop()!;
+      if (seen.has(id)) continue;
+      seen.add(id);
+      descendantCount++;
+      for (const c of allItems.filter(i => String(i.parentItemId) === id)) {
+        stack.push(String(c.id));
+      }
+    }
+
+    setDeleteDialog({ item, directChildIds, descendantCount });
+  };
+
+  // mode 'withChildren' relies on the DB onDelete cascade to remove descendants.
+  // mode 'parentOnly' first detaches direct children (parentItemId = null) so they
+  // are promoted to top-level instead of being cascaded away.
+  const performDelete = async (mode: 'withChildren' | 'parentOnly') => {
+    if (!deleteDialog) return;
+    const { item, directChildIds } = deleteDialog;
+    setIsDeleting(true);
     try {
+      if (mode === 'parentOnly' && directChildIds.length > 0) {
+        await Promise.all(
+          directChildIds.map(cid =>
+            apiRequest(`/api/schedule-items/${cid}`, "PATCH", { parentItemId: null })
+          )
+        );
+      }
       await apiRequest(`/api/schedule-items/${item.id}`, "DELETE");
       invalidateScheduleItems();
-      
-    } catch (error) {
-      toast({ title: "Failed to delete", description: "Could not delete item.", variant: "destructive" });
+      setDeleteDialog(null);
+    } catch (error: any) {
+      toast({
+        title: "Failed to delete",
+        description: error?.message || "Could not delete the item.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -4176,9 +4199,7 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
               <button
                 className="relative flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground w-full text-left text-destructive"
                 onClick={() => {
-                  if (confirm(`Are you sure you want to delete "${contextMenu.item.name}"?`)) {
-                    deleteItemMutation.mutate(contextMenu.item.id);
-                  }
+                  handleDeleteItem(contextMenu.item);
                   setContextMenu(null);
                 }}
                 data-testid="context-menu-delete"
@@ -4230,6 +4251,69 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
         </div>,
         document.body
       )}
+
+      <AlertDialog
+        open={!!deleteDialog}
+        onOpenChange={(open) => {
+          if (!open && !isDeleting) setDeleteDialog(null);
+        }}
+      >
+        <AlertDialogContent data-testid="dialog-delete-item">
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Delete "{deleteDialog?.item.name}"?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {deleteDialog && deleteDialog.descendantCount > 0
+                ? `This item has ${deleteDialog.descendantCount} sub-item${deleteDialog.descendantCount === 1 ? '' : 's'}. Choose whether to delete them too, or keep them and move them to the top level.`
+                : 'This will permanently delete this schedule item. This action cannot be undone.'}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeleting} data-testid="button-delete-cancel">
+              Cancel
+            </AlertDialogCancel>
+            {deleteDialog && deleteDialog.descendantCount > 0 ? (
+              <>
+                <AlertDialogAction
+                  onClick={(e) => {
+                    e.preventDefault();
+                    performDelete('parentOnly');
+                  }}
+                  disabled={isDeleting}
+                  className="bg-secondary text-secondary-foreground hover:bg-secondary"
+                  data-testid="button-delete-parent-only"
+                >
+                  Keep sub-items
+                </AlertDialogAction>
+                <AlertDialogAction
+                  onClick={(e) => {
+                    e.preventDefault();
+                    performDelete('withChildren');
+                  }}
+                  disabled={isDeleting}
+                  className="bg-destructive text-destructive-foreground hover:bg-destructive"
+                  data-testid="button-delete-with-children"
+                >
+                  Delete sub-items too
+                </AlertDialogAction>
+              </>
+            ) : (
+              <AlertDialogAction
+                onClick={(e) => {
+                  e.preventDefault();
+                  performDelete('withChildren');
+                }}
+                disabled={isDeleting}
+                className="bg-destructive text-destructive-foreground hover:bg-destructive"
+                data-testid="button-delete-confirm"
+              >
+                Delete
+              </AlertDialogAction>
+            )}
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

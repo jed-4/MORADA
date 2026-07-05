@@ -25356,10 +25356,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
             if (!requiredStart) continue;
 
-            // Only cascade forward (don't pull successors earlier than they already are)
-            if (succStart >= requiredStart) continue;
-
             const newSuccEnd = addWD(requiredStart, workDuration);
+
+            // Symmetric cascade: move dependents to their earliest allowed start in
+            // either direction (push later when a predecessor grows, pull earlier when
+            // it shrinks). Skip only when nothing actually changes, to avoid redundant
+            // writes and needless re-queuing.
+            if (
+              succStart.getTime() === requiredStart.getTime() &&
+              succEnd.getTime() === newSuccEnd.getTime()
+            ) continue;
 
             await storage.updateScheduleItem(succ.id, {
               startDate: requiredStart,
@@ -25427,7 +25433,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
                   .set(parentUpdate)
                   .where(eq(scheduleItems.id, item.parentItemId));
 
-                // Cascade from parent if its endDate moved outward
+                // Cascade from parent whenever its endDate moved in either direction
+                // (grew → push dependents later; shrank → pull dependents earlier).
                 if (maxEnd && (!parentOldEnd || maxEnd.getTime() !== parentOldEnd.getTime())) {
                   const parentNewStart = minStart
                     ?? (parentBefore?.startDate ? new Date(parentBefore.startDate) : maxEnd);

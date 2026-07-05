@@ -51,6 +51,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { Checkbox } from "@/components/ui/checkbox";
+import { ScheduleColorPicker } from "@/components/schedule/ScheduleColorPicker";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -2421,56 +2422,20 @@ export default function Schedule() {
               </Label>
               <div className="flex items-center gap-2">
                 {/* Colour dot picker */}
-                <Popover>
-                  <PopoverTrigger asChild>
+                <ScheduleColorPicker
+                  currentColor={formData.color}
+                  onColorChange={(color) => setFormData({ ...formData, color: color || '' })}
+                  align="start"
+                  triggerButton={
                     <button
                       type="button"
                       className="w-5 h-5 rounded-full border-2 border-border focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-1 transition-transform hover:scale-110 active:scale-95 flex-shrink-0"
-                      style={{ backgroundColor: formData.color || '#A890D4' }}
+                      style={{ backgroundColor: formData.color || '#9ca3af' }}
                       data-testid="button-color-dot"
                       title="Choose colour"
                     />
-                  </PopoverTrigger>
-                  <PopoverContent className="w-52 p-3" align="start" data-testid="popover-color-picker">
-                    <div className="space-y-3">
-                      <div className="grid grid-cols-6 gap-1.5">
-                        {[
-                          '#A890D4','#6B5B95','#B5838D','#E07A5F','#F2CC8F','#81B29A',
-                          '#457B9D','#4ECDC4','#FF6B6B','#95D5B2','#3D405B','#A0C4FF',
-                        ].map((preset) => (
-                          <button
-                            key={preset}
-                            type="button"
-                            className="w-6 h-6 rounded-full border-2 transition-transform hover:scale-110 active:scale-95"
-                            style={{
-                              backgroundColor: preset,
-                              borderColor: (formData.color || '#A890D4').toLowerCase() === preset.toLowerCase() ? 'hsl(var(--primary))' : 'transparent',
-                            }}
-                            onClick={() => setFormData({ ...formData, color: preset })}
-                            title={preset}
-                            data-testid={`color-swatch-${preset.replace('#','')}`}
-                          />
-                        ))}
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <div className="w-6 h-6 rounded-full border border-border flex-shrink-0" style={{ backgroundColor: formData.color || '#A890D4' }} />
-                        <Input
-                          className="h-7 text-xs font-mono px-2"
-                          value={formData.color || '#A890D4'}
-                          maxLength={7}
-                          onChange={(e) => {
-                            const v = e.target.value;
-                            if (/^#[0-9A-Fa-f]{0,6}$/.test(v)) {
-                              setFormData({ ...formData, color: v });
-                            }
-                          }}
-                          data-testid="input-item-color"
-                          placeholder="#A890D4"
-                        />
-                      </div>
-                    </div>
-                  </PopoverContent>
-                </Popover>
+                  }
+                />
                 <Input
                   id="item-name"
                   value={formData.name}
