@@ -1037,11 +1037,25 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
 
   // Update mutation for schedule items
   const updateItemMutation = useMutation({
+    mutationKey: ['updateScheduleItem'],
     mutationFn: async ({ id, startDate, endDate }: { id: string; startDate: Date; endDate: Date }) => {
       return apiRequest(`/api/schedule-items/${id}`, "PATCH", { startDate, endDate });
     },
-    onSuccess: () => {
-      invalidateScheduleItems();
+    // A single resize/drag fires a whole cascade of saves at once (the item, its
+    // successors, and the parent's successors). Cancel any refetch already in
+    // flight so a GET carrying the PRE-edit dates can't resolve after our
+    // optimistic bar update and snap the bar back to its old size.
+    onMutate: async () => {
+      if (schedule?.id) await queryClient.cancelQueries({ queryKey: [`/api/schedules/${schedule.id}/items`] });
+      await queryClient.cancelQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
+    },
+    // Only refetch once the ENTIRE cascade batch has settled (this is the last
+    // in-flight save), so the reconciling GET reflects every persisted change
+    // instead of racing mid-batch and overwriting still-pending updates.
+    onSettled: () => {
+      if (queryClient.isMutating({ mutationKey: ['updateScheduleItem'] }) <= 1) {
+        invalidateScheduleItems();
+      }
     },
   });
 
