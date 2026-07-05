@@ -5291,6 +5291,7 @@ export class MemStorage implements IStorage {
     return computeEstimateSummary(items, {
       projectMarkupPercent: estimate?.projectMarkupPercent,
       taxRate: estimate?.taxRate,
+      estimateId,
     });
   }
 
@@ -12254,6 +12255,7 @@ export class DbStorage implements IStorage {
       return computeEstimateSummary(items, {
         projectMarkupPercent: estimate?.projectMarkupPercent,
         taxRate: estimate?.taxRate,
+        estimateId,
       });
     } catch (error) {
       console.error("Database error in getEstimateSummary:", error);

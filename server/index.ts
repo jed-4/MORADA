@@ -11,8 +11,26 @@ import { startGmailBillPoller } from "./services/gmailBillPoller";
 import { healContactNames } from "./utils/healContactNames";
 import { ensureReferralTables, processReferralCredits } from "./referrals";
 import { storage } from "./storage";
+import { setEstimateTotalIntegrityReporter } from "@shared/pricing";
 import path from "path";
 import fs from "fs";
+
+// Wire the estimate total-integrity invariant to error monitoring. When an
+// estimate's grand total diverges from the sum of its per-line totals (the
+// structural symptom of a stale cached line price), surface it loudly to
+// Sentry (and the logs) instead of quietly displaying a wrong number. This is
+// a no-op signal when Sentry is not configured — it still logs.
+setEstimateTotalIntegrityReporter(({ estimateId, expectedTotal, actualTotal, diff }) => {
+  const message = `[estimate-integrity] total mismatch estimate=${estimateId ?? "unknown"} expected=${expectedTotal} actual=${actualTotal} diff=${diff}`;
+  console.error(message);
+  if (sentryEnabled) {
+    Sentry.captureMessage(message, {
+      level: "error",
+      tags: { area: "estimate-pricing", estimateId: estimateId ?? "unknown" },
+      extra: { estimateId, expectedTotal, actualTotal, diff },
+    });
+  }
+});
 
 const app = express();
 

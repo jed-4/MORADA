@@ -16,13 +16,18 @@
 // must never change any computed amount.
 //
 // Fixed-price lines (PC sums / provisional allowances):
-//   When qty * unitCostExTax === 0, we treat the line as a fixed-price entry:
+//   When a line has NO per-unit cost (unitCostExTax === 0), we treat it as a
+//   fixed-price entry:
 //     - the stored/typed priceIncTax is AUTHORITATIVE line inc tax and must be
 //       PRESERVED across every write path — never recomputed to $0
 //     - the line contributes its full cached amount to the builder cost total
 //     - the line contributes ZERO line-item markup (markup is for materials/labour)
 //   This is intentional and matches how Australian builders enter PC sums:
 //   you punch in a $5,000 fixed allowance, not a unit rate × quantity.
+//   NOTE: a normal priced line (unitCost > 0) whose quantity is set to 0 is NOT
+//   fixed-price — it recomputes to $0. Classifying on unitCost alone (not on
+//   qty × unitCost === 0) is what stops a zeroed priced line from keeping its
+//   stale cached price and never dropping the estimate total.
 //
 //   IMPORTANT for every write path (create / update / import / duplicate / copy /
 //   reorder / bulk edit, on web, mobile, routes AND storage): route the stored
@@ -100,15 +105,25 @@ export function computeEstimateItemPrice(input: EstimateItemPriceInput): Estimat
 }
 
 /**
- * A line is "fixed-price" (a flat PC sum / provisional allowance) when
- * qty × unitCost === 0. In that case the typed priceIncTax is the authoritative
- * amount and must be preserved, not derived from qty × unitCost × markup.
+ * A line is "fixed-price" (a flat PC sum / provisional allowance) when it has
+ * NO per-unit cost — i.e. `unitCostExTax === 0`. In that case the typed
+ * priceIncTax is the authoritative amount and must be preserved, not derived
+ * from qty × unitCost × markup.
+ *
+ * IMPORTANT: this is deliberately based on the unit cost ALONE, not on
+ * `qty × unitCost === 0`. A normal priced line (unitCost > 0) whose quantity is
+ * set to 0 is NOT fixed-price — it must recompute to $0. The old
+ * `qty × unitCost === 0` test wrongly matched those zeroed priced lines and
+ * preserved their stale cached price, so the estimate total never dropped.
+ * Genuine flat allowances are entered as a typed amount with unitCost = 0, so
+ * `unitCostExTax === 0` captures them exactly. (An allowance that DOES carry a
+ * real unit cost behaves as a normal priced line in both the old and new
+ * classification, so nothing regresses.)
  */
 export function isFixedPriceLine(
   unitCostExTax: number | null | undefined,
-  quantity: number | null | undefined,
 ): boolean {
-  return (Number(unitCostExTax) || 0) * (Number(quantity) || 0) === 0;
+  return (Number(unitCostExTax) || 0) === 0;
 }
 
 export interface StoredPriceResolveInput {
@@ -119,7 +134,7 @@ export interface StoredPriceResolveInput {
   taxRate: number | null | undefined;
   /**
    * The line's existing/typed priceIncTax. Authoritative for fixed-price
-   * (qty × unitCost === 0) lines — this is what must NOT be wiped to 0.
+   * (unitCost === 0) lines — this is what must NOT be wiped to 0.
    */
   existingPriceIncTax?: number | null;
 }
@@ -129,10 +144,11 @@ export interface StoredPriceResolveInput {
  * reorder / bulk edit, in routes.ts AND storage.ts) should use to decide the
  * stored { priceIncTax, taxAmount } for an estimate line.
  *
- *  - Priced line (qty × unitCost !== 0): fully re-derived from
- *    qty × unitCost × markup via computeEstimateItemPrice (with project-markup
- *    fallback). This keeps normal lines recalculating correctly.
- *  - Fixed-price line (qty × unitCost === 0, a flat PC/PS allowance): the typed
+ *  - Priced line (unitCost > 0): fully re-derived from qty × unitCost × markup
+ *    via computeEstimateItemPrice (with project-markup fallback). This keeps
+ *    normal lines recalculating correctly, INCLUDING dropping to $0 when the
+ *    quantity is set to 0.
+ *  - Fixed-price line (unitCost === 0, a flat PC/PS allowance): the typed
  *    priceIncTax is PRESERVED and a correct GST split is re-derived from it, so
  *    a stale taxAmount self-heals on the next write WITHOUT ever wiping the
  *    typed amount to $0. Toggling allowance / status / cost code / any non-price
@@ -143,7 +159,7 @@ export function resolveEstimateStoredPrice(
 ): { priceIncTax: number; taxAmount: number } {
   const taxRate = Number(input.taxRate ?? 10);
 
-  if (!isFixedPriceLine(input.unitCostExTax, input.quantity)) {
+  if (!isFixedPriceLine(input.unitCostExTax)) {
     const { taxAmount, lineIncTax } = computeEstimateItemPrice({
       unitCostExTax: input.unitCostExTax ?? 0,
       quantity: input.quantity ?? 0,
@@ -166,15 +182,15 @@ export function resolveEstimateStoredPrice(
  * with these fields so it works against drizzle rows, in-memory items, etc.
  *
  * `priceIncTax` and `taxAmount` are only consulted for the fixed-price
- * special case (qty * unitCost === 0). They are otherwise re-derived.
+ * special case (unitCost === 0). They are otherwise re-derived.
  */
 export interface EstimateItemSummaryInput {
   unitCostExTax?: number | null;
   quantity?: number | null;
   markupPercent?: number | null;
-  /** Used only as a fallback for fixed-price (qty=0) lines. */
+  /** Used only as a fallback for fixed-price (unitCost=0) lines. */
   priceIncTax?: number | null;
-  /** Used only as a fallback for fixed-price (qty=0) lines. */
+  /** Used only as a fallback for fixed-price (unitCost=0) lines. */
   taxAmount?: number | null;
 }
 
@@ -205,18 +221,48 @@ export interface EstimateSummary {
  * The pure builder COST (ex-tax, NO markup) of a single estimate line — the
  * cost-only basis used by the Budget page. This is exactly the per-line
  * contribution to `computeEstimateSummary().builderCostTotal`:
- *   - priced line (qty * unitCost !== 0): qty * unitCost (ex-tax)
- *   - fixed-price line (PC sum / provisional allowance, qty * unitCost === 0):
+ *   - priced line (unitCost > 0): qty * unitCost (ex-tax)
+ *   - fixed-price line (PC sum / provisional allowance, unitCost === 0):
  *     its cached ex-tax value (priceIncTax - taxAmount)
  * Excludes BOTH per-line markup and the global project markup, and excludes GST.
  */
 export function estimateItemBuilderCostExTax(item: EstimateItemSummaryInput): number {
   const unitCost = Number(item.unitCostExTax ?? 0);
   const qty = Number(item.quantity ?? 0);
-  if (unitCost * qty !== 0) {
+  if (!isFixedPriceLine(unitCost)) {
+    // Priced line: cost is qty × unitCost (0 when the quantity is 0).
     return round2(unitCost * qty);
   }
   return round2(Number(item.priceIncTax ?? 0) - Number(item.taxAmount ?? 0));
+}
+
+/**
+ * Payload handed to the total-integrity reporter when an estimate's grand total
+ * diverges from the sum of its per-line inc-tax totals (+ builder's margin).
+ */
+export interface EstimateTotalIntegrityViolation {
+  estimateId?: string;
+  /** Total reconstructed from the sum of the individual line totals. */
+  expectedTotal: number;
+  /** The aggregated grand total actually returned by computeEstimateSummary. */
+  actualTotal: number;
+  /** |expectedTotal - actualTotal|, rounded to cents. */
+  diff: number;
+}
+
+export type EstimateTotalIntegrityReporter = (
+  violation: EstimateTotalIntegrityViolation,
+) => void;
+
+// Injectable so shared/pricing.ts stays free of any server-only dependency
+// (e.g. @sentry/node). The server wires a Sentry-backed reporter at startup;
+// on the client / in tests this stays null and the invariant is a silent check.
+let integrityReporter: EstimateTotalIntegrityReporter | null = null;
+
+export function setEstimateTotalIntegrityReporter(
+  reporter: EstimateTotalIntegrityReporter | null,
+): void {
+  integrityReporter = reporter;
 }
 
 export function computeEstimateSummary(
@@ -224,6 +270,10 @@ export function computeEstimateSummary(
   options: {
     projectMarkupPercent: number | null | undefined;
     taxRate: number | null | undefined;
+    /** Optional — included in the integrity-violation report for traceability. */
+    estimateId?: string;
+    /** Optional override for the rounding tolerance budget (defaults to line count). */
+    estimateItemCountForTolerance?: number;
   },
 ): EstimateSummary {
   const projectMarkupPercent = Number(options.projectMarkupPercent ?? 0);
@@ -231,6 +281,9 @@ export function computeEstimateSummary(
 
   let builderCostTotal = 0;
   let lineItemMarkupTotal = 0;
+  // Independent running sum of every line's OWN inc-tax total (the number shown
+  // per row on screen). Used purely for the total-integrity invariant below.
+  let sumLineIncTax = 0;
 
   for (const item of items) {
     const unitCost = Number(item.unitCostExTax ?? 0);
@@ -245,18 +298,23 @@ export function computeEstimateSummary(
       taxRate,
     });
 
-    if (unitCost * qty !== 0) {
+    if (!isFixedPriceLine(unitCost)) {
       // Priced line: include positive AND negative-quantity rows
       // (e.g. deduction lines) so their markup nets correctly against the
-      // matching positive lines.
+      // matching positive lines. A zero-quantity priced line contributes $0
+      // (builderCost = qty × unitCost = 0), which is the whole point of the
+      // fix — its stale cached price is NOT preserved.
       builderCostTotal += computed.builderCost;
       lineItemMarkupTotal += computed.lineMarkupAmount;
+      sumLineIncTax += computed.lineIncTax;
     } else {
-      // Fixed-price line (PC sum / provisional allowance).
+      // Fixed-price line (PC sum / provisional allowance): no per-unit cost.
       // Use the cached priceIncTax - taxAmount as the line's ex-tax amount.
       // No line-item markup is added; markup on a flat allowance makes no sense.
-      const cachedExTax = Number(item.priceIncTax ?? 0) - Number(item.taxAmount ?? 0);
+      const cachedIncTax = Number(item.priceIncTax ?? 0);
+      const cachedExTax = cachedIncTax - Number(item.taxAmount ?? 0);
       builderCostTotal += cachedExTax;
+      sumLineIncTax += cachedIncTax;
     }
   }
 
@@ -267,6 +325,33 @@ export function computeEstimateSummary(
   const totalExTax = round2(subtotalExTax + globalMarkupAmount);
   const taxAmount = round2(totalExTax * (taxRate / 100));
   const total = round2(totalExTax + taxAmount);
+
+  // Total-integrity invariant. Reconstruct the grand total from the sum of the
+  // per-line inc-tax totals shown on screen, plus the builder's-margin
+  // (project markup) inc-tax which the UI shows as its own summary line. If this
+  // reconstruction diverges from the aggregated `total`, a line price has
+  // silently drifted from its contribution to the total — exactly the failure
+  // mode that let a stale cached price survive. Surface it loudly instead of
+  // quietly displaying a wrong number during a quote.
+  const globalMarkupIncTax = round2(globalMarkupAmount * (1 + taxRate / 100));
+  const reconstructedTotal = round2(sumLineIncTax + globalMarkupIncTax);
+  // Per-line rounding accumulates ~half a cent per line, so budget one cent per
+  // line (min one cent). A genuine stale-price divergence is dollars, far above
+  // this, so real bugs still surface while rounding noise never false-fires.
+  const integrityTolerance = Math.max(0.01, options.estimateItemCountForTolerance ?? items.length) * 0.01;
+  const integrityDiff = Math.abs(reconstructedTotal - total);
+  if (integrityDiff > integrityTolerance && integrityReporter) {
+    try {
+      integrityReporter({
+        estimateId: options.estimateId,
+        expectedTotal: reconstructedTotal,
+        actualTotal: total,
+        diff: round2(integrityDiff),
+      });
+    } catch {
+      // A misbehaving reporter must never break pricing.
+    }
+  }
 
   return {
     builderCostTotal,

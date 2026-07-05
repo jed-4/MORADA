@@ -9,7 +9,7 @@ export interface EstimateItemForMetrics {
   // re-applying it on top of the cached priceIncTax (which already bakes the
   // project markup in for lines that have no explicit per-line markup — that
   // path double-counts). priceIncTax/taxAmount remain for fixed-price (PC sum)
-  // lines where qty*unitCost === 0.
+  // lines where unitCost === 0.
   unitCostExTax?: number | null;
   quantity?: number | null;
   markupPercent?: number | null;
