@@ -36,6 +36,7 @@ interface RichTextEditorProps {
   placeholders?: RichTextPlaceholder[];
   /** Render the formatting buttons as a single vertical column on the left. */
   verticalToolbar?: boolean;
+  toolbarSide?: 'left' | 'right';
 }
 
 const extensions = [
@@ -55,6 +56,7 @@ export function RichTextEditor({
   'data-testid': testId,
   placeholders,
   verticalToolbar = false,
+  toolbarSide = 'left',
 }: RichTextEditorProps) {
   const initialContentRef = useRef(content);
   const isInternalChange = useRef(false);
@@ -196,7 +198,10 @@ export function RichTextEditor({
       <div
         className={cn(
           verticalToolbar
-            ? 'border-r p-1.5 flex flex-col items-center gap-1 shrink-0'
+            ? cn(
+                'p-1.5 flex flex-col items-center gap-1 shrink-0',
+                toolbarSide === 'right' ? 'border-l order-2' : 'border-r'
+              )
             : 'border-b p-2 flex items-center gap-1 flex-wrap'
         )}
       >
