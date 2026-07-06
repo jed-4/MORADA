@@ -1201,7 +1201,6 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
                     onChange={(html) => field.onChange(html)}
                     placeholder="Add a description..."
                     className="min-h-[120px]"
-                    verticalToolbar
                     data-testid="editor-description"
                   />
                 )}
