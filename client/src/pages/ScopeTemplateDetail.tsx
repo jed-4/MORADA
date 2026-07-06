@@ -29,6 +29,7 @@ import {
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import NotionEditor from "@/components/NotionEditor";
 import { useToast } from "@/hooks/use-toast";
 import { Checkbox } from "@/components/ui/checkbox";
 import { 
@@ -117,6 +118,18 @@ interface SortableItemProps {
   onToggleSelect: (id: string) => void;
 }
 
+function stripHtml(html: string): string {
+  if (!html) return '';
+  return html
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function SortableItem({ item, onEdit, onDelete, isSelected, onToggleSelect }: SortableItemProps) {
   const {
     attributes,
@@ -168,8 +181,8 @@ function SortableItem({ item, onEdit, onDelete, isSelected, onToggleSelect }: So
             </Badge>
           )}
         </div>
-        {item.description && (
-          <p className="text-xs text-muted-foreground line-clamp-1">{item.description}</p>
+        {stripHtml(item.description || '') && (
+          <p className="text-xs text-muted-foreground line-clamp-1">{stripHtml(item.description || '')}</p>
         )}
       </div>
 
@@ -230,8 +243,6 @@ export default function ScopeTemplateDetail() {
     title: "",
     description: "",
     itemType: "scope",
-    quantity: 1,
-    rate: 0,
     stageId: undefined,
   });
 
@@ -462,8 +473,6 @@ export default function ScopeTemplateDetail() {
       title: newItem.title.trim(),
       description: newItem.description?.trim(),
       itemType: newItem.itemType,
-      quantity: newItem.quantity,
-      rate: newItem.rate ? Math.round(newItem.rate * 100) : undefined,
       stageId: targetStageId,
       sortOrder: stageItems.length,
     };
@@ -475,18 +484,13 @@ export default function ScopeTemplateDetail() {
       title: "",
       description: "",
       itemType: "scope",
-      quantity: 1,
-      rate: 0,
       stageId: undefined,
     });
     toast({ title: "Item added" });
   };
 
   const handleEditItem = (item: TemplateItem) => {
-    setEditingItem({
-      ...item,
-      rate: item.rate ? item.rate / 100 : 0,
-    });
+    setEditingItem({ ...item });
     setEditDialogOpen(true);
   };
 
@@ -495,10 +499,7 @@ export default function ScopeTemplateDetail() {
 
     const updatedItems = items.map(item => 
       item.id === editingItem.id 
-        ? { 
-            ...editingItem, 
-            rate: editingItem.rate ? Math.round(editingItem.rate * 100) : undefined 
-          } 
+        ? { ...editingItem, quantity: item.quantity, rate: item.rate } 
         : item
     );
 
@@ -1029,13 +1030,13 @@ export default function ScopeTemplateDetail() {
             </div>
             <div className="space-y-2">
               <Label>Description</Label>
-              <Textarea
-                placeholder="Describe this scope item..."
-                value={newItem.description || ""}
-                onChange={(e) => setNewItem({ ...newItem, description: e.target.value })}
-                rows={2}
-                data-testid="input-item-description"
-              />
+              <div className="border rounded-md px-3 py-2" data-testid="input-item-description">
+                <NotionEditor
+                  content={newItem.description || ""}
+                  onChange={(html) => setNewItem({ ...newItem, description: html })}
+                  placeholder="Describe this scope item..."
+                />
+              </div>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
@@ -1076,30 +1077,6 @@ export default function ScopeTemplateDetail() {
                 </Select>
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Quantity</Label>
-                <Input
-                  type="number"
-                  min="0"
-                  step="1"
-                  value={newItem.quantity || ""}
-                  onChange={(e) => setNewItem({ ...newItem, quantity: parseFloat(e.target.value) || undefined })}
-                  data-testid="input-item-quantity"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Rate ($)</Label>
-                <Input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={newItem.rate || ""}
-                  onChange={(e) => setNewItem({ ...newItem, rate: parseFloat(e.target.value) || undefined })}
-                  data-testid="input-item-rate"
-                />
-              </div>
-            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setAddItemDialogOpen(false)}>
@@ -1138,12 +1115,14 @@ export default function ScopeTemplateDetail() {
               </div>
               <div className="space-y-2">
                 <Label>Description</Label>
-                <Textarea
-                  value={editingItem.description || ""}
-                  onChange={(e) => setEditingItem({ ...editingItem, description: e.target.value })}
-                  rows={2}
-                  data-testid="input-edit-description"
-                />
+                <div className="border rounded-md px-3 py-2" data-testid="input-edit-description">
+                  <NotionEditor
+                    key={editingItem.id}
+                    content={editingItem.description || ""}
+                    onChange={(html) => setEditingItem({ ...editingItem, description: html })}
+                    placeholder="Describe this scope item..."
+                  />
+                </div>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
@@ -1179,30 +1158,6 @@ export default function ScopeTemplateDetail() {
                       ))}
                     </SelectContent>
                   </Select>
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>Quantity</Label>
-                  <Input
-                    type="number"
-                    min="0"
-                    step="1"
-                    value={editingItem.quantity || ""}
-                    onChange={(e) => setEditingItem({ ...editingItem, quantity: parseFloat(e.target.value) || undefined })}
-                    data-testid="input-edit-quantity"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Rate ($)</Label>
-                  <Input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={editingItem.rate || ""}
-                    onChange={(e) => setEditingItem({ ...editingItem, rate: parseFloat(e.target.value) || undefined })}
-                    data-testid="input-edit-rate"
-                  />
                 </div>
               </div>
             </div>
