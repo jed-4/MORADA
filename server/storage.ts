@@ -120,7 +120,7 @@ import { eq, or, and, desc, asc, gte, lte, sql, inArray, isNull, isNotNull, gt, 
 import * as schema from "@shared/schema";
 import { computeEstimateItemPrice, computeEstimateSummary, estimateItemBuilderCostExTax, resolveEstimateStoredPrice } from "@shared/pricing";
 import { computeBillTotalsCents, billLineExGstCents } from "@shared/billTotals";
-import type { CircuitSession, InsertCircuitSession, CircuitBlockedItem, InsertCircuitBlockedItem, CircuitMessage, InsertCircuitMessage, CircuitContext } from "@shared/schema";
+import type { CircuitContext } from "@shared/schema";
 import type { AiConversation, InsertAiConversation, AiMessage, InsertAiMessage, AiBlockedItem, InsertAiBlockedItem } from "@shared/schema";
 
 // --- Timezone helpers (used by clockIn/clockOut and backfill) ---
@@ -1388,16 +1388,8 @@ export interface IStorage {
   deletePushToken(token: string, userId?: string): Promise<boolean>;
   deletePushTokens(tokens: string[]): Promise<number>;
 
-  // Circuit AI Chat
+  // Circuit AI Chat (legacy tables kept in DB; context now served via getCircuitContext)
   ensureCircuitTables(): Promise<void>;
-  createCircuitSession(session: InsertCircuitSession): Promise<CircuitSession>;
-  getCircuitSession(id: string): Promise<CircuitSession | undefined>;
-  updateCircuitSession(id: string, data: Partial<InsertCircuitSession>): Promise<CircuitSession | undefined>;
-  getCircuitMessages(sessionId: string): Promise<CircuitMessage[]>;
-  createCircuitMessage(message: InsertCircuitMessage): Promise<CircuitMessage>;
-  getCircuitBlockedItems(companyId: string, resolved?: boolean): Promise<CircuitBlockedItem[]>;
-  createCircuitBlockedItem(item: InsertCircuitBlockedItem): Promise<CircuitBlockedItem>;
-  resolveCircuitBlockedItem(id: string, companyId: string): Promise<CircuitBlockedItem | undefined>;
   getCircuitContext(companyId: string): Promise<CircuitContext>;
 
   // Morada AI Assistant
@@ -24471,114 +24463,9 @@ export class DbStorage implements IStorage {
   // time the server boots after this feature ships. CREATE ... IF NOT EXISTS is
   // non-destructive and a no-op once the tables are present.
   async ensureCircuitTables(): Promise<void> {
-    try {
-      await db.execute(sql`
-        CREATE TABLE IF NOT EXISTS circuit_sessions (
-          id varchar PRIMARY KEY DEFAULT gen_random_uuid(),
-          company_id varchar NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
-          user_id varchar NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-          mode text NOT NULL DEFAULT 'full',
-          current_stop integer NOT NULL DEFAULT 1,
-          completed_at timestamp,
-          summary json DEFAULT '{}'::json,
-          created_at timestamp NOT NULL DEFAULT now(),
-          updated_at timestamp NOT NULL DEFAULT now()
-        )
-      `);
-      await db.execute(sql`
-        CREATE TABLE IF NOT EXISTS circuit_blocked_items (
-          id varchar PRIMARY KEY DEFAULT gen_random_uuid(),
-          company_id varchar NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
-          user_id varchar NOT NULL REFERENCES users(id),
-          session_id varchar REFERENCES circuit_sessions(id),
-          stop integer NOT NULL,
-          stop_name text NOT NULL,
-          description text NOT NULL,
-          reason text,
-          owned_by text,
-          related_project_id varchar REFERENCES projects(id) ON DELETE SET NULL,
-          resolved_at timestamp,
-          created_at timestamp NOT NULL DEFAULT now(),
-          updated_at timestamp NOT NULL DEFAULT now()
-        )
-      `);
-      await db.execute(sql`
-        CREATE TABLE IF NOT EXISTS circuit_messages (
-          id varchar PRIMARY KEY DEFAULT gen_random_uuid(),
-          session_id varchar NOT NULL REFERENCES circuit_sessions(id) ON DELETE CASCADE,
-          role text NOT NULL,
-          content text NOT NULL,
-          stop integer,
-          quick_replies json DEFAULT '[]'::json,
-          action json,
-          created_at timestamp NOT NULL DEFAULT now()
-        )
-      `);
-      await db.execute(sql`CREATE INDEX IF NOT EXISTS circuit_sessions_company_idx ON circuit_sessions (company_id)`);
-      await db.execute(sql`CREATE INDEX IF NOT EXISTS circuit_blocked_company_idx ON circuit_blocked_items (company_id)`);
-      await db.execute(sql`CREATE INDEX IF NOT EXISTS circuit_messages_session_idx ON circuit_messages (session_id)`);
-    } catch (error) {
-      console.error("Failed to ensure circuit tables exist:", error);
-    }
-  }
-
-  async createCircuitSession(session: InsertCircuitSession): Promise<CircuitSession> {
-    const [row] = await db.insert(schema.circuitSessions).values(session).returning();
-    return row;
-  }
-
-  async getCircuitSession(id: string): Promise<CircuitSession | undefined> {
-    const [row] = await db.select().from(schema.circuitSessions)
-      .where(eq(schema.circuitSessions.id, id))
-      .limit(1);
-    return row;
-  }
-
-  async updateCircuitSession(id: string, data: Partial<InsertCircuitSession>): Promise<CircuitSession | undefined> {
-    const [row] = await db.update(schema.circuitSessions)
-      .set({ ...data, updatedAt: new Date() })
-      .where(eq(schema.circuitSessions.id, id))
-      .returning();
-    return row;
-  }
-
-  async getCircuitMessages(sessionId: string): Promise<CircuitMessage[]> {
-    return await db.select().from(schema.circuitMessages)
-      .where(eq(schema.circuitMessages.sessionId, sessionId))
-      .orderBy(asc(schema.circuitMessages.createdAt));
-  }
-
-  async createCircuitMessage(message: InsertCircuitMessage): Promise<CircuitMessage> {
-    const [row] = await db.insert(schema.circuitMessages).values(message).returning();
-    return row;
-  }
-
-  async getCircuitBlockedItems(companyId: string, resolved?: boolean): Promise<CircuitBlockedItem[]> {
-    const conditions = [eq(schema.circuitBlockedItems.companyId, companyId)];
-    if (resolved === true) {
-      conditions.push(isNotNull(schema.circuitBlockedItems.resolvedAt));
-    } else if (resolved === false) {
-      conditions.push(isNull(schema.circuitBlockedItems.resolvedAt));
-    }
-    return await db.select().from(schema.circuitBlockedItems)
-      .where(and(...conditions))
-      .orderBy(desc(schema.circuitBlockedItems.createdAt));
-  }
-
-  async createCircuitBlockedItem(item: InsertCircuitBlockedItem): Promise<CircuitBlockedItem> {
-    const [row] = await db.insert(schema.circuitBlockedItems).values(item).returning();
-    return row;
-  }
-
-  async resolveCircuitBlockedItem(id: string, companyId: string): Promise<CircuitBlockedItem | undefined> {
-    const [row] = await db.update(schema.circuitBlockedItems)
-      .set({ resolvedAt: new Date(), updatedAt: new Date() })
-      .where(and(
-        eq(schema.circuitBlockedItems.id, id),
-        eq(schema.circuitBlockedItems.companyId, companyId),
-      ))
-      .returning();
-    return row;
+    // Legacy circuit tables (circuit_sessions, circuit_messages, circuit_blocked_items) remain
+    // in the DB for historical data but are no longer managed by Drizzle schema.
+    // This method is kept as a no-op to satisfy the IStorage interface.
   }
 
   async getCircuitContext(companyId: string): Promise<CircuitContext> {
@@ -24645,13 +24532,13 @@ export class DbStorage implements IStorage {
       ))
       .limit(10);
 
-    // Open blocked items from previous circuits
-    const openBlockedItems = await db.select().from(schema.circuitBlockedItems)
+    // Open blocked items tracked via the Morada AI assistant
+    const openBlockedItems = await db.select().from(schema.aiBlockedItems)
       .where(and(
-        eq(schema.circuitBlockedItems.companyId, companyId),
-        isNull(schema.circuitBlockedItems.resolvedAt),
+        eq(schema.aiBlockedItems.companyId, companyId),
+        isNull(schema.aiBlockedItems.resolvedAt),
       ))
-      .orderBy(desc(schema.circuitBlockedItems.createdAt))
+      .orderBy(desc(schema.aiBlockedItems.createdAt))
       .limit(20);
 
     return {
@@ -24732,6 +24619,14 @@ export class DbStorage implements IStorage {
         await db.execute(sql`ALTER TABLE ai_conversations ADD COLUMN IF NOT EXISTS circuit_mode boolean NOT NULL DEFAULT false`);
       } catch (_alterErr) {
         // Column may already exist; ignore
+      }
+      // Add extended fields to ai_blocked_items (idempotent, one ALTER per column)
+      for (const colSql of [
+        sql`ALTER TABLE ai_blocked_items ADD COLUMN IF NOT EXISTS reason text`,
+        sql`ALTER TABLE ai_blocked_items ADD COLUMN IF NOT EXISTS owned_by text`,
+        sql`ALTER TABLE ai_blocked_items ADD COLUMN IF NOT EXISTS related_project_id varchar`,
+      ]) {
+        try { await db.execute(colSql); } catch (_e) { /* column already exists */ }
       }
       // One-time backfill: copy circuit_blocked_items → ai_blocked_items (idempotent)
       try {

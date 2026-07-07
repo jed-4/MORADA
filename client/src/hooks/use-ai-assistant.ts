@@ -238,7 +238,8 @@ export function useAiAssistant() {
         { role: "user", content: mode === "quick" ? "Quick check please" : "Run the full circuit" },
         { role: "assistant", content: result.message },
       ];
-      setMessages(initialMsgs);
+      // Append to existing thread — circuit runs in the same conversation
+      setMessages(prev => [...prev, ...initialMsgs]);
       if (result.circuitData) {
         const cd: CircuitData = result.circuitData;
         setCircuitData(cd);

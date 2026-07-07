@@ -21959,7 +21959,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await storage.createAiMessage({ conversationId: conv.id, role: "user", content: startMessage });
 
       const systemPrompt = buildSystemPrompt(true);
-      const claudeMessages: any[] = [{ role: "user", content: startMessage }];
+      // Include prior conversation history so circuit runs in-thread
+      const priorHistory = await storage.getAiMessages(conv.id);
+      const claudeMessages: any[] = [
+        ...priorHistory.slice(0, -1).map((m: any) => ({ role: m.role, content: m.content })),
+        { role: "user", content: startMessage },
+      ];
       let assistantText = "";
 
       for (let round = 0; round < 5; round++) {
