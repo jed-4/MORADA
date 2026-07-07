@@ -171,6 +171,9 @@ import {
   type CircuitContext
 } from "@shared/schema";
 import Anthropic from "@anthropic-ai/sdk";
+import { AI_TOOLS } from "./ai/tools";
+import { AI_MODEL, buildSystemPrompt, buildCircuitStartMessage } from "./ai/prompts";
+import { executeTool } from "./ai/executor";
 import { computeBillTotalsCents, billLineExGstCents } from "@shared/billTotals";
 import { matchSupplier } from "@shared/supplierMatcher";
 import {
@@ -982,118 +985,8 @@ async function generateSelectionPdf(selections: any[], projectName?: string): Pr
   }
 }
 
-// ── Circuit AI Chat ─────────────────────────────────
+// ── Morada AI ─────────────────────────────────────────
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-// NOTE: the spec's "claude-sonnet-4-6" is not a valid model id. This is the
-// current Claude Sonnet 4.5 model that the ANTHROPIC_API_KEY can call.
-const CIRCUIT_MODEL = "claude-sonnet-4-5-20250929";
-
-const CIRCUIT_STOPS = [
-  { stop: 1, name: "Active Sites",        focus: "active projects — progress, blockers, what's happening this week" },
-  { stop: 2, name: "Clients",             focus: "client communication — unsigned variations, pending approvals, overdue payments" },
-  { stop: 3, name: "Tasks",               focus: "overdue and upcoming tasks across all projects" },
-  { stop: 4, name: "Bills & Suppliers",   focus: "unpaid bills, overdue payments, orders needed for next 2 weeks" },
-  { stop: 5, name: "Finance",             focus: "cash flow — unpaid client invoices, progress claims due, 30-day gap check" },
-  { stop: 6, name: "Pipeline",            focus: "leads and proposals — follow-ups due, quotes to send, gone-quiet prospects" },
-  { stop: 7, name: "Team",                focus: "team blockers — does everyone have what they need to work this week" },
-  { stop: 8, name: "Compliance",          focus: "upcoming inspections, certificates expiring, DA/CC conditions (note: no inspection table yet — ask user)" },
-  { stop: 9, name: "Admin & Business",    focus: "Notion up to date, pending decisions, anything being avoided" },
-];
-
-function buildCircuitSystemPrompt(context: CircuitContext, mode: string): string {
-  const lines: string[] = [];
-
-  lines.push(`You are Circuit, an AI assistant built into Morada — a construction project management app.`);
-  lines.push(`You help the user run through their business systematically by asking ONE specific, data-driven question at a time.`);
-  lines.push(`The user has ADHD — this means: ask one question only, offer 2–3 quick reply options with every question, be direct and specific, never ask vague open-ended questions.`);
-  lines.push(`Mode: ${mode === "quick" ? "Quick check (Stops 1 & 2 only)" : mode === "brain_dump" ? "Brain dump — sort whatever the user throws at you into the circuit stops" : "Full circuit — all 9 stops"}`);
-  lines.push(``);
-  lines.push(`## THE CIRCUIT STOPS`);
-  CIRCUIT_STOPS.forEach(s => lines.push(`Stop ${s.stop} — ${s.name}: ${s.focus}`));
-  lines.push(``);
-  lines.push(`## LIVE BUSINESS DATA`);
-
-  if (context.activeProjects.length > 0) {
-    lines.push(`\nACTIVE PROJECTS (${context.activeProjects.length}):`);
-    context.activeProjects.forEach(p => {
-      lines.push(`- ${p.name} | ${p.percentComplete}% complete | Phase: ${p.status} | Due: ${p.endDate || "no date set"} | Contract: ${p.contractCost ? "$" + (p.contractCost / 100).toLocaleString() : "not set"}`);
-    });
-  }
-
-  if (context.overdueTasks.length > 0) {
-    lines.push(`\nOVERDUE TASKS (${context.overdueTasks.length}):`);
-    context.overdueTasks.slice(0, 10).forEach(t => {
-      lines.push(`- "${t.title}" | assigned: ${t.assigneeName || "unassigned"} | was due: ${new Date(t.dueDate).toLocaleDateString("en-AU")}`);
-    });
-  }
-
-  if (context.tasksDueThisWeek.length > 0) {
-    lines.push(`\nDUE THIS WEEK (${context.tasksDueThisWeek.length}):`);
-    context.tasksDueThisWeek.slice(0, 8).forEach(t => {
-      lines.push(`- "${t.title}" | due: ${new Date(t.dueDate).toLocaleDateString("en-AU")} | ${t.assigneeName || "unassigned"}`);
-    });
-  }
-
-  if (context.unpaidBills.length > 0) {
-    lines.push(`\nUNPAID BILLS (${context.unpaidBills.length}):`);
-    context.unpaidBills.slice(0, 8).forEach(b => {
-      lines.push(`- Bill ${b.billNumber} | $${(b.total / 100).toLocaleString()} | ${b.daysOverdue > 0 ? b.daysOverdue + " days overdue" : "due " + (b.dueDate ? new Date(b.dueDate).toLocaleDateString("en-AU") : "no date")}`);
-    });
-  }
-
-  if (context.overdueClientInvoices.length > 0) {
-    lines.push(`\nOVERDUE CLIENT INVOICES (${context.overdueClientInvoices.length}):`);
-    context.overdueClientInvoices.forEach(inv => {
-      lines.push(`- ${inv.projectName}: $${(inv.totalAmount / 100).toLocaleString()} | sent ${inv.daysSinceSent} days ago | still unpaid`);
-    });
-  }
-
-  if (context.openBlockedItems.length > 0) {
-    lines.push(`\nOPEN BLOCKED ITEMS FROM PREVIOUS CIRCUITS (${context.openBlockedItems.length}):`);
-    context.openBlockedItems.slice(0, 5).forEach(b => {
-      lines.push(`- Stop ${b.stop} (${b.stopName}): "${b.description}" | owner: ${b.ownedBy || "unassigned"}`);
-    });
-  }
-
-  if (context.leadProjects.length > 0) {
-    lines.push(`\nPIPELINE / LEADS (${context.leadProjects.length}): ${context.leadProjects.map(p => p.name).join(", ")}`);
-  }
-
-  lines.push(`\n## RULES`);
-  lines.push(`1. Ask exactly ONE question per message — never two.`);
-  lines.push(`2. Always reference the specific project/task/bill by name — never generic questions.`);
-  lines.push(`3. End every question with a "quickReplies" JSON array of 2–4 short options.`);
-  lines.push(`4. If something is blocked, ask immediately: who owns unblocking it?`);
-  lines.push(`5. If the user says to create a task, include an "action" JSON object.`);
-  lines.push(`6. When done with a stop, say so clearly and move to the next.`);
-  lines.push(`7. Never apologise, never over-explain. Be direct and move fast.`);
-  lines.push(`\n## RESPONSE FORMAT`);
-  lines.push(`Always respond with valid JSON in this exact shape (no markdown, no code fences):`);
-  lines.push(`{`);
-  lines.push(`  "message": "Your question or response here",`);
-  lines.push(`  "quickReplies": ["Option 1", "Option 2", "Option 3"],`);
-  lines.push(`  "currentStop": 1,`);
-  lines.push(`  "stopName": "Active Sites",`);
-  lines.push(`  "action": null`);
-  lines.push(`}`);
-  lines.push(`When creating a task, set action to:`);
-  lines.push(`{ "type": "create_task", "payload": { "title": "...", "projectId": "...", "dueDate": "YYYY-MM-DD", "assigneeName": "..." } }`);
-  lines.push(`When logging a blocked item, set action to:`);
-  lines.push(`{ "type": "log_blocked", "payload": { "description": "...", "ownedBy": "...", "stop": 1, "stopName": "Active Sites", "relatedProjectId": "..." } }`);
-
-  return lines.join("\n");
-}
-
-function parseCircuitResponse(response: any, fallbackStop: number, fallbackStopName: string): any {
-  const raw = response.content[0]?.type === "text" ? response.content[0].text : "{}";
-  try {
-    // Strip accidental markdown code fences if present.
-    const cleaned = raw.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "");
-    return JSON.parse(cleaned);
-  } catch {
-    return { message: raw, quickReplies: [], currentStop: fallbackStop, stopName: fallbackStopName, action: null };
-  }
-}
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Client-side error reporting (used by index.html startup error handler).
@@ -21859,178 +21752,222 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // ── Circuit AI Chat routes ─────────────────────────
-  // POST /api/circuit/session/start
-  app.post("/api/circuit/session/start", requireAuth, requireTeamMember, async (req, res) => {
+  // ── Morada AI Chat routes ─────────────────────────────
+
+  // POST /api/ai/conversations
+  app.post("/api/ai/conversations", requireAuth, requireTeamMember, async (req, res) => {
     try {
-      const { mode = "full" } = req.body;
+      const companyId = req.user!.companyId;
+      if (!companyId) return res.status(400).json({ error: "No company context" });
+      const conv = await storage.createAiConversation({
+        companyId, userId: req.user!.id, title: req.body.title || null,
+      });
+      res.json(conv);
+    } catch (err: any) {
+      res.status(500).json({ error: "Failed to create conversation", details: err.message });
+    }
+  });
+
+  // POST /api/ai/conversations/:id/messages
+  app.post("/api/ai/conversations/:id/messages", requireAuth, requireTeamMember, async (req, res) => {
+    try {
       const companyId = req.user!.companyId;
       const userId = req.user!.id;
       if (!companyId) return res.status(400).json({ error: "No company context" });
 
-      const context = await storage.getCircuitContext(companyId);
-      const session = await storage.createCircuitSession({ companyId, userId, mode, currentStop: 1 });
-      const systemPrompt = buildCircuitSystemPrompt(context, mode);
-
-      const response = await anthropic.messages.create({
-        model: CIRCUIT_MODEL,
-        max_tokens: 500,
-        system: systemPrompt,
-        messages: [{
-          role: "user",
-          content: mode === "brain_dump"
-            ? "I want to do a brain dump — I'll tell you everything on my mind and you sort it."
-            : mode === "quick"
-            ? "Run me through a quick 5-minute check on my sites and clients."
-            : "Let's run the full circuit. Start with Stop 1.",
-        }],
-      });
-
-      const parsed = parseCircuitResponse(response, 1, "Active Sites");
-
-      await storage.createCircuitMessage({
-        sessionId: session.id,
-        role: "assistant",
-        content: parsed.message,
-        stop: parsed.currentStop ?? 1,
-        quickReplies: parsed.quickReplies || [],
-        action: parsed.action ?? null,
-      });
-
-      res.json({
-        session,
-        message: parsed,
-        context: {
-          projectCount: context.activeProjects.length,
-          overdueTaskCount: context.overdueTasks.length,
-          unpaidBillCount: context.unpaidBills.length,
-          openBlockedCount: context.openBlockedItems.length,
-        },
-      });
-    } catch (error: any) {
-      console.error("Circuit start error:", error);
-      res.status(500).json({ error: "Failed to start circuit session", details: error.message });
-    }
-  });
-
-  // POST /api/circuit/session/:id/message
-  app.post("/api/circuit/session/:id/message", requireAuth, requireTeamMember, async (req, res) => {
-    try {
-      const { id } = req.params;
-      const { content } = req.body;
-      const companyId = req.user!.companyId;
+      const { content, circuitMode = false } = req.body;
       if (!content || typeof content !== "string") {
-        return res.status(400).json({ error: "Message content is required" });
+        return res.status(400).json({ error: "content is required" });
       }
 
-      const session = await storage.getCircuitSession(id);
-      if (!session || session.companyId !== companyId) {
-        return res.status(404).json({ error: "Session not found" });
+      const conversationId = req.params.id;
+      const conv = await storage.getAiConversation(conversationId);
+      if (!conv || conv.companyId !== companyId) {
+        return res.status(404).json({ error: "Conversation not found" });
       }
 
-      await storage.createCircuitMessage({ sessionId: id, role: "user", content, stop: session.currentStop, quickReplies: [], action: null });
+      await storage.createAiMessage({ conversationId, role: "user", content });
 
-      const messages = await storage.getCircuitMessages(id);
-      const context = await storage.getCircuitContext(companyId);
-      const systemPrompt = buildCircuitSystemPrompt(context, session.mode);
+      const history = await storage.getAiMessages(conversationId);
+      const systemPrompt = buildSystemPrompt(circuitMode);
 
-      const claudeMessages = messages.map(m => ({ role: m.role as "user" | "assistant", content: m.content }));
+      const claudeMessages: any[] = history
+        .slice(0, -1)
+        .map(m => ({ role: m.role, content: m.content }));
+      claudeMessages.push({ role: "user", content });
 
-      const response = await anthropic.messages.create({
-        model: CIRCUIT_MODEL,
-        max_tokens: 600,
-        system: systemPrompt,
-        messages: claudeMessages,
-      });
-
-      const parsed = parseCircuitResponse(response, session.currentStop, "");
-
-      if (parsed.action?.type === "log_blocked") {
-        const p = parsed.action.payload || {};
-        await storage.createCircuitBlockedItem({
-          companyId, userId: req.user!.id, sessionId: id,
-          stop: p.stop ?? session.currentStop,
-          stopName: p.stopName ?? "",
-          description: p.description ?? "",
-          ownedBy: p.ownedBy ?? null,
-          relatedProjectId: p.relatedProjectId || null,
+      let assistantText = "";
+      for (let round = 0; round < 5; round++) {
+        const response = await anthropic.messages.create({
+          model: AI_MODEL,
+          max_tokens: 1024,
+          system: systemPrompt,
+          tools: AI_TOOLS as any,
+          messages: claudeMessages,
         });
+
+        const hasToolUse = response.content.some((b: any) => b.type === "tool_use");
+        if (!hasToolUse || response.stop_reason === "end_turn") {
+          const textBlock = response.content.find((b: any) => b.type === "text");
+          assistantText = textBlock?.text || "";
+          break;
+        }
+
+        const toolResults: any[] = [];
+        for (const block of response.content) {
+          if ((block as any).type === "tool_use") {
+            const tb = block as any;
+            const result = await executeTool(tb.name, tb.input || {}, companyId, userId, conversationId);
+            toolResults.push({
+              type: "tool_result",
+              tool_use_id: tb.id,
+              content: JSON.stringify(result.data ?? { error: result.error }),
+            });
+          }
+        }
+        claudeMessages.push({ role: "assistant", content: response.content });
+        claudeMessages.push({ role: "user", content: toolResults });
       }
 
-      if (parsed.action?.type === "create_task") {
-        const p = parsed.action.payload || {};
-        await storage.createTask({
-          companyId, title: p.title, content: "", type: "task",
-          status: "todo", projectId: p.projectId || null,
-          assigneeName: p.assigneeName || null,
-          dueDate: p.dueDate ? new Date(p.dueDate) : null,
-          scope: p.projectId ? "project" : "personal",
-          author: req.user!.id, ownerId: req.user!.id,
-        } as any);
+      if (assistantText) {
+        await storage.createAiMessage({ conversationId, role: "assistant", content: assistantText });
       }
 
-      if (parsed.currentStop && parsed.currentStop !== session.currentStop) {
-        await storage.updateCircuitSession(id, { currentStop: parsed.currentStop });
+      let circuitData: any = null;
+      if (circuitMode && assistantText) {
+        try {
+          const cleaned = assistantText.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "");
+          circuitData = JSON.parse(cleaned);
+          assistantText = circuitData.message || assistantText;
+        } catch {
+          circuitData = { message: assistantText, quickReplies: [], currentStop: 1 };
+        }
       }
 
-      await storage.createCircuitMessage({
-        sessionId: id, role: "assistant", content: parsed.message,
-        stop: parsed.currentStop ?? session.currentStop, quickReplies: parsed.quickReplies || [], action: parsed.action ?? null,
-      });
-
-      res.json({ message: parsed });
-    } catch (error: any) {
-      console.error("Circuit message error:", error);
-      res.status(500).json({ error: "Failed to send message", details: error.message });
+      res.json({ message: assistantText, circuitData });
+    } catch (err: any) {
+      console.error("[AI] message error:", err);
+      res.status(500).json({ error: "Failed to process message", details: err.message });
     }
   });
 
-  // GET /api/circuit/session/:id/messages — rehydrate an open session
-  app.get("/api/circuit/session/:id/messages", requireAuth, requireTeamMember, async (req, res) => {
+  // GET /api/ai/conversations/:id/messages
+  app.get("/api/ai/conversations/:id/messages", requireAuth, requireTeamMember, async (req, res) => {
     try {
-      const session = await storage.getCircuitSession(req.params.id);
-      if (!session || session.companyId !== req.user!.companyId) {
-        return res.status(404).json({ error: "Session not found" });
+      const companyId = req.user!.companyId;
+      const conv = await storage.getAiConversation(req.params.id);
+      if (!conv || conv.companyId !== companyId) {
+        return res.status(404).json({ error: "Conversation not found" });
       }
-      const messages = await storage.getCircuitMessages(req.params.id);
-      res.json({ session, messages });
-    } catch (error: any) {
-      res.status(500).json({ error: "Failed to fetch messages", details: error.message });
+      const messages = await storage.getAiMessages(req.params.id);
+      res.json({ conversation: conv, messages });
+    } catch (err: any) {
+      res.status(500).json({ error: "Failed to fetch messages", details: err.message });
     }
   });
 
-  // GET /api/circuit/blocked-items
-  app.get("/api/circuit/blocked-items", requireAuth, requireTeamMember, async (req, res) => {
+  // GET /api/ai/blocked-items
+  app.get("/api/ai/blocked-items", requireAuth, requireTeamMember, async (req, res) => {
     try {
       const resolved = req.query.resolved === "true" ? true : req.query.resolved === "false" ? false : undefined;
-      const items = await storage.getCircuitBlockedItems(req.user!.companyId, resolved);
+      const items = await storage.getAiBlockedItems(req.user!.companyId, resolved);
       res.json(items);
-    } catch (error: any) {
-      res.status(500).json({ error: "Failed to fetch blocked items", details: error.message });
+    } catch (err: any) {
+      res.status(500).json({ error: "Failed to fetch blocked items", details: err.message });
     }
   });
 
-  // PATCH /api/circuit/blocked-items/:id/resolve
-  app.patch("/api/circuit/blocked-items/:id/resolve", requireAuth, requireTeamMember, async (req, res) => {
+  // PATCH /api/ai/blocked-items/:id/resolve
+  app.patch("/api/ai/blocked-items/:id/resolve", requireAuth, requireTeamMember, async (req, res) => {
     try {
-      const item = await storage.resolveCircuitBlockedItem(req.params.id, req.user!.companyId);
+      const item = await storage.resolveAiBlockedItem(req.params.id, req.user!.companyId);
       if (!item) return res.status(404).json({ error: "Item not found" });
       res.json(item);
-    } catch (error: any) {
-      res.status(500).json({ error: "Failed to resolve blocked item", details: error.message });
+    } catch (err: any) {
+      res.status(500).json({ error: "Failed to resolve blocked item", details: err.message });
     }
   });
 
-  // GET /api/circuit/context (for the widget badge count)
-  app.get("/api/circuit/context", requireAuth, requireTeamMember, async (req, res) => {
+  // GET /api/ai/context
+  app.get("/api/ai/context", requireAuth, requireTeamMember, async (req, res) => {
     try {
-      const context = await storage.getCircuitContext(req.user!.companyId);
+      const companyId = req.user!.companyId;
+      const ctx = await storage.getCircuitContext(companyId);
+      const openBlocked = await storage.getAiBlockedItems(companyId, false);
       res.json({
-        actionableCount: context.overdueTasks.length + context.overdueClientInvoices.length + context.unpaidBills.filter(b => b.daysOverdue > 0).length,
-        openBlockedCount: context.openBlockedItems.length,
+        actionableCount: ctx.overdueTasks.length + ctx.overdueClientInvoices.length + ctx.unpaidBills.filter(b => b.daysOverdue > 0).length,
+        openBlockedCount: openBlocked.length,
       });
-    } catch (error: any) {
-      res.status(500).json({ error: "Failed to fetch circuit context", details: error.message });
+    } catch (err: any) {
+      res.status(500).json({ error: "Failed to fetch AI context", details: err.message });
+    }
+  });
+
+  // POST /api/ai/circuit/start
+  app.post("/api/ai/circuit/start", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const companyId = req.user!.companyId;
+      const userId = req.user!.id;
+      if (!companyId) return res.status(400).json({ error: "No company context" });
+
+      const { mode = "full" } = req.body;
+      const conv = await storage.createAiConversation({
+        companyId, userId, title: `Circuit — ${new Date().toLocaleDateString("en-AU")}`,
+      });
+
+      const startMessage = buildCircuitStartMessage(mode as "full" | "quick");
+      await storage.createAiMessage({ conversationId: conv.id, role: "user", content: startMessage });
+
+      const systemPrompt = buildSystemPrompt(true);
+      const claudeMessages: any[] = [{ role: "user", content: startMessage }];
+      let assistantText = "";
+
+      for (let round = 0; round < 5; round++) {
+        const response = await anthropic.messages.create({
+          model: AI_MODEL,
+          max_tokens: 1024,
+          system: systemPrompt,
+          tools: AI_TOOLS as any,
+          messages: claudeMessages,
+        });
+
+        const hasToolUse = response.content.some((b: any) => b.type === "tool_use");
+        if (!hasToolUse || response.stop_reason === "end_turn") {
+          const textBlock = response.content.find((b: any) => b.type === "text");
+          assistantText = textBlock?.text || "";
+          break;
+        }
+
+        const toolResults: any[] = [];
+        for (const block of response.content) {
+          if ((block as any).type === "tool_use") {
+            const tb = block as any;
+            const result = await executeTool(tb.name, tb.input || {}, companyId, userId, conv.id);
+            toolResults.push({
+              type: "tool_result",
+              tool_use_id: tb.id,
+              content: JSON.stringify(result.data ?? { error: result.error }),
+            });
+          }
+        }
+        claudeMessages.push({ role: "assistant", content: response.content });
+        claudeMessages.push({ role: "user", content: toolResults });
+      }
+
+      await storage.createAiMessage({ conversationId: conv.id, role: "assistant", content: assistantText });
+
+      let circuitData: any = { message: assistantText, quickReplies: [], currentStop: 1, stopName: "Active Sites" };
+      try {
+        const cleaned = assistantText.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "");
+        const parsed = JSON.parse(cleaned);
+        circuitData = { ...circuitData, ...parsed };
+        assistantText = circuitData.message || assistantText;
+      } catch { /* use defaults */ }
+
+      res.json({ conversationId: conv.id, message: assistantText, circuitData });
+    } catch (err: any) {
+      console.error("[AI] circuit start error:", err);
+      res.status(500).json({ error: "Failed to start circuit", details: err.message });
     }
   });
 

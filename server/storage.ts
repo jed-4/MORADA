@@ -121,6 +121,7 @@ import * as schema from "@shared/schema";
 import { computeEstimateItemPrice, computeEstimateSummary, estimateItemBuilderCostExTax, resolveEstimateStoredPrice } from "@shared/pricing";
 import { computeBillTotalsCents, billLineExGstCents } from "@shared/billTotals";
 import type { CircuitSession, InsertCircuitSession, CircuitBlockedItem, InsertCircuitBlockedItem, CircuitMessage, InsertCircuitMessage, CircuitContext } from "@shared/schema";
+import type { AiConversation, InsertAiConversation, AiMessage, InsertAiMessage, AiBlockedItem, InsertAiBlockedItem } from "@shared/schema";
 
 // --- Timezone helpers (used by clockIn/clockOut and backfill) ---
 export function formatHHmmInTz(d: Date, tz: string): string {
@@ -1398,6 +1399,16 @@ export interface IStorage {
   createCircuitBlockedItem(item: InsertCircuitBlockedItem): Promise<CircuitBlockedItem>;
   resolveCircuitBlockedItem(id: string, companyId: string): Promise<CircuitBlockedItem | undefined>;
   getCircuitContext(companyId: string): Promise<CircuitContext>;
+
+  // Morada AI Assistant
+  ensureAiTables(): Promise<void>;
+  createAiConversation(data: InsertAiConversation): Promise<AiConversation>;
+  getAiConversation(id: string): Promise<AiConversation | undefined>;
+  createAiMessage(data: InsertAiMessage): Promise<AiMessage>;
+  getAiMessages(conversationId: string): Promise<AiMessage[]>;
+  getAiBlockedItems(companyId: string, resolved?: boolean): Promise<AiBlockedItem[]>;
+  createAiBlockedItem(data: InsertAiBlockedItem): Promise<AiBlockedItem>;
+  resolveAiBlockedItem(id: string, companyId: string): Promise<AiBlockedItem | undefined>;
 
   // Product suggestions (feedback). Identity/company derived server-side.
   ensureSuggestionsTable(): Promise<void>;
@@ -6535,6 +6546,15 @@ export class MemStorage implements IStorage {
   async repairDuplicateScopeStages(): Promise<{ projectsScanned: number; duplicatesRemoved: number }> { return { projectsScanned: 0, duplicatesRemoved: 0 }; }
   async syncClientInvoicePaidStatus(_invoiceId: string): Promise<void> {}
   async healVoidedClientInvoicePaidAmounts(): Promise<{ fixed: number }> { return { fixed: 0 }; }
+
+  async ensureAiTables(): Promise<void> {}
+  async createAiConversation(_data: InsertAiConversation): Promise<AiConversation> { throw new Error("Not implemented"); }
+  async getAiConversation(_id: string): Promise<AiConversation | undefined> { return undefined; }
+  async createAiMessage(_data: InsertAiMessage): Promise<AiMessage> { throw new Error("Not implemented"); }
+  async getAiMessages(_conversationId: string): Promise<AiMessage[]> { return []; }
+  async getAiBlockedItems(_companyId: string, _resolved?: boolean): Promise<AiBlockedItem[]> { return []; }
+  async createAiBlockedItem(_data: InsertAiBlockedItem): Promise<AiBlockedItem> { throw new Error("Not implemented"); }
+  async resolveAiBlockedItem(_id: string, _companyId: string): Promise<AiBlockedItem | undefined> { return undefined; }
 }
 
 // Database-backed storage implementation
@@ -24667,6 +24687,89 @@ export class DbStorage implements IStorage {
       openBlockedItems,
       leadProjects: leadProjects.map((p: any) => ({ id: p.id, name: p.name, subStatus: p.projectSubStatus })),
     };
+  }
+
+  // ── Morada AI Assistant ────────────────────────────────
+  async ensureAiTables(): Promise<void> {
+    try {
+      await db.execute(sql`
+        CREATE TABLE IF NOT EXISTS ai_conversations (
+          id varchar PRIMARY KEY DEFAULT gen_random_uuid(),
+          company_id varchar NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+          user_id varchar NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          title text,
+          created_at timestamp NOT NULL DEFAULT now(),
+          updated_at timestamp NOT NULL DEFAULT now()
+        )
+      `);
+      await db.execute(sql`
+        CREATE TABLE IF NOT EXISTS ai_messages (
+          id varchar PRIMARY KEY DEFAULT gen_random_uuid(),
+          conversation_id varchar NOT NULL REFERENCES ai_conversations(id) ON DELETE CASCADE,
+          role text NOT NULL,
+          content text NOT NULL,
+          created_at timestamp NOT NULL DEFAULT now()
+        )
+      `);
+      await db.execute(sql`
+        CREATE TABLE IF NOT EXISTS ai_blocked_items (
+          id varchar PRIMARY KEY DEFAULT gen_random_uuid(),
+          company_id varchar NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+          user_id varchar NOT NULL REFERENCES users(id),
+          conversation_id varchar REFERENCES ai_conversations(id),
+          description text NOT NULL,
+          resolved_at timestamp,
+          created_at timestamp NOT NULL DEFAULT now(),
+          updated_at timestamp NOT NULL DEFAULT now()
+        )
+      `);
+    } catch (error) {
+      console.error("Failed to ensure AI tables:", error);
+      throw error;
+    }
+  }
+
+  async createAiConversation(data: InsertAiConversation): Promise<AiConversation> {
+    const [row] = await db.insert(schema.aiConversations).values(data).returning();
+    return row;
+  }
+
+  async getAiConversation(id: string): Promise<AiConversation | undefined> {
+    const [row] = await db.select().from(schema.aiConversations).where(eq(schema.aiConversations.id, id));
+    return row;
+  }
+
+  async createAiMessage(data: InsertAiMessage): Promise<AiMessage> {
+    const [row] = await db.insert(schema.aiMessages).values(data).returning();
+    return row;
+  }
+
+  async getAiMessages(conversationId: string): Promise<AiMessage[]> {
+    return db.select().from(schema.aiMessages)
+      .where(eq(schema.aiMessages.conversationId, conversationId))
+      .orderBy(asc(schema.aiMessages.createdAt));
+  }
+
+  async getAiBlockedItems(companyId: string, resolved?: boolean): Promise<AiBlockedItem[]> {
+    const conditions: any[] = [eq(schema.aiBlockedItems.companyId, companyId)];
+    if (resolved === false) conditions.push(isNull(schema.aiBlockedItems.resolvedAt));
+    if (resolved === true) conditions.push(isNotNull(schema.aiBlockedItems.resolvedAt));
+    return db.select().from(schema.aiBlockedItems)
+      .where(and(...conditions))
+      .orderBy(desc(schema.aiBlockedItems.createdAt));
+  }
+
+  async createAiBlockedItem(data: InsertAiBlockedItem): Promise<AiBlockedItem> {
+    const [row] = await db.insert(schema.aiBlockedItems).values(data).returning();
+    return row;
+  }
+
+  async resolveAiBlockedItem(id: string, companyId: string): Promise<AiBlockedItem | undefined> {
+    const [row] = await db.update(schema.aiBlockedItems)
+      .set({ resolvedAt: new Date(), updatedAt: new Date() })
+      .where(and(eq(schema.aiBlockedItems.id, id), eq(schema.aiBlockedItems.companyId, companyId)))
+      .returning();
+    return row;
   }
 
   async upsertPushToken(data: { userId: string; token: string; platform?: string; deviceName?: string }): Promise<PushToken> {

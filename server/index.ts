@@ -282,6 +282,13 @@ app.use((req, res, next) => {
       console.error('Failed to ensure circuit tables:', error);
     }
 
+    // Ensure the AI assistant tables exist (additive, idempotent).
+    try {
+      await storage.ensureAiTables();
+    } catch (error) {
+      console.error('Failed to ensure AI tables:', error);
+    }
+
     // Ensure the suggestions table + users.is_platform_staff column exist
     // (additive, idempotent). The deploy build does not run drizzle push, so
     // this guarantees the suggestion box works the first time production boots
