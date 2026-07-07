@@ -26,7 +26,7 @@ export const AI_TOOLS: Tool[] = [
   {
     name: "get_project_detail",
     description:
-      "Get detailed information about a specific project including financials, progress, contacts, and schedule summary. Use when the user asks about one specific project.",
+      "Get detailed information about a specific project including financials, progress, contacts, and schedule summary.",
     input_schema: {
       type: "object" as const,
       properties: {
@@ -43,10 +43,7 @@ export const AI_TOOLS: Tool[] = [
     input_schema: {
       type: "object" as const,
       properties: {
-        filter: {
-          type: "string",
-          enum: ["overdue", "due_this_week", "all"],
-        },
+        filter: { type: "string", enum: ["overdue", "due_this_week", "all"] },
         project_id: { type: "string", description: "Optional: scope to one project." },
         limit: { type: "number", description: "Max number to return (default 20)." },
       },
@@ -61,10 +58,7 @@ export const AI_TOOLS: Tool[] = [
     input_schema: {
       type: "object" as const,
       properties: {
-        status: {
-          type: "string",
-          enum: ["all", "unpaid", "overdue"],
-        },
+        status: { type: "string", enum: ["all", "unpaid", "overdue"] },
         project_id: { type: "string", description: "Optional: scope to one project." },
         limit: { type: "number" },
       },
@@ -75,14 +69,11 @@ export const AI_TOOLS: Tool[] = [
   {
     name: "get_client_invoices",
     description:
-      "Get client invoices. Use status='overdue' to find past-due invoices, 'draft' for unsent, 'sent' for outstanding. Amounts in cents.",
+      "Get client invoices. Use status='overdue' for past-due, 'draft' for unsent, 'sent' for outstanding. Amounts in cents.",
     input_schema: {
       type: "object" as const,
       properties: {
-        status: {
-          type: "string",
-          enum: ["all", "overdue", "sent", "draft", "paid"],
-        },
+        status: { type: "string", enum: ["all", "overdue", "sent", "draft", "paid"] },
         project_id: { type: "string", description: "Optional: scope to one project." },
       },
       required: [],
@@ -92,11 +83,11 @@ export const AI_TOOLS: Tool[] = [
   {
     name: "get_estimates",
     description:
-      "Get estimates (quotes) for a specific project. Returns estimate name, status (draft/approved/contract), and total value in cents.",
+      "Get estimates (quotes) for a specific project. Returns estimate name, status, and total value in cents.",
     input_schema: {
       type: "object" as const,
       properties: {
-        project_id: { type: "string", description: "Project ID to fetch estimates for (required)." },
+        project_id: { type: "string", description: "Project ID (required)." },
       },
       required: ["project_id"],
     },
@@ -105,18 +96,18 @@ export const AI_TOOLS: Tool[] = [
   {
     name: "get_team",
     description:
-      "Get team members and their roles. Use this when the user asks who is on the team, who to assign work to, or about team capacity.",
+      "Get team members of this company and their roles.",
     input_schema: { type: "object" as const, properties: {}, required: [] },
   },
 
   {
     name: "get_schedule_items",
     description:
-      "Get schedule items (milestones, tasks) for a specific project. Returns item names, dates, and status.",
+      "Get schedule items (milestones, tasks) for a specific project.",
     input_schema: {
       type: "object" as const,
       properties: {
-        project_id: { type: "string", description: "Project ID to fetch schedule for (required)." },
+        project_id: { type: "string", description: "Project ID (required)." },
         limit: { type: "number", description: "Max items to return (default 20)." },
       },
       required: ["project_id"],
@@ -124,9 +115,36 @@ export const AI_TOOLS: Tool[] = [
   },
 
   {
-    name: "get_blocked_items",
+    name: "get_site_diary_entries",
     description:
-      "Get open (unresolved) blocked items previously logged in AI conversations.",
+      "Get recent site diary entries. Optionally filter to a specific project.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        project_id: { type: "string", description: "Optional: scope to one project." },
+        limit: { type: "number", description: "Max entries to return (default 10)." },
+      },
+      required: [],
+    },
+  },
+
+  {
+    name: "get_channel_messages",
+    description:
+      "Read recent messages from a project channel or company channel. Use to understand what has been discussed recently.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        project_id: { type: "string", description: "Optional: scope to channels for this project." },
+        limit: { type: "number", description: "Max messages to return (default 15)." },
+      },
+      required: [],
+    },
+  },
+
+  {
+    name: "get_blocked_items",
+    description: "Get open (unresolved) blocked items previously logged in AI conversations.",
     input_schema: { type: "object" as const, properties: {}, required: [] },
   },
 
@@ -140,9 +158,9 @@ export const AI_TOOLS: Tool[] = [
       type: "object" as const,
       properties: {
         title: { type: "string", description: "Task title (required)." },
-        project_id: { type: "string", description: "Project to attach to. Optional." },
-        due_date: { type: "string", description: "Due date as YYYY-MM-DD. Optional." },
-        assignee_name: { type: "string", description: "Name of person to assign to. Optional." },
+        project_id: { type: "string", description: "Project to attach to." },
+        due_date: { type: "string", description: "Due date as YYYY-MM-DD." },
+        assignee_name: { type: "string", description: "Name of person to assign to." },
       },
       required: ["title"],
     },
@@ -151,16 +169,12 @@ export const AI_TOOLS: Tool[] = [
   {
     name: "update_task",
     description:
-      "Update an existing task's status, due date, or assignee. Use when the user says a task is done, wants to reschedule it, or reassign it.",
+      "Update an existing task's status, due date, or assignee.",
     input_schema: {
       type: "object" as const,
       properties: {
         task_id: { type: "string", description: "Task ID to update (required)." },
-        status: {
-          type: "string",
-          enum: ["todo", "in-progress", "done"],
-          description: "New status.",
-        },
+        status: { type: "string", enum: ["todo", "in-progress", "done"] },
         due_date: { type: "string", description: "New due date as YYYY-MM-DD." },
         assignee_name: { type: "string", description: "New assignee name." },
       },
@@ -169,9 +183,30 @@ export const AI_TOOLS: Tool[] = [
   },
 
   {
+    name: "create_schedule_item",
+    description:
+      "Add a schedule item (task, milestone, or inspection) to a project schedule.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        project_id: { type: "string", description: "Project ID (required)." },
+        name: { type: "string", description: "Schedule item name (required)." },
+        type: {
+          type: "string",
+          enum: ["task", "milestone", "inspection", "delivery", "meeting"],
+          description: "Item type (default: task).",
+        },
+        start_date: { type: "string", description: "Start date as YYYY-MM-DD (required)." },
+        end_date: { type: "string", description: "End date as YYYY-MM-DD (required)." },
+      },
+      required: ["project_id", "name", "start_date", "end_date"],
+    },
+  },
+
+  {
     name: "log_blocked_item",
     description:
-      "Log a blocked item — something stuck, blocked, or needing follow-up. Use when the user mentions a dependency, problem, or thing that isn't moving.",
+      "Log a blocked item — something stuck, blocked, or needing follow-up.",
     input_schema: {
       type: "object" as const,
       properties: {
@@ -183,8 +218,7 @@ export const AI_TOOLS: Tool[] = [
 
   {
     name: "resolve_blocked_item",
-    description:
-      "Mark a previously logged blocked item as resolved. Use when the user says a blocked item has been unblocked or resolved.",
+    description: "Mark a previously logged blocked item as resolved.",
     input_schema: {
       type: "object" as const,
       properties: {
@@ -197,7 +231,7 @@ export const AI_TOOLS: Tool[] = [
   {
     name: "add_project_note",
     description:
-      "Add a note or memo to a project. Use when the user wants to record something on a project that isn't a task or site diary entry.",
+      "Add a note or memo to a project.",
     input_schema: {
       type: "object" as const,
       properties: {
@@ -212,7 +246,7 @@ export const AI_TOOLS: Tool[] = [
   {
     name: "create_site_diary_entry",
     description:
-      "Create a site diary entry for a project. Use when the user wants to log what happened on site today or record site activity.",
+      "Create a site diary entry for a project.",
     input_schema: {
       type: "object" as const,
       properties: {

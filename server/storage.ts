@@ -24725,6 +24725,28 @@ export class DbStorage implements IStorage {
           updated_at timestamp NOT NULL DEFAULT now()
         )
       `);
+      // One-time backfill: copy circuit_blocked_items → ai_blocked_items (idempotent)
+      try {
+        await db.execute(sql`
+          INSERT INTO ai_blocked_items (id, company_id, user_id, description, resolved_at, created_at, updated_at)
+          SELECT
+            gen_random_uuid(),
+            cbi.company_id,
+            cbi.user_id,
+            cbi.description,
+            cbi.resolved_at,
+            cbi.created_at,
+            COALESCE(cbi.updated_at, cbi.created_at)
+          FROM circuit_blocked_items cbi
+          WHERE NOT EXISTS (
+            SELECT 1 FROM ai_blocked_items ai
+            WHERE ai.company_id = cbi.company_id
+              AND ai.description = cbi.description
+          )
+        `);
+      } catch (_backfillErr) {
+        // Silently skip if circuit_blocked_items doesn't exist or schema differs
+      }
     } catch (error) {
       console.error("Failed to ensure AI tables:", error);
       throw error;

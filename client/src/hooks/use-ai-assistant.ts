@@ -76,9 +76,10 @@ export function useAiAssistant() {
   const loadConversation = useCallback(async (id: string) => {
     setIsLoadingHistory(true);
     try {
-      const msgs = await apiRequest("GET", `/api/ai/conversations/${id}/messages`) as AiMessage[];
+      const result = await apiRequest("GET", `/api/ai/conversations/${id}/messages`) as any;
+      const msgs: AiMessage[] = Array.isArray(result) ? result : (result?.messages ?? []);
       setConversationId(id);
-      setMessages(msgs || []);
+      setMessages(msgs);
       setCircuitData(null);
       setIsCircuitMode(false);
     } catch (err) {
