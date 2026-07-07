@@ -103,15 +103,14 @@ export async function pollBillInbox(): Promise<{ processed: number; errors: stri
 
   for (const messageId of messageIds) {
     try {
-      // Duplicate prevention — skip if already fully processed; retry AI if still a draft
+      // Duplicate prevention — if we already created a bill for this message
+      // (regardless of whether OCR has run), mark it read and skip. The user
+      // controls when AI extraction happens via the bulk "Run AI Read" action.
       const existing = await storage.getBillByGmailMessageId(messageId);
       if (existing) {
-        if (existing.ocrProcessed) {
-          console.log(`[BillInbox] Message ${messageId} already fully processed as bill ${existing.billNumber} — marking read`);
-          await markRead(gmail, messageId);
-          continue;
-        }
-        console.log(`[BillInbox] Message ${messageId} has an unprocessed draft bill ${existing.billNumber} — re-running AI`);
+        console.log(`[BillInbox] Message ${messageId} already imported as bill ${existing.billNumber} — marking read`);
+        await markRead(gmail, messageId);
+        continue;
       }
 
       const msgRes = await gmail.users.messages.get({

@@ -64,6 +64,7 @@ import {
   MoreHorizontal,
   RefreshCw,
   Banknote,
+  ScanText,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -735,6 +736,22 @@ export default function Bills({ embedded }: { embedded?: boolean } = {}) {
     onError: (error: Error) => {
       queryClient.invalidateQueries({ queryKey: ["/api/bills"] });
       toast({ title: "Partial failure", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const bulkAiReadMutation = useMutation({
+    mutationFn: async (billIds: string[]) =>
+      apiRequest<{ processed: number; skipped: number }>("/api/bills/bulk-ai-read", "POST", { billIds }),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/bills"] });
+      const { processed, skipped } = data as { processed: number; skipped: number };
+      const parts: string[] = [];
+      if (processed > 0) parts.push(`${processed} read`);
+      if (skipped > 0) parts.push(`${skipped} skipped (already processed or no attachment)`);
+      toast({ title: "AI Read complete", description: parts.join(", ") || "No bills were processed." });
+    },
+    onError: (error: Error) => {
+      toast({ title: "AI Read failed", description: error.message, variant: "destructive" });
     },
   });
 
@@ -1428,6 +1445,13 @@ export default function Bills({ embedded }: { embedded?: boolean } = {}) {
         </Button>
         <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setChangeSupplierDialogOpen(true)}>
           Change Supplier
+        </Button>
+        <Button size="sm" variant="outline" className="h-7 text-xs" disabled={bulkAiReadMutation.isPending} onClick={() => bulkAiReadMutation.mutate(Array.from(selectedBills))}>
+          {bulkAiReadMutation.isPending ? (
+            <><Loader2 className="w-3 h-3 mr-1 animate-spin" />Reading…</>
+          ) : (
+            <><ScanText className="w-3 h-3 mr-1" />Run AI Read</>
+          )}
         </Button>
         <Button size="sm" className="h-7 text-xs bg-status-success text-white" disabled={bulkApproveMutation.isPending} onClick={() => bulkApproveMutation.mutate(Array.from(selectedBills))}>
           <CheckCircle2 className="w-3 h-3 mr-1" />{bulkApproveMutation.isPending ? "Approving…" : "Approve"}

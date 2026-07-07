@@ -230,9 +230,6 @@ export default function BillDetail() {
   const [previewAttachment, setPreviewAttachment] = useState<string | null>(null);
   const [fullscreenPreview, setFullscreenPreview] = useState(false);
   const dueDateManuallySet = useRef(false);
-  // Tracks which bill ID we have already auto-triggered OCR for, so we only
-  // fire once per bill even if the component re-renders.
-  const autoOcrTriggeredForRef = useRef<string | null>(null);
   const [visibleAmountCols, setVisibleAmountCols] = useState<{ exTax: boolean; tax: boolean; incTax: boolean }>({ exTax: false, tax: false, incTax: false });
   const [colMenuOpen, setColMenuOpen] = useState(false);
   const [unmappedContactDialogOpen, setUnmappedContactDialogOpen] = useState(false);
@@ -1490,46 +1487,10 @@ export default function BillDetail() {
     },
   });
 
-  // Auto-trigger the AI reader for email-imported bills that landed without
-  // AI extraction (server-side OCR may have failed or timed out). We fire once
-  // per bill the moment the attachment list is populated and the bill is in
-  // draft state with ocrProcessed = false.
-  useEffect(() => {
-    if (!isEditMode || !bill || !id) return;
-    // Already processed by AI — nothing to do.
-    if ((bill as any).ocrProcessed) return;
-    // Never auto-run on Xero-imported bills — they already carry correct line
-    // items and totals from Xero, and re-reading would clobber them.
-    if ((bill as any).xeroInvoiceId) return;
-    // Only auto-run for genuine draft bills awaiting extraction (paid/awaiting
-    // payment bills are complete and must not be re-read).
-    if (bill.status !== "draft") return;
-    // Wait for the existing line items to load before deciding, and never
-    // overwrite a bill that already has line items.
-    if (existingLineItemsLoading) return;
-    if (existingLineItems.length > 0) return;
-    // Already fired for this bill in this session.
-    if (autoOcrTriggeredForRef.current === id) return;
-    // Wait until at least one attachment is available.
-    if (attachmentUrls.length === 0) return;
-    // Find the first attachment we can actually OCR (PDF or image).
-    const firstProcessable = attachmentUrls.find((u) => {
-      const pathClean = u.split("?")[0].split("#")[0];
-      const extFromPath = pathClean.split(".").pop()?.toLowerCase() || "";
-      const meta = attachmentMeta[u];
-      const extFromMeta = meta?.filename?.split(".").pop()?.toLowerCase() || "";
-      const mimeOk = /^(application\/pdf|image\/(jpeg|jpg|png|webp))/.test(meta?.mimeType || "");
-      return (
-        ["pdf", "jpg", "jpeg", "png", "webp"].includes(extFromPath) ||
-        ["pdf", "jpg", "jpeg", "png", "webp"].includes(extFromMeta) ||
-        mimeOk
-      );
-    });
-    if (!firstProcessable) return;
-    // Guard: don't double-fire.
-    autoOcrTriggeredForRef.current = id;
-    ocrFromAttachmentMutation.mutate(firstProcessable);
-  }, [bill, attachmentUrls, isEditMode, id, existingLineItems.length, existingLineItemsLoading]);
+  // Auto-OCR on bill open has been intentionally removed.
+  // AI extraction is now user-controlled: either via the "Read & Apply" button
+  // on this page, or via the "Run AI Read" bulk action on the bills list.
+  // This prevents unintended re-processing and gives the user full control.
 
   const performSubmit = (data: BillFormData) => {
     if (isEditMode) {
@@ -2550,7 +2511,7 @@ export default function BillDetail() {
                             <Button
                               className="w-full"
                               size="sm"
-                              disabled={!firstProcessable || ocrFromAttachmentMutation.isPending}
+                              disabled={!firstProcessable || ocrFromAttachmentMutation.isPending || !!(bill as any)?.ocrProcessed}
                               onClick={() => firstProcessable && ocrFromAttachmentMutation.mutate(firstProcessable)}
                               data-testid="button-read-attachment-ai"
                             >

@@ -1,14 +1,8 @@
-import { processInvoiceWithAI } from "./aiBillReader";
 import { getEmailParserService, type ParsedEmail } from "./emailParser";
 import { storage } from "../storage";
-import type { InsertBill, InsertBillLineItem } from "@shared/schema";
-import * as schema from "@shared/schema";
-import { matchSupplier } from "@shared/supplierMatcher";
+import type { InsertBill } from "@shared/schema";
 import { objectStorageClient } from "../replit_integrations/object_storage/objectStorage";
 import { randomUUID } from "crypto";
-import { db } from "../db";
-import { and, eq, gte, lte } from "drizzle-orm";
-import { recomputePOStatusFromBills } from "./poStatusFromBills";
 
 export interface AutoBillResult {
   success: boolean;
@@ -29,104 +23,6 @@ export interface AutoBillOptions {
   existingBillId?: string;
 }
 
-/**
- * Normalise an address/name string for project matching:
- * lowercase, expand common abbreviations, strip punctuation.
- */
-function normAddr(s: string): string {
-  return s.toLowerCase()
-    .replace(/\bplace\b/g, "pl").replace(/\bstreet\b/g, "st").replace(/\broad\b/g, "rd")
-    .replace(/\bdrive\b/g, "dr").replace(/\bcourt\b/g, "ct").replace(/\bavenue\b/g, "ave")
-    .replace(/\blane\b/g, "ln").replace(/\bcrescent\b/g, "cres")
-    .replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
-}
-function tokAddr(s: string): string[] { return normAddr(s).split(" ").filter(t => t.length > 1); }
-
-/**
- * Try to match a single text source against all projects (name + location).
- * Returns { projectId, score } if confident, null otherwise.
- */
-function matchTextAgainstProjects(
-  sourceText: string,
-  projects: import("@shared/schema").Project[],
-): string | null {
-  const srcTokens = new Set(tokAddr(sourceText));
-  const srcStreetNum = normAddr(sourceText).match(/\b(\d+)\b/)?.[1];
-
-  let best: { id: string; score: number } | null = null;
-
-  for (const project of projects) {
-    if ((project as any).isArchived) continue;
-
-    // Try both the project name and the location as candidate pools
-    const candidatePools = [
-      [project.name, project.location].filter(Boolean).join(" "),
-    ];
-
-    for (const candidateText of candidatePools) {
-      if (!candidateText.trim()) continue;
-
-      const projTokens = tokAddr(candidateText);
-      if (projTokens.length === 0) continue;
-
-      // Street number check: if both have a number, they must match
-      const projStreetNum = normAddr(candidateText).match(/\b(\d+)\b/)?.[1];
-      if (srcStreetNum && projStreetNum && srcStreetNum !== projStreetNum) continue;
-
-      let overlap = 0;
-      for (const t of projTokens) {
-        if (srcTokens.has(t)) overlap++;
-      }
-
-      // Require at least 2 shared tokens OR (street number match + 1 other token)
-      if (overlap < 2 && !(srcStreetNum && projStreetNum && overlap >= 1)) continue;
-      const score = overlap / Math.max(projTokens.length, 1);
-      if (score < 0.3) continue;
-
-      if (!best || score > best.score) best = { id: project.id, score };
-    }
-  }
-
-  return best?.id ?? null;
-}
-
-/**
- * Match project using multiple signals, in priority order:
- *   1. AI-extracted siteAddress vs project location + name
- *   2. AI-extracted siteAddress vs project name alone (for projects with no location)
- *   3. PDF filenames (tokenised) vs project name + location
- *   4. Email subject vs project name + location
- */
-function matchProjectMultiSignal(
-  invoiceData: { siteAddress?: string; supplierAddress?: string },
-  pdfFilenames: string[],
-  emailSubject: string,
-  projects: import("@shared/schema").Project[],
-): string | null {
-  // Signal 1 & 2: AI-extracted address
-  const aiAddress = invoiceData.siteAddress || invoiceData.supplierAddress;
-  if (aiAddress) {
-    const m = matchTextAgainstProjects(aiAddress, projects);
-    if (m) return m;
-  }
-
-  // Signal 3: PDF filenames
-  for (const filename of pdfFilenames) {
-    // Strip extension and common filler words for cleaner matching
-    const cleaned = filename.replace(/\.(pdf|png|jpg|jpeg)$/i, "")
-      .replace(/invoice|receipt|bill|tax|statement/gi, " ");
-    const m = matchTextAgainstProjects(cleaned, projects);
-    if (m) return m;
-  }
-
-  // Signal 4: Email subject
-  if (emailSubject) {
-    const m = matchTextAgainstProjects(emailSubject, projects);
-    if (m) return m;
-  }
-
-  return null;
-}
 
 export class AutoBillCreatorService {
   /**
@@ -214,7 +110,6 @@ export class AutoBillCreatorService {
 
     // ── Resolve project ──────────────────────────────────────────────────────
     let projectId = options.defaultProjectId;
-    let projectMatchConfident = !!options.defaultProjectId;
     // Filter projects by companyId to avoid cross-tenant matches
     const allProjects = await storage.getProjects();
     const projects = companyId
@@ -230,7 +125,6 @@ export class AutoBillCreatorService {
         );
         if (matchedProject) {
           projectId = matchedProject.id;
-          projectMatchConfident = true;
         }
       }
 
@@ -238,18 +132,10 @@ export class AutoBillCreatorService {
         const activeProject = projects.find(p => p.isActive);
         if (activeProject) {
           projectId = activeProject.id;
-          projectMatchConfident = false; // fallback — may be refined after AI
         }
         // If still no project, bill will be saved as a business-level bill (projectId = null)
       }
     }
-
-    // ── Extract sender email domain for fallback matching later ─────────────
-    const fromEmailMatch = email.from.match(/<([^>]+)>/) || email.from.match(/(\S+@\S+)/);
-    const senderEmail = fromEmailMatch ? fromEmailMatch[1] : email.from;
-    const senderDomain = senderEmail.includes("@")
-      ? senderEmail.split("@")[1].toLowerCase().replace(/^www\./, "")
-      : null;
 
     let supplierId: string | undefined;
     let supplierName = "Unknown Supplier";
@@ -344,261 +230,22 @@ export class AutoBillCreatorService {
       }
     }
 
-    // ── Run AI on the FIRST (primary) attachment ─────────────────────────────
-    const primary = attachments[0];
-    const primaryBase64 = Buffer.isBuffer(primary.content)
-      ? primary.content.toString("base64")
-      : primary.content;
+    // ── Bill saved as draft — AI extraction deferred to bulk "Run AI Read" ───
+    // Do NOT run processInvoiceWithAI here. The bill lands in the list as a
+    // draft with its attachment saved. Users select one or more drafts and
+    // trigger OCR in bulk from the bills list.
+    console.log(`[autoBillCreator] Bill ${createdBill.billNumber} saved as draft — AI extraction deferred`);
 
-    // Skip AI if this is an existing bill that was already successfully processed.
-    // The polling cycle can revisit the same bill multiple times; once ocrProcessed
-    // is true and the bill has a supplier or invoice reference, there is no value
-    // in running the extraction pipeline again.
-    if (options.existingBillId && createdBill.ocrProcessed && (createdBill.supplierId || (createdBill as any).billReference)) {
-      console.log(`[autoBillCreator] Bill ${createdBill.id} already processed (ocrProcessed=true) — skipping AI re-extraction`);
-      return { success: true, billId: createdBill.id, billNumber: createdBill.billNumber ?? undefined, supplierName };
-    }
+    const project = await storage.getProject(projectId!);
+    return {
+      success: true,
+      billId: createdBill.id,
+      billNumber: createdBill.billNumber ?? undefined,
+      supplierName,
+      projectName: project?.name,
+      total: 0,
+    };
 
-    try {
-      const invoiceData = await processInvoiceWithAI(primaryBase64, primary.filename);
-
-      // ── Re-resolve supplier using full priority chain ────────────────────────
-      // Priority: ABN → learned name mapping → fuzzy name match → email domain
-      let aiSupplierId = supplierId;
-      let aiSupplierName = invoiceData.supplierName || supplierName;
-
-      if (options.autoMatch) {
-        const [supplierContacts, tradeContacts] = await Promise.all([
-          storage.getContacts(companyId, "supplier"),
-          storage.getContacts(companyId, "trade"),
-        ]);
-        const seenIds = new Set<string>();
-        const allContacts = [...supplierContacts, ...tradeContacts].filter((c: any) => {
-          if (seenIds.has(c.id)) return false;
-          seenIds.add(c.id);
-          return true;
-        });
-
-        let matched = false;
-
-        // 1. ABN match (exact — strip all spaces before comparing)
-        if (!matched && invoiceData.supplierAbn) {
-          const normAbn = invoiceData.supplierAbn.replace(/\s/g, "");
-          const abnMatch = allContacts.find((c: any) => c.abn && c.abn.replace(/\s/g, "") === normAbn);
-          if (abnMatch) {
-            aiSupplierId = abnMatch.id;
-            aiSupplierName = (abnMatch as any).name || invoiceData.supplierName || supplierName;
-            console.log(`[autoBillCreator] Supplier matched by ABN ${normAbn} → "${aiSupplierName}"`);
-            matched = true;
-          }
-        }
-
-        // 2. Learned name mapping (exact on AI-extracted name)
-        if (!matched && invoiceData.supplierName) {
-          const mapping = await storage.getSupplierNameMapping(invoiceData.supplierName, companyId);
-          if (mapping) {
-            const contact = allContacts.find((c: any) => c.id === mapping.supplierId);
-            if (contact) {
-              aiSupplierId = contact.id;
-              aiSupplierName = (contact as any).name || invoiceData.supplierName;
-              console.log(`[autoBillCreator] Supplier matched by learned name mapping "${invoiceData.supplierName}" → "${aiSupplierName}"`);
-              matched = true;
-            }
-          }
-        }
-
-        // 3. Fuzzy name match against supplier/trade contacts
-        if (!matched && invoiceData.supplierName) {
-          const matchResult = matchSupplier(
-            invoiceData.supplierName,
-            allContacts.map((c: any) => ({
-              id: c.id,
-              names: [c.company, c.name, `${c.firstName || ""} ${c.lastName || ""}`.trim()].filter(Boolean),
-              raw: c,
-            })),
-          );
-          if (matchResult.match) {
-            aiSupplierId = matchResult.match.candidate.id;
-            aiSupplierName = (matchResult.match.candidate as any).raw?.name || invoiceData.supplierName;
-            console.log(`[autoBillCreator] Supplier fuzzy-matched "${invoiceData.supplierName}" → "${aiSupplierName}" (confidence ${matchResult.match.confidence.toFixed(2)})`);
-            // Auto-save the name mapping so future imports skip fuzzy matching
-            await storage.createSupplierNameMapping({
-              invoiceNameString: invoiceData.supplierName,
-              supplierId: aiSupplierId!,
-              companyId,
-            }).catch(() => {}); // Non-fatal
-            matched = true;
-          }
-        }
-
-        // 4. Email domain match (sender domain vs contact email domain)
-        if (!matched && senderDomain) {
-          const domainMatch = allContacts.find((c: any) => {
-            if (!c.email) return false;
-            const contactDomain = c.email.split("@")[1]?.toLowerCase().replace(/^www\./, "");
-            return contactDomain === senderDomain;
-          });
-          if (domainMatch) {
-            aiSupplierId = domainMatch.id;
-            aiSupplierName = (domainMatch as any).name || supplierName;
-            console.log(`[autoBillCreator] Supplier matched by email domain "${senderDomain}" → "${aiSupplierName}"`);
-            matched = true;
-          }
-        }
-
-        // 5. No match — leave supplierId null; bill goes to "needs_review" status
-        if (!matched) {
-          aiSupplierId = undefined;
-          aiSupplierName = invoiceData.supplierName || supplierName;
-          console.log(`[autoBillCreator] No supplier match found for "${aiSupplierName}" — bill will require manual review`);
-        }
-      }
-
-      // ── Re-resolve project using all available signals ───────────────────────
-      if (!projectMatchConfident && options.autoMatch) {
-        const pdfFilenames = attachments.map(a => a.filename).filter(Boolean);
-        const projectMatch = matchProjectMultiSignal(
-          invoiceData,
-          pdfFilenames,
-          email.subject || "",
-          projects,
-        );
-        if (projectMatch) {
-          console.log(`[autoBillCreator] Matched project ${projectMatch} via multi-signal matching`);
-          projectId = projectMatch;
-          await storage.updateBill(createdBill.id, { projectId });
-        }
-      }
-
-      // ── PO MATCHING (any PO type) ────────────────────────────────────────────
-      // Suggestion + auto-link logic lives in poSuggestions.ts so the same
-      // matching runs from the AI Bill Reader, the manual "Resuggest" button,
-      // and the backfill job. We compute candidates here against the in-memory
-      // bill snapshot (since the DB row hasn't been updated with supplier/total
-      // yet) and let the helper persist/link if a top candidate is safe.
-      let matchedSitePOId: string | null = null;
-      let suggestedSitePOIds: string[] = [];
-
-      if (options.autoMatch) {
-        const pdfFilenames = attachments.map(a => a.filename).filter(Boolean) as string[];
-        const extraText = [
-          invoiceData?.rawText || '',
-          ...pdfFilenames,
-          email?.subject || '',
-        ].join(' \n ');
-
-        // aiBillReader returns totals in cents (see processInvoiceWithAI's
-        // toCents() conversion). suggestPOsForBill expects bill.total in cents
-        // to match purchase_orders.total which is also cents.
-        const billTotalCents = typeof invoiceData?.totalAmount === 'number' ? invoiceData.totalAmount : 0;
-        const { suggestPOsForBill } = await import("./poSuggestions");
-        const { candidates, topAuto } = await suggestPOsForBill(
-          {
-            id: createdBill.id,
-            companyId,
-            supplierId: aiSupplierId,
-            total: billTotalCents,
-            billDate: invoiceData.invoiceDate ? new Date(invoiceData.invoiceDate) : null,
-            ocrData: invoiceData as any,
-            attachmentUrls: attachments.map(a => ({ filename: a.filename })) as any,
-          },
-          { extraText },
-        );
-
-        if (topAuto) {
-          const [matchedPO] = await db
-            .select()
-            .from(schema.purchaseOrders)
-            .where(eq(schema.purchaseOrders.id, topAuto.poId))
-            .limit(1);
-          if (matchedPO) {
-            matchedSitePOId = matchedPO.id;
-            // Authoritative match: prefer PO's project/supplier on the bill.
-            if (matchedPO.projectId) projectId = matchedPO.projectId;
-            if (matchedPO.supplierId) aiSupplierId = matchedPO.supplierId;
-            console.log(`[autoBillCreator] Auto-linked PO ${matchedPO.poNumber} (${matchedPO.poType}) → bill ${createdBill.billNumber}`);
-          }
-        } else if (candidates.length > 0) {
-          suggestedSitePOIds = candidates.map(c => c.poId);
-          console.log(`[autoBillCreator] Found ${suggestedSitePOIds.length} PO suggestion(s) for bill ${createdBill.billNumber}`);
-        }
-      }
-      // ── END PO MATCHING ───────────────────────────────────────────────────────
-
-      // If no supplier matched, leave as "needs_review" so the bill is flagged
-      const billStatus = aiSupplierId ? "awaiting_approval" : "needs_review";
-
-      await storage.updateBill(createdBill.id, {
-        supplierId: aiSupplierId || null,
-        status: billStatus,
-        billDate: invoiceData.invoiceDate ? new Date(invoiceData.invoiceDate) : new Date(),
-        dueDate: invoiceData.dueDate ? new Date(invoiceData.dueDate) : undefined,
-        billReference: invoiceData.invoiceNumber,
-        subtotal: invoiceData.subtotalAmount || 0,
-        tax: invoiceData.totalTax || 0,
-        total: invoiceData.totalAmount || 0,
-        ocrProcessed: true,
-        ocrData: invoiceData as any,
-        ...(matchedSitePOId ? { matchedSitePOId } : {}),
-        ...(suggestedSitePOIds.length > 0 ? { suggestedSitePOIds } : {}),
-      });
-
-      // Push status of the matched PO forward (sent → invoiced) once the bill
-      // is linked. recomputePOStatusFromBills is idempotent and PO-type agnostic.
-      if (matchedSitePOId) {
-        try {
-          await recomputePOStatusFromBills(matchedSitePOId);
-        } catch (err) {
-          console.error("[autoBillCreator] PO recompute failed:", err);
-        }
-      }
-
-      if (invoiceData.lineItems && invoiceData.lineItems.length > 0) {
-        const costCodes = await storage.getCostCodes(projectId!);
-        const defaultCostCode = costCodes.find(cc => cc.isActive);
-
-        for (let i = 0; i < invoiceData.lineItems.length; i++) {
-          const item = invoiceData.lineItems[i];
-          const lineItemData: InsertBillLineItem = {
-            billId: createdBill.id,
-            lineType: "custom",
-            description: item.description || `Line Item ${i + 1}`,
-            costCodeId: defaultCostCode?.id,
-            quantity: item.quantity || 1,
-            unitPrice: item.unitPrice || 0,
-            tax: item.taxAmount ? "GST on expenses" : "No GST",
-            account: "Expenses",
-            total: item.totalAmount || 0,
-            order: i,
-          };
-          await storage.createBillLineItem(lineItemData);
-        }
-      }
-
-      const project = await storage.getProject(projectId!);
-      const attachCount = attachments.length;
-      console.log(`[autoBillCreator] Bill ${createdBill.billNumber} created with ${attachCount} attachment(s), AI processed from "${primary.filename}"`);
-
-      return {
-        success: true,
-        billId: createdBill.id,
-        billNumber: createdBill.billNumber,
-        supplierName: aiSupplierName,
-        projectName: project?.name,
-        total: invoiceData.totalAmount || 0,
-      };
-    } catch (aiError: any) {
-      console.error("autoBillCreator: AI extraction failed, bill saved as draft:", aiError.message);
-      const project = await storage.getProject(projectId!);
-      return {
-        success: true,
-        billId: createdBill.id,
-        billNumber: createdBill.billNumber,
-        supplierName,
-        projectName: project?.name,
-        total: 0,
-      };
-    }
   }
 }
 

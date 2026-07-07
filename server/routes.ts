@@ -20075,6 +20075,138 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ── Bulk AI Read ─────────────────────────────────────────────────────────────
+  // Process multiple bills in one request. Each bill must belong to the caller's
+  // company. Bills with ocrProcessed=true are silently skipped. Returns a summary
+  // { processed, skipped } so the client can show a meaningful toast.
+  app.post("/api/bills/bulk-ai-read", requireAuth, async (req, res) => {
+    try {
+      const companyId = (req.user as any)?.companyId as string | undefined;
+      if (!companyId) return res.status(400).json({ error: "No company" });
+
+      const { billIds } = req.body;
+      if (!Array.isArray(billIds) || billIds.length === 0) {
+        return res.status(400).json({ error: "billIds must be a non-empty array" });
+      }
+
+      let processed = 0;
+      let skipped = 0;
+
+      const { ObjectStorageService } = await import("./replit_integrations/object_storage/objectStorage");
+      const { processInvoiceWithAI } = await import("./services/aiBillReader");
+      const objectStorage = new ObjectStorageService();
+
+      for (const billId of billIds as string[]) {
+        // Verify ownership — must have a non-null companyId that exactly matches
+        // the caller's company. No null-bypass: a bill with no companyId is not
+        // owned by the caller and must be skipped.
+        const bill = await storage.getBillById(billId);
+        if (!bill) { skipped++; continue; }
+        const billCompany = (bill as any).companyId;
+        if (!billCompany || billCompany !== companyId) { skipped++; continue; }
+
+        // Already processed — skip silently
+        if (bill.ocrProcessed) { skipped++; continue; }
+
+        // Find first processable attachment
+        type Att = string | { objectPath?: string; filename?: string; mimeType?: string };
+        const attachments: Att[] = Array.isArray(bill.attachmentUrls) ? (bill.attachmentUrls as Att[]) : [];
+        let objectPath: string | null = null;
+        let filename = "invoice";
+        let mimeType = "application/pdf";
+
+        for (const att of attachments) {
+          const path = typeof att === "string" ? att : (att?.objectPath || "");
+          const fname = typeof att === "object" && att?.filename ? att.filename : "";
+          const mime = typeof att === "object" && att?.mimeType ? att.mimeType : "";
+          const extFromPath = path.split("?")[0].split("#")[0].split(".").pop()?.toLowerCase() || "";
+          const extFromName = fname.split(".").pop()?.toLowerCase() || "";
+          const ext = ["pdf", "jpg", "jpeg", "png"].includes(extFromPath) ? extFromPath
+            : ["pdf", "jpg", "jpeg", "png"].includes(extFromName) ? extFromName : "";
+          const isMimeOk = /^(application\/pdf|image\/(jpeg|jpg|png|webp))/.test(mime);
+          if (ext || isMimeOk) {
+            objectPath = path;
+            filename = fname || decodeURIComponent(path.split("/").pop() || "invoice");
+            mimeType = mime || (ext === "pdf" ? "application/pdf" : ["jpg", "jpeg"].includes(ext) ? "image/jpeg" : "image/png");
+            break;
+          }
+        }
+
+        if (!objectPath) { skipped++; continue; }
+
+        // Strip /objects/company/<cid> prefix for getObjectEntityFile
+        let storagePath = objectPath;
+        const m = storagePath.match(/^\/objects\/company\/[^/]+(\/.*)?$/);
+        if (m) storagePath = `/objects${m[1] || "/"}`;
+
+        let fileBuffer: Buffer;
+        try {
+          const objectFile = await objectStorage.getObjectEntityFile(storagePath);
+          const [downloaded] = await objectFile.download();
+          fileBuffer = downloaded as Buffer;
+        } catch {
+          skipped++;
+          continue;
+        }
+
+        try {
+          const base64 = fileBuffer.toString("base64");
+          const dataUrl = `data:${mimeType};base64,${base64}`;
+          const invoiceData = await processInvoiceWithAI(dataUrl, filename);
+
+          // Always move to needs_review after bulk AI extraction — consistent with
+          // the individual "Read & Apply" button which always sets needs_review.
+          // The user then reviews the extracted data and approves manually.
+          await storage.updateBill(billId, {
+            status: "needs_review",
+            billDate: invoiceData.invoiceDate ? new Date(invoiceData.invoiceDate) : (bill.billDate ?? new Date()),
+            dueDate: invoiceData.dueDate ? new Date(invoiceData.dueDate) : undefined,
+            billReference: invoiceData.invoiceNumber || bill.billReference,
+            subtotal: invoiceData.subtotalAmount || 0,
+            tax: invoiceData.totalTax || 0,
+            total: invoiceData.totalAmount || 0,
+            ocrProcessed: true,
+            ocrData: invoiceData as any,
+          });
+
+          // Create line items if present and bill had none
+          const existingItems = await storage.getBillLineItems(billId);
+          if (existingItems.length === 0 && invoiceData.lineItems && invoiceData.lineItems.length > 0) {
+            const costCodes = await storage.getCostCodes(bill.projectId || undefined);
+            const defaultCostCode = costCodes.find((cc: any) => cc.isActive);
+            for (let i = 0; i < invoiceData.lineItems.length; i++) {
+              const item = invoiceData.lineItems[i];
+              await storage.createBillLineItem({
+                billId,
+                lineType: "custom",
+                description: item.description || `Line Item ${i + 1}`,
+                costCodeId: defaultCostCode?.id,
+                quantity: item.quantity || 1,
+                unitPrice: item.unitPrice || 0,
+                tax: item.taxAmount ? "GST on expenses" : "No GST",
+                account: "Expenses",
+                total: item.totalAmount || 0,
+                order: i,
+              });
+            }
+          }
+
+          // Recalc budget
+          await recalcProjectBudget(bill.projectId);
+
+          processed++;
+        } catch {
+          skipped++;
+        }
+      }
+
+      return res.json({ processed, skipped });
+    } catch (error: any) {
+      console.error("[bulk-ai-read] Error:", error?.message || error);
+      return res.status(500).json({ error: error?.message || "Bulk AI read failed" });
+    }
+  });
+
   app.post("/api/bills/:id/ocr-from-attachment", requireAuth, async (req, res) => {
     try {
       const bill = await getOwnedBill(req, res, req.params.id);
