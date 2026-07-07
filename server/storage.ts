@@ -1404,6 +1404,7 @@ export interface IStorage {
   ensureAiTables(): Promise<void>;
   createAiConversation(data: InsertAiConversation): Promise<AiConversation>;
   getAiConversation(id: string): Promise<AiConversation | undefined>;
+  listAiConversations(companyId: string, userId: string, limit?: number): Promise<AiConversation[]>;
   createAiMessage(data: InsertAiMessage): Promise<AiMessage>;
   getAiMessages(conversationId: string): Promise<AiMessage[]>;
   getAiBlockedItems(companyId: string, resolved?: boolean): Promise<AiBlockedItem[]>;
@@ -6550,6 +6551,7 @@ export class MemStorage implements IStorage {
   async ensureAiTables(): Promise<void> {}
   async createAiConversation(_data: InsertAiConversation): Promise<AiConversation> { throw new Error("Not implemented"); }
   async getAiConversation(_id: string): Promise<AiConversation | undefined> { return undefined; }
+  async listAiConversations(_companyId: string, _userId: string, _limit?: number): Promise<AiConversation[]> { return []; }
   async createAiMessage(_data: InsertAiMessage): Promise<AiMessage> { throw new Error("Not implemented"); }
   async getAiMessages(_conversationId: string): Promise<AiMessage[]> { return []; }
   async getAiBlockedItems(_companyId: string, _resolved?: boolean): Promise<AiBlockedItem[]> { return []; }
@@ -24737,6 +24739,13 @@ export class DbStorage implements IStorage {
   async getAiConversation(id: string): Promise<AiConversation | undefined> {
     const [row] = await db.select().from(schema.aiConversations).where(eq(schema.aiConversations.id, id));
     return row;
+  }
+
+  async listAiConversations(companyId: string, userId: string, limit: number = 20): Promise<AiConversation[]> {
+    return db.select().from(schema.aiConversations)
+      .where(and(eq(schema.aiConversations.companyId, companyId), eq(schema.aiConversations.userId, userId)))
+      .orderBy(desc(schema.aiConversations.updatedAt))
+      .limit(limit);
   }
 
   async createAiMessage(data: InsertAiMessage): Promise<AiMessage> {

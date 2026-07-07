@@ -21754,6 +21754,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // ── Morada AI Chat routes ─────────────────────────────
 
+  // GET /api/ai/conversations
+  app.get("/api/ai/conversations", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const companyId = req.user!.companyId;
+      const userId = req.user!.id;
+      if (!companyId) return res.status(400).json({ error: "No company context" });
+      const convs = await storage.listAiConversations(companyId, userId, 20);
+      res.json(convs);
+    } catch (err: any) {
+      res.status(500).json({ error: "Failed to list conversations", details: err.message });
+    }
+  });
+
   // POST /api/ai/conversations
   app.post("/api/ai/conversations", requireAuth, requireTeamMember, async (req, res) => {
     try {

@@ -9,6 +9,13 @@ export interface AiMessage {
   createdAt?: string;
 }
 
+export interface AiConversation {
+  id: string;
+  title: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface CircuitData {
   message: string;
   quickReplies: string[];
@@ -43,6 +50,13 @@ export function useAiBlockedItems() {
   });
 }
 
+export function useAiConversations() {
+  return useQuery<AiConversation[]>({
+    queryKey: ["/api/ai/conversations"],
+    staleTime: 30_000,
+  });
+}
+
 export function useAiAssistant() {
   const qc = useQueryClient();
   const [conversationId, setConversationId] = useState<string | null>(null);
@@ -50,11 +64,28 @@ export function useAiAssistant() {
   const [circuitData, setCircuitData] = useState<CircuitData | null>(null);
   const [isCircuitMode, setIsCircuitMode] = useState(false);
   const [isSending, setIsSending] = useState(false);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const isMounted = useRef(true);
 
   const createConversation = useCallback(async (): Promise<string> => {
     const conv = await apiRequest("POST", "/api/ai/conversations", { title: null }) as any;
+    qc.invalidateQueries({ queryKey: ["/api/ai/conversations"] });
     return conv.id;
+  }, [qc]);
+
+  const loadConversation = useCallback(async (id: string) => {
+    setIsLoadingHistory(true);
+    try {
+      const msgs = await apiRequest("GET", `/api/ai/conversations/${id}/messages`) as AiMessage[];
+      setConversationId(id);
+      setMessages(msgs || []);
+      setCircuitData(null);
+      setIsCircuitMode(false);
+    } catch (err) {
+      console.error("Failed to load conversation:", err);
+    } finally {
+      if (isMounted.current) setIsLoadingHistory(false);
+    }
   }, []);
 
   const sendMessage = useCallback(async (content: string, circuitMode?: boolean) => {
@@ -77,14 +108,15 @@ export function useAiAssistant() {
       }) as any;
 
       const assistantMsg: AiMessage = { role: "assistant", content: result.message };
-      setMessages(prev => [...prev, assistantMsg]);
+      if (isMounted.current) setMessages(prev => [...prev, assistantMsg]);
 
-      if (result.circuitData) {
+      if (result.circuitData && isMounted.current) {
         setCircuitData(result.circuitData);
       }
 
       qc.invalidateQueries({ queryKey: ["/api/ai/context"] });
       qc.invalidateQueries({ queryKey: ["/api/ai/blocked-items"] });
+      qc.invalidateQueries({ queryKey: ["/api/ai/conversations"] });
     } catch (err: any) {
       const errMsg: AiMessage = {
         role: "assistant",
@@ -100,6 +132,7 @@ export function useAiAssistant() {
     setIsSending(true);
     setIsCircuitMode(true);
     setMessages([]);
+    setConversationId(null);
 
     try {
       const result = await apiRequest("POST", "/api/ai/circuit/start", { mode }) as any;
@@ -109,12 +142,15 @@ export function useAiAssistant() {
         { role: "assistant", content: result.message },
       ]);
       if (result.circuitData) setCircuitData(result.circuitData);
+      qc.invalidateQueries({ queryKey: ["/api/ai/conversations"] });
     } catch (err) {
-      setMessages([{ role: "assistant", content: "Couldn't start the circuit. Please try again." }]);
+      if (isMounted.current) {
+        setMessages([{ role: "assistant", content: "Couldn't start the circuit. Please try again." }]);
+      }
     } finally {
       if (isMounted.current) setIsSending(false);
     }
-  }, []);
+  }, [qc]);
 
   const reset = useCallback(() => {
     setConversationId(null);
@@ -137,8 +173,10 @@ export function useAiAssistant() {
     circuitData,
     isCircuitMode,
     isSending,
+    isLoadingHistory,
     sendMessage,
     startCircuit,
+    loadConversation,
     reset,
     resolveBlockedItem,
   };
