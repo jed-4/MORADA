@@ -21852,10 +21852,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         claudeMessages.push({ role: "user", content: toolResults });
       }
 
-      if (assistantText) {
-        await storage.createAiMessage({ conversationId, role: "assistant", content: assistantText });
-      }
-
+      // In circuit mode Claude returns JSON — parse first so we persist human-readable text, not raw JSON
       let circuitData: any = null;
       if (effectiveCircuitMode && assistantText) {
         try {
@@ -21866,6 +21863,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         } catch {
           circuitData = { message: assistantText, quickReplies: [], currentStop: 1, stopName: "Review" };
         }
+      }
+
+      if (assistantText) {
+        await storage.createAiMessage({ conversationId, role: "assistant", content: assistantText });
       }
 
       res.json({ message: assistantText, circuitData, conversationCircuitMode: effectiveCircuitMode });
@@ -21999,8 +22000,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         claudeMessages.push({ role: "user", content: toolResults });
       }
 
-      await storage.createAiMessage({ conversationId: conv.id, role: "assistant", content: assistantText });
-
+      // Parse JSON first so we persist human-readable text, not raw JSON
       let circuitData: any = { message: assistantText, quickReplies: [], currentStop: 1, stopName: "Active Sites" };
       try {
         const cleaned = assistantText.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "");
@@ -22008,6 +22008,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         circuitData = { ...circuitData, ...parsed };
         assistantText = circuitData.message || assistantText;
       } catch { /* use defaults */ }
+
+      await storage.createAiMessage({ conversationId: conv.id, role: "assistant", content: assistantText });
 
       res.json({ conversationId: conv.id, message: assistantText, circuitData });
     } catch (err: any) {

@@ -13,6 +13,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Bot, Send, RotateCcw, CheckCircle2, AlertCircle,
   Loader2, Zap, History, MessageSquare, ChevronLeft,
+  Clock, Receipt, ShieldAlert,
 } from "lucide-react";
 import {
   useAiAssistant, useAiContext, useAiBlockedItems, useAiConversations,
@@ -350,6 +351,39 @@ export function MoradaAI() {
                               Ask anything or run the Circuit for a full business review.
                             </p>
                           </div>
+
+                          {/* Quick stats */}
+                          {aiCtx && (
+                            <div className="w-full grid grid-cols-3 gap-2">
+                              <button
+                                onClick={() => sendMessage("What's overdue?", false)}
+                                disabled={isSending}
+                                className="flex flex-col items-center gap-1 rounded-md border border-border bg-background p-2.5 hover-elevate active-elevate-2 disabled:opacity-50 disabled:pointer-events-none"
+                              >
+                                <Clock className="h-4 w-4 text-destructive" />
+                                <span className="text-base font-semibold leading-none">{aiCtx.overdueTasks?.length ?? 0}</span>
+                                <span className="text-[10px] text-muted-foreground text-center leading-tight">Overdue tasks</span>
+                              </button>
+                              <button
+                                onClick={() => sendMessage("Any unpaid bills?", false)}
+                                disabled={isSending}
+                                className="flex flex-col items-center gap-1 rounded-md border border-border bg-background p-2.5 hover-elevate active-elevate-2 disabled:opacity-50 disabled:pointer-events-none"
+                              >
+                                <Receipt className="h-4 w-4 text-amber-500" />
+                                <span className="text-base font-semibold leading-none">{aiCtx.unpaidBills?.length ?? 0}</span>
+                                <span className="text-[10px] text-muted-foreground text-center leading-tight">Unpaid bills</span>
+                              </button>
+                              <button
+                                onClick={() => setTab("blocked")}
+                                disabled={isSending}
+                                className="flex flex-col items-center gap-1 rounded-md border border-border bg-background p-2.5 hover-elevate active-elevate-2 disabled:opacity-50 disabled:pointer-events-none"
+                              >
+                                <ShieldAlert className="h-4 w-4 text-muted-foreground" />
+                                <span className="text-base font-semibold leading-none">{aiCtx.openBlockedItems?.filter(i => !i.resolvedAt).length ?? 0}</span>
+                                <span className="text-[10px] text-muted-foreground text-center leading-tight">Blocked items</span>
+                              </button>
+                            </div>
+                          )}
 
                           {/* Quick chips */}
                           <div className="flex flex-wrap gap-1.5 justify-center">

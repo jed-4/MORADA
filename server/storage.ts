@@ -24629,14 +24629,19 @@ export class DbStorage implements IStorage {
         try { await db.execute(colSql); } catch (_e) { /* column already exists */ }
       }
       // One-time backfill: copy circuit_blocked_items → ai_blocked_items (idempotent)
+      // Uses (company_id, description, created_at) as idempotency key to avoid false-positive collapse.
+      // New fields (reason, owned_by, related_project_id) may not exist on legacy table — COALESCE to NULL.
       try {
         await db.execute(sql`
-          INSERT INTO ai_blocked_items (id, company_id, user_id, description, resolved_at, created_at, updated_at)
+          INSERT INTO ai_blocked_items (id, company_id, user_id, description, reason, owned_by, related_project_id, resolved_at, created_at, updated_at)
           SELECT
             gen_random_uuid(),
             cbi.company_id,
             cbi.user_id,
             cbi.description,
+            NULL::text,
+            NULL::text,
+            NULL::varchar,
             cbi.resolved_at,
             cbi.created_at,
             COALESCE(cbi.updated_at, cbi.created_at)
@@ -24645,6 +24650,7 @@ export class DbStorage implements IStorage {
             SELECT 1 FROM ai_blocked_items ai
             WHERE ai.company_id = cbi.company_id
               AND ai.description = cbi.description
+              AND ai.created_at = cbi.created_at
           )
         `);
       } catch (_backfillErr) {
