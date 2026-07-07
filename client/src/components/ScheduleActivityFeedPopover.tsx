@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Bell, Loader2, MessageSquare, Settings2, Sparkles } from "lucide-react";
-import { format, isToday, isYesterday, formatDistanceToNowStrict } from "date-fns";
+import { format, isToday, isYesterday, formatDistanceToNowStrict, isValid } from "date-fns";
 import { useAuth } from "@/hooks/use-auth";
 
 export type ActivityFeedEntry = {
@@ -66,27 +66,159 @@ function fieldLabel(field: string): string {
   }
 }
 
-function changeDetails(entry: ActivityFeedEntry): string[] {
+// Parse a change value into a Date. All-day schedule dates are stored at UTC
+// midnight, so read the calendar date directly to avoid a timezone day-shift.
+function parseChangeDate(v: any): Date | null {
+  if (v === null || v === undefined || v === "") return null;
+  if (v instanceof Date) return isValid(v) ? v : null;
+  const s = String(v);
+  const midnight = s.match(/^(\d{4})-(\d{2})-(\d{2})T00:00:00(?:\.000)?Z?$/);
+  if (midnight) return new Date(Number(midnight[1]), Number(midnight[2]) - 1, Number(midnight[3]));
+  const dateOnly = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (dateOnly) return new Date(Number(dateOnly[1]), Number(dateOnly[2]) - 1, Number(dateOnly[3]));
+  const d = new Date(s);
+  return isValid(d) ? d : null;
+}
+
+// Friendly single date: "10 Jul" (year omitted when it's the current year).
+function formatDay(d: Date): string {
+  return d.getFullYear() === new Date().getFullYear()
+    ? format(d, "d MMM")
+    : format(d, "d MMM yyyy");
+}
+
+// Compact date range: "10–13 Jul", "28 Jun – 3 Jul", or with year when not current.
+function formatRange(start: Date, end: Date): string {
+  const currentYear = new Date().getFullYear();
+  const sameYear = start.getFullYear() === end.getFullYear();
+  const sameMonth = sameYear && start.getMonth() === end.getMonth();
+  if (start.getTime() === end.getTime()) return formatDay(start);
+  const yearSuffix = sameYear && end.getFullYear() !== currentYear ? ` ${end.getFullYear()}` : "";
+  if (sameMonth) return `${format(start, "d")}–${format(end, "d MMM")}${yearSuffix}`;
+  if (sameYear) return `${format(start, "d MMM")} – ${format(end, "d MMM")}${yearSuffix}`;
+  return `${formatDay(start)} – ${formatDay(end)}`;
+}
+
+type AssigneeResolver = (raw: any) => string;
+
+function makeAssigneeResolver(nameMap: Map<string, string>): AssigneeResolver {
+  return (raw: any) => {
+    if (raw === null || raw === undefined || raw === "") return "Unassigned";
+    let id = String(raw);
+    if (id.startsWith("company:")) return "The Business";
+    if (id.startsWith("user:")) id = id.slice(5);
+    return nameMap.get(id) || nameMap.get(String(raw)) || "another person";
+  };
+}
+
+// Note-source diff line (single field with old/new on metadata). Unchanged from
+// the original behaviour so note/system/AI entries render exactly as before.
+function noteDetails(entry: ActivityFeedEntry): string[] {
   const meta = entry.metadata || {};
-  // Note-source: single field with old/new on metadata
   if (entry.source === "note" && (meta.field || meta.oldValue !== undefined || meta.newValue !== undefined)) {
     const oldVal = formatStatusValue(meta.oldValue);
     const newVal = formatStatusValue(meta.newValue);
     const field = meta.field ? `${fieldLabel(meta.field)}: ` : "";
     return [`${field}${oldVal} → ${newVal}`];
   }
-  // Change-source: metadata.changes[].fields[] with before/after
-  if (entry.source === "change" && Array.isArray(meta.changes)) {
-    const out: string[] = [];
-    for (const c of meta.changes) {
-      const fields = Array.isArray(c?.fields) ? c.fields : [];
-      for (const f of fields) {
-        out.push(`${fieldLabel(f.field)}: ${formatStatusValue(f.before)} → ${formatStatusValue(f.after)}`);
+  return [];
+}
+
+type ChangeDiff = { label?: string; oldText: string; newText: string };
+type ChangeSummary = { headline: string; diffs: ChangeDiff[] };
+
+// Build a human-readable headline + restyled diff lines for a change entry.
+function buildChangeSummary(entry: ActivityFeedEntry, resolveAssignee: AssigneeResolver): ChangeSummary {
+  const meta = entry.metadata || {};
+  const changes: any[] = Array.isArray(meta.changes) ? meta.changes : [];
+  const byField = new Map<string, { before: any; after: any }>();
+  for (const c of changes) {
+    const fields = Array.isArray(c?.fields) ? c.fields : [];
+    for (const f of fields) {
+      if (f && f.field) byField.set(f.field, { before: f.before, after: f.after });
+    }
+  }
+
+  // No structured diff: fall back to the backend description (covers created /
+  // deleted / reordered actions that carry no field-level metadata).
+  if (byField.size === 0) {
+    return { headline: entry.content?.trim() || "Updated", diffs: [] };
+  }
+
+  const diffs: ChangeDiff[] = [];
+  const candidates: { key: string; priority: number; headline: string }[] = [];
+
+  const hasStart = byField.has("startDate");
+  const hasEnd = byField.has("endDate");
+  const collapseDates = hasStart && hasEnd;
+
+  if (collapseDates) {
+    const os = parseChangeDate(byField.get("startDate")!.before);
+    const oe = parseChangeDate(byField.get("endDate")!.before);
+    const ns = parseChangeDate(byField.get("startDate")!.after);
+    const ne = parseChangeDate(byField.get("endDate")!.after);
+    const oldRange = os && oe ? formatRange(os, oe) : "—";
+    const newRange = ns && ne ? formatRange(ns, ne) : "—";
+    diffs.push({ label: "Moved", oldText: oldRange, newText: newRange });
+    if (ns && ne) candidates.push({ key: "dates", priority: 1, headline: `Rescheduled to ${formatRange(ns, ne)}` });
+  }
+
+  for (const [field, { before, after }] of Array.from(byField.entries())) {
+    if (collapseDates && (field === "startDate" || field === "endDate")) continue;
+    switch (field) {
+      case "startDate": {
+        const nb = parseChangeDate(after);
+        const ob = parseChangeDate(before);
+        diffs.push({ label: "Start", oldText: ob ? formatDay(ob) : "—", newText: nb ? formatDay(nb) : "—" });
+        if (nb) candidates.push({ key: "startDate", priority: 2, headline: `Start moved to ${formatDay(nb)}` });
+        break;
+      }
+      case "endDate": {
+        const nb = parseChangeDate(after);
+        const ob = parseChangeDate(before);
+        diffs.push({ label: "End", oldText: ob ? formatDay(ob) : "—", newText: nb ? formatDay(nb) : "—" });
+        if (nb) candidates.push({ key: "endDate", priority: 2, headline: `Due moved to ${formatDay(nb)}` });
+        break;
+      }
+      case "status": {
+        const nv = formatStatusValue(after);
+        diffs.push({ label: "Status", oldText: formatStatusValue(before), newText: nv });
+        candidates.push({ key: "status", priority: 3, headline: `Status → ${nv}` });
+        break;
+      }
+      case "assigneeId": {
+        const nv = resolveAssignee(after);
+        const ov = resolveAssignee(before);
+        diffs.push({ label: "Assignee", oldText: ov, newText: nv });
+        const headline = !before || ov === "Unassigned"
+          ? `Assigned to ${nv}`
+          : !after || nv === "Unassigned"
+            ? "Unassigned"
+            : `Reassigned to ${nv}`;
+        candidates.push({ key: "assignee", priority: 4, headline });
+        break;
+      }
+      case "progress": {
+        const nv = `${after ?? 0}%`;
+        diffs.push({ label: "Progress", oldText: `${before ?? 0}%`, newText: nv });
+        candidates.push({ key: "progress", priority: 5, headline: `Progress → ${nv}` });
+        break;
+      }
+      case "name": {
+        diffs.push({ label: "Renamed", oldText: String(before ?? "—"), newText: String(after ?? "—") });
+        candidates.push({ key: "name", priority: 6, headline: `Renamed to "${after}"` });
+        break;
+      }
+      default: {
+        diffs.push({ label: fieldLabel(field), oldText: formatStatusValue(before), newText: formatStatusValue(after) });
+        candidates.push({ key: field, priority: 7, headline: `${fieldLabel(field)} updated` });
       }
     }
-    return out;
   }
-  return [];
+
+  candidates.sort((a, b) => a.priority - b.priority);
+  const headline = candidates[0]?.headline || entry.content?.trim() || "Updated";
+  return { headline, diffs };
 }
 
 export function ScheduleActivityFeedPopover({ scheduleId, onSelectItem }: Props) {
@@ -130,6 +262,27 @@ export function ScheduleActivityFeedPopover({ scheduleId, onSelectItem }: Props)
 
   const entries = feedQuery.data?.entries ?? [];
   const hasMore = !!feedQuery.data?.hasMore && pages < MAX_PAGES;
+
+  // Resolve assignee IDs/GUIDs in change diffs to human names. Assignees may be
+  // contacts (schedule item assignedToId) or company users, so cover both.
+  const { data: contactsData = [] } = useQuery<any[]>({ queryKey: ["/api/contacts"], enabled: open });
+  const { data: assignableData = [] } = useQuery<any[]>({ queryKey: ["/api/users/assignable"], enabled: open });
+  const resolveAssignee = useMemo<AssigneeResolver>(() => {
+    const map = new Map<string, string>();
+    for (const c of contactsData) {
+      const company = (c?.company || "").trim();
+      const name = (c?.name || "").trim();
+      const label = company && name && company.toLowerCase() !== name.toLowerCase()
+        ? `${company} - ${name}`
+        : company || name;
+      if (c?.id && label) map.set(String(c.id), label);
+    }
+    for (const u of assignableData) {
+      const label = u?.displayName || [u?.firstName, u?.lastName].filter(Boolean).join(" ") || u?.email;
+      if (u?.id && label) map.set(String(u.id), label);
+    }
+    return makeAssigneeResolver(map);
+  }, [contactsData, assignableData]);
 
   // Backend-driven unread count, polled every 60s
   const unreadQuery = useQuery<{ count: number }>({
@@ -240,7 +393,7 @@ export function ScheduleActivityFeedPopover({ scheduleId, onSelectItem }: Props)
                   </div>
                   <div className="flex flex-col gap-0.5">
                     {items.map(e => (
-                      <FeedItem key={e.id} entry={e} onSelectItem={onSelectItem} />
+                      <FeedItem key={e.id} entry={e} onSelectItem={onSelectItem} resolveAssignee={resolveAssignee} />
                     ))}
                   </div>
                 </div>
@@ -260,14 +413,16 @@ export function ScheduleActivityFeedPopover({ scheduleId, onSelectItem }: Props)
   );
 }
 
-function FeedItem({ entry, onSelectItem }: { entry: ActivityFeedEntry; onSelectItem?: (id: string) => void }) {
+function FeedItem({ entry, onSelectItem, resolveAssignee }: { entry: ActivityFeedEntry; onSelectItem?: (id: string) => void; resolveAssignee: AssigneeResolver }) {
   const isClickable = !!entry.scheduleItemId && !!onSelectItem;
   const Icon = entry.authorType === "ai"
     ? Sparkles
     : entry.source === "change" || entry.authorType === "system"
       ? Settings2
       : MessageSquare;
-  const details = changeDetails(entry);
+  const isChange = entry.source === "change";
+  const summary = isChange ? buildChangeSummary(entry, resolveAssignee) : null;
+  const noteLines = isChange ? [] : noteDetails(entry);
 
   return (
     <button
@@ -293,9 +448,6 @@ function FeedItem({ entry, onSelectItem }: { entry: ActivityFeedEntry; onSelectI
           {entry.authorType === "system" && (
             <Badge variant="secondary" className="text-data px-1 py-0 h-4">System</Badge>
           )}
-          {entry.source === "change" && entry.authorType === "user" && (
-            <Badge variant="outline" className="text-data px-1 py-0 h-4">Change</Badge>
-          )}
           <span
             className="text-muted-foreground text-table ml-auto flex-shrink-0"
             title={format(new Date(entry.createdAt), "PPpp")}
@@ -303,15 +455,37 @@ function FeedItem({ entry, onSelectItem }: { entry: ActivityFeedEntry; onSelectI
             {formatDistanceToNowStrict(new Date(entry.createdAt), { addSuffix: true })}
           </span>
         </div>
-        <div className="text-xs text-foreground mt-0.5 break-words whitespace-pre-wrap">
-          {entry.content}
-        </div>
-        {details.length > 0 && (
-          <div className="mt-0.5 space-y-0.5">
-            {details.map((d, i) => (
-              <div key={i} className="text-table text-muted-foreground font-mono">{d}</div>
-            ))}
-          </div>
+        {isChange && summary ? (
+          <>
+            <div className="text-xs text-foreground mt-0.5 break-words">
+              {summary.headline}
+            </div>
+            {summary.diffs.length > 0 && (
+              <div className="mt-0.5 space-y-0.5">
+                {summary.diffs.map((d, i) => (
+                  <div key={i} className="text-table break-words">
+                    {d.label && <span className="text-muted-foreground">{d.label}: </span>}
+                    <span className="text-muted-foreground">{d.oldText}</span>
+                    <span className="text-muted-foreground mx-1">→</span>
+                    <span className="text-foreground font-medium">{d.newText}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
+        ) : (
+          <>
+            <div className="text-xs text-foreground mt-0.5 break-words whitespace-pre-wrap">
+              {entry.content}
+            </div>
+            {noteLines.length > 0 && (
+              <div className="mt-0.5 space-y-0.5">
+                {noteLines.map((d, i) => (
+                  <div key={i} className="text-table text-muted-foreground font-mono">{d}</div>
+                ))}
+              </div>
+            )}
+          </>
         )}
         {entry.scheduleItemName && (
           <div className="text-table text-muted-foreground mt-0.5 truncate">
