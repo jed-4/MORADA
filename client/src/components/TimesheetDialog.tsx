@@ -125,6 +125,9 @@ export function TimesheetDialog({
   const { data: canViewTimesheetRates = false } = useQuery<boolean>({
     queryKey: ["/api/user/can-view-timesheet-rates"],
   });
+  const { data: canApproveTimesheets = false } = useQuery<boolean>({
+    queryKey: ["/api/user/can-approve-timesheets"],
+  });
   const [isSplit, setIsSplit] = useState(false);
   const [lastEditedField, setLastEditedField] = useState<"startTime" | "endTime" | "duration" | "breakDuration" | null>(null);
   const [costCodeSplits, setCostCodeSplits] = useState<CostCodeSplit[]>([]);
@@ -132,6 +135,8 @@ export function TimesheetDialog({
   const [showBreakTimes, setShowBreakTimes] = useState(false);
   const [showCostCodeSplit, setShowCostCodeSplit] = useState(false);
   const [showLabels, setShowLabels] = useState(false);
+  const [rejectionReason, setRejectionReason] = useState("");
+  const [showRejectInput, setShowRejectInput] = useState(false);
 
   // Drawer mount/animation state
   const [isMounted, setIsMounted] = useState(open);
@@ -290,10 +295,12 @@ export function TimesheetDialog({
     }
   }, [open, timesheet, defaultProjectId, currentUser, form]);
 
-  // Reset labels on close
+  // Reset labels and rejection state on close
   useEffect(() => {
     if (!open) {
       setShowLabels(false);
+      setShowRejectInput(false);
+      setRejectionReason("");
     }
   }, [open]);
 
@@ -491,6 +498,41 @@ export function TimesheetDialog({
     },
   });
 
+  // Approve / reject mutations
+  const approveMutation = useMutation({
+    mutationFn: async (id: string) =>
+      apiRequest(`/api/timesheets/${id}/approve`, "POST", {}),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/timesheets"] });
+      if (timesheet?.projectId) {
+        queryClient.invalidateQueries({ queryKey: ["/api/projects", timesheet.projectId, "timesheets"] });
+      }
+      toast({ title: "Timesheet approved" });
+      onOpenChange(false);
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message || "Failed to approve", variant: "destructive" });
+    },
+  });
+
+  const rejectMutation = useMutation({
+    mutationFn: async ({ id, reason }: { id: string; reason: string }) =>
+      apiRequest(`/api/timesheets/${id}/reject`, "POST", { comment: reason || undefined }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/timesheets"] });
+      if (timesheet?.projectId) {
+        queryClient.invalidateQueries({ queryKey: ["/api/projects", timesheet.projectId, "timesheets"] });
+      }
+      toast({ title: "Timesheet rejected" });
+      setShowRejectInput(false);
+      setRejectionReason("");
+      onOpenChange(false);
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message || "Failed to reject", variant: "destructive" });
+    },
+  });
+
   // Cost code split helpers
   const addCostCodeSplit = () => {
     setCostCodeSplits([
@@ -528,6 +570,35 @@ export function TimesheetDialog({
 
   const calculateSplitTotal = () => {
     return costCodeSplits.reduce((sum, split) => sum + parseFloat(split.total || "0"), 0).toFixed(2);
+  };
+
+  // Enable split mode: pre-populate first row from current single-code values
+  const enableSplit = () => {
+    if (costCodeSplits.length === 0) {
+      const currentCostCodeId = form.getValues("costCodeId") || "";
+      const currentDuration = form.getValues("duration") || "0";
+      const currentRate = form.getValues("hourlyRate") || "50";
+      const dur = parseFloat(currentDuration);
+      const rate = parseFloat(currentRate);
+      setCostCodeSplits([{
+        id: `new-${Date.now()}`,
+        costCodeId: currentCostCodeId,
+        duration: currentDuration,
+        hourlyRate: currentRate,
+        total: (dur * rate).toFixed(2),
+      }]);
+    }
+    setIsSplit(true);
+    setShowCostCodeSplit(true);
+  };
+
+  // Disable split mode: copy first row's cost code back to the single field
+  const disableSplit = () => {
+    if (costCodeSplits.length > 0 && costCodeSplits[0].costCodeId) {
+      form.setValue("costCodeId", costCodeSplits[0].costCodeId);
+    }
+    setIsSplit(false);
+    setShowCostCodeSplit(false);
   };
 
   // Keyboard handling: Esc closes; Arrow Up/Down navigates rows when focus
@@ -587,6 +658,15 @@ export function TimesheetDialog({
   const displayHrs = Math.floor(totalHoursVal);
   const displayMins = Math.round((totalHoursVal - displayHrs) * 60);
   const displayHoursStr = `${displayHrs}h ${String(displayMins).padStart(2, '0')}m`;
+
+  // Split balance check (used for the "allocated" pill and Save button guard)
+  const splitAllocatedHours = isSplit
+    ? costCodeSplits.reduce((sum, s) => sum + (parseFloat(s.duration) || 0), 0)
+    : totalHoursVal;
+  const splitBalanced = !isSplit || Math.abs(splitAllocatedHours - totalHoursVal) < 0.01;
+  const splitAllocHrs = Math.floor(splitAllocatedHours);
+  const splitAllocMins = Math.round((splitAllocatedHours - splitAllocHrs) * 60);
+  const splitAllocStr = `${splitAllocHrs}h ${String(splitAllocMins).padStart(2, '0')}m`;
 
   const displayId = timesheet?.id ? `#TS-${timesheet.id.slice(0, 8)}` : "New entry";
   const headerTitle = readonly ? "View Timesheet" : timesheet ? "Edit Timesheet" : "Add Timesheet";
@@ -901,53 +981,160 @@ export function TimesheetDialog({
 
                 <div className="border-t border-border" />
 
-                {/* Cost Code | Rate (rate only visible to users with timesheets.rates permission) */}
-                <div className={canViewTimesheetRates ? "grid grid-cols-[2fr_1fr] gap-3" : ""}>
-                  <FormField
-                    control={form.control}
-                    name="costCodeId"
-                    render={({ field }) => (
-                      <FormItem className="space-y-0">
-                        <Label className={labelClass}>Cost code</Label>
-                        <FormControl>
-                          <CostCodeSelect
-                            value={field.value}
-                            onValueChange={field.onChange}
-                            placeholder="Select cost code"
-                            triggerClassName={selectTriggerClass}
-                            data-testid="select-cost-code"
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
+                {/* Cost code — label row has inline "Split" toggle */}
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <Label className={labelClass}>Cost code</Label>
+                    {!isSplit ? (
+                      <button
+                        type="button"
+                        onClick={enableSplit}
+                        className="text-[11px] text-primary/70 hover:text-primary font-medium leading-none"
+                        data-testid="button-enable-split"
+                      >
+                        Split
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={disableSplit}
+                        className="text-[11px] text-muted-foreground hover:text-foreground leading-none"
+                        data-testid="button-disable-split"
+                      >
+                        Remove split
+                      </button>
                     )}
-                  />
+                  </div>
 
-                  {canViewTimesheetRates && (
-                    <FormField
-                      control={form.control}
-                      name="hourlyRate"
-                      render={({ field }) => (
-                        <FormItem className="space-y-0">
-                          <Label className={labelClass}>Rate ($)</Label>
-                          <FormControl>
-                            <Input
-                              type="number"
-                              step="0.01"
-                              {...field}
-                              className={inputClass}
-                              data-testid="input-hourly-rate"
-                            />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
+                  {/* Single cost-code + rate — hidden in split mode */}
+                  {!isSplit && (
+                    <div className={canViewTimesheetRates ? "grid grid-cols-[2fr_1fr] gap-3" : ""}>
+                      <FormField
+                        control={form.control}
+                        name="costCodeId"
+                        render={({ field }) => (
+                          <FormItem className="space-y-0">
+                            <FormControl>
+                              <CostCodeSelect
+                                value={field.value}
+                                onValueChange={field.onChange}
+                                placeholder="Select cost code"
+                                triggerClassName={selectTriggerClass}
+                                data-testid="select-cost-code"
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      {canViewTimesheetRates && (
+                        <FormField
+                          control={form.control}
+                          name="hourlyRate"
+                          render={({ field }) => (
+                            <FormItem className="space-y-0">
+                              <Label className={labelClass}>Rate ($)</Label>
+                              <FormControl>
+                                <Input
+                                  type="number"
+                                  step="0.01"
+                                  {...field}
+                                  className={inputClass}
+                                  data-testid="input-hourly-rate"
+                                />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
                       )}
-                    />
+                    </div>
+                  )}
+
+                  {/* Split table — shown when split mode is active */}
+                  {isSplit && (
+                    <Card className="mt-0">
+                      <CardContent className="p-3 space-y-2">
+                        {costCodeSplits.map((split) => (
+                          <div
+                            key={split.id}
+                            className={canViewTimesheetRates ? "grid gap-2 grid-cols-[2fr_1fr_1fr_auto] items-end" : "grid gap-2 grid-cols-[2fr_1fr_auto] items-end"}
+                          >
+                            <div className="space-y-1">
+                              <Label className="text-[10px] text-muted-foreground">Cost Code</Label>
+                              <CostCodeSelect
+                                value={split.costCodeId}
+                                onValueChange={(v) => updateCostCodeSplit(split.id, "costCodeId", v)}
+                                placeholder="Select"
+                                allowNone={false}
+                                data-testid={`select-cost-code-${split.id}`}
+                              />
+                            </div>
+                            <div className="space-y-1">
+                              <Label className="text-[10px] text-muted-foreground">Hours</Label>
+                              <Input
+                                type="number"
+                                step="0.25"
+                                value={split.duration}
+                                onChange={(e) => updateCostCodeSplit(split.id, "duration", e.target.value)}
+                                className={inputClass}
+                                data-testid={`input-split-duration-${split.id}`}
+                              />
+                            </div>
+                            {canViewTimesheetRates && (
+                              <div className="space-y-1">
+                                <Label className="text-[10px] text-muted-foreground">Rate</Label>
+                                <Input
+                                  type="number"
+                                  step="0.01"
+                                  value={split.hourlyRate}
+                                  onChange={(e) => updateCostCodeSplit(split.id, "hourlyRate", e.target.value)}
+                                  className={inputClass}
+                                  data-testid={`input-split-rate-${split.id}`}
+                                />
+                              </div>
+                            )}
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => removeCostCodeSplit(split.id)}
+                              data-testid={`button-remove-split-${split.id}`}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        ))}
+                        <div className="flex items-center justify-between gap-2 pt-2 border-t">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={addCostCodeSplit}
+                            data-testid="button-add-split"
+                          >
+                            <Plus className="h-3 w-3 mr-1" />
+                            Add split
+                          </Button>
+                          <span
+                            className={cn(
+                              "text-[11px] font-medium px-2 py-0.5 rounded-full",
+                              splitBalanced
+                                ? "bg-muted/50 text-muted-foreground"
+                                : "bg-destructive/10 text-destructive",
+                            )}
+                            data-testid="text-split-allocation"
+                          >
+                            {splitAllocStr} / {displayHoursStr} allocated
+                          </span>
+                        </div>
+                      </CardContent>
+                    </Card>
                   )}
                 </div>
 
-                {/* Duration & Total cost — Total only visible to users with timesheets.rates permission */}
-                <div className={canViewTimesheetRates ? "grid grid-cols-[2fr_1fr] gap-3" : ""}>
+                {/* Duration & Total cost — Total only visible to users with rates permission and not in split mode */}
+                <div className={canViewTimesheetRates && !isSplit ? "grid grid-cols-[2fr_1fr] gap-3" : ""}>
                   <div>
                     <Label className={labelClass}>Duration</Label>
                     <div
@@ -961,7 +1148,7 @@ export function TimesheetDialog({
                       <div style={{ fontSize: '11px', color: '#9b9b9b', marginTop: '2px' }}>total hours</div>
                     </div>
                   </div>
-                  {canViewTimesheetRates && (
+                  {canViewTimesheetRates && !isSplit && (
                     <div>
                       <Label className={labelClass}>Total cost</Label>
                       <div
@@ -976,98 +1163,6 @@ export function TimesheetDialog({
                     </div>
                   )}
                 </div>
-
-                {/* Cost Code Split — available for new and existing timesheets */}
-                <div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const next = !showCostCodeSplit;
-                        setShowCostCodeSplit(next);
-                        setIsSplit(next);
-                        if (next && costCodeSplits.length === 0) addCostCodeSplit();
-                      }}
-                      className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground"
-                      data-testid="toggle-cost-code-split"
-                    >
-                      <ChevronDown
-                        className={cn(
-                          "h-3 w-3 transition-transform",
-                          showCostCodeSplit ? "rotate-0" : "-rotate-90",
-                        )}
-                      />
-                      Split across cost codes
-                    </button>
-                    {showCostCodeSplit && (
-                      <Card className="mt-2">
-                        <CardContent className="p-3 space-y-2">
-                          {costCodeSplits.map((split) => (
-                            <div
-                              key={split.id}
-                              className={canViewTimesheetRates ? "grid gap-2 grid-cols-[2fr_1fr_1fr_auto] items-end" : "grid gap-2 grid-cols-[2fr_1fr_auto] items-end"}
-                            >
-                              <div className="space-y-1">
-                                <Label className="text-[10px] text-muted-foreground">Cost Code</Label>
-                                <CostCodeSelect
-                                  value={split.costCodeId}
-                                  onValueChange={(v) => updateCostCodeSplit(split.id, "costCodeId", v)}
-                                  placeholder="Select"
-                                  allowNone={false}
-                                  data-testid={`select-cost-code-${split.id}`}
-                                />
-                              </div>
-                              <div className="space-y-1">
-                                <Label className="text-[10px] text-muted-foreground">Hours</Label>
-                                <Input
-                                  type="number"
-                                  step="0.25"
-                                  value={split.duration}
-                                  onChange={(e) => updateCostCodeSplit(split.id, "duration", e.target.value)}
-                                  className={inputClass}
-                                  data-testid={`input-split-duration-${split.id}`}
-                                />
-                              </div>
-                              {canViewTimesheetRates && (
-                                <div className="space-y-1">
-                                  <Label className="text-[10px] text-muted-foreground">Rate</Label>
-                                  <Input
-                                    type="number"
-                                    step="0.01"
-                                    value={split.hourlyRate}
-                                    onChange={(e) => updateCostCodeSplit(split.id, "hourlyRate", e.target.value)}
-                                    className={inputClass}
-                                    data-testid={`input-split-rate-${split.id}`}
-                                  />
-                                </div>
-                              )}
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="icon"
-                                onClick={() => removeCostCodeSplit(split.id)}
-                                data-testid={`button-remove-split-${split.id}`}
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                            </div>
-                          ))}
-                          <div className="flex items-center justify-between gap-2 pt-2 border-t">
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              onClick={addCostCodeSplit}
-                              data-testid="button-add-split"
-                            >
-                              <Plus className="h-3 w-3 mr-1" />
-                              Add split
-                            </Button>
-                            <div className="text-[12px] font-bold">Total: ${calculateSplitTotal()}</div>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    )}
-                  </div>
 
                 <div className="border-t border-border" />
 
@@ -1191,7 +1286,7 @@ export function TimesheetDialog({
 
             {/* Sticky footer */}
             <div
-              className="flex items-center justify-between px-5 h-[60px] border-t border-border bg-card flex-none gap-2"
+              className="flex items-center justify-between px-5 min-h-[60px] border-t border-border bg-card flex-none gap-2 py-3 flex-wrap"
             >
               {timesheet ? (
                 <button
@@ -1207,24 +1302,88 @@ export function TimesheetDialog({
                 <span />
               )}
 
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => onOpenChange(false)}
-                  className="bg-muted/40 text-muted-foreground rounded-md px-4 h-[30px] text-[12px] hover:bg-muted transition-colors"
-                  data-testid="button-cancel"
-                >
-                  {readonly ? "Close" : "Cancel"}
-                </button>
-                {!readonly && (
-                  <button
-                    type="submit"
-                    disabled={createMutation.isPending}
-                    className="bg-primary text-primary-foreground rounded-md px-4 h-[30px] text-[12px] font-semibold hover:bg-primary/90 disabled:opacity-50 transition-colors"
-                    data-testid="button-save-timesheet"
-                  >
-                    {createMutation.isPending ? "Saving..." : timesheet ? "Update" : "Create"}
-                  </button>
+              <div className="flex items-center gap-2 flex-wrap justify-end">
+                {/* Approve / Reject — visible when user can approve and timesheet is submitted */}
+                {canApproveTimesheets && timesheet?.status === "submitted" && !showRejectInput && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => setShowRejectInput(true)}
+                      className="border border-border bg-muted/40 text-muted-foreground rounded-md px-3 h-[30px] text-[12px] hover:bg-muted transition-colors"
+                      data-testid="button-reject-timesheet"
+                    >
+                      Reject
+                    </button>
+                    <button
+                      type="button"
+                      disabled={approveMutation.isPending}
+                      onClick={() => timesheet && approveMutation.mutate(timesheet.id)}
+                      className="bg-[hsl(var(--sage))] text-white rounded-md px-4 h-[30px] text-[12px] font-semibold hover:opacity-90 disabled:opacity-50 transition-colors"
+                      data-testid="button-approve-timesheet"
+                    >
+                      {approveMutation.isPending ? "Approving…" : "Approve"}
+                    </button>
+                  </>
+                )}
+                {/* Inline rejection reason */}
+                {canApproveTimesheets && timesheet?.status === "submitted" && showRejectInput && (
+                  <>
+                    <Input
+                      value={rejectionReason}
+                      onChange={(e) => setRejectionReason(e.target.value)}
+                      placeholder="Reason (optional)"
+                      className="h-[30px] text-[12px] w-36"
+                      data-testid="input-rejection-reason"
+                      autoFocus
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && timesheet) {
+                          rejectMutation.mutate({ id: timesheet.id, reason: rejectionReason });
+                        }
+                        if (e.key === "Escape") setShowRejectInput(false);
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowRejectInput(false)}
+                      className="bg-muted/40 text-muted-foreground rounded-md px-3 h-[30px] text-[12px] hover:bg-muted transition-colors"
+                      data-testid="button-cancel-reject"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      disabled={rejectMutation.isPending}
+                      onClick={() => timesheet && rejectMutation.mutate({ id: timesheet.id, reason: rejectionReason })}
+                      className="bg-destructive text-white rounded-md px-3 h-[30px] text-[12px] font-semibold hover:bg-destructive/90 disabled:opacity-50 transition-colors"
+                      data-testid="button-confirm-reject"
+                    >
+                      {rejectMutation.isPending ? "Rejecting…" : "Confirm Reject"}
+                    </button>
+                  </>
+                )}
+                {/* Cancel / Save — hidden only while reject input is open */}
+                {!showRejectInput && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => onOpenChange(false)}
+                      className="bg-muted/40 text-muted-foreground rounded-md px-4 h-[30px] text-[12px] hover:bg-muted transition-colors"
+                      data-testid="button-cancel"
+                    >
+                      {readonly ? "Close" : "Cancel"}
+                    </button>
+                    {!readonly && (
+                      <button
+                        type="submit"
+                        disabled={createMutation.isPending || (isSplit && !splitBalanced)}
+                        className="bg-primary text-primary-foreground rounded-md px-4 h-[30px] text-[12px] font-semibold hover:bg-primary/90 disabled:opacity-50 transition-colors"
+                        data-testid="button-save-timesheet"
+                        title={isSplit && !splitBalanced ? "Allocated hours must match total hours" : undefined}
+                      >
+                        {createMutation.isPending ? "Saving…" : timesheet ? "Update" : "Create"}
+                      </button>
+                    )}
+                  </>
                 )}
               </div>
             </div>

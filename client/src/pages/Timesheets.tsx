@@ -65,6 +65,18 @@ import { useWeekStartDay } from "@/hooks/useWeekStartDay";
 const TABLE_STORAGE_KEY = "timesheets";
 const LEGACY_STORAGE_KEY = "timesheets-column-config-v1";
 
+// A display row in the flat table — either a vanilla timesheet or one split
+// sub-row from a multi-cost-code timesheet. The parent timesheet `id` is
+// always preserved so click handlers and selection still target the real entry.
+type TimesheetTableRow = Timesheet & {
+  _rowKey: string;
+  _isSplitRow?: true;
+  _splitCostCodeId?: string;
+  _splitDuration?: string;
+  _splitTotal?: string;
+  _splitIsFirst?: boolean;
+};
+
 const PICKER_COLUMNS: { id: string; label: string; pinned?: boolean }[] = [
   { id: "select", label: "Select", pinned: true },
   { id: "date", label: "Date" },
@@ -484,7 +496,8 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
       ? selectedPhases.includes(getProjectPhase(timesheet.projectId)) 
       : true;
     const matchesCostCode = selectedCostCodes.length > 0 
-      ? selectedCostCodes.includes(timesheet.costCodeId || "") 
+      ? selectedCostCodes.includes(timesheet.costCodeId || "") ||
+        ((timesheet as any).costCodeSplits as any[] || []).some((s: any) => selectedCostCodes.includes(s.costCodeId || ""))
       : true;
     const matchesInvoiced = !showInvoicedOnly || timesheet.invoiced;
 
@@ -497,6 +510,30 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
 
     return matchesSearch && matchesProject && matchesUser && matchesStatus && matchesPhase && matchesCostCode && matchesInvoiced && matchesDateRange;
   });
+
+  // Expand split timesheets into per-split display rows
+  const tableRows = useMemo<TimesheetTableRow[]>(() => {
+    const rows: TimesheetTableRow[] = [];
+    for (const ts of filteredTimesheets) {
+      const splits = (ts as any).costCodeSplits as any[] | undefined;
+      if (splits && splits.length > 0) {
+        splits.forEach((split, idx) => {
+          rows.push({
+            ...ts,
+            _rowKey: `${ts.id}-split-${idx}`,
+            _isSplitRow: true,
+            _splitCostCodeId: split.costCodeId || "",
+            _splitDuration: split.duration?.toString() ?? "0",
+            _splitTotal: split.total?.toString() ?? "0",
+            _splitIsFirst: idx === 0,
+          });
+        });
+      } else {
+        rows.push({ ...ts, _rowKey: `timesheet-${ts.id}` });
+      }
+    }
+    return rows;
+  }, [filteredTimesheets]);
 
   // Get current project if in project context
   const currentProject = projectId ? projects.find(p => p.id === projectId) : null;
@@ -625,8 +662,8 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
     );
   };
 
-  const timesheetColumns = useMemo<ColumnDef<Timesheet, unknown>[]>(() => {
-    const cols: (ColumnDef<Timesheet, unknown> & { meta?: DataTableColumnMeta })[] = [
+  const timesheetColumns = useMemo<ColumnDef<TimesheetTableRow, unknown>[]>(() => {
+    const cols: (ColumnDef<TimesheetTableRow, unknown> & { meta?: DataTableColumnMeta })[] = [
       {
         id: "select",
         enableSorting: false,
@@ -671,20 +708,30 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
         accessorFn: (t) => new Date(t.date as unknown as string).getTime(),
         header: "Date",
         meta: { headerLabel: "Date", defaultWidth: 70 },
-        cell: ({ row }) => (
-          <span className="text-table font-medium truncate">
-            {formatTimesheetDate(row.original.date, tsDateFormat)}
-          </span>
-        ),
+        cell: ({ row }) => {
+          const t = row.original;
+          if (t._isSplitRow && !t._splitIsFirst) {
+            return <span className="text-table truncate text-muted-foreground/30">—</span>;
+          }
+          return (
+            <span className="text-table font-medium truncate">
+              {formatTimesheetDate(t.date, tsDateFormat)}
+            </span>
+          );
+        },
       },
       {
         id: "user",
         accessorFn: (t) => getUserName(t.userId),
         header: "User",
         meta: { headerLabel: "User", defaultWidth: 100 },
-        cell: ({ row }) => (
-          <span className="text-table truncate">{getUserName(row.original.userId)}</span>
-        ),
+        cell: ({ row }) => {
+          const t = row.original;
+          if (t._isSplitRow && !t._splitIsFirst) {
+            return <span className="text-table truncate text-muted-foreground/30">—</span>;
+          }
+          return <span className="text-table truncate">{getUserName(t.userId)}</span>;
+        },
       },
       {
         id: "project",
@@ -692,8 +739,12 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
         header: "Project",
         meta: { headerLabel: "Project", defaultWidth: 140, defaultHidden: true },
         cell: ({ row }) => {
-          const projColor = getProjectColor(row.original.projectId);
-          const name = getProjectName(row.original.projectId);
+          const t = row.original;
+          if (t._isSplitRow && !t._splitIsFirst) {
+            return <span className="text-table truncate text-muted-foreground/30">—</span>;
+          }
+          const projColor = getProjectColor(t.projectId);
+          const name = getProjectName(t.projectId);
           return (
             <span
               className="inline-flex items-center gap-1.5 px-1.5 py-0.5 rounded text-table truncate max-w-full text-foreground"
@@ -711,14 +762,18 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
       },
       {
         id: "costCode",
-        accessorFn: (t) => getCostCodeName(t.costCodeId),
+        accessorFn: (t) => getCostCodeName(t._splitCostCodeId ?? t.costCodeId),
         header: "Cost Code",
         meta: { headerLabel: "Cost Code", defaultWidth: 100 },
-        cell: ({ row }) => (
-          <span className="text-table truncate text-muted-foreground">
-            {getCostCodeName(row.original.costCodeId)}
-          </span>
-        ),
+        cell: ({ row }) => {
+          const t = row.original;
+          const codeId = t._splitCostCodeId ?? t.costCodeId;
+          return (
+            <span className="text-table truncate text-muted-foreground">
+              {getCostCodeName(codeId)}
+            </span>
+          );
+        },
       },
       {
         id: "startTime",
@@ -764,11 +819,12 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
       },
       {
         id: "hours",
-        accessorFn: (t) => getNetHours(t),
+        accessorFn: (t) => t._splitDuration != null ? parseFloat(t._splitDuration) : getNetHours(t),
         header: "Hours",
         meta: { headerLabel: "Hours", defaultWidth: 50 },
         cell: ({ row }) => {
-          const hrs = getNetHours(row.original);
+          const t = row.original;
+          const hrs = t._splitDuration != null ? parseFloat(t._splitDuration) : getNetHours(t);
           if (hrs > 0) {
             return (
               <span className="font-semibold text-[13px] text-primary tabular-nums">
@@ -799,16 +855,25 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
       },
       {
         id: "total",
-        accessorFn: (t) => (t.total ? parseFloat(t.total) : 0),
+        accessorFn: (t) => t._splitTotal != null ? parseFloat(t._splitTotal) : (t.total ? parseFloat(t.total) : 0),
         header: "Total",
         enableSorting: false,
         meta: { headerLabel: "Total", defaultWidth: 60, align: "right" },
         cell: ({ row }) => {
-          const hasRate = row.original.hourlyRate && parseFloat(row.original.hourlyRate) > 0;
+          const t = row.original;
+          if (t._splitTotal != null) {
+            const val = parseFloat(t._splitTotal);
+            return (
+              <span className="text-table font-medium text-foreground tabular-nums">
+                ${val.toFixed(2)}
+              </span>
+            );
+          }
+          const hasRate = t.hourlyRate && parseFloat(t.hourlyRate) > 0;
           if (!hasRate) {
             return <span className="text-table text-muted-foreground tabular-nums">&mdash;</span>;
           }
-          const total = row.original.total ? parseFloat(row.original.total) : 0;
+          const total = t.total ? parseFloat(t.total) : 0;
           return (
             <span className="text-table font-medium text-foreground tabular-nums">
               ${total.toFixed(2)}
@@ -844,7 +909,12 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
         header: "Status",
         meta: { headerLabel: "Status", defaultWidth: 70 },
         cell: ({ row }) => {
-          const s = row.original.status;
+          const t = row.original;
+          // Non-first split sub-rows: dim the status badge
+          if (t._isSplitRow && !t._splitIsFirst) {
+            return <span className="text-table text-muted-foreground/30">—</span>;
+          }
+          const s = t.status;
           if (s === "approved") {
             return (
               <Badge variant="outline" className="text-data font-medium bg-[hsl(var(--sage-bg))] text-[hsl(var(--sage))] border border-[hsl(var(--sage))]">
@@ -2106,18 +2176,21 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
           <DataTable
             storageKey={TABLE_STORAGE_KEY}
             legacyConfigKey={LEGACY_STORAGE_KEY}
-            data={filteredTimesheets}
+            data={tableRows}
             columns={timesheetColumns}
-            rowKey={(t) => `timesheet-${t.id}`}
+            rowKey={(t) => t._rowKey}
             onRowClick={(t) => {
-              setSelectedTimesheet(t);
+              // Always open the parent timesheet even when clicking a split sub-row
+              const parent = filteredTimesheets.find((ts) => ts.id === t.id) ?? t;
+              setSelectedTimesheet(parent as Timesheet);
               setIsDialogOpen(true);
             }}
             rowClassName={(t) => {
+              const base = t._isSplitRow ? "border-l-2 border-l-primary/25" : "";
               if (isDialogOpen && selectedTimesheet?.id === t.id) {
-                return "bg-primary/10 ring-1 ring-inset ring-primary/40";
+                return `${base} bg-primary/10 ring-1 ring-inset ring-primary/40`;
               }
-              return selectedTimesheets.includes(t.id) ? "bg-muted/30 dark:bg-muted/20" : "";
+              return `${base} ${selectedTimesheets.includes(t.id) ? "bg-muted/30 dark:bg-muted/20" : ""}`.trim();
             }}
             headerClassName="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground"
           />
