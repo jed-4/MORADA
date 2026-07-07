@@ -21920,9 +21920,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const companyId = req.user!.companyId;
       const ctx = await storage.getCircuitContext(companyId);
       const openBlocked = await storage.getAiBlockedItems(companyId, false);
+      const overdueTaskCount = ctx.overdueTasks.length;
+      const unpaidBillCount = ctx.unpaidBills.length;
+      const openBlockedItemCount = openBlocked.length;
       res.json({
-        actionableCount: ctx.overdueTasks.length + ctx.overdueClientInvoices.length + ctx.unpaidBills.filter(b => b.daysOverdue > 0).length,
-        openBlockedCount: openBlocked.length,
+        actionableCount: overdueTaskCount + ctx.overdueClientInvoices.length + ctx.unpaidBills.filter(b => b.daysOverdue > 0).length,
+        openBlockedCount: openBlockedItemCount,
+        overdueTaskCount,
+        unpaidBillCount,
+        openBlockedItemCount,
       });
     } catch (err: any) {
       res.status(500).json({ error: "Failed to fetch AI context", details: err.message });

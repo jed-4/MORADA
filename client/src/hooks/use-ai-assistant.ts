@@ -26,6 +26,9 @@ export interface CircuitData {
 export interface AiContextData {
   actionableCount: number;
   openBlockedCount: number;
+  overdueTaskCount: number;
+  unpaidBillCount: number;
+  openBlockedItemCount: number;
 }
 
 export interface BlockedItem {

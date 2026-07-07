@@ -370,15 +370,26 @@ export async function executeTool(
           .where(and(eq(schema.projects.id, input.project_id), eq(schema.projects.companyId, companyId)))
           .limit(1);
         if (!proj.length) return { success: false, error: "Project not found" };
+        // Find the default site diary template for the company
+        const template = await storage.getDefaultSiteDiaryTemplate(companyId);
+        if (!template) {
+          return { success: false, error: "No site diary template is configured for this company. Please set up a site diary template first." };
+        }
         const entryDate = input.date ? new Date(input.date) : new Date();
-        const entry = await storage.createNote({
-          companyId,
+        const entry = await storage.createSiteDiaryEntry({
+          templateId: template.id,
+          templateName: template.name ?? null,
           projectId: input.project_id,
           title: `Site Diary — ${entryDate.toLocaleDateString("en-AU")}`,
-          content: input.content,
-          type: "site_diary",
-          author: userId,
-          status: "active",
+          entryDateTime: entryDate,
+          fieldValues: { ai_notes: input.content },
+          createdBy: userId,
+          createdByName: null,
+          notifyUserIds: [] as string[],
+          attachments: [] as string[],
+          overallPhotos: [] as string[],
+          labels: [] as string[],
+          shareWithClient: false,
         } as any);
         return { success: true, data: { id: entry.id, message: "Site diary entry created." } };
       }

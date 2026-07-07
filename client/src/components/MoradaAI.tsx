@@ -361,7 +361,7 @@ export function MoradaAI() {
                                 className="flex flex-col items-center gap-1 rounded-md border border-border bg-background p-2.5 hover-elevate active-elevate-2 disabled:opacity-50 disabled:pointer-events-none"
                               >
                                 <Clock className="h-4 w-4 text-destructive" />
-                                <span className="text-base font-semibold leading-none">{aiCtx.overdueTasks?.length ?? 0}</span>
+                                <span className="text-base font-semibold leading-none">{aiCtx.overdueTaskCount ?? 0}</span>
                                 <span className="text-[10px] text-muted-foreground text-center leading-tight">Overdue tasks</span>
                               </button>
                               <button
@@ -370,7 +370,7 @@ export function MoradaAI() {
                                 className="flex flex-col items-center gap-1 rounded-md border border-border bg-background p-2.5 hover-elevate active-elevate-2 disabled:opacity-50 disabled:pointer-events-none"
                               >
                                 <Receipt className="h-4 w-4 text-amber-500" />
-                                <span className="text-base font-semibold leading-none">{aiCtx.unpaidBills?.length ?? 0}</span>
+                                <span className="text-base font-semibold leading-none">{aiCtx.unpaidBillCount ?? 0}</span>
                                 <span className="text-[10px] text-muted-foreground text-center leading-tight">Unpaid bills</span>
                               </button>
                               <button
@@ -379,7 +379,7 @@ export function MoradaAI() {
                                 className="flex flex-col items-center gap-1 rounded-md border border-border bg-background p-2.5 hover-elevate active-elevate-2 disabled:opacity-50 disabled:pointer-events-none"
                               >
                                 <ShieldAlert className="h-4 w-4 text-muted-foreground" />
-                                <span className="text-base font-semibold leading-none">{aiCtx.openBlockedItems?.filter(i => !i.resolvedAt).length ?? 0}</span>
+                                <span className="text-base font-semibold leading-none">{aiCtx.openBlockedItemCount ?? 0}</span>
                                 <span className="text-[10px] text-muted-foreground text-center leading-tight">Blocked items</span>
                               </button>
                             </div>
