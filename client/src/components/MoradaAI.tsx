@@ -154,9 +154,11 @@ export function MoradaAI() {
     isCircuitMode,
     isSending,
     isLoadingHistory,
+    isInitialising,
     sendMessage,
     startCircuit,
     loadConversation,
+    resumeLatest,
     reset,
     resolveBlockedItem,
   } = useAiAssistant();
@@ -166,10 +168,19 @@ export function MoradaAI() {
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const hasResumed = useRef(false);
 
   const totalBadge =
     (aiCtx?.actionableCount ?? 0) + (aiCtx?.openBlockedCount ?? 0);
   const openBlockedCount = blockedItems.filter((i) => !i.resolvedAt).length;
+
+  // Auto-resume the most recent conversation the first time the panel opens
+  useEffect(() => {
+    if (open && !hasResumed.current) {
+      hasResumed.current = true;
+      resumeLatest();
+    }
+  }, [open, resumeLatest]);
 
   useEffect(() => {
     if (scrollRef.current) {
