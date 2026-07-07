@@ -223,12 +223,15 @@ export function useAiAssistant() {
   const startCircuit = useCallback(async (mode: "full" | "quick" = "full") => {
     setIsSending(true);
     setIsCircuitMode(true);
-    setMessages([]);
-    setConversationId(null);
-    saveCircuitState(null); // clear any previous saved state
+    // Keep existing messages in view — circuit continues in the same thread
+    saveCircuitState(null); // clear any previous saved state before new circuit
 
     try {
-      const result = await apiRequest("/api/ai/circuit/start", "POST", { mode }) as any;
+      // Pass the active conversationId so circuit starts in the same conversation thread
+      const result = await apiRequest("/api/ai/circuit/start", "POST", {
+        mode,
+        conversationId: conversationId ?? undefined,
+      }) as any;
       if (!isMounted.current) return;
       setConversationId(result.conversationId);
       const initialMsgs: AiMessage[] = [

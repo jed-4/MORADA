@@ -1404,6 +1404,7 @@ export interface IStorage {
   ensureAiTables(): Promise<void>;
   createAiConversation(data: InsertAiConversation): Promise<AiConversation>;
   getAiConversation(id: string): Promise<AiConversation | undefined>;
+  updateAiConversation(id: string, data: { circuitMode?: boolean; title?: string }): Promise<AiConversation | undefined>;
   listAiConversations(companyId: string, userId: string, limit?: number): Promise<AiConversation[]>;
   createAiMessage(data: InsertAiMessage): Promise<AiMessage>;
   getAiMessages(conversationId: string): Promise<AiMessage[]>;
@@ -6551,6 +6552,7 @@ export class MemStorage implements IStorage {
   async ensureAiTables(): Promise<void> {}
   async createAiConversation(_data: InsertAiConversation): Promise<AiConversation> { throw new Error("Not implemented"); }
   async getAiConversation(_id: string): Promise<AiConversation | undefined> { return undefined; }
+  async updateAiConversation(_id: string, _data: { circuitMode?: boolean; title?: string }): Promise<AiConversation | undefined> { return undefined; }
   async listAiConversations(_companyId: string, _userId: string, _limit?: number): Promise<AiConversation[]> { return []; }
   async createAiMessage(_data: InsertAiMessage): Promise<AiMessage> { throw new Error("Not implemented"); }
   async getAiMessages(_conversationId: string): Promise<AiMessage[]> { return []; }
@@ -24725,6 +24727,12 @@ export class DbStorage implements IStorage {
           updated_at timestamp NOT NULL DEFAULT now()
         )
       `);
+      // Add circuitMode column if it doesn't exist yet (idempotent)
+      try {
+        await db.execute(sql`ALTER TABLE ai_conversations ADD COLUMN IF NOT EXISTS circuit_mode boolean NOT NULL DEFAULT false`);
+      } catch (_alterErr) {
+        // Column may already exist; ignore
+      }
       // One-time backfill: copy circuit_blocked_items → ai_blocked_items (idempotent)
       try {
         await db.execute(sql`
@@ -24760,6 +24768,17 @@ export class DbStorage implements IStorage {
 
   async getAiConversation(id: string): Promise<AiConversation | undefined> {
     const [row] = await db.select().from(schema.aiConversations).where(eq(schema.aiConversations.id, id));
+    return row;
+  }
+
+  async updateAiConversation(id: string, data: { circuitMode?: boolean; title?: string }): Promise<AiConversation | undefined> {
+    const updates: Record<string, any> = { updatedAt: new Date() };
+    if (data.circuitMode !== undefined) updates.circuitMode = data.circuitMode;
+    if (data.title !== undefined) updates.title = data.title;
+    const [row] = await db.update(schema.aiConversations)
+      .set(updates)
+      .where(eq(schema.aiConversations.id, id))
+      .returning();
     return row;
   }
 

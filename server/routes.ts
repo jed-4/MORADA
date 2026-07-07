@@ -21795,14 +21795,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const conversationId = req.params.id;
       const conv = await storage.getAiConversation(conversationId);
-      if (!conv || conv.companyId !== companyId) {
+      if (!conv || conv.companyId !== companyId || conv.userId !== userId) {
         return res.status(404).json({ error: "Conversation not found" });
+      }
+
+      // Auto-detect circuit trigger phrases in the message
+      const CIRCUIT_TRIGGERS = ["run the circuit", "run circuit", "quick circuit", "quick check", "start circuit"];
+      const isCircuitTrigger = CIRCUIT_TRIGGERS.some(t => content.toLowerCase().includes(t));
+      const effectiveCircuitMode = circuitMode || conv.circuitMode || isCircuitTrigger;
+
+      // Persist circuit mode on the conversation if newly enabled
+      if (effectiveCircuitMode && !conv.circuitMode) {
+        await storage.updateAiConversation(conversationId, { circuitMode: true });
       }
 
       await storage.createAiMessage({ conversationId, role: "user", content });
 
       const history = await storage.getAiMessages(conversationId);
-      const systemPrompt = buildSystemPrompt(circuitMode);
+      const systemPrompt = buildSystemPrompt(effectiveCircuitMode);
 
       const claudeMessages: any[] = history
         .slice(0, -1)
@@ -21847,17 +21857,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       let circuitData: any = null;
-      if (circuitMode && assistantText) {
+      if (effectiveCircuitMode && assistantText) {
         try {
           const cleaned = assistantText.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "");
-          circuitData = JSON.parse(cleaned);
+          const parsed = JSON.parse(cleaned);
+          circuitData = parsed;
           assistantText = circuitData.message || assistantText;
         } catch {
-          circuitData = { message: assistantText, quickReplies: [], currentStop: 1 };
+          circuitData = { message: assistantText, quickReplies: [], currentStop: 1, stopName: "Review" };
         }
       }
 
-      res.json({ message: assistantText, circuitData });
+      res.json({ message: assistantText, circuitData, conversationCircuitMode: effectiveCircuitMode });
     } catch (err: any) {
       console.error("[AI] message error:", err);
       res.status(500).json({ error: "Failed to process message", details: err.message });
@@ -21868,8 +21879,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/ai/conversations/:id/messages", requireAuth, requireTeamMember, async (req, res) => {
     try {
       const companyId = req.user!.companyId;
+      const userId = req.user!.id;
       const conv = await storage.getAiConversation(req.params.id);
-      if (!conv || conv.companyId !== companyId) {
+      if (!conv || conv.companyId !== companyId || conv.userId !== userId) {
         return res.status(404).json({ error: "Conversation not found" });
       }
       const messages = await storage.getAiMessages(req.params.id);
@@ -21923,10 +21935,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const userId = req.user!.id;
       if (!companyId) return res.status(400).json({ error: "No company context" });
 
-      const { mode = "full" } = req.body;
-      const conv = await storage.createAiConversation({
-        companyId, userId, title: `Circuit — ${new Date().toLocaleDateString("en-AU")}`,
-      });
+      const { mode = "full", conversationId: existingConvId } = req.body;
+
+      // Re-use the caller's active conversation if they pass one (same-thread circuit mode)
+      let conv: any;
+      if (existingConvId) {
+        conv = await storage.getAiConversation(existingConvId);
+        if (!conv || conv.companyId !== companyId || conv.userId !== userId) {
+          conv = null; // fall through to create new
+        }
+      }
+      if (!conv) {
+        conv = await storage.createAiConversation({
+          companyId, userId,
+          title: `Circuit — ${new Date().toLocaleDateString("en-AU")}`,
+          circuitMode: true,
+        } as any);
+      } else if (!conv.circuitMode) {
+        await storage.updateAiConversation(conv.id, { circuitMode: true });
+      }
 
       const startMessage = buildCircuitStartMessage(mode as "full" | "quick");
       await storage.createAiMessage({ conversationId: conv.id, role: "user", content: startMessage });
