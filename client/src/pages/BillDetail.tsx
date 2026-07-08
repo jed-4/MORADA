@@ -6,6 +6,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { format, addDays, endOfMonth, addMonths } from "date-fns";
+import { formatDate } from "@/lib/formatters";
 import { 
   ArrowLeft, 
   Copy, 
@@ -1952,6 +1953,7 @@ export default function BillDetail() {
                         <th className="text-left px-3 py-2 text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">PO Number</th>
                         <th className="text-left px-3 py-2 text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">Description</th>
                         <th className="text-left px-3 py-2 text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">Supplier</th>
+                        <th className="text-left px-3 py-2 text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">Date</th>
                         <th className="text-right px-3 py-2 text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">Total</th>
                         <th className="text-left px-3 py-2 text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">Status</th>
                       </tr>
@@ -1975,6 +1977,7 @@ export default function BillDetail() {
                             <td className="px-3 py-2 font-mono font-medium">{po.poNumber}</td>
                             <td className="px-3 py-2 text-muted-foreground max-w-[180px] truncate">{description}</td>
                             <td className="px-3 py-2 truncate max-w-[140px]">{supplierName}</td>
+                            <td className="px-3 py-2 text-muted-foreground whitespace-nowrap">{formatDate(po.poDate)}</td>
                             <td className="px-3 py-2 text-right tabular-nums">
                               {formatCurrency((po.total || 0) / 100)}
                               {matched && (
