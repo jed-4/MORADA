@@ -24,8 +24,8 @@ export interface FormatCurrencyOptions {
 
 /**
  * Format a money value as a localised currency string.
- * Whole numbers omit the cents (`$1,234`); fractional amounts show two
- * decimals (`$1,234.50`). Override with `fractionDigits`.
+ * Always shows two decimal places (`$1,234.00`) unless overridden via
+ * `fractionDigits`.
  */
 export function formatCurrency(
   amount: number | null | undefined,
@@ -33,11 +33,10 @@ export function formatCurrency(
 ): string {
   if (amount === null || amount === undefined || Number.isNaN(amount)) return "—";
   const dollars = opts.fromDollars ? amount : amount / 100;
-  const isWhole = dollars % 1 === 0;
   return new Intl.NumberFormat(opts.locale ?? "en-AU", {
     style: "currency",
     currency: opts.currency ?? "AUD",
-    minimumFractionDigits: opts.fractionDigits ?? (isWhole ? 0 : 2),
+    minimumFractionDigits: opts.fractionDigits ?? 2,
     maximumFractionDigits: opts.fractionDigits ?? 2,
   }).format(dollars);
 }

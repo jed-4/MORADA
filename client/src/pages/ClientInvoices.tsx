@@ -33,6 +33,7 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import { format, isPast } from "date-fns";
 import { cn } from "@/lib/utils";
+import { formatCurrency } from "@/lib/formatters";
 
 // ── Status chip colours ────────────────────────────────────────────────────
 
@@ -166,15 +167,6 @@ export default function ClientInvoices({ embedded }: { embedded?: boolean } = {}
   });
 
   const getProject = (projectId: string) => projects.find((p) => p.id === projectId);
-
-  const formatCurrency = (cents: number) => {
-    const dollars = cents / 100;
-    return new Intl.NumberFormat("en-AU", {
-      style: "currency", currency: "AUD",
-      minimumFractionDigits: dollars % 1 === 0 ? 0 : 2,
-      maximumFractionDigits: 2,
-    }).format(dollars);
-  };
 
   const isDueDateOverdue = (dueDate: Date | string | null | undefined, status: string) =>
     !(!dueDate || status === "paid") && isPast(new Date(dueDate));
