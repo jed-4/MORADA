@@ -47,3 +47,5 @@
 - [Task activity feed](task-activity-feed.md) — task audit lines share the comment feed; recordTaskActivity must fire on EVERY task-mutation path or logging silently stops; no notifications.
 - [Mention notif tenant validation](mention-notif-tenant-validation.md) — @mention markup carries raw userId; notify-mentions helpers MUST filter IDs through getUsersByCompany before createNotification or a crafted mention pushes to another company.
 - [Gantt row grouping normalization](gantt-row-grouping-normalization.md) — one shared buildNormalizedOrder + resolveDrop drives BOTH render and drop-commit so groups stay contiguous and mid-drag view == post-refresh.
+- [Task assignee notification paths](task-assignee-notification-paths.md) — notifyTaskAssignment must fire from create/edit/bulk-copy with the pre-write assigneeId, diffed for no-op/self-notify.
+- [Duplicate /api/auth/register handler](auth-register-route-duplication.md) — server/auth.ts's handler wins (200, no company, firstName/lastName); the routes.ts one is dead code.

@@ -119,6 +119,58 @@ export async function notifyTaskCommentMentions(params: {
   }
 }
 
+function collectTaskAssignees(task: any): string[] {
+  if (!task) return [];
+  const ids: (string | null | undefined)[] = [];
+  if (Array.isArray(task.assigneeIds)) ids.push(...task.assigneeIds);
+  if (task.assigneeId) ids.push(task.assigneeId);
+  return uniqueDefined(ids);
+}
+
+/**
+ * Notify every user newly assigned to a task (single legacy `assigneeId` and/or
+ * multi `assigneeIds`), regardless of which write path set the assignee
+ * (create, edit, bulk copy, board drag-and-drop, etc.). Callers pass the
+ * previous task state (`previousTask`, `null`/`undefined` for a brand-new
+ * task) so this can diff the assignee sets itself and stay a no-op for users
+ * who were already assigned. Never notifies the acting user about their own
+ * self-assignment.
+ */
+export async function notifyTaskAssignment(params: {
+  task: any;
+  previousTask?: any | null;
+  actorUserId: string;
+  companyId: string;
+  actorName: string;
+}): Promise<void> {
+  const { task, previousTask = null, actorUserId, companyId, actorName } = params;
+  try {
+    if (!task || !companyId) return;
+    const prevAssignees = new Set(collectTaskAssignees(previousTask));
+    const newAssignees = collectTaskAssignees(task).filter(
+      (id) => !prevAssignees.has(id) && id !== actorUserId,
+    );
+    if (newAssignees.length === 0) return;
+
+    const link = task.projectId ? `/projects/${task.projectId}/tasks` : `/workspace/tasks`;
+    for (const userId of newAssignees) {
+      await safeCreate({
+        userId,
+        companyId,
+        type: "task_assigned",
+        title: "Task Assigned",
+        message: `${actorName} assigned you a task: "${task.title}"`,
+        link,
+        entityType: "task",
+        entityId: task.id,
+        createdByUserId: actorUserId,
+      });
+    }
+  } catch (err) {
+    console.error("[Notify] notifyTaskAssignment failed:", err);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Timesheets
 // ---------------------------------------------------------------------------

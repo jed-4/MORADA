@@ -203,6 +203,7 @@ import {
   notifyNoteAssignmentAndMentions,
   notifySiteDiaryAssignmentAndMentions,
   notifyScheduleItemChange,
+  notifyTaskAssignment,
 } from "./utils/domainNotifications";
 
 async function fetchNonWorkingDaySet(companyId: string, scheduleId?: string): Promise<Set<string>> {
@@ -2224,6 +2225,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       emitTaskCreated(user.companyId, task, user.id);
 
+      // Notify a newly-assigned user immediately, even though this is a brand
+      // new task (no "previous" assignee to diff against).
+      {
+        const actorName = user.firstName && user.lastName
+          ? `${user.firstName} ${user.lastName}`
+          : user.email || "Someone";
+        await notifyTaskAssignment({
+          task,
+          previousTask: null,
+          actorUserId: user.id,
+          companyId: user.companyId,
+          actorName,
+        });
+      }
+
       // If a channelId was supplied (task created from a message), post a server-side bot message.
       // Requires channel to belong to the user's company AND user to be a member (prevents IDOR injection).
       const sourceChannelId = typeof body.channelId === "string" ? body.channelId.trim() : "";
@@ -2325,29 +2341,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Create notification when task is assigned to a different user
-      const assigneeChanged = existingTask.assigneeId !== task.assigneeId;
-      const assignedToSomeoneElse = task.assigneeId && task.assigneeId !== user.id;
-      
-      if (assigneeChanged && assignedToSomeoneElse) {
-        try {
-          const notification = await storage.createNotification({
-            userId: task.assigneeId!,
-            companyId: user.companyId,
-            type: "task_assigned",
-            title: "Task Assigned",
-            message: `${user.firstName || user.email} assigned you a task: "${task.title}"`,
-            link: task.projectId ? `/projects/${task.projectId}/tasks` : `/workspace/tasks`,
-            entityType: "task",
-            entityId: task.id,
-            isRead: false,
-            createdByUserId: user.id
-          });
-          
-          // Emit real-time notification
-          emitNotification(task.assigneeId!, notification);
-        } catch (err) {
-          console.error("Failed to create task assignment notification:", err);
-        }
+      {
+        const actorName = user.firstName && user.lastName
+          ? `${user.firstName} ${user.lastName}`
+          : user.email || "Someone";
+        await notifyTaskAssignment({
+          task,
+          previousTask: existingTask,
+          actorUserId: user.id,
+          companyId: user.companyId,
+          actorName,
+        });
       }
 
       // Record auto-activity for meaningful field changes (best-effort).
@@ -2459,8 +2463,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       // Check permissions based on action
-      const hasDeletePermission = await storage.userHasPermission(user.id, "tasks.manage", "delete");
-      const hasEditPermission = await storage.userHasPermission(user.id, "tasks.manage", "edit");
+      const hasDeletePermission = await storage.checkUserPermission(user.id, "tasks.manage", "delete");
+      const hasEditPermission = await storage.checkUserPermission(user.id, "tasks.manage", "edit");
       
       if (action === "delete" && !hasDeletePermission) {
         return res.status(403).json({ error: "Permission denied: cannot delete tasks" });
@@ -2494,11 +2498,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
               }
               break;
               
-            case "copyToProject":
+            case "copyToProject": {
               if (!projectId) throw new Error("Project ID required");
               const task = await storage.getTask(taskId);
               if (task) {
-                await storage.createTask({
+                const copiedTask = await storage.createTask({
                   ...task,
                   id: undefined,
                   projectId,
@@ -2507,14 +2511,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
                   createdAt: undefined,
                   updatedAt: undefined,
                 } as any);
+                const actorName = user.firstName && user.lastName
+                  ? `${user.firstName} ${user.lastName}`
+                  : user.email || "Someone";
+                await notifyTaskAssignment({
+                  task: copiedTask,
+                  previousTask: null,
+                  actorUserId: user.id,
+                  companyId: user.companyId,
+                  actorName,
+                });
                 success++;
               }
               break;
-              
-            case "copyToBusiness":
+            }
+
+            case "copyToBusiness": {
               const businessTask = await storage.getTask(taskId);
               if (businessTask) {
-                await storage.createTask({
+                const copiedTask = await storage.createTask({
                   ...businessTask,
                   id: undefined,
                   projectId: null,
@@ -2523,9 +2538,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
                   createdAt: undefined,
                   updatedAt: undefined,
                 } as any);
+                const actorName = user.firstName && user.lastName
+                  ? `${user.firstName} ${user.lastName}`
+                  : user.email || "Someone";
+                await notifyTaskAssignment({
+                  task: copiedTask,
+                  previousTask: null,
+                  actorUserId: user.id,
+                  companyId: user.companyId,
+                  actorName,
+                });
                 success++;
               }
               break;
+            }
               
             default:
               throw new Error(`Unknown action: ${action}`);
