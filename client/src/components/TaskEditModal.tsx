@@ -1332,63 +1332,61 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
                     </div>
                   </div>
                   
-                  <div className="space-y-1">
-                    <DndContext
-                      sensors={checklistSensors}
-                      collisionDetection={closestCenter}
-                      onDragEnd={handleChecklistDragEnd}
-                    >
-                      <SortableContext
-                        items={checklistItems.map(item => item.id || '')}
-                        strategy={verticalListSortingStrategy}
+                  {(checklistItems.length > 0 || showChecklistInput) && (
+                    <div className="space-y-1">
+                      <DndContext
+                        sensors={checklistSensors}
+                        collisionDetection={closestCenter}
+                        onDragEnd={handleChecklistDragEnd}
                       >
-                        {checklistItems.map((item) => (
-                          <SortableChecklistItem
-                            key={item.id}
-                            item={item}
-                            onToggle={handleToggleChecklistItem}
-                            onRemove={handleRemoveChecklistItem}
-                            onEdit={handleEditChecklistItem}
-                            onAssigneeChange={handleChecklistAssigneeChange}
-                            assignees={assignees}
-                            getUserDisplayName={getUserDisplayName}
-                            getInitials={getInitials}
+                        <SortableContext
+                          items={checklistItems.map(item => item.id || '')}
+                          strategy={verticalListSortingStrategy}
+                        >
+                          {checklistItems.map((item) => (
+                            <SortableChecklistItem
+                              key={item.id}
+                              item={item}
+                              onToggle={handleToggleChecklistItem}
+                              onRemove={handleRemoveChecklistItem}
+                              onEdit={handleEditChecklistItem}
+                              onAssigneeChange={handleChecklistAssigneeChange}
+                              assignees={assignees}
+                              getUserDisplayName={getUserDisplayName}
+                              getInitials={getInitials}
+                            />
+                          ))}
+                        </SortableContext>
+                      </DndContext>
+
+                      {showChecklistInput && (
+                        <div className="flex items-center gap-2 p-2">
+                          <Input
+                            ref={checklistInputRef}
+                            value={checklistInput}
+                            onChange={(e) => setChecklistInput(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") handleAddChecklistItem();
+                              if (e.key === "Escape") {
+                                setShowChecklistInput(false);
+                                setChecklistInput("");
+                              }
+                            }}
+                            onBlur={() => {
+                              if (!checklistInput.trim()) {
+                                setShowChecklistInput(false);
+                                setChecklistInput("");
+                              }
+                            }}
+                            placeholder="Checklist item..."
+                            className="h-8 text-sm"
+                            autoFocus
+                            data-testid="input-add-checklist-item"
                           />
-                        ))}
-                      </SortableContext>
-                    </DndContext>
-
-                    {showChecklistInput && (
-                      <div className="flex items-center gap-2 p-2">
-                        <Input
-                          ref={checklistInputRef}
-                          value={checklistInput}
-                          onChange={(e) => setChecklistInput(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") handleAddChecklistItem();
-                            if (e.key === "Escape") {
-                              setShowChecklistInput(false);
-                              setChecklistInput("");
-                            }
-                          }}
-                          onBlur={() => {
-                            if (!checklistInput.trim()) {
-                              setShowChecklistInput(false);
-                              setChecklistInput("");
-                            }
-                          }}
-                          placeholder="Checklist item..."
-                          className="h-8 text-sm"
-                          autoFocus
-                          data-testid="input-add-checklist-item"
-                        />
-                      </div>
-                    )}
-
-                    {checklistItems.length === 0 && !showChecklistInput && (
-                      <p className="text-xs text-muted-foreground italic py-2">No checklist items yet</p>
-                    )}
-                  </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </>
               )}
             </div>
@@ -1454,9 +1452,7 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
 
             {/* Comments thread (only for saved tasks) */}
             {task?.id && (
-              <div className="pt-2">
-                <TaskComments taskId={task.id} users={users} currentUserId={user?.id} />
-              </div>
+              <TaskComments taskId={task.id} users={users} currentUserId={user?.id} />
             )}
           </div>
 

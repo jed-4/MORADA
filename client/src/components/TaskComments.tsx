@@ -1,13 +1,25 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { formatDistanceToNow } from "date-fns";
-import { MessageSquare, Pencil, Trash2, X, Check, Activity } from "lucide-react";
+import { MessageSquare, Pencil, Trash2, X, Check, Activity, MoreVertical, Plus } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
 import type { TaskComment, TaskActivity } from "@shared/schema";
+
+function autoResizeTextarea(el: HTMLTextAreaElement | null) {
+  if (!el) return;
+  el.style.height = "auto";
+  el.style.height = `${el.scrollHeight}px`;
+}
 
 interface TaskCommentsProps {
   taskId: string;
@@ -129,6 +141,11 @@ type FeedItem =
 export default function TaskComments({ taskId, users, currentUserId }: TaskCommentsProps) {
   const { toast } = useToast();
   const composer = useMentionComposer(users);
+
+  useEffect(() => {
+    autoResizeTextarea(composer.textareaRef.current);
+  }, [composer.value, composer.textareaRef]);
+
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
   const [showActivity, setShowActivity] = useState(true);
@@ -195,6 +212,12 @@ export default function TaskComments({ taskId, users, currentUserId }: TaskComme
     createMutation.mutate(content);
   };
 
+  const isEmptyFeed = !isLoading && comments.length === 0 && activity.length === 0;
+
+  const focusComposer = () => {
+    requestAnimationFrame(() => composer.textareaRef.current?.focus());
+  };
+
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -202,26 +225,38 @@ export default function TaskComments({ taskId, users, currentUserId }: TaskComme
           <MessageSquare className="h-3.5 w-3.5" />
           Activity &amp; Comments {comments.length > 0 && `(${comments.length})`}
         </label>
-        {activity.length > 0 && (
-          <Button
-            size="sm"
-            variant="ghost"
-            className="h-7 px-2 text-xs text-muted-foreground"
-            onClick={() => setShowActivity((v) => !v)}
-            data-testid="button-toggle-activity"
-          >
-            <Activity className="h-3 w-3" />
-            {showActivity ? "Hide activity" : "Show activity"}
-          </Button>
-        )}
+        <div className="flex items-center gap-1">
+          {activity.length > 0 && (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 px-2 text-xs text-muted-foreground"
+              onClick={() => setShowActivity((v) => !v)}
+              data-testid="button-toggle-activity"
+            >
+              <Activity className="h-3 w-3" />
+              {showActivity ? "Hide activity" : "Show activity"}
+            </Button>
+          )}
+          {isEmptyFeed && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 px-2 text-xs"
+              onClick={focusComposer}
+              data-testid="button-add-comment-header"
+            >
+              <Plus className="h-3 w-3" />
+              Add comment
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* Thread (oldest first) */}
       {isLoading ? (
         <p className="text-sm text-muted-foreground">Loading comments…</p>
-      ) : feed.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No comments yet. Start the conversation.</p>
-      ) : (
+      ) : feed.length === 0 ? null : (
         <div className="space-y-3">
           {feed.map((item) => {
             if (item.kind === "activity") {
@@ -253,12 +288,50 @@ export default function TaskComments({ taskId, users, currentUserId }: TaskComme
                   </AvatarFallback>
                 </Avatar>
                 <div className="flex-1 min-w-0 space-y-1">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-sm font-medium">{comment.createdByName}</span>
-                    <span className="text-xs text-muted-foreground">
-                      {formatDistanceToNow(new Date(comment.createdAt), { addSuffix: true })}
-                      {comment.editedAt ? " (edited)" : ""}
-                    </span>
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 flex-wrap min-w-0">
+                      <span className="text-sm font-medium">{comment.createdByName}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {formatDistanceToNow(new Date(comment.createdAt), { addSuffix: true })}
+                        {comment.editedAt ? " (edited)" : ""}
+                      </span>
+                    </div>
+                    {isOwn && !isEditing && (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="h-6 w-6 shrink-0 text-muted-foreground"
+                            data-testid={`button-comment-menu-${comment.id}`}
+                          >
+                            <MoreVertical className="h-3.5 w-3.5" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem
+                            onClick={() => {
+                              setEditingId(comment.id);
+                              setEditValue(comment.content);
+                            }}
+                            data-testid={`button-edit-comment-${comment.id}`}
+                          >
+                            <Pencil className="h-3.5 w-3.5" /> Edit
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={() => {
+                              if (window.confirm("Delete this comment?")) {
+                                deleteMutation.mutate(comment.id);
+                              }
+                            }}
+                            className="text-destructive focus:text-destructive"
+                            data-testid={`button-delete-comment-${comment.id}`}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" /> Delete
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    )}
                   </div>
 
                   {isEditing ? (
@@ -299,34 +372,6 @@ export default function TaskComments({ taskId, users, currentUserId }: TaskComme
                       {renderContent(comment.content)}
                     </div>
                   )}
-
-                  {isOwn && !isEditing && (
-                    <div className="flex items-center gap-1">
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => {
-                          setEditingId(comment.id);
-                          setEditValue(comment.content);
-                        }}
-                        data-testid={`button-edit-comment-${comment.id}`}
-                      >
-                        <Pencil className="h-3 w-3" /> Edit
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => {
-                          if (window.confirm("Delete this comment?")) {
-                            deleteMutation.mutate(comment.id);
-                          }
-                        }}
-                        data-testid={`button-delete-comment-${comment.id}`}
-                      >
-                        <Trash2 className="h-3 w-3 text-destructive" /> Delete
-                      </Button>
-                    </div>
-                  )}
                 </div>
               </div>
             );
@@ -335,14 +380,17 @@ export default function TaskComments({ taskId, users, currentUserId }: TaskComme
       )}
 
       {/* Composer */}
-      <div className="relative space-y-2">
+      <div className="relative flex items-end gap-2">
         <Textarea
           ref={composer.textareaRef}
           value={composer.value}
-          onChange={composer.handleChange}
+          onChange={(e) => {
+            composer.handleChange(e);
+            autoResizeTextarea(e.target);
+          }}
           placeholder="Add a comment… use @ to mention a teammate"
-          rows={2}
-          className="text-sm"
+          rows={1}
+          className="text-sm resize-none min-h-9 max-h-40 overflow-y-auto py-2"
           data-testid="textarea-new-comment"
           onKeyDown={(e) => {
             if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
@@ -351,6 +399,15 @@ export default function TaskComments({ taskId, users, currentUserId }: TaskComme
             }
           }}
         />
+        <Button
+          size="sm"
+          onClick={handleSubmit}
+          disabled={!composer.value.trim() || createMutation.isPending}
+          className="shrink-0"
+          data-testid="button-post-comment"
+        >
+          {createMutation.isPending ? "Posting…" : "Comment"}
+        </Button>
         {composer.mention.active && composer.filtered.length > 0 && (
           <div className="absolute z-50 bottom-full mb-1 left-0 w-64 max-h-56 overflow-y-auto rounded-md border bg-popover shadow-md">
             {composer.filtered.map((user) => (
@@ -371,16 +428,6 @@ export default function TaskComments({ taskId, users, currentUserId }: TaskComme
             ))}
           </div>
         )}
-        <div className="flex justify-end">
-          <Button
-            size="sm"
-            onClick={handleSubmit}
-            disabled={!composer.value.trim() || createMutation.isPending}
-            data-testid="button-post-comment"
-          >
-            {createMutation.isPending ? "Posting…" : "Comment"}
-          </Button>
-        </div>
       </div>
     </div>
   );
