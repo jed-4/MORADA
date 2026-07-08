@@ -28,7 +28,7 @@ import {
   Send,
   Settings,
   Link2,
-  ClipboardList,
+  Search,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { FilePreviewModal, type PreviewFile } from "@/components/FilePreviewModal";
@@ -246,6 +246,8 @@ export default function BillDetail() {
   const [defaultsAccountSearch, setDefaultsAccountSearch] = useState("");
   const [defaultsPromptDismissed, setDefaultsPromptDismissed] = useState(false);
   const [showUpdateDefaultsPrompt, setShowUpdateDefaultsPrompt] = useState(false);
+  const [poSearchOpen, setPoSearchOpen] = useState(false);
+  const [poSearchText, setPoSearchText] = useState("");
 
   const { data: bill, isLoading: billLoading } = useQuery<Bill>({
     queryKey: ["/api/bills", id],
@@ -1758,27 +1760,9 @@ export default function BillDetail() {
     };
   };
 
-  // ── Site PO suggestion banner ──────────────────────────────────────────────
+  // ── Site PO linking ────────────────────────────────────────────────────────
   const billAny = bill as any;
   const matchedSitePOId: string | null = billAny?.matchedSitePOId ?? null;
-  const suggestedSitePOIds: string[] = Array.isArray(billAny?.suggestedSitePOIds)
-    ? (billAny.suggestedSitePOIds as string[])
-    : [];
-
-  const { data: suggestedSitePOs = [] } = useQuery<PurchaseOrder[]>({
-    queryKey: ["/api/purchase-orders/suggestions", suggestedSitePOIds],
-    queryFn: async () => {
-      if (!suggestedSitePOIds.length) return [];
-      const results = await Promise.all(
-        suggestedSitePOIds.map(poId =>
-          fetch(`/api/purchase-orders/${poId}`, { credentials: "include" })
-            .then(r => r.ok ? r.json() as Promise<PurchaseOrder> : null)
-        )
-      );
-      return results.filter(Boolean) as PurchaseOrder[];
-    },
-    enabled: !!(suggestedSitePOIds.length && !matchedSitePOId && isEditMode),
-  });
 
   const { data: matchedSitePO } = useQuery<PurchaseOrder | null>({
     queryKey: ["/api/purchase-orders", matchedSitePOId],
@@ -1816,31 +1800,20 @@ export default function BillDetail() {
     },
   });
 
-  // Pickable POs: any non-draft, non-cancelled PO for the bill's supplier.
+  // Pickable POs: all non-draft, non-cancelled POs for this company (not filtered by supplier).
   const billSupplierId = form.watch('supplierId') as string | undefined;
   const { data: pickablePOs = [] } = useQuery<PurchaseOrder[]>({
-    queryKey: ["/api/purchase-orders", { supplierId: billSupplierId }],
+    queryKey: ["/api/purchase-orders", { all: true }],
     queryFn: async () => {
       const r = await fetch(`/api/purchase-orders`, { credentials: "include" });
       if (!r.ok) return [];
       const all = (await r.json()) as PurchaseOrder[];
       return all.filter((po: any) => {
-        if (!billSupplierId) return false;
-        if (po.supplierId !== billSupplierId) return false;
         if (po.status === "draft" || po.status === "cancelled" || po.status === "paid") return false;
         return true;
       });
     },
-    enabled: !!(isEditMode && !matchedSitePOId && billSupplierId),
-  });
-
-  const dismissSuggestionsMutation = useMutation({
-    mutationFn: async () => {
-      await apiRequest(`/api/bills/${id}`, "PATCH", { suggestedSitePOIds: [] });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/bills"] });
-    },
+    enabled: isEditMode,
   });
 
   if (billLoading) {
@@ -1930,118 +1903,84 @@ export default function BillDetail() {
         </div>
       </div>
 
-      {/* ── Site PO matched banner ──────────────────────────────────────── */}
-      {isEditMode && matchedSitePOId && matchedSitePO && (
-        <div className="flex-none border-b bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800 px-4 py-2">
-          <div className="flex items-center justify-between gap-2 text-sm text-green-800 dark:text-green-300">
-            <div className="flex items-center gap-2 min-w-0">
-              <Link2 className="w-4 h-4 flex-shrink-0 text-green-600 dark:text-green-400" />
-              <span className="font-medium">Matched to Purchase Order</span>
-              <button
-                type="button"
-                onClick={() => setLocation(`/purchase-orders/${matchedSitePO.id}`)}
-                className="font-mono font-semibold hover:underline"
-                data-testid="link-matched-po"
-              >
-                {matchedSitePO.poNumber}
-              </button>
-              {matchedSitePO.description && (
-                <span className="text-green-700/70 dark:text-green-400/70 truncate">— {matchedSitePO.description}</span>
-              )}
+      {/* ── PO search modal ──────────────────────────────────────────────── */}
+      {isEditMode && (
+        <Dialog open={poSearchOpen} onOpenChange={(open) => { setPoSearchOpen(open); if (!open) setPoSearchText(""); }}>
+          <DialogContent className="max-w-2xl" data-testid="dialog-po-search">
+            <DialogHeader>
+              <DialogTitle>Link Purchase Order</DialogTitle>
+              <DialogDescription>Search and select a purchase order to link to this bill.</DialogDescription>
+            </DialogHeader>
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+              <Input
+                placeholder="Search by PO number, description, or supplier…"
+                value={poSearchText}
+                onChange={(e) => setPoSearchText(e.target.value)}
+                className="pl-9"
+                data-testid="input-po-search"
+                autoFocus
+              />
             </div>
-            <Button
-              size="sm"
-              variant="ghost"
-              className="h-7 px-2 text-xs text-green-800 dark:text-green-300"
-              onClick={() => unlinkSitePOMutation.mutate()}
-              disabled={unlinkSitePOMutation.isPending}
-              data-testid="button-unlink-po"
-            >
-              {unlinkSitePOMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : "Unlink"}
-            </Button>
-          </div>
-        </div>
-      )}
-
-      {/* ── PO picker (any open PO from the bill's supplier) ──────────────── */}
-      {isEditMode && !matchedSitePOId && billSupplierId && pickablePOs.length > 0 && suggestedSitePOs.length === 0 && (
-        <div className="flex-none border-b bg-blue-50/80 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800 px-4 py-2">
-          <div className="flex items-center gap-2 text-sm">
-            <Link2 className="w-4 h-4 flex-shrink-0 text-blue-600 dark:text-blue-400" />
-            <span className="font-medium text-blue-800 dark:text-blue-300">Link this bill to a PO:</span>
-            <Select onValueChange={(v) => v && linkSitePOMutation.mutate(v)} disabled={linkSitePOMutation.isPending}>
-              <SelectTrigger className="h-8 w-[320px] text-xs" data-testid="select-link-po">
-                <SelectValue placeholder={`Choose from ${pickablePOs.length} open PO${pickablePOs.length === 1 ? "" : "s"}…`} />
-              </SelectTrigger>
-              <SelectContent>
-                {pickablePOs.map((po: any) => (
-                  <SelectItem key={po.id} value={po.id}>
-                    <span className="font-mono">{po.poNumber}</span>
-                    {po.description ? ` — ${po.description}` : ""}
-                    {" · "}{formatCurrency(po.total || 0)}
-                    {" · "}{(po.status || "").replace(/_/g, " ")}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
-      )}
-
-      {/* ── PO suggestion banner ────────────────────────────────────────── */}
-      {isEditMode && !matchedSitePOId && suggestedSitePOs.length > 0 && (
-        <div className="flex-none border-b bg-amber-50/80 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800 px-4 py-3">
-          <div className="flex items-start justify-between gap-3">
-            <div className="flex items-start gap-2 min-w-0">
-              <ClipboardList className="w-4 h-4 flex-shrink-0 text-amber-600 dark:text-amber-400 mt-0.5" />
-              <div className="min-w-0">
-                <p className="text-sm font-medium text-amber-800 dark:text-amber-300 mb-1.5">
-                  Possible PO match{suggestedSitePOs.length > 1 ? "es" : ""}
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  {suggestedSitePOs.map(po => (
-                    <div
-                      key={po.id}
-                      className="flex items-center gap-2 bg-white dark:bg-amber-900/30 border border-amber-200 dark:border-amber-700 rounded-md px-2.5 py-1.5 text-xs"
-                    >
-                      <span className="font-mono font-semibold text-amber-700 dark:text-amber-300">{po.poNumber}</span>
-                      {po.description && (
-                        <span className="text-muted-foreground truncate max-w-[180px]">{po.description}</span>
-                      )}
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="h-6 px-2 text-xs border-amber-300 dark:border-amber-600 text-amber-800 dark:text-amber-300 ml-1"
-                        onClick={() => linkSitePOMutation.mutate(po.id)}
-                        disabled={linkSitePOMutation.isPending}
-                        data-testid={`button-link-site-po-${po.id}`}
-                      >
-                        {linkSitePOMutation.isPending ? (
-                          <Loader2 className="w-3 h-3 animate-spin" />
-                        ) : (
-                          <>
-                            <Link2 className="w-3 h-3 mr-1" />
-                            Link
-                          </>
-                        )}
-                      </Button>
+            <div className="border rounded-md overflow-hidden max-h-80 overflow-y-auto">
+              {(() => {
+                const q = poSearchText.toLowerCase();
+                const filtered = pickablePOs.filter((po: any) => {
+                  if (!q) return true;
+                  const supplierName = (suppliers.find((s: any) => s.id === po.supplierId) as any)?.name ?? "";
+                  return (
+                    (po.poNumber ?? "").toLowerCase().includes(q) ||
+                    (po.description ?? "").toLowerCase().includes(q) ||
+                    supplierName.toLowerCase().includes(q)
+                  );
+                });
+                if (filtered.length === 0) {
+                  return (
+                    <div className="py-8 text-center text-sm text-muted-foreground">
+                      {poSearchText ? "No purchase orders match your search." : "No open purchase orders found."}
                     </div>
-                  ))}
-                </div>
-              </div>
+                  );
+                }
+                return (
+                  <table className="w-full text-sm">
+                    <thead className="bg-muted/50 sticky top-0">
+                      <tr>
+                        <th className="text-left px-3 py-2 text-xs font-semibold text-muted-foreground">PO Number</th>
+                        <th className="text-left px-3 py-2 text-xs font-semibold text-muted-foreground">Description</th>
+                        <th className="text-left px-3 py-2 text-xs font-semibold text-muted-foreground">Supplier</th>
+                        <th className="text-right px-3 py-2 text-xs font-semibold text-muted-foreground">Total</th>
+                        <th className="text-left px-3 py-2 text-xs font-semibold text-muted-foreground">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filtered.map((po: any, idx: number) => {
+                        const supplierName = (suppliers.find((s: any) => s.id === po.supplierId) as any)?.name ?? "—";
+                        return (
+                          <tr
+                            key={po.id}
+                            className={`cursor-pointer hover-elevate border-t ${idx % 2 === 0 ? "" : "bg-muted/20"}`}
+                            onClick={() => {
+                              linkSitePOMutation.mutate(po.id);
+                              setPoSearchOpen(false);
+                              setPoSearchText("");
+                            }}
+                            data-testid={`row-po-${po.id}`}
+                          >
+                            <td className="px-3 py-2 font-mono font-semibold">{po.poNumber}</td>
+                            <td className="px-3 py-2 text-muted-foreground max-w-[180px] truncate">{po.description || "—"}</td>
+                            <td className="px-3 py-2 truncate max-w-[140px]">{supplierName}</td>
+                            <td className="px-3 py-2 text-right tabular-nums">{formatCurrency(po.total || 0)}</td>
+                            <td className="px-3 py-2 capitalize text-muted-foreground">{(po.status || "").replace(/_/g, " ")}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                );
+              })()}
             </div>
-            <Button
-              size="icon"
-              variant="ghost"
-              className="flex-shrink-0 h-6 w-6 text-amber-600 dark:text-amber-400"
-              onClick={() => dismissSuggestionsMutation.mutate()}
-              disabled={dismissSuggestionsMutation.isPending}
-              data-testid="button-dismiss-site-po-suggestions"
-            >
-              <X className="w-3.5 h-3.5" />
-            </Button>
-          </div>
-        </div>
+          </DialogContent>
+        </Dialog>
       )}
 
       <div className="flex-1 flex overflow-hidden">
@@ -2347,6 +2286,51 @@ export default function BillDetail() {
                       </FormItem>
                     )}
                   />
+
+                  {/* ── Purchase Order field ──────────────────────────────── */}
+                  {isEditMode && (
+                    <div className="space-y-1">
+                      <label className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">Purchase Order</label>
+                      {matchedSitePOId && matchedSitePO ? (
+                        <div className="flex items-center gap-1.5 h-9 px-3 rounded-md border border-border bg-muted/30 text-sm">
+                          <Link2 className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+                          <button
+                            type="button"
+                            onClick={() => setLocation(`/purchase-orders/${matchedSitePO.id}`)}
+                            className="font-mono font-medium hover:underline truncate flex-1 text-left"
+                            data-testid="link-matched-po"
+                          >
+                            {matchedSitePO.poNumber}
+                          </button>
+                          {matchedSitePO.description && (
+                            <span className="text-muted-foreground truncate text-xs max-w-[100px]">{matchedSitePO.description}</span>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => unlinkSitePOMutation.mutate()}
+                            disabled={unlinkSitePOMutation.isPending}
+                            className="flex-shrink-0 text-muted-foreground hover:text-foreground ml-auto"
+                            data-testid="button-unlink-po"
+                            title="Unlink PO"
+                          >
+                            {unlinkSitePOMutation.isPending
+                              ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              : <X className="h-3.5 w-3.5" />}
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setPoSearchOpen(true)}
+                          className="flex items-center gap-2 w-full h-9 px-3 rounded-md border border-border bg-muted/30 text-sm text-muted-foreground hover-elevate text-left"
+                          data-testid="button-link-po"
+                        >
+                          <Link2 className="h-3.5 w-3.5 flex-shrink-0" />
+                          <span>Link a PO…</span>
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 {form.watch("sendToXero") && (
