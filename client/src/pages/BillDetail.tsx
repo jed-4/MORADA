@@ -118,7 +118,6 @@ const billFormSchema = z.object({
   dueDate: z.string().optional(),
   billReference: z.string().optional(),
   notes: z.string().optional(),
-  reminders: z.string().optional(),
   paidAmount: z.number().default(0),
   sendToXero: z.boolean().default(false),
 });
@@ -402,7 +401,6 @@ export default function BillDetail() {
       dueDate: "",
       billReference: "",
       notes: "",
-      reminders: "",
       paidAmount: 0,
       sendToXero: false,
     },
@@ -471,7 +469,6 @@ export default function BillDetail() {
         dueDate: bill.dueDate ? format(new Date(bill.dueDate), "yyyy-MM-dd") : "",
         billReference: bill.billReference || "",
         notes: bill.notes || "",
-        reminders: bill.reminders || "",
         paidAmount: (bill.paidAmount || 0) / 100,
         sendToXero: !!bill.sendToXero,
       });
@@ -826,12 +823,10 @@ export default function BillDetail() {
   };
 
   const formatCurrency = (amount: number) => {
-    const isWholeNumber = amount % 1 === 0;
-    
     return new Intl.NumberFormat("en-AU", {
       style: "currency",
       currency: "AUD",
-      minimumFractionDigits: isWholeNumber ? 0 : 2,
+      minimumFractionDigits: 2,
       maximumFractionDigits: 2
     }).format(amount);
   };
@@ -1925,15 +1920,24 @@ export default function BillDetail() {
             <div className="border rounded-md overflow-hidden max-h-80 overflow-y-auto">
               {(() => {
                 const q = poSearchText.toLowerCase();
-                const filtered = pickablePOs.filter((po: any) => {
-                  if (!q) return true;
-                  const supplierName = (suppliers.find((s: any) => s.id === po.supplierId) as any)?.name ?? "";
-                  return (
-                    (po.poNumber ?? "").toLowerCase().includes(q) ||
-                    (po.description ?? "").toLowerCase().includes(q) ||
-                    supplierName.toLowerCase().includes(q)
-                  );
-                });
+                const billTotal = total;
+                const isAmountMatch = (po: any) => Math.abs((po.total || 0) / 100 - billTotal) < 0.01 && billTotal > 0;
+                const filtered = pickablePOs
+                  .filter((po: any) => {
+                    if (!q) return true;
+                    const supplierName = (suppliers.find((s: any) => s.id === po.supplierId) as any)?.name ?? po.supplierName ?? "";
+                    return (
+                      (po.poNumber ?? "").toLowerCase().includes(q) ||
+                      (po.description ?? "").toLowerCase().includes(q) ||
+                      (po.title ?? "").toLowerCase().includes(q) ||
+                      supplierName.toLowerCase().includes(q)
+                    );
+                  })
+                  .sort((a: any, b: any) => {
+                    const aMatch = isAmountMatch(a) ? 1 : 0;
+                    const bMatch = isAmountMatch(b) ? 1 : 0;
+                    return bMatch - aMatch;
+                  });
                 if (filtered.length === 0) {
                   return (
                     <div className="py-8 text-center text-sm text-muted-foreground">
@@ -1943,22 +1947,24 @@ export default function BillDetail() {
                 }
                 return (
                   <table className="w-full text-sm">
-                    <thead className="bg-muted/50 sticky top-0">
+                    <thead className="sticky top-0 z-10 bg-card border-b border-border">
                       <tr>
-                        <th className="text-left px-3 py-2 text-xs font-semibold text-muted-foreground">PO Number</th>
-                        <th className="text-left px-3 py-2 text-xs font-semibold text-muted-foreground">Description</th>
-                        <th className="text-left px-3 py-2 text-xs font-semibold text-muted-foreground">Supplier</th>
-                        <th className="text-right px-3 py-2 text-xs font-semibold text-muted-foreground">Total</th>
-                        <th className="text-left px-3 py-2 text-xs font-semibold text-muted-foreground">Status</th>
+                        <th className="text-left px-3 py-2 text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">PO Number</th>
+                        <th className="text-left px-3 py-2 text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">Description</th>
+                        <th className="text-left px-3 py-2 text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">Supplier</th>
+                        <th className="text-right px-3 py-2 text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">Total</th>
+                        <th className="text-left px-3 py-2 text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">Status</th>
                       </tr>
                     </thead>
                     <tbody>
                       {filtered.map((po: any, idx: number) => {
-                        const supplierName = (suppliers.find((s: any) => s.id === po.supplierId) as any)?.name ?? "—";
+                        const supplierName = (suppliers.find((s: any) => s.id === po.supplierId) as any)?.name ?? po.supplierName ?? "—";
+                        const description = po.description || po.title || "—";
+                        const matched = isAmountMatch(po);
                         return (
                           <tr
                             key={po.id}
-                            className={`cursor-pointer hover-elevate border-t ${idx % 2 === 0 ? "" : "bg-muted/20"}`}
+                            className={`cursor-pointer hover-elevate border-t border-border ${matched ? "bg-primary/10" : idx % 2 === 0 ? "" : "bg-muted/20"}`}
                             onClick={() => {
                               linkSitePOMutation.mutate(po.id);
                               setPoSearchOpen(false);
@@ -1966,10 +1972,15 @@ export default function BillDetail() {
                             }}
                             data-testid={`row-po-${po.id}`}
                           >
-                            <td className="px-3 py-2 font-mono font-semibold">{po.poNumber}</td>
-                            <td className="px-3 py-2 text-muted-foreground max-w-[180px] truncate">{po.description || "—"}</td>
+                            <td className="px-3 py-2 font-mono font-medium">{po.poNumber}</td>
+                            <td className="px-3 py-2 text-muted-foreground max-w-[180px] truncate">{description}</td>
                             <td className="px-3 py-2 truncate max-w-[140px]">{supplierName}</td>
-                            <td className="px-3 py-2 text-right tabular-nums">{formatCurrency(po.total || 0)}</td>
+                            <td className="px-3 py-2 text-right tabular-nums">
+                              {formatCurrency((po.total || 0) / 100)}
+                              {matched && (
+                                <Badge variant="secondary" className="ml-2 align-middle">Match</Badge>
+                              )}
+                            </td>
                             <td className="px-3 py-2 capitalize text-muted-foreground">{(po.status || "").replace(/_/g, " ")}</td>
                           </tr>
                         );
@@ -2270,67 +2281,62 @@ export default function BillDetail() {
                     )}
                   />
 
-                  <FormField
-                    control={form.control}
-                    name="sendToXero"
-                    render={({ field }) => (
-                      <FormItem className="flex items-center gap-2 space-y-0 self-end pb-1">
-                        <FormControl>
-                          <Checkbox
-                            checked={field.value}
-                            onCheckedChange={field.onChange}
-                            data-testid="checkbox-send-to-xero"
-                          />
-                        </FormControl>
-                        <FormLabel className="!mt-0 text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">Sync with Xero</FormLabel>
-                      </FormItem>
-                    )}
-                  />
-
                   {/* ── Purchase Order field ──────────────────────────────── */}
-                  {isEditMode && (
-                    <div className="space-y-1">
-                      <label className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">Purchase Order</label>
-                      {matchedSitePOId && matchedSitePO ? (
-                        <div className="flex items-center gap-1.5 h-9 px-3 rounded-md border border-border bg-muted/30 text-sm">
-                          <Link2 className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+                  {isEditMode && (() => {
+                    const hasUnlinkedMatch = !matchedSitePOId && pickablePOs.some(
+                      (po: any) => total > 0 && Math.abs((po.total || 0) / 100 - total) < 0.01
+                    );
+                    return (
+                      <div className="space-y-1">
+                        <label className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">Purchase Order</label>
+                        {matchedSitePOId && matchedSitePO ? (
+                          <div className="flex items-center gap-1.5 h-9 px-3 rounded-md border border-border bg-muted/30 text-sm">
+                            <Link2 className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+                            <button
+                              type="button"
+                              onClick={() => setLocation(`/purchase-orders/${matchedSitePO.id}`)}
+                              className="font-mono font-medium hover:underline truncate flex-1 text-left"
+                              data-testid="link-matched-po"
+                            >
+                              {matchedSitePO.poNumber}
+                            </button>
+                            {matchedSitePO.description && (
+                              <span className="text-muted-foreground truncate text-xs max-w-[100px]">{matchedSitePO.description}</span>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => unlinkSitePOMutation.mutate()}
+                              disabled={unlinkSitePOMutation.isPending}
+                              className="flex-shrink-0 text-muted-foreground hover:text-foreground ml-auto"
+                              data-testid="button-unlink-po"
+                              title="Unlink PO"
+                            >
+                              {unlinkSitePOMutation.isPending
+                                ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                : <X className="h-3.5 w-3.5" />}
+                            </button>
+                          </div>
+                        ) : (
                           <button
                             type="button"
-                            onClick={() => setLocation(`/purchase-orders/${matchedSitePO.id}`)}
-                            className="font-mono font-medium hover:underline truncate flex-1 text-left"
-                            data-testid="link-matched-po"
+                            onClick={() => setPoSearchOpen(true)}
+                            className={
+                              hasUnlinkedMatch
+                                ? "flex items-center gap-2 w-full h-9 px-3 rounded-md border border-primary bg-primary/10 text-sm text-primary hover-elevate text-left"
+                                : "flex items-center gap-2 w-full h-9 px-3 rounded-md border border-border bg-muted/30 text-sm text-muted-foreground hover-elevate text-left"
+                            }
+                            data-testid="button-link-po"
                           >
-                            {matchedSitePO.poNumber}
+                            <Link2 className="h-3.5 w-3.5 flex-shrink-0" />
+                            <span className="truncate">Link a PO…</span>
+                            {hasUnlinkedMatch && (
+                              <Badge variant="secondary" className="ml-auto flex-shrink-0">Match</Badge>
+                            )}
                           </button>
-                          {matchedSitePO.description && (
-                            <span className="text-muted-foreground truncate text-xs max-w-[100px]">{matchedSitePO.description}</span>
-                          )}
-                          <button
-                            type="button"
-                            onClick={() => unlinkSitePOMutation.mutate()}
-                            disabled={unlinkSitePOMutation.isPending}
-                            className="flex-shrink-0 text-muted-foreground hover:text-foreground ml-auto"
-                            data-testid="button-unlink-po"
-                            title="Unlink PO"
-                          >
-                            {unlinkSitePOMutation.isPending
-                              ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                              : <X className="h-3.5 w-3.5" />}
-                          </button>
-                        </div>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => setPoSearchOpen(true)}
-                          className="flex items-center gap-2 w-full h-9 px-3 rounded-md border border-border bg-muted/30 text-sm text-muted-foreground hover-elevate text-left"
-                          data-testid="button-link-po"
-                        >
-                          <Link2 className="h-3.5 w-3.5 flex-shrink-0" />
-                          <span>Link a PO…</span>
-                        </button>
-                      )}
-                    </div>
-                  )}
+                        )}
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 {form.watch("sendToXero") && (
@@ -2366,20 +2372,20 @@ export default function BillDetail() {
                   />
                   <FormField
                     control={form.control}
-                    name="reminders"
+                    name="sendToXero"
                     render={({ field }) => (
                       <FormItem className="space-y-1">
-                        <FormLabel className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">Reminders</FormLabel>
+                        <FormLabel className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">Xero</FormLabel>
                         <FormControl>
-                          <Textarea
-                            {...field}
-                            placeholder="Add reminders..."
-                            rows={2}
-                            className="bg-muted/30 border border-border text-sm resize-none"
-                            data-testid="textarea-reminders"
-                          />
+                          <div className="flex items-center gap-2 h-9 px-3 rounded-md border border-border bg-muted/30">
+                            <Checkbox
+                              checked={field.value}
+                              onCheckedChange={field.onChange}
+                              data-testid="checkbox-send-to-xero"
+                            />
+                            <span className="text-sm text-muted-foreground">Sync with Xero</span>
+                          </div>
                         </FormControl>
-                        <FormMessage />
                       </FormItem>
                     )}
                   />
