@@ -1923,8 +1923,11 @@ export default function BillDetail() {
                 const q = poSearchText.toLowerCase();
                 const billTotal = total;
                 const isAmountMatch = (po: any) => Math.abs((po.total || 0) / 100 - billTotal) < 0.01 && billTotal > 0;
+                // Only restrict by project when the bill has a specific (non-business) project selected.
+                const isBusinessProjectSelected = !currentProjectId || currentProjectId === businessProject?.id;
                 const filtered = pickablePOs
                   .filter((po: any) => {
+                    if (!isBusinessProjectSelected && po.projectId !== currentProjectId) return false;
                     if (!q) return true;
                     const supplierName = (suppliers.find((s: any) => s.id === po.supplierId) as any)?.name ?? po.supplierName ?? "";
                     return (
