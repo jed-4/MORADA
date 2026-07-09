@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, Fragment } from "react";
 import { createPortal } from "react-dom";
 import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -1066,23 +1066,33 @@ export function TimesheetDialog({
                   {isSplit && (
                     <Card className="mt-0">
                       <CardContent className="p-3 space-y-2">
-                        {costCodeSplits.map((split) => (
-                          <div
-                            key={split.id}
-                            className={canViewTimesheetRates ? "grid gap-2 grid-cols-[2fr_1fr_1fr_auto] items-end" : "grid gap-2 grid-cols-[2fr_1fr_auto] items-end"}
-                          >
-                            <div className="space-y-1 min-w-0">
-                              <Label className="text-[10px] text-muted-foreground">Cost Code</Label>
-                              <CostCodeSelect
-                                value={split.costCodeId}
-                                onValueChange={(v) => updateCostCodeSplit(split.id, "costCodeId", v)}
-                                placeholder="Select"
-                                allowNone={false}
-                                data-testid={`select-cost-code-${split.id}`}
-                              />
-                            </div>
-                            <div className="space-y-1">
-                              <Label className="text-[10px] text-muted-foreground">Hours</Label>
+                        {/* Single shared grid so all rows have identical column widths */}
+                        <div className={cn(
+                          "grid gap-x-2 gap-y-2 items-center",
+                          canViewTimesheetRates
+                            ? "grid-cols-[2fr_1fr_1fr_auto]"
+                            : "grid-cols-[2fr_1fr_auto]"
+                        )}>
+                          {/* Column headers */}
+                          <Label className="text-[10px] text-muted-foreground">Cost Code</Label>
+                          <Label className="text-[10px] text-muted-foreground">Hours</Label>
+                          {canViewTimesheetRates && (
+                            <Label className="text-[10px] text-muted-foreground">Rate</Label>
+                          )}
+                          <div />
+
+                          {/* One Fragment per split row — direct grid children */}
+                          {costCodeSplits.map((split) => (
+                            <Fragment key={split.id}>
+                              <div className="min-w-0">
+                                <CostCodeSelect
+                                  value={split.costCodeId}
+                                  onValueChange={(v) => updateCostCodeSplit(split.id, "costCodeId", v)}
+                                  placeholder="Select"
+                                  allowNone={false}
+                                  data-testid={`select-cost-code-${split.id}`}
+                                />
+                              </div>
                               <Input
                                 type="number"
                                 step="0.25"
@@ -1091,31 +1101,28 @@ export function TimesheetDialog({
                                 className={inputClass}
                                 data-testid={`input-split-duration-${split.id}`}
                               />
-                            </div>
-                            {canViewTimesheetRates && (
-                              <div className="space-y-1">
-                                <Label className="text-[10px] text-muted-foreground">Rate</Label>
+                              {canViewTimesheetRates && (
                                 <Input
                                   type="number"
-                                  step="0.01"
+                                  step="1"
                                   value={split.hourlyRate}
                                   onChange={(e) => updateCostCodeSplit(split.id, "hourlyRate", e.target.value)}
                                   className={inputClass}
                                   data-testid={`input-split-rate-${split.id}`}
                                 />
-                              </div>
-                            )}
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => removeCostCodeSplit(split.id)}
-                              data-testid={`button-remove-split-${split.id}`}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        ))}
+                              )}
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => removeCostCodeSplit(split.id)}
+                                data-testid={`button-remove-split-${split.id}`}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </Fragment>
+                          ))}
+                        </div>
                         <div className="flex items-center justify-between gap-2 pt-2 border-t">
                           <Button
                             type="button"
