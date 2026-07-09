@@ -139,7 +139,7 @@ export default function BillsSummaryWidget({ widget, onUpdate, isConfiguring, on
         variant="ghost" 
         size="sm" 
         className="w-full h-7 text-xs justify-between"
-        onClick={() => navigate('/bills')}
+        onClick={() => navigate(`/projects/${currentProject.id}/bills`)}
         data-testid="button-view-all-bills"
       >
         <span>View All Bills</span>

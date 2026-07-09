@@ -394,7 +394,7 @@ export function useProjectMetrics() {
       return new Date(b.dueDate) < now;
     });
 
-    const paidBillsAmount = paidBillsList.reduce((sum, b) => sum + (b.totalIncTax || 0), 0) / 100;
+    const paidBillsAmount = paidBillsList.reduce((sum, b) => sum + (b.total || 0), 0) / 100;
 
     // Actual Costs: Paid Bills + Approved Time Logs (simplified - just bills for now)
     const actualCosts = paidBillsAmount;
