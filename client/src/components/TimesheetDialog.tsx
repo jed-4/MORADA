@@ -277,6 +277,10 @@ export function TimesheetDialog({
       }
     } else if (open && !timesheet) {
       setLastEditedField(null);
+      setIsSplit(false);
+      setShowCostCodeSplit(false);
+      setCostCodeSplits([]);
+      setShowBreakTimes(false);
       form.reset({
         projectId: defaultProjectId || "",
         userId: currentUser?.id || "",
@@ -1008,7 +1012,7 @@ export function TimesheetDialog({
 
                   {/* Single cost-code + rate — hidden in split mode */}
                   {!isSplit && (
-                    <div className={canViewTimesheetRates ? "grid grid-cols-[2fr_1fr] gap-3" : ""}>
+                    <div className={canViewTimesheetRates ? "grid grid-cols-[2fr_1fr] gap-3 items-end" : ""}>
                       <FormField
                         control={form.control}
                         name="costCodeId"
@@ -1037,7 +1041,8 @@ export function TimesheetDialog({
                               <FormControl>
                                 <Input
                                   type="number"
-                                  step="0.01"
+                                  step="1"
+                                  min="0"
                                   {...field}
                                   className={inputClass}
                                   data-testid="input-hourly-rate"
