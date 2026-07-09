@@ -116,7 +116,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { cn } from "@/lib/utils";
 
-function SortableAttachmentThumb({ att, onDelete }: { att: OptionAttachment; onDelete: (id: string) => void }) {
+function SortableAttachmentThumb({ att, onDelete, selectionId }: { att: OptionAttachment; onDelete: (id: string) => void; selectionId: string }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: att.id });
   const { toast } = useToast();
   const [focalOpen, setFocalOpen] = useState(false);
@@ -133,7 +133,7 @@ function SortableAttachmentThumb({ att, onDelete }: { att: OptionAttachment; onD
     setIsSavingFocal(true);
     try {
       await saveFocalPoint("option_attachments", att.id, x, y);
-      queryClient.invalidateQueries({ queryKey: ["selections"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/selections", selectionId] });
       toast({ title: "Focal point saved" });
       setFocalOpen(false);
     } catch {
@@ -203,10 +203,12 @@ function SortableImageGrid({
   attachments,
   onReorder,
   onDelete,
+  selectionId,
 }: {
   attachments: OptionAttachment[];
   onReorder: (newOrder: OptionAttachment[]) => void;
   onDelete: (id: string) => void;
+  selectionId: string;
 }) {
   const [items, setItems] = useState<OptionAttachment[]>(attachments);
   useEffect(() => { setItems(attachments); }, [attachments]);
@@ -226,7 +228,7 @@ function SortableImageGrid({
       <SortableContext items={items.map((i) => i.id)} strategy={horizontalListSortingStrategy}>
         <div className="grid grid-cols-4 gap-2">
           {items.map((att) => (
-            <SortableAttachmentThumb key={att.id} att={att} onDelete={onDelete} />
+            <SortableAttachmentThumb key={att.id} att={att} onDelete={onDelete} selectionId={selectionId} />
           ))}
         </div>
       </SortableContext>
@@ -439,10 +441,11 @@ export default function SelectionDetail() {
         description: "The selection option has been updated successfully.",
       });
     },
-    onError: () => {
+    onError: (err: any) => {
+      const msg = err?.message?.replace(/^\d+:\s*/, "") ?? "Failed to update option. Please try again.";
       toast({
         title: "Error",
-        description: "Failed to update option. Please try again.",
+        description: msg,
         variant: "destructive",
       });
     },
@@ -2599,6 +2602,7 @@ export default function SelectionDetail() {
                     return imageAtts.length > 0 ? (
                       <SortableImageGrid
                         attachments={imageAtts}
+                        selectionId={id ?? ""}
                         onReorder={(newOrder) => {
                           newOrder.forEach((att, idx) => {
                             apiRequest(`/api/selection-option-attachments/${att.id}`, "PATCH", { sortOrder: idx });
