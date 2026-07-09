@@ -9,8 +9,15 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { Input } from "@/components/ui/input";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import type { Project } from "@shared/schema";
+
+const PHASE_ORDER: Record<string, number> = {
+  construction: 0,
+  pre_construction: 1,
+  lead: 2,
+  post_construction: 3,
+  archive: 4,
+};
 
 interface ProjectSelectProps {
   value?: string;
@@ -54,7 +61,16 @@ export function ProjectSelect({
     if (allowNone) {
       opts.push({ value: "none", label: "Business (No Project)" });
     }
-    projects.forEach((p) =>
+    // Sort by phase order (construction first), then by job number within each phase
+    const sorted = [...projects].sort((a, b) => {
+      const phaseA = PHASE_ORDER[a.currentSystemPhase || "lead"] ?? 99;
+      const phaseB = PHASE_ORDER[b.currentSystemPhase || "lead"] ?? 99;
+      if (phaseA !== phaseB) return phaseA - phaseB;
+      const jnA = a.jobNumber || "";
+      const jnB = b.jobNumber || "";
+      return jnA.localeCompare(jnB, undefined, { numeric: true });
+    });
+    sorted.forEach((p) =>
       opts.push({ value: p.id, label: p.name, address: p.address || undefined, color: p.color })
     );
     return opts;
@@ -120,38 +136,36 @@ export function ProjectSelect({
             />
           </div>
         )}
-        <ScrollArea className="max-h-64">
-          <div className="p-1">
-            {filtered.length === 0 && (
-              <p className="text-sm text-muted-foreground text-center py-4">No projects found.</p>
-            )}
-            {filtered.map((option) => {
-              const isSelected = (value || (allowNone ? "none" : undefined)) === option.value;
-              return (
-                <button
-                  key={option.value}
-                  type="button"
-                  onClick={() => handleSelect(option.value)}
-                  className={cn(
-                    "w-full flex items-center gap-2 px-2 py-1.5 text-sm rounded-sm text-left hover-elevate cursor-pointer",
-                    isSelected && "bg-accent text-accent-foreground"
+        <div className="max-h-64 overflow-y-auto p-1">
+          {filtered.length === 0 && (
+            <p className="text-sm text-muted-foreground text-center py-4">No projects found.</p>
+          )}
+          {filtered.map((option) => {
+            const isSelected = (value || (allowNone ? "none" : undefined)) === option.value;
+            return (
+              <button
+                key={option.value}
+                type="button"
+                onClick={() => handleSelect(option.value)}
+                className={cn(
+                  "w-full flex items-center gap-2 px-2 py-1.5 text-sm rounded-sm text-left hover-elevate cursor-pointer",
+                  isSelected && "bg-accent text-accent-foreground"
+                )}
+              >
+                <Check className={cn("h-4 w-4 flex-shrink-0", isSelected ? "opacity-100" : "opacity-0")} />
+                {option.color && showColor && option.value !== "none" && (
+                  <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: option.color }} />
+                )}
+                <div className="flex flex-col min-w-0">
+                  <span className="truncate">{option.label}</span>
+                  {option.address && (
+                    <span className="text-xs text-muted-foreground truncate">{option.address}</span>
                   )}
-                >
-                  <Check className={cn("h-4 w-4 flex-shrink-0", isSelected ? "opacity-100" : "opacity-0")} />
-                  {option.color && showColor && option.value !== "none" && (
-                    <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: option.color }} />
-                  )}
-                  <div className="flex flex-col min-w-0">
-                    <span className="truncate">{option.label}</span>
-                    {option.address && (
-                      <span className="text-xs text-muted-foreground truncate">{option.address}</span>
-                    )}
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        </ScrollArea>
+                </div>
+              </button>
+            );
+          })}
+        </div>
       </PopoverContent>
     </Popover>
   );
