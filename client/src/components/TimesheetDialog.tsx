@@ -410,11 +410,17 @@ export function TimesheetDialog({
           "PATCH",
           timesheetData
         );
-        // Sync splits: delete all existing DB splits then recreate
+        // Sync splits: delete all existing DB splits then recreate.
+        // Ignore 404 on delete — the split may already be gone if the dialog
+        // was holding a stale costCodeSplits reference from a prior save.
         const existingSplits = (timesheet as any).costCodeSplits as any[] | undefined;
         if (existingSplits && existingSplits.length > 0) {
           for (const s of existingSplits) {
-            await apiRequest(`/api/timesheets/cost-codes/${s.id}`, "DELETE");
+            try {
+              await apiRequest(`/api/timesheets/cost-codes/${s.id}`, "DELETE");
+            } catch (e: any) {
+              if (!String(e?.message || "").includes("404")) throw e;
+            }
           }
         }
         if (isSplit && costCodeSplits.length > 0) {
