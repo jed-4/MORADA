@@ -50,7 +50,9 @@ import {
   BookTemplate,
   Save,
   Loader2,
+  Crosshair,
 } from "lucide-react";
+import { FocalPointPicker, saveFocalPoint } from "@/components/FocalPointPicker";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 
@@ -313,6 +315,8 @@ interface EnoteAttachment {
   fileSize: number;
   mimeType: string;
   uploadedAt: string;
+  thumbnailX?: number;
+  thumbnailY?: number;
 }
 
 // ─── AttachmentPanel ──────────────────────────────────────────────────────────
@@ -341,6 +345,8 @@ function AttachmentPanel({
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
+  const [focalPickerId, setFocalPickerId] = useState<string | null>(null);
+  const [isSavingFocal, setIsSavingFocal] = useState(false);
 
   const { data: attachments = [], isLoading, refetch } = useQuery<EnoteAttachment[]>({
     queryKey: ["/api/estimate-enotes", row.id, "attachments"],
@@ -357,6 +363,21 @@ function AttachmentPanel({
     },
     onError: () => toast({ title: "Delete failed", variant: "destructive" }),
   });
+
+  const handleSaveFocal = async (x: number, y: number) => {
+    if (!focalPickerId) return;
+    setIsSavingFocal(true);
+    try {
+      await saveFocalPoint("enote_attachments", focalPickerId, x, y);
+      await refetch();
+      toast({ title: "Focal point saved" });
+      setFocalPickerId(null);
+    } catch {
+      toast({ title: "Failed to save focal point", variant: "destructive" });
+    } finally {
+      setIsSavingFocal(false);
+    }
+  };
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -418,7 +439,12 @@ function AttachmentPanel({
                       onClick={() => setLightboxUrl(att.fileUrl)}
                       title="Preview"
                     >
-                      <img src={att.fileUrl} alt={att.fileName} className="w-full h-full object-cover" />
+                      <img
+                        src={att.fileUrl}
+                        alt={att.fileName}
+                        className="w-full h-full object-cover"
+                        style={{ objectPosition: `${att.thumbnailX ?? 50}% ${att.thumbnailY ?? 50}%` }}
+                      />
                     </button>
                   ) : (
                     <div className="w-10 h-10 flex-shrink-0 rounded border border-border/30 bg-muted/50 flex items-center justify-center">
@@ -434,6 +460,15 @@ function AttachmentPanel({
 
                   {/* Actions */}
                   <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    {isImage(att.mimeType) && (
+                      <button
+                        className="text-muted-foreground hover:text-foreground transition-colors"
+                        onClick={() => setFocalPickerId(att.id)}
+                        title="Set thumbnail focal point"
+                      >
+                        <Crosshair className="w-3.5 h-3.5" />
+                      </button>
+                    )}
                     <a
                       href={att.fileUrl}
                       download={att.fileName}
@@ -456,6 +491,23 @@ function AttachmentPanel({
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Focal point picker */}
+      {focalPickerId !== null && (() => {
+        const att = attachments.find(a => a.id === focalPickerId);
+        if (!att) return null;
+        return (
+          <FocalPointPicker
+            open={true}
+            onOpenChange={v => { if (!v) setFocalPickerId(null); }}
+            imageUrl={att.fileUrl}
+            initialX={att.thumbnailX ?? 50}
+            initialY={att.thumbnailY ?? 50}
+            onSave={handleSaveFocal}
+            isSaving={isSavingFocal}
+          />
+        );
+      })()}
 
       {/* Lightbox */}
       {lightboxUrl !== null && (

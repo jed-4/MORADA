@@ -1,41 +1,45 @@
 import { useState, useRef, useCallback, useEffect } from "react";
-import { useMutation } from "@tanstack/react-query";
-import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { useToast } from "@/hooks/use-toast";
 import { Crosshair } from "lucide-react";
 
+/**
+ * FocalPointPicker — pure UI component.
+ *
+ * Props:
+ *  - imageUrl      URL of the image to set the focal point on
+ *  - initialX/Y    Starting position in 0–100 percent (default 50)
+ *  - onSave(x, y)  Called with the chosen position; caller handles persistence
+ *  - isSaving      When true, the Save button shows a loading state
+ *
+ * The caller owns the API mutation and query invalidation.
+ * This keeps the component reusable across all attachment table types.
+ */
 interface FocalPointPickerProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   imageUrl: string;
-  attachmentTable: string;
-  attachmentId: string;
   initialX?: number;
   initialY?: number;
-  invalidateKeys?: string[][];
+  onSave: (x: number, y: number) => void;
+  isSaving?: boolean;
 }
 
 export function FocalPointPicker({
   open,
   onOpenChange,
   imageUrl,
-  attachmentTable,
-  attachmentId,
   initialX = 50,
   initialY = 50,
-  invalidateKeys = [],
+  onSave,
+  isSaving = false,
 }: FocalPointPickerProps) {
-  const { toast } = useToast();
   const [pos, setPos] = useState({ x: initialX, y: initialY });
   const containerRef = useRef<HTMLDivElement>(null);
   const isDragging = useRef(false);
 
   useEffect(() => {
-    if (open) {
-      setPos({ x: initialX, y: initialY });
-    }
+    if (open) setPos({ x: initialX, y: initialY });
   }, [open, initialX, initialY]);
 
   const getPositionFromEvent = useCallback((e: MouseEvent | TouchEvent) => {
@@ -51,8 +55,7 @@ export function FocalPointPicker({
   const handlePointerDown = useCallback((e: React.MouseEvent | React.TouchEvent) => {
     e.preventDefault();
     isDragging.current = true;
-    const nativeEvent = "touches" in e ? e.nativeEvent : e.nativeEvent;
-    const p = getPositionFromEvent(nativeEvent);
+    const p = getPositionFromEvent(e.nativeEvent);
     if (p) setPos(p);
   }, [getPositionFromEvent]);
 
@@ -74,25 +77,6 @@ export function FocalPointPicker({
       window.removeEventListener("touchend", handleUp);
     };
   }, [getPositionFromEvent]);
-
-  const saveMutation = useMutation({
-    mutationFn: () =>
-      apiRequest(
-        `/api/attachments/${attachmentTable}/${attachmentId}/focal-point`,
-        "PATCH",
-        { thumbnailX: pos.x, thumbnailY: pos.y },
-      ),
-    onSuccess: () => {
-      for (const key of invalidateKeys) {
-        queryClient.invalidateQueries({ queryKey: key });
-      }
-      toast({ title: "Focal point saved" });
-      onOpenChange(false);
-    },
-    onError: () => {
-      toast({ title: "Failed to save focal point", variant: "destructive" });
-    },
-  });
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -122,11 +106,7 @@ export function FocalPointPicker({
               className="w-full h-full object-contain pointer-events-none"
               draggable={false}
             />
-            {/* Crosshair lines */}
-            <div
-              className="absolute inset-0 pointer-events-none"
-              style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0 }}
-            >
+            <div className="absolute inset-0 pointer-events-none">
               {/* Horizontal line */}
               <div
                 className="absolute w-full"
@@ -149,7 +129,7 @@ export function FocalPointPicker({
                   transform: "translateX(-50%)",
                 }}
               />
-              {/* Crosshair dot */}
+              {/* Dot */}
               <div
                 className="absolute rounded-full border-2 border-white"
                 style={{
@@ -165,7 +145,7 @@ export function FocalPointPicker({
             </div>
           </div>
 
-          {/* Live square-crop preview */}
+          {/* Live preview */}
           <div className="flex flex-col gap-2 items-center">
             <p className="text-xs text-muted-foreground font-medium">Preview</p>
             <div className="w-32 h-32 rounded-md overflow-hidden border border-border bg-muted shrink-0">
@@ -193,11 +173,11 @@ export function FocalPointPicker({
         </div>
 
         <DialogFooter className="px-5 py-3 border-t border-border gap-2">
-          <Button variant="outline" size="sm" onClick={() => onOpenChange(false)} disabled={saveMutation.isPending}>
+          <Button variant="outline" size="sm" onClick={() => onOpenChange(false)} disabled={isSaving}>
             Cancel
           </Button>
-          <Button size="sm" onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending}>
-            {saveMutation.isPending ? "Saving…" : "Save focal point"}
+          <Button size="sm" onClick={() => onSave(pos.x, pos.y)} disabled={isSaving}>
+            {isSaving ? "Saving…" : "Save focal point"}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -205,46 +185,20 @@ export function FocalPointPicker({
   );
 }
 
-interface FocalPointTriggerProps {
-  children: React.ReactNode;
-  imageUrl: string;
-  attachmentTable: string;
-  attachmentId: string;
-  thumbnailX?: number;
-  thumbnailY?: number;
-  invalidateKeys?: string[][];
-  className?: string;
-}
-
-export function FocalPointTrigger({
-  children,
-  imageUrl,
-  attachmentTable,
-  attachmentId,
-  thumbnailX = 50,
-  thumbnailY = 50,
-  invalidateKeys = [],
-  className,
-}: FocalPointTriggerProps) {
-  const [open, setOpen] = useState(false);
-
-  return (
-    <>
-      <div className={className} onClick={() => setOpen(true)}>
-        {children}
-      </div>
-      {open && (
-        <FocalPointPicker
-          open={open}
-          onOpenChange={setOpen}
-          imageUrl={imageUrl}
-          attachmentTable={attachmentTable}
-          attachmentId={attachmentId}
-          initialX={thumbnailX}
-          initialY={thumbnailY}
-          invalidateKeys={invalidateKeys}
-        />
-      )}
-    </>
+/**
+ * saveFocalPoint — shared helper for any caller to persist a focal point.
+ * Callers import this alongside FocalPointPicker and handle query invalidation.
+ */
+export async function saveFocalPoint(
+  table: string,
+  id: string,
+  x: number,
+  y: number,
+): Promise<void> {
+  const { apiRequest } = await import("@/lib/queryClient");
+  await apiRequest(
+    `/api/attachments/${table}/${id}/focal-point`,
+    "PATCH",
+    { thumbnailX: x, thumbnailY: y },
   );
 }

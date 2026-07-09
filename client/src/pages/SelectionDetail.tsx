@@ -108,7 +108,7 @@ import {
   Crosshair,
 } from "lucide-react";
 import { format } from "date-fns";
-import { FocalPointPicker } from "@/components/FocalPointPicker";
+import { FocalPointPicker, saveFocalPoint } from "@/components/FocalPointPicker";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Separator } from "@/components/ui/separator";
@@ -118,7 +118,9 @@ import { cn } from "@/lib/utils";
 
 function SortableAttachmentThumb({ att, onDelete }: { att: OptionAttachment; onDelete: (id: string) => void }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: att.id });
+  const { toast } = useToast();
   const [focalOpen, setFocalOpen] = useState(false);
+  const [isSavingFocal, setIsSavingFocal] = useState(false);
   const isImage = att.fileType?.toLowerCase() === "image" || /\.(jpe?g|png|gif|webp|avif)$/i.test(att.filePath || "");
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -126,6 +128,21 @@ function SortableAttachmentThumb({ att, onDelete }: { att: OptionAttachment; onD
     opacity: isDragging ? 0.5 : 1,
     zIndex: isDragging ? 10 : undefined,
   };
+
+  const handleSaveFocal = async (x: number, y: number) => {
+    setIsSavingFocal(true);
+    try {
+      await saveFocalPoint("option_attachments", att.id, x, y);
+      queryClient.invalidateQueries({ queryKey: ["selections"] });
+      toast({ title: "Focal point saved" });
+      setFocalOpen(false);
+    } catch {
+      toast({ title: "Failed to save focal point", variant: "destructive" });
+    } finally {
+      setIsSavingFocal(false);
+    }
+  };
+
   return (
     <>
       <div ref={setNodeRef} style={style} className="relative group aspect-square rounded-md overflow-hidden bg-muted cursor-grab active:cursor-grabbing">
@@ -167,16 +184,15 @@ function SortableAttachmentThumb({ att, onDelete }: { att: OptionAttachment; onD
           </button>
         </div>
       </div>
-      {isImage && focalOpen && (
+      {isImage && (
         <FocalPointPicker
           open={focalOpen}
           onOpenChange={setFocalOpen}
           imageUrl={att.filePath}
-          attachmentTable="option_attachments"
-          attachmentId={att.id}
           initialX={att.thumbnailX ?? 50}
           initialY={att.thumbnailY ?? 50}
-          invalidateKeys={[["selections"]]}
+          onSave={handleSaveFocal}
+          isSaving={isSavingFocal}
         />
       )}
     </>
