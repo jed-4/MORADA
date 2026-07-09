@@ -1071,7 +1071,7 @@ export function TimesheetDialog({
                             key={split.id}
                             className={canViewTimesheetRates ? "grid gap-2 grid-cols-[2fr_1fr_1fr_auto] items-end" : "grid gap-2 grid-cols-[2fr_1fr_auto] items-end"}
                           >
-                            <div className="space-y-1">
+                            <div className="space-y-1 min-w-0">
                               <Label className="text-[10px] text-muted-foreground">Cost Code</Label>
                               <CostCodeSelect
                                 value={split.costCodeId}
