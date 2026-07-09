@@ -301,17 +301,31 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
   });
 
   // Status workflow mutations
+  const tsQueryKey = projectId ? ["/api/projects", projectId, "timesheets"] : ["/api/timesheets"];
+
   const bulkActionMutation = useMutation({
     mutationFn: (data: { ids: string[]; action: string; status?: string }) =>
       apiRequest("/api/timesheets/bulk-action", "POST", data),
+    onMutate: async (variables) => {
+      // Optimistically update the cache so the UI responds immediately
+      await queryClient.cancelQueries({ queryKey: tsQueryKey });
+      const previous = queryClient.getQueryData<Timesheet[]>(tsQueryKey);
+      queryClient.setQueryData<Timesheet[]>(tsQueryKey, (old) => {
+        if (!old) return old;
+        const idSet = new Set(variables.ids);
+        if (variables.action === "delete") {
+          return old.filter((ts) => !idSet.has(ts.id));
+        }
+        if (variables.action === "changeStatus" && variables.status) {
+          return old.map((ts) =>
+            idSet.has(ts.id) ? { ...ts, status: variables.status as string } : ts
+          );
+        }
+        return old;
+      });
+      return { previous };
+    },
     onSuccess: (result: { success: number; errors: string[] }, variables) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/timesheets"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/timesheets/subcontractor/awaiting-po"] });
-      if (projectId) {
-        queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "timesheets"] });
-        queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "labour-hours-budget"] });
-      }
-      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
       setSelectedTimesheets([]);
       const actionLabels: Record<string, string> = {
         changeStatus: "updated",
@@ -322,11 +336,25 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
         description: result.errors?.length > 0 ? `${result.errors.length} failed` : undefined,
       });
     },
-    onError: () => {
+    onError: (_err, _variables, context: any) => {
+      // Roll back optimistic update on failure
+      if (context?.previous !== undefined) {
+        queryClient.setQueryData(tsQueryKey, context.previous);
+      }
       toast({
         title: "Bulk action failed",
         variant: "destructive",
       });
+    },
+    onSettled: () => {
+      // Always refetch to sync with server truth
+      queryClient.invalidateQueries({ queryKey: ["/api/timesheets"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/timesheets/subcontractor/awaiting-po"] });
+      if (projectId) {
+        queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "timesheets"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "labour-hours-budget"] });
+      }
+      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
     },
   });
 
