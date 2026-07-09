@@ -34930,20 +34930,20 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
   // ─── Focal Point Picker ───────────────────────────────────────────────────
   // PATCH /api/attachments/:table/:id/focal-point
   // Updates thumbnailX/thumbnailY (0-100 percent) on any supported attachment table.
-  // Uses raw SQL so a single endpoint covers all tables without per-table storage methods.
-  const FOCAL_POINT_TABLES: Record<string, string> = {
-    "option_attachments": "option_attachments",
-    "message_attachments": "message_attachments",
-    "purchase_order_attachments": "purchase_order_attachments",
-    "enote_attachments": "enote_attachments",
-    "task_template_attachments": "task_template_attachments",
-  };
+  // Each table is verified against the authenticated user's companyId before updating
+  // (returns 404 cross-tenant, per tenant-isolation convention).
+  const FOCAL_POINT_TABLES = new Set([
+    "option_attachments",
+    "message_attachments",
+    "purchase_order_attachments",
+    "enote_attachments",
+    "task_template_attachments",
+  ]);
 
   app.patch("/api/attachments/:table/:id/focal-point", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const { table, id } = req.params;
-      const tableName = FOCAL_POINT_TABLES[table];
-      if (!tableName) {
+      if (!FOCAL_POINT_TABLES.has(table)) {
         return res.status(400).json({ error: "Unsupported attachment table" });
       }
       const x = Math.round(Number(req.body.thumbnailX));
@@ -34951,8 +34951,59 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
       if (!Number.isFinite(x) || !Number.isFinite(y) || x < 0 || x > 100 || y < 0 || y > 100) {
         return res.status(400).json({ error: "thumbnailX and thumbnailY must be integers 0–100" });
       }
+      const user = req.user as Express.User & { companyId?: string };
+      const companyId = user?.companyId;
+      if (!companyId) return res.status(403).json({ error: "Forbidden" });
+
       const { sql: sqlHelper } = await import("drizzle-orm");
-      await db.execute(sqlHelper`UPDATE ${sqlHelper.raw(tableName)} SET thumbnail_x = ${x}, thumbnail_y = ${y} WHERE id = ${id}`);
+
+      // Verify ownership — joins through to company_id; returns 0 rows cross-tenant.
+      let ownershipQuery: ReturnType<typeof sqlHelper>;
+      switch (table) {
+        case "option_attachments":
+          ownershipQuery = sqlHelper`
+            SELECT oa.id FROM option_attachments oa
+            JOIN selection_options so ON so.id = oa.option_id
+            JOIN selections s ON s.id = so.selection_id
+            JOIN projects p ON p.id = s.project_id
+            WHERE oa.id = ${id} AND p.company_id = ${companyId}`;
+          break;
+        case "message_attachments":
+          ownershipQuery = sqlHelper`
+            SELECT ma.id FROM message_attachments ma
+            JOIN messages m ON m.id = ma.message_id
+            JOIN channels c ON c.id = m.channel_id
+            WHERE ma.id = ${id} AND c.company_id = ${companyId}`;
+          break;
+        case "purchase_order_attachments":
+          ownershipQuery = sqlHelper`
+            SELECT poa.id FROM purchase_order_attachments poa
+            JOIN purchase_orders po ON po.id = poa.purchase_order_id
+            WHERE poa.id = ${id} AND po.company_id = ${companyId}`;
+          break;
+        case "enote_attachments":
+          ownershipQuery = sqlHelper`
+            SELECT ea.id FROM enote_attachments ea
+            JOIN estimate_enotes ee ON ee.id = ea.enote_id
+            JOIN estimates e ON e.id = ee.estimate_id
+            JOIN projects p ON p.id = e.project_id
+            WHERE ea.id = ${id} AND p.company_id = ${companyId}`;
+          break;
+        case "task_template_attachments":
+          ownershipQuery = sqlHelper`
+            SELECT tta.id FROM task_template_attachments tta
+            WHERE tta.id = ${id} AND tta.company_id = ${companyId}`;
+          break;
+        default:
+          return res.status(400).json({ error: "Unsupported attachment table" });
+      }
+
+      const owned = await db.execute(ownershipQuery);
+      if (!owned.rows || owned.rows.length === 0) {
+        return res.status(404).json({ error: "Attachment not found" });
+      }
+
+      await db.execute(sqlHelper`UPDATE ${sqlHelper.raw(table)} SET thumbnail_x = ${x}, thumbnail_y = ${y} WHERE id = ${id}`);
       res.json({ id, thumbnailX: x, thumbnailY: y });
     } catch (err: any) {
       console.error("[PATCH /api/attachments/:table/:id/focal-point] error:", err);
