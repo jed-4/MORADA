@@ -3,7 +3,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
-import { FileText, Plus, Edit3, X } from "lucide-react";
+import { FileText, Plus, Edit3, X, ChevronDown, ChevronRight } from "lucide-react";
 import { useState, useEffect } from "react";
 import { WidgetProps } from "@/types/widgets";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -22,6 +22,16 @@ export default function NotesWidget({ widget, onUpdate, isConfiguring, onCloseCo
     setConfigMaxNotes(widget.config?.maxNotes || 3);
   }, [widget.title, widget.config]);
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
+  const [expandedNoteIds, setExpandedNoteIds] = useState<Set<string>>(new Set());
+
+  const toggleNoteExpanded = (id: string) => {
+    setExpandedNoteIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
   const [newNote, setNewNote] = useState("");
   const [newNoteVisibility, setNewNoteVisibility] = useState<"team_only" | "everyone" | "project_team" | "private">("team_only");
   const [editContent, setEditContent] = useState("");
@@ -356,13 +366,31 @@ export default function NotesWidget({ widget, onUpdate, isConfiguring, onCloseCo
                   </div>
                 </div>
               ) : (
-                <div 
-                  className="flex items-start gap-2"
-                  onClick={() => handleEditNote(note)}
-                >
+                <div className="flex items-start gap-2">
                   <FileText className="h-4 w-4 text-muted-foreground mt-0.5 flex-shrink-0" />
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm">{note.content}</p>
+                    <div className="flex items-center gap-1">
+                      <p
+                        className="text-sm font-medium flex-1 min-w-0 truncate cursor-pointer"
+                        onClick={() => handleEditNote(note)}
+                      >
+                        {note.title?.trim() || note.content?.slice(0, 60) || "Untitled"}
+                      </p>
+                      {note.content?.trim() && (
+                        <button
+                          onClick={() => toggleNoteExpanded(note.id)}
+                          className="flex-shrink-0 text-muted-foreground hover:text-foreground"
+                          aria-label={expandedNoteIds.has(note.id) ? "Collapse note" : "Expand note"}
+                        >
+                          {expandedNoteIds.has(note.id)
+                            ? <ChevronDown className="h-3.5 w-3.5" />
+                            : <ChevronRight className="h-3.5 w-3.5" />}
+                        </button>
+                      )}
+                    </div>
+                    {expandedNoteIds.has(note.id) && note.content?.trim() && (
+                      <p className="text-sm text-muted-foreground mt-1 whitespace-pre-wrap">{note.content}</p>
+                    )}
                     <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
                       <span>{note.ownerName || note.author}</span>
                       <span>•</span>

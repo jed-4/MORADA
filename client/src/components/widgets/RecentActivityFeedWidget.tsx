@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
 import {
   FileText,
   DollarSign,
@@ -60,9 +61,21 @@ function toneFor(type: string): string {
   }
 }
 
+const PREVIEW_LENGTH = 80;
+
 export default function RecentActivityFeedWidget({ widget }: WidgetProps) {
   const { currentProject } = useProject();
   const limit = (widget.config?.maxItems as number) || 8;
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+
+  const toggleExpanded = (id: string) => {
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
 
   const { data, isLoading, isError, refetch } = useQuery<Activity[]>({
     queryKey: ["/api/activities", currentProject?.id, limit],
@@ -91,6 +104,12 @@ export default function RecentActivityFeedWidget({ widget }: WidgetProps) {
     <div className="flex-1 overflow-auto px-4 py-3 space-y-3" data-testid="widget-recent-activity">
       {activities.map((a) => {
         const Icon = iconFor(a.activityType);
+        const fullText = stripActivityActor(a.description, a.userName);
+        const needsTruncation = fullText.length > PREVIEW_LENGTH;
+        const isExpanded = expandedIds.has(a.id);
+        const displayText = needsTruncation && !isExpanded
+          ? fullText.slice(0, PREVIEW_LENGTH).trimEnd() + "…"
+          : fullText;
         return (
           <div key={a.id} className="flex gap-3" data-testid={`activity-${a.id}`}>
             <div
@@ -101,7 +120,15 @@ export default function RecentActivityFeedWidget({ widget }: WidgetProps) {
             <div className="flex-1 min-w-0">
               <p className="text-sm leading-snug">
                 <span className="font-medium">{a.userName || "Someone"}</span>{" "}
-                <span className="text-muted-foreground">{stripActivityActor(a.description, a.userName)}</span>
+                <span className="text-muted-foreground">{displayText}</span>
+                {needsTruncation && (
+                  <button
+                    onClick={() => toggleExpanded(a.id)}
+                    className="ml-1 text-xs text-primary hover:underline whitespace-nowrap"
+                  >
+                    {isExpanded ? "less" : "more"}
+                  </button>
+                )}
               </p>
               {a.entityName && (
                 <p className="text-xs text-muted-foreground truncate">{a.entityName}</p>
