@@ -706,6 +706,16 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
       {
         id: "date",
         accessorFn: (t) => new Date(t.date as unknown as string).getTime(),
+        // Secondary sort by startTime in the same direction as the date sort,
+        // so "oldest at bottom" and "earliest time at bottom" stay consistent.
+        sortingFn: (rowA, rowB, columnId) => {
+          const dateA = rowA.getValue<number>(columnId);
+          const dateB = rowB.getValue<number>(columnId);
+          if (dateA !== dateB) return dateA - dateB;
+          const timeA = rowA.original.startTime || "";
+          const timeB = rowB.original.startTime || "";
+          return timeA.localeCompare(timeB);
+        },
         header: "Date",
         meta: { headerLabel: "Date", defaultWidth: 70 },
         cell: ({ row }) => {
