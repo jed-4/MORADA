@@ -490,10 +490,22 @@ function useGanttRowDrag(
             if (itemsCacheKey) queryClient.invalidateQueries({ queryKey: [itemsCacheKey] });
           };
 
-          // Persist sortOrder for ALL rows so no stale values cause tiebreaks on refresh.
+          // Persist sortOrder for ALL rows in a single bulk request so no stale
+          // values cause tiebreaks on refresh. Sort values are spaced 10 apart
+          // so future single-item inserts rarely need a full renumber.
+          // On first failure we retry once after a short delay; if that also
+          // fails we invalidate so the UI reverts to the last-good DB order.
           const persistSortOrders = () => {
-            newOrder.forEach((id, newIdx) => {
-              apiRequest(`/api/schedule-items/${id}`, "PATCH", { sortOrder: newIdx }).catch(() => {});
+            const items = newOrder.map((id, newIdx) => ({ id, updates: { sortOrder: (newIdx + 1) * 10 } }));
+            const attempt = () => apiRequest(`/api/schedule-items/bulk`, "POST", { items });
+            attempt().catch(() => {
+              // Single retry after 2 s before giving up
+              setTimeout(() => {
+                attempt().catch(() => {
+                  queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
+                  if (itemsCacheKey) queryClient.invalidateQueries({ queryKey: [itemsCacheKey] });
+                });
+              }, 2000);
             });
           };
 
@@ -597,6 +609,17 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
       queryClient.invalidateQueries({ queryKey: [`/api/schedules/${schedule.id}/items`] });
     }
   }, [projectId, schedule?.id]);
+
+  // Tracks how many cascade mutations are still in-flight so onSettled only
+  // triggers a reconciling GET once the full batch (item + all successors) has settled.
+  const pendingMutationCountRef = useRef(0);
+  // Stable ref to schedule id so the mutation callbacks (which don't re-register
+  // when schedule changes) can always resolve the current active cache key.
+  const scheduleIdRef = useRef(schedule?.id);
+  scheduleIdRef.current = schedule?.id;
+  // Stable ref to toast so the drag mouseup handler (captured at mount) can call it.
+  const toastRef = useRef(toast);
+  toastRef.current = toast;
   
   const timelineRef = useRef<HTMLDivElement>(null);
   const leftPanelRef = useRef<HTMLDivElement>(null);
@@ -1109,20 +1132,27 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
     mutationFn: async ({ id, startDate, endDate }: { id: string; startDate: Date; endDate: Date }) => {
       return apiRequest(`/api/schedule-items/${id}`, "PATCH", { startDate, endDate });
     },
-    // A single resize/drag fires a whole cascade of saves at once (the item, its
-    // successors, and the parent's successors). Cancel any refetch already in
-    // flight so a GET carrying the PRE-edit dates can't resolve after our
-    // optimistic bar update and snap the bar back to its old size.
+    // Cancel only the key that updateCacheOptimistically writes to so a stale
+    // GET for the OTHER key can't overwrite the optimistic state mid-drag.
     onMutate: async () => {
-      if (schedule?.id) await queryClient.cancelQueries({ queryKey: [`/api/schedules/${schedule.id}/items`] });
-      await queryClient.cancelQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
+      const key = scheduleIdRef.current
+        ? `/api/schedules/${scheduleIdRef.current}/items`
+        : `/api/projects/${projectIdRef.current}/schedule-items`;
+      await queryClient.cancelQueries({ queryKey: [key] });
     },
-    // Only refetch once the ENTIRE cascade batch has settled (this is the last
-    // in-flight save), so the reconciling GET reflects every persisted change
-    // instead of racing mid-batch and overwriting still-pending updates.
+    // Only refetch once the ENTIRE cascade batch has settled.  We use a
+    // ref-based counter (incremented before each mutate.mutate() call and
+    // decremented here) rather than the racey isMutating check.  When the
+    // counter reaches 0 we know every mutation in the batch is done.
+    // Crucially we invalidate ONLY the active key (the one updateCacheOptimistically
+    // wrote to) so the reconciling GET never overwrites an unrelated cache entry.
     onSettled: () => {
-      if (queryClient.isMutating({ mutationKey: ['updateScheduleItem'] }) <= 1) {
-        invalidateScheduleItems();
+      pendingMutationCountRef.current = Math.max(0, pendingMutationCountRef.current - 1);
+      if (pendingMutationCountRef.current === 0) {
+        const activeKey = scheduleIdRef.current
+          ? `/api/schedules/${scheduleIdRef.current}/items`
+          : `/api/projects/${projectIdRef.current}/schedule-items`;
+        queryClient.invalidateQueries({ queryKey: [activeKey] });
       }
     },
   });
@@ -1657,7 +1687,12 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
       const scrollDelta = (timelineRef.current?.scrollLeft ?? 0) - drag.startScrollLeft;
       const deltaX = (e.clientX - drag.startX) + scrollDelta;
       const deltaDays = Math.round(deltaX / pixelsPerDayRef.current);
-      const cacheKey = schedule?.id ? `/api/schedules/${schedule.id}/items` : `/api/projects/${projectIdRef.current}/schedule-items`;
+      // Derive the cache key from refs so it is always current, not stale from
+      // the mount-time closure (the effect has [] deps so schedule?.id would be
+      // the initial undefined value even after the schedule loads).
+      const cacheKey = scheduleIdRef.current
+        ? `/api/schedules/${scheduleIdRef.current}/items`
+        : `/api/projects/${projectIdRef.current}/schedule-items`;
 
       const updateCacheOptimistically = (itemId: number | string, newStart: Date, newEnd: Date) => {
         const startStr = format(newStart, 'yyyy-MM-dd');
@@ -1717,12 +1752,14 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
 
       // When a child item is dragged and its new end date changes the parent's
       // effective end date, cascade to the parent's dependents (successors).
-      const cascadeParentSuccessors = (childId: number | string, childNewEnd: Date) => {
+      // Returns promises for every mutation it enqueues so the caller can add
+      // them to the batch and await them together.
+      const cascadeParentSuccessors = (childId: number | string, childNewEnd: Date): Promise<any>[] => {
         const child = currentItems.find(i => i.id === childId);
-        if (!child?.parentItemId) return;
+        if (!child?.parentItemId) return [];
         const parentId = child.parentItemId;
         const parent = currentItems.find(i => String(i.id) === String(parentId));
-        if (!parent) return;
+        if (!parent) return [];
 
         const siblings = currentItems.filter(i => String(i.parentItemId) === String(parentId));
 
@@ -1740,7 +1777,7 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
           return d > max ? d : max;
         }, childNewEnd);
 
-        if (newParentEnd.getTime() === oldParentEnd.getTime()) return;
+        if (newParentEnd.getTime() === oldParentEnd.getTime()) return [];
 
         const oldParentStart = siblings.reduce((min, sib) => {
           const d = parseLocalMidnight(sib.startDate as any);
@@ -1761,17 +1798,25 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
           isNonWorking: isNonWorkingDayRef.current,
         });
 
+        const promises: Promise<any>[] = [];
         for (const u of parentCascade) {
           const parsedStart = parseLocalMidnight(u.startDate);
           const parsedEnd = parseLocalMidnight(u.endDate);
           updateCacheOptimistically(u.id, parsedStart, parsedEnd);
-          mutate.mutate({
+          pendingMutationCountRef.current++;
+          promises.push(mutate.mutateAsync({
             id: u.id,
             startDate: u.startDate as any,
             endDate: u.endDate as any,
-          });
+          }));
         }
+        return promises;
       };
+
+      // Collect promises for every bar-date mutation in this drag batch so that
+      // a PATCH failure (network error, 4xx/5xx) is caught by the surrounding
+      // try/catch and can trigger an immediate rollback + user-visible toast.
+      const batchPromises: Promise<any>[] = [];
 
       try {
       if (drag.type === 'move') {
@@ -1801,22 +1846,24 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
             updateCacheOptimistically(u.id, parsedStart, parsedEnd);
           }
 
-          mutate.mutate({
+          pendingMutationCountRef.current++;
+          batchPromises.push(mutate.mutateAsync({
             id: drag.id,
             startDate: format(newStart, 'yyyy-MM-dd') as any,
             endDate: format(newEnd, 'yyyy-MM-dd') as any,
-          });
+          }));
 
           for (const u of cascadeUpdates) {
-            mutate.mutate({
+            pendingMutationCountRef.current++;
+            batchPromises.push(mutate.mutateAsync({
               id: u.id,
               startDate: u.startDate as any,
               endDate: u.endDate as any,
-            });
+            }));
           }
 
           recalcLagForItem(drag.id, newStart, currentItems);
-          cascadeParentSuccessors(drag.id, newEnd);
+          batchPromises.push(...cascadeParentSuccessors(drag.id, newEnd));
         }
       } else if (drag.type === 'resize-left') {
         if (deltaDays !== 0) {
@@ -1825,12 +1872,13 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
           
           if (newStart <= drag.originalEnd) {
             updateCacheOptimistically(drag.id, newStart, drag.originalEnd);
-            
-            mutate.mutate({
+
+            pendingMutationCountRef.current++;
+            batchPromises.push(mutate.mutateAsync({
               id: drag.id,
               startDate: format(newStart, 'yyyy-MM-dd') as any,
               endDate: format(drag.originalEnd, 'yyyy-MM-dd') as any,
-            });
+            }));
 
             recalcLagForItem(drag.id, newStart, currentItems);
 
@@ -1851,13 +1899,22 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
                 newSuccStart = snap(newSuccStart, snapDirSS as 'forward' | 'backward');
                 const newSuccEnd = addWD(newSuccStart, succWorkDuration);
                 updateCacheOptimistically(succ.id, newSuccStart, newSuccEnd);
-                mutate.mutate({
+                pendingMutationCountRef.current++;
+                batchPromises.push(mutate.mutateAsync({
                   id: succ.id,
                   startDate: format(newSuccStart, 'yyyy-MM-dd') as any,
                   endDate: format(newSuccEnd, 'yyyy-MM-dd') as any,
-                });
+                }));
               }
             }
+          } else {
+            // newStart > drag.originalEnd — would create a zero-duration item.
+            // Snap the bar back and let the user know there is a minimum of 1 day.
+            updateCacheOptimistically(drag.id, drag.originalStart, drag.originalEnd);
+            toastRef.current({
+              title: "Minimum 1 day",
+              description: "Tasks must be at least one day long.",
+            });
           }
         }
       } else if (drag.type === 'resize-right') {
@@ -1887,21 +1944,23 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
               updateCacheOptimistically(u.id, parsedStart, parsedEnd);
             }
 
-            mutate.mutate({
+            pendingMutationCountRef.current++;
+            batchPromises.push(mutate.mutateAsync({
               id: drag.id,
               startDate: format(drag.originalStart, 'yyyy-MM-dd') as any,
               endDate: format(newEnd, 'yyyy-MM-dd') as any,
-            });
+            }));
 
             for (const u of cascadeUpdates) {
-              mutate.mutate({
+              pendingMutationCountRef.current++;
+              batchPromises.push(mutate.mutateAsync({
                 id: u.id,
                 startDate: u.startDate as any,
                 endDate: u.endDate as any,
-              });
+              }));
             }
 
-            cascadeParentSuccessors(drag.id, newEnd);
+            batchPromises.push(...cascadeParentSuccessors(drag.id, newEnd));
           }
         }
       } else if (drag.type === 'dependency') {
@@ -1930,8 +1989,30 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
         }
       }
 
+      // Await every bar-date PATCH that was queued in this drag batch.
+      // Promise.allSettled waits for all of them regardless of success/failure.
+      // If any fail we throw so the surrounding catch rolls back + toasts.
+      if (batchPromises.length > 0) {
+        const results = await Promise.allSettled(batchPromises);
+        const anyFailed = results.some(r => r.status === 'rejected');
+        if (anyFailed) {
+          const firstRejection = results.find(r => r.status === 'rejected') as PromiseRejectedResult;
+          throw firstRejection.reason ?? new Error('One or more date mutations failed');
+        }
+      }
+
       } catch (err) {
         console.error('[drag] Error during drag commit, resetting drag state:', err);
+        // Roll back the optimistic update so the bar doesn't silently stay in
+        // the wrong position when the server never received the change.
+        updateCacheOptimistically(drag.id, drag.originalStart, drag.originalEnd);
+        // Reset the pending counter so a stuck count doesn't block future GETs.
+        pendingMutationCountRef.current = 0;
+        toastRef.current({
+          title: "Drag failed",
+          description: "The change couldn't be saved — the bar has been reset.",
+          variant: "destructive",
+        });
       } finally {
         setDragging(null);
         setHoveredAnchor(null);
