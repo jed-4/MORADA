@@ -32,6 +32,17 @@ setEstimateTotalIntegrityReporter(({ estimateId, expectedTotal, actualTotal, dif
   }
 });
 
+// Catch async errors that escape the request context entirely (e.g. AggregateError
+// from connection pool failures on unmatched routes). Without this, Node prints
+// an unhandled rejection warning and Sentry never sees a structured event.
+process.on("unhandledRejection", (reason) => {
+  const err = reason instanceof Error ? reason : new Error(String(reason));
+  console.error("[unhandledRejection]", err);
+  if (sentryEnabled) {
+    Sentry.captureException(err, { extra: { type: "unhandledRejection" } });
+  }
+});
+
 const app = express();
 
 // Capture raw body for Xero webhook HMAC verification before JSON parsing
@@ -225,6 +236,18 @@ app.use((req, res, next) => {
     });
     log("Mobile app preview available at /mobile");
   }
+
+  // Explicit sitemap — bots and crawlers get a clean 200 with a valid empty
+  // sitemap instead of falling through to the SPA catch-all and triggering
+  // an unhandled AggregateError rejection path.
+  app.get("/sitemap.xml", (_req, res) => {
+    res.setHeader("Content-Type", "application/xml; charset=utf-8");
+    res.setHeader("Cache-Control", "public, max-age=86400");
+    res.status(200).send(
+      '<?xml version="1.0" encoding="UTF-8"?>' +
+      '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"></urlset>'
+    );
+  });
 
   // importantly only setup vite in development and after
   // setting up all the other routes so the catch-all route
