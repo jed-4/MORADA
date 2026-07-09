@@ -34927,6 +34927,39 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
     }
   });
 
+  // ─── Focal Point Picker ───────────────────────────────────────────────────
+  // PATCH /api/attachments/:table/:id/focal-point
+  // Updates thumbnailX/thumbnailY (0-100 percent) on any supported attachment table.
+  // Uses raw SQL so a single endpoint covers all tables without per-table storage methods.
+  const FOCAL_POINT_TABLES: Record<string, string> = {
+    "option_attachments": "option_attachments",
+    "message_attachments": "message_attachments",
+    "purchase_order_attachments": "purchase_order_attachments",
+    "enote_attachments": "enote_attachments",
+    "task_template_attachments": "task_template_attachments",
+  };
+
+  app.patch("/api/attachments/:table/:id/focal-point", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const { table, id } = req.params;
+      const tableName = FOCAL_POINT_TABLES[table];
+      if (!tableName) {
+        return res.status(400).json({ error: "Unsupported attachment table" });
+      }
+      const x = Math.round(Number(req.body.thumbnailX));
+      const y = Math.round(Number(req.body.thumbnailY));
+      if (!Number.isFinite(x) || !Number.isFinite(y) || x < 0 || x > 100 || y < 0 || y > 100) {
+        return res.status(400).json({ error: "thumbnailX and thumbnailY must be integers 0–100" });
+      }
+      const { sql: sqlHelper } = await import("drizzle-orm");
+      await db.execute(sqlHelper`UPDATE ${sqlHelper.raw(tableName)} SET thumbnail_x = ${x}, thumbnail_y = ${y} WHERE id = ${id}`);
+      res.json({ id, thumbnailX: x, thumbnailY: y });
+    } catch (err: any) {
+      console.error("[PATCH /api/attachments/:table/:id/focal-point] error:", err);
+      res.status(500).json({ error: "Failed to update focal point" });
+    }
+  });
+
   const httpServer = createServer(app);
 
   // Setup Socket.io for real-time messaging and task updates with session authentication

@@ -105,8 +105,10 @@ import {
   FileText,
   File as FileIcon,
   BookMarked,
+  Crosshair,
 } from "lucide-react";
 import { format } from "date-fns";
+import { FocalPointPicker } from "@/components/FocalPointPicker";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Separator } from "@/components/ui/separator";
@@ -116,6 +118,8 @@ import { cn } from "@/lib/utils";
 
 function SortableAttachmentThumb({ att, onDelete }: { att: OptionAttachment; onDelete: (id: string) => void }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: att.id });
+  const [focalOpen, setFocalOpen] = useState(false);
+  const isImage = att.fileType?.toLowerCase() === "image" || /\.(jpe?g|png|gif|webp|avif)$/i.test(att.filePath || "");
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
@@ -123,29 +127,59 @@ function SortableAttachmentThumb({ att, onDelete }: { att: OptionAttachment; onD
     zIndex: isDragging ? 10 : undefined,
   };
   return (
-    <div ref={setNodeRef} style={style} className="relative group aspect-square rounded-md overflow-hidden bg-muted cursor-grab active:cursor-grabbing">
-      <img src={att.filePath} alt={att.fileName || "attachment"} className="w-full h-full object-cover" />
-      <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
-        <button
-          type="button"
-          {...attributes}
-          {...listeners}
-          className="text-white p-1"
-          aria-label="Drag to reorder"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M9 3h2v2H9V3zm4 0h2v2h-2V3zM9 7h2v2H9V7zm4 0h2v2h-2V7zM9 11h2v2H9v-2zm4 0h2v2h-2v-2zM9 15h2v2H9v-2zm4 0h2v2h-2v-2z"/></svg>
-        </button>
-        <button
-          type="button"
-          className="text-white p-1"
-          onClick={(e) => { e.stopPropagation(); onDelete(att.id); }}
-          aria-label="Delete image"
-        >
-          <Trash2 className="w-4 h-4" />
-        </button>
+    <>
+      <div ref={setNodeRef} style={style} className="relative group aspect-square rounded-md overflow-hidden bg-muted cursor-grab active:cursor-grabbing">
+        <img
+          src={att.filePath}
+          alt={att.fileName || "attachment"}
+          className="w-full h-full object-cover"
+          style={{ objectPosition: `${att.thumbnailX ?? 50}% ${att.thumbnailY ?? 50}%` }}
+        />
+        <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+          <button
+            type="button"
+            {...attributes}
+            {...listeners}
+            className="text-white p-1"
+            aria-label="Drag to reorder"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M9 3h2v2H9V3zm4 0h2v2h-2V3zM9 7h2v2H9V7zm4 0h2v2h-2V7zM9 11h2v2H9v-2zm4 0h2v2h-2v-2zM9 15h2v2H9v-2zm4 0h2v2h-2v-2z"/></svg>
+          </button>
+          {isImage && (
+            <button
+              type="button"
+              className="text-white p-1"
+              onClick={(e) => { e.stopPropagation(); setFocalOpen(true); }}
+              aria-label="Set thumbnail focal point"
+              title="Set focal point"
+            >
+              <Crosshair className="w-4 h-4" />
+            </button>
+          )}
+          <button
+            type="button"
+            className="text-white p-1"
+            onClick={(e) => { e.stopPropagation(); onDelete(att.id); }}
+            aria-label="Delete image"
+          >
+            <Trash2 className="w-4 h-4" />
+          </button>
+        </div>
       </div>
-    </div>
+      {isImage && focalOpen && (
+        <FocalPointPicker
+          open={focalOpen}
+          onOpenChange={setFocalOpen}
+          imageUrl={att.filePath}
+          attachmentTable="option_attachments"
+          attachmentId={att.id}
+          initialX={att.thumbnailX ?? 50}
+          initialY={att.thumbnailY ?? 50}
+          invalidateKeys={[["selections"]]}
+        />
+      )}
+    </>
   );
 }
 

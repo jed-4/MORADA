@@ -186,7 +186,12 @@ function SelectionThumbnail({ category, attachment, size = 32 }: SelectionThumbn
       }}
     >
       {isImage && attachment?.filePath ? (
-        <img src={attachment.filePath} alt="" className="w-full h-full object-cover" />
+        <img
+          src={attachment.filePath}
+          alt=""
+          className="w-full h-full object-cover"
+          style={{ objectPosition: `${attachment.thumbnailX ?? 50}% ${attachment.thumbnailY ?? 50}%` }}
+        />
       ) : (
         <ImageIcon className="text-muted-foreground/60" style={{ width: size * 0.4, height: size * 0.4 }} />
       )}

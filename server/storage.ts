@@ -1404,6 +1404,9 @@ export interface IStorage {
   createAiBlockedItem(data: InsertAiBlockedItem): Promise<AiBlockedItem>;
   resolveAiBlockedItem(id: string, companyId: string): Promise<AiBlockedItem | undefined>;
 
+  // Focal point columns on attachment tables (thumbnailX/thumbnailY)
+  ensureFocalPointColumns(): Promise<void>;
+
   // Product suggestions (feedback). Identity/company derived server-side.
   ensureSuggestionsTable(): Promise<void>;
   createSuggestion(data: InsertSuggestion & { userId: string; companyId: string | null; roleName: string | null }): Promise<Suggestion>;
@@ -6458,6 +6461,9 @@ export class MemStorage implements IStorage {
     return 0;
   }
   async ensureSuggestionsTable(): Promise<void> {
+    return;
+  }
+  async ensureFocalPointColumns(): Promise<void> {
     return;
   }
   async createSuggestion(data: InsertSuggestion & { userId: string; companyId: string | null; roleName: string | null }): Promise<Suggestion> {
@@ -24885,6 +24891,24 @@ export class DbStorage implements IStorage {
     } catch (error) {
       console.error("Database error in updateSuggestion:", error);
       throw error;
+    }
+  }
+
+  async ensureFocalPointColumns(): Promise<void> {
+    try {
+      const tables = [
+        "option_attachments",
+        "message_attachments",
+        "purchase_order_attachments",
+        "enote_attachments",
+        "task_template_attachments",
+      ];
+      for (const table of tables) {
+        await db.execute(sql`ALTER TABLE ${sql.raw(table)} ADD COLUMN IF NOT EXISTS thumbnail_x integer NOT NULL DEFAULT 50`);
+        await db.execute(sql`ALTER TABLE ${sql.raw(table)} ADD COLUMN IF NOT EXISTS thumbnail_y integer NOT NULL DEFAULT 50`);
+      }
+    } catch (error) {
+      console.error("Failed to ensure focal point columns:", error);
     }
   }
 

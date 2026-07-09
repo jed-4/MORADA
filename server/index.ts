@@ -326,6 +326,14 @@ app.use((req, res, next) => {
       console.error('Failed to ensure referral tables:', error);
     }
 
+    // Ensure thumbnail_x/thumbnail_y columns exist on all attachment tables
+    // (additive, idempotent). Powers the focal point picker feature.
+    try {
+      await storage.ensureFocalPointColumns();
+    } catch (error) {
+      console.error('Failed to ensure focal point columns:', error);
+    }
+
     // Auto-seed missing built-in field categories (for production databases)
     try {
       const seedResult = await storage.seedMissingBuiltInCategories();

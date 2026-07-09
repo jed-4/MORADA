@@ -1525,6 +1525,8 @@ export const optionAttachments = pgTable("option_attachments", {
   mimeType: text("mime_type"),
   sortOrder: integer("sort_order").notNull().default(0),
   createdAt: timestamp("created_at").notNull().defaultNow(),
+  thumbnailX: integer("thumbnail_x").notNull().default(50),
+  thumbnailY: integer("thumbnail_y").notNull().default(50),
 });
 
 export const insertOptionAttachmentSchema = createInsertSchema(optionAttachments).omit({
@@ -4457,6 +4459,8 @@ export const taskTemplateAttachments = pgTable("task_template_attachments", {
   uploadedBy: varchar("uploaded_by").references(() => users.id),
   uploadedByName: text("uploaded_by_name"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
+  thumbnailX: integer("thumbnail_x").notNull().default(50),
+  thumbnailY: integer("thumbnail_y").notNull().default(50),
 });
 
 export const insertTaskTemplateAttachmentSchema = createInsertSchema(taskTemplateAttachments).omit({
@@ -4779,6 +4783,8 @@ export const messageAttachments = pgTable("message_attachments", {
   mimeType: text("mime_type"),               // e.g. "image/jpeg", "application/pdf"
   objectPath: text("object_path").notNull(), // Internal storage path
   createdAt: timestamp("created_at").notNull().defaultNow(),
+  thumbnailX: integer("thumbnail_x").notNull().default(50),
+  thumbnailY: integer("thumbnail_y").notNull().default(50),
 }, (table) => ({
   messageIdIndex: index("msg_attachments_message_id_idx").on(table.messageId),
 }));
@@ -5376,6 +5382,8 @@ export const purchaseOrderAttachments = pgTable("purchase_order_attachments", {
   
   uploadedById: varchar("uploaded_by_id").notNull().references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
+  thumbnailX: integer("thumbnail_x").notNull().default(50),
+  thumbnailY: integer("thumbnail_y").notNull().default(50),
 });
 
 export const insertPurchaseOrderAttachmentSchema = createInsertSchema(purchaseOrderAttachments).omit({
@@ -6368,6 +6376,8 @@ export const enoteAttachments = pgTable("enote_attachments", {
   fileSize: integer("file_size"),
   mimeType: text("mime_type"),
   uploadedAt: timestamp("uploaded_at").notNull().defaultNow(),
+  thumbnailX: integer("thumbnail_x").notNull().default(50),
+  thumbnailY: integer("thumbnail_y").notNull().default(50),
 });
 
 export const insertEnoteAttachmentSchema = createInsertSchema(enoteAttachments).omit({ id: true, uploadedAt: true });
