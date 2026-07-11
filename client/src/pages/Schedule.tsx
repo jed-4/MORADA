@@ -197,8 +197,7 @@ export default function Schedule() {
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
   const [newItemDependencies, setNewItemDependencies] = useState<any[]>([]);
   const [allCollapsed, setAllCollapsed] = useState(false);
-  const [descriptionExpanded, setDescriptionExpanded] = useState(false);
-  const [notesExpanded, setNotesExpanded] = useState(false);
+
   const [showSaveTemplateDialog, setShowSaveTemplateDialog] = useState(false);
   const [showLoadTemplateDialog, setShowLoadTemplateDialog] = useState(false);
   const [loadTemplateStartDate, setLoadTemplateStartDate] = useState<string>("");
@@ -2560,85 +2559,29 @@ export default function Schedule() {
 
             {/* Description */}
             <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="item-description">Description</Label>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="h-6 w-6 p-0"
-                  onClick={() => setDescriptionExpanded(!descriptionExpanded)}
-                  data-testid="button-toggle-description"
-                >
-                  {descriptionExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                </Button>
-              </div>
-              {descriptionExpanded && (
-                <Textarea
-                  id="item-description"
-                  value={formData.description}
-                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  placeholder="Add details about this schedule item..."
-                  rows={3}
-                  data-testid="input-item-description"
-                />
-              )}
+              <Label htmlFor="item-description">Description</Label>
+              <Textarea
+                id="item-description"
+                value={formData.description}
+                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                placeholder="Add details about this schedule item..."
+                rows={3}
+                data-testid="input-item-description"
+              />
             </div>
 
             {/* Notes */}
             <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="item-notes">Notes</Label>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="h-6 w-6 p-0"
-                  onClick={() => setNotesExpanded(!notesExpanded)}
-                  data-testid="button-toggle-notes"
-                >
-                  {notesExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                </Button>
-              </div>
-              {notesExpanded && (
-                <>
-                  <Textarea
-                    id="item-notes"
-                    value={formData.notes}
-                    onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                    placeholder="Add internal notes about this schedule item..."
-                    rows={4}
-                    data-testid="input-item-notes"
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Internal notes for tracking progress, decisions, or important details.
-                  </p>
-                </>
-              )}
+              <Label htmlFor="item-notes">Notes</Label>
+              <Textarea
+                id="item-notes"
+                value={formData.notes}
+                onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                placeholder="Add internal notes about this schedule item..."
+                rows={3}
+                data-testid="input-item-notes"
+              />
             </div>
-
-            {/* Parent Item */}
-            {!(editingItem && !editingItem.parentItemId && scheduleItems.some(i => i.parentItemId === editingItem.id)) && (
-              <div className="space-y-1">
-                <Label htmlFor="item-parent" className="text-xs text-muted-foreground">Parent Item</Label>
-                <Select
-                  value={formData.parentItemId || "none"}
-                  onValueChange={(value) => setFormData({ ...formData, parentItemId: value === "none" ? "" : value })}
-                >
-                  <SelectTrigger id="item-parent" data-testid="select-parent-item">
-                    <SelectValue placeholder="No parent (top level)" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">No parent (top level)</SelectItem>
-                    {parentItems.map((parent) => (
-                      <SelectItem key={parent.id} value={parent.id}>
-                        {parent.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
 
             {/* Type / Status / Assignee / Progress — compact 2×2 grid */}
             {(() => {
@@ -3064,7 +3007,7 @@ export default function Schedule() {
               </div>
             )}
 
-            <div className="pt-3 border-t">
+            <div className="pt-3 border-t hidden">
                   <div className="space-y-4">
                     {/* Allow on weekends */}
                     <div className="flex items-center justify-between py-1">

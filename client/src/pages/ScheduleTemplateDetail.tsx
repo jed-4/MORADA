@@ -3,6 +3,7 @@ import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { TYPE_COLORS } from "@/lib/taskColors";
+import { ScheduleColorPicker } from "@/components/schedule/ScheduleColorPicker";
 import { useToast } from "@/hooks/use-toast";
 import { type ScheduleTemplate, type Project, type ScheduleItem } from "@shared/schema";
 import { Button } from "@/components/ui/button";
@@ -393,6 +394,7 @@ export default function ScheduleTemplateDetail() {
     assigneeName: "",
     relativeStartDay: 0,
     parentItemId: null as string | null,
+    color: "",
   });
 
   useEffect(() => {
@@ -606,20 +608,20 @@ export default function ScheduleTemplateDetail() {
   const handleAddItem = () => {
     setEditingItem(null);
     setDialogMode("item");
-    setFormData({ name: "", description: "", duration: 1, type: "task", assigneeName: "", relativeStartDay: 0, parentItemId: null });
+    setFormData({ name: "", description: "", duration: 1, type: "task", assigneeName: "", relativeStartDay: 0, parentItemId: null, color: "" });
     setShowItemDialog(true);
   };
 
   const handleAddGroup = () => {
     setEditingItem(null);
-    setFormData({ name: "", description: "", duration: 5, type: "task", assigneeName: "", relativeStartDay: 0, parentItemId: null });
+    setFormData({ name: "", description: "", duration: 5, type: "task", assigneeName: "", relativeStartDay: 0, parentItemId: null, color: "" });
     setDialogMode("group");
     setShowItemDialog(true);
   };
 
   const handleAddChild = (parentItem: TemplateItem) => {
     setEditingItem(null);
-    setFormData({ name: "", description: "", duration: 1, type: "task", assigneeName: "", relativeStartDay: parentItem.relativeStartDay || 0, parentItemId: parentItem.id });
+    setFormData({ name: "", description: "", duration: 1, type: "task", assigneeName: "", relativeStartDay: parentItem.relativeStartDay || 0, parentItemId: parentItem.id, color: "" });
     setDialogMode("item");
     setShowItemDialog(true);
   };
@@ -627,7 +629,7 @@ export default function ScheduleTemplateDetail() {
   const handleEditItem = (item: TemplateItem) => {
     setEditingItem(item);
     setDialogMode("item");
-    setFormData({ name: item.name, description: item.description || "", duration: item.duration, type: item.type, assigneeName: item.assigneeName || "", relativeStartDay: item.relativeStartDay || 0, parentItemId: item.parentItemId || null });
+    setFormData({ name: item.name, description: item.description || "", duration: item.duration, type: item.type, assigneeName: item.assigneeName || "", relativeStartDay: item.relativeStartDay || 0, parentItemId: item.parentItemId || null, color: item.color || "" });
     setShowItemDialog(true);
   };
 
@@ -1141,13 +1143,28 @@ export default function ScheduleTemplateDetail() {
           <div className="space-y-4 py-2">
             <div className="space-y-2">
               <Label htmlFor="name">Name <span className="text-destructive">*</span></Label>
-              <Input
-                id="name"
-                value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                placeholder={dialogMode === "group" ? "e.g., Framing Phase" : "e.g., Pour footings"}
-                data-testid="input-item-name"
-              />
+              <div className="flex items-center gap-2">
+                <ScheduleColorPicker
+                  currentColor={formData.color}
+                  onColorChange={(color) => setFormData({ ...formData, color: color || '' })}
+                  align="start"
+                  triggerButton={
+                    <button
+                      type="button"
+                      className="w-5 h-5 rounded-full border-2 border-border focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-1 flex-shrink-0"
+                      style={{ backgroundColor: formData.color || '#9ca3af' }}
+                      title="Choose colour"
+                    />
+                  }
+                />
+                <Input
+                  id="name"
+                  value={formData.name}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  placeholder={dialogMode === "group" ? "e.g., Framing Phase" : "e.g., Pour footings"}
+                  data-testid="input-item-name"
+                />
+              </div>
             </div>
 
             <div className={`grid gap-4 ${dialogMode === "group" ? "grid-cols-1" : "grid-cols-2"}`}>
