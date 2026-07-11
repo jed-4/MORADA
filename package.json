@@ -104,6 +104,7 @@
     "expo-constants": "~17.0.0",
     "expo-secure-store": "~15.0.0",
     "expo-status-bar": "~2.2.0",
+    "expo-updates": "^57.0.6",
     "express": "^4.21.2",
     "express-session": "^1.18.2",
     "favico.js": "^0.3.10",
