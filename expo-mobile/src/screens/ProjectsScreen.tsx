@@ -293,7 +293,7 @@ const colors = {
 
   const filteredProjects = getFilteredProjects();
 
-  const screenBg = isDark ? theme.background : '#FAFAF8';
+  const screenBg = isDark ? theme.background : '#F0EBE3';
 
   return (
     <View style={[styles.container, { backgroundColor: screenBg }]}>
