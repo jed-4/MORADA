@@ -36,7 +36,10 @@ interface Project {
   clientBudget?: number;    // client's budget (cents)
   contractCost?: number;    // agreed contract cost (cents)
   contractPrice?: number;   // locked contract price set at construction (cents)
-  // Completion (0–100 integer, NOT NULL default 0 on server)
+  // Completion — two sources:
+  // `progress`: dynamically computed from schedule item progressPercent (enriched by GET /api/projects)
+  // `percentComplete`: manually-set field used by OH predictor, almost always 0
+  progress?: number | null;
   percentComplete?: number;
   // Dates
   startDate?: string;
@@ -190,10 +193,10 @@ const colors = {
       ? getSubStatusLabel(item.currentSystemPhase)
       : 'Active';
 
-    // Progress (server stores as `percentComplete`, 0–100, NOT NULL default 0)
-    const pct = typeof item.percentComplete === 'number' ? item.percentComplete : 0;
-    // Show the track whenever we have a percentComplete value (even 0 = "not started")
-    const hasProgress = typeof item.percentComplete === 'number';
+    // `progress` is computed by the server from schedule item progressPercent values.
+    // It's null when a project has no schedule items. Only show the bar when it exists.
+    const pct = typeof item.progress === 'number' ? item.progress : 0;
+    const hasProgress = item.progress != null;
 
     // Value display — server stores ALL financial fields in CENTS.
     // Pick the most "headline" value available, in priority order.
