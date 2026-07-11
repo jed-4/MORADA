@@ -192,7 +192,8 @@ const colors = {
 
     // Progress (server stores as `percentComplete`, 0–100, NOT NULL default 0)
     const pct = typeof item.percentComplete === 'number' ? item.percentComplete : 0;
-    const hasProgress = pct > 0;
+    // Show the track whenever we have a percentComplete value (even 0 = "not started")
+    const hasProgress = typeof item.percentComplete === 'number';
 
     // Value display — server stores ALL financial fields in CENTS.
     // Pick the most "headline" value available, in priority order.
@@ -255,19 +256,22 @@ const colors = {
             )}
           </View>
 
-          {/* Row 3: Progress bar in the project's own colour + % label.
-              Role-gated alongside contract value. */}
-          {canViewFinancials && hasProgress && (
+          {/* Row 3: Progress bar in the project's own colour + % label. */}
+          {hasProgress && (
             <View style={{ marginTop: 10 }}>
-              <View style={[styles.progressBg, { backgroundColor: '#EAEAE8' }]}>
-                <View style={[styles.progressFill, {
-                  backgroundColor: projectColor,
-                  width: `${Math.min(pct, 100)}%`,
-                }]} />
+              <View style={[styles.progressBg, { backgroundColor: isDark ? '#2e2c29' : '#EAEAE8' }]}>
+                {pct > 0 && (
+                  <View style={[styles.progressFill, {
+                    backgroundColor: projectColor,
+                    width: `${Math.min(pct, 100)}%`,
+                  }]} />
+                )}
               </View>
-              <Text style={[styles.progressLabel, { color: colors.secondary }]}>
-                {Math.round(pct)}% complete
-              </Text>
+              {pct > 0 && (
+                <Text style={[styles.progressLabel, { color: colors.secondary }]}>
+                  {Math.round(pct)}% complete
+                </Text>
+              )}
             </View>
           )}
 
