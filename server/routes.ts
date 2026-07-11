@@ -23721,6 +23721,157 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // GET /api/projects/:projectId/allowances/:allowanceId/detail
+  // Returns allocated bills, timesheets, and custom items saved for a specific allowance.
+  app.get("/api/projects/:projectId/allowances/:allowanceId/detail", async (req, res) => {
+    try {
+      const { projectId, allowanceId } = req.params;
+
+      // Company-scope auth: verify the project belongs to the requester's company
+      const project = await storage.getProject(projectId);
+      if (!project) return res.status(404).json({ error: "Project not found" });
+      if (req.user && (project as any).companyId !== (req.user as any).companyId) {
+        return res.status(403).json({ error: "Forbidden" });
+      }
+
+      const {
+        billLineItemAllowances: bliaTable,
+        billLineItems: bliTable,
+        timesheetAllowances: tsaTable,
+        timesheets: tsTable,
+        allowanceItems: aiTable,
+      } = await import("@shared/schema");
+
+      // 1. Allocated bills: bill_line_item_allowances → bill_line_items → bills → contacts
+      let allocatedBills: any[] = [];
+      try {
+        const blia = await db
+          .select({
+            id: bliaTable.id,
+            amount: bliaTable.amount,
+            billLineItemId: bliaTable.billLineItemId,
+            lineItemDescription: bliTable.description,
+            billId: bliTable.billId,
+          })
+          .from(bliaTable)
+          .innerJoin(bliTable, eq(bliTable.id, bliaTable.billLineItemId))
+          .where(eq(bliaTable.estimateItemId, allowanceId));
+
+        if (blia.length > 0) {
+          const billIds = [...new Set(blia.map((r) => r.billId))];
+          const billRows = await db
+            .select({ id: billsTable.id, billNumber: billsTable.billNumber, billDate: billsTable.billDate, supplierId: billsTable.supplierId })
+            .from(billsTable)
+            .where(inArray(billsTable.id, billIds));
+
+          const supplierIds = [...new Set(billRows.map((b) => b.supplierId).filter(Boolean))] as string[];
+          const supplierRows = supplierIds.length
+            ? await db
+                .select({ id: contacts.id, name: contacts.name, company: contacts.company })
+                .from(contacts)
+                .where(inArray(contacts.id, supplierIds))
+            : [];
+
+          const billMap = new Map(billRows.map((b) => [b.id, b]));
+          const supplierMap = new Map(supplierRows.map((s) => [s.id, s]));
+
+          allocatedBills = blia.map((row) => {
+            const bill = billMap.get(row.billId);
+            const supplier = bill?.supplierId ? supplierMap.get(bill.supplierId) : null;
+            const supplierName = supplier?.company || supplier?.name || "Unknown Supplier";
+            const amountIncGst = row.amount;
+            const amountExGst = Math.round(amountIncGst / 1.1);
+            return {
+              id: row.id,
+              billId: row.billId,
+              billNumber: bill?.billNumber || "",
+              billDate: bill?.billDate ? new Date(bill.billDate).toISOString() : "",
+              supplierName,
+              supplierId: bill?.supplierId || "",
+              lineItemDescription: row.lineItemDescription,
+              amountIncGst,
+              amountExGst,
+            };
+          });
+        }
+      } catch (e: any) {
+        console.warn("[allowance-detail] allocatedBills query failed:", e?.message);
+      }
+
+      // 2. Allocated timesheets: timesheet_allowances → timesheets → users
+      let allocatedTimesheets: any[] = [];
+      try {
+        const tsa = await db
+          .select({
+            id: tsaTable.id,
+            timesheetId: tsaTable.timesheetId,
+            amount: tsaTable.amount,
+            tsDate: tsTable.date,
+            tsDuration: tsTable.duration,
+            tsUserId: tsTable.userId,
+          })
+          .from(tsaTable)
+          .innerJoin(tsTable, eq(tsTable.id, tsaTable.timesheetId))
+          .where(eq(tsaTable.estimateItemId, allowanceId));
+
+        if (tsa.length > 0) {
+          const userIds = [...new Set(tsa.map((r) => r.tsUserId))];
+          const userRows = await db
+            .select({ id: usersTable.id, firstName: usersTable.firstName, lastName: usersTable.lastName })
+            .from(usersTable)
+            .where(inArray(usersTable.id, userIds));
+          const userMap = new Map(userRows.map((u) => [u.id, u]));
+
+          allocatedTimesheets = tsa.map((row) => {
+            const user = userMap.get(row.tsUserId);
+            const staffName = [user?.firstName, user?.lastName].filter(Boolean).join(" ") || "Team member";
+            const amountIncGst = row.amount;
+            const amountExGst = Math.round(amountIncGst / 1.1);
+            const durationHours = parseFloat(String(row.tsDuration)) || 0;
+            const hourlyRateCents = durationHours > 0 ? Math.round(amountIncGst / durationHours) : 0;
+            return {
+              id: row.id,
+              timesheetId: row.timesheetId,
+              date: row.tsDate ? new Date(row.tsDate).toISOString() : "",
+              userId: row.tsUserId,
+              staffName,
+              durationHours,
+              hourlyRateCents,
+              amountIncGst,
+              amountExGst,
+            };
+          });
+        }
+      } catch (e: any) {
+        console.warn("[allowance-detail] allocatedTimesheets query failed:", e?.message);
+      }
+
+      // 3. Allocated custom items
+      let allocatedItems: any[] = [];
+      try {
+        const items = await db
+          .select()
+          .from(aiTable)
+          .where(eq(aiTable.estimateItemId, allowanceId))
+          .orderBy(asc(aiTable.sortOrder));
+        allocatedItems = items.map((i) => ({
+          id: i.id,
+          description: i.description,
+          quantity: i.quantity,
+          unitPrice: i.unitPrice,
+          total: i.totalPrice,
+        }));
+      } catch (e: any) {
+        console.warn("[allowance-detail] allocatedItems query failed:", e?.message);
+      }
+
+      res.json({ allocatedBills, allocatedTimesheets, allocatedItems });
+    } catch (error: any) {
+      console.error("[allowance-detail] error:", error?.message);
+      res.status(500).json({ error: "Failed to fetch allowance detail", details: error?.message });
+    }
+  });
+
   // Helper: enrich timesheets with costCodeId from timesheet_cost_codes join table (batch query)
   async function filterTimesheetsByViewScope(timesheets: any[], user: any): Promise<any[]> {
     if (!user) return [];
