@@ -103,7 +103,7 @@ app.use((req, res, next) => {
     "worker-src 'self' blob:; " +
     "child-src 'self' blob:; " +
     "style-src 'self' 'unsafe-inline' https://client.crisp.chat; " +
-    "img-src 'self' data: blob: https://client.crisp.chat https://image.crisp.chat; " +
+    "img-src 'self' data: blob: https://client.crisp.chat https://image.crisp.chat https://api.qrserver.com; " +
     "font-src 'self' data: https://client.crisp.chat; " +
     "connect-src 'self' ws: wss: blob: data: https://client.crisp.chat wss://client.relay.crisp.chat; " +
     "frame-src 'self' blob: https://client.crisp.chat; " +
@@ -237,9 +237,10 @@ app.use((req, res, next) => {
     log("Mobile app preview available at /mobile");
   }
 
-  // Expo Go QR code page — renders a scannable QR code for the active tunnel.
+  // Expo Go QR code page — rendered under /api/ so Vite's dev middleware
+  // never intercepts and injects the React SPA entry point into this HTML.
   // Only available in development; returns 404 in production.
-  app.get("/expo-qr", (req, res) => {
+  app.get("/api/expo-qr", (req, res) => {
     if (app.get("env") !== "development") return res.status(404).end();
     const tunnelUrl = "exp://ltskb44-jed4-8081.exp.direct";
     const qrImg = `https://api.qrserver.com/v1/create-qr-code/?size=400x400&margin=20&data=${encodeURIComponent(tunnelUrl)}`;
