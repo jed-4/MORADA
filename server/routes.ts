@@ -3692,7 +3692,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Filter projects by company for multi-tenant isolation
       const allProjects = await storage.getProjects();
-      const companyProjects = allProjects.filter(p => p.companyId === user.companyId && !p.isBusiness);
+      const companyProjects = allProjects.filter(p => p.companyId === user.companyId && !p.isBusiness && !p.isArchived);
 
       // Check if user is admin (admins see all company projects)
       const isAdmin = user.roleName?.toLowerCase()?.includes('admin') ||
