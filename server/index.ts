@@ -237,6 +237,27 @@ app.use((req, res, next) => {
     log("Mobile app preview available at /mobile");
   }
 
+  // Expo Go QR code page — renders a scannable QR code for the active tunnel.
+  // Only available in development; returns 404 in production.
+  app.get("/expo-qr", (req, res) => {
+    if (app.get("env") !== "development") return res.status(404).end();
+    const tunnelUrl = "exp://ltskb44-jed4-8081.exp.direct";
+    const qrImg = `https://api.qrserver.com/v1/create-qr-code/?size=400x400&margin=20&data=${encodeURIComponent(tunnelUrl)}`;
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    res.status(200).send(`<!DOCTYPE html><html><head><meta charset="utf-8">
+<title>Expo Go QR</title>
+<style>
+  body{margin:0;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;background:#fff;font-family:sans-serif;gap:16px}
+  img{width:320px;height:320px;border-radius:8px}
+  p{color:#555;font-size:14px;text-align:center;max-width:320px}
+  code{background:#f0f0f0;padding:2px 6px;border-radius:4px;font-size:12px;word-break:break-all}
+</style></head><body>
+  <img src="${qrImg}" alt="Expo Go QR code" />
+  <p>Scan with <strong>Expo Go</strong> (Android) or the <strong>Camera app</strong> (iOS)</p>
+  <code>${tunnelUrl}</code>
+</body></html>`);
+  });
+
   // Explicit sitemap — bots and crawlers get a clean 200 with a valid empty
   // sitemap instead of falling through to the SPA catch-all and triggering
   // an unhandled AggregateError rejection path.
