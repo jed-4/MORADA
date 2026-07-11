@@ -15,6 +15,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RouteProp } from '@react-navigation/native';
 
 import { useTheme } from '../theme';
+import { useAuth } from '../contexts/AuthContext';
 interface Project {
   id: string;
   name: string;
@@ -91,6 +92,11 @@ export default function ProjectDetailScreen({ navigation, route }: Props) {
   const { projectId } = route.params as { projectId: string };
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
+  const { user } = useAuth();
+  const canViewFinancials = (() => {
+    const r = (user?.roleName ?? '').toLowerCase();
+    return r.includes('admin') || r.includes('owner') || r.includes('general manager');
+  })();
   const [project, setProject] = useState<Project | null>(null);
   const [clientContact, setClientContact] = useState<Contact | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -490,7 +496,7 @@ const colors = {
                   </View>
                 </View>
               )}
-              {!!project.contractCost && (
+              {canViewFinancials && !!project.contractCost && (
                 <View style={styles.infoRow}>
                   <Ionicons name="cash-outline" size={16} color={colors.secondary} />
                   <View style={styles.infoText}>
