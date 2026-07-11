@@ -31,7 +31,7 @@ interface VisibleColumns {
   completion: boolean;
 }
 
-export interface CasvaScheduleRowProps {
+export interface MoradaScheduleRowProps {
   item: ScheduleItem;
   noteCount?: number;
   onEdit: () => void;
@@ -57,7 +57,7 @@ export interface CasvaScheduleRowProps {
   templateReferenceDate?: Date;
 }
 
-export function CasvaScheduleRow({ 
+export function MoradaScheduleRow({ 
   item, 
   noteCount = 0,
   onEdit,
@@ -81,7 +81,7 @@ export function CasvaScheduleRow({
   onAddSubItem,
   isTemplate = false,
   templateReferenceDate,
-}: CasvaScheduleRowProps) {
+}: MoradaScheduleRowProps) {
   const hasValidDates = item.startDate && item.endDate;
   const startDate = hasValidDates ? new Date(item.startDate) : null;
   const endDate = hasValidDates ? new Date(item.endDate) : null;

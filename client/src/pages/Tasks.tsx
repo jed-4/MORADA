@@ -292,7 +292,7 @@ export default function Tasks({ embedded }: { embedded?: boolean } = {}) {
   const [isCreatingInline, setIsCreatingInline] = useState(false);
   const [cardWidth, setCardWidth] = useState<'compact' | 'comfortable' | 'spacious'>('comfortable');
 
-  // Casva Keyboard Shortcuts
+  // Morada Keyboard Shortcuts
   useKeyboardShortcuts([
     {
       key: "n",

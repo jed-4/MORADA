@@ -1,6 +1,6 @@
 import { Task } from "@shared/schema";
-import { CasvaTaskRow } from "./CasvaTaskRow";
-import { CasvaTaskCreateRow } from "./CasvaTaskCreateRow";
+import { MoradaTaskRow } from "./MoradaTaskRow";
+import { MoradaTaskCreateRow } from "./MoradaTaskCreateRow";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Plus } from "lucide-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -24,7 +24,7 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
 
-export interface CasvaTaskListProps {
+export interface MoradaTaskListProps {
   tasks: Task[];
   onEditTask: (task: Task) => void;
   onToggleComplete?: (task: Task) => void;
@@ -45,7 +45,7 @@ export interface CasvaTaskListProps {
   priorityOptions?: Array<{ key: string; name: string; color?: string | null }>;
 }
 
-export function CasvaTaskList({ 
+export function MoradaTaskList({ 
   tasks, 
   onEditTask, 
   onToggleComplete,
@@ -59,7 +59,7 @@ export function CasvaTaskList({
   columnOrder = ['assignee', 'dueDate', 'status', 'priority'],
   statusOptions,
   priorityOptions
-}: CasvaTaskListProps) {
+}: MoradaTaskListProps) {
   const { toast } = useToast();
 
   // Column widths state
@@ -226,7 +226,7 @@ export function CasvaTaskList({
           {showCheckboxes && <div className="w-5 flex-shrink-0"></div>}
           <div className="flex-1 text-xs font-medium text-muted-foreground">TASK</div>
         </div>
-        <CasvaTaskCreateRow
+        <MoradaTaskCreateRow
           onSave={(title) => createTaskMutation.mutate({ title, projectId })}
           onCancel={onCancelInlineCreate}
           showCheckbox={showCheckboxes}
@@ -286,7 +286,7 @@ export function CasvaTaskList({
           <SortableContext items={tasks.map(t => t.id)} strategy={verticalListSortingStrategy}>
             <div>
               {tasks.map((task) => (
-                <CasvaTaskRow
+                <MoradaTaskRow
                   key={task.id}
                   task={task}
                   onEdit={() => onEditTask(task)}
@@ -308,7 +308,7 @@ export function CasvaTaskList({
       
         {/* Inline Add Row */}
         {isCreatingInline ? (
-          <CasvaTaskCreateRow
+          <MoradaTaskCreateRow
             onSave={(title) => createTaskMutation.mutate({ title, projectId })}
             onCancel={onCancelInlineCreate}
             showCheckbox={showCheckboxes}

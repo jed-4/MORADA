@@ -147,7 +147,7 @@ The schedule operates in three modes:
 - Status options come from Field Settings (configurable per company)
 - Status changes use semantic colours from the configured options
 
-**Current Implementation:** Fully implemented in both List view (CasvaScheduleList) and Gantt view.
+**Current Implementation:** Fully implemented in both List view (MoradaScheduleList) and Gantt view.
 
 ---
 
@@ -382,7 +382,7 @@ The schedule operates in three modes:
 - Items show their type via coloured badges or indicators
 - Click on a row opens the edit dialog
 
-**Current Implementation:** Fully implemented via `CasvaScheduleList` and `CasvaScheduleRow` components.
+**Current Implementation:** Fully implemented via `MoradaScheduleList` and `MoradaScheduleRow` components.
 
 ---
 
@@ -868,8 +868,8 @@ The schedule operates in three modes:
 | `client/src/pages/Gantt.tsx` | Gantt chart component with timeline rendering, drag/drop, dependencies, colour picker | ~2950 |
 | `client/src/pages/ScheduleTemplates.tsx` | Template management list page | ~1073 |
 | `client/src/pages/ScheduleTemplateDetail.tsx` | Template detail/edit page with item management and apply-to-project | ~1345 |
-| `client/src/components/schedule/CasvaScheduleList.tsx` | List view table component | ~377 |
-| `client/src/components/schedule/CasvaScheduleRow.tsx` | Individual row component for list view | varies |
+| `client/src/components/schedule/MoradaScheduleList.tsx` | List view table component | ~377 |
+| `client/src/components/schedule/MoradaScheduleRow.tsx` | Individual row component for list view | varies |
 | `client/src/components/schedule/ImportScheduleDialog.tsx` | CSV/Excel import wizard (3-step) | ~670 |
 | `client/src/components/schedule/ScheduleColorPicker.tsx` | Colour picker for Gantt bars | varies |
 | `client/src/components/widgets/ScheduleWidget.tsx` | Dashboard widget with List/Day/Week/Month views | ~1124 |

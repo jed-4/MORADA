@@ -42,7 +42,7 @@ export function useKeyboardShortcuts(shortcuts: KeyboardShortcut[], enabled: boo
   }, [shortcuts, enabled]);
 }
 
-// Predefined Casva shortcuts
+// Predefined Morada shortcuts
 export const CASVA_SHORTCUTS = {
   GOTO_TASKS: { key: "g", description: "Go to Tasks" },
   GOTO_DASHBOARD: { key: "d", description: "Go to Dashboard" },

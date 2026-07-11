@@ -76,7 +76,7 @@ import { format, addDays, differenceInDays } from "date-fns";
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
 import { arrayMove, SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { CasvaScheduleList } from "@/components/schedule/CasvaScheduleList";
+import { MoradaScheduleList } from "@/components/schedule/MoradaScheduleList";
 
 interface TemplateItem {
   id: string;
@@ -981,7 +981,7 @@ export default function ScheduleTemplateDetail() {
           </div>
         ) : activeView === "list" ? (
           <div className="h-full">
-            <CasvaScheduleList
+            <MoradaScheduleList
               items={listItems}
               onEditItem={(item) => {
                 const templateItem = items.find(i => i.id === item.id);

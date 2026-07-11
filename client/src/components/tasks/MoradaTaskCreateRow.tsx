@@ -1,17 +1,17 @@
 import { useState, useRef, useEffect } from "react";
 import { X, Check } from "lucide-react";
 
-export interface CasvaTaskCreateRowProps {
+export interface MoradaTaskCreateRowProps {
   onSave: (title: string) => void;
   onCancel?: () => void;
   showCheckbox?: boolean;
 }
 
-export function CasvaTaskCreateRow({ 
+export function MoradaTaskCreateRow({ 
   onSave, 
   onCancel,
   showCheckbox = false
-}: CasvaTaskCreateRowProps) {
+}: MoradaTaskCreateRowProps) {
   const [title, setTitle] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
 

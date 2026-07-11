@@ -14,7 +14,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 
-export interface CasvaTaskRowProps {
+export interface MoradaTaskRowProps {
   task: Task;
   onEdit: () => void;
   onToggleComplete?: () => void;
@@ -52,7 +52,7 @@ const DEFAULT_PRIORITY_OPTIONS = [
   { key: "high", name: "High", color: null },
 ];
 
-export function CasvaTaskRow({ 
+export function MoradaTaskRow({ 
   task, 
   onEdit, 
   onToggleComplete,
@@ -70,7 +70,7 @@ export function CasvaTaskRow({
   columnOrder = ['assignee', 'dueDate', 'status', 'priority'],
   statusOptions = DEFAULT_STATUS_OPTIONS,
   priorityOptions = DEFAULT_PRIORITY_OPTIONS
-}: CasvaTaskRowProps) {
+}: MoradaTaskRowProps) {
   const isCompleted = task.status === "done" || task.status === "completed";
   const [editingField, setEditingField] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");

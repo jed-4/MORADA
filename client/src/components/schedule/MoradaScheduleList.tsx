@@ -1,5 +1,5 @@
 import { ScheduleItem } from "@shared/schema";
-import { CasvaScheduleRow } from "./CasvaScheduleRow";
+import { MoradaScheduleRow } from "./MoradaScheduleRow";
 import { Table, TableHeader, TableRow, TableHead, TableBody } from "@/components/ui/table";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -30,7 +30,7 @@ interface VisibleColumns {
   completion: boolean;
 }
 
-export interface CasvaScheduleListProps {
+export interface MoradaScheduleListProps {
   items: ScheduleItem[];
   noteCounts?: Record<string, number>;
   onEditItem: (item: ScheduleItem) => void;
@@ -59,7 +59,7 @@ interface FlatRow {
   depth: 0 | 1 | 2;
 }
 
-export function CasvaScheduleList({ 
+export function MoradaScheduleList({ 
   items, 
   noteCounts = {},
   onEditItem,
@@ -79,7 +79,7 @@ export function CasvaScheduleList({
   locked = false,
   isTemplate = false,
   templateReferenceDate,
-}: CasvaScheduleListProps) {
+}: MoradaScheduleListProps) {
   const [collapsedItems, setCollapsedItems] = useState<Set<string>>(new Set());
 
   useEffect(() => {
@@ -770,7 +770,7 @@ export function CasvaScheduleList({
                         </td>
                       </>
                     ) : (
-                      <CasvaScheduleRow
+                      <MoradaScheduleRow
                         item={item}
                         noteCount={noteCounts[item.id] || 0}
                         onEdit={() => onEditItem(item)}
@@ -820,7 +820,7 @@ export function CasvaScheduleList({
                               />
                             </td>
                           )}
-                          <CasvaScheduleRow
+                          <MoradaScheduleRow
                             item={subtask}
                             noteCount={noteCounts[subtask.id] || 0}
                             onEdit={() => onEditItem(subtask)}
@@ -868,7 +868,7 @@ export function CasvaScheduleList({
                                 />
                               </td>
                             )}
-                            <CasvaScheduleRow
+                            <MoradaScheduleRow
                               item={grandchild}
                               noteCount={noteCounts[grandchild.id] || 0}
                               onEdit={() => onEditItem(grandchild)}

@@ -96,7 +96,7 @@ import {
   ArrowUpDown,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { CasvaScheduleList } from "@/components/schedule/CasvaScheduleList";
+import { MoradaScheduleList } from "@/components/schedule/MoradaScheduleList";
 import { ScheduleActivityFeedPopover } from "@/components/ScheduleActivityFeedPopover";
 import { ContactSelect } from "@/components/ContactSelect";
 import Gantt from "./Gantt";
@@ -485,7 +485,7 @@ export default function Schedule() {
   // Fetch schedule item status options from Field Settings using hook
   const { statusOptions: rawStatusOptions } = useScheduleItemStatusOptions();
   
-  // Transform status options to match CasvaScheduleList interface
+  // Transform status options to match MoradaScheduleList interface
   const statusOptions = useMemo(() => {
     return rawStatusOptions.map((opt: any) => ({
       id: opt.id || opt.key,
@@ -2208,7 +2208,7 @@ export default function Schedule() {
               // The shared DataTable now supports nested rows via the
               // `getSubRows` API (the foundational primitive for this
               // migration). The remaining blocker is the bespoke UX layered
-              // on top of <CasvaScheduleList> — hold-to-nest + drag-to-reorder
+              // on top of <MoradaScheduleList> — hold-to-nest + drag-to-reorder
               // gestures, ripple feedback, ghost drag elements, and inline
               // editing of every cell — none of which the shared DataTable
               // implements today. Migrating without those would silently
@@ -2226,7 +2226,7 @@ export default function Schedule() {
                   </Card>
                 ) : (
                   <>
-                    <CasvaScheduleList
+                    <MoradaScheduleList
                       items={filteredItems}
                       noteCounts={noteCounts}
                       statusOptions={statusOptions}
