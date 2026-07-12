@@ -1173,7 +1173,7 @@ export default function EstimateDetail() {
 
   // Mutation for updating individual group properties (including parentGroupId)
   const updateGroupMutation = useMutation({
-    mutationFn: async ({ groupId, updates }: { groupId: string; updates: { parentGroupId?: string | null; order?: number } }) => {
+    mutationFn: async ({ groupId, updates }: { groupId: string; updates: { parentGroupId?: string | null; order?: number; status?: string } }) => {
       return apiRequest(`/api/estimate-groups/${groupId}`, "PATCH", updates);
     },
     onMutate: async ({ groupId, updates }) => {
@@ -5995,7 +5995,7 @@ export default function EstimateDetail() {
                                   costCategories={costCategories}
                                   dropIndicator={groupDropIndicator}
                                   onUpdateStatus={(groupId, status) =>
-                                    updateGroupMutation.mutate({ groupId, updates: { status } as any })
+                                    updateGroupMutation.mutate({ groupId, updates: { status } })
                                   }
                                 />
                               );

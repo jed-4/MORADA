@@ -1001,10 +1001,15 @@ export const estimateGroups = pgTable("estimate_groups", {
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
+export const ESTIMATE_GROUP_STATUSES = ["not_started", "in_progress", "complete"] as const;
+export type EstimateGroupStatus = typeof ESTIMATE_GROUP_STATUSES[number];
+
 export const insertEstimateGroupSchema = createInsertSchema(estimateGroups).omit({
   id: true,
   createdAt: true,
   updatedAt: true,
+}).extend({
+  status: z.enum(ESTIMATE_GROUP_STATUSES).optional(),
 });
 
 export type InsertEstimateGroup = z.infer<typeof insertEstimateGroupSchema>;

@@ -24500,6 +24500,14 @@ export class DbStorage implements IStorage {
 
       // estimate_groups: progress status per group section.
       await db.execute(sql`ALTER TABLE estimate_groups ADD COLUMN IF NOT EXISTS status text NOT NULL DEFAULT 'not_started'`);
+      await db.execute(sql`
+        DO $$ BEGIN
+          ALTER TABLE estimate_groups
+            ADD CONSTRAINT estimate_groups_status_check
+            CHECK (status IN ('not_started', 'in_progress', 'complete'));
+        EXCEPTION WHEN duplicate_object THEN NULL;
+        END $$
+      `);
 
       // Backfill company_id from the creating user's company where missing.
       await db.execute(sql`

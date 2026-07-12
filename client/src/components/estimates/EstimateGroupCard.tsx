@@ -298,15 +298,13 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
                       </DropdownMenuContent>
                     </DropdownMenu>
                   ) : (
-                    currentStatus !== 'not_started' && (
-                      <Badge
-                        variant="outline"
-                        className={`text-xs px-1.5 py-0 h-5 flex-shrink-0 border ${statusCfg.className}`}
-                        data-testid={`badge-group-status-${group.id}`}
-                      >
-                        {statusCfg.label}
-                      </Badge>
-                    )
+                    <Badge
+                      variant="outline"
+                      className={`text-xs px-1.5 py-0 h-5 flex-shrink-0 border ${statusCfg.className}`}
+                      data-testid={`badge-group-status-${group.id}`}
+                    >
+                      {statusCfg.label}
+                    </Badge>
                   )}
                   {groupTotals && groupTotals.builderCostExTax > 0 && (
                     <span className="text-xs font-semibold text-primary ml-auto flex-shrink-0" data-testid={`group-total-badge-${group.id}`}>
