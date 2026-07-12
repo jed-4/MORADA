@@ -27,7 +27,6 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import NetInfo from '@react-native-community/netinfo';
 import { useAuth } from '../contexts/AuthContext';
 import { apiFetch, apiRequest, uploadPhoto, uploadAudio, API_BASE_URL } from '../services/api';
-import VoiceToTextButton from '../components/VoiceToTextButton';
 import { isOnline, addToQueue } from '../services/offlineQueue';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
@@ -1038,17 +1037,9 @@ const colors = {
       case 'text':
         return (
           <View key={field.id} style={styles.fieldContainer}>
-            <View style={styles.fieldLabelRow}>
-              <Text style={[styles.fieldLabel, { color: colors.text, marginBottom: 0 }]}>
-                {field.title}{field.required ? ' *' : ''}
-              </Text>
-              <VoiceToTextButton
-                onTranscription={(text) => setFormFieldValues(prev => ({
-                  ...prev,
-                  [field.id]: (prev[field.id] || '') + (prev[field.id] ? ' ' : '') + text,
-                }))}
-              />
-            </View>
+            <Text style={[styles.fieldLabel, { color: colors.text }]}>
+              {field.title}{field.required ? ' *' : ''}
+            </Text>
             <TextInput
               style={[styles.input, { backgroundColor: colors.inputBg, color: colors.text, borderColor: colors.border }]}
               value={value || ''}
@@ -1062,17 +1053,9 @@ const colors = {
       case 'textarea':
         return (
           <View key={field.id} style={styles.fieldContainer}>
-            <View style={styles.fieldLabelRow}>
-              <Text style={[styles.fieldLabel, { color: colors.text, marginBottom: 0 }]}>
-                {field.title}{field.required ? ' *' : ''}
-              </Text>
-              <VoiceToTextButton
-                onTranscription={(text) => setFormFieldValues(prev => ({
-                  ...prev,
-                  [field.id]: (prev[field.id] || '') + (prev[field.id] ? ' ' : '') + text,
-                }))}
-              />
-            </View>
+            <Text style={[styles.fieldLabel, { color: colors.text }]}>
+              {field.title}{field.required ? ' *' : ''}
+            </Text>
             <TextInput
               style={[styles.input, styles.textArea, { backgroundColor: colors.inputBg, color: colors.text, borderColor: colors.border }]}
               value={value || ''}
