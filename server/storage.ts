@@ -3860,6 +3860,8 @@ export class MemStorage implements IStorage {
       }
       
       const projects = await query.orderBy(
+        // Push NULL and empty/whitespace job numbers to the end
+        sql`CASE WHEN ${schema.projects.jobNumber} IS NULL OR TRIM(${schema.projects.jobNumber}) = '' THEN 1 ELSE 0 END`,
         asc(schema.projects.jobNumber),
         asc(schema.projects.name)
       );
