@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef, useCallback, lazy, Suspense } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback, lazy, Suspense, type ReactNode } from "react";
 import { useToolbarVisible } from "@/hooks/useToolbarVisible";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -729,6 +729,8 @@ export default function CustomizableProjectOverview() {
     def.description.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
+  const [widgetHeaderActions, setWidgetHeaderActions] = useState<Record<string, ReactNode>>({});
+
   const renderWidget = (widget: Widget) => {
     const definition = getWidgetDefinition(widget.type);
     if (!definition) return null;
@@ -743,6 +745,7 @@ export default function CustomizableProjectOverview() {
         onRemove={removeWidget}
         onConfigure={definition.configurable ? setConfiguringWidget : undefined}
         isConfiguring={configuringWidget === widget.id}
+        headerActions={widgetHeaderActions[widget.id]}
       >
         <ErrorBoundary
           context={`widget:${widget.type}`}
@@ -761,6 +764,9 @@ export default function CustomizableProjectOverview() {
             onRemove={removeWidget}
             isConfiguring={configuringWidget === widget.id}
             onCloseConfig={() => setConfiguringWidget(null)}
+            onSetHeaderActions={(actions) =>
+              setWidgetHeaderActions(prev => ({ ...prev, [widget.id]: actions }))
+            }
           />
         </ErrorBoundary>
       </WidgetContainer>

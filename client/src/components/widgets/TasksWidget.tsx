@@ -2,11 +2,11 @@ import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { TaskTooltip } from "@/components/ui/task-tooltip";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { Checkbox } from "@/components/ui/checkbox";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { type Task } from "@shared/schema";
+import { type Task, type TaskTemplateStatus } from "@shared/schema";
 import {
-  Plus, Circle, CheckSquare, ChevronDown, ChevronRight, Eye, EyeOff, AlertCircle,
+  Plus, Circle, CheckSquare, ChevronDown, ChevronRight, AlertCircle, SlidersHorizontal, Eye, EyeOff,
 } from "lucide-react";
 import { WidgetProps } from "@/types/widgets";
 import { useLocation } from "wouter";
@@ -21,29 +21,15 @@ import { Input } from "@/components/ui/input";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useState, useEffect, useMemo } from "react";
 import { cn } from "@/lib/utils";
 
-type FilterStatus = "all" | "todo" | "in_progress" | "done";
 type FilterPriority = "all" | "low" | "medium" | "high";
 type SortBy = "dueDate" | "priority" | "title" | "status";
 type SortOrder = "asc" | "desc";
 type DisplayMode = "grouped" | "flat";
-
-const STATUS_TABS: { value: FilterStatus; label: string }[] = [
-  { value: "all", label: "All" },
-  { value: "todo", label: "To Do" },
-  { value: "in_progress", label: "In Progress" },
-  { value: "done", label: "Done" },
-];
-
-const STATUS_LABELS: Record<string, string> = {
-  todo: "To Do",
-  in_progress: "In Progress",
-  done: "Done",
-};
-
-const STATUS_ORDER = ["todo", "in_progress", "done"] as const;
 
 const PRIORITY_DOT_CLASSES: Record<string, string> = {
   high: "bg-red-500",
@@ -144,45 +130,41 @@ function TaskRow({ task, onToggle, onClick }: TaskRowProps) {
   );
 }
 
-export default function TasksWidget({ widget, onUpdate, isConfiguring, onCloseConfig, userId }: WidgetProps) {
+export default function TasksWidget({ widget, onUpdate, isConfiguring, onCloseConfig, userId, onSetHeaderActions }: WidgetProps) {
   const [, setLocation] = useLocation();
   const { currentProject } = useProject();
 
   const displayMode = (widget.config?.displayMode as DisplayMode) || "grouped";
-  const showStatusTabs = widget.config?.showStatusTabs !== false;
   const showSummaryBar = widget.config?.showSummaryBar !== false;
   const maxItems = (widget.config?.maxItems as number) || 8;
   const myTasksOnly = widget.config?.myTasksOnly === true;
-  const defaultFilterStatus = (widget.config?.defaultFilterStatus as FilterStatus) || "all";
   const defaultFilterPriority = (widget.config?.defaultFilterPriority as FilterPriority) || "all";
   const defaultSortBy = (widget.config?.defaultSortBy as SortBy) || "dueDate";
   const defaultSortOrder = (widget.config?.defaultSortOrder as SortOrder) || "asc";
 
-  const [activeTab, setActiveTab] = useState<FilterStatus>(defaultFilterStatus);
   const [showCompleted, setShowCompleted] = useState(true);
+  const [filterPriority, setFilterPriority] = useState<FilterPriority>(defaultFilterPriority);
+  const [sortBy, setSortBy] = useState<SortBy>(defaultSortBy);
+  const [sortOrder, setSortOrder] = useState<SortOrder>(defaultSortOrder);
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const [filterOpen, setFilterOpen] = useState(false);
 
   const [editingTitle, setEditingTitle] = useState(widget.title);
   const [configDisplayMode, setConfigDisplayMode] = useState<DisplayMode>(displayMode);
-  const [configShowStatusTabs, setConfigShowStatusTabs] = useState(showStatusTabs);
   const [configShowSummaryBar, setConfigShowSummaryBar] = useState(showSummaryBar);
   const [configMaxItems, setConfigMaxItems] = useState(maxItems);
   const [configMyTasksOnly, setConfigMyTasksOnly] = useState(myTasksOnly);
-  const [configFilterStatus, setConfigFilterStatus] = useState<FilterStatus>(defaultFilterStatus);
   const [configFilterPriority, setConfigFilterPriority] = useState<FilterPriority>(defaultFilterPriority);
   const [configSortBy, setConfigSortBy] = useState<SortBy>(defaultSortBy);
   const [configSortOrder, setConfigSortOrder] = useState<SortOrder>(defaultSortOrder);
 
   useEffect(() => {
-    setActiveTab((widget.config?.defaultFilterStatus as FilterStatus) || "all");
     setEditingTitle(widget.title);
     setConfigDisplayMode((widget.config?.displayMode as DisplayMode) || "grouped");
-    setConfigShowStatusTabs(widget.config?.showStatusTabs !== false);
     setConfigShowSummaryBar(widget.config?.showSummaryBar !== false);
     setConfigMaxItems((widget.config?.maxItems as number) || 8);
     setConfigMyTasksOnly(widget.config?.myTasksOnly === true);
-    setConfigFilterStatus((widget.config?.defaultFilterStatus as FilterStatus) || "all");
     setConfigFilterPriority((widget.config?.defaultFilterPriority as FilterPriority) || "all");
     setConfigSortBy((widget.config?.defaultSortBy as SortBy) || "dueDate");
     setConfigSortOrder((widget.config?.defaultSortOrder as SortOrder) || "asc");
@@ -198,6 +180,16 @@ export default function TasksWidget({ widget, onUpdate, isConfiguring, onCloseCo
     },
     enabled: !!currentProject?.id,
   });
+
+  const { data: customStatuses = [] } = useQuery<TaskTemplateStatus[]>({
+    queryKey: ["/api/task-template-statuses"],
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const sortedStatuses = useMemo(() =>
+    [...customStatuses].sort((a, b) => (a.order ?? 0) - (b.order ?? 0)),
+    [customStatuses],
+  );
 
   const deleteTaskMutation = useMutation({
     mutationFn: async (taskId: string) => { await apiRequest(`/api/tasks/${taskId}`, "DELETE"); },
@@ -220,11 +212,9 @@ export default function TasksWidget({ widget, onUpdate, isConfiguring, onCloseCo
         config: {
           ...widget.config,
           displayMode: configDisplayMode,
-          showStatusTabs: configShowStatusTabs,
           showSummaryBar: configShowSummaryBar,
           maxItems: configMaxItems,
           myTasksOnly: configMyTasksOnly,
-          defaultFilterStatus: configFilterStatus,
           defaultFilterPriority: configFilterPriority,
           defaultSortBy: configSortBy,
           defaultSortOrder: configSortOrder,
@@ -241,16 +231,16 @@ export default function TasksWidget({ widget, onUpdate, isConfiguring, onCloseCo
       tasks = tasks.filter(t => (t as any).assigneeId === userId);
     }
 
-    if (defaultFilterPriority !== "all") {
-      tasks = tasks.filter(t => t.priority === defaultFilterPriority);
+    if (filterPriority !== "all") {
+      tasks = tasks.filter(t => t.priority === filterPriority);
     }
 
     tasks.sort((a, b) => {
       let cmp = 0;
-      switch (defaultSortBy) {
+      switch (sortBy) {
         case "dueDate": {
-          const dA = a.dueDate ? new Date(a.dueDate as string).getTime() : (defaultSortOrder === "asc" ? Infinity : -Infinity);
-          const dB = b.dueDate ? new Date(b.dueDate as string).getTime() : (defaultSortOrder === "asc" ? Infinity : -Infinity);
+          const dA = a.dueDate ? new Date(a.dueDate as string).getTime() : (sortOrder === "asc" ? Infinity : -Infinity);
+          const dB = b.dueDate ? new Date(b.dueDate as string).getTime() : (sortOrder === "asc" ? Infinity : -Infinity);
           cmp = dA - dB;
           break;
         }
@@ -263,16 +253,17 @@ export default function TasksWidget({ widget, onUpdate, isConfiguring, onCloseCo
           cmp = a.title.localeCompare(b.title);
           break;
         case "status": {
-          const so = { todo: 0, in_progress: 1, done: 2 } as Record<string, number>;
-          cmp = (so[a.status ?? ""] ?? 3) - (so[b.status ?? ""] ?? 3);
+          const so: Record<string, number> = {};
+          sortedStatuses.forEach((s, i) => { so[s.name] = i; });
+          cmp = (so[a.status ?? ""] ?? 99) - (so[b.status ?? ""] ?? 99);
           break;
         }
       }
-      return defaultSortOrder === "asc" ? cmp : -cmp;
+      return sortOrder === "asc" ? cmp : -cmp;
     });
 
     return tasks;
-  }, [allTasks, myTasksOnly, userId, defaultFilterPriority, defaultSortBy, defaultSortOrder]);
+  }, [allTasks, myTasksOnly, userId, filterPriority, sortBy, sortOrder, sortedStatuses]);
 
   const overdueCount = useMemo(() =>
     processedTasks.filter(t => {
@@ -288,35 +279,56 @@ export default function TasksWidget({ widget, onUpdate, isConfiguring, onCloseCo
   const inProgressCount = useMemo(() =>
     processedTasks.filter(t => t.status === "in_progress").length, [processedTasks]);
 
-  const tabFilteredTasks = useMemo(() => {
-    if (activeTab === "all") return processedTasks;
-    return processedTasks.filter(t => t.status === activeTab);
-  }, [processedTasks, activeTab]);
-
   const visibleTasks = useMemo(() => {
-    if (showCompleted) return tabFilteredTasks;
-    return tabFilteredTasks.filter(t => t.status !== "done" && t.status !== "complete");
-  }, [tabFilteredTasks, showCompleted]);
+    if (showCompleted) return processedTasks;
+    return processedTasks.filter(t => t.status !== "done" && t.status !== "complete");
+  }, [processedTasks, showCompleted]);
 
   const cappedTasks = useMemo(() => visibleTasks.slice(0, maxItems), [visibleTasks, maxItems]);
   const hasMore = visibleTasks.length > maxItems;
 
   const groupedSections = useMemo(() => {
     if (displayMode !== "grouped") return null;
-    return STATUS_ORDER.map(status => ({
-      status,
-      label: STATUS_LABELS[status],
-      tasks: cappedTasks.filter(t => t.status === status),
-    })).filter(s => s.tasks.length > 0);
-  }, [cappedTasks, displayMode]);
+    const knownStatuses = sortedStatuses.map(s => s.name);
+    const sections = sortedStatuses.map(s => ({
+      key: s.name,
+      label: s.name,
+      tasks: cappedTasks.filter(t => t.status === s.name),
+    }));
+    const otherTasks = cappedTasks.filter(t => !knownStatuses.includes(t.status ?? ""));
+    if (otherTasks.length > 0) {
+      sections.push({ key: "__other__", label: "Other", tasks: otherTasks });
+    }
+    return sections.filter(s => s.tasks.length > 0);
+  }, [cappedTasks, displayMode, sortedStatuses]);
 
-  const toggleSection = (status: string) => {
+  const toggleSection = (key: string) => {
     setCollapsedSections(prev => {
       const next = new Set(prev);
-      if (next.has(status)) next.delete(status); else next.add(status);
+      if (next.has(key)) next.delete(key); else next.add(key);
       return next;
     });
   };
+
+  useEffect(() => {
+    onSetHeaderActions?.(
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            size="icon"
+            variant="default"
+            className="h-6 w-6"
+            onClick={() => setLocation(currentProject?.id ? `/projects/${currentProject.id}/tasks` : "/tasks")}
+            data-testid="tasks-widget-add"
+            aria-label="Add task"
+          >
+            <Plus className="h-3.5 w-3.5" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="top">Add task</TooltipContent>
+      </Tooltip>
+    );
+  }, [currentProject?.id]);
 
   if (isLoading) {
     return (
@@ -337,54 +349,70 @@ export default function TasksWidget({ widget, onUpdate, isConfiguring, onCloseCo
   return (
     <>
       <div className="flex flex-col h-full gap-2">
-        <div className="flex items-center justify-between gap-2">
-          <span className="text-sm font-semibold text-muted-foreground">
-            {visibleTasks.length} task{visibleTasks.length !== 1 ? "s" : ""}
-          </span>
-          <div className="flex items-center gap-1">
+        <div className="flex items-center justify-end gap-1">
+          <Popover open={filterOpen} onOpenChange={setFilterOpen}>
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  onClick={() => setShowCompleted(v => !v)}
-                  aria-label={showCompleted ? "Hide completed" : "Show completed"}
-                >
-                  {showCompleted ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
-                </Button>
+                <PopoverTrigger asChild>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="h-6 w-6"
+                    aria-label="Filter tasks"
+                    data-testid="tasks-widget-filter"
+                  >
+                    <SlidersHorizontal className="h-3.5 w-3.5" />
+                  </Button>
+                </PopoverTrigger>
               </TooltipTrigger>
-              <TooltipContent side="top">{showCompleted ? "Hide completed" : "Show completed"}</TooltipContent>
+              <TooltipContent side="top">Filter</TooltipContent>
             </Tooltip>
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => setLocation(currentProject?.id ? `/projects/${currentProject.id}/tasks` : "/tasks")}
-              data-testid="tasks-widget-add"
-            >
-              <Plus className="h-3 w-3 mr-1" />
-              Add
-            </Button>
-          </div>
+            <PopoverContent align="end" className="w-56 p-3 space-y-3">
+              <div className="flex items-center justify-between gap-2">
+                <Label className="text-xs font-normal text-muted-foreground">Show completed</Label>
+                <Switch
+                  checked={showCompleted}
+                  onCheckedChange={setShowCompleted}
+                  data-testid="tasks-filter-show-completed"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">Priority</Label>
+                <Select value={filterPriority} onValueChange={v => setFilterPriority(v as FilterPriority)}>
+                  <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All priorities</SelectItem>
+                    <SelectItem value="high">High</SelectItem>
+                    <SelectItem value="medium">Medium</SelectItem>
+                    <SelectItem value="low">Low</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">Sort by</Label>
+                <Select value={sortBy} onValueChange={v => setSortBy(v as SortBy)}>
+                  <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="dueDate">Due date</SelectItem>
+                    <SelectItem value="priority">Priority</SelectItem>
+                    <SelectItem value="title">Title</SelectItem>
+                    <SelectItem value="status">Status</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">Order</Label>
+                <Select value={sortOrder} onValueChange={v => setSortOrder(v as SortOrder)}>
+                  <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="asc">Ascending</SelectItem>
+                    <SelectItem value="desc">Descending</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </PopoverContent>
+          </Popover>
         </div>
-
-        {showStatusTabs && (
-          <div className="flex gap-1 flex-wrap">
-            {STATUS_TABS.map(tab => (
-              <button
-                key={tab.value}
-                onClick={() => setActiveTab(tab.value)}
-                className={cn(
-                  "px-2 py-0.5 text-xs rounded-full border transition-colors",
-                  activeTab === tab.value
-                    ? "bg-primary text-primary-foreground border-primary"
-                    : "border-border text-muted-foreground hover:border-foreground/40 hover:text-foreground",
-                )}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
-        )}
 
         {showSummaryBar && (overdueCount > 0 || inProgressCount > 0) && (
           <p className="text-xs text-muted-foreground leading-none">
@@ -407,12 +435,12 @@ export default function TasksWidget({ widget, onUpdate, isConfiguring, onCloseCo
           ) : displayMode === "grouped" && groupedSections ? (
             <div className="space-y-1">
               {groupedSections.map(section => {
-                const isCollapsed = collapsedSections.has(section.status);
+                const isCollapsed = collapsedSections.has(section.key);
                 return (
-                  <div key={section.status}>
+                  <div key={section.key}>
                     <button
                       className="flex items-center gap-1 w-full text-xs font-medium text-muted-foreground py-1 px-1 hover:text-foreground"
-                      onClick={() => toggleSection(section.status)}
+                      onClick={() => toggleSection(section.key)}
                     >
                       {isCollapsed
                         ? <ChevronRight className="h-3 w-3 flex-shrink-0" />
@@ -490,14 +518,6 @@ export default function TasksWidget({ widget, onUpdate, isConfiguring, onCloseCo
             </div>
             <div className="flex items-center gap-2">
               <Checkbox
-                id="cfg-tabs"
-                checked={configShowStatusTabs}
-                onCheckedChange={v => setConfigShowStatusTabs(!!v)}
-              />
-              <Label htmlFor="cfg-tabs" className="cursor-pointer font-normal">Show status filter tabs</Label>
-            </div>
-            <div className="flex items-center gap-2">
-              <Checkbox
                 id="cfg-summary"
                 checked={configShowSummaryBar}
                 onCheckedChange={v => setConfigShowSummaryBar(!!v)}
@@ -522,18 +542,6 @@ export default function TasksWidget({ widget, onUpdate, isConfiguring, onCloseCo
                 value={configMaxItems}
                 onChange={e => setConfigMaxItems(parseInt(e.target.value) || 8)}
               />
-            </div>
-            <div className="space-y-2">
-              <Label>Default Status Filter</Label>
-              <Select value={configFilterStatus} onValueChange={v => setConfigFilterStatus(v as FilterStatus)}>
-                <SelectTrigger data-testid="config-select-filter-status"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All</SelectItem>
-                  <SelectItem value="todo">To Do</SelectItem>
-                  <SelectItem value="in_progress">In Progress</SelectItem>
-                  <SelectItem value="done">Done</SelectItem>
-                </SelectContent>
-              </Select>
             </div>
             <div className="space-y-2">
               <Label>Default Priority Filter</Label>
@@ -575,11 +583,9 @@ export default function TasksWidget({ widget, onUpdate, isConfiguring, onCloseCo
               variant="outline"
               onClick={() => {
                 setConfigDisplayMode(displayMode);
-                setConfigShowStatusTabs(showStatusTabs);
                 setConfigShowSummaryBar(showSummaryBar);
                 setConfigMaxItems(maxItems);
                 setConfigMyTasksOnly(myTasksOnly);
-                setConfigFilterStatus(defaultFilterStatus);
                 setConfigFilterPriority(defaultFilterPriority);
                 setConfigSortBy(defaultSortBy);
                 setConfigSortOrder(defaultSortOrder);

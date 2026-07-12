@@ -1,3 +1,5 @@
+import type { ReactNode } from "react";
+
 export interface Widget {
   id: string;
   type: string;
@@ -62,6 +64,8 @@ export interface WidgetProps {
   isConfiguring?: boolean;
   onCloseConfig?: () => void;
   userId?: string;
+  /** Called by the widget to push React nodes into the WidgetCard header row */
+  onSetHeaderActions?: (actions: ReactNode) => void;
 }
 
 export interface ProjectDashboard {

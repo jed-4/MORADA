@@ -456,19 +456,36 @@ export default function ScheduleWidget({ widget, onUpdate, isConfiguring, onClos
 
 
   const renderListView = () => {
-    const sortedItems = scheduleItems.slice(0, maxItems);
+    const today = new Date();
+    const weekStart = startOfWeek(today, { weekStartsOn: weekStartDay });
+    const weekEnd = new Date(weekStart);
+    weekEnd.setDate(weekStart.getDate() + 6);
+    weekEnd.setHours(23, 59, 59, 999);
+
+    const weekItems = scheduleItems.filter(item => {
+      const d = new Date(item.date);
+      return d >= weekStart && d <= weekEnd;
+    }).slice(0, maxItems);
+
+    const weekOverdueCount = weekItems.filter(i => i.status === "overdue").length;
+
+    const weekLabel = (() => {
+      const startLabel = weekStart.toLocaleDateString("en-AU", { month: "short", day: "numeric" });
+      const endLabel = weekEnd.toLocaleDateString("en-AU", { month: "short", day: "numeric" });
+      return `${startLabel} – ${endLabel}`;
+    })();
     
     return (
       <div className="space-y-3">
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
-            {overdueCount > 0 && (
+            {weekOverdueCount > 0 && (
               <Badge variant="destructive" className="text-xs">
-                {overdueCount} overdue
+                {weekOverdueCount} overdue
               </Badge>
             )}
             <span className="text-xs text-muted-foreground">
-              {sortedItems.length} upcoming
+              This week · {weekLabel}
             </span>
           </div>
           <Button 
@@ -484,7 +501,7 @@ export default function ScheduleWidget({ widget, onUpdate, isConfiguring, onClos
         </div>
         
         <div className="space-y-2">
-          {sortedItems.map((item) => (
+          {weekItems.map((item) => (
             <div 
               key={item.id}
               className={`p-2.5 border rounded-md hover-elevate cursor-pointer ${
@@ -544,10 +561,10 @@ export default function ScheduleWidget({ widget, onUpdate, isConfiguring, onClos
           ))}
         </div>
         
-        {sortedItems.length === 0 && (
+        {weekItems.length === 0 && (
           <div className="text-center py-6 text-sm text-muted-foreground">
             <Calendar className="h-8 w-8 mx-auto mb-2 opacity-50" />
-            <p>No scheduled items</p>
+            <p>Nothing scheduled this week</p>
             <Button 
               variant="link" 
               size="sm" 
@@ -559,7 +576,7 @@ export default function ScheduleWidget({ widget, onUpdate, isConfiguring, onClos
           </div>
         )}
 
-        {sortedItems.length > 0 && (
+        {weekItems.length > 0 && (
           <Button 
             variant="ghost" 
             size="sm" 

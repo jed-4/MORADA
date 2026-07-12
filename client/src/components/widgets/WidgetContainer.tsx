@@ -10,7 +10,7 @@ import {
 import { Widget } from "@/types/widgets";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useCallback, useEffect, type ReactNode } from "react";
 import { WidgetCard } from "@/components/ui/WidgetCard";
 import { getWidgetDefinition } from "./WidgetRegistry";
 import { cn } from "@/lib/utils";
@@ -22,6 +22,7 @@ interface WidgetContainerProps {
   onRemove?: (widgetId: string) => void;
   onConfigure?: (widgetId: string) => void;
   isConfiguring?: boolean;
+  headerActions?: ReactNode;
 }
 
 // Resize overlay that shows during drag
@@ -163,6 +164,7 @@ export default function WidgetContainer({
   onRemove,
   onConfigure,
   isConfiguring = false,
+  headerActions,
 }: WidgetContainerProps) {
   const [isResizing, setIsResizing] = useState(false);
   const [currentDimensions, setCurrentDimensions] = useState(widget.dimensions);
@@ -251,7 +253,7 @@ export default function WidgetContainer({
   );
 
   const hasMenu = !!onConfigure || !!onRemove;
-  const headerRight = hasMenu ? (
+  const menuNode = hasMenu ? (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button
@@ -279,6 +281,13 @@ export default function WidgetContainer({
         )}
       </DropdownMenuContent>
     </DropdownMenu>
+  ) : null;
+
+  const headerRight = (headerActions || menuNode) ? (
+    <>
+      {headerActions}
+      {menuNode}
+    </>
   ) : null;
 
   return (
