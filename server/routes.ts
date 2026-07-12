@@ -2800,20 +2800,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const minute = await getOwnedMinute(req, res, req.params.id);
       if (!minute) return;
 
-      // Use OpenAI to generate summary
-      const OpenAI = (await import('openai')).default;
-      const openai = new OpenAI({
-        baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
-        apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
-      });
+      const anthropicClient = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-      const completion = await openai.chat.completions.create({
-        model: "gpt-5-mini",
+      const minutesCompletion = await anthropicClient.messages.create({
+        model: "claude-haiku-4-5",
+        max_tokens: 1024,
+        system: "You are an assistant that summarizes meeting minutes for construction project management. Provide a concise summary highlighting key decisions, action items, and important discussions. Format the response in clear paragraphs.",
         messages: [
-          {
-            role: "system",
-            content: "You are an assistant that summarizes meeting minutes for construction project management. Provide a concise summary highlighting key decisions, action items, and important discussions. Format the response in clear paragraphs."
-          },
           {
             role: "user",
             content: `Please summarize the following meeting minutes:\n\nTitle: ${minute.title}\nDate: ${new Date(minute.meetingDate).toLocaleDateString()}\nAttendees: ${(minute.attendees as string[])?.join(', ') || 'Not specified'}\n\nContent:\n${minute.contentText || ''}`
@@ -2821,7 +2814,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         ],
       });
 
-      const summary = completion.choices[0]?.message?.content || '';
+      const summary = (minutesCompletion.content[0] as any).text || '';
       
       // Update the minute with the summary
       const updatedMinute = await storage.updateMinute(req.params.id, { aiSummary: summary });
@@ -2832,105 +2825,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Configure multer for audio/video file uploads
-  const recordingUpload = multer({
-    storage: multer.memoryStorage(),
-    limits: {
-      fileSize: 25 * 1024 * 1024, // 25MB limit (OpenAI Whisper limit)
-    },
-    fileFilter: (req, file, cb) => {
-      const allowedMimeTypes = [
-        'audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/m4a', 'audio/webm',
-        'video/mp4', 'video/mpeg', 'video/webm'
-      ];
-      if (allowedMimeTypes.includes(file.mimetype)) {
-        cb(null, true);
-      } else {
-        cb(new Error('Invalid file type. Please upload an audio or video file.'));
-      }
-    }
-  });
-
-  // Transcribe audio/video endpoint for minutes
-  app.post("/api/minutes/:id/transcribe", recordingUpload.single('recording'), async (req, res) => {
-    try {
-      if (!req.file) {
-        return res.status(400).json({ error: "No file uploaded" });
-      }
-
-      const minute = await getOwnedMinute(req, res, req.params.id);
-      if (!minute) return;
-
-      // Update status to processing
-      await storage.updateMinute(req.params.id, { 
-        transcriptionStatus: 'processing',
-        recordingFileName: req.file.originalname
-      });
-
-      // Use OpenAI Whisper API to transcribe
-      const OpenAI = (await import('openai')).default;
-      const openai = new OpenAI({
-        baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
-        apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
-      });
-
-      // Create a File object from the buffer
-      const file = new File([req.file.buffer], req.file.originalname, { type: req.file.mimetype });
-
-      const transcription = await openai.audio.transcriptions.create({
-        file: file,
-        model: "whisper-1",
-        language: "en",
-      });
-
-      // Update minute with transcription
-      const updatedMinute = await storage.updateMinute(req.params.id, {
-        transcription: transcription.text,
-        transcriptionStatus: 'completed',
-        contentText: transcription.text, // Pre-fill content with transcription
-      });
-
-      res.json({ 
-        transcription: transcription.text, 
-        minute: updatedMinute 
-      });
-    } catch (error) {
-      console.error("Failed to transcribe audio:", error);
-      
-      // Update status to failed
-      await storage.updateMinute(req.params.id, { transcriptionStatus: 'failed' });
-      
-      res.status(500).json({ error: "Failed to transcribe audio" });
-    }
-  });
-
-  // Generic audio transcription endpoint (voice-to-text)
-  app.post("/api/transcribe-audio", recordingUpload.single('audio'), async (req, res) => {
-    try {
-      if (!req.file) {
-        return res.status(400).json({ error: "No audio file uploaded" });
-      }
-
-      const OpenAI = (await import('openai')).default;
-      const openai = new OpenAI({
-        baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
-        apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
-      });
-
-      const file = new File([req.file.buffer], req.file.originalname || 'audio.m4a', { type: req.file.mimetype });
-
-      const transcription = await openai.audio.transcriptions.create({
-        file: file,
-        model: "gpt-4o-mini-transcribe",
-        response_format: "json",
-      });
-
-      res.json({ text: transcription.text });
-    } catch (error) {
-      console.error("Failed to transcribe audio:", error);
-      res.status(500).json({ error: "Failed to transcribe audio" });
-    }
-  });
 
   // Custom Field Definitions API Routes
   app.get("/api/custom-field-defs", async (req, res) => {
@@ -19994,7 +19888,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // OCR Invoice Processing endpoint (using OpenAI Vision)
+  // OCR Invoice Processing endpoint (using AI Vision)
   // File-first: persist the uploaded file to object storage BEFORE invoking the
   // AI extractor so the source attachment is never lost on AI failure. The
   // returned objectPath/filename/mimeType/size let the client save the
@@ -30970,37 +30864,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
       };
 
       // Generate AI summary
-      const OpenAI = (await import('openai')).default;
-      const openai = new OpenAI({
-        baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
-        apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
-      });
+      const projectSummaryClient = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-      const completion = await openai.chat.completions.create({
-        model: "gpt-5-mini",
-        messages: [
-          {
-            role: "system",
-            content: `You are a construction project assistant providing daily briefings for builders. Generate a concise, actionable summary. Return JSON with these arrays:
+      const projectBriefingCompletion = await projectSummaryClient.messages.create({
+        model: "claude-haiku-4-5",
+        max_tokens: 1024,
+        system: `You are a construction project assistant providing daily briefings for builders. Generate a concise, actionable summary. Return JSON with these arrays:
 - schedule: 2-4 brief items about today's tasks and upcoming deadlines
 - actionItems: 2-4 specific things that need attention (overdue tasks, pending RFIs/RFQs)
 - issues: 1-3 potential concerns or warnings (only if applicable)
-Keep each item under 15 words. Be specific and practical. Don't include empty arrays.`
-          },
+Keep each item under 15 words. Be specific and practical. Don't include empty arrays. Return only valid JSON.`,
+        messages: [
           {
             role: "user",
             content: `Daily briefing for project "${context.projectName}":
-- ${context.todayTaskCount} tasks due today: ${context.todayTasks.map(t => t.title).join(', ') || 'none'}
-- ${context.overdueTaskCount} overdue tasks: ${context.overdueTasks.map(t => `${t.title} (${t.daysOverdue}d)`).join(', ') || 'none'}
-- Upcoming this week: ${context.upcomingTasks.map(t => t.title).join(', ') || 'nothing scheduled'}
+- ${context.todayTaskCount} tasks due today: ${context.todayTasks.map((t: any) => t.title).join(', ') || 'none'}
+- ${context.overdueTaskCount} overdue tasks: ${context.overdueTasks.map((t: any) => `${t.title} (${t.daysOverdue}d)`).join(', ') || 'none'}
+- Upcoming this week: ${context.upcomingTasks.map((t: any) => t.title).join(', ') || 'nothing scheduled'}
 - ${context.openRFICount} open RFIs, ${context.openRFQCount} pending RFQs
 - Total budget: $${context.totalBudget.toLocaleString()}`
           }
         ],
-        response_format: { type: "json_object" },
       });
 
-      const aiResponse = JSON.parse(completion.choices[0]?.message?.content || '{}');
+      const aiResponse = JSON.parse((projectBriefingCompletion.content[0] as any).text || '{}');
       
       res.json({
         schedule: aiResponse.schedule || [],
@@ -31025,23 +30912,17 @@ Keep each item under 15 words. Be specific and practical. Don't include empty ar
       const { taskSummary } = req.body;
 
       // Generate personalized AI summary
-      const OpenAI = (await import('openai')).default;
-      const openai = new OpenAI({
-        baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
-        apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
-      });
+      const dailySummaryClient = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-      const completion = await openai.chat.completions.create({
-        model: "gpt-5-mini",
-        messages: [
-          {
-            role: "system",
-            content: `You are a friendly productivity assistant for a construction project manager. Generate a brief, encouraging daily summary. Return JSON with:
+      const dailyCompletion = await dailySummaryClient.messages.create({
+        model: "claude-haiku-4-5",
+        max_tokens: 1024,
+        system: `You are a friendly productivity assistant for a construction project manager. Generate a brief, encouraging daily summary. Return JSON with:
 - summary: A 1-2 sentence overview of their day (friendly and motivating)
 - highlights: Array of 2-3 positive observations or accomplishments
 - suggestions: Array of 2-3 actionable tips to be more productive today
-Keep language casual and encouraging. Focus on what they can accomplish.`
-          },
+Keep language casual and encouraging. Focus on what they can accomplish. Return only valid JSON.`,
+        messages: [
           {
             role: "user",
             content: `Daily summary for a team member:
@@ -31051,10 +30932,9 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
 - Upcoming tasks: ${taskSummary?.upcomingTasks?.map((t: any) => t.title).join(', ') || 'none scheduled'}`
           }
         ],
-        response_format: { type: "json_object" },
       });
 
-      const aiResponse = JSON.parse(completion.choices[0]?.message?.content || '{}');
+      const aiResponse = JSON.parse((dailyCompletion.content[0] as any).text || '{}');
       
       res.json({
         summary: aiResponse.summary || "Have a productive day!",
@@ -34805,7 +34685,7 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
   // ─────────────────────────────────────────────────────────────────────
   app.get("/api/ai/capabilities", requireAuth, async (_req, res) => {
     res.json({
-      dailySummary: Boolean(process.env.AI_INTEGRATIONS_OPENAI_API_KEY || process.env.OPENAI_API_KEY),
+      dailySummary: Boolean(process.env.ANTHROPIC_API_KEY),
     });
   });
 

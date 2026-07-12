@@ -44,7 +44,7 @@ export default function PrivacyPolicy() {
               <li>Stripe (billing)</li>
               <li>Xero (accounting integration)</li>
               <li>Resend (transactional email)</li>
-              <li>Anthropic/OpenAI (AI features and support chat)</li>
+              <li>Anthropic (AI features and support chat)</li>
               <li>Crisp (support chat)</li>
               <li>Sentry (error monitoring)</li>
             </ul>
@@ -54,7 +54,7 @@ export default function PrivacyPolicy() {
             <h2 className="text-xl font-semibold mb-3">AI support chat disclosure</h2>
             <p className="text-muted-foreground leading-relaxed">
               When you use support chat, your name, email, plan, and company name may be shared with Crisp and
-              Anthropic/OpenAI to assist with your query. No financial figures, client names, or document content are
+              Anthropic to assist with your query. No financial figures, client names, or document content are
               shared. Support conversations are stored and may inform future support interactions.
             </p>
           </section>

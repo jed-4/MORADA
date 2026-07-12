@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { useParams, useLocation } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -22,9 +22,6 @@ import {
   Edit3,
   Check,
   X,
-  Upload,
-  Mic,
-  FileAudio,
   Link as LinkIcon,
 } from "lucide-react";
 import { format } from "date-fns";
@@ -41,7 +38,6 @@ export default function MinuteDetail() {
   const [editedLocation, setEditedLocation] = useState("");
   const [editedRecordingUrl, setEditedRecordingUrl] = useState("");
   const [editedAttendees, setEditedAttendees] = useState<Attendee[]>([]);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Fetch minute
   const { data: minute, isLoading } = useQuery<Minute>({
@@ -100,38 +96,6 @@ export default function MinuteDetail() {
     },
   });
 
-  // Transcribe audio mutation
-  const transcribeMutation = useMutation({
-    mutationFn: async (file: File) => {
-      const formData = new FormData();
-      formData.append('recording', file);
-      
-      const response = await fetch(`/api/minutes/${id}/transcribe`, {
-        method: 'POST',
-        body: formData,
-      });
-      
-      if (!response.ok) {
-        throw new Error('Failed to transcribe audio');
-      }
-      
-      return response.json();
-    },
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/minutes", id] });
-      setContentHtml(data.transcription);
-      setContentText(data.transcription);
-      toast({ title: "Recording transcribed successfully" });
-    },
-    onError: (error: any) => {
-      toast({ 
-        title: "Failed to transcribe recording", 
-        description: error.message || "An error occurred",
-        variant: "destructive" 
-      });
-    },
-  });
-
   const handleContentChange = (html: string, text: string) => {
     setContentHtml(html);
     setContentText(text);
@@ -168,13 +132,6 @@ export default function MinuteDetail() {
       setEditedAttendees((minute.attendees as Attendee[]) || []);
     }
     setIsEditing(false);
-  };
-
-  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (file) {
-      transcribeMutation.mutate(file);
-    }
   };
 
   const handleGenerateSummary = () => {
@@ -331,62 +288,6 @@ export default function MinuteDetail() {
           )}
         </CardHeader>
         <CardContent className="space-y-6">
-          <div>
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold">Upload & Transcribe Recording</h3>
-              <div className="flex gap-2">
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="audio/*,video/*"
-                  onChange={handleFileUpload}
-                  className="hidden"
-                  data-testid="input-file-upload"
-                />
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={transcribeMutation.isPending}
-                  data-testid="button-upload-recording"
-                >
-                  {transcribeMutation.isPending ? (
-                    <>
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                      Transcribing...
-                    </>
-                  ) : (
-                    <>
-                      <Upload className="h-4 w-4 mr-2" />
-                      Upload Recording
-                    </>
-                  )}
-                </Button>
-              </div>
-            </div>
-            {minute.recordingFileName && (
-              <div className="flex items-center gap-2 p-3 bg-muted rounded-md">
-                <FileAudio className="h-4 w-4 text-muted-foreground" />
-                <span className="text-sm" data-testid="text-recording-filename">{minute.recordingFileName}</span>
-                {minute.transcriptionStatus && (
-                  <Badge variant={minute.transcriptionStatus === 'completed' ? 'default' : minute.transcriptionStatus === 'failed' ? 'destructive' : 'secondary'}>
-                    {minute.transcriptionStatus}
-                  </Badge>
-                )}
-              </div>
-            )}
-            {minute.transcription && (
-              <Card className="bg-muted/50 mt-4">
-                <CardContent className="pt-6">
-                  <h4 className="font-medium mb-2">Transcription</h4>
-                  <p className="whitespace-pre-wrap text-sm" data-testid="text-transcription">
-                    {minute.transcription}
-                  </p>
-                </CardContent>
-              </Card>
-            )}
-          </div>
-
           <Separator />
 
           <div>

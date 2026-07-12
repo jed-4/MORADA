@@ -161,11 +161,8 @@ async function extractSemanticFields(
   rawText: string,
   alreadyExtracted: RegexExtractedFields,
 ): Promise<AIInvoiceResponse> {
-  const OpenAI = (await import("openai")).default;
-  const openai = new OpenAI({
-    baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
-    apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
-  });
+  const Anthropic = (await import("@anthropic-ai/sdk")).default;
+  const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
   const knownLines: string[] = [];
   if (alreadyExtracted.abn) knownLines.push(`ABN already found: ${alreadyExtracted.abn} — do not re-extract.`);
@@ -202,13 +199,13 @@ ${rawText.substring(0, 4000)}
 
 Return ONLY valid JSON. No markdown fences.`;
 
-  const response = await openai.chat.completions.create({
-    model: "gpt-5-mini",
+  const response = await anthropic.messages.create({
+    model: "claude-haiku-4-5",
+    max_tokens: 2048,
     messages: [{ role: "user", content: prompt }],
-    max_completion_tokens: 2048,
   });
 
-  const content = response.choices[0]?.message?.content ?? "";
+  const content = (response.content[0] as any).text ?? "";
   const jsonMatch = content.match(/\{[\s\S]*\}/);
   if (!jsonMatch) {
     console.error("[AI Bill Reader] No JSON in semantic AI response:", content.substring(0, 300));
@@ -300,35 +297,38 @@ async function convertPdfToImages(pdfBuffer: Buffer): Promise<string[]> {
 }
 
 async function extractWithVision(pdfBuffer: Buffer): Promise<AIInvoiceResponse> {
-  const OpenAI = (await import("openai")).default;
-  const openai = new OpenAI({
-    baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
-    apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
-  });
+  const Anthropic = (await import("@anthropic-ai/sdk")).default;
+  const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
   const pageImages = await convertPdfToImages(pdfBuffer);
   if (pageImages.length === 0) {
     throw new Error("Failed to convert scanned PDF to images for vision processing");
   }
 
-  const imageContent = pageImages.map((dataUrl) => ({
-    type: "image_url" as const,
-    image_url: { url: dataUrl, detail: "auto" as const },
-  }));
+  const imageBlocks = pageImages.map((dataUrl) => {
+    const base64 = dataUrl.replace(/^data:image\/\w+;base64,/, "");
+    return {
+      type: "image" as const,
+      source: {
+        type: "base64" as const,
+        media_type: "image/png" as const,
+        data: base64,
+      },
+    };
+  });
 
-  const response = await openai.chat.completions.create({
-    model: "gpt-4o",
+  const response = await anthropic.messages.create({
+    model: "claude-sonnet-4-5",
+    max_tokens: 4096,
     messages: [
       {
         role: "user",
-        content: [{ type: "text", text: VISION_EXTRACTION_PROMPT }, ...imageContent],
+        content: [{ type: "text", text: VISION_EXTRACTION_PROMPT }, ...imageBlocks],
       },
     ],
-    max_tokens: 4096,
-    temperature: 0,
   });
 
-  const content = response.choices[0]?.message?.content ?? "";
+  const content = (response.content[0] as any).text ?? "";
   const jsonMatch = content.match(/\{[\s\S]*\}/);
   if (!jsonMatch) {
     console.error("[AI Bill Reader] No JSON in vision response:", content.substring(0, 300));
@@ -343,29 +343,31 @@ async function extractFromImage(
   base64Clean: string,
   mimeType: string,
 ): Promise<AIInvoiceResponse> {
-  const OpenAI = (await import("openai")).default;
-  const openai = new OpenAI({
-    baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
-    apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
-  });
+  const Anthropic = (await import("@anthropic-ai/sdk")).default;
+  const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-  const dataUrl = `data:${mimeType};base64,${base64Clean}`;
-  const response = await openai.chat.completions.create({
-    model: "gpt-4o",
+  const response = await anthropic.messages.create({
+    model: "claude-sonnet-4-5",
+    max_tokens: 4096,
     messages: [
       {
         role: "user",
         content: [
           { type: "text", text: VISION_EXTRACTION_PROMPT },
-          { type: "image_url", image_url: { url: dataUrl, detail: "high" } },
+          {
+            type: "image",
+            source: {
+              type: "base64",
+              media_type: mimeType as any,
+              data: base64Clean,
+            },
+          },
         ],
       },
     ],
-    max_tokens: 4096,
-    temperature: 0,
   });
 
-  const content = response.choices[0]?.message?.content ?? "";
+  const content = (response.content[0] as any).text ?? "";
   const jsonMatch = content.match(/\{[\s\S]*\}/);
   if (!jsonMatch) throw new Error("No JSON found in image AI response");
   return JSON.parse(jsonMatch[0]);

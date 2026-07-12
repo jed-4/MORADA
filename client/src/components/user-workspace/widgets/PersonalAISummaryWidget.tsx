@@ -70,11 +70,11 @@ export default function PersonalAISummaryWidget({ widget, onUpdate, isConfigurin
     setConfigShowSuggestedActions(widget.config?.showSuggestedActions ?? true);
   }, [widget.title, widget.config]);
 
-  const { data: capabilities, isLoading: isLoadingCapabilities } = useQuery<{ dailySummary: boolean }>({
+  const { isLoading: isLoadingCapabilities } = useQuery<{ dailySummary: boolean }>({
     queryKey: ["/api/ai/capabilities"],
     staleTime: 5 * 60 * 1000,
   });
-  const aiAvailable = capabilities?.dailySummary !== false;
+  const aiAvailable = true;
 
   const { data: tasks = [] } = useQuery<Task[]>({
     queryKey: ["/api/tasks", { assigneeId: userId }],
@@ -324,7 +324,7 @@ export default function PersonalAISummaryWidget({ widget, onUpdate, isConfigurin
       <WidgetEmpty
         icon={Sparkles}
         title="AI Summary unavailable"
-        message="Add an OpenAI API key to enable daily summaries."
+        message="AI summaries are not available at this time."
       />
     );
   }
