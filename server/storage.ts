@@ -13021,6 +13021,100 @@ export class DbStorage implements IStorage {
     }
   }
 
+  async applyScopeTemplateStage(
+    templateId: string,
+    projectId: string,
+    stageName: string,
+  ): Promise<ScopeItem[]> {
+    const [template] = await db.select().from(schema.scopeTemplates)
+      .where(eq(schema.scopeTemplates.id, templateId))
+      .limit(1);
+    if (!template) throw new Error("Template not found");
+
+    const project = await this.getProject(projectId);
+    if (!project) throw new Error("Project not found");
+    const companyId = project.companyId;
+
+    const rawData = template.templateData as any;
+    let templateStages: Array<{ id?: string; name: string; sortOrder: number }> = [];
+    let templateItems: any[] = [];
+    if (Array.isArray(rawData)) {
+      templateItems = rawData;
+      const stageNamesSet = new Set<string>();
+      rawData.forEach((item: any) => { if (item.stage) stageNamesSet.add(item.stage); });
+      templateStages = Array.from(stageNamesSet).map((n, i) => ({ name: n, sortOrder: i }));
+    } else if (rawData && typeof rawData === 'object') {
+      templateStages = rawData.stages || [];
+      templateItems = rawData.items || [];
+    }
+
+    const stageIdToName = new Map<string, string>();
+    for (const ts of templateStages) {
+      if (ts.id) stageIdToName.set(ts.id, ts.name);
+    }
+
+    const normalizedTarget = stageName.toLowerCase().trim();
+    const targetStage = templateStages.find(
+      (s) => s.name.toLowerCase().trim() === normalizedTarget,
+    );
+    if (!targetStage) throw new Error(`Stage "${stageName}" not found in template`);
+
+    const stageItems = templateItems
+      .filter((item: any) => {
+        const n = item.stageId ? stageIdToName.get(item.stageId) : item.stage;
+        return (n || '').toLowerCase().trim() === normalizedTarget;
+      })
+      .sort((a: any, b: any) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+
+    const existingStages = await this.getScopeStages(projectId);
+    let projectStage = existingStages.find(
+      (s) => s.name.toLowerCase().trim() === normalizedTarget,
+    );
+    if (!projectStage) {
+      const maxOrder = existingStages.length > 0
+        ? Math.max(...existingStages.map((s) => s.displayOrder)) + 1
+        : 0;
+      projectStage = await this.createScopeStage({
+        projectId,
+        companyId,
+        name: targetStage.name,
+        displayOrder: maxOrder,
+      });
+    }
+
+    const existingInStage = await db
+      .select({ displayOrder: schema.scopeItems.displayOrder })
+      .from(schema.scopeItems)
+      .where(
+        and(
+          eq(schema.scopeItems.projectId, projectId),
+          eq(schema.scopeItems.stage, projectStage.name),
+        ),
+      );
+    const maxDisplayOrder = existingInStage.length > 0
+      ? Math.max(...existingInStage.map((i) => i.displayOrder ?? 0))
+      : -1;
+
+    if (stageItems.length === 0) return [];
+
+    const itemsToCreate = stageItems.map((data: any, index: number) => ({
+      companyId,
+      projectId,
+      title: data.title || 'Untitled',
+      description: data.description || null,
+      stage: projectStage!.name,
+      itemType: data.itemType || 'scope',
+      contentType: data.contentType || 'text',
+      quantity: data.quantity || null,
+      rate: data.rate || null,
+      gearList: data.gearList || data.gearChecklist || [],
+      checklistItems: data.checklistItems || [],
+      displayOrder: maxDisplayOrder + 1 + index,
+    }));
+
+    return await this.bulkCreateScopeItems(itemsToCreate);
+  }
+
   async addItemToScopeTemplate(templateId: string, scopeItem: any, companyId: string): Promise<ScopeTemplate | undefined> {
     try {
       // Get the template

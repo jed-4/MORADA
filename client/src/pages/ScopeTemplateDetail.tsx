@@ -252,6 +252,11 @@ export default function ScopeTemplateDetail() {
   const [addToProjectDialogOpen, setAddToProjectDialogOpen] = useState(false);
   const [selectedProjectId, setSelectedProjectId] = useState<string>("");
 
+  // Stage → project state
+  const [addStageToProjectOpen, setAddStageToProjectOpen] = useState(false);
+  const [stageForProject, setStageForProject] = useState<TemplateStage | null>(null);
+  const [stageProjectId, setStageProjectId] = useState<string>("");
+
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: { distance: 8 },
@@ -597,6 +602,36 @@ export default function ScopeTemplateDetail() {
     });
   };
 
+  // Add a single stage's items to a project
+  const addStageToProjectMutation = useMutation({
+    mutationFn: async ({ projectId, stageName }: { projectId: string; stageName: string }) => {
+      return await apiRequest(
+        `/api/scope-templates/${params.templateId}/apply-stage`,
+        'POST',
+        { projectId, stageName },
+      );
+    },
+    onSuccess: (data: any[], { projectId }) => {
+      const project = projects.find(p => p.id === projectId);
+      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/scope`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/scope-stages`] });
+      setAddStageToProjectOpen(false);
+      setStageForProject(null);
+      setStageProjectId("");
+      toast({
+        title: "Stage added to project",
+        description: `${Array.isArray(data) ? data.length : 0} item${Array.isArray(data) && data.length !== 1 ? 's' : ''} added to ${project?.name ?? 'project'}.`,
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to add stage to project.",
+        variant: "destructive",
+      });
+    },
+  });
+
   // Check if item passes current filters
   const passesFilter = (item: TemplateItem) => {
     if (!item.itemType) return true; // Items without type always show
@@ -898,6 +933,18 @@ export default function ScopeTemplateDetail() {
                             >
                               <Pen className="h-4 w-4 mr-2" />
                               Rename Stage
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setStageForProject(stage);
+                                setStageProjectId("");
+                                setAddStageToProjectOpen(true);
+                              }}
+                              data-testid={`menu-add-stage-to-project-${stage.id}`}
+                            >
+                              <FolderPlus className="h-4 w-4 mr-2" />
+                              Add to Project
                             </DropdownMenuItem>
                             <DropdownMenuSeparator />
                             <DropdownMenuItem
@@ -1278,6 +1325,57 @@ export default function ScopeTemplateDetail() {
               data-testid="button-confirm-add-to-project"
             >
               {addToProjectMutation.isPending ? "Adding..." : "Add to Project"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Stage to Project Dialog */}
+      <Dialog open={addStageToProjectOpen} onOpenChange={setAddStageToProjectOpen}>
+        <DialogContent data-testid="dialog-add-stage-to-project">
+          <DialogHeader>
+            <DialogTitle>Add Stage to Project</DialogTitle>
+            <DialogDescription>
+              {stageForProject && (
+                <>
+                  Add <strong>{stageForProject.name}</strong> ({getItemsByStage(stageForProject.id).length} item{getItemsByStage(stageForProject.id).length !== 1 ? 's' : ''}) to a project scope.
+                </>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>Select Project</Label>
+              <Select value={stageProjectId} onValueChange={setStageProjectId}>
+                <SelectTrigger data-testid="select-project-for-stage">
+                  <SelectValue placeholder="Choose a project..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {projects.map(project => (
+                    <SelectItem key={project.id} value={project.id}>
+                      {project.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAddStageToProjectOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                if (!stageProjectId || !stageForProject) return;
+                addStageToProjectMutation.mutate({
+                  projectId: stageProjectId,
+                  stageName: stageForProject.name,
+                });
+              }}
+              disabled={!stageProjectId || addStageToProjectMutation.isPending}
+              data-testid="button-confirm-add-stage-to-project"
+            >
+              {addStageToProjectMutation.isPending ? "Adding..." : "Add to Project"}
             </Button>
           </DialogFooter>
         </DialogContent>
