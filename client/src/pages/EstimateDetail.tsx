@@ -5994,6 +5994,9 @@ export default function EstimateDetail() {
                                   costCodes={costCodes}
                                   costCategories={costCategories}
                                   dropIndicator={groupDropIndicator}
+                                  onUpdateStatus={(groupId, status) =>
+                                    updateGroupMutation.mutate({ groupId, updates: { status } as any })
+                                  }
                                 />
                               );
                             })}

@@ -26,6 +26,23 @@ import { Separator } from "@/components/ui/separator";
 import { useSortable } from '@dnd-kit/sortable';
 import type { EstimateGroup, EstimateItem, CostCode, CostCategory } from "@shared/schema";
 
+type GroupStatus = "not_started" | "in_progress" | "complete";
+
+const STATUS_CONFIG: Record<GroupStatus, { label: string; className: string }> = {
+  not_started: {
+    label: "Not Started",
+    className: "bg-muted text-muted-foreground border-border",
+  },
+  in_progress: {
+    label: "In Progress",
+    className: "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-400 dark:border-amber-800",
+  },
+  complete: {
+    label: "Complete",
+    className: "bg-green-50 text-green-700 border-green-200 dark:bg-green-950/40 dark:text-green-400 dark:border-green-800",
+  },
+};
+
 type ColumnConfig = { id: string; label: string; visible: boolean; widthPx: number };
 
 interface EstimateGroupCardProps {
@@ -67,6 +84,7 @@ interface EstimateGroupCardProps {
   costCodes?: CostCode[];
   costCategories?: CostCategory[];
   dropIndicator?: 'above' | 'below' | null;
+  onUpdateStatus?: (groupId: string, status: GroupStatus) => void;
 }
 
 export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
@@ -102,6 +120,7 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
   costCodes = [],
   costCategories = [],
   dropIndicator,
+  onUpdateStatus,
 }) => {
   const [isAdding, setIsAdding] = useState(false);
 
@@ -129,13 +148,7 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
     animateLayoutChanges: () => false,
   });
 
-  // Check if an item (not a group) is being dragged
-  // When an item is being dragged, we should NOT apply transforms to groups
-  // This prevents groups from flying around when their child items are dragged
   const isItemBeingDragged = activeDragId && !String(activeDragId).startsWith('group-');
-  
-  // Only apply transforms when this group itself is being dragged OR when a group is being reordered
-  // Never apply transforms when an item (line item) is being dragged
   const shouldApplyTransform = transform && !isItemBeingDragged;
   
   const style = {
@@ -153,14 +166,13 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
   const isExpanded = !group.isCollapsed;
   const groupItems = groupedItems[group.id] || [];
   
-  // Use passed visibleCols for consistency with parent, fallback to filtering columns
   const visibleCols = parentVisibleCols || columns.filter(col => col.visible);
   const gridTemplate = parentGridTemplate || `24px ${visibleCols.map(c => `${c.widthPx}px`).join(' ')} 80px`;
   const cellBase = "h-9 px-2 flex items-center text-sm overflow-hidden";
 
-  // Alternating background for visual differentiation between groups
-  const isEvenGroup = groupIndex % 2 === 0;
-  
+  const currentStatus = ((group as any).status as GroupStatus) || "not_started";
+  const statusCfg = STATUS_CONFIG[currentStatus] || STATUS_CONFIG.not_started;
+
   return (
     <div
       ref={setNodeRef}
@@ -168,14 +180,12 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
       className={`relative group/grp ${nestingLevel > 0 ? 'ml-8' : ''}`}
       data-sortable-group-id={group.id}
     >
-      {/* Drop indicator line — shown when another group is dragged over this one */}
       {dropIndicator === 'above' && (
         <div className="absolute -top-[2px] left-0 right-0 h-1 bg-primary z-50 rounded-full shadow-[0_0_8px_rgba(168, 144, 212,0.6)]" />
       )}
       {dropIndicator === 'below' && (
         <div className="absolute -bottom-[2px] left-0 right-0 h-1 bg-primary z-50 rounded-full shadow-[0_0_8px_rgba(168, 144, 212,0.6)]" />
       )}
-      {/* Drag handle — floats in left dead zone, outside the Card */}
       {!isLocked && (
         <div
           {...attributes}
@@ -253,6 +263,51 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
                       </Badge>
                     ) : null;
                   })()}
+                  {/* Status badge — clickable dropdown when not locked */}
+                  {onUpdateStatus && !isLocked ? (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Badge
+                          variant="outline"
+                          className={`text-xs px-1.5 py-0 h-5 flex-shrink-0 cursor-pointer no-default-hover-elevate no-default-active-elevate border ${statusCfg.className}`}
+                          data-testid={`badge-group-status-${group.id}`}
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          {statusCfg.label}
+                        </Badge>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="start" onClick={(e) => e.stopPropagation()}>
+                        {(Object.keys(STATUS_CONFIG) as GroupStatus[]).map((s) => (
+                          <DropdownMenuItem
+                            key={s}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onUpdateStatus(group.id, s);
+                            }}
+                            className={currentStatus === s ? "font-medium" : ""}
+                            data-testid={`menu-item-status-${s}-${group.id}`}
+                          >
+                            <span className={`inline-block w-2 h-2 rounded-full mr-2 flex-shrink-0 ${
+                              s === 'not_started' ? 'bg-muted-foreground/50' :
+                              s === 'in_progress' ? 'bg-amber-500' :
+                              'bg-green-500'
+                            }`} />
+                            {STATUS_CONFIG[s].label}
+                          </DropdownMenuItem>
+                        ))}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  ) : (
+                    currentStatus !== 'not_started' && (
+                      <Badge
+                        variant="outline"
+                        className={`text-xs px-1.5 py-0 h-5 flex-shrink-0 border ${statusCfg.className}`}
+                        data-testid={`badge-group-status-${group.id}`}
+                      >
+                        {statusCfg.label}
+                      </Badge>
+                    )
+                  )}
                   {groupTotals && groupTotals.builderCostExTax > 0 && (
                     <span className="text-xs font-semibold text-primary ml-auto flex-shrink-0" data-testid={`group-total-badge-${group.id}`}>
                       {formatCurrency(groupTotals.builderCostExTax)}
@@ -381,13 +436,12 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
         </div>
       </div>
 
-      {/* Animated Collapsible Content - CSS Grid animation for smooth expand/collapse */}
+      {/* Animated Collapsible Content */}
       <div 
         className="grid transition-[grid-template-rows] duration-300 ease-in-out"
         style={{ gridTemplateRows: isExpanded ? '1fr' : '0fr' }}
       >
         <div className="overflow-hidden">
-          {/* Group items - CSS Grid rows */}
           {groupItems.length > 0 && (
             <div 
               role="rowgroup"
@@ -400,7 +454,6 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
             </div>
           )}
 
-          {/* Add Line row */}
           {!isLocked && !hideAddLines && (
             <div 
               role="row"
@@ -412,9 +465,7 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
               }}
               className="h-10 transition-colors border-t border-border hover:bg-primary/5 group/addline cursor-pointer"
             >
-              {/* Empty checkbox cell */}
               <div className="h-10 px-2 flex items-center" role="gridcell" />
-              {/* Add line button */}
               <div className="h-10 px-2 flex items-center col-span-1" role="gridcell">
                 <Button
                   variant="ghost"
@@ -431,7 +482,6 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
             </div>
           )}
 
-          {/* Child subgroups */}
           {childSubgroups.map((childGroup, childIndex) => (
             <div key={`subgroup-${childGroup.id}`} className="border-t border-border/50">
               <EstimateGroupCard
@@ -463,6 +513,7 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
                 activeDragId={activeDragId}
                 hideAddLines={hideAddLines}
                 groupIndex={childIndex}
+                onUpdateStatus={onUpdateStatus}
               />
             </div>
           ))}

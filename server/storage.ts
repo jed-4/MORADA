@@ -24498,6 +24498,9 @@ export class DbStorage implements IStorage {
       // schedules: per-session snapshot for the Save/Discard editing model.
       await db.execute(sql`ALTER TABLE schedules ADD COLUMN IF NOT EXISTS edit_snapshot json`);
 
+      // estimate_groups: progress status per group section.
+      await db.execute(sql`ALTER TABLE estimate_groups ADD COLUMN IF NOT EXISTS status text NOT NULL DEFAULT 'not_started'`);
+
       // Backfill company_id from the creating user's company where missing.
       await db.execute(sql`
         UPDATE checklist_templates ct
