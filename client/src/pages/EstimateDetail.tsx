@@ -2028,19 +2028,21 @@ export default function EstimateDetail() {
       return { previousItems };
     },
     onSuccess: (data: any) => {
-      // Capture the real id BEFORE invalidation so the items-change useEffect
-      // finds it when the refetch completes (inline-add path only).
-      if (pendingInlineAddRef.current && data?.id) {
+      // Capture the real id BEFORE invalidation for ALL add paths.
+      // The items-change useEffect fires once the refetch replaces the
+      // optimistic item, finds this id, and sets editingCell → autoFocus.
+      if (data?.id) {
         pendingAutoFocusItemId.current = data.id;
       }
+      const wasInlineAdd = pendingInlineAddRef.current;
       pendingInlineAddRef.current = false;
       // Close dialog only on success (no-op when dialog isn't open)
       setIsAddItemOpen(false);
       queryClient.invalidateQueries({ queryKey: ["/api/estimates", effectiveEstimateId, "items"] });
       queryClient.invalidateQueries({ queryKey: ["/api/estimates", effectiveEstimateId, "summary"] });
       queryClient.invalidateQueries({ queryKey: ["/api/estimates"] });
-      if (!pendingAutoFocusItemId.current) {
-        // Only show the toast for dialog-based adds; inline-add is silent.
+      if (!wasInlineAdd) {
+        // Show confirmation toast for dialog-based adds; inline-add is silent.
         toast({
           title: "Success",
           description: "Estimate item added successfully.",
