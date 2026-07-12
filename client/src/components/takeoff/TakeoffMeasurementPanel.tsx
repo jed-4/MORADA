@@ -19,6 +19,7 @@ import {
   Pencil,
   ChevronDown,
   ChevronRight,
+  ChevronLast,
   MoreVertical,
   GripVertical,
 } from "lucide-react";
@@ -51,6 +52,7 @@ interface Props {
   onEditClick?: (m: TakeoffMeasurement) => void;
   activeDrawingId?: string | null;
   onActivateDrawing?: (m: TakeoffMeasurement) => void;
+  onCollapse?: () => void;
 }
 
 const UNCAT = "__uncat__";
@@ -66,6 +68,7 @@ export default function TakeoffMeasurementPanel({
   onEditClick,
   activeDrawingId = null,
   onActivateDrawing,
+  onCollapse,
 }: Props) {
   const { toast } = useToast();
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -235,8 +238,19 @@ export default function TakeoffMeasurementPanel({
           <div className="text-sm font-medium truncate" title={plan.name}>{plan.name}</div>
         </div>
         <Button size="sm" variant="ghost" onClick={onAddClick} data-testid="button-add-measurement-header">
-          <Plus className="h-4 w-4 mr-1" /> Add
+          <Plus className="h-4 w-4 mr-1" /> Add measurement
         </Button>
+        {onCollapse && (
+          <Button
+            size="icon"
+            variant="ghost"
+            onClick={onCollapse}
+            title="Collapse panel"
+            data-testid="button-collapse-panel"
+          >
+            <ChevronLast className="h-4 w-4" />
+          </Button>
+        )}
       </div>
 
       <div className="px-3 py-2 border-b border-border flex items-center text-xs font-medium text-muted-foreground">

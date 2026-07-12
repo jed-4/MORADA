@@ -53,6 +53,7 @@ export default function TakeoffPlanViewer({ plan, initialPage, projectId, onClos
   const [pagesPopoverOpen, setPagesPopoverOpen] = useState(false);
   const [scalePopoverOpen, setScalePopoverOpen] = useState(false);
   const [toolbarScaleOpen, setToolbarScaleOpen] = useState(false);
+  const [panelCollapsed, setPanelCollapsed] = useState(false);
   const [pdfReloadKey, setPdfReloadKey] = useState(0);
 
   // If parent navigates to a different starting page (new click from grid),
@@ -973,32 +974,49 @@ export default function TakeoffPlanViewer({ plan, initialPage, projectId, onClos
             />
           )}
 
-          <div className="sticky bottom-6 flex justify-end pr-2 mt-2 z-20 pointer-events-none">
-            <Button
-              size="sm"
-              className="pointer-events-auto rounded-full shadow-md"
-              onClick={beginCreate}
-              data-testid="fab-add-measurement"
-            >
-              <Plus className="h-4 w-4 mr-1" /> Add measurement
-            </Button>
-          </div>
+          {panelCollapsed && (
+            <div className="sticky bottom-6 flex justify-end pr-2 mt-2 z-20 pointer-events-none">
+              <Button
+                size="sm"
+                className="pointer-events-auto rounded-full shadow-md"
+                onClick={beginCreate}
+                data-testid="fab-add-measurement"
+              >
+                <Plus className="h-4 w-4 mr-1" /> Add measurement
+              </Button>
+            </div>
+          )}
         </div>
 
-        <div className="w-72 flex-shrink-0">
-          <TakeoffMeasurementPanel
-            projectId={projectId}
-            plan={plan}
-            measurements={pageMeasurements}
-            categories={categories}
-            highlightedId={highlightedId}
-            onHighlight={setHighlightedId}
-            onAddClick={beginCreate}
-            onEditClick={handleEditMeasurement}
-            activeDrawingId={activeMeasurementId}
-            onActivateDrawing={handleActivateMeasurement}
-          />
-        </div>
+        {panelCollapsed ? (
+          <div className="flex-shrink-0 w-8 border-l border-border bg-card flex flex-col items-center pt-2">
+            <Button
+              size="icon"
+              variant="ghost"
+              onClick={() => setPanelCollapsed(false)}
+              title="Show measurements panel"
+              data-testid="button-expand-panel"
+            >
+              <ArrowLeft className="h-4 w-4 rotate-180" />
+            </Button>
+          </div>
+        ) : (
+          <div className="w-72 flex-shrink-0">
+            <TakeoffMeasurementPanel
+              projectId={projectId}
+              plan={plan}
+              measurements={pageMeasurements}
+              categories={categories}
+              highlightedId={highlightedId}
+              onHighlight={setHighlightedId}
+              onAddClick={beginCreate}
+              onEditClick={handleEditMeasurement}
+              activeDrawingId={activeMeasurementId}
+              onActivateDrawing={handleActivateMeasurement}
+              onCollapse={() => setPanelCollapsed(true)}
+            />
+          </div>
+        )}
       </div>
 
       <div className="h-8 flex items-center px-3 text-xs bg-[#3d3d3d] text-[#cccccc]">
