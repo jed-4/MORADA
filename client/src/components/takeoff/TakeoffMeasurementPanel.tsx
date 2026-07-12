@@ -22,6 +22,8 @@ import {
   ChevronLast,
   MoreVertical,
   GripVertical,
+  BookmarkPlus,
+  FolderDown,
 } from "lucide-react";
 import {
   DndContext,
@@ -53,6 +55,8 @@ interface Props {
   activeDrawingId?: string | null;
   onActivateDrawing?: (m: TakeoffMeasurement) => void;
   onCollapse?: () => void;
+  onLoadTemplate?: () => void;
+  onSaveTemplate?: () => void;
 }
 
 const UNCAT = "__uncat__";
@@ -69,6 +73,8 @@ export default function TakeoffMeasurementPanel({
   activeDrawingId = null,
   onActivateDrawing,
   onCollapse,
+  onLoadTemplate,
+  onSaveTemplate,
 }: Props) {
   const { toast } = useToast();
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -302,10 +308,36 @@ export default function TakeoffMeasurementPanel({
         )}
       </div>
 
-      <div className="p-3 border-t border-border">
+      <div className="p-3 border-t border-border space-y-2">
         <Button onClick={onAddClick} className="w-full" data-testid="button-add-measurement">
           <Plus className="h-4 w-4 mr-2" /> Add measurement
         </Button>
+        {(onLoadTemplate || onSaveTemplate) && (
+          <div className="flex gap-2">
+            {onLoadTemplate && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="flex-1"
+                onClick={onLoadTemplate}
+                data-testid="button-panel-load-template"
+              >
+                <FolderDown className="h-3.5 w-3.5 mr-1.5" /> Import template
+              </Button>
+            )}
+            {onSaveTemplate && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="flex-1"
+                onClick={onSaveTemplate}
+                data-testid="button-panel-save-template"
+              >
+                <BookmarkPlus className="h-3.5 w-3.5 mr-1.5" /> Save template
+              </Button>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

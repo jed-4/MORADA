@@ -156,9 +156,11 @@ interface LoadProps {
   projectId: string;
   plans: { id: string }[];
   categories: TakeoffCategory[];
+  targetPageNumber?: number;
+  onSuccess?: () => void;
 }
 
-export function LoadTemplateModal({ open, onOpenChange, projectId, plans, categories }: LoadProps) {
+export function LoadTemplateModal({ open, onOpenChange, projectId, plans, categories, targetPageNumber = 1, onSuccess }: LoadProps) {
   const { toast } = useToast();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const { data: settings } = useQuery<any>({ queryKey: ["/api/company-settings"] });
@@ -170,11 +172,11 @@ export function LoadTemplateModal({ open, onOpenChange, projectId, plans, catego
       if (!selected) throw new Error("Pick a template");
       if (plans.length === 0) throw new Error("This project has no plans yet — upload a plan first.");
       const targetPlanId = plans[0].id;
-      // Ensure page #1 row exists (lazy upsert via server route).
+      // Ensure the target page row exists (lazy upsert via server route).
       const page = await apiRequest(
         `/api/projects/${projectId}/takeoff/plans/${targetPlanId}/pages`,
         "POST",
-        { pageNumber: 1 },
+        { pageNumber: targetPageNumber },
       );
       // Pre-fetch existing categories to match by name.
       const existingCats = new Map<string, string>();
@@ -214,6 +216,7 @@ export function LoadTemplateModal({ open, onOpenChange, projectId, plans, catego
       queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "takeoff/measurements"] });
       queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "takeoff/categories"] });
       toast({ title: "Template applied" });
+      onSuccess?.();
       onOpenChange(false);
     },
     onError: (e: any) => {

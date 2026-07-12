@@ -24,6 +24,7 @@ import TakeoffMeasurementFormModal, {
 } from "./TakeoffMeasurementFormModal";
 import TakeoffMeasurementPanel from "./TakeoffMeasurementPanel";
 import TakeoffMarkupCanvas, { type MarkupMode } from "./TakeoffMarkupCanvas";
+import { LoadTemplateModal, SaveTemplateModal } from "./TakeoffTemplatesModal";
 import TakeoffColorPicker, { MARKUP_COLORS } from "./TakeoffColorPicker";
 import {
   computeQuantity, defaultUnitForType, pixelsToFractions,
@@ -105,6 +106,8 @@ export default function TakeoffPlanViewer({ plan, initialPage, projectId, onClos
   const [activeMeasurementId, setActiveMeasurementId] = useState<string | null>(null);
   const [scaleModalOpen, setScaleModalOpen] = useState(false);
   const [calibrationPxLength, setCalibrationPxLength] = useState(0);
+  const [loadTemplateOpen, setLoadTemplateOpen] = useState(false);
+  const [saveTemplateOpen, setSaveTemplateOpen] = useState(false);
   const [statusMessage, setStatusMessage] = useState("Ready");
   const [rotation, setRotation] = useState<0 | 90 | 180 | 270>(0);
   const [selection, setSelection] = useState<{ id: string; x: number; y: number } | null>(null);
@@ -1014,6 +1017,8 @@ export default function TakeoffPlanViewer({ plan, initialPage, projectId, onClos
               activeDrawingId={activeMeasurementId}
               onActivateDrawing={handleActivateMeasurement}
               onCollapse={() => setPanelCollapsed(true)}
+              onLoadTemplate={() => setLoadTemplateOpen(true)}
+              onSaveTemplate={() => setSaveTemplateOpen(true)}
             />
           </div>
         )}
@@ -1050,6 +1055,31 @@ export default function TakeoffPlanViewer({ plan, initialPage, projectId, onClos
         onOpenChange={setScaleModalOpen}
         pixelLength={calibrationPxLength}
         onSave={handleSaveCalibration}
+      />
+
+      <LoadTemplateModal
+        open={loadTemplateOpen}
+        onOpenChange={setLoadTemplateOpen}
+        projectId={projectId}
+        plans={[{ id: plan.id }]}
+        categories={categories}
+        targetPageNumber={currentPage}
+        onSuccess={() => {
+          // Always refetch pages so currentPageData becomes available when the
+          // page row was lazily created during import (pages query drives the
+          // pageMeasurementsKey derivation and its enabled flag).
+          queryClient.invalidateQueries({ queryKey: pagesKey });
+          if (pageMeasurementsKey) {
+            queryClient.invalidateQueries({ queryKey: pageMeasurementsKey });
+          }
+        }}
+      />
+
+      <SaveTemplateModal
+        open={saveTemplateOpen}
+        onOpenChange={setSaveTemplateOpen}
+        measurements={planMeasurements}
+        categories={categories}
       />
     </div>
   );
