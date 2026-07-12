@@ -3859,20 +3859,32 @@ export class MemStorage implements IStorage {
         query = query.where(eq(schema.projects.isActive, true));
       }
       
-      const projects = await query.orderBy(schema.projects.createdAt);
+      const projects = await query.orderBy(
+        asc(schema.projects.jobNumber),
+        asc(schema.projects.name)
+      );
       return projects;
     } catch (error) {
       console.error("Database error in getProjects:", error);
       // Fallback to memory
       const allProjects = Array.from(this.projects.values())
         .filter(project => project.isActive);
-      
+
+      const sortByJobNumber = (a: Project, b: Project) => {
+        const an = a.jobNumber ?? "";
+        const bn = b.jobNumber ?? "";
+        if (an === "" && bn === "") return a.name.localeCompare(b.name);
+        if (an === "") return 1;
+        if (bn === "") return -1;
+        return an.localeCompare(bn) || a.name.localeCompare(b.name);
+      };
+
       if (ownerId) {
-        return allProjects.filter(project => 
-          project.ownerId === ownerId
-        ).sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+        return allProjects
+          .filter(project => project.ownerId === ownerId)
+          .sort(sortByJobNumber);
       }
-      return allProjects.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+      return allProjects.sort(sortByJobNumber);
     }
   }
 
