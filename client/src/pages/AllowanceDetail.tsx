@@ -12,6 +12,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { useState } from "react";
 import { useAllowanceStatusOptions } from "@/hooks/useAllowanceStatusOptions";
+import { LayoutList, Users, CalendarDays } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -64,6 +65,12 @@ type Timesheet = {
   description: string;
   status: string;
   total: number;
+};
+
+type User = {
+  id: string;
+  firstName: string;
+  lastName: string;
 };
 
 type CustomLine = {
@@ -198,6 +205,7 @@ export default function AllowanceDetail() {
   const [isBillModalOpen, setIsBillModalOpen] = useState(false);
   const [isPsBillModalOpen, setIsPsBillModalOpen] = useState(false);
   const [isTimesheetModalOpen, setIsTimesheetModalOpen] = useState(false);
+  const [timesheetDisplayMode, setTimesheetDisplayMode] = useState<"date" | "person" | "description">("date");
   const [expandedBills, setExpandedBills] = useState<Set<string>>(new Set());
   const [expandedPsBills, setExpandedPsBills] = useState<Set<string>>(new Set());
   const [selectedLineItems, setSelectedLineItems] = useState<Set<string>>(new Set());
@@ -243,6 +251,10 @@ export default function AllowanceDetail() {
     enabled: isTimesheetModalOpen,
   });
 
+  const { data: users = [] } = useQuery<User[]>({
+    queryKey: ["/api/users"],
+  });
+
   const { data: allocatedDetail, refetch: refetchDetail } = useQuery<AllowanceDetailData>({
     queryKey: ["/api/projects", projectId, "allowances", allowanceId, "detail"],
     queryFn: async () => {
@@ -256,6 +268,12 @@ export default function AllowanceDetail() {
   const allocatedBills = allocatedDetail?.allocatedBills ?? [];
   const allocatedTimesheets = allocatedDetail?.allocatedTimesheets ?? [];
   const allocatedItems = allocatedDetail?.allocatedItems ?? [];
+
+  const getUserName = (userId: string) => {
+    const user = users.find((u) => u.id === userId);
+    if (!user) return userId.slice(0, 8) + "…";
+    return `${user.firstName} ${user.lastName}`.trim() || userId.slice(0, 8);
+  };
 
   const { toast } = useToast();
 
@@ -486,7 +504,7 @@ export default function AllowanceDetail() {
 
   return (
     <div className="flex-1 overflow-auto">
-      <div className="p-6 space-y-4 max-w-5xl">
+      <div className="p-6 space-y-4 max-w-5xl mx-auto">
 
         {/* Back link */}
         <Button
@@ -770,6 +788,7 @@ export default function AllowanceDetail() {
                   {pendingTimesheets.map((ts, idx) => {
                     const tsExGst = exGst(ts.total);
                     const hourlyRate = ts.duration > 0 ? Math.round(ts.total / ts.duration) : 0;
+                    const staffName = getUserName(ts.userId);
                     return (
                       <div
                         key={ts.id}
@@ -781,10 +800,10 @@ export default function AllowanceDetail() {
                             className="w-7 h-7 rounded-full flex items-center justify-center text-[9px] font-bold flex-shrink-0"
                             style={{ background: "hsl(var(--teal-light))", color: "hsl(var(--teal))" }}
                           >
-                            {initials(ts.userId.slice(0, 4))}
+                            {initials(staffName)}
                           </div>
                           <div>
-                            <p className="text-xs font-semibold text-foreground">{ts.userId}</p>
+                            <p className="text-xs font-semibold text-foreground">{staffName}</p>
                             <p className="text-[10px] text-muted-foreground">
                               {new Date(ts.date).toLocaleDateString("en-AU", { day: "2-digit", month: "short" })}
                             </p>
@@ -1222,38 +1241,154 @@ export default function AllowanceDetail() {
         <DialogContent className="max-w-4xl max-h-[80vh] overflow-hidden flex flex-col">
           <DialogHeader>
             <DialogTitle>Add Timesheets</DialogTitle>
-            <DialogDescription>Select timesheet entries to add to this PS allowance</DialogDescription>
+            <DialogDescription>
+              All timesheets shown — only approved entries can be selected.
+            </DialogDescription>
           </DialogHeader>
+
+          {/* Display mode toggle */}
+          <div className="flex items-center gap-1 px-1 py-1 bg-muted rounded-lg self-start">
+            <button
+              type="button"
+              onClick={() => setTimesheetDisplayMode("date")}
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${timesheetDisplayMode === "date" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground"}`}
+            >
+              <CalendarDays className="h-3 w-3" /> By Date
+            </button>
+            <button
+              type="button"
+              onClick={() => setTimesheetDisplayMode("person")}
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${timesheetDisplayMode === "person" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground"}`}
+            >
+              <Users className="h-3 w-3" /> By Person
+            </button>
+            <button
+              type="button"
+              onClick={() => setTimesheetDisplayMode("description")}
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${timesheetDisplayMode === "description" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground"}`}
+            >
+              <LayoutList className="h-3 w-3" /> By Description
+            </button>
+          </div>
+
           <div className="flex-1 overflow-auto">
             {timesheets.length === 0 ? (
               <div className="text-center py-8 text-muted-foreground">No timesheets found for this project</div>
-            ) : (
-              <div className="space-y-2">
-                {timesheets.map((ts) => (
-                  <div key={ts.id} className="flex items-center justify-between p-3 rounded border">
-                    <div className="flex items-center gap-3 flex-1">
-                      <Checkbox
-                        checked={selectedTimesheets.has(ts.id)}
-                        onCheckedChange={() => toggleTimesheetSelection(ts.id)}
-                        data-testid={`checkbox-timesheet-${ts.id}`}
-                      />
-                      <div>
-                        <div className="flex items-center gap-2 mb-0.5">
-                          <p className="text-sm font-medium">{new Date(ts.date).toLocaleDateString("en-AU")}</p>
-                          <p className="text-xs text-muted-foreground">{ts.startTime} – {ts.endTime} ({ts.duration}h)</p>
+            ) : (() => {
+              const sortedTimesheets = [...timesheets].sort((a, b) => {
+                if (timesheetDisplayMode === "date") return new Date(b.date).getTime() - new Date(a.date).getTime();
+                if (timesheetDisplayMode === "person") {
+                  const nameA = getUserName(a.userId);
+                  const nameB = getUserName(b.userId);
+                  return nameA.localeCompare(nameB) || new Date(b.date).getTime() - new Date(a.date).getTime();
+                }
+                return (a.description || "").localeCompare(b.description || "") || new Date(b.date).getTime() - new Date(a.date).getTime();
+              });
+
+              const groups: { key: string; label: string; entries: Timesheet[] }[] = [];
+              if (timesheetDisplayMode === "person") {
+                const seen = new Map<string, Timesheet[]>();
+                for (const ts of sortedTimesheets) {
+                  const name = getUserName(ts.userId);
+                  if (!seen.has(name)) seen.set(name, []);
+                  seen.get(name)!.push(ts);
+                }
+                seen.forEach((entries, name) => groups.push({ key: name, label: name, entries }));
+              } else if (timesheetDisplayMode === "description") {
+                const seen = new Map<string, Timesheet[]>();
+                for (const ts of sortedTimesheets) {
+                  const key = ts.description?.trim() || "(no description)";
+                  if (!seen.has(key)) seen.set(key, []);
+                  seen.get(key)!.push(ts);
+                }
+                seen.forEach((entries, key) => groups.push({ key, label: key, entries }));
+              } else {
+                groups.push({ key: "all", label: "", entries: sortedTimesheets });
+              }
+
+              const statusColors: Record<string, { bg: string; text: string }> = {
+                approved: { bg: "hsl(var(--sage-light))", text: "hsl(var(--sage))" },
+                pending: { bg: "hsl(var(--amber-light))", text: "hsl(var(--amber))" },
+                rejected: { bg: "hsl(var(--coral-light))", text: "hsl(var(--coral))" },
+                submitted: { bg: "hsl(var(--primary) / 0.1)", text: "hsl(var(--primary))" },
+              };
+
+              return (
+                <div className="space-y-4">
+                  {groups.map((group) => (
+                    <div key={group.key}>
+                      {group.label && (
+                        <div className="sticky top-0 bg-background/95 backdrop-blur-sm z-10 pb-1 pt-1">
+                          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide px-1">{group.label}</p>
                         </div>
-                        {ts.description && <p className="text-xs text-muted-foreground">{ts.description}</p>}
+                      )}
+                      <div className="space-y-1">
+                        {group.entries.map((ts) => {
+                          const isApproved = ts.status === "approved";
+                          const staffName = getUserName(ts.userId);
+                          const statusColor = statusColors[ts.status] ?? { bg: "hsl(var(--muted))", text: "hsl(var(--muted-foreground))" };
+                          return (
+                            <div
+                              key={ts.id}
+                              className={`flex items-center justify-between p-3 rounded-md border gap-3 ${!isApproved ? "opacity-60" : ""}`}
+                            >
+                              <div className="flex items-center gap-3 flex-1 min-w-0">
+                                <Checkbox
+                                  checked={selectedTimesheets.has(ts.id)}
+                                  onCheckedChange={() => isApproved && toggleTimesheetSelection(ts.id)}
+                                  disabled={!isApproved}
+                                  data-testid={`checkbox-timesheet-${ts.id}`}
+                                />
+                                <div
+                                  className="w-7 h-7 rounded-full flex items-center justify-center text-[9px] font-bold flex-shrink-0"
+                                  style={{ background: avatarColor(users.findIndex((u) => u.id === ts.userId)).bg, color: avatarColor(users.findIndex((u) => u.id === ts.userId)).text }}
+                                >
+                                  {initials(staffName)}
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <p className="text-sm font-medium">{staffName}</p>
+                                    <p className="text-xs text-muted-foreground">
+                                      {new Date(ts.date).toLocaleDateString("en-AU", { day: "2-digit", month: "short", year: "numeric" })}
+                                    </p>
+                                    {ts.startTime && ts.endTime && (
+                                      <p className="text-xs text-muted-foreground">{ts.startTime}–{ts.endTime} ({ts.duration}h)</p>
+                                    )}
+                                  </div>
+                                  {ts.description && (
+                                    <p className="text-xs text-muted-foreground truncate mt-0.5">{ts.description}</p>
+                                  )}
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-3 flex-shrink-0">
+                                <span
+                                  className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold capitalize"
+                                  style={{ background: statusColor.bg, color: statusColor.text }}
+                                >
+                                  {ts.status}
+                                </span>
+                                <p className="text-sm font-semibold w-20 text-right">{formatCurrency(ts.total)}</p>
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
-                    <p className="text-sm font-semibold">{formatCurrency(ts.total)}</p>
-                  </div>
-                ))}
-              </div>
-            )}
+                  ))}
+                </div>
+              );
+            })()}
           </div>
-          <div className="flex justify-end gap-2 pt-4 border-t">
-            <Button variant="outline" onClick={() => setIsTimesheetModalOpen(false)}>Cancel</Button>
-            <Button onClick={() => setIsTimesheetModalOpen(false)} data-testid="button-save-timesheets">Add Selected</Button>
+          <div className="flex items-center justify-between pt-4 border-t">
+            <p className="text-xs text-muted-foreground">
+              {selectedTimesheets.size > 0 ? `${selectedTimesheets.size} selected · ${formatCurrency(timesheets.filter((ts) => selectedTimesheets.has(ts.id)).reduce((s, ts) => s + ts.total, 0))} inc GST` : "No entries selected"}
+            </p>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => setIsTimesheetModalOpen(false)}>Cancel</Button>
+              <Button onClick={() => setIsTimesheetModalOpen(false)} disabled={selectedTimesheets.size === 0} data-testid="button-save-timesheets">
+                Add {selectedTimesheets.size > 0 ? `(${selectedTimesheets.size})` : ""} Selected
+              </Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>
