@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -70,6 +70,8 @@ export function TaskDetailModal({ event, taskId, open, onOpenChange, onEdit }: T
   const { toast } = useToast();
   const [checklistItems, setChecklistItems] = useState<ChecklistItem[]>([]);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingChecklistRef = useRef<ChecklistItem[] | null>(null);
 
   // Determine which ID to use - taskId prop takes precedence
   // Strip 'task-' prefix from calendar event IDs to get actual task ID
@@ -95,8 +97,11 @@ export function TaskDetailModal({ event, taskId, open, onOpenChange, onEdit }: T
     setShowDeleteConfirm(false);
   }, [effectiveTaskId]);
 
-  // Sync local checklist state with task data
+  // Sync local checklist state with task data.
+  // Skip when a debounced save is pending — the user is still interacting and
+  // a background response must not overwrite their in-progress state.
   useEffect(() => {
+    if (debounceTimerRef.current !== null) return;
     if (taskDetails?.checklist) {
       setChecklistItems(taskDetails.checklist as ChecklistItem[]);
     } else {
@@ -110,8 +115,16 @@ export function TaskDetailModal({ event, taskId, open, onOpenChange, onEdit }: T
       if (!effectiveTaskId) return;
       return await apiRequest(`/api/tasks/${effectiveTaskId}`, "PATCH", { checklist: newChecklist });
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+    onSuccess: (data) => {
+      // Write the server response directly into the per-task cache rather than
+      // triggering a full refetch that could race with local checklist state.
+      if (effectiveTaskId && data) {
+        queryClient.setQueryData(["/api/tasks", effectiveTaskId], (old: any) =>
+          old ? { ...old, checklist: (data as any).checklist ?? old.checklist } : old
+        );
+      }
+      // Still invalidate the flat list so task-list views (counts, badges) stay fresh.
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks"], exact: true });
     },
     onError: (error: any) => {
       toast({
@@ -179,11 +192,28 @@ export function TaskDetailModal({ event, taskId, open, onOpenChange, onEdit }: T
   });
 
   const handleToggleChecklistItem = (itemIndex: number) => {
-    const newChecklist = checklistItems.map((item, idx) =>
-      idx === itemIndex ? { ...item, completed: !item.completed } : item
-    );
-    setChecklistItems(newChecklist);
-    updateChecklistMutation.mutate(newChecklist);
+    // Functional updater ensures rapid successive clicks always operate on the
+    // latest local state rather than a stale closure snapshot.
+    setChecklistItems(prev => {
+      const newChecklist = prev.map((item, idx) =>
+        idx === itemIndex ? { ...item, completed: !item.completed } : item
+      );
+      pendingChecklistRef.current = newChecklist;
+      return newChecklist;
+    });
+
+    // Debounce: reset the timer on each click so a burst of quick checks
+    // collapses into a single PATCH with the final state.
+    if (debounceTimerRef.current !== null) {
+      clearTimeout(debounceTimerRef.current);
+    }
+    debounceTimerRef.current = setTimeout(() => {
+      debounceTimerRef.current = null;
+      if (pendingChecklistRef.current !== null) {
+        updateChecklistMutation.mutate(pendingChecklistRef.current);
+        pendingChecklistRef.current = null;
+      }
+    }, 500);
   };
 
   // If no event and no taskId, nothing to show
