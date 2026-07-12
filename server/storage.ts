@@ -13025,15 +13025,21 @@ export class DbStorage implements IStorage {
     templateId: string,
     projectId: string,
     stageName: string,
+    companyId: string,
   ): Promise<ScopeItem[]> {
+    // Scope template lookup to caller's company — prevents cross-tenant template reads
     const [template] = await db.select().from(schema.scopeTemplates)
-      .where(eq(schema.scopeTemplates.id, templateId))
+      .where(and(
+        eq(schema.scopeTemplates.id, templateId),
+        eq(schema.scopeTemplates.companyId, companyId),
+      ))
       .limit(1);
     if (!template) throw new Error("Template not found");
 
+    // Scope project lookup to caller's company — prevents cross-tenant writes
     const project = await this.getProject(projectId);
     if (!project) throw new Error("Project not found");
-    const companyId = project.companyId;
+    if (project.companyId !== companyId) throw new Error("Access denied");
 
     const rawData = template.templateData as any;
     let templateStages: Array<{ id?: string; name: string; sortOrder: number }> = [];

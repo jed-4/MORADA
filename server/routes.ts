@@ -7898,15 +7898,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Apply a single stage from a template to a project
   app.post("/api/scope-templates/:id/apply-stage", requireAuth, requireTeamMember, async (req, res) => {
     try {
+      const companyId = req.user!.companyId!;
       const { projectId, stageName } = req.body;
       if (!projectId || !stageName) {
         return res.status(400).json({ error: "projectId and stageName are required" });
       }
-      const items = await storage.applyScopeTemplateStage(req.params.id, projectId, stageName);
+      const items = await storage.applyScopeTemplateStage(req.params.id, projectId, stageName, companyId);
       res.status(201).json(items);
     } catch (error: any) {
       console.error("Error applying template stage:", error);
-      if (error.message?.includes("not found")) {
+      if (error.message?.includes("not found") || error.message?.includes("Access denied")) {
         return res.status(404).json({ error: error.message });
       }
       res.status(500).json({ error: "Failed to apply template stage" });
