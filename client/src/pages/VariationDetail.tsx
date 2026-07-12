@@ -2423,22 +2423,18 @@ export default function VariationDetail() {
                 })
                 .map((a: any) => {
                   const item = a.item;
-                  const isFinalized = item?.allowanceStatus === "finalized";
-                  const budgeted = (item?.priceIncTax || 0) * (item?.quantity || 1);
-                  const actual = (a.actualCost || 0) / 100;
-                  const variance = actual - budgeted;
+                  const budgetedCents = item?.priceIncTax || 0;
+                  const actualCents = a.actualCost || 0;
+                  const varianceCents: number = a.variance ?? (actualCents - budgetedCents);
+                  const isOverBudget = varianceCents > 0;
                   return (
                     <div
                       key={item.id}
-                      className={cn(
-                        "flex items-center gap-3 p-3 rounded-md border",
-                        isFinalized ? "hover-elevate cursor-pointer" : "opacity-40 cursor-not-allowed"
-                      )}
+                      className="flex items-center gap-3 p-3 rounded-md border hover-elevate cursor-pointer"
                       onClick={() => {
-                        if (!isFinalized) return;
                         addAllowanceLine({
                           description: `${item.name} — allowance adjustment`,
-                          amount: variance,
+                          amount: varianceCents / 100,
                         });
                         setAllowancesModalOpen(false);
                         setAllowancesSearch("");
@@ -2457,19 +2453,19 @@ export default function VariationDetail() {
                       <div className="flex items-center gap-4 flex-shrink-0 text-right">
                         <div>
                           <p className="text-xs text-muted-foreground">Budgeted</p>
-                          <p className="text-sm font-medium tabular-nums">{formatCurrency(budgeted)}</p>
+                          <p className="text-sm font-medium tabular-nums">{formatCurrency(budgetedCents / 100)}</p>
                         </div>
                         <div>
                           <p className="text-xs text-muted-foreground">Actual</p>
-                          <p className="text-sm font-medium tabular-nums">{formatCurrency(actual)}</p>
+                          <p className="text-sm font-medium tabular-nums">{formatCurrency(actualCents / 100)}</p>
                         </div>
                         <div>
                           <p className="text-xs text-muted-foreground">Variance</p>
-                          <p className={cn("text-sm font-semibold tabular-nums", variance < 0 ? "text-red-500" : variance > 0 ? "text-status-success" : "")}>
-                            {variance >= 0 ? "+" : ""}{formatCurrency(variance)}
+                          <p className={cn("text-sm font-semibold tabular-nums", isOverBudget ? "text-status-warning" : varianceCents < 0 ? "text-status-success" : "")}>
+                            {varianceCents >= 0 ? "+" : ""}{formatCurrency(varianceCents / 100)}
                           </p>
                         </div>
-                        <Badge variant={isFinalized ? "default" : "secondary"} className="text-xs capitalize">
+                        <Badge variant="outline" className="text-xs capitalize">
                           {item.allowanceStatus || "pending"}
                         </Badge>
                       </div>

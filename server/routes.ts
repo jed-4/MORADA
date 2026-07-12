@@ -6250,6 +6250,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Dedicated endpoint: update allowanceStatus only — bypasses the locked-estimate
+  // guard because this is an operational/workflow field, not a pricing field.
+  app.patch("/api/estimate-items/:id/allowance-status", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const existingItem = await getOwnedEstimateItem(req, res, req.params.id);
+      if (!existingItem) return;
+
+      const { allowanceStatus } = req.body;
+      if (!["pending", "in_progress", "finalized"].includes(allowanceStatus)) {
+        return res.status(400).json({ error: "Invalid allowanceStatus value" });
+      }
+
+      const { estimateItems: estimateItemsTbl } = await import("@shared/schema");
+      const result = await db.update(estimateItemsTbl)
+        .set({ allowanceStatus, updatedAt: new Date() })
+        .where(eq(estimateItemsTbl.id, req.params.id))
+        .returning();
+
+      if (!result[0]) {
+        return res.status(404).json({ error: "Estimate item not found" });
+      }
+      res.json(result[0]);
+    } catch (error: any) {
+      res.status(500).json({ error: "Failed to update allowance status" });
+    }
+  });
+
   app.delete("/api/estimate-items/:id", async (req, res) => {
     try {
       const existingItem = await getOwnedEstimateItem(req, res, req.params.id);

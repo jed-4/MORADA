@@ -3,7 +3,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Plus, ChevronDown, ChevronRight } from "lucide-react";
+import { ArrowLeft, Plus, ChevronDown, ChevronRight, CheckCircle, RotateCcw, Loader2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -307,6 +307,19 @@ export default function AllowanceDetail() {
     },
   });
 
+  const updateAllowanceStatusMutation = useMutation({
+    mutationFn: async (allowanceStatus: string) => {
+      return apiRequest(`/api/estimate-items/${allowanceId}/allowance-status`, "PATCH", { allowanceStatus });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "allowances"] });
+      toast({ title: "Status updated" });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to update status", variant: "destructive" });
+    },
+  });
+
   // ── Handlers ──
   const handleSavePcItem = async () => {
     if (isSavingPc) return;
@@ -531,6 +544,37 @@ export default function AllowanceDetail() {
                 >
                   ● {statusInfo.name}
                 </span>
+                {item.allowanceStatus !== "finalized" ? (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={updateAllowanceStatusMutation.isPending}
+                    onClick={() => updateAllowanceStatusMutation.mutate("finalized")}
+                    data-testid="button-finalise-allowance"
+                  >
+                    {updateAllowanceStatusMutation.isPending ? (
+                      <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                    ) : (
+                      <CheckCircle className="h-3.5 w-3.5 mr-1.5" />
+                    )}
+                    Finalise
+                  </Button>
+                ) : (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    disabled={updateAllowanceStatusMutation.isPending}
+                    onClick={() => updateAllowanceStatusMutation.mutate("in_progress")}
+                    data-testid="button-reopen-allowance"
+                  >
+                    {updateAllowanceStatusMutation.isPending ? (
+                      <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                    ) : (
+                      <RotateCcw className="h-3.5 w-3.5 mr-1.5" />
+                    )}
+                    Reopen
+                  </Button>
+                )}
               </div>
             </div>
             <div className="mt-3 pt-3 border-t border-border">
