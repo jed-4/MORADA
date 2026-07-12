@@ -1064,14 +1064,14 @@ export function TimesheetDialog({
 
                   {/* Split table — shown when split mode is active */}
                   {isSplit && (
-                    <Card className="mt-0">
+                    <Card className="mt-0 overflow-hidden">
                       <CardContent className="p-3 space-y-2">
                         {/* Single shared grid so all rows have identical column widths */}
                         <div className={cn(
-                          "grid gap-x-2 gap-y-2 items-center",
+                          "grid gap-x-2 gap-y-2 items-center min-w-0",
                           canViewTimesheetRates
-                            ? "grid-cols-[2fr_1fr_1fr_auto]"
-                            : "grid-cols-[2fr_1fr_auto]"
+                            ? "grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_auto]"
+                            : "grid-cols-[minmax(0,2fr)_minmax(0,1fr)_auto]"
                         )}>
                           {/* Column headers */}
                           <Label className="text-[10px] text-muted-foreground">Cost Code</Label>
@@ -1093,23 +1093,27 @@ export function TimesheetDialog({
                                   data-testid={`select-cost-code-${split.id}`}
                                 />
                               </div>
-                              <Input
-                                type="number"
-                                step="0.25"
-                                value={split.duration}
-                                onChange={(e) => updateCostCodeSplit(split.id, "duration", e.target.value)}
-                                className={inputClass}
-                                data-testid={`input-split-duration-${split.id}`}
-                              />
-                              {canViewTimesheetRates && (
+                              <div className="min-w-0">
                                 <Input
                                   type="number"
-                                  step="1"
-                                  value={split.hourlyRate}
-                                  onChange={(e) => updateCostCodeSplit(split.id, "hourlyRate", e.target.value)}
-                                  className={inputClass}
-                                  data-testid={`input-split-rate-${split.id}`}
+                                  step="0.25"
+                                  value={split.duration}
+                                  onChange={(e) => updateCostCodeSplit(split.id, "duration", e.target.value)}
+                                  className={cn(inputClass, "w-full")}
+                                  data-testid={`input-split-duration-${split.id}`}
                                 />
+                              </div>
+                              {canViewTimesheetRates && (
+                                <div className="min-w-0">
+                                  <Input
+                                    type="number"
+                                    step="1"
+                                    value={split.hourlyRate}
+                                    onChange={(e) => updateCostCodeSplit(split.id, "hourlyRate", e.target.value)}
+                                    className={cn(inputClass, "w-full")}
+                                    data-testid={`input-split-rate-${split.id}`}
+                                  />
+                                </div>
                               )}
                               <Button
                                 type="button"
@@ -1129,6 +1133,7 @@ export function TimesheetDialog({
                             variant="outline"
                             size="sm"
                             onClick={addCostCodeSplit}
+                            className="flex-shrink-0"
                             data-testid="button-add-split"
                           >
                             <Plus className="h-3 w-3 mr-1" />
@@ -1136,7 +1141,7 @@ export function TimesheetDialog({
                           </Button>
                           <span
                             className={cn(
-                              "text-[11px] font-medium px-2 py-0.5 rounded-full",
+                              "text-[11px] font-medium px-2 py-0.5 rounded-full min-w-0 truncate text-right",
                               splitBalanced
                                 ? "bg-muted/50 text-muted-foreground"
                                 : "bg-destructive/10 text-destructive",
