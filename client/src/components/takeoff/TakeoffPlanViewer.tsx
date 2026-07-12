@@ -52,6 +52,7 @@ export default function TakeoffPlanViewer({ plan, initialPage, projectId, onClos
   const [openPages, setOpenPages] = useState<number[]>([initialPage]);
   const [pagesPopoverOpen, setPagesPopoverOpen] = useState(false);
   const [scalePopoverOpen, setScalePopoverOpen] = useState(false);
+  const [toolbarScaleOpen, setToolbarScaleOpen] = useState(false);
   const [pdfReloadKey, setPdfReloadKey] = useState(0);
 
   // If parent navigates to a different starting page (new click from grid),
@@ -272,7 +273,7 @@ export default function TakeoffPlanViewer({ plan, initialPage, projectId, onClos
     setMarkupMode(null);
     setActiveMeasurementId(null);
     setDrawMode("calibrate");
-    setStatusMessage("Click two points along a known dimension, then double-click to finish");
+    setStatusMessage("Click to place start point, then click again to place end point");
   };
 
   const handleCalibrateComplete = (a: Point, b: Point) => {
@@ -696,9 +697,53 @@ export default function TakeoffPlanViewer({ plan, initialPage, projectId, onClos
           </>
         )}
         <Divider />
-        <Button variant="ghost" size="sm" onClick={handleStartCalibration} data-testid="tool-calibrate">
-          <Ruler className="h-4 w-4 mr-1" /> Calibrate
-        </Button>
+        <Popover open={toolbarScaleOpen} onOpenChange={setToolbarScaleOpen}>
+          <PopoverTrigger asChild>
+            <Button
+              variant={isScaled ? "secondary" : "outline"}
+              size="sm"
+              data-testid="button-scale-badge"
+              title="Click to set or change scale"
+            >
+              <Ruler className="h-3.5 w-3.5 mr-1.5" />
+              {isScaled ? scaleChip : <span className="text-muted-foreground">No scale</span>}
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent align="end" className="w-72 p-3">
+            <div className="text-sm font-semibold mb-1">Set scale</div>
+            <div className="text-xs text-muted-foreground mb-3">
+              Pick a standard architect's scale, or calibrate against a known dimension on the plan.
+            </div>
+            <div className="grid grid-cols-3 gap-2 mb-3">
+              {STANDARD_SCALES.map((r) => (
+                <Button
+                  key={r}
+                  variant="outline"
+                  size="sm"
+                  onClick={async () => {
+                    await handleStandardScale(r);
+                    setToolbarScaleOpen(false);
+                  }}
+                  data-testid={`button-toolbar-scale-${r}`}
+                >
+                  1:{r}
+                </Button>
+              ))}
+            </div>
+            <Button
+              variant="default"
+              size="sm"
+              className="w-full"
+              onClick={() => {
+                setToolbarScaleOpen(false);
+                handleStartCalibration();
+              }}
+              data-testid="button-toolbar-calibrate"
+            >
+              <Ruler className="h-4 w-4 mr-1" /> Calibrate from a plan dimension
+            </Button>
+          </PopoverContent>
+        </Popover>
         <div className="flex-1" />
         <Button size="icon" variant="ghost" onClick={() => setZoom((z) => Math.max(0.25, z - 0.25))} data-testid="button-zoom-out">
           <ZoomOut className="h-4 w-4" />
@@ -927,6 +972,17 @@ export default function TakeoffPlanViewer({ plan, initialPage, projectId, onClos
               onDelete={() => deleteMeasurement.mutate(selectedMeasurement.id)}
             />
           )}
+
+          <div className="sticky bottom-6 flex justify-end pr-2 mt-2 z-20 pointer-events-none">
+            <Button
+              size="sm"
+              className="pointer-events-auto rounded-full shadow-md"
+              onClick={beginCreate}
+              data-testid="fab-add-measurement"
+            >
+              <Plus className="h-4 w-4 mr-1" /> Add measurement
+            </Button>
+          </div>
         </div>
 
         <div className="w-72 flex-shrink-0">

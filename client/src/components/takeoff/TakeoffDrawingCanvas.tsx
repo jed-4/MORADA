@@ -73,11 +73,21 @@ export default function TakeoffDrawingCanvas({
       onCountClick?.(p);
       return;
     }
+    if (drawMode === "calibrate") {
+      if (inProgressPoints.length === 0) {
+        setInProgressPoints([p]);
+      } else {
+        onCalibrateComplete?.(inProgressPoints[0], p);
+        setInProgressPoints([]);
+        setCursor(null);
+      }
+      return;
+    }
     setInProgressPoints((prev) => [...prev, p]);
   };
 
   const handleDoubleClick = (e: React.MouseEvent) => {
-    if (drawMode !== "area" && drawMode !== "linear" && drawMode !== "calibrate") return;
+    if (drawMode !== "area" && drawMode !== "linear") return;
     const p = localPoint(e);
     const finalPoints = [...inProgressPoints, p];
     setInProgressPoints([]);
@@ -86,8 +96,6 @@ export default function TakeoffDrawingCanvas({
       onAreaComplete?.(finalPoints);
     } else if (drawMode === "linear" && finalPoints.length >= 2) {
       onLinearComplete?.(finalPoints);
-    } else if (drawMode === "calibrate" && finalPoints.length >= 2) {
-      onCalibrateComplete?.(finalPoints[0], finalPoints[finalPoints.length - 1]);
     }
   };
 

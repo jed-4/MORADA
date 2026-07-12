@@ -229,9 +229,14 @@ export default function TakeoffMeasurementPanel({
 
   return (
     <div className="flex flex-col h-full bg-card border-l border-border">
-      <div className="px-3 py-2 border-b border-border">
-        <div className="text-xs uppercase tracking-wide text-muted-foreground">This plan</div>
-        <div className="text-sm font-medium truncate" title={plan.name}>{plan.name}</div>
+      <div className="px-3 py-2 border-b border-border flex items-center gap-2">
+        <div className="flex-1 min-w-0">
+          <div className="text-xs uppercase tracking-wide text-muted-foreground">This plan</div>
+          <div className="text-sm font-medium truncate" title={plan.name}>{plan.name}</div>
+        </div>
+        <Button size="sm" variant="ghost" onClick={onAddClick} data-testid="button-add-measurement-header">
+          <Plus className="h-4 w-4 mr-1" /> Add
+        </Button>
       </div>
 
       <div className="px-3 py-2 border-b border-border flex items-center text-xs font-medium text-muted-foreground">
