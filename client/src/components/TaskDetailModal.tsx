@@ -72,6 +72,7 @@ export function TaskDetailModal({ event, taskId, open, onOpenChange, onEdit }: T
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingChecklistRef = useRef<ChecklistItem[] | null>(null);
+  const mutationInFlightRef = useRef(false);
 
   // Determine which ID to use - taskId prop takes precedence
   // Strip 'task-' prefix from calendar event IDs to get actual task ID
@@ -97,11 +98,25 @@ export function TaskDetailModal({ event, taskId, open, onOpenChange, onEdit }: T
     setShowDeleteConfirm(false);
   }, [effectiveTaskId]);
 
-  // Sync local checklist state with task data.
-  // Skip when a debounced save is pending — the user is still interacting and
-  // a background response must not overwrite their in-progress state.
+  // Clean up any pending debounce and in-flight tracking when the viewed task
+  // changes or the component unmounts, so a delayed callback cannot fire a
+  // stale checklist payload against the wrong task.
   useEffect(() => {
-    if (debounceTimerRef.current !== null) return;
+    return () => {
+      if (debounceTimerRef.current !== null) {
+        clearTimeout(debounceTimerRef.current);
+        debounceTimerRef.current = null;
+      }
+      pendingChecklistRef.current = null;
+      mutationInFlightRef.current = false;
+    };
+  }, [effectiveTaskId]);
+
+  // Sync local checklist state with task data.
+  // Skip while a debounced save is pending OR a mutation is in-flight so no
+  // background response can overwrite state the user is still working on.
+  useEffect(() => {
+    if (debounceTimerRef.current !== null || mutationInFlightRef.current) return;
     if (taskDetails?.checklist) {
       setChecklistItems(taskDetails.checklist as ChecklistItem[]);
     } else {
@@ -113,9 +128,11 @@ export function TaskDetailModal({ event, taskId, open, onOpenChange, onEdit }: T
   const updateChecklistMutation = useMutation({
     mutationFn: async (newChecklist: ChecklistItem[]) => {
       if (!effectiveTaskId) return;
+      mutationInFlightRef.current = true;
       return await apiRequest(`/api/tasks/${effectiveTaskId}`, "PATCH", { checklist: newChecklist });
     },
     onSuccess: (data) => {
+      mutationInFlightRef.current = false;
       // Write the server response directly into the per-task cache rather than
       // triggering a full refetch that could race with local checklist state.
       if (effectiveTaskId && data) {
@@ -127,6 +144,7 @@ export function TaskDetailModal({ event, taskId, open, onOpenChange, onEdit }: T
       queryClient.invalidateQueries({ queryKey: ["/api/tasks"], exact: true });
     },
     onError: (error: any) => {
+      mutationInFlightRef.current = false;
       toast({
         title: "Failed to update checklist",
         description: error.message,
