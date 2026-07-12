@@ -278,20 +278,6 @@ export default function AllowanceDetail() {
   const { toast } = useToast();
 
   // ── Mutations ──
-  const updateAllowanceMutation = useMutation({
-    mutationFn: async ({ actualCost }: { actualCost: number }) => {
-      return apiRequest(`/api/estimate-items/${allowanceId}`, "PATCH", { actualCost });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "allowances"] });
-      refetchDetail();
-      toast({ title: "Success", description: "Allowance updated successfully" });
-    },
-    onError: () => {
-      toast({ title: "Error", description: "Failed to update allowance", variant: "destructive" });
-    },
-  });
-
   const createBillLineItemAllowanceMutation = useMutation({
     mutationFn: async ({ billLineItemId, amount }: { billLineItemId: string; amount: number }) => {
       return apiRequest("/api/bill-line-item-allowances", "POST", {
@@ -326,11 +312,15 @@ export default function AllowanceDetail() {
     if (isSavingPc) return;
     setIsSavingPc(true);
     try {
-      const currentActualCost = allowance?.actualCost || 0;
       if (useSimpleEntry && enteredActualCost) {
-        const additionalCost = Math.round(parseFloat(parseFloat(enteredActualCost).toFixed(2)) * 100);
-        const newActualCost = currentActualCost + additionalCost;
-        await updateAllowanceMutation.mutateAsync({ actualCost: newActualCost });
+        const totalPrice = Math.round(parseFloat(parseFloat(enteredActualCost).toFixed(2)) * 100);
+        await createAllowanceItemMutation.mutateAsync({
+          description: "Actual cost entry",
+          quantity: 1,
+          unitPrice: totalPrice,
+          totalPrice,
+          sortOrder: 0,
+        });
         await queryClient.refetchQueries({ queryKey: ["/api/projects", projectId, "allowances"] });
         setEnteredActualCost("");
       } else if (!useSimpleEntry && (pcQuantity || pcUnitCostExTax)) {
@@ -342,9 +332,14 @@ export default function AllowanceDetail() {
         const amountExTax = builderCostExTax + markupAmount;
         const taxRate = 10;
         const amountTax = Math.round((amountExTax * taxRate) / 100);
-        const amountIncTax = amountExTax + amountTax;
-        const newActualCost = currentActualCost + amountIncTax;
-        await updateAllowanceMutation.mutateAsync({ actualCost: newActualCost });
+        const totalPrice = amountExTax + amountTax;
+        await createAllowanceItemMutation.mutateAsync({
+          description: `${qty} × $${unitCost.toFixed(2)}${markup ? ` + ${markup}% markup` : ""}`,
+          quantity: qty,
+          unitPrice: Math.round(unitCost * 100),
+          totalPrice,
+          sortOrder: 0,
+        });
         await queryClient.refetchQueries({ queryKey: ["/api/projects", projectId, "allowances"] });
         setPcQuantity("1");
         setPcUnitCostExTax("");
@@ -352,12 +347,9 @@ export default function AllowanceDetail() {
         setPcMarkupPercent("");
       } else if (selectedLineItems.size > 0) {
         const selectedItems = billLineItems.filter((item) => selectedLineItems.has(item.id));
-        const additionalCost = selectedItems.reduce((sum, item) => sum + item.total, 0);
         for (const item of selectedItems) {
           await createBillLineItemAllowanceMutation.mutateAsync({ billLineItemId: item.id, amount: item.total });
         }
-        const newActualCost = currentActualCost + additionalCost;
-        await updateAllowanceMutation.mutateAsync({ actualCost: newActualCost });
         await queryClient.refetchQueries({ queryKey: ["/api/projects", projectId, "allowances"] });
         setSelectedLineItems(new Set());
       }
@@ -373,12 +365,10 @@ export default function AllowanceDetail() {
     if (isSavingPs) return;
     setIsSavingPs(true);
     try {
-      let additionalCost = 0;
       if (selectedPsLineItems.size > 0) {
         const selectedItems = billLineItems.filter((item) => selectedPsLineItems.has(item.id));
         for (const item of selectedItems) {
           await createBillLineItemAllowanceMutation.mutateAsync({ billLineItemId: item.id, amount: item.total });
-          additionalCost += item.total;
         }
       }
       if (selectedTimesheets.size > 0) {
@@ -386,7 +376,6 @@ export default function AllowanceDetail() {
         for (const timesheet of selectedItems) {
           const amountCents = Math.round(timesheet.total * 100);
           await createTimesheetAllowanceMutation.mutateAsync({ timesheetId: timesheet.id, amount: amountCents });
-          additionalCost += amountCents;
         }
       }
       if (customLines.length > 0) {
@@ -399,12 +388,8 @@ export default function AllowanceDetail() {
             totalPrice: line.total,
             sortOrder: i,
           });
-          additionalCost += line.total;
         }
       }
-      const currentActualCost = allowance?.actualCost || 0;
-      const newActualCost = currentActualCost + additionalCost;
-      await updateAllowanceMutation.mutateAsync({ actualCost: newActualCost });
       await queryClient.refetchQueries({ queryKey: ["/api/projects", projectId, "allowances"] });
       setSelectedPsLineItems(new Set());
       setSelectedTimesheets(new Set());

@@ -10108,16 +10108,10 @@ export class DbStorage implements IStorage {
         return undefined;
       }
 
-      // Check if parent estimate is locked.
-      // actualCost and allowanceStatus are operational tracking fields —
-      // they must remain writable on locked/contract estimates.
-      const trackingOnlyFields = new Set(["actualCost", "allowanceStatus"]);
-      const isTrackingOnlyUpdate = Object.keys(item).every((k) => trackingOnlyFields.has(k));
-      if (!isTrackingOnlyUpdate) {
-        const estimate = await this.getEstimate(existingItem.estimateId);
-        if (estimate?.isLocked) {
-          throw new Error("Cannot update item in locked estimate. Unlock the estimate first.");
-        }
+      // Check if parent estimate is locked
+      const estimate = await this.getEstimate(existingItem.estimateId);
+      if (estimate?.isLocked) {
+        throw new Error("Cannot update item in locked estimate. Unlock the estimate first.");
       }
 
       // Prepare update data. We trust priceIncTax/taxAmount when the caller
