@@ -339,17 +339,17 @@ const SortableRow = React.memo(({ id, children, className, isDraggable = true, g
     >
       {/* Drop indicator line - shows above or below based on position */}
       {dropIndicator === 'above' && (
-        <div className="absolute -top-[2px] left-0 right-0 h-1 bg-primary z-50 rounded-full shadow-[0_0_8px_rgba(168, 144, 212,0.6)]" />
+        <div className="absolute -top-[2px] left-0 right-0 h-1 bg-primary z-50 rounded-full shadow-[0_0_8px_rgba(168,144,212,0.6)]" />
       )}
       {dropIndicator === 'below' && (
-        <div className="absolute -bottom-[2px] left-0 right-0 h-1 bg-primary z-50 rounded-full shadow-[0_0_8px_rgba(168, 144, 212,0.6)]" />
+        <div className="absolute -bottom-[2px] left-0 right-0 h-1 bg-primary z-50 rounded-full shadow-[0_0_8px_rgba(168,144,212,0.6)]" />
       )}
-      {/* Drag handle — floats in left dead zone, zero grid cost */}
+      {/* Drag handle — inside row boundary so overflow-auto scroll container doesn't clip it */}
       {isDraggable && (
         <div
           {...attributes}
           {...listeners}
-          className="absolute -left-3 top-0 h-full w-4 flex items-center justify-center opacity-0 group-hover:opacity-100 cursor-grab active:cursor-grabbing transition-opacity z-10"
+          className="absolute left-0 top-0 h-full w-5 flex items-center justify-center opacity-20 group-hover:opacity-80 cursor-grab active:cursor-grabbing transition-opacity z-10"
         >
           <GripVertical className="h-3.5 w-3.5 text-muted-foreground" />
         </div>
@@ -488,6 +488,9 @@ export default function EstimateDetail() {
   const [editingValue, setEditingValue] = useState<any>("");
   // Tracks a newly-created inline item that should auto-open name edit
   const pendingAutoFocusItemId = React.useRef<string | null>(null);
+  // Set to true by handleInlineAddItem so the mutation-level onSuccess knows
+  // to capture the new item's real id before the query refetch replaces it.
+  const pendingInlineAddRef = React.useRef<boolean>(false);
 
   // State to track collapsed parent items
   const [collapsedItems, setCollapsedItems] = useState<Set<string>>(new Set());
@@ -2024,22 +2027,32 @@ export default function EstimateDetail() {
       
       return { previousItems };
     },
-    onSuccess: () => {
-      // Close dialog only on success
+    onSuccess: (data: any) => {
+      // Capture the real id BEFORE invalidation so the items-change useEffect
+      // finds it when the refetch completes (inline-add path only).
+      if (pendingInlineAddRef.current && data?.id) {
+        pendingAutoFocusItemId.current = data.id;
+      }
+      pendingInlineAddRef.current = false;
+      // Close dialog only on success (no-op when dialog isn't open)
       setIsAddItemOpen(false);
       queryClient.invalidateQueries({ queryKey: ["/api/estimates", effectiveEstimateId, "items"] });
       queryClient.invalidateQueries({ queryKey: ["/api/estimates", effectiveEstimateId, "summary"] });
       queryClient.invalidateQueries({ queryKey: ["/api/estimates"] });
-      toast({
-        title: "Success",
-        description: "Estimate item added successfully.",
-      });
+      if (!pendingAutoFocusItemId.current) {
+        // Only show the toast for dialog-based adds; inline-add is silent.
+        toast({
+          title: "Success",
+          description: "Estimate item added successfully.",
+        });
+      }
     },
     onError: (error: any, variables, context) => {
       // Rollback on error
       if (context?.previousItems) {
         queryClient.setQueryData(["/api/estimates", effectiveEstimateId, "items"], context.previousItems);
       }
+      pendingInlineAddRef.current = false;
       // Dialog stays open with form data intact
       toast({
         title: "Error",
@@ -3612,13 +3625,8 @@ export default function EstimateDetail() {
       ...(group && (group as any).defaultCostCategoryId ? { costCategoryId: (group as any).defaultCostCategoryId } : {}),
     };
     
-    addItemMutation.mutate(newItem, {
-      onSuccess: (data: any) => {
-        if (data?.id) {
-          pendingAutoFocusItemId.current = data.id;
-        }
-      },
-    });
+    pendingInlineAddRef.current = true;
+    addItemMutation.mutate(newItem);
   };
   
   const handleCopyItem = (itemId: string) => {
@@ -4312,7 +4320,7 @@ export default function EstimateDetail() {
         const hasSubItems = subItems.length > 0;
         const isCollapsed = collapsedItems.has(item.id);
         const isSubItem = !!item.parentItemId;
-        const indentClass = isSubItem ? 'pl-16' : 'pl-8';
+        const indentClass = isSubItem ? 'pl-6' : '';
         
         if (isEditing) {
           return (
@@ -4344,7 +4352,7 @@ export default function EstimateDetail() {
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="h-4 w-4 p-0 -ml-6"
+                  className="h-4 w-4 p-0"
                   onClick={(e) => {
                     e.stopPropagation();
                     handleToggleItemCollapse(item.id);

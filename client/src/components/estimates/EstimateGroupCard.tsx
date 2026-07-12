@@ -181,16 +181,16 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
       data-sortable-group-id={group.id}
     >
       {dropIndicator === 'above' && (
-        <div className="absolute -top-[2px] left-0 right-0 h-1 bg-primary z-50 rounded-full shadow-[0_0_8px_rgba(168, 144, 212,0.6)]" />
+        <div className="absolute -top-[2px] left-0 right-0 h-1 bg-primary z-50 rounded-full shadow-[0_0_8px_rgba(168,144,212,0.6)]" />
       )}
       {dropIndicator === 'below' && (
-        <div className="absolute -bottom-[2px] left-0 right-0 h-1 bg-primary z-50 rounded-full shadow-[0_0_8px_rgba(168, 144, 212,0.6)]" />
+        <div className="absolute -bottom-[2px] left-0 right-0 h-1 bg-primary z-50 rounded-full shadow-[0_0_8px_rgba(168,144,212,0.6)]" />
       )}
       {!isLocked && (
         <div
           {...attributes}
           {...listeners}
-          className="absolute -left-3 top-0 h-9 w-4 flex items-center justify-center opacity-0 group-hover/grp:opacity-100 cursor-grab active:cursor-grabbing transition-opacity z-20"
+          className="absolute left-0 top-0 h-9 w-5 flex items-center justify-center opacity-20 group-hover/grp:opacity-80 cursor-grab active:cursor-grabbing transition-opacity z-20"
           data-testid={`drag-handle-group-${group.id}`}
         >
           <GripVertical className="h-3.5 w-3.5 text-muted-foreground" />
