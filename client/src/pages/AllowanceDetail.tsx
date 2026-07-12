@@ -205,7 +205,7 @@ export default function AllowanceDetail() {
   const [isBillModalOpen, setIsBillModalOpen] = useState(false);
   const [isPsBillModalOpen, setIsPsBillModalOpen] = useState(false);
   const [isTimesheetModalOpen, setIsTimesheetModalOpen] = useState(false);
-  const [timesheetDisplayMode, setTimesheetDisplayMode] = useState<"date" | "person" | "description">("date");
+  const [timesheetDisplayMode, setTimesheetDisplayMode] = useState<"date" | "person" | "description">("person");
   const [expandedBills, setExpandedBills] = useState<Set<string>>(new Set());
   const [expandedPsBills, setExpandedPsBills] = useState<Set<string>>(new Set());
   const [selectedLineItems, setSelectedLineItems] = useState<Set<string>>(new Set());
@@ -384,8 +384,9 @@ export default function AllowanceDetail() {
       if (selectedTimesheets.size > 0) {
         const selectedItems = timesheets.filter((ts) => selectedTimesheets.has(ts.id));
         for (const timesheet of selectedItems) {
-          await createTimesheetAllowanceMutation.mutateAsync({ timesheetId: timesheet.id, amount: timesheet.total });
-          additionalCost += timesheet.total;
+          const amountCents = Math.round(timesheet.total * 100);
+          await createTimesheetAllowanceMutation.mutateAsync({ timesheetId: timesheet.id, amount: amountCents });
+          additionalCost += amountCents;
         }
       }
       if (customLines.length > 0) {
@@ -786,8 +787,9 @@ export default function AllowanceDetail() {
                     </div>
                   ))}
                   {pendingTimesheets.map((ts, idx) => {
-                    const tsExGst = exGst(ts.total);
-                    const hourlyRate = ts.duration > 0 ? Math.round(ts.total / ts.duration) : 0;
+                    const totalCents = Math.round(ts.total * 100);
+                    const tsExGst = exGst(totalCents);
+                    const hourlyRate = ts.duration > 0 ? Math.round(totalCents / ts.duration) : 0;
                     const staffName = getUserName(ts.userId);
                     return (
                       <div
@@ -812,7 +814,7 @@ export default function AllowanceDetail() {
                         <p className="text-[11px] text-foreground">{ts.duration} hrs</p>
                         <p className="text-[11px] text-foreground">{formatCurrency(hourlyRate)}/hr</p>
                         <p className="text-xs font-semibold text-foreground text-right">{formatCurrency(tsExGst)}</p>
-                        <p className="text-xs font-semibold text-foreground text-right">{formatCurrency(ts.total)}</p>
+                        <p className="text-xs font-semibold text-foreground text-right">{formatCurrency(totalCents)}</p>
                       </div>
                     );
                   })}
@@ -822,7 +824,7 @@ export default function AllowanceDetail() {
                         Subtotal:{" "}
                         {formatCurrency(
                           allocatedTimesheets.reduce((s, ts) => s + ts.amountExGst, 0) +
-                            pendingTimesheets.reduce((s, ts) => s + exGst(ts.total), 0)
+                            pendingTimesheets.reduce((s, ts) => s + exGst(Math.round(ts.total * 100)), 0)
                         )}{" "}
                         ex
                       </p>
@@ -1327,6 +1329,9 @@ export default function AllowanceDetail() {
                           const isApproved = ts.status === "approved";
                           const staffName = getUserName(ts.userId);
                           const statusColor = statusColors[ts.status] ?? { bg: "hsl(var(--muted))", text: "hsl(var(--muted-foreground))" };
+                          const dateStr = new Date(ts.date).toLocaleDateString("en-AU", { weekday: "short", day: "2-digit", month: "short", year: "numeric" });
+                          const timeStr = ts.startTime && ts.endTime ? `${ts.startTime}–${ts.endTime} · ${ts.duration}h` : ts.duration ? `${ts.duration}h` : "";
+                          const groupedByPerson = timesheetDisplayMode === "person";
                           return (
                             <div
                               key={ts.id}
@@ -1339,24 +1344,36 @@ export default function AllowanceDetail() {
                                   disabled={!isApproved}
                                   data-testid={`checkbox-timesheet-${ts.id}`}
                                 />
-                                <div
-                                  className="w-7 h-7 rounded-full flex items-center justify-center text-[9px] font-bold flex-shrink-0"
-                                  style={{ background: avatarColor(users.findIndex((u) => u.id === ts.userId)).bg, color: avatarColor(users.findIndex((u) => u.id === ts.userId)).text }}
-                                >
-                                  {initials(staffName)}
-                                </div>
-                                <div className="min-w-0 flex-1">
-                                  <div className="flex items-center gap-2 flex-wrap">
-                                    <p className="text-sm font-medium">{staffName}</p>
-                                    <p className="text-xs text-muted-foreground">
-                                      {new Date(ts.date).toLocaleDateString("en-AU", { day: "2-digit", month: "short", year: "numeric" })}
-                                    </p>
-                                    {ts.startTime && ts.endTime && (
-                                      <p className="text-xs text-muted-foreground">{ts.startTime}–{ts.endTime} ({ts.duration}h)</p>
-                                    )}
+                                {!groupedByPerson && (
+                                  <div
+                                    className="w-7 h-7 rounded-full flex items-center justify-center text-[9px] font-bold flex-shrink-0"
+                                    style={{ background: avatarColor(users.findIndex((u) => u.id === ts.userId)).bg, color: avatarColor(users.findIndex((u) => u.id === ts.userId)).text }}
+                                  >
+                                    {initials(staffName)}
                                   </div>
-                                  {ts.description && (
-                                    <p className="text-xs text-muted-foreground truncate mt-0.5">{ts.description}</p>
+                                )}
+                                <div className="min-w-0 flex-1">
+                                  {groupedByPerson ? (
+                                    <>
+                                      <div className="flex items-center gap-2 flex-wrap">
+                                        <p className="text-sm font-medium">{dateStr}</p>
+                                        {timeStr && <p className="text-xs text-muted-foreground">{timeStr}</p>}
+                                      </div>
+                                      {ts.description && (
+                                        <p className="text-xs text-muted-foreground truncate mt-0.5">{ts.description}</p>
+                                      )}
+                                    </>
+                                  ) : (
+                                    <>
+                                      <div className="flex items-center gap-2 flex-wrap">
+                                        <p className="text-sm font-medium">{staffName}</p>
+                                        <p className="text-xs text-muted-foreground">{dateStr}</p>
+                                        {timeStr && <p className="text-xs text-muted-foreground">{timeStr}</p>}
+                                      </div>
+                                      {ts.description && (
+                                        <p className="text-xs text-muted-foreground truncate mt-0.5">{ts.description}</p>
+                                      )}
+                                    </>
                                   )}
                                 </div>
                               </div>
@@ -1367,7 +1384,7 @@ export default function AllowanceDetail() {
                                 >
                                   {ts.status}
                                 </span>
-                                <p className="text-sm font-semibold w-20 text-right">{formatCurrency(ts.total)}</p>
+                                <p className="text-sm font-semibold w-20 text-right">{formatCurrency(Math.round(ts.total * 100))}</p>
                               </div>
                             </div>
                           );
@@ -1381,7 +1398,7 @@ export default function AllowanceDetail() {
           </div>
           <div className="flex items-center justify-between pt-4 border-t">
             <p className="text-xs text-muted-foreground">
-              {selectedTimesheets.size > 0 ? `${selectedTimesheets.size} selected · ${formatCurrency(timesheets.filter((ts) => selectedTimesheets.has(ts.id)).reduce((s, ts) => s + ts.total, 0))} inc GST` : "No entries selected"}
+              {selectedTimesheets.size > 0 ? `${selectedTimesheets.size} selected · ${formatCurrency(timesheets.filter((ts) => selectedTimesheets.has(ts.id)).reduce((s, ts) => s + Math.round(ts.total * 100), 0))} inc GST` : "No entries selected"}
             </p>
             <div className="flex gap-2">
               <Button variant="outline" onClick={() => setIsTimesheetModalOpen(false)}>Cancel</Button>
