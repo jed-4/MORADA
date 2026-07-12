@@ -12976,10 +12976,23 @@ export class DbStorage implements IStorage {
         }
       }
 
+      // Build a stageId → stage name lookup for the new template format
+      // (items carry stageId referencing a stage's local id; legacy items carry data.stage directly)
+      const stageIdToName = new Map<string, string>();
+      for (const ts of templateStages as any[]) {
+        if (ts.id) stageIdToName.set(ts.id, ts.name);
+      }
+
       // Create scope items
       const itemsToCreate = templateItems.map((data: any, index: number) => {
-        // Map stage name to actual stage (use original if mapping doesn't exist)
-        const stageName = createdStageMap[data.stage] || data.stage;
+        // New format: resolve stageId → template stage name → actual stage name
+        // Legacy format: data.stage already carries the plain stage name
+        const templateStageName = data.stageId
+          ? stageIdToName.get(data.stageId)
+          : data.stage;
+        const stageName = (templateStageName && createdStageMap[templateStageName])
+          || templateStageName
+          || data.stage;
         
         return {
           companyId,
@@ -13004,7 +13017,7 @@ export class DbStorage implements IStorage {
       return await this.bulkCreateScopeItems(itemsToCreate);
     } catch (error) {
       console.error("Database error in applyScopeTemplate:", error);
-      return [];
+      throw error;
     }
   }
 
