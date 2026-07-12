@@ -45,6 +45,14 @@ const STATUS_CONFIG: Record<GroupStatus, { label: string; className: string }> =
 
 type ColumnConfig = { id: string; label: string; visible: boolean; widthPx: number };
 
+type GroupTotals = {
+  builderCostExTax: number;
+  builderCostIncTax: number;
+  clientAmountExTax: number;
+  clientTax: number;
+  clientAmountIncTax: number;
+};
+
 interface EstimateGroupCardProps {
   group: EstimateGroup;
   groupedItems: Record<string, EstimateItem[]>;
@@ -66,13 +74,8 @@ interface EstimateGroupCardProps {
   selectedGroups: Set<string>;
   onToggleGroupSelection: (groupId: string) => void;
   nestingLevel?: number;
-  groupTotals?: {
-    builderCostExTax: number;
-    builderCostIncTax: number;
-    clientAmountExTax: number;
-    clientTax: number;
-    clientAmountIncTax: number;
-  };
+  groupTotals?: GroupTotals;
+  groupTotalsMap?: Record<string, GroupTotals>;
   formatCurrency: (amount: number) => string;
   subgroups?: EstimateGroup[];
   allGroups?: EstimateGroup[];
@@ -84,6 +87,7 @@ interface EstimateGroupCardProps {
   costCodes?: CostCode[];
   costCategories?: CostCategory[];
   dropIndicator?: 'above' | 'below' | null;
+  dropTarget?: { id: string; position: 'above' | 'below' } | null;
   onUpdateStatus?: (groupId: string, status: GroupStatus) => void;
 }
 
@@ -109,6 +113,7 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
   onToggleGroupSelection,
   nestingLevel = 0,
   groupTotals,
+  groupTotalsMap,
   formatCurrency,
   subgroups = [],
   allGroups = [],
@@ -120,8 +125,15 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
   costCodes = [],
   costCategories = [],
   dropIndicator,
+  dropTarget,
   onUpdateStatus,
 }) => {
+  // Resolve this card's totals: prefer the map (accurate for nested groups) over the prop
+  const effectiveGroupTotals = groupTotalsMap?.[group.id] ?? groupTotals;
+  // Resolve drop indicator: when dropTarget is provided (recursive renders) compute locally
+  const effectiveDropIndicator = dropTarget != null
+    ? (dropTarget.id === `group-${group.id}` ? dropTarget.position : null)
+    : dropIndicator;
   const [isAdding, setIsAdding] = useState(false);
 
   const handleAddLine = async () => {
@@ -180,10 +192,10 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
       className={`relative group/grp ${nestingLevel > 0 ? 'ml-8' : ''}`}
       data-sortable-group-id={group.id}
     >
-      {dropIndicator === 'above' && (
+      {effectiveDropIndicator === 'above' && (
         <div className="absolute -top-[2px] left-0 right-0 h-1 bg-primary z-50 rounded-full shadow-[0_0_8px_rgba(168,144,212,0.6)]" />
       )}
-      {dropIndicator === 'below' && (
+      {effectiveDropIndicator === 'below' && (
         <div className="absolute -bottom-[2px] left-0 right-0 h-1 bg-primary z-50 rounded-full shadow-[0_0_8px_rgba(168,144,212,0.6)]" />
       )}
       {!isLocked && (
@@ -306,9 +318,9 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
                       {statusCfg.label}
                     </Badge>
                   )}
-                  {groupTotals && groupTotals.builderCostExTax > 0 && (
+                  {effectiveGroupTotals && effectiveGroupTotals.builderCostExTax > 0 && (
                     <span className="text-xs font-semibold text-primary ml-auto flex-shrink-0" data-testid={`group-total-badge-${group.id}`}>
-                      {formatCurrency(groupTotals.builderCostExTax)}
+                      {formatCurrency(effectiveGroupTotals.builderCostExTax)}
                     </span>
                   )}
                 </div>
@@ -317,17 +329,17 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
           }
 
           let cellContent = '';
-          if (groupTotals) {
+          if (effectiveGroupTotals) {
             if (column.id === 'builderCost') {
-              cellContent = formatCurrency(groupTotals.builderCostExTax);
+              cellContent = formatCurrency(effectiveGroupTotals.builderCostExTax);
             } else if (column.id === 'builderCostIncTax') {
-              cellContent = formatCurrency(groupTotals.builderCostIncTax);
+              cellContent = formatCurrency(effectiveGroupTotals.builderCostIncTax);
             } else if (column.id === 'clientPriceExTax') {
-              cellContent = formatCurrency(groupTotals.clientAmountExTax);
+              cellContent = formatCurrency(effectiveGroupTotals.clientAmountExTax);
             } else if (column.id === 'clientTax') {
-              cellContent = formatCurrency(groupTotals.clientTax);
+              cellContent = formatCurrency(effectiveGroupTotals.clientTax);
             } else if (column.id === 'clientPriceIncTax') {
-              cellContent = formatCurrency(groupTotals.clientAmountIncTax);
+              cellContent = formatCurrency(effectiveGroupTotals.clientAmountIncTax);
             }
           }
 
@@ -503,7 +515,8 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
                 selectedGroups={selectedGroups}
                 onToggleGroupSelection={onToggleGroupSelection}
                 nestingLevel={nestingLevel + 1}
-                groupTotals={groupTotals}
+                groupTotals={groupTotalsMap?.[childGroup.id]}
+                groupTotalsMap={groupTotalsMap}
                 formatCurrency={formatCurrency}
                 subgroups={subgroups}
                 allGroups={allGroups}
@@ -511,6 +524,10 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
                 activeDragId={activeDragId}
                 hideAddLines={hideAddLines}
                 groupIndex={childIndex}
+                onApplyCostCode={onApplyCostCode}
+                costCodes={costCodes}
+                costCategories={costCategories}
+                dropTarget={dropTarget}
                 onUpdateStatus={onUpdateStatus}
               />
             </div>

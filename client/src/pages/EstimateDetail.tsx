@@ -5993,6 +5993,7 @@ export default function EstimateDetail() {
                                   onToggleGroupSelection={handleToggleGroupSelection}
                                   nestingLevel={0}
                                   groupTotals={groupTotalsMap[group.id]}
+                                  groupTotalsMap={groupTotalsMap}
                                   formatCurrency={formatCurrency}
                                   subgroups={allSubgroups}
                                   allGroups={groups}
@@ -6004,6 +6005,7 @@ export default function EstimateDetail() {
                                   costCodes={costCodes}
                                   costCategories={costCategories}
                                   dropIndicator={groupDropIndicator}
+                                  dropTarget={dropTarget}
                                   onUpdateStatus={(groupId, status) =>
                                     updateGroupMutation.mutate({ groupId, updates: { status } })
                                   }
