@@ -37,12 +37,14 @@ export const sessionMiddleware = (() => {
     rolling: true,
     cookie: {
       httpOnly: true,
-      // Replit dev server is always served over HTTPS via Replit's proxy,
-      // so SameSite=None + Secure works in both dev and production.
-      // This allows the session cookie to be sent in cross-origin iframes
-      // (e.g. the canvas preview) without third-party-cookie blocking.
-      secure: true,
-      sameSite: 'none' as const,
+      // On Replit (always HTTPS via proxy) and in production, SameSite=None +
+      // Secure allows the session cookie in cross-origin iframes (e.g. the
+      // canvas preview) without third-party-cookie blocking. Local dev runs
+      // over plain HTTP, where browsers discard Secure cookies, so fall back
+      // to SameSite=Lax without Secure.
+      ...(process.env.REPL_ID || process.env.NODE_ENV === 'production'
+        ? { secure: true, sameSite: 'none' as const }
+        : { secure: false, sameSite: 'lax' as const }),
       maxAge: sessionTtl,
     },
   });
