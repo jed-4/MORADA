@@ -8,6 +8,10 @@ dist
 .expo/
 attached_assets
 
+# Env files
+.env
+.env.local
+
 # Expo env files
 expo-mobile/.env
 expo-mobile/.env.local

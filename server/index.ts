@@ -288,7 +288,8 @@ app.use((req, res, next) => {
   server.listen({
     port,
     host: "0.0.0.0",
-    reusePort: true,
+    // reusePort is Linux-only; macOS throws ENOTSUP
+    ...(process.platform === "linux" ? { reusePort: true } : {}),
   }, async () => {
     log(`serving on port ${port}`);
 
