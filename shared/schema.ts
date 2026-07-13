@@ -1911,7 +1911,7 @@ export type ContactInsurance = typeof contactInsurances.$inferSelect;
 // Bills
 export const bills = pgTable("bills", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  billNumber: text("bill_number").notNull().unique(), // Auto-generated unique number
+  billNumber: text("bill_number").notNull(), // Auto-generated number, unique per company (composite index below)
   companyId: varchar("company_id").references(() => companies.id, { onDelete: "cascade" }),
   projectId: varchar("project_id").references(() => projects.id, { onDelete: "set null" }), // Nullable — bills can belong to the business (no project)
   supplierId: varchar("supplier_id").references(() => contacts.id), // Changed from suppliers to contacts
@@ -1952,7 +1952,10 @@ export const bills = pgTable("bills", {
   createdById: varchar("created_by_id").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  // Composite unique constraint: bill numbers must be unique per company
+  uniqueBillNumberPerCompany: uniqueIndex("bills_company_bill_number_unique").on(table.companyId, table.billNumber),
+}));
 
 export const billAttachmentSchema = z.object({
   objectPath: z.string(),
@@ -2305,7 +2308,11 @@ export type VariationTimesheet = typeof variationTimesheets.$inferSelect;
 // Client Invoices
 export const clientInvoices = pgTable("client_invoices", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  invoiceNumber: text("invoice_number").unique(),
+  // Unique per company (composite index below), NOT globally — two companies
+  // may both use "INV-1001". companyId is nullable only for legacy rows;
+  // ensureTenancyColumns backfills it from the owning project.
+  invoiceNumber: text("invoice_number"),
+  companyId: varchar("company_id").references(() => companies.id),
   name: text("name").notNull(),
   projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
   clientId: varchar("client_id").references(() => users.id),
@@ -2335,7 +2342,10 @@ export const clientInvoices = pgTable("client_invoices", {
   contractClaimRows: jsonb("contract_claim_rows").default([]), // Array of { id, name, description, claimPercent } for progress payment claims
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  // Composite unique constraint: invoice numbers must be unique per company
+  uniqueInvoiceNumberPerCompany: uniqueIndex("client_invoices_company_invoice_number_unique").on(table.companyId, table.invoiceNumber),
+}));
 
 export const insertClientInvoiceSchema = createInsertSchema(clientInvoices).omit({
   id: true,

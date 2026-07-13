@@ -9725,6 +9725,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.error('[billing] failed to start trial at company creation:', trialErr);
       }
 
+      // Preload the new company with the demo dataset so a fresh signup lands
+      // on a populated dashboard. Runs in the background: seeding is
+      // transactional and idempotent, and a failure must never block signup.
+      import("./seed-lenny")
+        .then(({ seedLennyDemo }) => seedLennyDemo(company.id, userId))
+        .then((result) => console.log(`[demo] seeded demo data for new company ${company.id}:`, JSON.stringify(result)))
+        .catch((seedErr) => console.error(`[demo] failed to seed demo data for new company ${company.id}:`, seedErr));
+
       res.status(201).json(created);
     } catch (error) {
       console.error("Error creating company:", error);
@@ -18307,13 +18315,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
   const getProjectJobNumber = (project: any): string | null =>
     project?.constructionNumber || project?.preConstructionNumber || project?.leadNumber || project?.jobNumber || null;
 
-  // Generate the next "<jobNum>-CI-NN" number. invoice_number is GLOBALLY unique
-  // in the schema, so we check every invoice sharing the prefix (across all
-  // projects), derive the next sequence from the HIGHEST existing number (not a
-  // count, so deletions can't cause a repeat) and skip any number already taken.
-  const generateNextJobCiNumber = async (jobNum: string): Promise<string> => {
+  // Generate the next "<jobNum>-CI-NN" number. invoice_number is unique PER
+  // COMPANY, so we check every invoice sharing the prefix within the company
+  // (across all its projects), derive the next sequence from the HIGHEST
+  // existing number (not a count, so deletions can't cause a repeat) and skip
+  // any number already taken.
+  const generateNextJobCiNumber = async (jobNum: string, companyId: string): Promise<string> => {
     const ciPrefix = `${jobNum}-CI-`;
-    const existing = await storage.getClientInvoiceNumbersByPrefix(ciPrefix);
+    const existing = await storage.getClientInvoiceNumbersByPrefix(ciPrefix, companyId);
     const taken = new Set(existing);
     let maxSeq = 0;
     for (const num of existing) {
@@ -18330,9 +18339,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   };
 
   // Only auto-heal collisions on the invoice_number unique constraint.
+  // Matches both the current per-company composite constraint and the legacy
+  // global one (in case a not-yet-migrated database still has it).
   const isInvoiceNumberConflict = (error: any): boolean => {
     const msg = String(error?.message || "");
-    return error?.constraint === "client_invoices_invoice_number_unique"
+    return error?.constraint === "client_invoices_company_invoice_number_unique"
+      || msg.includes("client_invoices_company_invoice_number_unique")
+      || error?.constraint === "client_invoices_invoice_number_unique"
       || msg.includes("client_invoices_invoice_number_unique");
   };
 
@@ -18348,13 +18361,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: "Project not found" });
       }
       const jobNum = getProjectJobNumber(project);
+      const companyId = (project as any).companyId;
       let invoiceNumber: string;
       if (jobNum) {
-        invoiceNumber = await generateNextJobCiNumber(jobNum);
+        invoiceNumber = await generateNextJobCiNumber(jobNum, companyId);
       } else {
         const prefix = (project as any).clientInvoicePrefix || "INV-";
         const startNumber = (project as any).clientInvoiceStartNumber || 1000;
-        invoiceNumber = await storage.getNextClientInvoiceNumber(prefix, startNumber);
+        invoiceNumber = await storage.getNextClientInvoiceNumber(prefix, startNumber, companyId);
       }
       res.json({ invoiceNumber });
     } catch (error) {
@@ -18406,7 +18420,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           // Only auto-heal auto-generated numbers; a manually entered number that
           // collides surfaces a clear 409 so the user can choose another.
           if (!ciPrefix || !(payload as any).invoiceNumber?.startsWith(ciPrefix)) throw error;
-          payload = { ...payload, invoiceNumber: await generateNextJobCiNumber(jobNum!) };
+          payload = { ...payload, invoiceNumber: await generateNextJobCiNumber(jobNum!, (project as any).companyId) };
         }
       }
       res.status(201).json(invoice);

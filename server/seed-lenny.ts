@@ -416,12 +416,13 @@ export async function seedLennyDemo(companyId: string, userId: string) {
     // 4 progress payments totalling exactly the contract price.
     // Amounts include GST. ex = total / 1.1 rounded, gst = total - ex.
 
-    // INV-1001 — Deposit 10% = $49,738.47
+    // DEMO-1001 — Deposit 10% = $49,738.47
     const inv1Total = 4973847;
     const inv1Ex   = Math.round(inv1Total / 1.1);
     const inv1Gst  = inv1Total - inv1Ex;
     const [inv1] = await tx.insert(clientInvoices).values({
-      invoiceNumber: "INV-1001",
+      invoiceNumber: "DEMO-1001",
+      companyId,
       name: "Deposit — 10% Contract",
       projectId: proj1.id,
       invoiceDate: new Date("2025-03-01"),
@@ -445,12 +446,13 @@ export async function seedLennyDemo(companyId: string, userId: string) {
       reference: "Irwin-Deposit",
     });
 
-    // INV-1002 — Progress Claim 2, Slab & Frame Complete 25% = $124,346.18
+    // DEMO-1002 — Progress Claim 2, Slab & Frame Complete 25% = $124,346.18
     const inv2Total = 12434618;
     const inv2Ex   = Math.round(inv2Total / 1.1);
     const inv2Gst  = inv2Total - inv2Ex;
     const [inv2] = await tx.insert(clientInvoices).values({
-      invoiceNumber: "INV-1002",
+      invoiceNumber: "DEMO-1002",
+      companyId,
       name: "Progress Claim 2 — Slab & Frame Complete",
       projectId: proj1.id,
       invoiceDate: new Date("2025-05-01"),
@@ -474,13 +476,14 @@ export async function seedLennyDemo(companyId: string, userId: string) {
       reference: "Irwin-PP2",
     });
 
-    // INV-1003 — Progress Claim 3, Lock-Up Stage 35% = $174,084.66, half paid
+    // DEMO-1003 — Progress Claim 3, Lock-Up Stage 35% = $174,084.66, half paid
     const inv3Total = 17408466;
     const inv3Ex   = Math.round(inv3Total / 1.1);
     const inv3Gst  = inv3Total - inv3Ex;
     const inv3Paid = 8704233; // exactly half
     const [inv3] = await tx.insert(clientInvoices).values({
-      invoiceNumber: "INV-1003",
+      invoiceNumber: "DEMO-1003",
+      companyId,
       name: "Progress Claim 3 — Lock-Up Stage",
       projectId: proj1.id,
       invoiceDate: new Date("2025-07-01"),
@@ -504,13 +507,14 @@ export async function seedLennyDemo(companyId: string, userId: string) {
       reference: "Irwin-PP3-partial",
     });
 
-    // INV-1004 — Progress Claim 4, Practical Completion 30% = $149,215.42, unpaid
+    // DEMO-1004 — Progress Claim 4, Practical Completion 30% = $149,215.42, unpaid
     // Remainder after 10+25+35 = 30%. Total check: 4973847+12434618+17408466+14921542 = 49738473 ✓
     const inv4Total = 49738473 - inv1Total - inv2Total - inv3Total; // = 14921542
     const inv4Ex   = Math.round(inv4Total / 1.1);
     const inv4Gst  = inv4Total - inv4Ex;
     const [inv4] = await tx.insert(clientInvoices).values({
-      invoiceNumber: "INV-1004",
+      invoiceNumber: "DEMO-1004",
+      companyId,
       name: "Progress Claim 4 — Practical Completion",
       projectId: proj1.id,
       invoiceDate: new Date("2025-09-01"),
@@ -566,6 +570,7 @@ export async function seedLennyDemo(companyId: string, userId: string) {
       const subtotal = b.total - gst;
       const [bill] = await tx.insert(bills).values({
         billNumber: b.num,
+        companyId,
         projectId: proj1.id,
         supplierId: b.supplier,
         billType: "bill",
@@ -1374,6 +1379,7 @@ export async function seedLennyDemo(companyId: string, userId: string) {
       const subtotal = b.total - gst;
       const [bill] = await tx.insert(bills).values({
         billNumber: b.num,
+        companyId,
         projectId: proj2.id,
         supplierId: b.supplier,
         billType: "bill",
@@ -1403,7 +1409,8 @@ export async function seedLennyDemo(companyId: string, userId: string) {
     const inv2001Gst = Math.round(inv2001ExTax * 0.1);
 
     await tx.insert(clientInvoices).values({
-      invoiceNumber: "INV-2001",
+      invoiceNumber: "DEMO-2001",
+      companyId,
       name: "Preliminary Works — Design & Investigations",
       projectId: proj2.id,
       invoiceDate: new Date("2025-11-30"),

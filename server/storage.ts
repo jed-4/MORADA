@@ -819,8 +819,8 @@ export interface IStorage {
 
   // Client Invoices CRUD
   getClientInvoices(projectId?: string, status?: string): Promise<ClientInvoice[]>;
-  getNextClientInvoiceNumber(prefix: string, startNumber: number): Promise<string>;
-  getClientInvoiceNumbersByPrefix(prefix: string): Promise<string[]>;
+  getNextClientInvoiceNumber(prefix: string, startNumber: number, companyId: string): Promise<string>;
+  getClientInvoiceNumbersByPrefix(prefix: string, companyId: string): Promise<string[]>;
   getClientInvoice(id: string): Promise<ClientInvoice | undefined>;
   getClientInvoiceByXeroId(xeroInvoiceId: string): Promise<ClientInvoice | undefined>;
   createClientInvoice(invoice: InsertClientInvoice): Promise<ClientInvoice>;
@@ -6534,11 +6534,11 @@ export class MemStorage implements IStorage {
   async updateTeam(id: string, data: Partial<import("@shared/schema").InsertTeam>): Promise<import("@shared/schema").Team | undefined> { return undefined; }
   async deleteTeam(id: string): Promise<boolean> { return false; }
 
-  async getNextClientInvoiceNumber(prefix: string, startNumber: number): Promise<string> {
+  async getNextClientInvoiceNumber(prefix: string, startNumber: number, _companyId: string): Promise<string> {
     return `${prefix}${startNumber}`;
   }
 
-  async getClientInvoiceNumbersByPrefix(_prefix: string): Promise<string[]> {
+  async getClientInvoiceNumbersByPrefix(_prefix: string, _companyId: string): Promise<string[]> {
     return [];
   }
 
@@ -16295,11 +16295,16 @@ export class DbStorage implements IStorage {
     }
   }
 
-  async getNextClientInvoiceNumber(prefix: string, startNumber: number): Promise<string> {
+  async getNextClientInvoiceNumber(prefix: string, startNumber: number, companyId: string): Promise<string> {
     try {
+      // Company-scoped: invoice numbers are unique per company, and one
+      // company's sequence must never advance off another company's invoices.
       const allInvoices = await db.select({ invoiceNumber: schema.clientInvoices.invoiceNumber })
         .from(schema.clientInvoices)
-        .where(sql`${schema.clientInvoices.invoiceNumber} like ${prefix + '%'}`);
+        .where(and(
+          eq(schema.clientInvoices.companyId, companyId),
+          sql`${schema.clientInvoices.invoiceNumber} like ${prefix + '%'}`
+        ));
 
       let maxNum = startNumber - 1;
       for (const inv of allInvoices) {
@@ -16316,11 +16321,14 @@ export class DbStorage implements IStorage {
     }
   }
 
-  async getClientInvoiceNumbersByPrefix(prefix: string): Promise<string[]> {
+  async getClientInvoiceNumbersByPrefix(prefix: string, companyId: string): Promise<string[]> {
     try {
       const rows = await db.select({ invoiceNumber: schema.clientInvoices.invoiceNumber })
         .from(schema.clientInvoices)
-        .where(sql`${schema.clientInvoices.invoiceNumber} like ${prefix + '%'}`);
+        .where(and(
+          eq(schema.clientInvoices.companyId, companyId),
+          sql`${schema.clientInvoices.invoiceNumber} like ${prefix + '%'}`
+        ));
       return rows
         .map((r) => r.invoiceNumber)
         .filter((n): n is string => !!n);
@@ -16358,8 +16366,18 @@ export class DbStorage implements IStorage {
 
   async createClientInvoice(invoice: InsertClientInvoice): Promise<ClientInvoice> {
     try {
+      // Tenancy: derive companyId from the owning project when the caller
+      // didn't supply it, so the per-company invoice-number constraint applies.
+      let values = invoice as any;
+      if (!values.companyId && values.projectId) {
+        const [proj] = await db.select({ companyId: schema.projects.companyId })
+          .from(schema.projects)
+          .where(eq(schema.projects.id, values.projectId))
+          .limit(1);
+        if (proj?.companyId) values = { ...values, companyId: proj.companyId };
+      }
       const result = await db.insert(schema.clientInvoices)
-        .values(invoice)
+        .values(values)
         .returning();
       return result[0];
     } catch (error) {
@@ -24491,6 +24509,41 @@ export class DbStorage implements IStorage {
 
       // checklist_templates: company scoping column.
       await db.execute(sql`ALTER TABLE checklist_templates ADD COLUMN IF NOT EXISTS company_id varchar`);
+
+      // client_invoices: company scoping column. Invoice numbers are unique
+      // PER COMPANY, not globally — replace the legacy global unique
+      // constraint with a composite (company_id, invoice_number) index.
+      await db.execute(sql`ALTER TABLE client_invoices ADD COLUMN IF NOT EXISTS company_id varchar`);
+      await db.execute(sql`
+        UPDATE client_invoices ci
+        SET company_id = p.company_id
+        FROM projects p
+        WHERE ci.company_id IS NULL
+          AND ci.project_id = p.id
+          AND p.company_id IS NOT NULL
+      `);
+      await db.execute(sql`ALTER TABLE client_invoices DROP CONSTRAINT IF EXISTS client_invoices_invoice_number_unique`);
+      await db.execute(sql`
+        CREATE UNIQUE INDEX IF NOT EXISTS client_invoices_company_invoice_number_unique
+        ON client_invoices (company_id, invoice_number)
+      `);
+
+      // bills: same treatment — bill numbers are unique PER COMPANY, not
+      // globally. Backfill company_id from the owning project, then swap the
+      // legacy global unique constraint for a composite one.
+      await db.execute(sql`
+        UPDATE bills b
+        SET company_id = p.company_id
+        FROM projects p
+        WHERE b.company_id IS NULL
+          AND b.project_id = p.id
+          AND p.company_id IS NOT NULL
+      `);
+      await db.execute(sql`ALTER TABLE bills DROP CONSTRAINT IF EXISTS bills_bill_number_unique`);
+      await db.execute(sql`
+        CREATE UNIQUE INDEX IF NOT EXISTS bills_company_bill_number_unique
+        ON bills (company_id, bill_number)
+      `);
 
       // business_schedule_projects: Gantt "Build End" divider calculation mode.
       await db.execute(sql`ALTER TABLE business_schedule_projects ADD COLUMN IF NOT EXISTS build_end_mode text NOT NULL DEFAULT 'auto'`);
