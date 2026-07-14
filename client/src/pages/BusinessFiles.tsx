@@ -65,6 +65,7 @@ import {
   AlertCircle,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
+import { EmptyState } from "@/components/EmptyState";
 import { format } from "date-fns";
 import { SiGoogledrive } from "react-icons/si";
 
@@ -632,18 +633,13 @@ export default function BusinessFiles() {
             <Loader2 className="w-8 h-8 animate-spin text-primary" />
           </div>
         ) : sortedFiles.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
-            <FolderOpen className="w-16 h-16 mb-4" />
-            <p className="text-sm">
-              {searchQuery ? "No files match your search" : "This folder is empty"}
-            </p>
-            <button
-              onClick={() => setShowUploadDialog(true)}
-              className="mt-4 text-sm text-primary hover:underline"
-            >
-              Upload a file to Google Drive
-            </button>
-          </div>
+          <EmptyState
+            icon={FolderOpen}
+            title={searchQuery ? "No files match your search" : "This folder is empty"}
+            action={{ label: "Upload a file to Google Drive", onClick: () => setShowUploadDialog(true) }}
+            variant="inline"
+            className="h-full"
+          />
         ) : viewMode === "list" ? (
           <div className="space-y-0.5">
             <div className="grid grid-cols-[1fr_100px_120px_40px] gap-2 px-2 py-1 text-xs text-muted-foreground font-medium border-b">
@@ -1001,11 +997,13 @@ export default function BusinessFiles() {
                 </Button>
               </div>
             ) : linkFolderPath.length === 0 && linkBrowseFiles.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-full text-muted-foreground p-4">
-                <FolderOpen className="w-10 h-10 mb-2" />
-                <p className="text-sm">No folders found</p>
-                <p className="text-xs mt-1">Your Drive root is empty or has no folders</p>
-              </div>
+              <EmptyState
+                icon={FolderOpen}
+                title="No folders found"
+                description="Your Drive root is empty or has no folders"
+                variant="inline"
+                className="h-full py-4"
+              />
             ) : linkFolderPath.length > 0 && linkBrowseFiles.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-full text-muted-foreground p-4">
                 <FolderCheck className="w-10 h-10 mb-2 text-primary" />

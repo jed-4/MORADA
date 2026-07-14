@@ -13,12 +13,14 @@ import { SiGoogle } from "react-icons/si";
 import type { User } from "@shared/schema";
 import { apiRequest } from "@/lib/queryClient";
 import { format } from "date-fns";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 
 export default function UserProfile() {
   const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [isEditing, setIsEditing] = useState(false);
+  const [confirmAction, setConfirmAction] = useState<{ title: string; description?: string; confirmLabel?: string; destructive?: boolean; run: () => void } | null>(null);
 
   // Form state
   const [firstName, setFirstName] = useState("");
@@ -175,9 +177,13 @@ export default function UserProfile() {
   };
 
   const handleDisconnectGoogleCalendar = () => {
-    if (confirm("Are you sure you want to disconnect your Google Calendar?")) {
-      disconnectGoogleCalendarMutation.mutate();
-    }
+    setConfirmAction({
+      title: "Disconnect Google Calendar?",
+      description: "Morada tasks and events will stop syncing to your Google Calendar.",
+      confirmLabel: "Disconnect",
+      destructive: true,
+      run: () => disconnectGoogleCalendarMutation.mutate(),
+    });
   };
 
   const isGoogleCalendarConnected = (calendarStatus as any)?.connected || false;
@@ -482,6 +488,21 @@ export default function UserProfile() {
           </Card>
         </div>
       </div>
+
+      <ConfirmDialog
+        open={!!confirmAction}
+        onOpenChange={(o) => {
+          if (!o) setConfirmAction(null);
+        }}
+        title={confirmAction?.title ?? ""}
+        description={confirmAction?.description}
+        confirmLabel={confirmAction?.confirmLabel ?? "Confirm"}
+        destructive={confirmAction?.destructive}
+        onConfirm={() => {
+          confirmAction?.run();
+          setConfirmAction(null);
+        }}
+      />
     </div>
   );
 }

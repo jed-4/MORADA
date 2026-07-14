@@ -61,6 +61,7 @@ import EditCategoryDialog from "@/components/EditCategoryDialog";
 import MergeCategoryDialog from "@/components/MergeCategoryDialog";
 import EditCostCodeDialog from "@/components/EditCostCodeDialog";
 import BulkXeroMappingDialog from "@/components/BulkXeroMappingDialog";
+import { EmptyState } from "@/components/EmptyState";
 
 const TABLE_STORAGE_KEY = "cost-codes";
 const LEGACY_STORAGE_KEY = "cost-codes-column-config-v1";
@@ -913,15 +914,11 @@ export default function CostCodes() {
             )}
 
             {filteredCategories.length === 0 && uncategorizedCodes.length === 0 && (
-              <Card>
-                <CardContent className="p-12 text-center">
-                  <p className="text-muted-foreground">
-                    {searchTerm
-                      ? "No cost codes match your search."
-                      : "No cost codes yet. Click 'Add Category' or 'Add Cost Code' to get started."}
-                  </p>
-                </CardContent>
-              </Card>
+              <EmptyState
+                title={searchTerm ? "No cost codes match your search." : "No cost codes yet."}
+                description={searchTerm ? undefined : "Click 'Add Category' or 'Add Cost Code' to get started."}
+                variant="card"
+              />
             )}
           </>
         )}

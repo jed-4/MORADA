@@ -74,6 +74,7 @@ import type {
 import { insertSiteDiaryEntrySchema } from "@shared/schema";
 import { z } from "zod";
 import { Image as ImageIcon } from "lucide-react";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 
 const HIDE_SUMMARY_KEY = "site-diary-hide-summary";
 
@@ -1214,27 +1215,15 @@ function SiteDiaryFeedCard({
       </CardContent>
     </Card>
 
-    {showDeleteConfirm && (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setShowDeleteConfirm(false)}>
-        <div className="bg-background border rounded-lg p-4 max-w-sm mx-4 shadow-lg" onClick={(e) => e.stopPropagation()}>
-          <h3 className="font-semibold text-sm mb-2">Delete Site Diary Entry</h3>
-          <p className="text-xs text-muted-foreground mb-4">
-            Are you sure you want to delete "{entry.title}"? This cannot be undone.
-          </p>
-          <div className="flex justify-end gap-2">
-            <Button variant="outline" size="sm" onClick={() => setShowDeleteConfirm(false)}>Cancel</Button>
-            <Button
-              variant="destructive"
-              size="sm"
-              onClick={() => { deleteMutation.mutate(); setShowDeleteConfirm(false); }}
-              disabled={deleteMutation.isPending}
-            >
-              {deleteMutation.isPending ? "Deleting..." : "Delete"}
-            </Button>
-          </div>
-        </div>
-      </div>
-    )}
+    <ConfirmDialog
+      open={showDeleteConfirm}
+      onOpenChange={setShowDeleteConfirm}
+      title="Delete Site Diary Entry"
+      description={`Are you sure you want to delete "${entry.title}"? This cannot be undone.`}
+      confirmLabel="Delete"
+      destructive
+      onConfirm={() => { deleteMutation.mutate(); setShowDeleteConfirm(false); }}
+    />
     </>
   );
 }
@@ -1391,29 +1380,15 @@ function SiteDiaryCard({ entry, projectName, onView, onEdit }: { entry: SiteDiar
     </div>
 
     {/* Delete Confirmation Dialog */}
-    {showDeleteConfirm && (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setShowDeleteConfirm(false)}>
-        <div className="bg-background border rounded-lg p-4 max-w-sm mx-4 shadow-lg" onClick={(e) => e.stopPropagation()}>
-          <h3 className="font-semibold text-sm mb-2">Delete Site Diary Entry</h3>
-          <p className="text-xs text-muted-foreground mb-4">
-            Are you sure you want to delete "{entry.title}"? This cannot be undone.
-          </p>
-          <div className="flex justify-end gap-2">
-            <Button variant="outline" size="sm" onClick={() => setShowDeleteConfirm(false)}>
-              Cancel
-            </Button>
-            <Button 
-              variant="destructive" 
-              size="sm" 
-              onClick={() => { deleteMutation.mutate(); setShowDeleteConfirm(false); }}
-              disabled={deleteMutation.isPending}
-            >
-              {deleteMutation.isPending ? "Deleting..." : "Delete"}
-            </Button>
-          </div>
-        </div>
-      </div>
-    )}
+    <ConfirmDialog
+      open={showDeleteConfirm}
+      onOpenChange={setShowDeleteConfirm}
+      title="Delete Site Diary Entry"
+      description={`Are you sure you want to delete "${entry.title}"? This cannot be undone.`}
+      confirmLabel="Delete"
+      destructive
+      onConfirm={() => { deleteMutation.mutate(); setShowDeleteConfirm(false); }}
+    />
     </>
   );
 }
@@ -1940,7 +1915,7 @@ function EntryFormFields({
             disabled={createMutation.isPending}
             data-testid="button-submit-entry"
           >
-            {createMutation.isPending ? "Creating..." : "Create Entry"}
+            {createMutation.isPending ? (<><Loader2 className="w-4 h-4 mr-2 animate-spin" />Creating...</>) : "Create Entry"}
           </Button>
         </div>
       </form>
@@ -2328,7 +2303,7 @@ function EntryEditForm({
             ))}
             <div className="flex gap-2 pt-2">
               <Button type="submit" size="sm" disabled={updateMutation.isPending} data-testid="button-save-entry">
-                {updateMutation.isPending ? "Saving..." : "Save Changes"}
+                {updateMutation.isPending ? (<><Loader2 className="w-4 h-4 mr-2 animate-spin" />Saving...</>) : "Save Changes"}
               </Button>
               <Button type="button" variant="outline" size="sm" onClick={onCancel}>
                 Cancel

@@ -21,6 +21,7 @@ import {
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { RichTextEditor } from "@/components/RichTextEditor";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import type { User, Note } from "@shared/schema";
 import { format } from "date-fns";
 import { useTimezone, formatInTimezone, formatDateTimeInTimezone } from "@/hooks/useTimezone";
@@ -40,6 +41,7 @@ export default function Memos({ user, isOwnPage }: UserNotesProps) {
   const [editingNote, setEditingNote] = useState<Note | null>(null);
   const [noteTitle, setNoteTitle] = useState("");
   const [noteContent, setNoteContent] = useState("");
+  const [confirmAction, setConfirmAction] = useState<{ title: string; description?: string; confirmLabel?: string; destructive?: boolean; run: () => void } | null>(null);
 
   // Fetch personal notes for this user
   const { data: notes = [], isLoading } = useQuery<Note[]>({
@@ -239,9 +241,13 @@ export default function Memos({ user, isOwnPage }: UserNotesProps) {
   };
 
   const handleDelete = (id: string) => {
-    if (confirm("Are you sure you want to delete this memo?")) {
-      deleteMutation.mutate(id);
-    }
+    setConfirmAction({
+      title: "Delete this memo?",
+      description: "This cannot be undone.",
+      confirmLabel: "Delete",
+      destructive: true,
+      run: () => deleteMutation.mutate(id),
+    });
   };
 
   const handleTogglePin = (note: Note) => {
@@ -522,6 +528,15 @@ export default function Memos({ user, isOwnPage }: UserNotesProps) {
           </div>
         </DialogContent>
       </Dialog>
+      <ConfirmDialog
+        open={!!confirmAction}
+        onOpenChange={(o) => { if (!o) setConfirmAction(null); }}
+        title={confirmAction?.title ?? ""}
+        description={confirmAction?.description}
+        confirmLabel={confirmAction?.confirmLabel ?? "Confirm"}
+        destructive={confirmAction?.destructive}
+        onConfirm={() => { confirmAction?.run(); setConfirmAction(null); }}
+      />
     </div>
   );
 }

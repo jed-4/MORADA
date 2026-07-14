@@ -1,4 +1,4 @@
-import { type LucideIcon } from "lucide-react";
+import { Loader2, type LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -14,6 +14,10 @@ export interface EmptyStateProps {
     label: string;
     onClick: () => void;
     icon?: LucideIcon;
+    /** Disable the button (e.g. while a mutation is pending). */
+    disabled?: boolean;
+    /** Show a spinner in place of the icon and disable the button. */
+    loading?: boolean;
     "data-testid"?: string;
   };
   /** Choose how prominent the empty state should look.
@@ -65,9 +69,14 @@ export function EmptyState({
         <Button
           className="mt-4"
           onClick={action.onClick}
+          disabled={action.disabled || action.loading}
           data-testid={action["data-testid"] ?? "empty-state-action"}
         >
-          {ActionIcon ? <ActionIcon className="mr-1.5 h-4 w-4" /> : null}
+          {action.loading ? (
+            <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+          ) : ActionIcon ? (
+            <ActionIcon className="mr-1.5 h-4 w-4" />
+          ) : null}
           {action.label}
         </Button>
       ) : null}

@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useLocation, useParams } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { EmptyState } from "@/components/EmptyState";
 import { Input } from "@/components/ui/input";
 import {
   Dialog,
@@ -697,9 +698,7 @@ export default function RFQs({ embedded }: { embedded?: boolean } = {}) {
           </Card>
         ) : filteredRFQs.length === 0 ? (
           searchQuery || selectedStatus !== "all" ? (
-            <Card className="p-8 text-center text-muted-foreground text-xs">
-              No RFQs match your search
-            </Card>
+            <EmptyState variant="card" title="No RFQs match your search" />
           ) : (
             <div className="flex flex-col items-center justify-center py-16 px-4">
               <div className="w-20 h-20 rounded-full bg-primary/10 flex items-center justify-center mb-6">

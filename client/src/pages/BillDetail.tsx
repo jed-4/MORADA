@@ -32,6 +32,7 @@ import {
   Search,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/EmptyState";
 import { FilePreviewModal, type PreviewFile } from "@/components/FilePreviewModal";
 import { LineItemTable, type LineItemColumn } from "@/components/LineItemTable";
 import { Card } from "@/components/ui/card";
@@ -1869,7 +1870,7 @@ export default function BillDetail() {
                   data-testid="button-approve"
                   className="gap-1"
                 >
-                  <Check className="h-3.5 w-3.5" />
+                  {approveMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
                   {approveMutation.isPending ? "Approving..." : "Approve"}
                 </Button>
                 <Button
@@ -1945,9 +1946,11 @@ export default function BillDetail() {
                   });
                 if (filtered.length === 0) {
                   return (
-                    <div className="py-8 text-center text-sm text-muted-foreground">
-                      {poSearchText ? "No purchase orders match your search." : "No open purchase orders found."}
-                    </div>
+                    <EmptyState
+                      variant="inline"
+                      title={poSearchText ? "No purchase orders match your search." : "No open purchase orders found."}
+                      className="py-8"
+                    />
                   );
                 }
                 return (
@@ -2483,7 +2486,7 @@ export default function BillDetail() {
                           })}
                         </div>
                       ) : (
-                        <p className="text-data text-muted-foreground">No attachments</p>
+                        <EmptyState variant="inline" title="No attachments" className="py-3" />
                       )}
                     </div>
 
@@ -3227,9 +3230,11 @@ export default function BillDetail() {
                       </Button>
                     </div>
                     {billPayments.length === 0 ? (
-                      <p className="text-data text-muted-foreground">
-                        No payments recorded yet.
-                      </p>
+                      <EmptyState
+                        variant="inline"
+                        title="No payments recorded yet."
+                        className="py-3"
+                      />
                     ) : (
                       <div className="space-y-1.5">
                         {billPayments.map((payment) => (
@@ -3527,7 +3532,7 @@ export default function BillDetail() {
               }
               data-testid="button-save-payment"
             >
-              {recordPaymentMutation.isPending ? "Saving..." : "Record Payment"}
+              {recordPaymentMutation.isPending ? (<><Loader2 className="w-4 h-4 mr-2 animate-spin" />Saving...</>) : "Record Payment"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -3573,7 +3578,7 @@ export default function BillDetail() {
               disabled={!rejectComments.trim() || rejectMutation.isPending}
               data-testid="button-confirm-reject"
             >
-              {rejectMutation.isPending ? "Rejecting..." : "Reject Bill"}
+              {rejectMutation.isPending ? (<><Loader2 className="w-4 h-4 mr-2 animate-spin" />Rejecting...</>) : "Reject Bill"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -3676,7 +3681,7 @@ export default function BillDetail() {
                   disabled={createSupplierMutation.isPending}
                   data-testid="button-save-supplier"
                 >
-                  {createSupplierMutation.isPending ? "Adding..." : "Add Supplier"}
+                  {createSupplierMutation.isPending ? (<><Loader2 className="w-4 h-4 mr-2 animate-spin" />Adding...</>) : "Add Supplier"}
                 </Button>
               </DialogFooter>
             </form>

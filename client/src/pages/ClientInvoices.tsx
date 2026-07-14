@@ -4,7 +4,6 @@ import { type ColumnDef } from "@tanstack/react-table";
 import { DataTable, DataTableColumnPicker, type DataTableColumnMeta } from "@/components/data-table/DataTable";
 import { useLocation, useParams } from "wouter";
 import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
 import {
   Popover,
   PopoverContent,
@@ -34,6 +33,7 @@ import { usePageTitle } from "@/hooks/usePageTitle";
 import { format, isPast } from "date-fns";
 import { cn } from "@/lib/utils";
 import { formatCurrency } from "@/lib/formatters";
+import { EmptyState } from "@/components/EmptyState";
 
 // ── Status chip colours ────────────────────────────────────────────────────
 
@@ -684,18 +684,21 @@ export default function ClientInvoices({ embedded }: { embedded?: boolean } = {}
               <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
             </div>
           ) : filteredInvoices.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-48 gap-3">
-              <FileText className="w-8 h-8 text-muted-foreground/40" />
-              <p className="text-sm text-muted-foreground">
-                {invoices.length === 0 ? "No invoices yet" : "No matching invoices"}
-              </p>
-              {invoices.length === 0 && (
-                <Button size="sm" variant="outline" className="h-7 text-xs px-3" onClick={handleCreateInvoice} data-testid="button-add-first-invoice">
-                  <Plus className="w-3 h-3 mr-1" />
-                  Create First Invoice
-                </Button>
-              )}
-            </div>
+            <EmptyState
+              icon={FileText}
+              title={invoices.length === 0 ? "No invoices yet" : "No matching invoices"}
+              action={
+                invoices.length === 0
+                  ? {
+                      label: "Create First Invoice",
+                      onClick: handleCreateInvoice,
+                      icon: Plus,
+                      "data-testid": "button-add-first-invoice",
+                    }
+                  : undefined
+              }
+              variant="inline"
+            />
           ) : (
             <DataTable
               data={filteredInvoices}

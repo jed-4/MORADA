@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import { pdf } from "@react-pdf/renderer";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { EmptyState } from "@/components/EmptyState";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -67,7 +68,7 @@ import type { Rfq, RfqItem, RfqQuote, Contact, RfqTemplate, CostCode, EstimateIt
 import { format } from "date-fns";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { cn } from "@/lib/utils";
+import { StatusBadge } from "@/components/StatusBadge";
 import { CostCodeSelect } from "@/components/CostCodeSelect";
 
 export default function RFQDetail() {
@@ -362,58 +363,6 @@ export default function RFQDetail() {
     return format(d, "MMM d, yyyy");
   };
 
-  const getStatusBadge = (status: string) => {
-    const configs: Record<string, { label: string; className: string }> = {
-      draft: {
-        label: "Draft",
-        className: "bg-muted text-muted-foreground border-border",
-      },
-      sent: {
-        label: "Sent",
-        className:
-          "bg-blue-100 text-status-info border-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800",
-      },
-      pending: {
-        label: "Pending",
-        className:
-          "bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-900/30 dark:text-amber-400 dark:border-amber-800",
-      },
-      confirmed: {
-        label: "Confirmed",
-        className:
-          "bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-800",
-      },
-      quoted: {
-        label: "Quoted",
-        className:
-          "bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-800",
-      },
-      accepted: {
-        label: "Accepted",
-        className:
-          "bg-emerald-100 text-emerald-800 border-emerald-300 dark:bg-emerald-900/40 dark:text-emerald-300 dark:border-emerald-700",
-      },
-      declined: {
-        label: "Declined",
-        className:
-          "bg-red-100 text-status-danger border-red-200 dark:bg-red-900/30 dark:text-red-400 dark:border-red-800",
-      },
-      expired: {
-        label: "Expired",
-        className: "bg-muted text-muted-foreground border-border",
-      },
-    };
-    const config = configs[status] || {
-      label: status,
-      className: "bg-muted text-muted-foreground border-border",
-    };
-    return (
-      <Badge variant="outline" className={cn("text-xs", config.className)}>
-        {config.label}
-      </Badge>
-    );
-  };
-
   const goBack = () => {
     setLocation("/rfqs");
   };
@@ -461,7 +410,8 @@ export default function RFQDetail() {
             <Badge variant="outline" className="text-xs font-mono">
               {rfq.rfqNumber}
             </Badge>
-            {getStatusBadge(rfq.status)}
+            {/* "confirmed" isn't a known StatusBadge status — keep its emerald/success intent. */}
+            <StatusBadge status={rfq.status} tone={rfq.status === "confirmed" ? "success" : undefined} />
             {rfq.isExternal && (
               <Badge variant="outline" className="text-xs gap-1">
                 <ExternalLink className="w-3 h-3" />
@@ -481,7 +431,7 @@ export default function RFQDetail() {
               className="h-7 text-xs"
               data-testid="button-save"
             >
-              <Save className="w-3 h-3 mr-1" />
+              {updateRfqMutation.isPending ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Save className="w-3 h-3 mr-1" />}
               {updateRfqMutation.isPending ? "Saving..." : "Save"}
             </Button>
           )}
@@ -732,9 +682,12 @@ export default function RFQDetail() {
 
             {/* Line Items table */}
             {items.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground text-sm">
-                No line items yet. Add items or import from the estimate.
-              </div>
+              <EmptyState
+                variant="inline"
+                title="No line items yet"
+                description="Add items or import from the estimate."
+                className="py-8"
+              />
             ) : (
               <Table>
                 <TableHeader>
@@ -931,9 +884,7 @@ export default function RFQDetail() {
               </Button>
             </div>
             {quotes.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground text-sm">
-                No quotes received yet
-              </div>
+              <EmptyState variant="inline" title="No quotes received yet" className="py-8" />
             ) : (
               <QuoteComparisonView rfqId={rfq.id} quotes={quotes} rfq={rfq} />
             )}
@@ -1174,7 +1125,7 @@ export default function RFQDetail() {
               disabled={!newItem.description || createItemMutation.isPending}
               className="bg-primary hover:bg-primary/90 text-white"
             >
-              {createItemMutation.isPending ? "Adding..." : "Add Item"}
+              {createItemMutation.isPending ? (<><Loader2 className="w-4 h-4 mr-2 animate-spin" />Adding...</>) : "Add Item"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1262,7 +1213,7 @@ export default function RFQDetail() {
               disabled={selectedEstimateItems.length === 0 || importItemsMutation.isPending}
               className="bg-primary hover:bg-primary/90 text-white"
             >
-              {importItemsMutation.isPending ? "Importing..." : `Import ${selectedEstimateItems.length} Items`}
+              {importItemsMutation.isPending ? (<><Loader2 className="w-4 h-4 mr-2 animate-spin" />Importing...</>) : `Import ${selectedEstimateItems.length} Items`}
             </Button>
           </DialogFooter>
         </DialogContent>

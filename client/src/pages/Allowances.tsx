@@ -20,6 +20,7 @@ import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Separator } from "@/components/ui/separator";
+import { EmptyState } from "@/components/EmptyState";
 import {
   DollarSign,
   Search,
@@ -423,15 +424,13 @@ export default function Allowances() {
 
   if (!currentProject) {
     return (
-      <div className="flex flex-col items-center justify-center h-full py-16">
-        <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mb-4">
-          <DollarSign className="w-6 h-6 text-primary" />
-        </div>
-        <h3 className="text-sm font-semibold text-foreground mb-1">No Project Selected</h3>
-        <p className="text-xs text-muted-foreground text-center max-w-xs">
-          Please select a project to view allowances.
-        </p>
-      </div>
+      <EmptyState
+        icon={DollarSign}
+        title="No Project Selected"
+        description="Please select a project to view allowances."
+        variant="inline"
+        className="h-full py-16"
+      />
     );
   }
 
@@ -692,21 +691,19 @@ export default function Allowances() {
             Loading allowances…
           </div>
         ) : grouped.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-16">
-            <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mb-4">
-              <DollarSign className="w-6 h-6 text-primary" />
-            </div>
-            <h3 className="text-sm font-semibold text-foreground mb-1">
-              {allowances.length === 0 ? "No Allowances Yet" : "No Matching Allowances"}
-            </h3>
-            <p className="text-xs text-muted-foreground text-center max-w-xs">
-              {allowances.length === 0
+          <EmptyState
+            icon={DollarSign}
+            title={allowances.length === 0 ? "No Allowances Yet" : "No Matching Allowances"}
+            description={
+              allowances.length === 0
                 ? "Add Prime Cost or Provisional Sum items in your estimates to track allowances here."
                 : searchTerm || statusFilter || typeFilter !== "all"
                   ? "Try adjusting your search or filters."
-                  : "No allowances found for the selected estimate."}
-            </p>
-          </div>
+                  : "No allowances found for the selected estimate."
+            }
+            variant="inline"
+            className="py-16"
+          />
         ) : (
           grouped.map(([groupName, items], groupIdx) => {
             const collapsed = collapsedGroups.has(groupName);

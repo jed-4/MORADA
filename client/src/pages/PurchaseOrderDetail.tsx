@@ -58,6 +58,7 @@ import {
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/EmptyState";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -609,9 +610,7 @@ function ImportTimesheetsDialog({
               <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
             </div>
           ) : timesheets.length === 0 ? (
-            <p className="text-sm text-muted-foreground py-6 text-center">
-              No timesheets awaiting PO.
-            </p>
+            <EmptyState variant="inline" title="No timesheets awaiting PO." className="py-6" />
           ) : (
             timesheets.map((ts) => (
               <label
@@ -2062,21 +2061,17 @@ export default function PurchaseOrderDetail() {
                     <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
                   </div>
                 ) : items.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
-                    <FileText className="w-8 h-8 mb-2" />
-                    <p className="text-sm">No items yet</p>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="mt-2"
-                      onClick={handleAddItem}
-                      disabled={isLocked}
-                      data-testid="button-add-first-item"
-                    >
-                      <Plus className="w-3 h-3 mr-1" />
-                      Add First Item
-                    </Button>
-                  </div>
+                  <EmptyState
+                    variant="inline"
+                    icon={FileText}
+                    title="No items yet"
+                    action={!isLocked ? {
+                      label: "Add First Item",
+                      onClick: handleAddItem,
+                      icon: Plus,
+                      "data-testid": "button-add-first-item",
+                    } : undefined}
+                  />
                 ) : (
                   <DndContext
                     sensors={sensors}
@@ -2501,9 +2496,7 @@ export default function PurchaseOrderDetail() {
               </CardHeader>
               <CardContent>
                 {activityItems.length === 0 ? (
-                  <p className="text-xs text-muted-foreground">
-                    No activity yet.
-                  </p>
+                  <EmptyState variant="inline" title="No activity yet." className="py-4" />
                 ) : (
                   <ul className="space-y-2.5">
                     {activityItems.map((a, i) => (

@@ -3,6 +3,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/EmptyState";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -216,18 +217,14 @@ export default function ProductLibrary() {
             <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
           </div>
         ) : filtered.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-16 gap-3">
-            <Package className="w-10 h-10 text-muted-foreground opacity-50" />
-            <p className="text-sm text-muted-foreground">
-              {search || categoryFilter ? "No products match your filters." : "No products yet. Add your first product to the library."}
-            </p>
-            {!search && !categoryFilter && (
-              <Button size="sm" onClick={openCreate} className="gap-1">
-                <Plus className="w-3 h-3" />
-                Add Product
-              </Button>
-            )}
-          </div>
+          <EmptyState
+            variant="inline"
+            icon={Package}
+            title={search || categoryFilter ? "No products match your filters." : "No products yet"}
+            description={search || categoryFilter ? undefined : "Add your first product to the library."}
+            action={search || categoryFilter ? undefined : { label: "Add Product", onClick: openCreate, icon: Plus }}
+            className="py-16"
+          />
         ) : (
           filtered.map((p) => (
             <div

@@ -14,7 +14,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { Save, Settings, Palette, Info, Archive, Users, Plus, Trash2, AlertTriangle, DollarSign, MapPin, Calendar, FileText, TrendingUp, LayoutGrid, Check, UserPlus, Search, X } from "lucide-react";
+import { Save, Settings, Palette, Info, Archive, Users, Plus, Trash2, AlertTriangle, DollarSign, MapPin, Calendar, FileText, TrendingUp, LayoutGrid, Check, UserPlus, Search, X, Loader2 } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -48,6 +48,7 @@ import { Project, PROJECT_TYPES, ProjectType, PROJECT_ICONS, FieldOption, Estima
 import { ProjectIcon } from "@/components/ProjectIcon";
 import { BUILDPRO_PALETTE_HEXES } from "@/lib/colors";
 import AddContactDialog from "@/components/AddContactDialog";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import * as LucideIcons from "lucide-react";
 
 export default function ProjectSettings() {
@@ -170,6 +171,7 @@ export default function ProjectSettings() {
 
   const [teamSearchQuery, setTeamSearchQuery] = useState("");
   const [isTeamPopoverOpen, setIsTeamPopoverOpen] = useState(false);
+  const [confirmAction, setConfirmAction] = useState<{ title: string; description?: string; confirmLabel?: string; destructive?: boolean; run: () => void } | null>(null);
 
   const activeCompanyUsers = allCompanyUsers.filter((u: any) => u.isActive !== false);
   const teamMemberIds = teamMembers.map((m: any) => String(m.id));
@@ -420,7 +422,7 @@ export default function ProjectSettings() {
               disabled={updateProjectMutation.isPending}
               data-testid="button-save-project"
             >
-              <Save className="h-4 w-4 mr-2" />
+              {updateProjectMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Save className="h-4 w-4 mr-2" />}
               {updateProjectMutation.isPending ? "Saving..." : "Save Changes"}
             </Button>
           </div>
@@ -1408,9 +1410,13 @@ export default function ProjectSettings() {
                         size="icon"
                         variant="ghost"
                         onClick={() => {
-                          if (confirm(`Remove ${getUserDisplayName(member)} from this project?`)) {
-                            removeTeamMemberMutation.mutate(String(member.id));
-                          }
+                          setConfirmAction({
+                            title: `Remove ${getUserDisplayName(member)} from this project?`,
+                            description: "They will no longer have access to this project.",
+                            confirmLabel: "Remove",
+                            destructive: true,
+                            run: () => removeTeamMemberMutation.mutate(String(member.id)),
+                          });
                         }}
                         disabled={removeTeamMemberMutation.isPending}
                       >
@@ -1515,6 +1521,21 @@ export default function ProjectSettings() {
         }}
         defaultContactType="client"
       />
+
+      <ConfirmDialog
+        open={!!confirmAction}
+        onOpenChange={(o) => {
+          if (!o) setConfirmAction(null);
+        }}
+        title={confirmAction?.title ?? ""}
+        description={confirmAction?.description}
+        confirmLabel={confirmAction?.confirmLabel ?? "Confirm"}
+        destructive={confirmAction?.destructive}
+        onConfirm={() => {
+          confirmAction?.run();
+          setConfirmAction(null);
+        }}
+      />
     </div>
   );
 }
@@ -1580,7 +1601,7 @@ function ArchiveProjectButton({ project }: { project: Project }) {
             disabled={archiveMutation.isPending}
             data-testid="button-confirm-archive"
           >
-            {archiveMutation.isPending ? "Archiving..." : "Archive Project"}
+            {archiveMutation.isPending ? (<><Loader2 className="w-4 h-4 mr-2 animate-spin" />Archiving...</>) : "Archive Project"}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -1679,7 +1700,7 @@ function XeroProjectMapping({ project }: { project: Project }) {
           onClick={() => saveMapping.mutate()}
           disabled={saveMapping.isPending}
         >
-          {saveMapping.isPending ? "Saving..." : "Save Xero Mapping"}
+          {saveMapping.isPending ? (<><Loader2 className="w-4 h-4 mr-2 animate-spin" />Saving...</>) : "Save Xero Mapping"}
         </Button>
       </CardContent>
     </Card>
@@ -1765,7 +1786,7 @@ function DeleteProjectButton({ project }: { project: Project }) {
             disabled={!isConfirmValid || deleteMutation.isPending}
             data-testid="button-confirm-delete"
           >
-            {deleteMutation.isPending ? "Deleting..." : "Delete Project"}
+            {deleteMutation.isPending ? (<><Loader2 className="w-4 h-4 mr-2 animate-spin" />Deleting...</>) : "Delete Project"}
           </Button>
         </DialogFooter>
       </DialogContent>

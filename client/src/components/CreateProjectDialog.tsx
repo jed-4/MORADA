@@ -14,7 +14,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Search, Users, Lock } from "lucide-react";
+import { Search, Users, Lock, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { insertProjectSchema, InsertProject, Project, type FieldCategoryWithOptions } from "@shared/schema";
@@ -460,7 +460,7 @@ export default function CreateProjectDialog({ open, onOpenChange }: CreateProjec
                 disabled={createProjectMutation.isPending}
                 data-testid="button-submit-create-project"
               >
-                {createProjectMutation.isPending ? "Creating..." : "Create Project"}
+                {createProjectMutation.isPending ? (<><Loader2 className="w-4 h-4 mr-2 animate-spin" />Creating...</>) : "Create Project"}
               </Button>
             </div>
           </form>

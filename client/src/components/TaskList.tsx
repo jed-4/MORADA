@@ -3,6 +3,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { StatusBadge } from "@/components/StatusBadge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -579,19 +580,9 @@ export default function TaskList({ tasks: propTasks, groupedTasks, groupBy, isLo
   
   const getStatusBadge = (status: string) => {
     const statusInfo = getStatusInfo(status);
-    
+
     return (
-      <div className="flex items-center gap-2">
-        {statusInfo.color && (
-          <div 
-            className="w-3 h-3 rounded-full border border-border" 
-            style={{ backgroundColor: statusInfo.color }}
-          />
-        )}
-        <Badge variant="secondary">
-          {statusInfo.name}
-        </Badge>
-      </div>
+      <StatusBadge status={status} label={statusInfo.name} color={statusInfo.color} />
     );
   };
 

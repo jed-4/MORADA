@@ -9,6 +9,7 @@ import { ErrorBoundary } from "@/components/ui/error-boundary";
 import { useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
+import { EmptyState } from "@/components/EmptyState";
 
 // Tab content components — lazy-loaded to avoid circular module initialisation
 // (CustomizableProjectOverview is itself used inside the project page that App.tsx
@@ -27,7 +28,6 @@ const ProjectEstimates = lazy(() => import("@/pages/ProjectEstimates"));
 const Proposals = lazy(() => import("@/pages/Proposals"));
 const Bills = lazy(() => import("@/pages/Bills"));
 const Budget = lazy(() => import("@/pages/Budget"));
-const Calendar = lazy(() => import("@/pages/Calendar"));
 const Selections = lazy(() => import("@/pages/Selections"));
 const RFQs = lazy(() => import("@/pages/RFQs"));
 const RFIs = lazy(() => import("@/pages/RFIs"));
@@ -917,7 +917,17 @@ export default function CustomizableProjectOverview() {
       case "budget":
         return <Budget />;
       case "calendar":
-        return <Calendar />;
+        // The old project-calendar stub was non-functional and has been
+        // removed; a real project calendar arrives with the calendar
+        // consolidation (see UI_UX_AUDIT.md §5.6).
+        return (
+          <EmptyState
+            title="Project calendar coming soon"
+            description="Use My Calendar or the Business calendar in the meantime."
+            variant="inline"
+            className="h-full"
+          />
+        );
       case "selections":
         return <Selections />;
       case "rfqs":

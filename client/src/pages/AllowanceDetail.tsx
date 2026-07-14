@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { ArrowLeft, Plus, ChevronDown, ChevronRight, CheckCircle, RotateCcw, Loader2 } from "lucide-react";
+import { EmptyState } from "@/components/EmptyState";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -473,10 +474,11 @@ export default function AllowanceDetail() {
         <Button variant="ghost" onClick={() => setLocation(`/projects/${projectId}/allowances`)} className="mb-4">
           <ArrowLeft className="h-4 w-4 mr-2" /> Back to Allowances
         </Button>
-        <div className="bg-card rounded-xl border border-border p-12 text-center">
-          <h3 className="text-lg font-semibold mb-2">Allowance Not Found</h3>
-          <p className="text-muted-foreground">The requested allowance could not be found.</p>
-        </div>
+        <EmptyState
+          variant="card"
+          title="Allowance Not Found"
+          description="The requested allowance could not be found."
+        />
       </div>
     );
   }
@@ -658,7 +660,12 @@ export default function AllowanceDetail() {
               onAction={() => setIsPsBillModalOpen(true)}
             >
               {allocatedBills.length === 0 && pendingPsBillItems.length === 0 ? (
-                <p className="text-sm text-muted-foreground py-4">No bills added yet. Click &ldquo;+ Add Bills&rdquo; to allocate supplier invoices.</p>
+                <EmptyState
+                  variant="inline"
+                  title="No bills added yet"
+                  description={"Click “+ Add Bills” to allocate supplier invoices."}
+                  className="py-6"
+                />
               ) : (
                 <div className="pt-2">
                   <div
@@ -776,7 +783,7 @@ export default function AllowanceDetail() {
               onAction={() => setIsTimesheetModalOpen(true)}
             >
               {allocatedTimesheets.length === 0 && pendingTimesheets.length === 0 ? (
-                <p className="text-sm text-muted-foreground py-4">No timesheets added yet.</p>
+                <EmptyState variant="inline" title="No timesheets added yet." className="py-6" />
               ) : (
                 <div className="pt-2">
                   <div
@@ -874,7 +881,12 @@ export default function AllowanceDetail() {
               onAction={() => setIsCustomLineDialogOpen(true)}
             >
               {customLines.length === 0 && allocatedItems.length === 0 ? (
-                <p className="text-sm text-muted-foreground py-4">No custom lines yet. Add a line for any cost not covered by bills or timesheets.</p>
+                <EmptyState
+                  variant="inline"
+                  title="No custom lines yet"
+                  description="Add a line for any cost not covered by bills or timesheets."
+                  className="py-6"
+                />
               ) : (
                 <div className="pt-2 space-y-2">
                   {[...allocatedItems, ...customLines].map((line) => {
@@ -1134,7 +1146,7 @@ export default function AllowanceDetail() {
                     </DialogHeader>
                     <div className="flex-1 overflow-auto">
                       {bills.length === 0 ? (
-                        <div className="text-center py-8 text-muted-foreground">No bills found for this project</div>
+                        <EmptyState variant="inline" title="No bills found for this project" className="py-8" />
                       ) : (
                         <div className="space-y-2">
                           {bills.map((bill) => {
@@ -1209,7 +1221,7 @@ export default function AllowanceDetail() {
           </DialogHeader>
           <div className="flex-1 overflow-auto">
             {bills.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground">No bills found for this project</div>
+              <EmptyState variant="inline" title="No bills found for this project" className="py-8" />
             ) : (
               <div className="space-y-2">
                 {bills.map((bill) => {
@@ -1304,7 +1316,7 @@ export default function AllowanceDetail() {
 
           <div className="flex-1 overflow-auto">
             {timesheets.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground">No timesheets found for this project</div>
+              <EmptyState variant="inline" title="No timesheets found for this project" className="py-8" />
             ) : (() => {
               const sortedTimesheets = [...timesheets].sort((a, b) => {
                 if (timesheetDisplayMode === "date") return new Date(b.date).getTime() - new Date(a.date).getTime();

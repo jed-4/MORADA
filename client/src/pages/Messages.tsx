@@ -37,6 +37,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Hash, Plus, Send, Loader2, Sparkles, MoreVertical, Bell, BellOff, Lock, Eye, Settings, User, Pin, PinOff, Filter, EyeOff, Clock, Trash2, ThumbsUp, Check, Heart, Smile, Flame, MessageSquare, ChevronDown, ChevronRight, ListTodo, Calendar, Megaphone, X, Paperclip, FileText, Download, ZoomIn } from "lucide-react";
+import { EmptyState } from "@/components/EmptyState";
 import {
   Popover,
   PopoverContent,
@@ -1832,11 +1833,13 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                   <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
                 </div>
               ) : filteredChannels.length === 0 ? (
-                <div className="text-center text-xs text-muted-foreground p-4">
-                  {channels.length > 0 
-                    ? "All channels are hidden by filters" 
+                <EmptyState
+                  variant="inline"
+                  title={channels.length > 0
+                    ? "All channels are hidden by filters"
                     : channelTypeFilter === "dm" ? "No direct messages yet" : channelTypeFilter === "channel" ? "No channels yet" : "No channels yet"}
-                </div>
+                  className="p-4"
+                />
               ) : (
                 filteredChannels.map((channel) => {
                   const unreadCount = unreadCounts[channel.id] || 0;
@@ -1949,10 +1952,13 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                       <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
                     </div>
                   ) : localMessages.length === 0 ? (
-                    <div className="text-center p-8">
-                      <Hash className="h-12 w-12 mx-auto text-muted-foreground/30 mb-3" />
-                      <p className="text-sm text-muted-foreground">No messages yet. Start the conversation!</p>
-                    </div>
+                    <EmptyState
+                      variant="inline"
+                      icon={Hash}
+                      title="No messages yet"
+                      description="Start the conversation!"
+                      className="p-8"
+                    />
                   ) : (
                     localMessages.map((message, idx, arr) => {
                       const isBot = !!message.isBot;
@@ -2862,10 +2868,11 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
             </>
           ) : (
             <div className="flex-1 flex items-center justify-center">
-              <div className="text-center">
-                <Hash className="h-16 w-16 mx-auto text-muted-foreground/20 mb-4" />
-                <p className="text-muted-foreground">Select a channel to start messaging</p>
-              </div>
+              <EmptyState
+                variant="inline"
+                icon={Hash}
+                title="Select a channel to start messaging"
+              />
             </div>
           )}
         </div>
@@ -2930,7 +2937,7 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
               disabled={!newChannelName.trim() || createChannelMutation.isPending}
               data-testid="button-create"
             >
-              {createChannelMutation.isPending ? "Creating..." : "Create Channel"}
+              {createChannelMutation.isPending ? (<><Loader2 className="w-4 h-4 mr-2 animate-spin" />Creating...</>) : "Create Channel"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -2988,7 +2995,7 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
               disabled={!selectedDmUserId || createDmMutation.isPending}
               data-testid="button-start-dm"
             >
-              {createDmMutation.isPending ? "Starting..." : "Start Conversation"}
+              {createDmMutation.isPending ? (<><Loader2 className="w-4 h-4 mr-2 animate-spin" />Starting...</>) : "Start Conversation"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -3164,7 +3171,13 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                           const myMembership = channelMembers.find(m => m.userId === user?.id);
                           const amChannelOwner = myMembership?.role === "owner" || myMembership?.role === "admin";
                           if (pinnedMessages.length === 0) {
-                            return <p className="text-xs text-muted-foreground py-1">No pinned messages yet.</p>;
+                            return (
+                              <EmptyState
+                                variant="inline"
+                                title="No pinned messages yet."
+                                className="py-3"
+                              />
+                            );
                           }
                           return pinnedMessages.map((pm) => {
                             const pmName = pm.userFirstName && pm.userLastName

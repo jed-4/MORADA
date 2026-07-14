@@ -4,7 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { type ColumnDef } from "@tanstack/react-table";
 import { DataTable, DataTableColumnPicker, type DataTableColumnMeta } from "@/components/data-table/DataTable";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, Settings, MoreHorizontal, X, Search, ChevronLeft, ChevronRight, Pencil, ChevronDown, SlidersHorizontal, List, LayoutGrid, Calendar } from "lucide-react";
+import { Plus, Settings, MoreHorizontal, X, Search, ChevronLeft, ChevronRight, Pencil, ChevronDown, SlidersHorizontal, List, LayoutGrid, Calendar, Loader2 } from "lucide-react";
 import {
   DndContext,
   closestCenter,
@@ -1470,10 +1470,10 @@ export default function BusinessTasks() {
             <button
               onClick={handleSaveView}
               disabled={!newViewName.trim() || createViewMutation.isPending}
-              className="h-8 px-3 text-sm bg-primary text-white rounded-md hover:bg-primary/90 disabled:opacity-50"
+              className="h-8 px-3 text-sm bg-primary text-white rounded-md hover:bg-primary/90 disabled:opacity-50 inline-flex items-center"
               data-testid="button-save-view"
             >
-              {createViewMutation.isPending ? "Saving..." : "Save View"}
+              {createViewMutation.isPending ? (<><Loader2 className="w-4 h-4 mr-2 animate-spin" />Saving...</>) : "Save View"}
             </button>
           </div>
         </DialogContent>
@@ -1499,10 +1499,10 @@ export default function BusinessTasks() {
             <button
               onClick={() => viewToDelete && deleteViewMutation.mutate(viewToDelete.id)}
               disabled={deleteViewMutation.isPending}
-              className="h-8 px-3 text-sm bg-destructive text-destructive-foreground rounded-md hover:bg-destructive/90 disabled:opacity-50"
+              className="h-8 px-3 text-sm bg-destructive text-destructive-foreground rounded-md hover:bg-destructive/90 disabled:opacity-50 inline-flex items-center"
               data-testid="button-confirm-delete"
             >
-              {deleteViewMutation.isPending ? "Deleting..." : "Delete"}
+              {deleteViewMutation.isPending ? (<><Loader2 className="w-4 h-4 mr-2 animate-spin" />Deleting...</>) : "Delete"}
             </button>
           </div>
         </DialogContent>
@@ -1540,10 +1540,10 @@ export default function BusinessTasks() {
             <button
               onClick={handleUpdateView}
               disabled={!editViewName.trim() || updateViewMutation.isPending}
-              className="h-8 px-3 text-sm bg-primary text-white rounded-md hover:bg-primary/90 disabled:opacity-50"
+              className="h-8 px-3 text-sm bg-primary text-white rounded-md hover:bg-primary/90 disabled:opacity-50 inline-flex items-center"
               data-testid="button-update-view"
             >
-              {updateViewMutation.isPending ? "Updating..." : "Update View"}
+              {updateViewMutation.isPending ? (<><Loader2 className="w-4 h-4 mr-2 animate-spin" />Updating...</>) : "Update View"}
             </button>
           </div>
         </DialogContent>

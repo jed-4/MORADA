@@ -28,6 +28,7 @@ import { ProposalDocument } from './pdf/ProposalDocument';
 import { PDFPreview } from './PDFPreview';
 import { EstimateEditor } from './SectionEditor';
 import { RichTextEditor } from '@/components/RichTextEditor';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { PROPOSAL_PLACEHOLDER_TOKENS } from './pdf/placeholders';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { apiRequest, queryClient } from '@/lib/queryClient';
@@ -402,6 +403,7 @@ function ProposalTemplateBar({ proposal, sections }: ProposalTemplateBarProps) {
   const { toast } = useToast();
   const [templateName, setTemplateName] = useState('');
   const [showSave, setShowSave] = useState(false);
+  const [confirmAction, setConfirmAction] = useState<{ title: string; description?: string; confirmLabel?: string; destructive?: boolean; run: () => void } | null>(null);
 
   const { data: companySettings } = useQuery<{
     proposalTemplates?: ProposalTemplate[];
@@ -532,12 +534,16 @@ function ProposalTemplateBar({ proposal, sections }: ProposalTemplateBarProps) {
               if (!id) return;
               const tpl = templates.find((t) => t.id === id);
               if (!tpl) return;
-              const ok =
-                sections.length === 0 ||
-                window.confirm(
-                  `Apply template "${tpl.name}"? This will replace all ${sections.length} current section(s).`,
-                );
-              if (ok) applyMutation.mutate(id);
+              if (sections.length === 0) {
+                applyMutation.mutate(id);
+                return;
+              }
+              setConfirmAction({
+                title: `Apply template "${tpl.name}"?`,
+                description: `This will replace all ${sections.length} current section(s).`,
+                confirmLabel: 'Apply',
+                run: () => applyMutation.mutate(id),
+              });
             }}
             disabled={applyMutation.isPending}
           >
@@ -587,6 +593,15 @@ function ProposalTemplateBar({ proposal, sections }: ProposalTemplateBarProps) {
           </Button>
         </div>
       )}
+      <ConfirmDialog
+        open={!!confirmAction}
+        onOpenChange={(o) => { if (!o) setConfirmAction(null); }}
+        title={confirmAction?.title ?? ''}
+        description={confirmAction?.description}
+        confirmLabel={confirmAction?.confirmLabel ?? 'Confirm'}
+        destructive={confirmAction?.destructive}
+        onConfirm={() => { confirmAction?.run(); setConfirmAction(null); }}
+      />
     </div>
   );
 }

@@ -5,6 +5,7 @@ import { MessageSquare, Pencil, Trash2, X, Check, Activity, MoreVertical, Plus }
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Textarea } from "@/components/ui/textarea";
 import {
   DropdownMenu,
@@ -149,6 +150,7 @@ export default function TaskComments({ taskId, users, currentUserId }: TaskComme
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
   const [showActivity, setShowActivity] = useState(true);
+  const [confirmAction, setConfirmAction] = useState<{ title: string; description?: string; confirmLabel?: string; destructive?: boolean; run: () => void } | null>(null);
 
   const { data: comments = [], isLoading } = useQuery<TaskComment[]>({
     queryKey: ["/api/tasks", taskId, "comments"],
@@ -320,9 +322,13 @@ export default function TaskComments({ taskId, users, currentUserId }: TaskComme
                           </DropdownMenuItem>
                           <DropdownMenuItem
                             onClick={() => {
-                              if (window.confirm("Delete this comment?")) {
-                                deleteMutation.mutate(comment.id);
-                              }
+                              setConfirmAction({
+                                title: "Delete this comment?",
+                                description: "This cannot be undone.",
+                                confirmLabel: "Delete",
+                                destructive: true,
+                                run: () => deleteMutation.mutate(comment.id),
+                              });
                             }}
                             className="text-destructive focus:text-destructive"
                             data-testid={`button-delete-comment-${comment.id}`}
@@ -429,6 +435,15 @@ export default function TaskComments({ taskId, users, currentUserId }: TaskComme
           </div>
         )}
       </div>
+      <ConfirmDialog
+        open={!!confirmAction}
+        onOpenChange={(o) => { if (!o) setConfirmAction(null); }}
+        title={confirmAction?.title ?? ""}
+        description={confirmAction?.description}
+        confirmLabel={confirmAction?.confirmLabel ?? "Confirm"}
+        destructive={confirmAction?.destructive}
+        onConfirm={() => { confirmAction?.run(); setConfirmAction(null); }}
+      />
     </div>
   );
 }

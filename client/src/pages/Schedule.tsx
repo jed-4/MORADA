@@ -19,6 +19,7 @@ import "./schedule-calendar.css";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -190,6 +191,8 @@ export default function Schedule() {
   const [showItemDialog, setShowItemDialog] = useState(false);
   const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
   const [showOfflineConfirm, setShowOfflineConfirm] = useState(false);
+  // Generic confirmation dialog (replaces native confirm() calls).
+  const [confirmAction, setConfirmAction] = useState<{ title: string; description?: string; confirmLabel?: string; destructive?: boolean; run: () => void } | null>(null);
   const [editingItem, setEditingItem] = useState<ScheduleItem | null>(null);
   const [pendingAutoLink, setPendingAutoLink] = useState<{ successorId?: string; predecessorId?: string; insertAfterItemId?: string; lag?: number } | null>(null);
   const [showFilters, setShowFilters] = useState(false);
@@ -2297,9 +2300,13 @@ export default function Schedule() {
                       }}
                       onDuplicateItem={(item) => duplicateItemMutation.mutate(item.id)}
                       onDeleteItem={(itemId) => {
-                        if (confirm("Delete this schedule item? This cannot be undone.")) {
-                          deleteItemMutation.mutate(itemId);
-                        }
+                        setConfirmAction({
+                          title: "Delete this schedule item?",
+                          description: "This cannot be undone.",
+                          confirmLabel: "Delete",
+                          destructive: true,
+                          run: () => deleteItemMutation.mutate(itemId),
+                        });
                       }}
                     />
                   </>
@@ -2358,6 +2365,17 @@ export default function Schedule() {
         )}
         </div>
       </div>
+
+      {/* Generic confirmation dialog (replaces native confirm() calls) */}
+      <ConfirmDialog
+        open={!!confirmAction}
+        onOpenChange={(o) => { if (!o) setConfirmAction(null); }}
+        title={confirmAction?.title ?? ""}
+        description={confirmAction?.description}
+        confirmLabel={confirmAction?.confirmLabel ?? "Confirm"}
+        destructive={confirmAction?.destructive}
+        onConfirm={() => { confirmAction?.run(); setConfirmAction(null); }}
+      />
 
       <AlertDialog open={showDiscardConfirm} onOpenChange={setShowDiscardConfirm}>
         <AlertDialogContent>
@@ -3376,7 +3394,7 @@ export default function Schedule() {
               disabled={saveTemplateMutation.isPending}
               data-testid="button-save-template"
             >
-              {saveTemplateMutation.isPending ? "Saving..." : "Save Template"}
+              {saveTemplateMutation.isPending ? (<><Loader2 className="w-4 h-4 mr-2 animate-spin" />Saving...</>) : "Save Template"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -3814,14 +3832,18 @@ export default function Schedule() {
                 toast({ title: "Error", description: "No project selected", variant: "destructive" });
                 return;
               }
-              if (confirm(`Delete ${selectedItems.size} items? This cannot be undone.`)) {
-                bulkDeleteMutation.mutate(Array.from(selectedItems));
-              }
+              setConfirmAction({
+                title: `Delete ${selectedItems.size} items?`,
+                description: "This cannot be undone.",
+                confirmLabel: "Delete",
+                destructive: true,
+                run: () => bulkDeleteMutation.mutate(Array.from(selectedItems)),
+              });
             }}
             disabled={bulkDeleteMutation.isPending || !projectId}
             data-testid="button-bulk-delete"
           >
-            <Trash2 className="w-3 h-3 mr-1" />
+            {bulkDeleteMutation.isPending ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Trash2 className="w-3 h-3 mr-1" />}
             {bulkDeleteMutation.isPending ? "Deleting..." : "Delete"}
           </Button>
           <div className="w-px h-4 bg-border" />

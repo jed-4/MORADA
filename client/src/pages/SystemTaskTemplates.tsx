@@ -80,6 +80,7 @@ import {
 import { format } from "date-fns";
 import { Calendar } from "@/components/ui/calendar";
 import type { TaskTemplate, TaskTag, TaskTemplateStatus } from "@shared/schema";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 
 interface RecurringScheduleItem {
   dayOfWeek: number;
@@ -185,6 +186,7 @@ function SortableChecklistItem({
 export default function SystemTaskTemplates() {
   const { toast } = useToast();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [confirmAction, setConfirmAction] = useState<{ title: string; description?: string; confirmLabel?: string; destructive?: boolean; run: () => void } | null>(null);
   const [editingTemplate, setEditingTemplate] = useState<TaskTemplate | null>(null);
   
   // Create task from template state
@@ -486,9 +488,13 @@ export default function SystemTaskTemplates() {
   };
 
   const handleDelete = (id: string) => {
-    if (confirm("Are you sure you want to delete this task template?")) {
-      deleteMutation.mutate(id);
-    }
+    setConfirmAction({
+      title: "Delete task template?",
+      description: "This task template will be permanently deleted.",
+      confirmLabel: "Delete",
+      destructive: true,
+      run: () => deleteMutation.mutate(id),
+    });
   };
 
   const toggleTag = (tagId: string) => {
@@ -1313,6 +1319,21 @@ export default function SystemTaskTemplates() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ConfirmDialog
+        open={!!confirmAction}
+        onOpenChange={(o) => {
+          if (!o) setConfirmAction(null);
+        }}
+        title={confirmAction?.title ?? ""}
+        description={confirmAction?.description}
+        confirmLabel={confirmAction?.confirmLabel ?? "Confirm"}
+        destructive={confirmAction?.destructive}
+        onConfirm={() => {
+          confirmAction?.run();
+          setConfirmAction(null);
+        }}
+      />
     </div>
   );
 }

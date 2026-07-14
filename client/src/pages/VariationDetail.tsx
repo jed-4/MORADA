@@ -18,10 +18,7 @@ import {
   Check,
   X,
   Send,
-  AlertCircle,
   Clock,
-  CheckCircle,
-  XCircle,
   ChevronDown,
   ChevronUp,
   Columns,
@@ -39,6 +36,7 @@ import { VariationPreviewContent } from "@/components/variations/VariationPrevie
 import { VariationDocument } from "@/components/variations/pdf/VariationDocument";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { StatusBadge } from "@/components/StatusBadge";
 import {
   Dialog,
   DialogContent,
@@ -1199,23 +1197,6 @@ export default function VariationDetail() {
     }
   };
 
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case "draft":
-        return <Badge variant="secondary" data-testid="badge-status-draft"><FileText className="w-3 h-3 mr-1" />Draft</Badge>;
-      case "action":
-        return <Badge variant="destructive" data-testid="badge-status-action"><AlertCircle className="w-3 h-3 mr-1" />Action</Badge>;
-      case "pending":
-        return <Badge variant="default" data-testid="badge-status-pending"><Clock className="w-3 h-3 mr-1" />Pending</Badge>;
-      case "approved":
-        return <Badge variant="outline" className="border-green-500 text-status-success" data-testid="badge-status-approved"><CheckCircle className="w-3 h-3 mr-1" />Approved</Badge>;
-      case "rejected":
-        return <Badge variant="outline" className="border-red-500 text-status-danger" data-testid="badge-status-rejected"><XCircle className="w-3 h-3 mr-1" />Rejected</Badge>;
-      default:
-        return <Badge variant="outline" data-testid={`badge-status-${status}`}>{status}</Badge>;
-    }
-  };
-
   if (variationLoading) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -1287,7 +1268,13 @@ export default function VariationDetail() {
             <h2 className="text-sm font-semibold" data-testid="text-page-title">
               {isEditMode ? form.watch("variationNumber") : "New Variation"}
             </h2>
-            {isEditMode && variation?.status && getStatusBadge(variation.status)}
+            {isEditMode && variation?.status && (
+              /* Bare "action" isn't a known StatusBadge status — force the action tone. */
+              <StatusBadge
+                status={variation.status}
+                tone={variation.status === "action" ? "action" : undefined}
+              />
+            )}
             {projectName && (
               <span className="text-xs text-muted-foreground ml-1" data-testid="text-project-name">
                 {projectName}

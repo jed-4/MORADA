@@ -6,6 +6,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
+import { EmptyState } from "@/components/EmptyState";
 import { Input } from "@/components/ui/input";
 import {
   DndContext,
@@ -29,8 +30,7 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import { 
   Plus, 
-  FileText, 
-  Lock, 
+  FileText,
   Copy, 
   MoreHorizontal,
   DollarSign,
@@ -65,7 +65,21 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { type Estimate, type EstimateSummary, type Project, type FieldOption, type FieldCategoryWithOptions } from "@shared/schema";
+import { StatusBadge } from "@/components/StatusBadge";
 import { usePageTitle } from "@/hooks/usePageTitle";
+
+/** Single status-badge renderer shared by the list view and the kanban cards. */
+function renderEstimateStatusBadge(estimate: Estimate, statuses: FieldOption[]) {
+  const statusOption = statuses.find((s) => s.key === estimate.status);
+  if (statusOption) {
+    return <StatusBadge status={statusOption.key} label={statusOption.name} color={statusOption.color} />;
+  }
+  // Fallback to isLocked for backward compatibility
+  if (estimate.isLocked) {
+    return <StatusBadge status="locked" tone="info" label="Locked" />;
+  }
+  return <StatusBadge status={estimate.status || "Draft"} />;
+}
 
 interface ProjectEstimatesParams {
   projectId: string;
@@ -262,25 +276,7 @@ export default function ProjectEstimates() {
     }).format(amount);
   };
 
-  const getStatusBadge = (estimate: Estimate) => {
-    const statusOption = estimateStatuses.find(s => s.key === estimate.status);
-    if (statusOption && statusOption.color) {
-      return (
-        <Badge 
-          variant="secondary" 
-          className="h-4 text-data px-1.5"
-          style={{ 
-            backgroundColor: `${statusOption.color}20`,
-            color: statusOption.color,
-            borderColor: `${statusOption.color}40`
-          }}
-        >
-          {statusOption.name}
-        </Badge>
-      );
-    }
-    return <Badge variant="outline" className="h-4 text-data px-1.5"><FileText className="w-3 h-3 mr-0.5" />{estimate.status || 'Draft'}</Badge>;
-  };
+  const getStatusBadge = (estimate: Estimate) => renderEstimateStatusBadge(estimate, estimateStatuses);
 
   // Filter estimates based on search and filters
   const filteredEstimates = useMemo(() => {
@@ -623,28 +619,22 @@ export default function ProjectEstimates() {
             <div className="text-muted-foreground">Loading estimates...</div>
           </div>
         ) : filteredEstimates.length === 0 ? (
-          <Card className="p-8 text-center mt-6 rounded-xl">
-            <DollarSign className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-            <h3 className="text-lg font-medium mb-2">
-              {searchTerm || selectedStatus !== "All" ? "No estimates found" : "No estimates yet"}
-            </h3>
-            <p className="text-muted-foreground mb-4">
-              {searchTerm || selectedStatus !== "All" 
-                ? "Try adjusting your search or filter criteria"
-                : `Start by creating your first estimate for ${project?.name || 'this project'}`
-              }
-            </p>
-            {!searchTerm && selectedStatus === "All" && (
-              <button
-                onClick={handleNewEstimate}
-                className="h-8 w-auto px-3 text-sm border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-1 mx-auto"
-                data-testid="button-create-first-project-estimate"
-              >
-                <Plus className="h-4 w-4" />
-                Create First Estimate
-              </button>
-            )}
-          </Card>
+          <EmptyState
+            variant="card"
+            icon={DollarSign}
+            title={searchTerm || selectedStatus !== "All" ? "No estimates found" : "No estimates yet"}
+            description={searchTerm || selectedStatus !== "All"
+              ? "Try adjusting your search or filter criteria"
+              : `Start by creating your first estimate for ${project?.name || 'this project'}`
+            }
+            action={!searchTerm && selectedStatus === "All" ? {
+              label: "Create First Estimate",
+              onClick: handleNewEstimate,
+              icon: Plus,
+              "data-testid": "button-create-first-project-estimate",
+            } : undefined}
+            className="mt-6"
+          />
         ) : (
           <>
             {/* Grid View */}
@@ -868,28 +858,7 @@ function SortableEstimateCard({ estimate, estimateStatuses, projectId }: {
     }).format(amount);
   };
 
-  const getStatusBadge = (estimate: Estimate) => {
-    const statusOption = estimateStatuses.find(s => s.key === estimate.status);
-    if (statusOption && statusOption.color) {
-      return (
-        <Badge 
-          variant="secondary"
-          className="h-4 text-data px-1.5 rounded-full"
-          style={{
-            backgroundColor: `${statusOption.color}20`,
-            color: statusOption.color,
-            borderColor: `${statusOption.color}40`
-          }}
-        >
-          {statusOption.name}
-        </Badge>
-      );
-    }
-    if (estimate.isLocked) {
-      return <Badge variant="secondary" className="h-4 text-data px-1.5 rounded-full bg-blue-100 text-status-info"><Lock className="w-2.5 h-2.5 mr-0.5" />Locked</Badge>;
-    }
-    return <Badge variant="outline" className="h-4 text-data px-1.5 rounded-full"><FileText className="w-2.5 h-2.5 mr-0.5" />{estimate.status || 'Draft'}</Badge>;
-  };
+  const getStatusBadge = (estimate: Estimate) => renderEstimateStatusBadge(estimate, estimateStatuses);
 
   return (
     <div

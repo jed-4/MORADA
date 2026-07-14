@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { usePageTitle } from "@/hooks/usePageTitle";
+import { PageHeader } from "@/components/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -146,7 +147,7 @@ const EMPTY_ROLE_PERMISSIONS: RolePermission[] = [];
 export default function RolesPermissions() {
   const { toast } = useToast();
   const [, navigate] = useLocation();
-  const pageTitle = usePageTitle({ pageName: "Roles & Permissions" });
+  usePageTitle({ pageName: "Roles & Permissions" });
   const canResetDefaults = usePermission("admin.roles", "edit");
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedRoleId, setSelectedRoleId] = useState<string | null>(null);
@@ -459,7 +460,7 @@ export default function RolesPermissions() {
               Back to Settings
             </Button>
           </div>
-          <h1 className="text-xl font-semibold mb-4">{pageTitle}</h1>
+          <PageHeader title="Roles & Permissions" className="mb-4" />
           
           {/* Add new role button */}
           <Button
@@ -521,7 +522,7 @@ export default function RolesPermissions() {
                 <div className="flex items-center gap-3">
                   <Shield className="h-6 w-6" />
                   <div>
-                    <h2 className="text-2xl font-semibold">{selectedRole.name}</h2>
+                    <h2 className="text-xl font-semibold">{selectedRole.name}</h2>
                     {selectedRole.description && (
                       <p className="text-sm text-muted-foreground">{selectedRole.description}</p>
                     )}
@@ -771,7 +772,7 @@ export default function RolesPermissions() {
               disabled={deleteRoleMutation.isPending}
               data-testid="button-confirm-delete-role"
             >
-              {deleteRoleMutation.isPending ? "Deleting..." : "Delete"}
+              {deleteRoleMutation.isPending ? (<><Loader2 className="w-4 h-4 mr-2 animate-spin" />Deleting...</>) : "Delete"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -922,7 +923,7 @@ function AddRoleDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o
                 Cancel
               </Button>
               <Button type="submit" disabled={createRoleMutation.isPending} data-testid="button-create-role">
-                {createRoleMutation.isPending ? "Creating..." : "Create Role"}
+                {createRoleMutation.isPending ? (<><Loader2 className="w-4 h-4 mr-2 animate-spin" />Creating...</>) : "Create Role"}
               </Button>
             </DialogFooter>
           </form>
@@ -1048,7 +1049,7 @@ function EditRoleDialog({
                 Cancel
               </Button>
               <Button type="submit" disabled={updateRoleMutation.isPending} data-testid="button-update-role">
-                {updateRoleMutation.isPending ? "Updating..." : "Update Role"}
+                {updateRoleMutation.isPending ? (<><Loader2 className="w-4 h-4 mr-2 animate-spin" />Updating...</>) : "Update Role"}
               </Button>
             </DialogFooter>
           </form>

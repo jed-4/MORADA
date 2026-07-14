@@ -27,6 +27,8 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { StatusBadge } from "@/components/StatusBadge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Card } from "@/components/ui/card";
 import { 
@@ -2249,6 +2251,9 @@ export default function EstimateDetail() {
   // "Mark as Contract" confirmation dialog state (stage 2). Confirm calls
   // contractMutation.mutate(id), which locks + freezes the contract price.
   const [contractDialogRevisionId, setContractDialogRevisionId] = useState<string | null>(null);
+
+  // Generic confirmation dialog (replaces native confirm() calls).
+  const [confirmAction, setConfirmAction] = useState<{ title: string; description?: string; confirmLabel?: string; destructive?: boolean; run: () => void } | null>(null);
 
   // Summary for the revision being marked as the contract — so the confirm
   // dialog can show the exact ex-GST + inc-GST totals that will be frozen.
@@ -5006,23 +5011,11 @@ export default function EstimateDetail() {
     // Use field settings for status
     const statusOption = estimateStatuses.find(s => s.key === estimate.status);
     if (statusOption && statusOption.color) {
-      return (
-        <Badge 
-          variant="secondary" 
-          className="h-6 px-2 text-xs"
-          style={{ 
-            backgroundColor: `${statusOption.color}20`,
-            color: statusOption.color,
-            borderColor: `${statusOption.color}40`
-          }}
-        >
-          {statusOption.name}
-        </Badge>
-      );
+      return <StatusBadge status={statusOption.key} label={statusOption.name} color={statusOption.color} />;
     }
-    
+
     // Fallback
-    return <Badge variant="outline" className="h-6 px-2 text-xs">{statusOption?.name || estimate.status || 'Draft'}</Badge>;
+    return <StatusBadge status={estimate.status || "Draft"} label={statusOption?.name} />;
   };
 
   // Handle new estimate creation
@@ -5306,8 +5299,13 @@ export default function EstimateDetail() {
                           <DropdownMenuItem
                             onClick={() => {
                               if (estimateVersions.length <= 1) return;
-                              if (!confirm(`Delete ${getRevLabel(v.version)}? This cannot be undone.`)) return;
-                              deleteRevisionMutation.mutate(v.id);
+                              setConfirmAction({
+                                title: `Delete ${getRevLabel(v.version)}?`,
+                                description: "This cannot be undone.",
+                                confirmLabel: "Delete",
+                                destructive: true,
+                                run: () => deleteRevisionMutation.mutate(v.id),
+                              });
                             }}
                             disabled={estimateVersions.length <= 1}
                             className="text-destructive focus:text-destructive"
@@ -6584,7 +6582,7 @@ export default function EstimateDetail() {
                   Cancel
                 </Button>
                 <Button type="submit" disabled={addItemMutation.isPending} data-testid="button-submit-add-item">
-                  {addItemMutation.isPending ? "Adding..." : "Add item"}
+                  {addItemMutation.isPending ? (<><Loader2 className="w-4 h-4 mr-2 animate-spin" />Adding...</>) : "Add item"}
                 </Button>
               </div>
             </form>
@@ -7178,7 +7176,7 @@ export default function EstimateDetail() {
                       Cancel
                     </Button>
                     <Button type="submit" disabled={updateItemMutation.isPending} data-testid="button-submit-edit-item">
-                      {updateItemMutation.isPending ? "Saving..." : "Save Changes"}
+                      {updateItemMutation.isPending ? (<><Loader2 className="w-4 h-4 mr-2 animate-spin" />Saving...</>) : "Save Changes"}
                     </Button>
                   </div>
                 </form>
@@ -7307,8 +7305,8 @@ export default function EstimateDetail() {
                 </Button>
                 <Button type="submit" disabled={addGroupMutation.isPending || updateFullGroupMutation.isPending} data-testid="button-submit-add-group">
                   {editingGroupId
-                    ? (updateFullGroupMutation.isPending ? "Saving..." : "Save Changes")
-                    : (addGroupMutation.isPending ? "Adding..." : "Add Group")}
+                    ? (updateFullGroupMutation.isPending ? (<><Loader2 className="w-4 h-4 mr-2 animate-spin" />Saving...</>) : "Save Changes")
+                    : (addGroupMutation.isPending ? (<><Loader2 className="w-4 h-4 mr-2 animate-spin" />Adding...</>) : "Add Group")}
                 </Button>
               </div>
             </form>
@@ -7729,7 +7727,7 @@ export default function EstimateDetail() {
               disabled={bulkMarkupMutation.isPending || bulkMarkupValue === "" || isNaN(parseFloat(bulkMarkupValue)) || parseFloat(bulkMarkupValue) < 0}
               data-testid="button-confirm-bulk-markup"
             >
-              {bulkMarkupMutation.isPending ? "Applying..." : "Apply"}
+              {bulkMarkupMutation.isPending ? (<><Loader2 className="w-4 h-4 mr-2 animate-spin" />Applying...</>) : "Apply"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -7918,6 +7916,17 @@ export default function EstimateDetail() {
         </div>
       )}
 
+      {/* Generic confirmation dialog (replaces native confirm() calls). */}
+      <ConfirmDialog
+        open={!!confirmAction}
+        onOpenChange={(o) => { if (!o) setConfirmAction(null); }}
+        title={confirmAction?.title ?? ""}
+        description={confirmAction?.description}
+        confirmLabel={confirmAction?.confirmLabel ?? "Confirm"}
+        destructive={confirmAction?.destructive}
+        onConfirm={() => { confirmAction?.run(); setConfirmAction(null); }}
+      />
+
       {/* Stage 1 — Approve confirmation. Promotes the revision to the project's
           live (still-editable) selected estimate and stamps the contract
           price. The estimate stays unlocked so you can keep refining it. */}
@@ -7959,7 +7968,7 @@ export default function EstimateDetail() {
               disabled={approveMutation.isPending}
               data-testid="button-approve-confirm"
             >
-              {approveMutation.isPending ? "Approving…" : "Confirm"}
+              {approveMutation.isPending ? (<><Loader2 className="w-4 h-4 mr-2 animate-spin" />Approving…</>) : "Confirm"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -8019,7 +8028,7 @@ export default function EstimateDetail() {
               disabled={contractMutation.isPending}
               data-testid="button-contract-confirm"
             >
-              {contractMutation.isPending ? "Locking…" : "Mark as Contract"}
+              {contractMutation.isPending ? (<><Loader2 className="w-4 h-4 mr-2 animate-spin" />Locking…</>) : "Mark as Contract"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -8053,7 +8062,7 @@ export default function EstimateDetail() {
               disabled={archiveMutation.isPending}
               data-testid="button-archive-confirm"
             >
-              {archiveMutation.isPending ? "Archiving…" : "Archive"}
+              {archiveMutation.isPending ? (<><Loader2 className="w-4 h-4 mr-2 animate-spin" />Archiving…</>) : "Archive"}
             </Button>
           </DialogFooter>
         </DialogContent>

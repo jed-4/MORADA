@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useParams, useLocation } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { EmptyState } from "@/components/EmptyState";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -336,13 +337,12 @@ export default function MinuteDetail() {
                 </CardContent>
               </Card>
             ) : (
-              <Card className="bg-muted/50">
-                <CardContent className="pt-6 text-center">
-                  <p className="text-muted-foreground text-sm">
-                    No AI summary generated yet. Click the button above to generate one.
-                  </p>
-                </CardContent>
-              </Card>
+              <EmptyState
+                variant="inline"
+                title="No AI summary generated yet"
+                description="Click the button above to generate one."
+                className="py-8"
+              />
             )}
           </div>
         </CardContent>

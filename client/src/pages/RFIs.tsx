@@ -10,6 +10,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
+import { EmptyState } from "@/components/EmptyState";
 import { Input } from "@/components/ui/input";
 import {
   DropdownMenu,
@@ -509,29 +510,21 @@ export default function RFIs({ embedded }: { embedded?: boolean } = {}) {
           </Card>
         ) : filteredRFIs.length === 0 ? (
           searchQuery || statusFilter !== "all" ? (
-            <Card className="m-2 p-8 text-center text-muted-foreground">
-              No RFIs match your search
-            </Card>
+            <EmptyState variant="card" title="No RFIs match your search" className="m-2" />
           ) : (
-            <div className="flex flex-col items-center justify-center py-16 px-4">
-              <div className="w-20 h-20 rounded-full bg-primary/10 flex items-center justify-center mb-6">
-                <HelpCircle className="w-10 h-10 text-primary" />
-              </div>
-              <h3 className="text-xl font-semibold mb-2">No Requests for Information yet</h3>
-              <p className="text-muted-foreground text-center max-w-md mb-8">
-                Create RFIs to request clarification from architects, engineers, clients, or other stakeholders on your projects.
-              </p>
-              <div className="flex flex-col sm:flex-row gap-3">
-                <Button
-                  onClick={() => setLocation(getNavigationPath("/rfis/new"))}
-                  className="bg-primary hover:bg-primary/90 text-white gap-2"
-                  data-testid="button-create-rfi-empty"
-                >
-                  <Plus className="w-4 h-4" />
-                  Create New RFI
-                </Button>
-              </div>
-            </div>
+            <EmptyState
+              variant="inline"
+              icon={HelpCircle}
+              title="No Requests for Information yet"
+              description="Create RFIs to request clarification from architects, engineers, clients, or other stakeholders on your projects."
+              action={{
+                label: "Create New RFI",
+                onClick: () => setLocation(getNavigationPath("/rfis/new")),
+                icon: Plus,
+                "data-testid": "button-create-rfi-empty",
+              }}
+              className="py-16"
+            />
           )
         ) : (
           <DataTable

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
+import { StatusBadge, type StatusTone } from "@/components/StatusBadge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 import {
@@ -33,13 +34,13 @@ interface TaskCardCompactProps {
   showActions?: boolean;
 }
 
-// Status colors matching Asana 2025
-const getStatusColor = (status: string | null, isCompleted: boolean): string => {
-  if (isCompleted) return 'bg-status-success-bg text-status-success border-status-success/20';
-  
+// Status tones matching Asana 2025
+const getTaskStatusTone = (status: string | null, isCompleted: boolean): StatusTone => {
+  if (isCompleted) return 'success';
+
   const s = status?.toLowerCase() || '';
-  if (s.includes('progress') || s.includes('active')) return 'bg-status-info-bg text-status-info border-status-info/20';
-  return 'bg-muted text-secondary border-border-strong';
+  if (s.includes('progress') || s.includes('active')) return 'info';
+  return 'neutral';
 };
 
 // Priority colors
@@ -104,7 +105,7 @@ export default function TaskCardCompact({ task, onClick, isDragging = false, dis
     updateTaskStatusMutation.mutate(newStatus);
   };
 
-  const statusColor = getStatusColor(task.status, isCompleted);
+  const statusTone = getTaskStatusTone(task.status, isCompleted);
   const priorityColor = getPriorityColor(task.priority);
   const hasCostOrUnits = task.estimatedCost || task.estimatedUnits;
   const taskTags = Array.isArray((task as any).tags) ? ((task as any).tags as string[]) : [];
@@ -232,9 +233,12 @@ export default function TaskCardCompact({ task, onClick, isDragging = false, dis
           <div className="flex items-center gap-1 min-w-0 flex-1 overflow-hidden">
             {/* Status chip - bottom left */}
             {statusOption && (displaySettings?.showStatus !== false) && (
-              <Badge className={`text-data px-1.5 py-0 h-4 rounded-full ${statusColor} border no-default-hover-elevate no-default-active-elevate shrink-0`}>
-                {isCompleted ? '✓' : statusOption.name}
-              </Badge>
+              <StatusBadge
+                status={task.status || ''}
+                tone={statusTone}
+                label={isCompleted ? '✓' : statusOption.name}
+                className="shrink-0"
+              />
             )}
             
             {/* Due date chip */}

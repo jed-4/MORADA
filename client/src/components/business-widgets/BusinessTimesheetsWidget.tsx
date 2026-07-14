@@ -3,7 +3,7 @@ import { format, formatDistanceToNow, startOfWeek, endOfWeek } from "date-fns";
 import type { WidgetProps } from "@/types/widgets";
 import type { Timesheet, User, Project } from "@shared/schema";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Badge } from "@/components/ui/badge";
+import { StatusBadge } from "@/components/StatusBadge";
 import { Clock, CheckCircle, AlertCircle, XCircle } from "lucide-react";
 import { WidgetSkeleton } from "@/components/ui/WidgetSkeleton";
 import { WidgetEmpty } from "@/components/ui/WidgetEmpty";
@@ -57,15 +57,6 @@ export default function BusinessTimesheetsWidget({}: WidgetProps) {
     }
   };
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case "approved": return "bg-status-success-bg text-status-success";
-      case "submitted": return "bg-status-warning-bg text-status-warning";
-      case "rejected": return "bg-status-danger-bg text-status-danger";
-      default: return "bg-muted text-secondary";
-    }
-  };
-
   return (
     <div className="space-y-4" data-testid="business-timesheets-widget">
       <div className="grid grid-cols-3 gap-2 text-center">
@@ -99,9 +90,7 @@ export default function BusinessTimesheetsWidget({}: WidgetProps) {
               </div>
               <div className="flex items-center gap-2">
                 <span className="text-sm font-medium">{Number(entry.hours).toFixed(1)}h</span>
-                <Badge className={`text-data px-1 py-0 ${getStatusColor(entry.status)}`}>
-                  {entry.status}
-                </Badge>
+                <StatusBadge status={entry.status} />
               </div>
             </div>
           ))}

@@ -25,6 +25,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { Budget, BudgetLineItem, LabourHoursBudget, Project } from "@shared/schema";
 import type { ContractMetrics } from "@shared/projectMetrics";
 import { cn } from "@/lib/utils";
+import { EmptyState } from "@/components/EmptyState";
 import { usePermission } from "@/hooks/use-permission";
 import { useAuth } from "@/hooks/use-auth";
 
@@ -797,13 +798,14 @@ export default function BudgetPage() {
 
   if (!canViewActuals && !canViewLabour) {
     return (
-      <div className="flex flex-col h-full items-center justify-center gap-2 text-center p-8" data-testid="page-budget-no-access">
-        <AlertCircle className="h-10 w-10 text-muted-foreground" />
-        <h3 className="text-sm font-semibold">No budget access</h3>
-        <p className="text-xs text-muted-foreground max-w-xs">
-          You don't have permission to view the budget. Contact your administrator to request access.
-        </p>
-      </div>
+      <EmptyState
+        icon={AlertCircle}
+        title="No budget access"
+        description="You don't have permission to view the budget. Contact your administrator to request access."
+        variant="inline"
+        className="h-full"
+        data-testid="page-budget-no-access"
+      />
     );
   }
 
@@ -1130,13 +1132,13 @@ export default function BudgetPage() {
                     ))}
                   </div>
                 ) : costItems.length === 0 ? (
-                  <div className="text-center py-8">
-                    <AlertCircle className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
-                    <h3 className="text-sm font-semibold mb-1">No budget breakdown available</h3>
-                    <p className="text-xs text-muted-foreground mb-3">
-                      The budget breakdown is generated automatically from your estimates and bills.
-                    </p>
-                  </div>
+                  <EmptyState
+                    icon={AlertCircle}
+                    title="No budget breakdown available"
+                    description="The budget breakdown is generated automatically from your estimates and bills."
+                    variant="inline"
+                    className="py-8"
+                  />
                 ) : (
                   <>
                     <div className="flex-1 min-h-0">
@@ -1216,13 +1218,13 @@ export default function BudgetPage() {
                     ))}
                   </div>
                 ) : labourHours.length === 0 ? (
-                  <div className="text-center py-8">
-                    <Clock className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
-                    <h3 className="text-sm font-semibold mb-1">No labour hours budget</h3>
-                    <p className="text-xs text-muted-foreground mb-3">
-                      The hours budget is generated automatically from estimates and timesheets.
-                    </p>
-                  </div>
+                  <EmptyState
+                    icon={Clock}
+                    title="No labour hours budget"
+                    description="The hours budget is generated automatically from estimates and timesheets."
+                    variant="inline"
+                    className="py-8"
+                  />
                 ) : filteredLabourHours.length === 0 ? (
                   <div className="text-center py-8 text-xs text-muted-foreground">
                     {hideEmptyCostCodes

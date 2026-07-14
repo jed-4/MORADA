@@ -7,7 +7,7 @@ import { type Project, type FieldOption } from "@shared/schema";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { ProjectBoard, type ViewPreferences } from "@/components/ProjectBoard";
 import { ProjectIcon } from "@/components/ProjectIcon";
-import { Badge } from "@/components/ui/badge";
+import { StatusBadge } from "@/components/StatusBadge";
 import { useLocation } from "wouter";
 import { type ColumnDef } from "@tanstack/react-table";
 import {
@@ -40,12 +40,6 @@ const DEFAULT_PREFERENCES: ViewPreferences = {
     foreman: true,
   },
   hideEmptyColumns: false,
-};
-
-const STATUS_CONFIG = {
-  active: { label: "Active", variant: "default" as const, color: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200" },
-  on_hold: { label: "On Hold", variant: "secondary" as const, color: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200" },
-  completed: { label: "Completed", variant: "outline" as const, color: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200" },
 };
 
 // Reads parent project-status options and lists each stage with its long-form
@@ -301,19 +295,12 @@ export default function BusinessProjects() {
       id: "status",
       header: "Status",
       accessorFn: (p) => p.status || "active",
-      cell: ({ row }) => {
-        const projectStatus = (row.original.status || "active") as keyof typeof STATUS_CONFIG;
-        const statusConfig = STATUS_CONFIG[projectStatus] || STATUS_CONFIG.active;
-        return (
-          <Badge
-            variant={statusConfig.variant}
-            className={statusConfig.color}
-            data-testid={`badge-status-${row.original.id}`}
-          >
-            {statusConfig.label}
-          </Badge>
-        );
-      },
+      cell: ({ row }) => (
+        <StatusBadge
+          status={row.original.status || "active"}
+          data-testid={`badge-status-${row.original.id}`}
+        />
+      ),
       size: 120,
       meta: { defaultWidth: 120, headerLabel: "Status" } satisfies DataTableColumnMeta,
     },

@@ -37,6 +37,7 @@ import {
   type DataTableColumnMeta,
 } from "@/components/data-table/DataTable";
 import { Badge } from "@/components/ui/badge";
+import { EmptyState } from "@/components/EmptyState";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
@@ -62,6 +63,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { SiXero } from "react-icons/si";
 import { StatusBadge } from "@/components/StatusBadge";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import type { PurchaseOrder, Project, Contact, CostCode } from "@shared/schema";
 
 const STATUS_OPTIONS = [
@@ -109,6 +111,7 @@ export default function PurchaseOrders({ embedded }: { embedded?: boolean } = {}
   const [supplierFilterSearch, setSupplierFilterSearch] = useState("");
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [isProjectDialogOpen, setIsProjectDialogOpen] = useState(false);
+  const [confirmAction, setConfirmAction] = useState<{ title: string; description?: string; confirmLabel?: string; destructive?: boolean; run: () => void } | null>(null);
   const [newPOProjectId, setNewPOProjectId] = useState<string>("");
   const [isSitePODialogOpen, setIsSitePODialogOpen] = useState(false);
   const [confirmedSitePO, setConfirmedSitePO] = useState<{ poNumber: string; id: string } | null>(null);
@@ -383,9 +386,13 @@ export default function PurchaseOrders({ embedded }: { embedded?: boolean } = {}
   const handleDeletePO = (po: PurchaseOrder, e: React.MouseEvent) => {
     e.stopPropagation();
     const label = po.poNumber || po.title || "this purchase order";
-    if (window.confirm(`Delete ${label}? This cannot be undone.`)) {
-      deletePoMutation.mutate(po.id);
-    }
+    setConfirmAction({
+      title: `Delete ${label}?`,
+      description: "This cannot be undone.",
+      confirmLabel: "Delete",
+      destructive: true,
+      run: () => deletePoMutation.mutate(po.id),
+    });
   };
 
   const toggleSelect = (id: string, e: React.MouseEvent) => {
@@ -993,15 +1000,17 @@ export default function PurchaseOrders({ embedded }: { embedded?: boolean } = {}
                     <span className="text-xs text-amber-600/70 dark:text-amber-400/70">({sitePOs.length})</span>
                   </div>
                   {sitePOs.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center py-8 gap-2">
-                      <p className="text-sm text-muted-foreground">No site POs yet.</p>
-                      {isProjectContext && (
-                        <Button size="sm" variant="outline" onClick={() => setIsSitePODialogOpen(true)} data-testid="button-empty-site-po">
-                          <ClipboardList className="w-3.5 h-3.5 mr-1.5" />
-                          New Site PO
-                        </Button>
-                      )}
-                    </div>
+                    <EmptyState
+                      variant="inline"
+                      title="No site POs yet."
+                      action={isProjectContext ? {
+                        label: "New Site PO",
+                        onClick: () => setIsSitePODialogOpen(true),
+                        icon: ClipboardList,
+                        "data-testid": "button-empty-site-po",
+                      } : undefined}
+                      className="py-8"
+                    />
                   ) : (
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 p-4">
                       {sitePOs.map(po => {
@@ -1074,9 +1083,11 @@ export default function PurchaseOrders({ embedded }: { embedded?: boolean } = {}
               return (
                 <div className={showHeader ? "" : "h-full flex flex-col"}>
                   {mainPOs.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center py-10 gap-2">
-                      <p className="text-sm text-muted-foreground">No standard purchase orders match your filters.</p>
-                    </div>
+                    <EmptyState
+                      variant="inline"
+                      title="No standard purchase orders match your filters."
+                      className="py-10"
+                    />
                   ) : (
                     <DataTable
                       data={mainPOs}
@@ -1094,33 +1105,22 @@ export default function PurchaseOrders({ embedded }: { embedded?: boolean } = {}
 
             {/* ── Empty state when truly nothing ──────────────────────────── */}
             {filteredPOs.length === 0 && (
-              <div className="flex flex-col items-center justify-center py-16">
-                <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mb-4">
-                  <ShoppingCart className="w-6 h-6 text-primary" />
-                </div>
-                <h3 className="text-lg font-medium mb-2">No Purchase Orders</h3>
-                <p className="text-sm text-muted-foreground mb-4 text-center max-w-sm">
-                  {searchTerm || selectedStatus !== "all" || selectedType !== "all"
-                    ? "No purchase orders match your current filters."
-                    : "Create your first purchase order to start tracking orders to suppliers."}
-                </p>
-                {!searchTerm && selectedStatus === "all" && selectedType === "all" && (
-                  <Button
-                    onClick={handleNewPO}
-                    disabled={createPoMutation.isPending}
-                    className="bg-primary hover:bg-primary/90"
-                    size="sm"
-                    data-testid="button-empty-new-po"
-                  >
-                    {createPoMutation.isPending ? (
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    ) : (
-                      <Plus className="w-4 h-4 mr-2" />
-                    )}
-                    {createPoMutation.isPending ? "Creating..." : "New Purchase Order"}
-                  </Button>
-                )}
-              </div>
+              <EmptyState
+                variant="inline"
+                icon={ShoppingCart}
+                title="No Purchase Orders"
+                description={searchTerm || selectedStatus !== "all" || selectedType !== "all"
+                  ? "No purchase orders match your current filters."
+                  : "Create your first purchase order to start tracking orders to suppliers."}
+                action={!searchTerm && selectedStatus === "all" && selectedType === "all" ? {
+                  label: createPoMutation.isPending ? "Creating..." : "New Purchase Order",
+                  onClick: handleNewPO,
+                  icon: Plus,
+                  loading: createPoMutation.isPending,
+                  "data-testid": "button-empty-new-po",
+                } : undefined}
+                className="py-16"
+              />
             )}
           </>
         )}
@@ -1350,6 +1350,21 @@ export default function PurchaseOrders({ embedded }: { embedded?: boolean } = {}
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ConfirmDialog
+        open={!!confirmAction}
+        onOpenChange={(o) => {
+          if (!o) setConfirmAction(null);
+        }}
+        title={confirmAction?.title ?? ""}
+        description={confirmAction?.description}
+        confirmLabel={confirmAction?.confirmLabel ?? "Confirm"}
+        destructive={confirmAction?.destructive}
+        onConfirm={() => {
+          confirmAction?.run();
+          setConfirmAction(null);
+        }}
+      />
     </div>
   );
 }

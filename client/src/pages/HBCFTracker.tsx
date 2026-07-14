@@ -21,6 +21,7 @@ import {
   Plus, Trash2, ChevronLeft, ChevronRight, ShieldCheck, Info, Pencil, Check, X, Columns3
 } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { cn } from "@/lib/utils";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -166,6 +167,7 @@ export default function HBCFTracker() {
   const [year, setYear] = useState(new Date().getFullYear());
   const [selectedProjectId, setSelectedProjectId] = useState("__none__");
   const [newAmount, setNewAmount] = useState("");
+  const [confirmAction, setConfirmAction] = useState<{ title: string; description?: string; confirmLabel?: string; destructive?: boolean; run: () => void } | null>(null);
 
   const { data: settings = {} as CompanySettings } = useQuery<CompanySettings>({
     queryKey: ["/api/company-settings"],
@@ -339,7 +341,13 @@ export default function HBCFTracker() {
               <button
                 onClick={(e) => {
                   e.stopPropagation();
-                  if (confirm(`Remove "${r.name}" from tracker?`)) deleteMutation.mutate(r.id);
+                  setConfirmAction({
+                    title: `Remove "${r.name}" from tracker?`,
+                    description: "This removes the project and its weekly statuses from the tracker.",
+                    confirmLabel: "Remove",
+                    destructive: true,
+                    run: () => deleteMutation.mutate(r.id),
+                  });
                 }}
                 className="text-muted-foreground/20 hover:text-destructive transition-colors flex-shrink-0 opacity-0 group-hover/row:opacity-100 mt-0.5"
               >
@@ -585,6 +593,16 @@ export default function HBCFTracker() {
           </span>
         )}
       </div>
+
+      <ConfirmDialog
+        open={!!confirmAction}
+        onOpenChange={(o) => { if (!o) setConfirmAction(null); }}
+        title={confirmAction?.title ?? ""}
+        description={confirmAction?.description}
+        confirmLabel={confirmAction?.confirmLabel ?? "Confirm"}
+        destructive={confirmAction?.destructive}
+        onConfirm={() => { confirmAction?.run(); setConfirmAction(null); }}
+      />
     </div>
   );
 }

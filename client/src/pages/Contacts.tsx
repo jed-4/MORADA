@@ -54,6 +54,7 @@ import { ImportContactsDialog } from "@/components/contacts/ImportContactsDialog
 import QuickReviewPanel from "@/components/contacts/QuickReviewPanel";
 import { MergeContactDialog } from "@/components/contacts/MergeContactDialog";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { EmptyState } from "@/components/EmptyState";
 
 export default function Contacts() {
   const { toast } = useToast();
@@ -636,15 +637,12 @@ export default function Contacts() {
         {isLoading ? (
           <div className="text-center py-12 text-muted-foreground">Loading contacts...</div>
         ) : filteredContacts.length === 0 ? (
-          <div className="text-center py-12">
-            <Users className="h-12 w-12 mx-auto text-muted-foreground mb-3" />
-            <p className="text-muted-foreground">
-              {searchTerm ? "No contacts match your search" : "No contacts yet"}
-            </p>
-            <p className="text-sm text-muted-foreground">
-              {searchTerm ? "Try a different search term" : "Add team members, suppliers, and clients"}
-            </p>
-          </div>
+          <EmptyState
+            icon={Users}
+            title={searchTerm ? "No contacts match your search" : "No contacts yet"}
+            description={searchTerm ? "Try a different search term" : "Add team members, suppliers, and clients"}
+            variant="card"
+          />
         ) : (
           <DataTable
             data={filteredContacts}

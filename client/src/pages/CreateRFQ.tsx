@@ -36,6 +36,7 @@ import {
   Clock,
   X,
   Search,
+  Loader2,
 } from "lucide-react";
 import { type Project, type Contact, type RfqTemplate } from "@shared/schema";
 import { ProjectIcon } from "@/components/ProjectIcon";
@@ -222,7 +223,7 @@ export default function CreateRFQ() {
             className="h-7 text-xs bg-primary hover:bg-primary/90 text-white"
             data-testid="button-create-rfq"
           >
-            {createRfqMutation.isPending ? "Creating..." : "Create RFQ"}
+            {createRfqMutation.isPending ? (<><Loader2 className="w-3 h-3 mr-1 animate-spin" />Creating...</>) : "Create RFQ"}
           </Button>
         </div>
       </div>

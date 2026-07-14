@@ -5,7 +5,7 @@ import type { User, Timesheet, Task } from "@shared/schema";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Progress } from "@/components/ui/progress";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Badge } from "@/components/ui/badge";
+import { StatusBadge } from "@/components/StatusBadge";
 
 import { WidgetSkeleton } from "@/components/ui/WidgetSkeleton";
 import { WidgetEmpty } from "@/components/ui/WidgetEmpty";
@@ -70,14 +70,6 @@ export default function BusinessUtilizationWidget({}: WidgetProps) {
     return `${firstName?.[0] || ''}${lastName?.[0] || ''}`.toUpperCase() || '?';
   };
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case "optimal": return "text-status-success bg-status-success-bg";
-      case "moderate": return "text-status-warning bg-status-warning-bg";
-      default: return "text-status-danger bg-status-danger-bg";
-    }
-  };
-
   if (activeUsers.length === 0) {
     return (
       <div className="flex items-center justify-center h-32 text-muted-foreground text-sm" data-testid="widget-utilization-empty">
@@ -131,9 +123,11 @@ export default function BusinessUtilizationWidget({}: WidgetProps) {
                     <span className="text-xs font-medium truncate">
                       {user.firstName} {user.lastName}
                     </span>
-                    <Badge className={`text-label px-1 py-0 ${getStatusColor(status)}`}>
-                      {utilizationPercent.toFixed(0)}%
-                    </Badge>
+                    <StatusBadge
+                      status={status}
+                      tone={status === "optimal" ? "success" : status === "moderate" ? "warning" : "danger"}
+                      label={`${utilizationPercent.toFixed(0)}%`}
+                    />
                   </div>
                   <Progress 
                     value={Math.min(100, utilizationPercent)} 

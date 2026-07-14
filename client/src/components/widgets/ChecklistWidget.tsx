@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
+import { StatusBadge, type StatusTone } from "@/components/StatusBadge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
@@ -183,14 +183,14 @@ export default function ChecklistWidget({ widget, onUpdate, isConfiguring, onClo
     });
   };
 
-  const getStatusBadgeColor = (status: string) => {
-    const colors: Record<string, string> = {
-      'active': 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400',
-      'in_progress': 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400',
-      'completed': 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400',
-      'cancelled': 'bg-muted text-foreground',
+  const getStatusBadgeTone = (status: string): StatusTone => {
+    const tones: Record<string, StatusTone> = {
+      'active': 'info',
+      'in_progress': 'warning',
+      'completed': 'success',
+      'cancelled': 'neutral',
     };
-    return colors[status] || colors.active;
+    return tones[status] || tones.active;
   };
 
   const getStatusLabel = (status: string) => {
@@ -534,7 +534,7 @@ export default function ChecklistWidget({ widget, onUpdate, isConfiguring, onClo
               onToggle={() => toggleChecklist(checklist.id)}
               wrapText={wrapText}
               projectId={currentProject.id}
-              getStatusBadgeColor={getStatusBadgeColor}
+              getStatusBadgeTone={getStatusBadgeTone}
               getStatusLabel={getStatusLabel}
               getInitials={getInitials}
               expandedGroups={expandedGroups}
@@ -556,7 +556,7 @@ function ChecklistAccordionItem({
   onToggle,
   wrapText,
   projectId,
-  getStatusBadgeColor,
+  getStatusBadgeTone,
   getStatusLabel,
   getInitials,
   expandedGroups,
@@ -570,7 +570,7 @@ function ChecklistAccordionItem({
   onToggle: () => void;
   wrapText: boolean;
   projectId: string;
-  getStatusBadgeColor: (status: string) => string;
+  getStatusBadgeTone: (status: string) => StatusTone;
   getStatusLabel: (status: string) => string;
   getInitials: (name: string) => string;
   expandedGroups: Set<string>;
@@ -617,11 +617,12 @@ function ChecklistAccordionItem({
               </span>
             </TaskTooltip>
             
-            <Badge 
-              className={`${getStatusBadgeColor(checklist.status)} text-data px-1.5 py-0 h-4 flex-shrink-0 no-default-hover-elevate no-default-active-elevate`}
-            >
-              {getStatusLabel(checklist.status)}
-            </Badge>
+            <StatusBadge
+              status={checklist.status}
+              tone={getStatusBadgeTone(checklist.status)}
+              label={getStatusLabel(checklist.status)}
+              className="flex-shrink-0 no-default-hover-elevate no-default-active-elevate"
+            />
             
             {checklist.dueDate && (
               <div className="flex items-center gap-0.5 text-data text-muted-foreground flex-shrink-0">
@@ -686,7 +687,7 @@ function ChecklistAccordionItem({
                     wrapText={wrapText}
                     isExpanded={expandedGroups.has(group.id)}
                     onToggle={() => onToggleGroup(group.id)}
-                    getStatusBadgeColor={getStatusBadgeColor}
+                    getStatusBadgeTone={getStatusBadgeTone}
                     getStatusLabel={getStatusLabel}
                     getInitials={getInitials}
                     hideCompletedItems={hideCompletedItems}
@@ -708,7 +709,7 @@ function ChecklistGroupItem({
   wrapText,
   isExpanded,
   onToggle,
-  getStatusBadgeColor,
+  getStatusBadgeTone,
   getStatusLabel,
   getInitials,
   hideCompletedItems,
@@ -720,7 +721,7 @@ function ChecklistGroupItem({
   wrapText: boolean;
   isExpanded: boolean;
   onToggle: () => void;
-  getStatusBadgeColor: (status: string) => string;
+  getStatusBadgeTone: (status: string) => StatusTone;
   getStatusLabel: (status: string) => string;
   getInitials: (name: string) => string;
   hideCompletedItems: boolean;
@@ -792,11 +793,12 @@ function ChecklistGroupItem({
             </span>
           </TaskTooltip>
 
-          <Badge 
-            className={`${getStatusBadgeColor(group.status)} text-2xs px-0.5 py-0 h-3 flex-shrink-0 no-default-hover-elevate no-default-active-elevate`}
-          >
-            {getStatusLabel(group.status)}
-          </Badge>
+          <StatusBadge
+            status={group.status}
+            tone={getStatusBadgeTone(group.status)}
+            label={getStatusLabel(group.status)}
+            className="text-2xs px-0.5 h-3 flex-shrink-0 no-default-hover-elevate no-default-active-elevate"
+          />
 
           {group.assigneeName && (
             <Tooltip>

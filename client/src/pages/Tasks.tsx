@@ -3,7 +3,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useParams, useLocation } from "wouter";
-import { Plus, Settings, MoreHorizontal, MoreVertical, X, Flag, User, Tag, Layers, Eye, Zap, Search, GripVertical, Columns as ColumnsIcon, SlidersHorizontal, Pencil, ChevronDown, List, LayoutGrid, Calendar, ChevronLeft, ChevronRight, Filter, Trash2, Check } from "lucide-react";
+import { Plus, Settings, MoreHorizontal, MoreVertical, X, Flag, User, Tag, Layers, Eye, Zap, Search, GripVertical, Columns as ColumnsIcon, SlidersHorizontal, Pencil, ChevronDown, List, LayoutGrid, Calendar, ChevronLeft, ChevronRight, Filter, Trash2, Check, Loader2 } from "lucide-react";
+import { EmptyState } from "@/components/EmptyState";
 import {
   DndContext,
   closestCenter,
@@ -1059,10 +1060,11 @@ export default function Tasks({ embedded }: { embedded?: boolean } = {}) {
   if (!currentProject) {
     return (
       <div className="flex h-full items-center justify-center">
-        <div className="text-center space-y-2">
-          <h2 className="text-xl font-medium text-muted-foreground">No Project Selected</h2>
-          <p className="text-muted-foreground">Please select a project from the dropdown to view its tasks.</p>
-        </div>
+        <EmptyState
+          variant="inline"
+          title="No Project Selected"
+          description="Please select a project from the dropdown to view its tasks."
+        />
       </div>
     );
   }
@@ -1802,19 +1804,20 @@ export default function Tasks({ embedded }: { embedded?: boolean } = {}) {
                     onRowClick={(task) => setEditingTask(task)}
                     rowKey={(task) => task.id}
                     emptyState={
-                      <div className="text-xs text-muted-foreground py-4 text-center">
-                        No tasks
-                      </div>
+                      <EmptyState variant="inline" title="No tasks" className="py-4" />
                     }
                   />
                 </div>
               );
             })}
-            {Object.keys(groupedTasks).length === 0 && (
-              <div className="text-xs text-muted-foreground py-8 text-center">
-                {tasksLoading ? "Loading tasks..." : "No tasks found"}
-              </div>
-            )}
+            {Object.keys(groupedTasks).length === 0 &&
+              (tasksLoading ? (
+                <div className="text-xs text-muted-foreground py-8 text-center">
+                  Loading tasks...
+                </div>
+              ) : (
+                <EmptyState variant="card" title="No tasks found" className="py-8" />
+              ))}
           </div>
         )}
 
@@ -1913,7 +1916,7 @@ export default function Tasks({ embedded }: { embedded?: boolean } = {}) {
               data-testid="button-confirm-delete"
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              {deleteViewMutation.isPending ? "Deleting..." : "Delete"}
+              {deleteViewMutation.isPending ? (<><Loader2 className="w-4 h-4 mr-2 animate-spin" />Deleting...</>) : "Delete"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -1953,7 +1956,7 @@ export default function Tasks({ embedded }: { embedded?: boolean } = {}) {
               disabled={!editViewName.trim() || updateViewMutation.isPending}
               data-testid="button-update-view"
             >
-              {updateViewMutation.isPending ? "Updating..." : "Update View"}
+              {updateViewMutation.isPending ? (<><Loader2 className="w-4 h-4 mr-2 animate-spin" />Updating...</>) : "Update View"}
             </Button>
           </div>
         </DialogContent>

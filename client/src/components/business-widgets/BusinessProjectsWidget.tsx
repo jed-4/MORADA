@@ -4,6 +4,7 @@ import type { WidgetProps } from "@/types/widgets";
 import type { Project, Task, Estimate } from "@shared/schema";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
+import { StatusBadge } from "@/components/StatusBadge";
 import { Progress } from "@/components/ui/progress";
 import { ChevronRight } from "lucide-react";
 import { WidgetSkeleton } from "@/components/ui/WidgetSkeleton";
@@ -41,15 +42,6 @@ export default function BusinessProjectsWidget({}: WidgetProps) {
     return { total, completed, overdue };
   };
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case "active": return "bg-status-success-bg text-status-success dark:text-green-400";
-      case "on-hold": return "bg-status-warning-bg text-status-warning dark:text-yellow-400";
-      case "completed": return "bg-status-info-bg text-status-info dark:text-blue-400";
-      default: return "bg-muted text-secondary dark:text-muted";
-    }
-  };
-
   if (activeProjects.length === 0) return <WidgetEmpty title="No active projects" />;
 
   return (
@@ -70,9 +62,10 @@ export default function BusinessProjectsWidget({}: WidgetProps) {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
                     <h4 className="text-sm font-medium truncate">{project.name}</h4>
-                    <Badge className={`text-data px-1.5 py-0 ${getStatusColor(project.status)}`}>
-                      {project.status}
-                    </Badge>
+                    <StatusBadge
+                      status={project.status}
+                      tone={project.status === "completed" ? "info" : undefined}
+                    />
                   </div>
                   {project.address && (
                     <p className="text-xs text-muted-foreground truncate mt-0.5">

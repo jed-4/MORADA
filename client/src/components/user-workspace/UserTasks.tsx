@@ -58,6 +58,7 @@ import {
 import TaskBoard, { type BoardGroupByType } from "@/components/TaskBoard";
 import TaskListCompact from "@/components/TaskListCompact";
 import TaskEditModal from "@/components/TaskEditModal";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { EnhancedCalendar, CalendarEvent } from "@/components/EnhancedCalendar";
 import type { User, Task, Project, FieldCategoryWithOptions, TaskView, Company } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -202,6 +203,7 @@ export default function UserTasks({ user, isOwnPage }: UserTasksProps) {
   const [activeView, setActiveView] = useState<ViewType>("list");
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [initialBoardStatus, setInitialBoardStatus] = useState("");
+  const [confirmAction, setConfirmAction] = useState<{ title: string; description?: string; confirmLabel?: string; destructive?: boolean; run: () => void } | null>(null);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [listColumnOrder, setListColumnOrder] = useState<('status' | 'priority' | 'assignee' | 'project' | 'dueDate')[]>(['status', 'priority', 'assignee', 'project', 'dueDate']);
   const [listSortConfig, setListSortConfig] = useState<{ column: string; direction: 'asc' | 'desc' | null } | undefined>(undefined);
@@ -487,9 +489,13 @@ export default function UserTasks({ user, isOwnPage }: UserTasksProps) {
   });
 
   const handleDeleteTask = (task: Task) => {
-    if (confirm(`Delete "${task.title}"?`)) {
-      deleteTaskMutation.mutate(task.id);
-    }
+    setConfirmAction({
+      title: `Delete "${task.title}"?`,
+      description: "This cannot be undone.",
+      confirmLabel: "Delete",
+      destructive: true,
+      run: () => deleteTaskMutation.mutate(task.id),
+    });
   };
 
   const handleUpdateView = () => {
@@ -1407,6 +1413,16 @@ export default function UserTasks({ user, isOwnPage }: UserTasksProps) {
           </div>
         </DialogContent>
       </Dialog>
+
+      <ConfirmDialog
+        open={!!confirmAction}
+        onOpenChange={(o) => { if (!o) setConfirmAction(null); }}
+        title={confirmAction?.title ?? ""}
+        description={confirmAction?.description}
+        confirmLabel={confirmAction?.confirmLabel ?? "Confirm"}
+        destructive={confirmAction?.destructive}
+        onConfirm={() => { confirmAction?.run(); setConfirmAction(null); }}
+      />
     </div>
   );
 }

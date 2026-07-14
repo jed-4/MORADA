@@ -4,6 +4,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/EmptyState";
 import { Input } from "@/components/ui/input";
 import {
   AlertDialog,
@@ -879,9 +880,12 @@ export function LabourEstimatePanel({ projectId }: { projectId: string }) {
                 Select a category to view {mode === 'template' ? 'template items' : 'tasks'}.
               </div>
             ) : activeTasks.length === 0 ? (
-              <div className="flex items-center justify-center h-full text-sm text-muted-foreground">
-                No {mode === 'template' ? 'template items' : 'tasks'} yet. Add one below.
-              </div>
+              <EmptyState
+                variant="inline"
+                title={`No ${mode === 'template' ? 'template items' : 'tasks'} yet`}
+                description="Add one below."
+                className="h-full"
+              />
             ) : (
               <DndContext
                 sensors={sensors}

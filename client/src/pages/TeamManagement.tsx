@@ -18,6 +18,8 @@ import {
   HardHat,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { StatusBadge } from "@/components/StatusBadge";
 import InviteUserDialog from "@/components/InviteUserDialog";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { type UserInvitation } from "@shared/schema";
@@ -27,6 +29,7 @@ export default function TeamManagement() {
   const pageTitle = usePageTitle({ pageName: "Team" });
   const [isInviteDialogOpen, setIsInviteDialogOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [confirmAction, setConfirmAction] = useState<{ title: string; description?: string; confirmLabel?: string; destructive?: boolean; run: () => void } | null>(null);
   const { toast } = useToast();
 
   const { data: allUsers = [], isLoading: usersLoading } = useQuery({
@@ -141,9 +144,13 @@ export default function TeamManagement() {
                       invitation={invitation}
                       onResend={() => resendInvitationMutation.mutate(invitation.id)}
                       onCancel={() => {
-                        if (confirm("Are you sure you want to cancel this invitation?")) {
-                          cancelInvitationMutation.mutate(invitation.id);
-                        }
+                        setConfirmAction({
+                          title: "Cancel this invitation?",
+                          description: "The invitation link will stop working and the person will no longer be able to join.",
+                          confirmLabel: "Cancel Invitation",
+                          destructive: true,
+                          run: () => cancelInvitationMutation.mutate(invitation.id),
+                        });
                       }}
                       isResending={resendInvitationMutation.isPending}
                       isCancelling={cancelInvitationMutation.isPending}
@@ -183,6 +190,17 @@ export default function TeamManagement() {
         onOpenChange={setIsInviteDialogOpen}
       />
 
+      {/* Confirmation dialog (replaces native confirm() calls) */}
+      <ConfirmDialog
+        open={!!confirmAction}
+        onOpenChange={(o) => { if (!o) setConfirmAction(null); }}
+        title={confirmAction?.title ?? ""}
+        description={confirmAction?.description}
+        confirmLabel={confirmAction?.confirmLabel ?? "Confirm"}
+        destructive={confirmAction?.destructive}
+        onConfirm={() => { confirmAction?.run(); setConfirmAction(null); }}
+      />
+
     </div>
   );
 }
@@ -213,13 +231,7 @@ function TeamMemberCard({
     return user.email || "Unknown";
   };
 
-  const getStatusColor = (user: any) => {
-    if (!user.isActive) return { bg: 'hsl(var(--coral-light))', border: 'hsl(var(--coral) / 0.19)', text: 'hsl(var(--coral))' };
-    if (user.isInvitePending) return { bg: 'hsl(var(--amber-light))', border: 'hsl(var(--amber) / 0.19)', text: 'hsl(var(--amber))' };
-    return { bg: 'hsl(var(--sage-light))', border: 'hsl(var(--sage) / 0.19)', text: 'hsl(var(--sage))' };
-  };
-
-  const statusColor = getStatusColor(user);
+  const userStatus = !user.isActive ? "Disabled" : user.isInvitePending ? "Pending" : "Active";
 
   return (
     <Card
@@ -269,16 +281,11 @@ function TeamMemberCard({
             <Mail className="h-2.5 w-2.5 shrink-0" />
             <span className="truncate flex-1">{user.email}</span>
             
-            <Badge 
-              className="text-data px-1.5 py-0 h-4 rounded-full border no-default-hover-elevate no-default-active-elevate shrink-0"
-              style={{
-                backgroundColor: statusColor.bg,
-                color: statusColor.text,
-                borderColor: statusColor.border
-              }}
-            >
-              {!user.isActive ? "Disabled" : user.isInvitePending ? "Pending" : "Active"}
-            </Badge>
+            <StatusBadge
+              status={userStatus}
+              tone={!user.isActive ? "danger" : undefined}
+              className="shrink-0"
+            />
           </div>
         </div>
       </CardContent>
@@ -347,16 +354,7 @@ function PendingInvitationCard({
               {getDisplayName()}
             </h3>
             
-            <Badge 
-              className="text-data px-1.5 py-0 h-4 rounded-full border no-default-hover-elevate no-default-active-elevate shrink-0"
-              style={{
-                backgroundColor: isExpired ? 'hsl(var(--coral-light))' : 'hsl(var(--amber-light))',
-                color: isExpired ? 'hsl(var(--coral))' : 'hsl(var(--amber))',
-                borderColor: isExpired ? 'hsl(var(--coral) / 0.19)' : 'hsl(var(--amber) / 0.19)'
-              }}
-            >
-              {isExpired ? "Expired" : "Pending"}
-            </Badge>
+            <StatusBadge status={isExpired ? "Expired" : "Pending"} className="shrink-0" />
           </div>
 
           <div className="flex items-center gap-2 text-data text-muted-foreground">

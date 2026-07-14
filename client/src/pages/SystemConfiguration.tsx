@@ -1288,7 +1288,7 @@ export default function SystemConfigurationPage() {
               disabled={updateMutation.isPending}
               data-testid="button-save"
             >
-              {updateMutation.isPending ? "Saving..." : "Save Changes"}
+              {updateMutation.isPending ? (<><Loader2 className="w-4 h-4 mr-2 animate-spin" />Saving...</>) : "Save Changes"}
             </Button>
           </div>
         </form>

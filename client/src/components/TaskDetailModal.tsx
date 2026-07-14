@@ -33,6 +33,7 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import { format } from "date-fns";
+import { getPriorityStyle } from "@/lib/priorityConfig";
 import type { CalendarEvent } from "./EnhancedCalendar";
 import type { Task, Project } from "@shared/schema";
 
@@ -45,14 +46,6 @@ interface TaskDetailModalProps {
   onOpenChange: (open: boolean) => void;
   onEdit?: (task: Task) => void;
 }
-
-const priorityConfig: Record<string, { label: string; color: string; bgColor: string }> = {
-  urgent: { label: "Urgent", color: "#dc2626", bgColor: "rgba(220, 38, 38, 0.1)" },
-  high: { label: "High", color: "#f97316", bgColor: "rgba(249, 115, 22, 0.1)" },
-  medium: { label: "Medium", color: "#eab308", bgColor: "rgba(234, 179, 8, 0.1)" },
-  low: { label: "Low", color: "#22c55e", bgColor: "rgba(34, 197, 94, 0.1)" },
-  none: { label: "None", color: "#6b7280", bgColor: "rgba(107, 114, 128, 0.1)" },
-};
 
 function getInitials(name: string | null | undefined): string {
   if (!name) return "?";
@@ -276,7 +269,7 @@ export function TaskDetailModal({ event, taskId, open, onOpenChange, onEdit }: T
   };
 
   const priority = taskDetails?.priority || "none";
-  const priorityInfo = priorityConfig[priority] || priorityConfig.none;
+  const priorityInfo = getPriorityStyle(priority);
   const checklistProgress = checklistItems.length > 0 
     ? (checklistItems.filter(item => item.completed).length / checklistItems.length) * 100 
     : 0;

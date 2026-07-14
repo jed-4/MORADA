@@ -9,6 +9,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { PageHeader } from "@/components/PageHeader";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Plus, Edit2, Trash2, Settings as SettingsIcon, GripVertical, List, ArrowLeft, Tag, Layers } from "lucide-react";
@@ -199,6 +201,7 @@ export default function FieldSettings() {
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [editingOption, setEditingOption] = useState<FieldOption | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
+  const [confirmAction, setConfirmAction] = useState<{ title: string; description?: string; confirmLabel?: string; destructive?: boolean; run: () => void } | null>(null);
   const [formData, setFormData] = useState({
     name: "",
     description: "",
@@ -655,9 +658,13 @@ export default function FieldSettings() {
   };
 
   const handleDeleteLabel = (id: string) => {
-    if (confirm("Are you sure you want to delete this supplier label?")) {
-      deleteLabelMutation.mutate(id);
-    }
+    setConfirmAction({
+      title: "Delete this supplier label?",
+      description: "This cannot be undone.",
+      confirmLabel: "Delete",
+      destructive: true,
+      run: () => deleteLabelMutation.mutate(id),
+    });
   };
 
   const handleSubmitLabel = () => {
@@ -769,9 +776,13 @@ export default function FieldSettings() {
   };
 
   const handleDeletePLCategory = (id: string) => {
-    if (confirm("Are you sure you want to delete this price list category?")) {
-      deletePLCategoryMutation.mutate(id);
-    }
+    setConfirmAction({
+      title: "Delete this price list category?",
+      description: "This cannot be undone.",
+      confirmLabel: "Delete",
+      destructive: true,
+      run: () => deletePLCategoryMutation.mutate(id),
+    });
   };
 
   const handleSubmitPLCategory = () => {
@@ -922,9 +933,13 @@ export default function FieldSettings() {
   };
 
   const handleDelete = (id: string) => {
-    if (confirm("Are you sure you want to delete this field option?")) {
-      deleteMutation.mutate(id);
-    }
+    setConfirmAction({
+      title: "Delete this field option?",
+      description: "This cannot be undone.",
+      confirmLabel: "Delete",
+      destructive: true,
+      run: () => deleteMutation.mutate(id),
+    });
   };
 
   const handleSubmit = () => {
@@ -996,7 +1011,7 @@ export default function FieldSettings() {
             <ArrowLeft className="h-4 w-4 mr-2" />
             Back to Settings
           </Button>
-          <h1 className="text-2xl font-bold tracking-tight mb-6">Field Settings</h1>
+          <PageHeader title="Field Settings" className="mb-6" />
           <nav className="space-y-1">
             {fieldCategories.map((category) => {
               const isActive = selectedCategoryId === category.id && !showSupplierLabels && !showPriceListCategories && !showScopeItemTypes;
@@ -1106,8 +1121,8 @@ export default function FieldSettings() {
               <div className="space-y-6">
                 {/* Supplier Labels Header */}
                 <div>
-                  <h1 className="text-3xl font-bold tracking-tight">Supplier Labels</h1>
-                  <p className="text-muted-foreground mt-2">
+                  <h2 className="text-xl font-semibold tracking-tight">Supplier Labels</h2>
+                  <p className="text-sm text-muted-foreground mt-1">
                     Create custom labels to categorize and filter your suppliers and trades
                   </p>
                 </div>
@@ -1268,8 +1283,8 @@ export default function FieldSettings() {
               <div className="space-y-6">
                 {/* Price List Categories Header */}
                 <div>
-                  <h1 className="text-3xl font-bold tracking-tight">Price List Categories</h1>
-                  <p className="text-muted-foreground mt-2">
+                  <h2 className="text-xl font-semibold tracking-tight">Price List Categories</h2>
+                  <p className="text-sm text-muted-foreground mt-1">
                     Create categories to organize your price list items
                   </p>
                 </div>
@@ -1429,8 +1444,8 @@ export default function FieldSettings() {
             ) : showScopeItemTypes ? (
               <div className="space-y-6">
                 <div>
-                  <h1 className="text-3xl font-bold tracking-tight">Scope Item Types</h1>
-                  <p className="text-muted-foreground mt-2">
+                  <h2 className="text-xl font-semibold tracking-tight">Scope Item Types</h2>
+                  <p className="text-sm text-muted-foreground mt-1">
                     Define custom item types for your scope. Control which roles can see each type. An empty role list means the type is visible to everyone.
                   </p>
                 </div>
@@ -1572,8 +1587,8 @@ export default function FieldSettings() {
               <div className="space-y-6">
                 {/* Page Header */}
                 <div>
-                  <h1 className="text-3xl font-bold tracking-tight">{selectedCategory.label}</h1>
-                  <p className="text-muted-foreground mt-2">
+                  <h2 className="text-xl font-semibold tracking-tight">{selectedCategory.label}</h2>
+                  <p className="text-sm text-muted-foreground mt-1">
                     {selectedCategory.description || "Manage field options for this category"}
                   </p>
                 </div>
@@ -1775,6 +1790,16 @@ export default function FieldSettings() {
           </div>
         </div>
       </div>
+
+      <ConfirmDialog
+        open={!!confirmAction}
+        onOpenChange={(o) => { if (!o) setConfirmAction(null); }}
+        title={confirmAction?.title ?? ""}
+        description={confirmAction?.description}
+        confirmLabel={confirmAction?.confirmLabel ?? "Confirm"}
+        destructive={confirmAction?.destructive}
+        onConfirm={() => { confirmAction?.run(); setConfirmAction(null); }}
+      />
     </div>
   );
 }

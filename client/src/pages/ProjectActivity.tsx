@@ -5,6 +5,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { PageHeader } from "@/components/PageHeader";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -178,17 +179,20 @@ export default function ProjectActivity() {
 
   return (
     <div className="p-4 space-y-4" data-testid="project-activity">
-      {/* Toolbar row */}
-      <div className="flex items-center justify-end">
-        <Button 
-          onClick={() => setIsAddDialogOpen(true)} 
-          className="bg-primary text-white border-primary"
-          data-testid="button-add-activity"
-        >
-          <Plus className="h-4 w-4 mr-2" />
-          Add Note
-        </Button>
-      </div>
+      <PageHeader
+        title="Activity"
+        className="mb-0"
+        actions={
+          <Button
+            onClick={() => setIsAddDialogOpen(true)}
+            className="bg-primary text-white border-primary"
+            data-testid="button-add-activity"
+          >
+            <Plus className="h-4 w-4 mr-2" />
+            Add Note
+          </Button>
+        }
+      />
 
       {isLoading ? (
         <div className="space-y-3">

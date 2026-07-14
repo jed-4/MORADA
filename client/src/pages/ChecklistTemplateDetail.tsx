@@ -59,6 +59,7 @@ import {
   MoreVertical,
   Edit3,
   FolderInput,
+  Loader2,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -576,10 +577,11 @@ export default function ChecklistTemplateDetail() {
             <AlertDialogCancel data-testid="button-cancel-delete">Cancel</AlertDialogCancel>
             <AlertDialogAction
               onClick={() => deleteTemplateMutation.mutate()}
+              disabled={deleteTemplateMutation.isPending}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
               data-testid="button-confirm-delete"
             >
-              {deleteTemplateMutation.isPending ? "Deleting..." : "Delete"}
+              {deleteTemplateMutation.isPending ? (<><Loader2 className="w-4 h-4 mr-2 animate-spin" />Deleting...</>) : "Delete"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -816,7 +818,7 @@ function GroupFormDialog({
                 disabled={isPending}
                 data-testid="button-save-group"
               >
-                {isPending ? "Saving..." : group ? "Update" : "Create"}
+                {isPending ? (<><Loader2 className="w-4 h-4 mr-2 animate-spin" />Saving...</>) : group ? "Update" : "Create"}
               </Button>
             </div>
           </form>
@@ -1127,7 +1129,7 @@ function ItemFormDialog({
                 disabled={createMutation.isPending}
                 data-testid="button-save-item"
               >
-                {createMutation.isPending ? "Saving..." : item ? "Update" : "Create"}
+                {createMutation.isPending ? (<><Loader2 className="w-4 h-4 mr-2 animate-spin" />Saving...</>) : item ? "Update" : "Create"}
               </Button>
             </div>
           </form>
@@ -1248,7 +1250,7 @@ function MoveToGroupDialog({
             disabled={!targetTemplateId || moveMutation.isPending}
             data-testid="button-confirm-move"
           >
-            {moveMutation.isPending ? "Moving..." : "Move"}
+            {moveMutation.isPending ? (<><Loader2 className="w-4 h-4 mr-2 animate-spin" />Moving...</>) : "Move"}
           </Button>
         </div>
       </DialogContent>

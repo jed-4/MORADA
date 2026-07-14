@@ -3,6 +3,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation, useParams } from "wouter";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/EmptyState";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -655,21 +656,20 @@ export default function Proposals({ embedded }: { embedded?: boolean } = {}) {
       {/* Content */}
       <div className="flex-1 overflow-hidden">
         {filteredProposals.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-64 text-center">
-            <FileText className="w-12 h-12 text-muted-foreground mb-4" />
-            <h3 className="text-lg font-medium">No proposals found</h3>
-            <p className="text-sm text-muted-foreground mt-1">
-              {searchTerm || selectedProject !== "All" || selectedStatus !== "All"
-                ? "Try adjusting your filters"
-                : "Create your first proposal to get started"}
-            </p>
-            {!searchTerm && selectedProject === "All" && selectedStatus === "All" && (
-              <Button onClick={handleNewProposal} className="mt-4 gap-2">
-                <Plus className="w-4 h-4" />
-                Create Proposal
-              </Button>
-            )}
-          </div>
+          <EmptyState
+            variant="card"
+            icon={FileText}
+            title="No proposals found"
+            description={searchTerm || selectedProject !== "All" || selectedStatus !== "All"
+              ? "Try adjusting your filters"
+              : "Create your first proposal to get started"}
+            action={!searchTerm && selectedProject === "All" && selectedStatus === "All" ? {
+              label: "Create Proposal",
+              onClick: handleNewProposal,
+              icon: Plus,
+            } : undefined}
+            className="m-2"
+          />
         ) : (
           <DataTable
             data={filteredProposals}

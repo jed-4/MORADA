@@ -83,6 +83,7 @@ import { formatCurrency, formatDate } from "@/lib/formatters";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
+import { EmptyState } from "@/components/EmptyState";
 import { SiXero } from "react-icons/si";
 
 const STATUS_OPTIONS = [
@@ -881,19 +882,6 @@ export default function Bills({ embedded }: { embedded?: boolean } = {}) {
     }, 0);
   }, [filteredBills, selectedBills]);
 
-  const getStatusBadge = (status: string, _size: "sm" | "md" = "md") => {
-    // The new soft pill StatusBadge is already a fixed compact size, so the
-    // legacy `size` parameter is intentionally ignored.
-    const labelMap: Record<string, string> = {
-      draft: "Draft",
-      needs_review: "Needs Review",
-      awaiting_approval: "Awaiting Approval",
-      awaiting_payment: "Awaiting Payment",
-      paid: "Paid",
-    };
-    return <StatusBadge status={status} label={labelMap[status]} />;
-  };
-
   const handleSelectAll = (checked: boolean) => {
     if (checked) setSelectedBills(new Set(filteredBills.map((b) => b.id)));
     else setSelectedBills(new Set());
@@ -1003,7 +991,7 @@ export default function Bills({ embedded }: { embedded?: boolean } = {}) {
         id: "status",
         header: "Status",
         accessorFn: (b) => b.status,
-        cell: ({ row }) => getStatusBadge(row.original.status, "sm"),
+        cell: ({ row }) => <StatusBadge status={row.original.status} />,
         size: 130,
         meta: { defaultWidth: 130, headerLabel: "Status" },
       },
@@ -1454,7 +1442,11 @@ export default function Bills({ embedded }: { embedded?: boolean } = {}) {
           )}
         </Button>
         <Button size="sm" className="h-7 text-xs bg-status-success text-white" disabled={bulkApproveMutation.isPending} onClick={() => bulkApproveMutation.mutate(Array.from(selectedBills))}>
-          <CheckCircle2 className="w-3 h-3 mr-1" />{bulkApproveMutation.isPending ? "Approving…" : "Approve"}
+          {bulkApproveMutation.isPending ? (
+            <><Loader2 className="w-3 h-3 mr-1 animate-spin" />Approving…</>
+          ) : (
+            <><CheckCircle2 className="w-3 h-3 mr-1" />Approve</>
+          )}
         </Button>
         <Button size="sm" variant="outline" className="h-7 text-xs text-destructive border-destructive/30" onClick={() => setDeleteDialogOpen(true)}>
           <Trash2 className="w-3 h-3 mr-1" />Delete
@@ -1469,7 +1461,7 @@ export default function Bills({ embedded }: { embedded?: boolean } = {}) {
           <DialogFooter>
             <Button variant="outline" onClick={() => setDeleteDialogOpen(false)}>Cancel</Button>
             <Button variant="destructive" disabled={bulkDeleteMutation.isPending} onClick={() => bulkDeleteMutation.mutate(Array.from(selectedBills))}>
-              {bulkDeleteMutation.isPending ? "Deleting..." : "Delete"}
+              {bulkDeleteMutation.isPending ? (<><Loader2 className="w-4 h-4 mr-2 animate-spin" />Deleting...</>) : "Delete"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1488,7 +1480,7 @@ export default function Bills({ embedded }: { embedded?: boolean } = {}) {
           <DialogFooter>
             <Button variant="outline" onClick={() => { setChangeProjectDialogOpen(false); setSelectedProjectId(""); }}>Cancel</Button>
             <Button disabled={!selectedProjectId || bulkChangeProjectMutation.isPending} style={{ backgroundColor: "hsl(var(--primary))", color: "white" }} onClick={() => bulkChangeProjectMutation.mutate({ billIds: Array.from(selectedBills), projectId: selectedProjectId === "__business__" ? null : selectedProjectId })}>
-              {bulkChangeProjectMutation.isPending ? "Updating..." : "Update"}
+              {bulkChangeProjectMutation.isPending ? (<><Loader2 className="w-4 h-4 mr-2 animate-spin" />Updating...</>) : "Update"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1504,7 +1496,7 @@ export default function Bills({ embedded }: { embedded?: boolean } = {}) {
           <DialogFooter>
             <Button variant="outline" onClick={() => { setChangeSupplierDialogOpen(false); setSelectedSupplierId(""); }}>Cancel</Button>
             <Button disabled={!selectedSupplierId || bulkChangeSupplierMutation.isPending} style={{ backgroundColor: "hsl(var(--primary))", color: "white" }} onClick={() => bulkChangeSupplierMutation.mutate({ billIds: Array.from(selectedBills), supplierId: selectedSupplierId })}>
-              {bulkChangeSupplierMutation.isPending ? "Updating..." : "Update"}
+              {bulkChangeSupplierMutation.isPending ? (<><Loader2 className="w-4 h-4 mr-2 animate-spin" />Updating...</>) : "Update"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1574,22 +1566,21 @@ export default function Bills({ embedded }: { embedded?: boolean } = {}) {
             {/* DataTable */}
             <div className="flex-1 min-h-0">
               {filteredBills.length === 0 ? (
-                <div className="text-center py-8">
-                  <div className="flex flex-col items-center gap-3">
-                    <p className="text-muted-foreground text-sm">
-                      {bills.length === 0 ? "No bills found" : "No matching bills"}
-                    </p>
-                    {bills.length === 0 && (
-                      <button
-                        className="h-7 px-3 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-1"
-                        onClick={() => setLocation(projectIdFromUrl ? `/projects/${projectIdFromUrl}/bills/new` : "/bills/new")}
-                        data-testid="button-add-first-bill"
-                      >
-                        <Plus className="w-3.5 h-3.5" />Add First Bill
-                      </button>
-                    )}
-                  </div>
-                </div>
+                <EmptyState
+                  title={bills.length === 0 ? "No bills found" : "No matching bills"}
+                  action={
+                    bills.length === 0
+                      ? {
+                          label: "Add First Bill",
+                          onClick: () => setLocation(projectIdFromUrl ? `/projects/${projectIdFromUrl}/bills/new` : "/bills/new"),
+                          icon: Plus,
+                          "data-testid": "button-add-first-bill",
+                        }
+                      : undefined
+                  }
+                  variant="inline"
+                  className="py-8"
+                />
               ) : (
                 <DataTable
                   storageKey="bills"

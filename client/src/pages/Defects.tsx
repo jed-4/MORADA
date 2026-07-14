@@ -51,6 +51,7 @@ import { useDefectPriorityOptions } from "@/hooks/useDefectPriorityOptions";
 import { useDefectTypeOptions } from "@/hooks/useDefectTypeOptions";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
+import { EmptyState } from "@/components/EmptyState";
 import { format } from "date-fns";
 
 type ViewMode = "list" | "kanban";
@@ -442,21 +443,20 @@ export default function Defects({ embedded }: { embedded?: boolean } = {}) {
             <p className="text-muted-foreground text-sm">Loading defects...</p>
           </div>
         ) : filteredDefects.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-64 gap-4">
-            <p className="text-muted-foreground text-sm">
-              {defects.length === 0 ? "No defects found" : "No matching defects"}
-            </p>
-            {defects.length === 0 && (
-              <button
-                className="h-8 px-3 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-1"
-                onClick={() => setIsCreateDialogOpen(true)}
-                data-testid="button-add-first-defect"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                Add first defect
-              </button>
-            )}
-          </div>
+          <EmptyState
+            title={defects.length === 0 ? "No defects found" : "No matching defects"}
+            action={
+              defects.length === 0
+                ? {
+                    label: "Add first defect",
+                    onClick: () => setIsCreateDialogOpen(true),
+                    icon: Plus,
+                    "data-testid": "button-add-first-defect",
+                  }
+                : undefined
+            }
+            variant="card"
+          />
         ) : currentView === "list" ? (
           <DefectListTable
             defects={filteredDefects}

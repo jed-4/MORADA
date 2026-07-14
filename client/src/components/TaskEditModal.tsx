@@ -987,23 +987,6 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
   
   const getInitials = (name: string) => name?.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) || '?';
 
-  const getPriorityColor = (priority: string) => {
-    switch (priority) {
-      case 'high': return 'text-status-danger bg-red-50 dark:bg-red-900/20';
-      case 'medium': return 'text-amber-600 bg-amber-50 dark:bg-amber-900/20';
-      case 'low': return 'text-muted bg-muted';
-      default: return 'text-muted-foreground';
-    }
-  };
-
-  const getStatusColor = (statusKey: string) => {
-    const option = statusOptions.find(o => o.key === statusKey);
-    if (option?.color) {
-      return { backgroundColor: option.color + '20', color: option.color };
-    }
-    return {};
-  };
-
   return (
     <>
     <Dialog open={open} onOpenChange={onOpenChange}>

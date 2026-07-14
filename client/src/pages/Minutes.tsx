@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
+import { EmptyState } from "@/components/EmptyState";
 import { useProject } from "@/contexts/ProjectContext";
 import { useParams } from "wouter";
 import { usePageTitle } from "@/hooks/usePageTitle";
@@ -12,6 +13,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { queryClient, apiRequest } from "@/lib/queryClient";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { 
   insertMinuteSchema, 
   type Minute, 
@@ -54,6 +56,7 @@ export default function Minutes({ embedded }: { embedded?: boolean } = {}) {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingMinute, setEditingMinute] = useState<Minute | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [confirmAction, setConfirmAction] = useState<{ title: string; description?: string; confirmLabel?: string; destructive?: boolean; run: () => void } | null>(null);
   const { toast } = useToast();
   const pageTitle = usePageTitle({ pageName: "Minutes" });
 
@@ -185,9 +188,13 @@ export default function Minutes({ embedded }: { embedded?: boolean } = {}) {
   };
 
   const handleDelete = (id: string) => {
-    if (confirm("Are you sure you want to delete these meeting minutes?")) {
-      deleteMutation.mutate(id);
-    }
+    setConfirmAction({
+      title: "Delete these meeting minutes?",
+      description: "This cannot be undone.",
+      confirmLabel: "Delete",
+      destructive: true,
+      run: () => deleteMutation.mutate(id),
+    });
   };
 
   const filteredMinutes = minutes.filter((minute) => {
@@ -364,13 +371,12 @@ export default function Minutes({ embedded }: { embedded?: boolean } = {}) {
             Loading...
           </div>
         ) : filteredMinutes.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full">
-            <ClipboardList className="h-12 w-12 text-muted-foreground mb-4" />
-            <h3 className="text-lg font-semibold mb-2">No meeting minutes found</h3>
-            <p className="text-muted-foreground text-sm">
-              {searchQuery ? "Try adjusting your search" : "Get started by creating your first meeting minutes"}
-            </p>
-          </div>
+          <EmptyState
+            variant="card"
+            icon={ClipboardList}
+            title="No meeting minutes found"
+            description={searchQuery ? "Try adjusting your search" : "Get started by creating your first meeting minutes"}
+          />
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
             {filteredMinutes.map((minute) => (
@@ -386,6 +392,16 @@ export default function Minutes({ embedded }: { embedded?: boolean } = {}) {
           </div>
         )}
       </div>
+
+      <ConfirmDialog
+        open={!!confirmAction}
+        onOpenChange={(o) => { if (!o) setConfirmAction(null); }}
+        title={confirmAction?.title ?? ""}
+        description={confirmAction?.description}
+        confirmLabel={confirmAction?.confirmLabel ?? "Confirm"}
+        destructive={confirmAction?.destructive}
+        onConfirm={() => { confirmAction?.run(); setConfirmAction(null); }}
+      />
     </div>
   );
 }

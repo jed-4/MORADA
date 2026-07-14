@@ -2,9 +2,7 @@ import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { usePageTitle } from "@/hooks/usePageTitle";
-import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -78,6 +76,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { ProjectIcon } from "@/components/ProjectIcon";
 import { logActivity } from "@/lib/activityLogger";
+import { EmptyState } from "@/components/EmptyState";
 
 export default function Estimates() {
   const [, setLocation] = useLocation();
@@ -643,24 +642,27 @@ export default function Estimates() {
             <div className="text-muted-foreground">Loading estimates...</div>
           </div>
         ) : filteredEstimates.length === 0 ? (
-          <Card className="p-8 text-center mt-6">
-            <DollarSign className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-            <h3 className="text-lg font-medium mb-2">
-              {searchTerm || selectedProject !== "All" || selectedStatus !== "All" ? "No estimates found" : "No estimates yet"}
-            </h3>
-            <p className="text-muted-foreground mb-4">
-              {searchTerm || selectedProject !== "All" || selectedStatus !== "All" 
+          <EmptyState
+            icon={DollarSign}
+            title={searchTerm || selectedProject !== "All" || selectedStatus !== "All" ? "No estimates found" : "No estimates yet"}
+            description={
+              searchTerm || selectedProject !== "All" || selectedStatus !== "All"
                 ? "Try adjusting your search or filter criteria"
                 : "Start by creating your first estimate for a project"
-              }
-            </p>
-            {!searchTerm && selectedProject === "All" && selectedStatus === "All" && (
-              <Button onClick={handleNewEstimate} data-testid="button-create-first-estimate">
-                <Plus className="h-4 w-4 mr-2" />
-                Create Your First Estimate
-              </Button>
-            )}
-          </Card>
+            }
+            action={
+              !searchTerm && selectedProject === "All" && selectedStatus === "All"
+                ? {
+                    label: "Create Your First Estimate",
+                    onClick: handleNewEstimate,
+                    icon: Plus,
+                    "data-testid": "button-create-first-estimate",
+                  }
+                : undefined
+            }
+            variant="card"
+            className="mt-6"
+          />
         ) : (
           <>
             {/* Grid View */}

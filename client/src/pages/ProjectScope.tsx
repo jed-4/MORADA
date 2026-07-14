@@ -69,6 +69,7 @@ import {
   Loader2,
   Clock,
 } from "lucide-react";
+import { EmptyState } from "@/components/EmptyState";
 import { useUpload } from "@/hooks/use-upload";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
@@ -295,7 +296,7 @@ function AddToTemplateDialog({ open, onOpenChange, scopeItem }: AddToTemplateDia
               disabled={!newTemplateName.trim() || createTemplateMutation.isPending}
               data-testid="button-create-template"
             >
-              {createTemplateMutation.isPending ? "Creating..." : "Create Template"}
+              {createTemplateMutation.isPending ? (<><Loader2 className="w-4 h-4 mr-2 animate-spin" />Creating...</>) : "Create Template"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -328,9 +329,11 @@ function AddToTemplateDialog({ open, onOpenChange, scopeItem }: AddToTemplateDia
               Loading templates...
             </div>
           ) : filteredTemplates.length === 0 ? (
-            <div className="text-center text-sm text-muted-foreground py-8">
-              {searchQuery ? "No templates match your search" : "No templates yet"}
-            </div>
+            <EmptyState
+              variant="inline"
+              title={searchQuery ? "No templates match your search" : "No templates yet"}
+              className="py-8"
+            />
           ) : (
             <div className="max-h-[300px] overflow-y-auto space-y-1">
               {filteredTemplates.map((template) => (
@@ -385,7 +388,7 @@ function AddToTemplateDialog({ open, onOpenChange, scopeItem }: AddToTemplateDia
             disabled={!selectedTemplateId || addToTemplateMutation.isPending}
             data-testid="button-confirm-add-to-template"
           >
-            {addToTemplateMutation.isPending ? "Adding..." : "Add to Template"}
+            {addToTemplateMutation.isPending ? (<><Loader2 className="w-4 h-4 mr-2 animate-spin" />Adding...</>) : "Add to Template"}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -639,9 +642,12 @@ function ScopeItemDetailPanel({
             {attachmentsOpen ? <ChevronUp className="h-3 w-3 text-muted-foreground" /> : <ChevronDown className="h-3 w-3 text-muted-foreground" />}
           </button>
           {attachmentsOpen && (
-            <div className="px-1 py-2 text-xs text-muted-foreground italic">
-              No attachments yet.
-            </div>
+            <EmptyState
+              variant="inline"
+              icon={Paperclip}
+              title="No attachments yet."
+              className="px-1 py-4"
+            />
           )}
         </div>
 
@@ -658,9 +664,12 @@ function ScopeItemDetailPanel({
             {checklistsOpen ? <ChevronUp className="h-3 w-3 text-muted-foreground" /> : <ChevronDown className="h-3 w-3 text-muted-foreground" />}
           </button>
           {checklistsOpen && (
-            <div className="px-1 py-2 text-xs text-muted-foreground italic">
-              No linked checklists yet.
-            </div>
+            <EmptyState
+              variant="inline"
+              icon={ClipboardList}
+              title="No linked checklists yet."
+              className="px-1 py-4"
+            />
           )}
         </div>
       </div>
@@ -1328,7 +1337,7 @@ function LinkedChecklistPopoverContent({
         {isLoading ? (
           <div className="px-2 py-3 text-xs text-muted-foreground">Loading items…</div>
         ) : sorted.length === 0 ? (
-          <div className="px-2 py-3 text-xs text-muted-foreground">No items in this checklist.</div>
+          <EmptyState variant="inline" title="No items in this checklist." className="px-2 py-3" />
         ) : (
           sorted.map((it) => {
             const done = it.status === 'completed';
@@ -2284,9 +2293,12 @@ function DroppableStage({
           </DialogHeader>
           <div className="space-y-1 max-h-80 overflow-y-auto">
             {labourBudgetData.length === 0 ? (
-              <div className="py-8 text-center text-sm text-muted-foreground">
-                No labour cost codes found. Add a labour budget to this project first.
-              </div>
+              <EmptyState
+                variant="inline"
+                title="No labour cost codes found"
+                description="Add a labour budget to this project first."
+                className="py-8"
+              />
             ) : (() => {
               const currentTrackers: { costCodeId: string }[] = Array.isArray(stageData.labourTrackers) ? (stageData.labourTrackers as { costCodeId: string }[]) : [];
               const alreadyPinned = new Set(currentTrackers.map(t => t.costCodeId));
@@ -4076,7 +4088,7 @@ export default function ProjectScope() {
                   onClick={() => selectedTemplate && applyTemplateMutation.mutate(selectedTemplate)}
                   disabled={!selectedTemplate || applyTemplateMutation.isPending}
                 >
-                  {applyTemplateMutation.isPending ? "Applying..." : "Apply Template"}
+                  {applyTemplateMutation.isPending ? (<><Loader2 className="w-4 h-4 mr-2 animate-spin" />Applying...</>) : "Apply Template"}
                 </Button>
               </DialogFooter>
             </DialogContent>
@@ -4117,7 +4129,7 @@ export default function ProjectScope() {
                     })}
                     disabled={!selectedEstimateId || pushToEstimateMutation.isPending}
                   >
-                    {pushToEstimateMutation.isPending ? "Pushing..." : "Push Items"}
+                    {pushToEstimateMutation.isPending ? (<><Loader2 className="w-4 h-4 mr-2 animate-spin" />Pushing...</>) : "Push Items"}
                   </Button>
                 </DialogFooter>
               </DialogContent>
@@ -4139,7 +4151,7 @@ export default function ProjectScope() {
                     onClick={() => createRfqMutation.mutate(Array.from(selectedItems))}
                     disabled={createRfqMutation.isPending}
                   >
-                    {createRfqMutation.isPending ? "Creating..." : "Create RFQ"}
+                    {createRfqMutation.isPending ? (<><Loader2 className="w-4 h-4 mr-2 animate-spin" />Creating...</>) : "Create RFQ"}
                   </Button>
                 </DialogFooter>
               </DialogContent>
@@ -4161,7 +4173,7 @@ export default function ProjectScope() {
                     onClick={() => createPoMutation.mutate(Array.from(selectedItems))}
                     disabled={createPoMutation.isPending}
                   >
-                    {createPoMutation.isPending ? "Creating..." : "Create PO"}
+                    {createPoMutation.isPending ? (<><Loader2 className="w-4 h-4 mr-2 animate-spin" />Creating...</>) : "Create PO"}
                   </Button>
                 </DialogFooter>
               </DialogContent>
@@ -4235,13 +4247,12 @@ export default function ProjectScope() {
       <div className="flex-1 overflow-auto p-6 transition-all duration-200">
         <div className="max-w-5xl mx-auto">
           {scopeItems.length === 0 && scopeStages.length === 0 ? (
-            <Card className="p-12">
-              <div className="text-center text-muted-foreground">
-                <ListTree className="h-12 w-12 mx-auto mb-4 opacity-20" />
-                <p className="text-lg font-medium mb-2">No scope items yet</p>
-                <p className="text-sm">Load the "Standard Slab" template to get started with 12 pre-filled items</p>
-              </div>
-            </Card>
+            <EmptyState
+              variant="card"
+              icon={ListTree}
+              title="No scope items yet"
+              description={'Load the "Standard Slab" template to get started with 12 pre-filled items'}
+            />
           ) : (
             // Unified DnD Context for both stages and items
             <DndContext
@@ -4399,7 +4410,7 @@ export default function ProjectScope() {
               disabled={!newStageName.trim() || createStageMutation.isPending}
               data-testid="button-create-stage"
             >
-              {createStageMutation.isPending ? "Creating..." : "Add Stage"}
+              {createStageMutation.isPending ? (<><Loader2 className="w-4 h-4 mr-2 animate-spin" />Creating...</>) : "Add Stage"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -4460,9 +4471,11 @@ export default function ProjectScope() {
                 </div>
                 <div className="border rounded-md max-h-[300px] overflow-y-auto">
                   {estimateGroups.length === 0 ? (
-                    <div className="p-4 text-sm text-muted-foreground text-center">
-                      No groups found in this estimate
-                    </div>
+                    <EmptyState
+                      variant="inline"
+                      title="No groups found in this estimate"
+                      className="p-4"
+                    />
                   ) : (
                     estimateGroups
                       .filter(g => !g.parentGroupId) // Only top-level groups

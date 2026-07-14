@@ -14,6 +14,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { BillingSection } from "@/components/billing/BillingSection";
+import { PageHeader } from "@/components/PageHeader";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -65,6 +66,7 @@ import {
   Copy,
   CreditCard,
   Link,
+  Loader2,
 } from "lucide-react";
 import {
   DndContext,
@@ -466,8 +468,8 @@ export default function Settings() {
     return (
       <div className="space-y-6">
         <div>
-          <h2 className="text-2xl font-semibold">Integrations</h2>
-          <p className="text-muted-foreground">
+          <h2 className="text-lg font-semibold">Integrations</h2>
+          <p className="text-sm text-muted-foreground">
             Connect external services to enhance your workflow
           </p>
         </div>
@@ -1073,7 +1075,7 @@ export default function Settings() {
                   onClick={handleSaveTrackingSettings}
                   disabled={saveTrackingSettingsMutation.isPending}
                 >
-                  {saveTrackingSettingsMutation.isPending ? "Saving..." : "Save Mapping"}
+                  {saveTrackingSettingsMutation.isPending ? (<><Loader2 className="w-4 h-4 mr-2 animate-spin" />Saving...</>) : "Save Mapping"}
                 </Button>
               </div>
 
@@ -1693,7 +1695,7 @@ export default function Settings() {
       <div className="w-72 border-r border-border bg-background flex flex-col">
         {/* Header */}
         <div className="h-14 flex items-center px-6 border-b border-border flex-shrink-0">
-          <h1 className="text-sm font-semibold tracking-tight">Company Settings</h1>
+          <h2 className="text-sm font-semibold tracking-tight">Company Settings</h2>
         </div>
         
         {/* Navigation */}
@@ -1743,55 +1745,48 @@ export default function Settings() {
 
       {/* Main Content */}
       <div className="flex-1 overflow-hidden flex flex-col">
-        {/* Control Header - Row 1: Title & Actions */}
-        <div className="h-14 bg-background flex items-center justify-between px-6 border-b border-border flex-shrink-0">
-          <div className="flex items-center gap-3">
-            {activeCategory && <activeCategory.icon className="h-5 w-5 text-muted-foreground" />}
-            <h1 className="text-sm font-semibold">
-              {activeCategory?.label || "Settings"}
-            </h1>
-          </div>
-          {activeSection === "branding" && (
-            <div className="flex items-center gap-2">
-              {isEditing ? (
-                <>
-                  <Button variant="outline" size="sm" onClick={handleCancelEdit} data-testid="button-cancel-edit">
-                    <X className="h-4 w-4 mr-1" />
-                    Cancel
-                  </Button>
-                  <Button 
-                    size="sm" 
-                    onClick={companyForm.handleSubmit(onSubmitCompanyInfo)}
-                    disabled={updateCompanyMutation.isPending}
-                    className="bg-primary hover:bg-primary/90"
-                    data-testid="button-save-settings"
-                  >
-                    <Save className="h-4 w-4 mr-1" />
-                    {updateCompanyMutation.isPending ? "Saving..." : "Save"}
-                  </Button>
-                </>
-              ) : (
-                <Button 
-                  size="sm" 
-                  onClick={handleEditCompanyInfo}
-                  className="bg-primary hover:bg-primary/90"
-                  data-testid="button-edit-settings"
-                >
-                  <Edit className="h-4 w-4 mr-1" />
-                  Edit
-                </Button>
-              )}
-            </div>
-          )}
-        </div>
-
         {/* Content Area */}
         <div className="flex-1 overflow-y-auto">
           <div className="p-6 max-w-5xl">
-            {/* Section Description */}
-            <p className="text-sm text-muted-foreground mb-6">
-              {activeCategory?.description || "Manage your company settings"}
-            </p>
+            {/* Page Header */}
+            <div className="flex items-start gap-3 mb-6">
+              {activeCategory && <activeCategory.icon className="h-5 w-5 mt-1.5 text-muted-foreground flex-shrink-0" />}
+              <PageHeader
+                className="mb-0 flex-1"
+                title={activeCategory?.label || "Settings"}
+                description={activeCategory?.description || "Manage your company settings"}
+                actions={activeSection === "branding" ? (
+                  isEditing ? (
+                    <>
+                      <Button variant="outline" size="sm" onClick={handleCancelEdit} data-testid="button-cancel-edit">
+                        <X className="h-4 w-4 mr-1" />
+                        Cancel
+                      </Button>
+                      <Button
+                        size="sm"
+                        onClick={companyForm.handleSubmit(onSubmitCompanyInfo)}
+                        disabled={updateCompanyMutation.isPending}
+                        className="bg-primary hover:bg-primary/90"
+                        data-testid="button-save-settings"
+                      >
+                        {updateCompanyMutation.isPending ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Save className="h-4 w-4 mr-1" />}
+                        {updateCompanyMutation.isPending ? "Saving..." : "Save"}
+                      </Button>
+                    </>
+                  ) : (
+                    <Button
+                      size="sm"
+                      onClick={handleEditCompanyInfo}
+                      className="bg-primary hover:bg-primary/90"
+                      data-testid="button-edit-settings"
+                    >
+                      <Edit className="h-4 w-4 mr-1" />
+                      Edit
+                    </Button>
+                  )
+                ) : undefined}
+              />
+            </div>
 
             {/* Content based on active section */}
             {activeSection === "branding" && <CompanyInfoSection />}
@@ -2012,7 +2007,7 @@ function TimesheetSettingsSection() {
           disabled={saveMutation.isPending}
           data-testid="ts-settings-save"
         >
-          <Save className="h-4 w-4 mr-2" />
+          {saveMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Save className="h-4 w-4 mr-2" />}
           {saveMutation.isPending ? "Saving..." : "Save Timesheet Settings"}
         </Button>
       </div>
@@ -2590,7 +2585,7 @@ function DefaultValuesSection() {
                   disabled={!newPaymentTerm.name || createPaymentTermMutation.isPending}
                   data-testid="button-save-new-payment-term"
                 >
-                  {createPaymentTermMutation.isPending ? "Saving..." : "Save"}
+                  {createPaymentTermMutation.isPending ? (<><Loader2 className="w-4 h-4 mr-2 animate-spin" />Saving...</>) : "Save"}
                 </Button>
               </div>
             </CardContent>
@@ -2659,7 +2654,7 @@ function DefaultValuesSection() {
                   disabled={!editingPaymentTerm.name || updatePaymentTermMutation.isPending}
                   data-testid="button-save-edit-payment-term"
                 >
-                  {updatePaymentTermMutation.isPending ? "Saving..." : "Save"}
+                  {updatePaymentTermMutation.isPending ? (<><Loader2 className="w-4 h-4 mr-2 animate-spin" />Saving...</>) : "Save"}
                 </Button>
               </div>
             </CardContent>
@@ -4440,8 +4435,8 @@ function FieldCategoriesSection() {
     <div className="flex flex-col h-full">
       <div className="flex items-start justify-between pb-4 mb-6 border-b flex-shrink-0">
         <div>
-          <h2 className="text-2xl font-bold tracking-tight mb-1" data-testid="heading-field-settings">Field Settings</h2>
-          <p className="text-base text-muted-foreground">
+          <h2 className="text-lg font-semibold tracking-tight mb-1" data-testid="heading-field-settings">Field Settings</h2>
+          <p className="text-sm text-muted-foreground">
             Manage predefined field categories and their options
           </p>
         </div>
@@ -4460,7 +4455,7 @@ function FieldCategoriesSection() {
               disabled={updateOptionsMutation.isPending}
               data-testid="button-save-changes"
             >
-              <Save className="h-4 w-4 mr-2" />
+              {updateOptionsMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Save className="h-4 w-4 mr-2" />}
               {updateOptionsMutation.isPending ? "Saving..." : "Save Changes"}
             </Button>
           </div>

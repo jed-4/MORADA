@@ -3,6 +3,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { type ColumnDef } from "@tanstack/react-table";
 import { DataTable, DataTableColumnPicker, type DataTableColumnMeta } from "@/components/data-table/DataTable";
 import { useIsDark, monthlyActualsPalette, MonthlyActualsLegend } from "@/components/data-table/financialTableChrome";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -460,6 +461,7 @@ function RegisterTab({ data, xeroConnected }: { data: OverheadsData; xeroConnect
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [editingCatId, setEditingCatId] = useState<string | null>(null);
   const [editingCatName, setEditingCatName] = useState("");
+  const [confirmAction, setConfirmAction] = useState<{ title: string; description?: string; confirmLabel?: string; destructive?: boolean; run: () => void } | null>(null);
 
   const toggleCollapse = (id: string) =>
     setCollapsed(prev => {
@@ -740,7 +742,7 @@ function RegisterTab({ data, xeroConnected }: { data: OverheadsData; xeroConnect
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuItem onClick={() => setEditItem(item)}><Pencil className="w-3.5 h-3.5 mr-2" />Edit in dialog</DropdownMenuItem>
-              <DropdownMenuItem className="text-destructive" onClick={() => { if (confirm(`Delete "${item.name}"?`)) deleteItemMut.mutate(item.id); }}><Trash2 className="w-3.5 h-3.5 mr-2" />Delete</DropdownMenuItem>
+              <DropdownMenuItem className="text-destructive" onClick={() => setConfirmAction({ title: `Delete "${item.name}"?`, description: "This cannot be undone.", confirmLabel: "Delete", destructive: true, run: () => deleteItemMut.mutate(item.id) })}><Trash2 className="w-3.5 h-3.5 mr-2" />Delete</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         );
@@ -901,7 +903,13 @@ function RegisterTab({ data, xeroConnected }: { data: OverheadsData; xeroConnect
                           <DropdownMenuItem
                             className="text-destructive"
                             onClick={() => {
-                              if (confirm(`Delete "${cat.name}" and all its items?`)) deleteCatMut.mutate(cat.id);
+                              setConfirmAction({
+                                title: `Delete "${cat.name}" and all its items?`,
+                                description: "This cannot be undone.",
+                                confirmLabel: "Delete",
+                                destructive: true,
+                                run: () => deleteCatMut.mutate(cat.id),
+                              });
                             }}
                             data-testid={`menu-delete-overhead-category-${cat.id}`}
                           >
@@ -966,6 +974,15 @@ function RegisterTab({ data, xeroConnected }: { data: OverheadsData; xeroConnect
           xeroSynced={editItem.xeroSynced}
           initial={{ name: editItem.name, frequency: editItem.frequency, budgetCents: editItem.budgetCents > 0 ? (editItem.budgetCents / 100).toFixed(0) : "", xeroAccountCode: editItem.xeroAccountCode || "", notes: editItem.notes || "", categoryId: editItem.categoryId }} />
       )}
+      <ConfirmDialog
+        open={!!confirmAction}
+        onOpenChange={(o) => { if (!o) setConfirmAction(null); }}
+        title={confirmAction?.title ?? ""}
+        description={confirmAction?.description}
+        confirmLabel={confirmAction?.confirmLabel ?? "Confirm"}
+        destructive={confirmAction?.destructive}
+        onConfirm={() => { confirmAction?.run(); setConfirmAction(null); }}
+      />
     </div>
   );
 }
@@ -2399,6 +2416,7 @@ function OhRecoveryTab({ data }: { data: OverheadsData }) {
   const [jobDialogOpen, setJobDialogOpen] = useState(false);
   const [editJob, setEditJob] = useState<OhPipelineJob | null>(null);
   const [jobForm, setJobForm] = useState<PipelineJobForm>({ name: "", estimatedValue: "", probabilityPercent: "100", expectedStartDate: "", notes: "" });
+  const [confirmAction, setConfirmAction] = useState<{ title: string; description?: string; confirmLabel?: string; destructive?: boolean; run: () => void } | null>(null);
 
   const pipelineQuery = useQuery<OhPipelineJob[]>({ queryKey: ["/api/overheads/pipeline"] });
   const contractedQuery = useQuery<ContractedProject[]>({ queryKey: ["/api/overheads/predictor/contracted"] });
@@ -2614,7 +2632,7 @@ function OhRecoveryTab({ data }: { data: OverheadsData }) {
                         <DropdownMenuItem onClick={() => { setEditJob(job); setJobForm({ name: job.name, estimatedValue: (job.estimatedValue / 100).toFixed(0), probabilityPercent: String(job.probabilityPercent), expectedStartDate: job.expectedStartDate || "", notes: job.notes || "" }); }}>
                           <Pencil className="w-3.5 h-3.5 mr-2" />Edit
                         </DropdownMenuItem>
-                        <DropdownMenuItem className="text-destructive" onClick={() => { if (confirm("Delete this job?")) deleteJobMut.mutate(job.id); }}>
+                        <DropdownMenuItem className="text-destructive" onClick={() => setConfirmAction({ title: "Delete this job?", description: "This cannot be undone.", confirmLabel: "Delete", destructive: true, run: () => deleteJobMut.mutate(job.id) })}>
                           <Trash2 className="w-3.5 h-3.5 mr-2" />Delete
                         </DropdownMenuItem>
                       </DropdownMenuContent>
@@ -2682,6 +2700,15 @@ function OhRecoveryTab({ data }: { data: OverheadsData }) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <ConfirmDialog
+        open={!!confirmAction}
+        onOpenChange={(o) => { if (!o) setConfirmAction(null); }}
+        title={confirmAction?.title ?? ""}
+        description={confirmAction?.description}
+        confirmLabel={confirmAction?.confirmLabel ?? "Confirm"}
+        destructive={confirmAction?.destructive}
+        onConfirm={() => { confirmAction?.run(); setConfirmAction(null); }}
+      />
     </div>
   );
 }

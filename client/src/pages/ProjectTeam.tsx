@@ -8,6 +8,7 @@ import {
 } from "@/components/data-table/DataTable";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { EmptyState } from "@/components/EmptyState";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -17,6 +18,7 @@ import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { getUserDisplayName, getUserInitials } from "@/lib/utils";
 import AssignUserDialog from "@/components/AssignUserDialog";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 
 interface TeamUser {
   id: string;
@@ -32,6 +34,7 @@ export default function ProjectTeam() {
   const projectId = params?.projectId || "";
   const [isAssignDialogOpen, setIsAssignDialogOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [confirmAction, setConfirmAction] = useState<{ title: string; description?: string; confirmLabel?: string; destructive?: boolean; run: () => void } | null>(null);
   const { toast } = useToast();
 
   const { data: project } = useQuery<{ name?: string }>({
@@ -94,9 +97,13 @@ export default function ProjectTeam() {
   });
 
   const handleRemoveUser = (userId: string) => {
-    if (confirm("Are you sure you want to remove this user from the project?")) {
-      removeUserMutation.mutate(userId);
-    }
+    setConfirmAction({
+      title: "Remove user from project?",
+      description: "This user will no longer have access to this project.",
+      confirmLabel: "Remove",
+      destructive: true,
+      run: () => removeUserMutation.mutate(userId),
+    });
   };
 
   const columns = useMemo<ColumnDef<TeamUser, unknown>[]>(() => {
@@ -227,11 +234,13 @@ export default function ProjectTeam() {
                   Loading team members...
                 </div>
               ) : filteredTeamUsers.length === 0 ? (
-                <div className="text-center py-8 text-muted-foreground text-sm">
-                  {searchQuery
+                <EmptyState
+                  variant="inline"
+                  title={searchQuery
                     ? `No team members found matching "${searchQuery}"`
                     : "No team members assigned to this project"}
-                </div>
+                  className="py-8"
+                />
               ) : (
                 <DataTable
                   data={filteredTeamUsers}
@@ -259,11 +268,13 @@ export default function ProjectTeam() {
                   Loading suppliers...
                 </div>
               ) : filteredSupplierUsers.length === 0 ? (
-                <div className="text-center py-8 text-muted-foreground text-sm">
-                  {searchQuery
+                <EmptyState
+                  variant="inline"
+                  title={searchQuery
                     ? `No suppliers found matching "${searchQuery}"`
                     : "No suppliers assigned to this project"}
-                </div>
+                  className="py-8"
+                />
               ) : (
                 <DataTable
                   data={filteredSupplierUsers}
@@ -282,6 +293,21 @@ export default function ProjectTeam() {
         open={isAssignDialogOpen}
         onOpenChange={setIsAssignDialogOpen}
         projectId={projectId}
+      />
+
+      <ConfirmDialog
+        open={!!confirmAction}
+        onOpenChange={(o) => {
+          if (!o) setConfirmAction(null);
+        }}
+        title={confirmAction?.title ?? ""}
+        description={confirmAction?.description}
+        confirmLabel={confirmAction?.confirmLabel ?? "Confirm"}
+        destructive={confirmAction?.destructive}
+        onConfirm={() => {
+          confirmAction?.run();
+          setConfirmAction(null);
+        }}
       />
     </div>
   );

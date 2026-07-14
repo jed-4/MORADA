@@ -17,6 +17,7 @@ import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, us
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { BUILDPRO_PALETTE } from '@/lib/colors';
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 
 const TAG_COLORS = BUILDPRO_PALETTE.map(c => ({ value: c.hex, label: c.name }));
 
@@ -149,6 +150,7 @@ export default function TaskSettings() {
   const [isStatusDialogOpen, setIsStatusDialogOpen] = useState(false);
   const [editingStatus, setEditingStatus] = useState<TaskTemplateStatus | null>(null);
   const [statusFormData, setStatusFormData] = useState({ name: "", color: "#3b82f6" });
+  const [confirmAction, setConfirmAction] = useState<{ title: string; description?: string; confirmLabel?: string; destructive?: boolean; run: () => void } | null>(null);
 
   const { data: taskTags = [] } = useQuery<TaskTag[]>({ queryKey: ['/api/task-tags'] });
   const { data: taskTemplateStatuses = [] } = useQuery<TaskTemplateStatus[]>({ queryKey: ['/api/task-template-statuses'] });
@@ -245,9 +247,13 @@ export default function TaskSettings() {
   };
 
   const handleDeleteTag = (id: string) => {
-    if (confirm("Are you sure you want to delete this task tag?")) {
-      deleteTagMutation.mutate(id);
-    }
+    setConfirmAction({
+      title: "Delete task tag?",
+      description: "This tag will be removed from all tasks that use it.",
+      confirmLabel: "Delete",
+      destructive: true,
+      run: () => deleteTagMutation.mutate(id),
+    });
   };
 
   const handleSubmitTag = () => {
@@ -269,9 +275,13 @@ export default function TaskSettings() {
   };
 
   const handleDeleteStatus = (id: string) => {
-    if (confirm("Are you sure you want to delete this task template status?")) {
-      deleteStatusMutation.mutate(id);
-    }
+    setConfirmAction({
+      title: "Delete task template status?",
+      description: "This status will no longer be available for task templates.",
+      confirmLabel: "Delete",
+      destructive: true,
+      run: () => deleteStatusMutation.mutate(id),
+    });
   };
 
   const handleSubmitStatus = () => {
@@ -531,6 +541,21 @@ export default function TaskSettings() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ConfirmDialog
+        open={!!confirmAction}
+        onOpenChange={(o) => {
+          if (!o) setConfirmAction(null);
+        }}
+        title={confirmAction?.title ?? ""}
+        description={confirmAction?.description}
+        confirmLabel={confirmAction?.confirmLabel ?? "Confirm"}
+        destructive={confirmAction?.destructive}
+        onConfirm={() => {
+          confirmAction?.run();
+          setConfirmAction(null);
+        }}
+      />
     </div>
   );
 }

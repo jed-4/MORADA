@@ -38,6 +38,8 @@ type AssignableUser = {
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { StatusBadge } from "@/components/StatusBadge";
+import { EmptyState } from "@/components/EmptyState";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -181,7 +183,7 @@ function ActivityLogContent({ instanceId }: { instanceId: string }) {
 
   if (auditLog.length === 0) {
     return (
-      <p className="text-sm text-muted-foreground py-4 text-center">No activity recorded yet.</p>
+      <EmptyState variant="inline" title="No activity recorded yet." className="py-4" />
     );
   }
 
@@ -816,14 +818,13 @@ export default function ProjectChecklists() {
     }
   };
 
-  const getStatusBadgeClass = (status: string) => {
+  // Maps a checklist group status onto the shared StatusBadge tone palette.
+  // "active" (upcoming) stays neutral — auto-detection would read it as success.
+  const getStatusBadgeTone = (status: string) => {
     switch (status) {
-      case "completed":
-        return "bg-[hsl(var(--sage)/0.18)] text-[hsl(var(--sage))] border-transparent";
-      case "in_progress":
-        return "bg-[hsl(var(--amber)/0.18)] text-[hsl(var(--amber))] border-transparent";
-      default:
-        return "bg-muted/60 text-muted-foreground border-transparent";
+      case "completed": return "success" as const;
+      case "in_progress": return "warning" as const;
+      default: return "neutral" as const;
     }
   };
 
@@ -1084,27 +1085,21 @@ export default function ProjectChecklists() {
       {/* Content */}
       <div className="flex-1 overflow-auto px-6 py-6">
         {groupedByInstance.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full gap-4 text-muted-foreground">
-            <ClipboardList className="h-12 w-12 opacity-50" />
-            <p className="text-sm">
-              {activeTab === "upcoming" 
-                ? "No upcoming checklists" 
-                : activeTab === "action"
-                  ? "No checklists in action"
-                  : "No completed checklists"}
-            </p>
-            {activeTab !== "done" && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setShowAddDialog(true)}
-                data-testid="button-add-first-checklist"
-              >
-                <Plus className="h-4 w-4 mr-2" />
-                Add First Group
-              </Button>
-            )}
-          </div>
+          <EmptyState
+            variant="card"
+            icon={ClipboardList}
+            title={activeTab === "upcoming"
+              ? "No upcoming checklists"
+              : activeTab === "action"
+                ? "No checklists in action"
+                : "No completed checklists"}
+            action={activeTab !== "done" ? {
+              label: "Add First Group",
+              onClick: () => setShowAddDialog(true),
+              icon: Plus,
+              "data-testid": "button-add-first-checklist",
+            } : undefined}
+          />
         ) : (
           <div>
             {groupedByInstance.map(({ instance, groups }, instanceIdx) => {
@@ -1329,8 +1324,8 @@ export default function ProjectChecklists() {
                               
                               {/* Right: Chips + Assignee + Menu */}
                               <div className="flex items-center gap-1.5 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
-                                <Badge 
-                                  className={`${getStatusBadgeClass(group.status)} text-data px-1.5 py-0 cursor-pointer hover:opacity-80`}
+                                <span
+                                  className="inline-flex cursor-pointer hover:opacity-80"
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     const { status, completionData } = getNextStatus(group.status);
@@ -1341,8 +1336,12 @@ export default function ProjectChecklists() {
                                   }}
                                   data-testid={`status-toggle-${group.id}`}
                                 >
-                                  {getStatusLabel(group.status)}
-                                </Badge>
+                                  <StatusBadge
+                                    status={group.status}
+                                    label={getStatusLabel(group.status)}
+                                    tone={getStatusBadgeTone(group.status)}
+                                  />
+                                </span>
                                 {getPriorityBadge(group.priority || "medium")}
                                 {(group.linkedTaskId || group.linkedScheduleItemId) && (
                                   <span className="inline-flex items-center px-1 py-0.5 rounded bg-primary/10 text-primary">
@@ -2316,9 +2315,7 @@ export default function ProjectChecklists() {
                 
                 if (noteEntries.length === 0) {
                   return (
-                    <div className="flex items-center justify-center h-full text-xs text-muted-foreground">
-                      No notes yet
-                    </div>
+                    <EmptyState variant="inline" title="No notes yet" className="h-full" />
                   );
                 }
                 

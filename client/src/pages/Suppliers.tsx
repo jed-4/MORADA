@@ -58,9 +58,10 @@ import { useToast } from "@/hooks/use-toast";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { insertSupplierSchema, type Supplier, type InsertSupplier, type CostCode, type SupplierContact, type SupplierInsurance, type SupplierLabel } from "@shared/schema";
-import { Plus, MoreHorizontal, Pencil, Trash2, Store, Search, X, Building2, Users, Shield, Tag, Calendar, AlertTriangle, ChevronRight, Link2, Settings2 } from "lucide-react";
+import { Plus, MoreHorizontal, Pencil, Trash2, Store, Search, X, Building2, Users, Shield, Tag, Calendar, AlertTriangle, ChevronRight, Link2, Settings2, Loader2 } from "lucide-react";
 import { z } from "zod";
 import BulkXeroContactMappingDialog from "@/components/BulkXeroContactMappingDialog";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { format } from "date-fns";
 
 const PAYMENT_TERMS_OPTIONS = [
@@ -121,6 +122,7 @@ export default function Suppliers() {
   const [isInsuranceDialogOpen, setIsInsuranceDialogOpen] = useState(false);
   const [editingInsurance, setEditingInsurance] = useState<SupplierInsurance | null>(null);
   const [isBulkXeroMappingOpen, setIsBulkXeroMappingOpen] = useState(false);
+  const [confirmAction, setConfirmAction] = useState<{ title: string; description?: string; confirmLabel?: string; destructive?: boolean; run: () => void } | null>(null);
   const { toast } = useToast();
   usePageTitle({ pageName: "Suppliers" });
 
@@ -446,9 +448,13 @@ export default function Suppliers() {
   };
 
   const handleDeleteSupplier = (id: string) => {
-    if (confirm("Are you sure you want to delete this supplier?")) {
-      deleteMutation.mutate(id);
-    }
+    setConfirmAction({
+      title: "Delete this supplier?",
+      description: "The supplier and their details will be permanently deleted.",
+      confirmLabel: "Delete",
+      destructive: true,
+      run: () => deleteMutation.mutate(id),
+    });
   };
 
   const handleCloseDialog = () => {
@@ -1230,9 +1236,13 @@ export default function Suppliers() {
                                 </DropdownMenuItem>
                                 <DropdownMenuItem 
                                   onClick={() => {
-                                    if (confirm("Delete this contact?")) {
-                                      deleteContactMutation.mutate(contact.id);
-                                    }
+                                    setConfirmAction({
+                                      title: "Delete this contact?",
+                                      description: "This contact will be permanently deleted.",
+                                      confirmLabel: "Delete",
+                                      destructive: true,
+                                      run: () => deleteContactMutation.mutate(contact.id),
+                                    });
                                   }}
                                   className="text-destructive"
                                 >
@@ -1305,9 +1315,13 @@ export default function Suppliers() {
                                 </DropdownMenuItem>
                                 <DropdownMenuItem 
                                   onClick={() => {
-                                    if (confirm("Delete this insurance record?")) {
-                                      deleteInsuranceMutation.mutate(insurance.id);
-                                    }
+                                    setConfirmAction({
+                                      title: "Delete this insurance record?",
+                                      description: "This insurance record will be permanently deleted.",
+                                      confirmLabel: "Delete",
+                                      destructive: true,
+                                      run: () => deleteInsuranceMutation.mutate(insurance.id),
+                                    });
                                   }}
                                   className="text-destructive"
                                 >
@@ -1454,7 +1468,7 @@ export default function Suppliers() {
                   disabled={createContactMutation.isPending || updateContactMutation.isPending}
                   className="bg-primary hover:bg-primary/90 text-white"
                 >
-                  {createContactMutation.isPending || updateContactMutation.isPending ? "Saving..." : editingContact ? "Update" : "Add"}
+                  {createContactMutation.isPending || updateContactMutation.isPending ? (<><Loader2 className="w-4 h-4 mr-2 animate-spin" />Saving...</>) : editingContact ? "Update" : "Add"}
                 </Button>
               </div>
             </form>
@@ -1567,7 +1581,7 @@ export default function Suppliers() {
                   disabled={createInsuranceMutation.isPending || updateInsuranceMutation.isPending}
                   className="bg-primary hover:bg-primary/90 text-white"
                 >
-                  {createInsuranceMutation.isPending || updateInsuranceMutation.isPending ? "Saving..." : editingInsurance ? "Update" : "Add"}
+                  {createInsuranceMutation.isPending || updateInsuranceMutation.isPending ? (<><Loader2 className="w-4 h-4 mr-2 animate-spin" />Saving...</>) : editingInsurance ? "Update" : "Add"}
                 </Button>
               </div>
             </form>
@@ -1579,6 +1593,21 @@ export default function Suppliers() {
         open={isBulkXeroMappingOpen}
         onOpenChange={setIsBulkXeroMappingOpen}
         contactType="supplier"
+      />
+
+      <ConfirmDialog
+        open={!!confirmAction}
+        onOpenChange={(o) => {
+          if (!o) setConfirmAction(null);
+        }}
+        title={confirmAction?.title ?? ""}
+        description={confirmAction?.description}
+        confirmLabel={confirmAction?.confirmLabel ?? "Confirm"}
+        destructive={confirmAction?.destructive}
+        onConfirm={() => {
+          confirmAction?.run();
+          setConfirmAction(null);
+        }}
       />
     </div>
   );

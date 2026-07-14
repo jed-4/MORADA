@@ -11,6 +11,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -73,18 +74,15 @@ export function DefectTableView({ defects }: DefectTableViewProps) {
 
   const getStatusBadge = (status: string) => {
     const option = statusOptions.find((o) => o.key === status);
-    if (!option) return <Badge>{status}</Badge>;
-    
+    if (!option) return <StatusBadge status={status} />;
+
     return (
-      <Badge
-        style={{
-          backgroundColor: `#${option.color || "6B7280"}`,
-          color: "#fff",
-        }}
+      <StatusBadge
+        status={status}
+        label={option.name}
+        color={`#${option.color || "6B7280"}`}
         data-testid={`badge-status-${status}`}
-      >
-        {option.name}
-      </Badge>
+      />
     );
   };
 

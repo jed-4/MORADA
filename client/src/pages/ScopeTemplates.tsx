@@ -42,6 +42,7 @@ import {
   Copy,
   Layers,
   Columns3,
+  Loader2,
 } from "lucide-react";
 import type { ScopeTemplate } from "@shared/schema";
 import { format } from "date-fns";
@@ -523,7 +524,7 @@ export default function ScopeTemplates() {
               className="bg-primary hover:bg-primary/90"
               data-testid="button-confirm-create"
             >
-              {createMutation.isPending ? "Creating..." : "Create Template"}
+              {createMutation.isPending ? (<><Loader2 className="w-4 h-4 mr-2 animate-spin" />Creating...</>) : "Create Template"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -586,7 +587,7 @@ export default function ScopeTemplates() {
               className="bg-primary hover:bg-primary/90"
               data-testid="button-confirm-edit"
             >
-              {updateMutation.isPending ? "Updating..." : "Update Template"}
+              {updateMutation.isPending ? (<><Loader2 className="w-4 h-4 mr-2 animate-spin" />Updating...</>) : "Update Template"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -612,7 +613,7 @@ export default function ScopeTemplates() {
               disabled={deleteMutation.isPending}
               data-testid="button-confirm-delete"
             >
-              {deleteMutation.isPending ? "Deleting..." : "Delete Template"}
+              {deleteMutation.isPending ? (<><Loader2 className="w-4 h-4 mr-2 animate-spin" />Deleting...</>) : "Delete Template"}
             </Button>
           </DialogFooter>
         </DialogContent>

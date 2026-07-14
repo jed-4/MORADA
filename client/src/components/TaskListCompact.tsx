@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useMemo, useCallback, KeyboardEvent } from
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
+import { StatusBadge, type StatusTone } from "@/components/StatusBadge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
@@ -101,13 +102,12 @@ interface TaskListCompactProps {
   onAddTask?: (title: string) => void | Promise<void>;
 }
 
-// Status colors matching Asana 2025
-const getStatusColor = (status: string | null): string => {
+// Status tones matching Asana 2025
+const getTaskStatusTone = (status: string | null): StatusTone => {
   const s = status?.toLowerCase() || '';
-  if (s.includes('done') || s.includes('complete')) return 'bg-status-success-bg text-status-success dark:text-green-400';
-  if (s.includes('progress') || s.includes('active')) return 'bg-status-info-bg text-status-info dark:text-blue-400';
-  if (s.includes('todo') || s.includes('pending') || s.includes('capture')) return 'bg-muted text-secondary dark:text-muted';
-  return 'bg-muted text-secondary dark:text-muted';
+  if (s.includes('done') || s.includes('complete')) return 'success';
+  if (s.includes('progress') || s.includes('active')) return 'info';
+  return 'neutral';
 };
 
 // Priority colors
@@ -305,7 +305,7 @@ function SortableTaskRow({
     }
   };
 
-  const statusColor = getStatusColor(task.status);
+  const statusTone = getTaskStatusTone(task.status);
   const priorityColor = getPriorityColor(task.priority);
 
   return (
@@ -389,9 +389,12 @@ function SortableTaskRow({
                   }}
                   className="group relative"
                 >
-                  <Badge className={`text-xs px-2 py-0.5 h-5 rounded-full ${statusColor} border-0 no-default-hover-elevate no-default-active-elevate cursor-pointer hover:opacity-80 truncate max-w-full`}>
-                    {statusOptions.find(opt => opt.key === task.status)?.name || task.status}
-                  </Badge>
+                  <StatusBadge
+                    status={task.status}
+                    tone={statusTone}
+                    label={statusOptions.find(opt => opt.key === task.status)?.name || task.status}
+                    className="no-default-hover-elevate no-default-active-elevate cursor-pointer hover:opacity-80 truncate max-w-full"
+                  />
                 </div>
               ) : (
                 <div className="text-xs text-muted-foreground/30">—</div>

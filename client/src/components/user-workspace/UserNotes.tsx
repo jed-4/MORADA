@@ -20,6 +20,7 @@ import {
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import NotionEditor from "@/components/NotionEditor";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import type { User, Note } from "@shared/schema";
 import { formatDateTimeInTimezone, useTimezone } from "@/hooks/useTimezone";
 
@@ -43,6 +44,7 @@ export default function UserNotes({ user, isOwnPage }: UserNotesProps) {
   const [editingNote, setEditingNote] = useState<Note | null>(null);
   const [noteTitle, setNoteTitle] = useState("");
   const [noteContent, setNoteContent] = useState("");
+  const [confirmAction, setConfirmAction] = useState<{ title: string; description?: string; confirmLabel?: string; destructive?: boolean; run: () => void } | null>(null);
 
   const { data: notesResponse, isLoading } = useQuery<NotesResponse>({
     queryKey: ["/api/users", user.id, "notes"],
@@ -247,7 +249,13 @@ export default function UserNotes({ user, isOwnPage }: UserNotesProps) {
               variant="ghost"
               className="h-6 w-6"
               onClick={() => {
-                if (confirm("Delete this note?")) deleteMutation.mutate(note.id);
+                setConfirmAction({
+                  title: "Delete this note?",
+                  description: "This cannot be undone.",
+                  confirmLabel: "Delete",
+                  destructive: true,
+                  run: () => deleteMutation.mutate(note.id),
+                });
               }}
               data-testid={`button-delete-${note.id}`}
             >
@@ -467,6 +475,15 @@ export default function UserNotes({ user, isOwnPage }: UserNotesProps) {
           </div>
         </DialogContent>
       </Dialog>
+      <ConfirmDialog
+        open={!!confirmAction}
+        onOpenChange={(o) => { if (!o) setConfirmAction(null); }}
+        title={confirmAction?.title ?? ""}
+        description={confirmAction?.description}
+        confirmLabel={confirmAction?.confirmLabel ?? "Confirm"}
+        destructive={confirmAction?.destructive}
+        onConfirm={() => { confirmAction?.run(); setConfirmAction(null); }}
+      />
     </div>
   );
 }
