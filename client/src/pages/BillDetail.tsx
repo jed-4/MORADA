@@ -1833,6 +1833,7 @@ export default function BillDetail() {
             >
               <ArrowLeft className="h-4 w-4" />
             </Button>
+            <div className="w-[3px] h-5 rounded-full flex-shrink-0" style={{ background: "hsl(var(--amber))" }} aria-hidden="true" />
             <h1 className="text-lg font-semibold" data-testid="text-page-title">
               {isEditMode
                 ? (form.watch("billType") === "credit" ? "Edit Vendor Credit" : "Edit Bill")

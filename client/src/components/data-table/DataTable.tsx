@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import {
   ColumnDef,
   ColumnOrderState,
@@ -52,6 +52,12 @@ export interface DataTableColumnMeta {
   headerLabel?: string;
   /** Hidden by default on first load (when no persisted state exists). */
   defaultHidden?: boolean;
+  /**
+   * Pinned to the right edge of the table (sticky on horizontal scroll,
+   * non-draggable, non-resizable, always last). Columns with id "actions"
+   * are treated as pinned-right automatically.
+   */
+  pinnedRight?: boolean;
 }
 
 export interface DataTableProps<TData> {
@@ -128,6 +134,12 @@ function migrateLegacyConfig(scope: string, legacyKey: string | undefined) {
 
 const MIN_COL_WIDTH = 60;
 const STICKY_SHADOW = "2px 0 4px rgba(0,0,0,0.06)";
+const STICKY_SHADOW_RIGHT = "-2px 0 4px rgba(0,0,0,0.06)";
+
+function isPinnedRightCol<TData>(c: ColumnDef<TData, unknown>): boolean {
+  const meta = (c.meta as DataTableColumnMeta | undefined) ?? {};
+  return meta.pinnedRight === true || c.id === "actions";
+}
 
 function lsKey(scope: string, kind: "widths" | "order" | "hidden" | "sort" | "expanded") {
   return `buildpro_table_${kind}_${scope}`;
@@ -153,12 +165,16 @@ interface DraggableHeaderProps {
   width: number;
   pinned: boolean;
   sticky: boolean;
+  /** Sticky to the right edge (actions column). */
+  stickyRight?: boolean;
+  /** Show the sticky-right shadow (only when the table actually overflows). */
+  rightShadow?: boolean;
   align?: "left" | "right" | "center";
   onContextMenu?: (e: React.MouseEvent) => void;
   thClassName?: string;
 }
 
-function DraggableHeader({ id, children, width, pinned, sticky, align, onContextMenu, thClassName }: DraggableHeaderProps) {
+function DraggableHeader({ id, children, width, pinned, sticky, stickyRight, rightShadow, align, onContextMenu, thClassName }: DraggableHeaderProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging, isOver, over, active } =
     useSortable({ id, disabled: pinned });
 
@@ -169,11 +185,12 @@ function DraggableHeader({ id, children, width, pinned, sticky, align, onContext
     transform: CSS.Translate.toString(transform),
     transition,
     opacity: isDragging ? 0.5 : 1,
-    position: sticky ? "sticky" : "relative",
+    position: sticky || stickyRight ? "sticky" : "relative",
     left: sticky ? 0 : undefined,
-    zIndex: sticky ? 3 : isDragging ? 2 : 1,
-    background: sticky ? "hsl(var(--muted))" : undefined,
-    boxShadow: sticky ? STICKY_SHADOW : undefined,
+    right: stickyRight ? 0 : undefined,
+    zIndex: sticky || stickyRight ? 3 : isDragging ? 2 : 1,
+    background: sticky || stickyRight ? "hsl(var(--muted))" : undefined,
+    boxShadow: sticky ? STICKY_SHADOW : stickyRight && rightShadow ? STICKY_SHADOW_RIGHT : undefined,
   };
 
   const dragProps = pinned ? {} : { ...attributes, ...listeners };
@@ -318,6 +335,14 @@ export function DataTable<TData>({
         ordered.unshift(expanderColId);
       }
     }
+    // Pinned-right columns (actions) always stay at the very end, even when
+    // stale persisted state has them elsewhere.
+    effectiveColumns.filter(isPinnedRightCol).forEach((c) => {
+      const id = c.id as string;
+      const idx = ordered.indexOf(id);
+      if (idx !== -1) ordered.splice(idx, 1);
+      ordered.push(id);
+    });
     return ordered;
   });
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>(initialHidden);
@@ -389,12 +414,18 @@ export function DataTable<TData>({
     const set = new Set<string>();
     effectiveColumns.forEach((c) => {
       const meta = (c.meta as DataTableColumnMeta | undefined) ?? {};
-      if (meta.pinned) set.add(c.id as string);
+      if (meta.pinned || isPinnedRightCol(c)) set.add(c.id as string);
     });
     // Expander is always treated as pinned even if a caller forgets to set it.
     if (expansionEnabled) set.add(expanderColId);
     return set;
   }, [effectiveColumns, expansionEnabled]);
+
+  // The (single) pinned-right column, e.g. the 3-dot actions column.
+  const pinnedRightId = useMemo(() => {
+    const col = effectiveColumns.find(isPinnedRightCol);
+    return col ? (col.id as string) : undefined;
+  }, [effectiveColumns]);
 
   const handleDragEnd = (e: DragEndEvent) => {
     const { active, over } = e;
@@ -410,6 +441,47 @@ export function DataTable<TData>({
     });
   };
 
+  // ── Overflow tracking ──────────────────────────────────────────────────────
+  // The sticky-right column only casts a shadow when the table can actually
+  // scroll horizontally; next to the blank filler gap a shadow would look odd.
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [hasOverflow, setHasOverflow] = useState(false);
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const check = () => setHasOverflow(el.scrollWidth > el.clientWidth + 1);
+    check();
+    const ro = new ResizeObserver(check);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (el) setHasOverflow(el.scrollWidth > el.clientWidth + 1);
+  }, [columnSizing, columnVisibility, data]);
+
+  // Auto-hide scrollbars, mimicking macOS overlay behaviour: visible while
+  // scrolling, hidden ~1s after the last scroll event. Toggled via a DOM
+  // attribute (see .dt-autohide-scrollbar in index.css) to avoid re-rendering
+  // the table on every scroll event.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const onScroll = () => {
+      el.dataset.scrolling = "true";
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
+        delete el.dataset.scrolling;
+      }, 1000);
+    };
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      el.removeEventListener("scroll", onScroll);
+      if (timer) clearTimeout(timer);
+    };
+  }, []);
+
   // ── Render ────────────────────────────────────────────────────────────────
   const headerGroup = table.getHeaderGroups()[0];
   const visibleLeafColumns = table.getVisibleLeafColumns();
@@ -418,18 +490,27 @@ export function DataTable<TData>({
   // The first user-defined (non-expander) column is the one that should carry
   // depth-based indentation for nested child rows.
   const firstNonExpanderId = visibleLeafColumns.find((c) => c.id !== expanderColId)?.id;
+  // Pinned-right column, if currently visible (always last after order
+  // normalisation). A width-less filler <col> before it absorbs any leftover
+  // space so every real column keeps its exact saved width and the actions
+  // column sits flush at the right edge. Without a pinned-right column the
+  // filler goes at the very end.
+  const lastVisible = visibleLeafColumns[visibleLeafColumns.length - 1];
+  const pinnedRightVisible = !!lastVisible && lastVisible.id === pinnedRightId;
 
   return (
-    <div className={cn("relative w-full h-full overflow-auto", className)} data-testid={`datatable-${storageKey}`}>
+    <div ref={scrollRef} className={cn("relative w-full h-full overflow-auto dt-autohide-scrollbar", className)} data-testid={`datatable-${storageKey}`}>
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
         <table
           className="border-separate border-spacing-0 text-sm"
           style={{ width: totalWidth, minWidth: "100%", tableLayout: "fixed" }}
         >
           <colgroup>
-            {visibleLeafColumns.map((c) => (
+            {(pinnedRightVisible ? visibleLeafColumns.slice(0, -1) : visibleLeafColumns).map((c) => (
               <col key={c.id} style={{ width: c.getSize() }} />
             ))}
+            <col key="__filler" />
+            {pinnedRightVisible && <col key={lastVisible.id} style={{ width: lastVisible.getSize() }} />}
           </colgroup>
 
           <thead className="sticky top-0 z-20">
@@ -444,15 +525,23 @@ export function DataTable<TData>({
                   // Treat the first visible column as sticky (per spec). pinned columns (e.g. checkbox)
                   // are usually the very first column anyway; keep them sticky too.
                   const isSticky = id === firstVisibleId;
+                  const isPinnedRight = pinnedRightVisible && id === pinnedRightId;
+                  const isFixed = !!meta.pinned || isPinnedRight;
 
                   return (
-                    <ContextMenu key={id}>
+                    <Fragment key={id}>
+                    {isPinnedRight && (
+                      <th aria-hidden className={cn("h-7 border-b border-border bg-muted", headerClassName)} />
+                    )}
+                    <ContextMenu>
                       <ContextMenuTrigger asChild>
                         <DraggableHeader
                           id={id}
                           width={header.getSize()}
-                          pinned={!!meta.pinned}
+                          pinned={isFixed}
                           sticky={isSticky}
+                          stickyRight={isPinnedRight}
+                          rightShadow={hasOverflow}
                           align={meta.align}
                           thClassName={headerClassName}
                         >
@@ -478,7 +567,7 @@ export function DataTable<TData>({
                           </div>
 
                           {/* Resize handle */}
-                          {!meta.pinned && (
+                          {!isFixed && (
                             <div
                               role="separator"
                               onMouseDown={header.getResizeHandler()}
@@ -519,7 +608,7 @@ export function DataTable<TData>({
                           </>
                         )}
                         <ContextMenuItem
-                          disabled={!!meta.pinned}
+                          disabled={isFixed}
                           onClick={() => header.column.toggleVisibility(false)}
                           data-testid={`ctx-hide-${id}`}
                         >
@@ -527,8 +616,12 @@ export function DataTable<TData>({
                         </ContextMenuItem>
                       </ContextMenuContent>
                     </ContextMenu>
+                    </Fragment>
                   );
                 })}
+                {!pinnedRightVisible && (
+                  <th aria-hidden className={cn("h-7 border-b border-border bg-muted", headerClassName)} />
+                )}
               </tr>
             </SortableContext>
           </thead>
@@ -536,7 +629,7 @@ export function DataTable<TData>({
           <tbody>
             {table.getRowModel().rows.length === 0 ? (
               <tr>
-                <td colSpan={visibleLeafColumns.length} className="py-12 text-center text-muted-foreground text-sm">
+                <td colSpan={visibleLeafColumns.length + 1} className="py-12 text-center text-muted-foreground text-sm">
                   {emptyState ?? "No data"}
                 </td>
               </tr>
@@ -549,6 +642,8 @@ export function DataTable<TData>({
                     rowHeight={rowHeight}
                     firstVisibleId={firstVisibleId}
                     firstNonExpanderId={firstNonExpanderId}
+                    pinnedRightId={pinnedRightVisible ? pinnedRightId : undefined}
+                    rightShadow={hasOverflow}
                     expanderColId={expanderColId}
                     expansionEnabled={expansionEnabled}
                     nestedMode={!!getSubRows}
@@ -562,7 +657,7 @@ export function DataTable<TData>({
                 if (renderExpandedPanel && row.depth === 0 && row.getIsExpanded()) {
                   nodes.push(
                     <tr key={`${row.id}__panel`} data-testid={`row-${row.id}-panel`}>
-                      <td colSpan={visibleLeafColumns.length} className="p-0 border-b border-border/40 bg-muted/30">
+                      <td colSpan={visibleLeafColumns.length + 1} className="p-0 border-b border-border/40 bg-muted/30">
                         {renderExpandedPanel(row.original)}
                       </td>
                     </tr>,
@@ -583,6 +678,8 @@ function DataTableRow<TData>({
   rowHeight,
   firstVisibleId,
   firstNonExpanderId,
+  pinnedRightId,
+  rightShadow,
   expanderColId,
   expansionEnabled,
   nestedMode,
@@ -595,6 +692,8 @@ function DataTableRow<TData>({
   rowHeight: number;
   firstVisibleId: string | undefined;
   firstNonExpanderId?: string;
+  pinnedRightId?: string;
+  rightShadow?: boolean;
   expanderColId?: string;
   expansionEnabled?: boolean;
   nestedMode?: boolean;
@@ -626,13 +725,15 @@ function DataTableRow<TData>({
       {row.getVisibleCells().map((cell) => {
         const meta = (cell.column.columnDef.meta as DataTableColumnMeta | undefined) ?? {};
         const isSticky = cell.column.id === firstVisibleId;
+        const isPinnedRight = !!pinnedRightId && cell.column.id === pinnedRightId;
         const isExpanderCell = expansionEnabled && cell.column.id === expanderColId;
         const isFirstNonExpander = cell.column.id === firstNonExpanderId;
         // 16px indent per nesting level for the leftmost user column.
         const indentPx = isFirstNonExpander && row.depth > 0 ? row.depth * 16 : 0;
         return (
+          <Fragment key={cell.id}>
+          {isPinnedRight && <td aria-hidden />}
           <td
-            key={cell.id}
             className={cn(
               "px-2 text-xs align-middle overflow-hidden text-ellipsis whitespace-nowrap",
               meta.align === "right" && "text-right",
@@ -642,11 +743,12 @@ function DataTableRow<TData>({
               width: cell.column.getSize(),
               minWidth: cell.column.getSize(),
               maxWidth: cell.column.getSize(),
-              position: isSticky ? "sticky" : undefined,
+              position: isSticky || isPinnedRight ? "sticky" : undefined,
               left: isSticky ? 0 : undefined,
-              zIndex: isSticky ? 1 : undefined,
-              background: isSticky ? "var(--dt-row-bg, hsl(var(--background)))" : undefined,
-              boxShadow: isSticky ? STICKY_SHADOW : undefined,
+              right: isPinnedRight ? 0 : undefined,
+              zIndex: isSticky || isPinnedRight ? 1 : undefined,
+              background: isSticky || isPinnedRight ? "var(--dt-row-bg, hsl(var(--background)))" : undefined,
+              boxShadow: isSticky ? STICKY_SHADOW : isPinnedRight && rightShadow ? STICKY_SHADOW_RIGHT : undefined,
               paddingLeft: indentPx ? `calc(0.5rem + ${indentPx}px)` : undefined,
             }}
           >
@@ -672,8 +774,10 @@ function DataTableRow<TData>({
               flexRender(cell.column.columnDef.cell, cell.getContext())
             )}
           </td>
+          </Fragment>
         );
       })}
+      {!pinnedRightId && <td aria-hidden />}
     </tr>
   );
 }

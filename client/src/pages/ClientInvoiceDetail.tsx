@@ -1731,7 +1731,7 @@ export default function ClientInvoiceDetail() {
                 <div className="w-px h-3.5 bg-primary/40" />
                 <div className="flex items-center gap-1.5" data-testid="header-summary-paid">
                   <span className="text-muted-foreground">Paid</span>
-                  <span className="font-semibold text-emerald-600 dark:text-emerald-400">{formatCurrency(paid)}</span>
+                  <span className="font-semibold text-sage">{formatCurrency(paid)}</span>
                 </div>
                 <div className="w-px h-3.5 bg-primary/40" />
                 <div className="flex items-center gap-1.5" data-testid="header-summary-due">
@@ -1739,10 +1739,10 @@ export default function ClientInvoiceDetail() {
                   <span className={cn(
                     "font-semibold",
                     due <= 0
-                      ? "text-emerald-600 dark:text-emerald-400"
+                      ? "text-sage"
                       : paid > 0
-                      ? "text-amber-600 dark:text-amber-400"
-                      : "text-red-500 dark:text-red-400"
+                      ? "text-amber"
+                      : "text-coral"
                   )}>{formatCurrency(due)}</span>
                 </div>
               </div>
@@ -1795,7 +1795,7 @@ export default function ClientInvoiceDetail() {
 
                 {/* Synced badge with Xero invoice number */}
                 {isEditMode && invoice?.xeroInvoiceId && (
-                  <span className="text-data text-status-success dark:text-green-400 flex items-center gap-1 px-1.5 h-6 border border-green-300 dark:border-green-700 rounded-md bg-green-50 dark:bg-green-950/30" data-testid="badge-synced-to-xero">
+                  <span className="text-data text-status-success flex items-center gap-1 px-1.5 h-6 border border-sage/40 rounded-md bg-sage-light" data-testid="badge-synced-to-xero">
                     <SiXero className="w-3 h-3" />
                     {invoice.xeroInvoiceNumber ? `#${invoice.xeroInvoiceNumber}` : "Synced"}
                   </span>
@@ -2185,7 +2185,7 @@ export default function ClientInvoiceDetail() {
                 {/* Card 2 — Financials */}
                 <div className="rounded-lg border border-border bg-card overflow-hidden">
                   <div className="h-8 flex items-center px-3 gap-2 border-b border-border/50 bg-muted/40">
-                    <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-emerald-400/70" />
+                    <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-sage/70" />
                     <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Financials</span>
                   </div>
 
@@ -2437,7 +2437,7 @@ export default function ClientInvoiceDetail() {
                     <div className="border-t border-border/50" data-testid="section-variations">
                       <div className="h-8 flex items-center justify-between px-3 gap-2 border-b border-border/50 bg-muted/40">
                         <div className="flex items-center gap-2">
-                          <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-amber-400/70" />
+                          <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-amber/70" />
                           <span className="text-xs font-medium">Variations</span>
                         </div>
                         {selectedVariationIds.length > 0 && (
@@ -2572,7 +2572,7 @@ export default function ClientInvoiceDetail() {
                     <div className="border-t border-border/50" data-testid="section-allowances">
                       <div className="h-8 flex items-center justify-between px-3 gap-2 border-b border-border/50 bg-muted/40">
                         <div className="flex items-center gap-2">
-                          <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-emerald-400/70" />
+                          <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-sage/70" />
                           <span className="text-xs font-medium">Allowances</span>
                         </div>
                         {selectedAllowanceIds.length > 0 && (
@@ -2717,7 +2717,7 @@ export default function ClientInvoiceDetail() {
                     <div className="border-t border-border/50" data-testid="section-labour">
                       <div className="h-8 flex items-center justify-between px-3 gap-2 border-b border-border/50 bg-muted/40">
                         <div className="flex items-center gap-2">
-                          <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-emerald-400/70" />
+                          <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-sage/70" />
                           <span className="text-xs font-medium">Labour</span>
                           {selectedTimesheetIds.length > 0 && (
                             <span className="text-xs tabular-nums text-muted-foreground">
@@ -3433,7 +3433,7 @@ export default function ClientInvoiceDetail() {
                             {paid > 0 && (
                               <div className="flex justify-between text-sm">
                                 <span className="text-muted-foreground">Paid</span>
-                                <span className="font-medium text-emerald-600 dark:text-emerald-400 tabular-nums">
+                                <span className="font-medium text-sage tabular-nums">
                                   {formatCurrency(paid)}
                                 </span>
                               </div>
@@ -3444,10 +3444,10 @@ export default function ClientInvoiceDetail() {
                             )}>
                               <span className={cn(
                                 due <= 0
-                                  ? "text-emerald-600 dark:text-emerald-400"
+                                  ? "text-sage"
                                   : paid > 0
-                                  ? "text-amber-600 dark:text-amber-400"
-                                  : "text-red-500 dark:text-red-400"
+                                  ? "text-amber"
+                                  : "text-coral"
                               )}>
                                 {due <= 0 ? "Paid in Full" : "Balance Due"}
                               </span>
@@ -3455,10 +3455,10 @@ export default function ClientInvoiceDetail() {
                                 className={cn(
                                   "tabular-nums",
                                   due <= 0
-                                    ? "text-emerald-600 dark:text-emerald-400"
+                                    ? "text-sage"
                                     : paid > 0
-                                    ? "text-amber-600 dark:text-amber-400"
-                                    : "text-red-500 dark:text-red-400"
+                                    ? "text-amber"
+                                    : "text-coral"
                                 )}
                                 data-testid="text-summary-due"
                               >
@@ -3482,7 +3482,7 @@ export default function ClientInvoiceDetail() {
                     onClick={() => setClosingCollapsed((v) => !v)}
                   >
                     <div className="flex items-center gap-2">
-                      <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-amber-400/70" />
+                      <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-amber/70" />
                       <span className="text-xs font-medium">Closing Text</span>
                     </div>
                     {closingCollapsed ? (
@@ -3607,7 +3607,7 @@ export default function ClientInvoiceDetail() {
                   <div className="rounded-lg border border-border bg-card overflow-hidden" data-testid="section-payments-history">
                     <div className="h-8 flex items-center justify-between px-3 gap-2 border-b border-border/50">
                       <div className="flex items-center gap-2">
-                        <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-emerald-400/70" />
+                        <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-sage/70" />
                         <span className="text-xs font-medium">Payments ({payments.length})</span>
                       </div>
                       <button
@@ -4049,8 +4049,8 @@ export default function ClientInvoiceDetail() {
                               <TableCell className="py-1 text-sm font-medium whitespace-nowrap">{getUserName(t.userId)}</TableCell>
                               <TableCell className="py-1 whitespace-nowrap">
                                 {isApproved
-                                  ? <span className="flex items-center gap-1 text-xs"><div className="w-1.5 h-1.5 rounded-full bg-emerald-400 flex-shrink-0" />Approved</span>
-                                  : <span className="flex items-center gap-1 text-xs"><div className="w-1.5 h-1.5 rounded-full bg-amber-400 flex-shrink-0" />Pending</span>}
+                                  ? <span className="flex items-center gap-1 text-xs"><div className="w-1.5 h-1.5 rounded-full bg-sage flex-shrink-0" />Approved</span>
+                                  : <span className="flex items-center gap-1 text-xs"><div className="w-1.5 h-1.5 rounded-full bg-amber flex-shrink-0" />Pending</span>}
                               </TableCell>
                               <TableCell className="py-1 text-right text-sm tabular-nums">{Number(t.duration).toFixed(1)}</TableCell>
                               <TableCell className="py-1 text-sm text-muted-foreground whitespace-nowrap">{cc?.title || cc?.code || "—"}</TableCell>
@@ -4155,18 +4155,18 @@ export default function ClientInvoiceDetail() {
                   const billStatusBadge = (status: string) => {
                     const map: Record<string, { label: string; cls: string }> = {
                       draft: { label: "Draft", cls: "text-muted-foreground" },
-                      awaiting_approval: { label: "Pending Approval", cls: "text-amber-600 dark:text-amber-400" },
+                      awaiting_approval: { label: "Pending Approval", cls: "text-amber" },
                       awaiting_payment: { label: "Awaiting Payment", cls: "text-status-info dark:text-blue-400" },
-                      paid: { label: "Paid", cls: "text-emerald-600 dark:text-emerald-400" },
+                      paid: { label: "Paid", cls: "text-sage" },
                     };
                     const s = map[status] || { label: status || "—", cls: "text-muted-foreground" };
                     return (
                       <span className={cn("flex items-center gap-1 text-xs whitespace-nowrap", s.cls)}>
                         <div className={cn("w-1.5 h-1.5 rounded-full flex-shrink-0", {
                           "bg-muted-foreground/60": status === "draft",
-                          "bg-amber-400": status === "awaiting_approval",
+                          "bg-amber": status === "awaiting_approval",
                           "bg-blue-400": status === "awaiting_payment",
-                          "bg-emerald-400": status === "paid",
+                          "bg-sage": status === "paid",
                         })} />
                         {s.label}
                       </span>
@@ -4217,7 +4217,7 @@ export default function ClientInvoiceDetail() {
                               {isBillColVisible("xero") && (
                                 <TableCell className="py-1 text-sm">
                                   {(b as any).xeroInvoiceId
-                                    ? <span className="flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400"><div className="w-1.5 h-1.5 rounded-full bg-emerald-400" />Synced</span>
+                                    ? <span className="flex items-center gap-1 text-xs text-sage"><div className="w-1.5 h-1.5 rounded-full bg-sage" />Synced</span>
                                     : <span className="text-muted-foreground/40">—</span>}
                                 </TableCell>
                               )}

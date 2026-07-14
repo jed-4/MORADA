@@ -1229,7 +1229,7 @@ export default function FieldSettings() {
                             <TableRow key={label.id} data-testid={`row-label-${label.id}`}>
                               <TableCell className="font-medium">{label.name}</TableCell>
                               <TableCell>
-                                <Badge style={{ backgroundColor: label.color || "#A890D4", color: "white" }}>
+                                <Badge style={{ backgroundColor: label.color || "hsl(var(--primary))", color: "white" }}>
                                   {label.name}
                                 </Badge>
                               </TableCell>

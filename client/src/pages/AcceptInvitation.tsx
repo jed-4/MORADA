@@ -6,17 +6,13 @@ import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, CheckCircle2, Building2, User, Mail } from "lucide-react";
+import { passwordSchema, PASSWORD_REQUIREMENTS_HINT } from "@shared/schema";
 
 const acceptInvitationSchema = z.object({
-  password: z.string()
-    .min(12, "Password must be at least 12 characters")
-    .regex(/[A-Z]/, "Password must contain at least one uppercase letter")
-    .regex(/[a-z]/, "Password must contain at least one lowercase letter")
-    .regex(/[0-9]/, "Password must contain at least one number")
-    .regex(/[^A-Za-z0-9]/, "Password must contain at least one special character"),
+  password: passwordSchema,
   confirmPassword: z.string(),
   firstName: z.string().optional(),
   lastName: z.string().optional(),
@@ -161,7 +157,7 @@ export default function AcceptInvitation() {
         });
         // Redirect to login page after a delay
         setTimeout(() => {
-          window.location.href = "/api/login";
+          window.location.href = "/auth";
         }, 2000);
       } else {
         // Auto-login succeeded
@@ -312,6 +308,7 @@ export default function AcceptInvitation() {
                         data-testid="input-password"
                       />
                     </FormControl>
+                    <FormDescription>{PASSWORD_REQUIREMENTS_HINT}</FormDescription>
                     <FormMessage />
                   </FormItem>
                 )}

@@ -39,10 +39,12 @@ import {
 import { useAuth } from "@/hooks/use-auth";
 import { format } from "date-fns";
 import { TemplateFormDialog } from "@/components/site-diary/TemplateFormDialog";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 
 export default function SiteDiaryTemplates() {
   const [isAddingTemplate, setIsAddingTemplate] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<SiteDiaryTemplate | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<{ id: string; name: string } | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -461,7 +463,7 @@ export default function SiteDiaryTemplates() {
                       <DropdownMenuItem
                         onClick={(e) => {
                           e.stopPropagation();
-                          deleteMutation.mutate(template.id);
+                          setConfirmDelete({ id: template.id, name: template.name });
                         }}
                         className="text-destructive"
                         data-testid={`button-delete-${template.id}`}
@@ -618,6 +620,15 @@ export default function SiteDiaryTemplates() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <ConfirmDialog
+        open={!!confirmDelete}
+        onOpenChange={(open) => { if (!open) setConfirmDelete(null); }}
+        title={`Delete "${confirmDelete?.name ?? ""}"?`}
+        description="This permanently deletes it and cannot be undone."
+        confirmLabel="Delete"
+        destructive
+        onConfirm={() => { if (confirmDelete) deleteMutation.mutate(confirmDelete.id); setConfirmDelete(null); }}
+      />
     </div>
   );
 }

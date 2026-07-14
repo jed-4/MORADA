@@ -68,6 +68,7 @@ import {
   X,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 
@@ -118,6 +119,7 @@ export default function SelectionTemplates() {
   const [, navigate] = useLocation();
   const [isAddingTemplate, setIsAddingTemplate] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<TemplateWithGroups | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<{ id: string; name: string } | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [groupBy, setGroupBy] = useState<"category" | "group" | "none">("category");
   const [isManagingGroups, setIsManagingGroups] = useState(false);
@@ -580,7 +582,7 @@ export default function SelectionTemplates() {
                 Duplicate
               </DropdownMenuItem>
               <DropdownMenuItem
-                onClick={(e) => { e.stopPropagation(); deleteMutation.mutate(template.id); }}
+                onClick={(e) => { e.stopPropagation(); setConfirmDelete({ id: template.id, name: template.name }); }}
                 className="text-destructive"
               >
                 <Trash2 className="h-4 w-4 mr-2" />
@@ -1223,6 +1225,15 @@ export default function SelectionTemplates() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <ConfirmDialog
+        open={!!confirmDelete}
+        onOpenChange={(open) => { if (!open) setConfirmDelete(null); }}
+        title={`Delete "${confirmDelete?.name ?? ""}"?`}
+        description="This permanently deletes it and cannot be undone."
+        confirmLabel="Delete"
+        destructive
+        onConfirm={() => { if (confirmDelete) deleteMutation.mutate(confirmDelete.id); setConfirmDelete(null); }}
+      />
     </div>
   );
 }

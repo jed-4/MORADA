@@ -216,6 +216,17 @@ export const insertPasswordResetTokenSchema = createInsertSchema(passwordResetTo
 export type InsertPasswordResetToken = z.infer<typeof insertPasswordResetTokenSchema>;
 export type PasswordResetToken = typeof passwordResetTokens.$inferSelect;
 
+// Shared password policy — used by registration and invitation acceptance forms
+export const PASSWORD_REQUIREMENTS_HINT =
+  "At least 8 characters, with an uppercase letter, a lowercase letter, and a number";
+
+export const passwordSchema = z
+  .string()
+  .min(8, "Password must be at least 8 characters")
+  .regex(/[A-Z]/, "Password must include at least one uppercase letter")
+  .regex(/[a-z]/, "Password must include at least one lowercase letter")
+  .regex(/[0-9]/, "Password must include at least one number");
+
 // User column preferences for customizing table views
 export const userColumnPreferences = pgTable("user_column_preferences", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

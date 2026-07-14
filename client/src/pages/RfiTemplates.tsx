@@ -61,6 +61,7 @@ import {
   Columns3,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { format } from "date-fns";
 
 const DIRECTED_TO_TYPES = [
@@ -83,6 +84,7 @@ export default function RfiTemplates() {
   const [, navigate] = useLocation();
   const [isAddingTemplate, setIsAddingTemplate] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<RfiTemplate | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<{ id: string; name: string } | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [columnPickerOpen, setColumnPickerOpen] = useState(false);
@@ -497,7 +499,7 @@ export default function RfiTemplates() {
               <DropdownMenuItem
                 onClick={(e) => {
                   e.stopPropagation();
-                  deleteMutation.mutate(row.original.id);
+                  setConfirmDelete({ id: row.original.id, name: row.original.name });
                 }}
                 className="text-destructive"
                 data-testid={`button-delete-${row.original.id}`}
@@ -512,7 +514,7 @@ export default function RfiTemplates() {
       size: 56,
       meta: { defaultWidth: 56, align: "right", headerLabel: "Actions" } satisfies DataTableColumnMeta,
     },
-  ], [categories, duplicateMutation, deleteMutation]);
+  ], [categories, duplicateMutation]);
 
   const pickerColumns = useMemo(
     () => [
@@ -857,6 +859,15 @@ Response Required By: [Date]"
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <ConfirmDialog
+        open={!!confirmDelete}
+        onOpenChange={(open) => { if (!open) setConfirmDelete(null); }}
+        title={`Delete "${confirmDelete?.name ?? ""}"?`}
+        description="This permanently deletes it and cannot be undone."
+        confirmLabel="Delete"
+        destructive
+        onConfirm={() => { if (confirmDelete) deleteMutation.mutate(confirmDelete.id); setConfirmDelete(null); }}
+      />
     </div>
   );
 }

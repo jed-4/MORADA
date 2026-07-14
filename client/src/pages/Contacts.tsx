@@ -53,6 +53,7 @@ import EditContactDialog from "@/components/EditContactDialog";
 import { ImportContactsDialog } from "@/components/contacts/ImportContactsDialog";
 import QuickReviewPanel from "@/components/contacts/QuickReviewPanel";
 import { MergeContactDialog } from "@/components/contacts/MergeContactDialog";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 
 export default function Contacts() {
   const { toast } = useToast();
@@ -62,6 +63,7 @@ export default function Contacts() {
   const [selectedContactType, setSelectedContactType] = useState<"trade" | "supplier" | "client" | undefined>();
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [contactToEdit, setContactToEdit] = useState<Contact | null>(null);
+  const [confirmArchive, setConfirmArchive] = useState<{ id: string; name: string } | null>(null);
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
   const [isQuickReviewOpen, setIsQuickReviewOpen] = useState(false);
   const [isMergeDialogOpen, setIsMergeDialogOpen] = useState(false);
@@ -212,8 +214,8 @@ export default function Contacts() {
     setIsAddDialogOpen(true);
   };
 
-  const handleArchive = (contactId: string) => {
-    archiveMutation.mutate(contactId);
+  const handleArchive = (contact: Contact) => {
+    setConfirmArchive({ id: contact.id, name: contact.name || contact.company || "Unnamed" });
   };
 
   const handleRestore = (contactId: string) => {
@@ -475,7 +477,7 @@ export default function Contacts() {
                     </DropdownMenuItem>
                   ) : (
                     <DropdownMenuItem
-                      onClick={() => handleArchive(contact.id)}
+                      onClick={() => handleArchive(contact)}
                       data-testid={`menu-archive-${contact.id}`}
                     >
                       <Archive className="h-4 w-4 mr-2" />
@@ -768,6 +770,14 @@ export default function Contacts() {
         onOpenChange={setIsMergeDialogOpen}
         contacts={contacts}
         preselectedSourceId={mergeSourceId}
+      />
+      <ConfirmDialog
+        open={!!confirmArchive}
+        onOpenChange={(open) => { if (!open) setConfirmArchive(null); }}
+        title={`Archive "${confirmArchive?.name ?? ""}"?`}
+        description="The contact is hidden from lists but can be restored later."
+        confirmLabel="Archive"
+        onConfirm={() => { if (confirmArchive) archiveMutation.mutate(confirmArchive.id); setConfirmArchive(null); }}
       />
     </div>
   );

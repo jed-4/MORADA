@@ -17,7 +17,7 @@ export default function LandingPage() {
           </div>
           <div className="flex items-center gap-3">
             <Button 
-              onClick={() => window.location.href = '/api/login'}
+              onClick={() => window.location.href = '/auth'}
               variant="default"
               data-testid="button-login-header"
             >
@@ -37,7 +37,7 @@ export default function LandingPage() {
             </p>
             <div className="mt-10 flex items-center justify-center gap-4">
               <Button 
-                onClick={() => window.location.href = '/api/login'}
+                onClick={() => window.location.href = '/auth'}
                 size="lg"
                 className="gap-2 text-base"
                 data-testid="button-get-started"
@@ -102,7 +102,7 @@ export default function LandingPage() {
                   Create your free account and start managing projects today. No credit card required.
                 </p>
                 <Button 
-                  onClick={() => window.location.href = '/api/login'}
+                  onClick={() => window.location.href = '/auth'}
                   size="lg"
                   className="mt-8 gap-2 text-base"
                   data-testid="button-get-started-cta"

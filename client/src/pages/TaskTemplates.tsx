@@ -54,6 +54,7 @@ import {
 } from "@/components/ui/popover";
 import type { TaskTemplate, TaskTag, TaskTemplateStatus, TemplateCategory } from "@shared/schema";
 import { useAuth } from "@/hooks/use-auth";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 
 interface RecurringScheduleItem {
   dayOfWeek: number;
@@ -98,6 +99,7 @@ export default function TaskTemplates() {
   const [filterRecurring, setFilterRecurring] = useState<string>("all");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<TaskTemplate | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<{ id: string; name: string } | null>(null);
   const [formData, setFormData] = useState<TaskTemplateFormData>({
     title: "",
     goal: "",
@@ -674,7 +676,7 @@ export default function TaskTemplates() {
                         </DropdownMenuItem>
                         <DropdownMenuItem
                           className="text-destructive"
-                          onClick={(e) => { e.stopPropagation(); deleteMutation.mutate(template.id); }}
+                          onClick={(e) => { e.stopPropagation(); setConfirmDelete({ id: template.id, name: template.title }); }}
                         >
                           <Trash2 className="h-3 w-3 mr-2" />
                           Delete
@@ -1077,6 +1079,15 @@ export default function TaskTemplates() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <ConfirmDialog
+        open={!!confirmDelete}
+        onOpenChange={(open) => { if (!open) setConfirmDelete(null); }}
+        title={`Delete "${confirmDelete?.name ?? ""}"?`}
+        description="This permanently deletes it and cannot be undone."
+        confirmLabel="Delete"
+        destructive
+        onConfirm={() => { if (confirmDelete) deleteMutation.mutate(confirmDelete.id); setConfirmDelete(null); }}
+      />
     </div>
   );
 }

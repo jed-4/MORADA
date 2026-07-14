@@ -96,7 +96,7 @@ function SectionView({
         {sectionItems.length === 0 ? (
           <p className="text-sm text-muted-foreground">No line items.</p>
         ) : (
-          <div className="border rounded-md overflow-hidden">
+          <div className="border rounded-md overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-muted">
                 <tr>
@@ -157,7 +157,7 @@ function SectionView({
         {sorted.length === 0 ? (
           <p className="text-sm text-muted-foreground">No payment milestones defined.</p>
         ) : (
-          <div className="border rounded-md overflow-hidden">
+          <div className="border rounded-md overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-muted">
                 <tr>

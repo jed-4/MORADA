@@ -61,6 +61,7 @@ import {
   Columns3,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { format } from "date-fns";
 
 interface TemplateItem {
@@ -91,6 +92,7 @@ export default function RfqTemplates() {
   const [, navigate] = useLocation();
   const [isAddingTemplate, setIsAddingTemplate] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<RfqTemplate | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<{ id: string; name: string } | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const { toast } = useToast();
@@ -501,7 +503,7 @@ export default function RfqTemplates() {
                 <DropdownMenuItem
                   onClick={(e) => {
                     e.stopPropagation();
-                    deleteMutation.mutate(row.original.id);
+                    setConfirmDelete({ id: row.original.id, name: row.original.name });
                   }}
                   className="text-destructive"
                   data-testid={`button-delete-${row.original.id}`}
@@ -518,7 +520,7 @@ export default function RfqTemplates() {
       },
     ];
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [categories, duplicateMutation, deleteMutation]);
+  }, [categories, duplicateMutation]);
 
   const pickerColumns = useMemo(
     () => columns
@@ -893,6 +895,15 @@ export default function RfqTemplates() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <ConfirmDialog
+        open={!!confirmDelete}
+        onOpenChange={(open) => { if (!open) setConfirmDelete(null); }}
+        title={`Delete "${confirmDelete?.name ?? ""}"?`}
+        description="This permanently deletes it and cannot be undone."
+        confirmLabel="Delete"
+        destructive
+        onConfirm={() => { if (confirmDelete) deleteMutation.mutate(confirmDelete.id); setConfirmDelete(null); }}
+      />
     </div>
   );
 }

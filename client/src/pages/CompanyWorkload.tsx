@@ -725,7 +725,7 @@ export default function CompanyWorkload({ onSwitchView, className }: CompanyWork
           </div>
         </div>
       </div>
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex flex-1 overflow-x-auto overflow-y-hidden">
         <div
           ref={leftPanelRef}
           className="flex-shrink-0 border-r border-border overflow-hidden"

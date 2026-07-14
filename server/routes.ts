@@ -8174,8 +8174,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!email || !token || !newPassword) {
         return res.status(400).json({ message: 'Email, token and new password are required' });
       }
-      if (newPassword.length < 8) {
-        return res.status(400).json({ message: 'Password must be at least 8 characters' });
+      const passwordValidation = PasswordUtils.validatePasswordStrength(newPassword);
+      if (!passwordValidation.isValid) {
+        return res.status(400).json({ message: passwordValidation.errors.join(". ") });
       }
 
       const crypto = require('crypto');

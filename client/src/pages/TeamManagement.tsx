@@ -214,9 +214,9 @@ function TeamMemberCard({
   };
 
   const getStatusColor = (user: any) => {
-    if (!user.isActive) return { bg: '#ef444415', border: '#ef444430', text: '#ef4444' };
-    if (user.isInvitePending) return { bg: '#f59e0b15', border: '#f59e0b30', text: '#f59e0b' };
-    return { bg: '#10b98115', border: '#10b98130', text: '#10b981' };
+    if (!user.isActive) return { bg: 'hsl(var(--coral-light))', border: 'hsl(var(--coral) / 0.19)', text: 'hsl(var(--coral))' };
+    if (user.isInvitePending) return { bg: 'hsl(var(--amber-light))', border: 'hsl(var(--amber) / 0.19)', text: 'hsl(var(--amber))' };
+    return { bg: 'hsl(var(--sage-light))', border: 'hsl(var(--sage) / 0.19)', text: 'hsl(var(--sage))' };
   };
 
   const statusColor = getStatusColor(user);
@@ -254,9 +254,9 @@ function TeamMemberCard({
               <Badge 
                 className="text-data px-1.5 py-0 h-4 rounded-full border no-default-hover-elevate no-default-active-elevate shrink-0"
                 style={{
-                  backgroundColor: '#f59e0b15',
-                  color: '#f59e0b',
-                  borderColor: '#f59e0b30'
+                  backgroundColor: 'hsl(var(--amber-light))',
+                  color: 'hsl(var(--amber))',
+                  borderColor: 'hsl(var(--amber) / 0.19)'
                 }}
               >
                 <HardHat className="w-2.5 h-2.5 mr-0.5" />
@@ -321,8 +321,8 @@ function PendingInvitationCard({
     <Card
       className="h-20 border-2 transition-all duration-200 hover-elevate"
       style={{
-        borderColor: isExpired ? '#ef444430' : '#f59e0b30',
-        backgroundColor: isExpired ? '#ef444408' : '#f59e0b08'
+        borderColor: isExpired ? 'hsl(var(--coral) / 0.19)' : 'hsl(var(--amber) / 0.19)',
+        backgroundColor: isExpired ? 'hsl(var(--coral) / 0.03)' : 'hsl(var(--amber) / 0.03)'
       }}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
@@ -333,8 +333,8 @@ function PendingInvitationCard({
           <AvatarFallback 
             className="font-semibold"
             style={{
-              backgroundColor: isExpired ? '#ef444415' : '#f59e0b15',
-              color: isExpired ? '#ef4444' : '#f59e0b'
+              backgroundColor: isExpired ? 'hsl(var(--coral-light))' : 'hsl(var(--amber-light))',
+              color: isExpired ? 'hsl(var(--coral))' : 'hsl(var(--amber))'
             }}
           >
             {getInitials(invitation.firstName, invitation.lastName, invitation.email)}
@@ -350,9 +350,9 @@ function PendingInvitationCard({
             <Badge 
               className="text-data px-1.5 py-0 h-4 rounded-full border no-default-hover-elevate no-default-active-elevate shrink-0"
               style={{
-                backgroundColor: isExpired ? '#ef444415' : '#f59e0b15',
-                color: isExpired ? '#ef4444' : '#f59e0b',
-                borderColor: isExpired ? '#ef444430' : '#f59e0b30'
+                backgroundColor: isExpired ? 'hsl(var(--coral-light))' : 'hsl(var(--amber-light))',
+                color: isExpired ? 'hsl(var(--coral))' : 'hsl(var(--amber))',
+                borderColor: isExpired ? 'hsl(var(--coral) / 0.19)' : 'hsl(var(--amber) / 0.19)'
               }}
             >
               {isExpired ? "Expired" : "Pending"}
@@ -381,7 +381,7 @@ function PendingInvitationCard({
             title="Resend Invitation"
             data-testid={`button-resend-${invitation.id}`}
           >
-            <Send className="h-3 w-3 text-[#f59e0b]" />
+            <Send className="h-3 w-3 text-amber" />
           </Button>
           <Button
             variant="ghost"

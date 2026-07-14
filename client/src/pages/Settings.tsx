@@ -264,7 +264,7 @@ export default function Settings() {
       timesheetReminderThresholdHours: 10,
       timesheetAutoRound: false,
       timesheetDefaultBreak: 0,
-      brandColor: "#3B82F6",
+      brandColor: "#A890D4",
       facebook: "",
       linkedin: "",
       twitter: "",
@@ -311,7 +311,7 @@ export default function Settings() {
         timesheetReminderThresholdHours: companySettings.timesheetReminderThresholdHours ? parseFloat(companySettings.timesheetReminderThresholdHours as string) : 10,
         timesheetAutoRound: companySettings.timesheetAutoRound ?? false,
         timesheetDefaultBreak: companySettings.timesheetDefaultBreak ? parseFloat(companySettings.timesheetDefaultBreak as string) : 0,
-        brandColor: companySettings.brandColor || "#3B82F6",
+        brandColor: companySettings.brandColor || "#A890D4",
         facebook: companySettings.facebook || "",
         linkedin: companySettings.linkedin || "",
         twitter: companySettings.twitter || "",
@@ -1417,25 +1417,25 @@ export default function Settings() {
                     <div className="flex items-center gap-3">
                       <div
                         className="w-9 h-9 rounded-md border border-border flex-shrink-0"
-                        style={{ backgroundColor: field.value || "#3B82F6" }}
+                        style={{ backgroundColor: field.value || "hsl(var(--primary))" }}
                       />
                       <FormControl>
                         <div className="flex items-center gap-2">
                           <Input
                             type="color"
                             {...field}
-                            value={field.value || "#3B82F6"}
+                            value={field.value || "#A890D4"}
                             disabled={!isEditing}
                             className="w-9 h-9 p-0.5 cursor-pointer"
                             data-testid="brand-color-picker"
                           />
                           <Input
                             type="text"
-                            value={field.value || "#3B82F6"}
+                            value={field.value || "#A890D4"}
                             onChange={(e) => field.onChange(e.target.value)}
                             disabled={!isEditing}
                             className="w-28 font-mono text-sm"
-                            placeholder="#3B82F6"
+                            placeholder="#A890D4"
                             data-testid="brand-color-hex-input"
                           />
                         </div>
@@ -1511,7 +1511,7 @@ export default function Settings() {
                   <div className="w-full h-24 bg-white border border-border rounded overflow-hidden flex flex-col">
                     <div
                       className="h-7 flex items-center px-2 gap-1.5"
-                      style={{ backgroundColor: companySettings?.brandColor || "#3B82F6" }}
+                      style={{ backgroundColor: companySettings?.brandColor || "hsl(var(--primary))" }}
                     >
                       <div className="w-5 h-4 rounded opacity-40 bg-white flex-shrink-0" />
                       <div className="flex flex-col gap-0.5 flex-1">
@@ -1522,16 +1522,16 @@ export default function Settings() {
                     <div
                       className="h-5 border-b flex items-center px-2 gap-1"
                       style={{
-                        backgroundColor: (companySettings?.brandColor || "#3B82F6") + "14",
-                        borderColor: (companySettings?.brandColor || "#3B82F6") + "26",
+                        backgroundColor: (companySettings?.brandColor || "#A890D4") + "14",
+                        borderColor: (companySettings?.brandColor || "#A890D4") + "26",
                       }}
                     >
-                      <div className="h-1 rounded w-8" style={{ backgroundColor: (companySettings?.brandColor || "#3B82F6") + "80" }} />
+                      <div className="h-1 rounded w-8" style={{ backgroundColor: (companySettings?.brandColor || "#A890D4") + "80" }} />
                       <div className="flex-1" />
-                      <div className="h-1 rounded w-10" style={{ backgroundColor: (companySettings?.brandColor || "#3B82F6") + "80" }} />
+                      <div className="h-1 rounded w-10" style={{ backgroundColor: (companySettings?.brandColor || "#A890D4") + "80" }} />
                     </div>
                     <div className="flex-1 flex flex-col px-2 py-1 gap-0.5">
-                      <div className="h-3 rounded" style={{ backgroundColor: (companySettings?.brandColor || "#3B82F6") + "20" }} />
+                      <div className="h-3 rounded" style={{ backgroundColor: (companySettings?.brandColor || "#A890D4") + "20" }} />
                       <div className="h-1.5 bg-muted/30 rounded w-full" />
                       <div className="h-1.5 bg-muted/30 rounded w-5/6" />
                     </div>

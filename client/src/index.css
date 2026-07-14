@@ -1007,30 +1007,41 @@ input[type="number"] {
   display: none; /* Chrome, Safari, Opera */
 }
 
+/* Auto-hiding scrollbars (macOS overlay style): invisible while idle,
+   shown while scrolling. DataTable toggles data-scrolling from JS. */
+.dt-autohide-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+
+.dt-autohide-scrollbar[data-scrolling="true"] {
+  scrollbar-color: rgba(127, 127, 127, 0.5) transparent;
+}
+
 /* ========== ENHANCED DRAG-DROP STYLES (Buildern-level) ========== */
 
 /* Drop Zone Glow - Blue glow when hovering during drag */
 @keyframes dropZoneGlow {
-  0%, 100% { box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.3); }
-  50% { box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.5), 0 0 12px rgba(59, 130, 246, 0.3); }
+  0%, 100% { box-shadow: 0 0 0 2px hsl(var(--primary) / 0.3); }
+  50% { box-shadow: 0 0 0 4px hsl(var(--primary) / 0.5), 0 0 12px hsl(var(--primary) / 0.3); }
 }
 
 .drop-zone-active {
   animation: dropZoneGlow 1.5s ease-in-out infinite;
-  border-color: rgb(59, 130, 246) !important;
-  background-color: rgba(59, 130, 246, 0.05);
+  border-color: hsl(var(--primary)) !important;
+  background-color: hsl(var(--primary) / 0.05);
   transition: all 0.2s ease;
 }
 
 /* Ghost Card - Dragging preview */
 .drag-ghost-card {
   background: white;
-  border: 2px solid rgb(59, 130, 246);
+  border: 2px solid hsl(var(--primary));
   border-radius: 8px;
   padding: 12px;
   box-shadow: 
     0 10px 30px rgba(0, 0, 0, 0.15),
-    0 0 0 1px rgba(59, 130, 246, 0.3);
+    0 0 0 1px hsl(var(--primary) / 0.3);
   transform: rotate(-2deg);
   cursor: grabbing;
 }
@@ -1039,23 +1050,23 @@ input[type="number"] {
   background: hsl(var(--card));
   box-shadow: 
     0 10px 30px rgba(0, 0, 0, 0.4),
-    0 0 0 1px rgba(59, 130, 246, 0.5);
+    0 0 0 1px hsl(var(--primary) / 0.5);
 }
 
 /* Hierarchy Visual Borders - Color-coded by level */
 .hierarchy-level-1 {
-  border-left: 3px solid #3b82f6; /* Blue-500 for top-level groups */
+  border-left: 3px solid hsl(var(--primary)); /* primary lavender for top-level groups */
   padding-left: 12px;
 }
 
 .hierarchy-level-2 {
-  border-left: 3px solid #10b981; /* Emerald-500 for subgroups */
+  border-left: 3px solid hsl(var(--sage)); /* sage for subgroups */
   padding-left: 20px;
   margin-left: 16px;
 }
 
 .hierarchy-level-3 {
-  border-left: 3px solid #6b7280; /* Gray-500 for items */
+  border-left: 3px solid hsl(var(--muted-foreground)); /* muted for items */
   padding-left: 28px;
   margin-left: 32px;
 }
@@ -1119,7 +1130,7 @@ input[type="number"] {
 
 .catalog-item-draggable:hover {
   background: hsl(var(--muted));
-  border-left-color: rgb(59, 130, 246);
+  border-left-color: hsl(var(--primary));
   transform: translateX(-2px);
 }
 

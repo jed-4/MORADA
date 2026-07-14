@@ -25,7 +25,6 @@ import { Crisp } from "crisp-sdk-web";
 // module initialization order across a single giant static-import chunk.
 const Dashboard = lazy(() => import("@/pages/Dashboard"));
 const Tasks = lazy(() => import("@/pages/Tasks"));
-const Calendar = lazy(() => import("@/pages/Calendar"));
 const Notes = lazy(() => import("@/pages/Notes"));
 const Docs = lazy(() => import("@/pages/Docs"));
 const Minutes = lazy(() => import("@/pages/Minutes"));
@@ -160,7 +159,6 @@ function Router() {
       </Route>
       <Route path="/dashboard" component={Dashboard} />
       <Route path="/tasks" component={Tasks} />
-      <Route path="/calendar" component={Calendar} />
       <Route path="/messages" component={Messages} />
       <Route path="/notes" component={Notes} />
       <Route path="/docs" component={Docs} />

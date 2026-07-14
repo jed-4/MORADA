@@ -59,6 +59,20 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { type Estimate, type EstimateSummary, type Project, type FieldCategoryWithOptions, type FieldOption } from "@shared/schema";
+import { StatusBadge } from "@/components/StatusBadge";
+
+/** Single status-badge renderer shared by the list view and the kanban cards. */
+function renderEstimateStatusBadge(estimate: Estimate, statuses: FieldOption[]) {
+  const statusOption = statuses.find((s) => s.key === estimate.status);
+  if (statusOption) {
+    return <StatusBadge status={statusOption.key} label={statusOption.name} color={statusOption.color} />;
+  }
+  // Fallback to isLocked for backward compatibility
+  if (estimate.isLocked) {
+    return <StatusBadge status="locked" tone="info" label="Locked" />;
+  }
+  return <StatusBadge status={estimate.status || "Draft"} />;
+}
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
@@ -329,29 +343,7 @@ export default function Estimates() {
     }).format(amount);
   };
 
-  const getStatusBadge = (estimate: Estimate) => {
-    const statusOption = estimateStatuses.find(s => s.key === estimate.status);
-    if (statusOption) {
-      return (
-        <Badge 
-          variant="outline"
-          className="h-4 text-data px-1.5"
-          style={{
-            backgroundColor: statusOption.color || '#6B7280',
-            color: '#FFFFFF',
-            borderColor: statusOption.color || '#6B7280'
-          }}
-        >
-          {statusOption.name}
-        </Badge>
-      );
-    }
-    // Fallback to isLocked for backward compatibility
-    if (estimate.isLocked) {
-      return <Badge variant="secondary" className="h-4 text-data px-1.5 bg-blue-100 text-status-info"><Lock className="w-3 h-3 mr-0.5" />Locked</Badge>;
-    }
-    return <Badge variant="outline" className="h-4 text-data px-1.5"><FileText className="w-3 h-3 mr-0.5" />{estimate.status || 'Draft'}</Badge>;
-  };
+  const getStatusBadge = (estimate: Estimate) => renderEstimateStatusBadge(estimate, estimateStatuses);
 
 
   // Filter estimates based on search and filters
@@ -847,28 +839,7 @@ function SortableEstimateCard({ estimate, estimateStatuses, projects }: {
     }).format(amount);
   };
 
-  const getStatusBadge = (estimate: Estimate) => {
-    const statusOption = estimateStatuses.find(s => s.key === estimate.status);
-    if (statusOption && statusOption.color) {
-      return (
-        <Badge 
-          variant="secondary"
-          className="h-4 text-data px-1.5 rounded-full"
-          style={{
-            backgroundColor: `${statusOption.color}20`,
-            color: statusOption.color,
-            borderColor: `${statusOption.color}40`
-          }}
-        >
-          {statusOption.name}
-        </Badge>
-      );
-    }
-    if (estimate.isLocked) {
-      return <Badge variant="secondary" className="h-4 text-data px-1.5 rounded-full bg-blue-100 text-status-info"><Lock className="w-2.5 h-2.5 mr-0.5" />Locked</Badge>;
-    }
-    return <Badge variant="outline" className="h-4 text-data px-1.5 rounded-full"><FileText className="w-2.5 h-2.5 mr-0.5" />{estimate.status || 'Draft'}</Badge>;
-  };
+  const getStatusBadge = (estimate: Estimate) => renderEstimateStatusBadge(estimate, estimateStatuses);
 
   return (
     <div

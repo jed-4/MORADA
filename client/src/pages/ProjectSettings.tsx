@@ -1105,7 +1105,7 @@ export default function ProjectSettings() {
               <div className="flex items-center gap-2">
                 <div
                   className="w-6 h-6 rounded-md border border-border"
-                  style={{ backgroundColor: currentProject.color || "#A890D4" }}
+                  style={{ backgroundColor: currentProject.color || "hsl(var(--primary))" }}
                   data-testid="color-preview"
                 />
                 <span className="text-sm font-mono" data-testid="text-project-color">

@@ -46,6 +46,7 @@ import {
   Columns3,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { format } from "date-fns";
 
 interface TemplateItem {
@@ -60,6 +61,7 @@ export default function POTemplates() {
   const [, navigate] = useLocation();
   const [isAddingTemplate, setIsAddingTemplate] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<PurchaseOrderTemplate | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<{ id: string; name: string } | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [columnPickerOpen, setColumnPickerOpen] = useState(false);
   const { toast } = useToast();
@@ -340,7 +342,7 @@ export default function POTemplates() {
                 <DropdownMenuItem
                   onClick={(e) => {
                     e.stopPropagation();
-                    deleteMutation.mutate(row.original.id);
+                    setConfirmDelete({ id: row.original.id, name: row.original.name });
                   }}
                   className="text-destructive"
                   data-testid={`button-delete-${row.original.id}`}
@@ -356,7 +358,7 @@ export default function POTemplates() {
         meta: { defaultWidth: 56, align: "right", pinned: true, headerLabel: "Actions" } satisfies DataTableColumnMeta,
       },
     ],
-    [duplicateMutation, deleteMutation],
+    [duplicateMutation],
   );
 
   const pickerColumns = useMemo(
@@ -558,6 +560,15 @@ export default function POTemplates() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <ConfirmDialog
+        open={!!confirmDelete}
+        onOpenChange={(open) => { if (!open) setConfirmDelete(null); }}
+        title={`Delete "${confirmDelete?.name ?? ""}"?`}
+        description="This permanently deletes it and cannot be undone."
+        confirmLabel="Delete"
+        destructive
+        onConfirm={() => { if (confirmDelete) deleteMutation.mutate(confirmDelete.id); setConfirmDelete(null); }}
+      />
     </div>
   );
 }

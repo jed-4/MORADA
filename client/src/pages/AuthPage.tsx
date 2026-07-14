@@ -6,12 +6,13 @@ import { z } from 'zod';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
+import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useToast } from '@/hooks/use-toast';
 import { queryClient } from '@/lib/queryClient';
 import { Mail, Lock, User, Loader2, CheckCircle2, ArrowLeft } from 'lucide-react';
+import { passwordSchema, PASSWORD_REQUIREMENTS_HINT } from '@shared/schema';
 import moradaLogo from "@assets/icon_1783074833445.png";
 
 const loginSchema = z.object({
@@ -21,7 +22,7 @@ const loginSchema = z.object({
 
 const registerSchema = z.object({
   email: z.string().email('Please enter a valid email'),
-  password: z.string().min(8, 'Password must be at least 8 characters'),
+  password: passwordSchema,
   confirmPassword: z.string(),
   firstName: z.string().min(1, 'First name is required'),
   lastName: z.string().min(1, 'Last name is required'),
@@ -296,7 +297,7 @@ export default function AuthPage() {
               <TabsContent value="register" className="space-y-4 mt-0">
                 <Form {...registerForm}>
                   <form onSubmit={registerForm.handleSubmit(handleRegister)} className="space-y-4">
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <FormField
                         control={registerForm.control}
                         name="firstName"
@@ -370,12 +371,13 @@ export default function AuthPage() {
                               <Input
                                 {...field}
                                 type="password"
-                                placeholder="At least 8 characters"
+                                placeholder="Create a password"
                                 className="pl-10"
                                 data-testid="input-register-password"
                               />
                             </div>
                           </FormControl>
+                          <FormDescription>{PASSWORD_REQUIREMENTS_HINT}</FormDescription>
                           <FormMessage />
                         </FormItem>
                       )}

@@ -43,11 +43,13 @@ import {
 } from "@/components/data-table/DataTable";
 import { ChecklistTemplateFormDialog } from "@/components/checklist/ChecklistTemplateFormDialog";
 import { ImportChecklistDialog } from "@/components/checklist/ImportChecklistDialog";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 
 export default function ChecklistTemplates() {
   const [, setLocation] = useLocation();
   const [isAddingTemplate, setIsAddingTemplate] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<ChecklistTemplate | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<{ id: string; name: string } | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [isImportOpen, setIsImportOpen] = useState(false);
   const [columnPickerOpen, setColumnPickerOpen] = useState(false);
@@ -306,7 +308,7 @@ export default function ChecklistTemplates() {
               <DropdownMenuItem
                 onClick={(e) => {
                   e.stopPropagation();
-                  deleteMutation.mutate(row.original.id);
+                  setConfirmDelete({ id: row.original.id, name: row.original.name });
                 }}
                 className="text-destructive"
                 data-testid={`button-delete-${row.original.id}`}
@@ -321,7 +323,7 @@ export default function ChecklistTemplates() {
       size: 60,
       meta: { defaultWidth: 60, align: "right", pinned: true, headerLabel: "Actions" } satisfies DataTableColumnMeta,
     },
-  ], [allRoles, deleteMutation, duplicateMutation, setLocation]);
+  ], [allRoles, duplicateMutation, setLocation]);
 
   const pickerColumns = useMemo(
     () => [
@@ -470,6 +472,15 @@ export default function ChecklistTemplates() {
       <ImportChecklistDialog
         open={isImportOpen}
         onOpenChange={setIsImportOpen}
+      />
+      <ConfirmDialog
+        open={!!confirmDelete}
+        onOpenChange={(open) => { if (!open) setConfirmDelete(null); }}
+        title={`Delete "${confirmDelete?.name ?? ""}"?`}
+        description="This permanently deletes it and cannot be undone."
+        confirmLabel="Delete"
+        destructive
+        onConfirm={() => { if (confirmDelete) deleteMutation.mutate(confirmDelete.id); setConfirmDelete(null); }}
       />
     </div>
   );

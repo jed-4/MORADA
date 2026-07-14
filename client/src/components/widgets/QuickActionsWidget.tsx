@@ -32,7 +32,7 @@ const defaultActions: QuickAction[] = [
   { id: "add-bill", label: "Add Bill", icon: Receipt, path: "/bills?action=new", color: "text-green-500" },
   { id: "add-variation", label: "Add Variation", icon: FileEdit, path: "/variations?action=new", color: "text-purple-500" },
   { id: "create-invoice", label: "Create Invoice", icon: FileText, path: "/invoices?action=new", color: "text-amber-500" },
-  { id: "schedule-meeting", label: "Schedule", icon: Calendar, path: "/calendar", color: "text-red-500" },
+  { id: "schedule-meeting", label: "Schedule", icon: Calendar, path: "/my-calendar", color: "text-red-500" },
   { id: "view-contacts", label: "Contacts", icon: Users, path: "/contacts", color: "text-indigo-500" },
   { id: "view-checklists", label: "Checklists", icon: ClipboardList, path: "/checklists", color: "text-teal-500" },
   { id: "site-diary", label: "Site Diary", icon: Camera, path: "/site-diary", color: "text-orange-500" },

@@ -3,6 +3,7 @@ import session from 'express-session';
 import type { Express, RequestHandler, Request, Response, NextFunction } from 'express';
 import connectPg from 'connect-pg-simple';
 import { storage } from './storage';
+import { PasswordUtils } from './utils/auth';
 import { OAuth2Client } from 'google-auth-library';
 import * as signature from 'cookie-signature';
 
@@ -86,8 +87,9 @@ export async function setupAuth(app: Express) {
         return res.status(400).json({ message: 'Email and password are required' });
       }
 
-      if (password.length < 8) {
-        return res.status(400).json({ message: 'Password must be at least 8 characters' });
+      const passwordValidation = PasswordUtils.validatePasswordStrength(password);
+      if (!passwordValidation.isValid) {
+        return res.status(400).json({ message: passwordValidation.errors.join('. ') });
       }
 
       // Check if user already exists

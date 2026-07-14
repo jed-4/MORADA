@@ -121,6 +121,12 @@ export interface StatusBadgeProps {
   tone?: StatusTone;
   /** Custom display label; defaults to a humanized version of `status`. */
   label?: string;
+  /**
+   * Dynamic colour for field-setting-driven statuses (6-digit hex from the
+   * status colour picker). Renders a translucent pill tinted with the colour.
+   * Takes precedence over tone detection.
+   */
+  color?: string | null;
   className?: string;
   "data-testid"?: string;
 }
@@ -133,10 +139,31 @@ export function StatusBadge({
   status,
   tone,
   label,
+  color,
   className,
   ...rest
 }: StatusBadgeProps) {
   const resolvedTone = tone ?? getStatusTone(status);
+
+  if (color) {
+    // User-configured status colour (field settings). 6-digit hex gets the
+    // translucent-tint treatment; anything else falls back to a solid fill.
+    const isHex6 = /^#[0-9a-fA-F]{6}$/.test(color);
+    return (
+      <Badge
+        variant="outline"
+        className={cn("rounded-[9px] h-[18px] px-[7px] py-0 text-data font-medium", className)}
+        style={
+          isHex6
+            ? { backgroundColor: `${color}20`, color, borderColor: `${color}40` }
+            : { backgroundColor: color, color: "#FFFFFF", borderColor: color }
+        }
+        data-testid={rest["data-testid"] ?? `badge-status-${normalize(status)}`}
+      >
+        {label ?? humanize(status)}
+      </Badge>
+    );
+  }
 
   if (resolvedTone === "neutral") {
     return (

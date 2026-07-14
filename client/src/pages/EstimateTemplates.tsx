@@ -58,6 +58,7 @@ import {
   Columns3,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { format } from "date-fns";
 import * as XLSX from "xlsx";
 
@@ -119,6 +120,7 @@ export default function EstimateTemplates() {
   const [activeTab, setActiveTab] = useState<'items' | 'labour' | 'enotes'>('items');
   const [isAddingTemplate, setIsAddingTemplate] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<EstimateTemplate | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<{ id: string; name: string } | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   // Shared group state (Labour + E-Notes)
   const [selectedGroup, setSelectedGroup] = useState<string>("");
@@ -849,7 +851,7 @@ export default function EstimateTemplates() {
                 <Copy className="h-4 w-4 mr-2" /> Duplicate
               </DropdownMenuItem>
               <DropdownMenuItem
-                onClick={(e) => { e.stopPropagation(); deleteMutation.mutate(row.original.id); }}
+                onClick={(e) => { e.stopPropagation(); setConfirmDelete({ id: row.original.id, name: row.original.name }); }}
                 className="text-destructive"
                 data-testid={`button-delete-${row.original.id}`}
               >
@@ -1857,6 +1859,15 @@ export default function EstimateTemplates() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <ConfirmDialog
+        open={!!confirmDelete}
+        onOpenChange={(open) => { if (!open) setConfirmDelete(null); }}
+        title={`Delete "${confirmDelete?.name ?? ""}"?`}
+        description="This permanently deletes it and cannot be undone."
+        confirmLabel="Delete"
+        destructive
+        onConfirm={() => { if (confirmDelete) deleteMutation.mutate(confirmDelete.id); setConfirmDelete(null); }}
+      />
     </div>
   );
 }
