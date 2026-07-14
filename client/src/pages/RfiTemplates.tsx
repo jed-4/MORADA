@@ -3,6 +3,7 @@ import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { PriorityBadge } from "@/components/PriorityBadge";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
@@ -338,15 +339,6 @@ export default function RfiTemplates() {
     return PRIORITIES.find(p => p.value === priority)?.label || priority;
   };
 
-  const getPriorityColor = (priority: string | null) => {
-    switch (priority) {
-      case "urgent": return "border-red-500 text-status-danger";
-      case "high": return "border-orange-500 text-status-warning";
-      case "low": return "border-border-strong text-muted";
-      default: return "";
-    }
-  };
-
   const uniqueCategoryIds = [...new Set(templates.map(t => t.categoryId).filter(Boolean))] as string[];
 
   const handleRowClick = (template: RfiTemplate) => {
@@ -434,13 +426,12 @@ export default function RfiTemplates() {
           return <span className="text-xs text-muted-foreground">—</span>;
         }
         return (
-          <Badge
-            variant="outline"
-            className={`h-4 px-1.5 text-data ${getPriorityColor(priority)}`}
+          <PriorityBadge
+            priority={priority}
+            label={getPriorityLabel(priority) || undefined}
+            className="h-4 px-1.5"
             data-testid={`cell-priority-${row.original.id}`}
-          >
-            {getPriorityLabel(priority)}
-          </Badge>
+          />
         );
       },
       size: 100,

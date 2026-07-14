@@ -478,20 +478,20 @@ export default function Settings() {
         <Card>
           <CardHeader>
             <div className="flex items-center gap-3">
-              <div className="p-2 bg-blue-100 dark:bg-blue-900 rounded-lg">
-                <HardDrive className="h-6 w-6 text-status-info dark:text-blue-400" />
+              <div className="p-2 bg-status-info-bg rounded-lg">
+                <HardDrive className="h-6 w-6 text-status-info" />
               </div>
               <div className="flex-1">
                 <CardTitle className="flex items-center gap-2">
                   Google Drive
                   {driveStatus?.connected && (
-                    <Badge variant="secondary" className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">
+                    <Badge variant="secondary" className="bg-status-success-bg text-status-success">
                       <CheckCircle2 className="h-3 w-3 mr-1" />
                       Connected
                     </Badge>
                   )}
                   {driveStatus?.credentialsConfigured && !driveStatus?.connected && (
-                    <Badge variant="secondary" className="bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200">
+                    <Badge variant="secondary" className="bg-status-warning-bg text-status-warning">
                       <AlertCircle className="h-3 w-3 mr-1" />
                       Credentials Set
                     </Badge>
@@ -633,8 +633,8 @@ export default function Settings() {
               <div className="space-y-4">
                 <div className="flex items-center justify-between p-4 border rounded-lg">
                   <div className="flex items-center gap-3">
-                    <div className="p-2 bg-green-100 dark:bg-green-900 rounded-full">
-                      <CheckCircle2 className="h-5 w-5 text-status-success dark:text-green-400" />
+                    <div className="p-2 bg-status-success-bg rounded-full">
+                      <CheckCircle2 className="h-5 w-5 text-status-success" />
                     </div>
                     <div>
                       <p className="font-medium">Connected to Google Drive</p>
@@ -767,20 +767,20 @@ export default function Settings() {
       <Card>
         <CardHeader>
           <div className="flex items-center gap-3">
-            <div className="p-2 bg-orange-100 dark:bg-orange-900 rounded-lg">
-              <Receipt className="h-6 w-6 text-orange-600 dark:text-orange-400" />
+            <div className="p-2 bg-amber-light rounded-lg">
+              <Receipt className="h-6 w-6 text-amber" />
             </div>
             <div className="flex-1">
               <CardTitle className="flex items-center gap-2 flex-wrap">
                 Bill Inbox
                 {status?.connected && status?.pollingEnabled && (
-                  <Badge variant="secondary" className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">
+                  <Badge variant="secondary" className="bg-status-success-bg text-status-success">
                     <CheckCircle2 className="h-3 w-3 mr-1" />
                     Active
                   </Badge>
                 )}
                 {status?.connected && !status?.pollingEnabled && (
-                  <Badge variant="secondary" className="bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200">
+                  <Badge variant="secondary" className="bg-status-warning-bg text-status-warning">
                     Paused
                   </Badge>
                 )}
@@ -820,8 +820,8 @@ export default function Settings() {
             <div className="space-y-4">
               <div className="flex items-center justify-between p-4 border rounded-lg">
                 <div className="flex items-center gap-3">
-                  <div className="p-2 bg-green-100 dark:bg-green-900 rounded-full">
-                    <CheckCircle2 className="h-5 w-5 text-status-success dark:text-green-400" />
+                  <div className="p-2 bg-status-success-bg rounded-full">
+                    <CheckCircle2 className="h-5 w-5 text-status-success" />
                   </div>
                   <div>
                     <p className="font-medium">{status.email}</p>
@@ -977,7 +977,7 @@ export default function Settings() {
               <CardTitle className="flex items-center gap-2">
                 Xero
                 {xeroStatus?.connected && (
-                  <Badge variant="secondary" className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">
+                  <Badge variant="secondary" className="bg-status-success-bg text-status-success">
                     <CheckCircle2 className="h-3 w-3 mr-1" />
                     Connected
                   </Badge>
@@ -999,8 +999,8 @@ export default function Settings() {
             <div className="space-y-4">
               <div className="flex items-center justify-between p-4 border rounded-lg">
                 <div className="flex items-center gap-3">
-                  <div className="p-2 bg-green-100 dark:bg-green-900 rounded-full">
-                    <CheckCircle2 className="h-5 w-5 text-status-success dark:text-green-400" />
+                  <div className="p-2 bg-status-success-bg rounded-full">
+                    <CheckCircle2 className="h-5 w-5 text-status-success" />
                   </div>
                   <div>
                     <p className="font-medium">Connected to Xero</p>
@@ -3698,7 +3698,7 @@ function FieldSettingsSection() {
                     <p className="text-sm text-muted-foreground mt-1">
                       {section.description}
                     </p>
-                    <p className="text-xs text-status-warning bg-yellow-50 border border-yellow-200 rounded px-2 py-1 mt-2">
+                    <p className="text-xs text-status-warning bg-status-warning-bg border border-status-warning/30 rounded px-2 py-1 mt-2">
                       Note: Custom fields are shared across all notes and tasks
                     </p>
                   </div>

@@ -164,13 +164,6 @@ const styles = StyleSheet.create({
     fontSize: 8,
     color: "#aaaaaa",
   },
-  priorityBadge: {
-    fontSize: 8,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 3,
-    color: "#ffffff",
-  },
 });
 
 interface GroupData {
@@ -186,16 +179,6 @@ interface ChecklistPdfProps {
   projectName?: string;
   exportDate: string;
 }
-
-const getPriorityColor = (priority: string) => {
-  switch (priority) {
-    case "urgent": return "#ef4444";
-    case "high": return "#f97316";
-    case "medium": return "#eab308";
-    case "low": return "#22c55e";
-    default: return "#94a3b8";
-  }
-};
 
 export function ChecklistPdfDocument({ checklist, groups, projectName, exportDate }: ChecklistPdfProps) {
   const allItems = groups.flatMap(g => g.items);

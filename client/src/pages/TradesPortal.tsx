@@ -34,13 +34,13 @@ function SelectionCard({ sel }: { sel: TradesPortalData["selections"][number] })
         {sel.category && <Badge variant="outline" className="text-[10px]">{sel.category}</Badge>}
         {(sel as any).room && <Badge variant="outline" className="text-[10px]">{(sel as any).room}</Badge>}
         {approved && (
-          <div className="flex items-center gap-1.5 text-xs text-green-600 dark:text-green-400">
+          <div className="flex items-center gap-1.5 text-xs text-status-success">
             <CheckCircle2 className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">Approved</span>
           </div>
         )}
         {isOver && (
-          <Badge className="text-[10px] bg-orange-100 text-orange-700 border-orange-200 dark:bg-orange-900/30 dark:text-orange-400">
+          <Badge className="text-[10px] bg-status-danger-bg text-status-danger border-status-danger/30">
             Over allowance
           </Badge>
         )}
@@ -54,10 +54,10 @@ function SelectionCard({ sel }: { sel: TradesPortalData["selections"][number] })
               <span>Allowance: <b className="text-foreground">{formatCents(allowanceCents)}</b></span>
             )}
             {approved && (
-              <span>Selected: <b className={cn("tabular-nums", isOver ? "text-orange-600 dark:text-orange-400" : "text-foreground")}>{formatCents(approved.totalCost)}</b></span>
+              <span>Selected: <b className={cn("tabular-nums", isOver ? "text-status-danger" : "text-foreground")}>{formatCents(approved.totalCost)}</b></span>
             )}
             {allowanceCents > 0 && approved && (
-              <span>Variance: <b className={cn("tabular-nums", isOver ? "text-orange-600 dark:text-orange-400" : "text-green-600 dark:text-green-400")}>
+              <span>Variance: <b className={cn("tabular-nums", isOver ? "text-status-danger" : "text-status-success")}>
                 {formatCents(selectedCost - allowanceCents)}
               </b></span>
             )}
@@ -77,7 +77,7 @@ function SelectionCard({ sel }: { sel: TradesPortalData["selections"][number] })
                     key={opt.id}
                     className={cn(
                       "rounded-md border px-3 py-2.5 flex items-start gap-3 text-sm",
-                      isSelected ? "border-green-300 bg-green-50 dark:border-green-800 dark:bg-green-950/30" : "border-border bg-background"
+                      isSelected ? "border-sage/40 bg-sage/10" : "border-border bg-background"
                     )}
                   >
                     {images.length > 0 && (
@@ -89,9 +89,9 @@ function SelectionCard({ sel }: { sel: TradesPortalData["selections"][number] })
                     )}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className={cn("font-medium text-sm", isSelected && "text-green-700 dark:text-green-300")}>{opt.name}</span>
+                        <span className={cn("font-medium text-sm", isSelected && "text-status-success")}>{opt.name}</span>
                         {isSelected && (
-                          <Badge className="text-[10px] bg-green-100 text-green-700 border-green-200 dark:bg-green-900/30 dark:text-green-300 dark:border-green-800">
+                          <Badge className="text-[10px] bg-status-success-bg text-status-success border-status-success/30">
                             Selected
                           </Badge>
                         )}

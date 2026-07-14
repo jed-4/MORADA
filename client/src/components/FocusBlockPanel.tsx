@@ -5,6 +5,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { generateNotionColors , TYPE_COLORS_HEX } from "@/lib/taskColors";
+import { getPriorityStyle } from "@/lib/priorityConfig";
 import { X, Edit2, Trash2, Clock, CalendarDays, Pin, PinOff, Plus, Search } from "lucide-react";
 import type { FocusBlock, Task, FieldCategoryWithOptions } from "@shared/schema";
 import { FocusBlockCreator } from "./FocusBlockCreator";
@@ -15,12 +16,6 @@ interface FocusBlockPanelProps {
 }
 
 const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-
-const PRIORITY_COLORS: Record<string, string> = {
-  high: "#ef4444",
-  medium: "#f97316",
-  low: "#22c55e",
-};
 
 function getPriorityLabel(priority: string | null | undefined): string {
   if (!priority) return "—";
@@ -232,7 +227,7 @@ export function FocusBlockPanel({ block, onClose }: FocusBlockPanelProps) {
                 {blockTasks.map((task) => {
                   const taskColors = generateNotionColors(task.color || TYPE_COLORS_HEX.task);
                   const isPinned = pinnedTaskIds.has(task.id);
-                  const priorityColor = PRIORITY_COLORS[task.priority || ""] || "#6b7280";
+                  const priorityColor = getPriorityStyle(task.priority).color;
                   return (
                     <div
                       key={task.id}

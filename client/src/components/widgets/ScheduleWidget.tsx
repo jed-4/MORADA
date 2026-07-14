@@ -52,6 +52,7 @@ import {
   getDay
 } from "date-fns";
 import { generateNotionColors, TYPE_COLORS_HEX } from "@/lib/taskColors";
+import { getPriorityStyle } from "@/lib/priorityConfig";
 import { useWeekStartDay } from "@/hooks/useWeekStartDay";
 
 type ViewMode = "list" | "day" | "week" | "month";
@@ -84,12 +85,6 @@ const typeHexColors: Record<string, string> = {
 function getTypeNotionColors(type: string) {
   return generateNotionColors(typeHexColors[type] || TYPE_COLORS_HEX.task);
 }
-
-const priorityColors = {
-  high: "text-red-500",
-  medium: "text-amber-500",
-  low: "text-blue-500",
-};
 
 const typeColors: Record<string, string> = {
   task: "bg-blue-500",
@@ -539,7 +534,7 @@ export default function ScheduleWidget({ widget, onUpdate, isConfiguring, onClos
                       </span>
                     </div>
                     {item.priority && (
-                      <span className={`text-data ${priorityColors[item.priority]}`}>
+                      <span className="text-data" style={{ color: getPriorityStyle(item.priority).color }}>
                         {item.priority}
                       </span>
                     )}
@@ -714,7 +709,7 @@ export default function ScheduleWidget({ widget, onUpdate, isConfiguring, onClos
                         </span>
                       </TaskTooltip>
                       {item.priority && (
-                        <span className={`text-label ${priorityColors[item.priority]}`}>
+                        <span className="text-label" style={{ color: getPriorityStyle(item.priority).color }}>
                           {item.priority}
                         </span>
                       )}
@@ -754,7 +749,7 @@ export default function ScheduleWidget({ widget, onUpdate, isConfiguring, onClos
                     <span className="text-data text-muted-foreground">{item.time}</span>
                   )}
                   {item.priority && (
-                    <span className={`text-data ${priorityColors[item.priority]}`}>
+                    <span className="text-data" style={{ color: getPriorityStyle(item.priority).color }}>
                       {item.priority}
                     </span>
                   )}
@@ -1111,7 +1106,7 @@ export default function ScheduleWidget({ widget, onUpdate, isConfiguring, onClos
               {selectedItem.priority && (
                 <div className="flex items-center gap-2">
                   <Flag className="h-4 w-4 flex-shrink-0" />
-                  <span className={`capitalize ${priorityColors[selectedItem.priority]}`}>
+                  <span className="capitalize" style={{ color: getPriorityStyle(selectedItem.priority).color }}>
                     {selectedItem.priority} Priority
                   </span>
                 </div>

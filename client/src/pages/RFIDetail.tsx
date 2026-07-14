@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { PriorityBadge } from "@/components/PriorityBadge";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
@@ -205,15 +206,8 @@ export default function RFIDetail() {
   const statusInfo = getStatusInfo(rfi.status);
   const isOverdue = rfi.dueDate && isPast(new Date(rfi.dueDate)) && rfi.status !== "closed" && rfi.status !== "answered";
 
-  const getPriorityColor = (priority: string) => {
-    const colors: Record<string, string> = {
-      low: "bg-muted text-foreground",
-      normal: "bg-blue-100 text-blue-800",
-      high: "bg-orange-100 text-orange-800",
-      urgent: "bg-red-100 text-red-800",
-    };
-    return colors[priority] || colors.normal;
-  };
+  // RFI scale is low/normal/high/urgent — "normal" maps to the shared "medium" colour.
+  const rfiPriority = rfi.priority || "normal";
 
   return (
     <div className="flex flex-col h-full">
@@ -232,9 +226,10 @@ export default function RFIDetail() {
             <Badge style={{ backgroundColor: statusInfo.color, color: "#fff" }}>
               {statusInfo.name}
             </Badge>
-            <Badge className={getPriorityColor(rfi.priority || "normal")}>
-              {(rfi.priority || "normal").charAt(0).toUpperCase() + (rfi.priority || "normal").slice(1)}
-            </Badge>
+            <PriorityBadge
+              priority={rfiPriority === "normal" ? "medium" : rfiPriority}
+              label={rfiPriority.charAt(0).toUpperCase() + rfiPriority.slice(1)}
+            />
           </div>
           <div className="flex items-center gap-2">
             {hasChanges && (

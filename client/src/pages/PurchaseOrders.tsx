@@ -80,9 +80,9 @@ const SELECT_COL_WIDTH = 32;
 const BULK_STATUSES: Array<{ key: string; label: string; icon?: typeof CheckCheck; className?: string }> = [
   { key: "draft", label: "Draft", className: "text-muted-foreground" },
   { key: "sent", label: "Sent" },
-  { key: "invoiced", label: "Invoiced", className: "text-amber-600 dark:text-amber-400" },
-  { key: "partially_paid", label: "Partially Paid", className: "text-amber-600 dark:text-amber-400" },
-  { key: "paid", label: "Paid", icon: CheckCheck, className: "text-emerald-600 dark:text-emerald-400" },
+  { key: "invoiced", label: "Invoiced", className: "text-status-warning" },
+  { key: "partially_paid", label: "Partially Paid", className: "text-status-warning" },
+  { key: "paid", label: "Paid", icon: CheckCheck, className: "text-status-success" },
   { key: "cancelled", label: "Cancelled", icon: Ban, className: "text-destructive" },
 ];
 
@@ -583,8 +583,8 @@ export default function PurchaseOrders({ embedded }: { embedded?: boolean } = {}
             variant="outline"
             className={`text-data uppercase font-medium ${
               row.original.poType === "site"
-                ? "bg-amber-50 border-amber-200 text-amber-700 dark:bg-amber-900/20 dark:border-amber-800 dark:text-amber-400"
-                : "bg-blue-50 border-blue-200 text-status-info dark:bg-blue-900/20 dark:border-blue-800 dark:text-blue-400"
+                ? "bg-amber-light border-amber/30 text-amber"
+                : "bg-status-info-bg border-status-info/30 text-status-info"
             }`}
           >
             {row.original.poType === "site" ? "Site" : "Std"}
@@ -875,7 +875,7 @@ export default function PurchaseOrders({ embedded }: { embedded?: boolean } = {}
               <div className="space-y-1 max-h-64 overflow-y-auto">
                 <button
                   onClick={() => setSelectedSupplier(null)}
-                  className={`w-full text-left px-2 py-1.5 text-sm rounded hover:bg-muted dark:hover:bg-gray-800 transition-colors ${
+                  className={`w-full text-left px-2 py-1.5 text-sm rounded hover:bg-muted transition-colors ${
                     !selectedSupplier ? "bg-primary/10 text-primary font-medium" : ""
                   }`}
                   data-testid="filter-supplier-all"
@@ -900,7 +900,7 @@ export default function PurchaseOrders({ embedded }: { embedded?: boolean } = {}
                       <button
                         key={opt.key}
                         onClick={() => setSelectedSupplier(opt)}
-                        className={`w-full text-left px-2 py-1.5 text-sm rounded hover:bg-muted dark:hover:bg-gray-800 transition-colors truncate ${
+                        className={`w-full text-left px-2 py-1.5 text-sm rounded hover:bg-muted transition-colors truncate ${
                           isActive ? "bg-primary/10 text-primary font-medium" : ""
                         }`}
                         data-testid={`filter-supplier-${opt.key}`}
@@ -919,7 +919,7 @@ export default function PurchaseOrders({ embedded }: { embedded?: boolean } = {}
           <button
             onClick={() => setIsSitePODialogOpen(true)}
             disabled={createSitePOMutation.isPending}
-            className="h-6 px-2 text-xs border rounded-md bg-amber-500 text-white border-amber-400/20 hover:bg-amber-600 active-elevate-2 flex items-center gap-1 disabled:opacity-50 flex-shrink-0"
+            className="h-6 px-2 text-xs border rounded-md bg-amber text-white border-amber/20 hover:bg-amber/90 active-elevate-2 flex items-center gap-1 disabled:opacity-50 flex-shrink-0"
             data-testid="button-new-site-po"
           >
             {createSitePOMutation.isPending ? (
@@ -992,12 +992,12 @@ export default function PurchaseOrders({ embedded }: { embedded?: boolean } = {}
               if (sitePOs.length === 0 && selectedType !== "site") return null;
               return (
                 <div className="border-b border-border">
-                  <div className="flex items-center gap-2 px-4 py-2 bg-amber-50/50 dark:bg-amber-900/10 border-b border-amber-100 dark:border-amber-900/30">
-                    <ClipboardList className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 flex-shrink-0" />
-                    <span className="text-xs font-semibold text-amber-700 dark:text-amber-400 uppercase tracking-wide">
+                  <div className="flex items-center gap-2 px-4 py-2 bg-amber/5 border-b border-amber/20">
+                    <ClipboardList className="w-3.5 h-3.5 text-amber flex-shrink-0" />
+                    <span className="text-xs font-semibold text-amber uppercase tracking-wide">
                       Site Purchase Orders
                     </span>
-                    <span className="text-xs text-amber-600/70 dark:text-amber-400/70">({sitePOs.length})</span>
+                    <span className="text-xs text-amber/70">({sitePOs.length})</span>
                   </div>
                   {sitePOs.length === 0 ? (
                     <EmptyState
@@ -1027,11 +1027,11 @@ export default function PurchaseOrders({ embedded }: { embedded?: boolean } = {}
                           po.status.replace(/_/g, " ");
                         const statusClass =
                           po.status === "draft"
-                            ? "bg-blue-50 border-blue-200 text-blue-700 dark:bg-blue-900/20 dark:border-blue-800 dark:text-blue-300"
+                            ? "bg-status-info-bg border-status-info/30 text-status-info"
                             : po.status === "paid"
-                            ? "bg-green-50 border-green-200 text-green-700 dark:bg-green-900/20 dark:border-green-800 dark:text-green-300"
+                            ? "bg-status-success-bg border-status-success/30 text-status-success"
                             : po.status === "invoiced" || po.status === "partially_paid"
-                            ? "bg-amber-50 border-amber-200 text-amber-700 dark:bg-amber-900/20 dark:border-amber-800 dark:text-amber-300"
+                            ? "bg-status-warning-bg border-status-warning/30 text-status-warning"
                             : "bg-muted border-border text-muted-foreground";
                         return (
                           <div
@@ -1062,7 +1062,7 @@ export default function PurchaseOrders({ embedded }: { embedded?: boolean } = {}
                               <span className="text-sm font-semibold tabular-nums">{formatCurrency(po.total || 0)}</span>
                             </div>
                             {(po.status === "invoiced" || po.status === "partially_paid" || po.status === "paid") && anyPo.matchedBillId && (
-                              <div className="flex items-center gap-1 text-[11px] text-green-600 dark:text-green-400 mt-0.5">
+                              <div className="flex items-center gap-1 text-[11px] text-status-success mt-0.5">
                                 <Link2 className="w-3 h-3 flex-shrink-0" />
                                 <span>Matched to bill</span>
                               </div>
@@ -1254,7 +1254,7 @@ export default function PurchaseOrders({ embedded }: { embedded?: boolean } = {}
             <Button
               onClick={handleCreateSitePO}
               disabled={createSitePOMutation.isPending || !sitePOCostCodeId || !sitePOAmount || !sitePODescription.trim()}
-              className="bg-amber-500 hover:bg-amber-600 text-white"
+              className="bg-amber hover:bg-amber/90 text-white"
               data-testid="button-submit-site-po"
             >
               {createSitePOMutation.isPending ? (
@@ -1271,8 +1271,8 @@ export default function PurchaseOrders({ embedded }: { embedded?: boolean } = {}
       <Dialog open={!!confirmedSitePO} onOpenChange={(open) => { if (!open) setConfirmedSitePO(null); }}>
         <DialogContent className="sm:max-w-sm text-center">
           <div className="flex flex-col items-center gap-4 py-4">
-            <div className="w-14 h-14 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center">
-              <Check className="w-7 h-7 text-green-600 dark:text-green-400" />
+            <div className="w-14 h-14 rounded-full bg-status-success-bg flex items-center justify-center">
+              <Check className="w-7 h-7 text-status-success" />
             </div>
             <div>
               <h2 className="text-lg font-semibold mb-1">Site PO Created</h2>

@@ -161,10 +161,10 @@ const VARIATION_COL_ALIGN: Record<string, "left" | "right" | "center"> = {
 };
 
 const VARIATION_TYPE_COLORS: Record<string, string> = {
-  Material: "bg-blue-100 text-status-info dark:bg-blue-900/40 dark:text-blue-300",
-  Labour: "bg-green-100 text-status-success dark:bg-green-900/40 dark:text-green-300",
-  Subcontractor: "bg-orange-100 text-status-warning dark:bg-orange-900/40 dark:text-orange-300",
-  Fee: "bg-status-info-bg text-status-info dark:bg-purple-900/40 dark:text-purple-300",
+  Material: "bg-status-info-bg text-status-info",
+  Labour: "bg-status-success-bg text-status-success",
+  Subcontractor: "bg-status-warning-bg text-status-warning",
+  Fee: "bg-status-info-bg text-status-info",
 };
 
 const labelCls = "h-4 leading-none flex items-center text-table text-muted-foreground/70 uppercase tracking-wide font-medium";
@@ -1356,7 +1356,7 @@ export default function VariationDetail() {
                   type="button"
                   onClick={() => setApproveDialogOpen(true)}
                   disabled={approveMutation.isPending}
-                  className="h-6 w-auto px-2 text-xs border rounded-md bg-emerald-600 text-white border-emerald-600/20 hover:bg-emerald-600/90 active-elevate-2 flex items-center gap-1"
+                  className="h-6 w-auto px-2 text-xs border rounded-md bg-sage text-white border-sage/20 hover:bg-sage/90 active-elevate-2 flex items-center gap-1"
                   data-testid="button-approve"
                 >
                   <Check className="w-3 h-3" />
@@ -1539,7 +1539,7 @@ export default function VariationDetail() {
                   {/* Cost Lines sub-section */}
                   <div>
                     <SubHeader
-                      dotColor="bg-amber-400/70"
+                      dotColor="bg-amber/70"
                       label={costLines.length > 0 ? `Cost Lines · ${formatCurrency(calculateCostLinesSubtotal())}` : "Cost Lines"}
                       rightEl={
                         <div className="flex items-center gap-1.5">
@@ -1721,7 +1721,7 @@ export default function VariationDetail() {
                   {/* Bills sub-section */}
                   <div className="border-t border-border/50" data-testid="section-bills">
                     <SubHeader
-                      dotColor="bg-orange-400/70"
+                      dotColor="bg-amber/70"
                       label={selectedBillIds.length > 0 ? `Bills · ${formatCurrency(calculateBillsTotal())}` : "Bills"}
                       collapsible
                       collapsed={billsCollapsed}
@@ -1777,7 +1777,7 @@ export default function VariationDetail() {
                   {/* Labour sub-section */}
                   <div className="border-t border-border/50" data-testid="section-labour">
                     <SubHeader
-                      dotColor="bg-indigo-400/70"
+                      dotColor="bg-primary/70"
                       label={selectedTimesheetIds.length > 0 ? `Labour · ${formatCurrency(calculateLabourTotal())}` : "Labour"}
                       collapsible
                       collapsed={labourCollapsed}
@@ -1924,7 +1924,7 @@ export default function VariationDetail() {
                           </Table>
                           <div className="flex items-center justify-end gap-2 pt-2 border-t text-sm">
                             <span className="text-muted-foreground">Total Adjustments:</span>
-                            <span className={cn("font-semibold tabular-nums", calculateAllowancesTotal() < 0 ? "text-red-500" : "")}>
+                            <span className={cn("font-semibold tabular-nums", calculateAllowancesTotal() < 0 ? "text-status-danger" : "")}>
                               {formatCurrency(calculateAllowancesTotal())}
                             </span>
                           </div>
@@ -2003,7 +2003,7 @@ export default function VariationDetail() {
                           {calculateAllowancesTotal() !== 0 && (
                             <div className="flex justify-between text-sm">
                               <span className="text-muted-foreground">Allowances ({allowanceLines.length})</span>
-                              <span className={cn("font-medium tabular-nums", calculateAllowancesTotal() < 0 ? "text-red-500" : "")}>{formatCurrency(calculateAllowancesTotal())}</span>
+                              <span className={cn("font-medium tabular-nums", calculateAllowancesTotal() < 0 ? "text-status-danger" : "")}>{formatCurrency(calculateAllowancesTotal())}</span>
                             </div>
                           )}
                           <div className="flex justify-between text-sm pt-1 border-t border-border/50">
@@ -2032,7 +2032,7 @@ export default function VariationDetail() {
                   {/* Closing Text sub-section */}
                   <div>
                     <SubHeader
-                      dotColor="bg-amber-400/70"
+                      dotColor="bg-amber/70"
                       label="Closing Text"
                       collapsible
                       collapsed={closingCollapsed}
@@ -2189,7 +2189,7 @@ export default function VariationDetail() {
                 {isEditMode && variation?.daysChanged && variation.daysChanged !== 0 && (
                   <div className="rounded-lg border border-border bg-card overflow-hidden">
                     <div className="h-8 flex items-center px-3 gap-2 border-b border-border/50 bg-muted/40">
-                      <div className="w-1.5 h-1.5 rounded-full bg-orange-400/70 flex-shrink-0" />
+                      <div className="w-1.5 h-1.5 rounded-full bg-amber/70 flex-shrink-0" />
                       <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Schedule Impact</span>
                     </div>
                     <div className="p-4">
@@ -2350,8 +2350,8 @@ export default function VariationDetail() {
                         <TableCell className="text-sm font-medium py-1 px-2">{getUserName(t.userId)}</TableCell>
                         <TableCell className="py-1 px-2">
                           {isApproved
-                            ? <span className="flex items-center gap-1 text-xs"><div className="w-1.5 h-1.5 rounded-full bg-emerald-400 flex-shrink-0" />Approved</span>
-                            : <span className="flex items-center gap-1 text-xs"><div className="w-1.5 h-1.5 rounded-full bg-amber-400 flex-shrink-0" />Pending</span>}
+                            ? <span className="flex items-center gap-1 text-xs"><div className="w-1.5 h-1.5 rounded-full bg-sage flex-shrink-0" />Approved</span>
+                            : <span className="flex items-center gap-1 text-xs"><div className="w-1.5 h-1.5 rounded-full bg-amber flex-shrink-0" />Pending</span>}
                         </TableCell>
                         <TableCell className="text-right text-sm tabular-nums py-1 px-2">{Number(t.duration).toFixed(1)}</TableCell>
                         <TableCell className="text-right text-sm font-medium py-1 px-2">{formatCurrency((t.total || 0) / 100)}</TableCell>

@@ -33,6 +33,7 @@ import { useLocation } from "wouter";
 import { format, isToday, isBefore, startOfDay } from "date-fns";
 import { type Task, type Project, type FocusBlock } from "@shared/schema";
 import { generateNotionColors } from "@/lib/taskColors";
+import { getPriorityStyle } from "@/lib/priorityConfig";
 import { useTimezone, formatInTimezone } from "@/hooks/useTimezone";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { TaskDetailModal } from "@/components/TaskDetailModal";
@@ -99,12 +100,6 @@ function FocusBlockItem({ block }: { block: FocusBlock }) {
     staleTime: 60 * 1000,
   });
 
-  const PRIORITY_COLORS: Record<string, string> = {
-    high: "#ef4444",
-    medium: "#f97316",
-    low: "#22c55e",
-  };
-
   return (
     <div
       className="ml-4 rounded-md border overflow-hidden"
@@ -124,7 +119,7 @@ function FocusBlockItem({ block }: { block: FocusBlock }) {
             <div key={task.id} className="flex items-center gap-1.5 pl-1">
               <div
                 className="w-1 h-1 rounded-full flex-shrink-0"
-                style={{ backgroundColor: PRIORITY_COLORS[task.priority || ""] || "#6b7280" }}
+                style={{ backgroundColor: getPriorityStyle(task.priority).color }}
               />
               <span className="text-data text-muted-foreground truncate">{task.title}</span>
             </div>

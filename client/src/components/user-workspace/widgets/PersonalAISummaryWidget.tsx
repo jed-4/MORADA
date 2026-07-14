@@ -299,19 +299,19 @@ export default function PersonalAISummaryWidget({ widget, onUpdate, isConfigurin
       label: "Active", 
       value: activeTasks.length, 
       icon: CheckCircle,
-      color: "text-status-info dark:text-blue-400" 
+      color: "text-status-info"
     },
     { 
       label: "Overdue", 
       value: overdueTasks.length, 
       icon: AlertCircle,
-      color: overdueTasks.length > 0 ? "text-status-danger dark:text-red-400" : "text-muted-foreground"
+      color: overdueTasks.length > 0 ? "text-status-danger" : "text-muted-foreground"
     },
     { 
       label: "Done", 
       value: completedThisWeek.length, 
       icon: TrendingUp,
-      color: "text-status-success dark:text-green-400" 
+      color: "text-status-success"
     },
   ];
 
@@ -374,14 +374,14 @@ export default function PersonalAISummaryWidget({ widget, onUpdate, isConfigurin
         </div>
 
         {overdueTasks.length > 0 && (
-          <div className="py-2 px-3 rounded-md border-l-3 border-l-red-500 bg-red-50/50 dark:bg-red-950/20">
+          <div className="py-2 px-3 rounded-md border-l-3 border-l-coral bg-coral/10">
             <div className="flex items-center gap-1.5 mb-1">
-              <AlertTriangle className="h-3 w-3 text-red-500" />
-              <span className="text-data font-semibold uppercase tracking-wide text-status-danger dark:text-red-400">
+              <AlertTriangle className="h-3 w-3 text-status-danger" />
+              <span className="text-data font-semibold uppercase tracking-wide text-status-danger">
                 Needs Attention
               </span>
             </div>
-            <p className="text-table text-status-danger dark:text-red-400">
+            <p className="text-table text-status-danger">
               {overdueTasks.length} overdue task{overdueTasks.length > 1 ? 's' : ''} requiring immediate action
             </p>
           </div>
@@ -390,7 +390,7 @@ export default function PersonalAISummaryWidget({ widget, onUpdate, isConfigurin
         {showSuggestedActions && suggestedActions.length > 0 && (
           <div className="space-y-2">
             <div className="flex items-center gap-1.5">
-              <Zap className="h-3 w-3 text-amber-500" />
+              <Zap className="h-3 w-3 text-amber" />
               <span className="text-data font-semibold uppercase tracking-wide text-muted-foreground">
                 Suggested Actions
               </span>
@@ -400,18 +400,18 @@ export default function PersonalAISummaryWidget({ widget, onUpdate, isConfigurin
                 <div
                   key={action.id}
                   className={`flex items-center gap-2 p-2 rounded-md border cursor-pointer hover-elevate ${
-                    action.priority === 'high' 
-                      ? 'border-red-200 dark:border-red-800 bg-red-50/30 dark:bg-red-950/10' 
+                    action.priority === 'high'
+                      ? 'border-coral/40 bg-coral/5'
                       : action.priority === 'medium'
-                      ? 'border-amber-200 dark:border-amber-800 bg-amber-50/30 dark:bg-amber-950/10'
+                      ? 'border-amber/40 bg-amber/5'
                       : ''
                   }`}
                   onClick={() => handleActionClick(action)}
                   data-testid={`action-${action.id}`}
                 >
-                  {action.type === 'overdue' && <AlertCircle className="h-3 w-3 text-red-500 flex-shrink-0" />}
-                  {action.type === 'task' && <Target className="h-3 w-3 text-amber-500 flex-shrink-0" />}
-                  {action.type === 'schedule' && <Clock className="h-3 w-3 text-blue-500 flex-shrink-0" />}
+                  {action.type === 'overdue' && <AlertCircle className="h-3 w-3 text-status-danger flex-shrink-0" />}
+                  {action.type === 'task' && <Target className="h-3 w-3 text-status-warning flex-shrink-0" />}
+                  {action.type === 'schedule' && <Clock className="h-3 w-3 text-status-info flex-shrink-0" />}
                   {action.type === 'follow-up' && <Calendar className="h-3 w-3 text-muted-foreground flex-shrink-0" />}
                   <span className="text-table flex-1 truncate">{action.text}</span>
                   {action.link && <ChevronRight className="h-3 w-3 text-muted-foreground flex-shrink-0" />}
@@ -424,12 +424,12 @@ export default function PersonalAISummaryWidget({ widget, onUpdate, isConfigurin
         {summary && (
           <div className="space-y-2 pt-2 border-t">
             <div className="flex items-center gap-1.5">
-              <Sparkles className="h-3 w-3 text-purple-500" />
-              <span className="text-data font-semibold uppercase tracking-wide text-purple-600 dark:text-purple-400">
+              <Sparkles className="h-3 w-3 text-primary" />
+              <span className="text-data font-semibold uppercase tracking-wide text-primary">
                 AI Insights
               </span>
             </div>
-            <div className="p-2 rounded-md bg-purple-50/50 dark:bg-purple-950/20 border border-purple-200 dark:border-purple-800">
+            <div className="p-2 rounded-md bg-primary/5 border border-primary/20">
               <p className="text-table leading-relaxed">{summary.summary}</p>
             </div>
 
@@ -437,7 +437,7 @@ export default function PersonalAISummaryWidget({ widget, onUpdate, isConfigurin
               <div className="space-y-1">
                 {summary.suggestions.map((s, i) => (
                   <div key={i} className="flex items-start gap-2 text-table pl-1">
-                    <span className="text-purple-500 mt-0.5">*</span>
+                    <span className="text-primary mt-0.5">*</span>
                     <span>{s}</span>
                   </div>
                 ))}

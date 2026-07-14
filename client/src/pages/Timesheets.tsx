@@ -985,9 +985,9 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
         meta: { headerLabel: "PO Status", defaultWidth: 90, defaultHidden: true },
         cell: ({ row }) => {
           const p = row.original.poStatus;
-          if (p === "awaiting_po") return <Badge variant="outline" className="text-data font-medium bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-800">Awaiting PO</Badge>;
-          if (p === "on_po") return <Badge variant="outline" className="text-data font-medium bg-blue-50 dark:bg-blue-900/20 text-status-info dark:text-blue-400 border-blue-200 dark:border-blue-800">On PO</Badge>;
-          if (p === "paid") return <Badge variant="outline" className="text-data font-medium bg-green-50 dark:bg-green-900/20 text-status-success dark:text-green-400 border-green-200 dark:border-green-800">Paid</Badge>;
+          if (p === "awaiting_po") return <Badge variant="outline" className="text-data font-medium bg-status-warning-bg text-status-warning border-status-warning/30">Awaiting PO</Badge>;
+          if (p === "on_po") return <Badge variant="outline" className="text-data font-medium bg-status-info-bg text-status-info border-status-info/30">On PO</Badge>;
+          if (p === "paid") return <Badge variant="outline" className="text-data font-medium bg-status-success-bg text-status-success border-status-success/30">Paid</Badge>;
           return <span className="text-table text-muted-foreground/50">&mdash;</span>;
         },
       },
@@ -1125,6 +1125,7 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
             {projectId && currentProject ? currentProject.name : "All Projects"}
           </span>
           <ChevronRight className="h-3 w-3 text-muted-foreground/50 flex-shrink-0" />
+          <div className="w-[3px] h-3.5 rounded-full flex-shrink-0" style={{ background: "hsl(var(--teal))" }} aria-hidden="true" />
           <span className="text-xs font-medium text-foreground" data-testid="text-page-title">Timesheets</span>
         </div>
       )}
@@ -1462,7 +1463,7 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
             <button
               onClick={() => clockOutMutation.mutate()}
               disabled={clockOutMutation.isPending}
-              className="h-6 w-auto px-2 text-xs border rounded-md bg-red-500 text-white border-red-500/20 hover:bg-red-600 active-elevate-2 flex items-center gap-1"
+              className="h-6 w-auto px-2 text-xs border rounded-md bg-coral text-white border-coral/20 hover:bg-coral/90 active-elevate-2 flex items-center gap-1"
               data-testid="button-clock-out"
             >
               <Square className="w-3 h-3" />
@@ -1633,7 +1634,7 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
             <Button
               onClick={() => clockInMutation.mutate()}
               disabled={!clockInProjectId || clockInMutation.isPending}
-              className="w-full bg-green-600 hover:bg-green-700"
+              className="w-full bg-sage text-white hover:bg-sage/90"
               size="sm"
             >
               <Play className="w-3 h-3 mr-1" />
@@ -1721,7 +1722,7 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
                           return (
                             <TableCell key={dayKey} className="text-table text-center tabular-nums px-1 py-1">
                               {hours > 0 ? (
-                                <span className={hours >= 8 ? "font-medium text-status-success dark:text-green-400" : ""}>
+                                <span className={hours >= 8 ? "font-medium text-status-success" : ""}>
                                   {formatDuration(hours)}
                                 </span>
                               ) : (
@@ -1865,11 +1866,11 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
 
             const statusColors = (status: string) => {
               if (status === "approved")
-                return "bg-green-100 dark:bg-green-900/40 border-green-300 dark:border-green-700 text-green-800 dark:text-green-300";
+                return "bg-status-success-bg border-status-success/40 text-status-success";
               if (status === "submitted")
-                return "bg-amber-100 dark:bg-amber-900/40 border-amber-300 dark:border-amber-700 text-amber-800 dark:text-amber-300";
+                return "bg-status-warning-bg border-status-warning/40 text-status-warning";
               if (status === "rejected")
-                return "bg-red-100 dark:bg-red-900/40 border-red-300 dark:border-red-700 text-red-800 dark:text-red-300";
+                return "bg-status-danger-bg border-status-danger/40 text-status-danger";
               return "bg-muted/60 border-border text-muted-foreground";
             };
 
@@ -1919,13 +1920,13 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
                         key={day.toISOString()}
                         style={{ flex }}
                         className={`text-center py-1.5 border-r border-border last:border-r-0 text-table font-medium min-w-0 ${
-                          isToday ? "bg-blue-50 dark:bg-blue-900/20" : "bg-muted/30 dark:bg-muted/10"
+                          isToday ? "bg-teal/10" : "bg-muted/30 dark:bg-muted/10"
                         }`}
                       >
-                        <div className={isToday ? "text-status-info dark:text-blue-400" : "text-muted-foreground"}>
+                        <div className={isToday ? "text-teal" : "text-muted-foreground"}>
                           {format(day, "EEE")}
                         </div>
-                        <div className={`text-data font-semibold ${isToday ? "text-status-info dark:text-blue-400" : ""}`}>
+                        <div className={`text-data font-semibold ${isToday ? "text-teal" : ""}`}>
                           {format(day, "d")}
                         </div>
                         {/* Per-user lane labels (only when 2–5 users) */}
@@ -1972,7 +1973,7 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
                         <div
                           key={dk}
                           style={{ flex }}
-                          className={`border-r border-border last:border-r-0 min-h-[28px] min-w-0 flex ${isToday ? "bg-blue-50/40 dark:bg-blue-900/10" : ""}`}
+                          className={`border-r border-border last:border-r-0 min-h-[28px] min-w-0 flex ${isToday ? "bg-teal/5" : ""}`}
                         >
                           {useLanes ? (
                             laneUsers.map(uid => {
@@ -2063,7 +2064,7 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
                       <div
                         key={dk}
                         style={{ flex }}
-                        className={`border-r border-border last:border-r-0 relative min-w-0 ${isToday ? "bg-blue-50/30 dark:bg-blue-900/10" : ""}`}
+                        className={`border-r border-border last:border-r-0 relative min-w-0 ${isToday ? "bg-teal/5" : ""}`}
                       >
                         {/* Hour lines */}
                         {Array.from({ length: totalHours }, (_, i) => (
@@ -2248,9 +2249,12 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
             const entryCount   = filteredTimesheets.length;
             return (
               <div className="flex items-center justify-between gap-4 h-11 px-4">
-                <span className="text-table text-muted-foreground">
-                  {entryCount} {entryCount === 1 ? "entry" : "entries"}
-                </span>
+                <div className="flex items-center gap-2">
+                  <div className="w-[3px] h-3.5 rounded-full flex-shrink-0" style={{ background: "hsl(var(--teal))" }} aria-hidden="true" />
+                  <span className="text-table text-muted-foreground">
+                    {entryCount} {entryCount === 1 ? "entry" : "entries"}
+                  </span>
+                </div>
                 <div className="flex items-center gap-4">
                   <div className="flex items-center gap-1.5">
                     <span className="text-data uppercase tracking-wider text-muted-foreground">Submitted</span>
@@ -2307,11 +2311,11 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
               Submitted
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => bulkActionMutation.mutate({ ids: selectedTimesheets, action: "changeStatus", status: "approved" })}>
-              <div className="w-2 h-2 rounded-full mr-2 bg-green-500" />
+              <div className="w-2 h-2 rounded-full mr-2 bg-sage" />
               Approved
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => bulkActionMutation.mutate({ ids: selectedTimesheets, action: "changeStatus", status: "rejected" })}>
-              <div className="w-2 h-2 rounded-full mr-2 bg-red-500" />
+              <div className="w-2 h-2 rounded-full mr-2 bg-coral" />
               Rejected
             </DropdownMenuItem>
           </DropdownMenuContent>

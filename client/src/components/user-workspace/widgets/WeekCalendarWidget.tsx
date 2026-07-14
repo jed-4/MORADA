@@ -20,6 +20,7 @@ import {
   startOfDay
 } from "date-fns";
 import { generateNotionColors, TYPE_COLORS_HEX } from "@/lib/taskColors";
+import { getPriorityStyle } from "@/lib/priorityConfig";
 import { TaskDetailModal } from "@/components/TaskDetailModal";
 import TaskEditModal from "@/components/TaskEditModal";
 import type { Task } from "@shared/schema";
@@ -48,13 +49,6 @@ const typeColors: Record<string, string> = {
   reminder:          TYPE_COLORS_HEX.leave,       // rose
 };
 
-const priorityColors: Record<string, string> = {
-  high: "#ef4444",
-  medium: "#f59e0b",
-  low: "#3b82f6",
-  none: "#6b7280",
-};
-
 const typeIcons: Record<string, React.ReactNode> = {
   task: <CheckSquare className="h-2 w-2" />,
   schedule: <CalendarDays className="h-2 w-2" />,
@@ -71,7 +65,7 @@ function getEventColor(event: CalendarItem, colorMode: ColorMode): string {
       return event.projectColor || "#6b7280";
     case "priority":
       if (event.type === "task" && event.priority) {
-        return priorityColors[event.priority] || priorityColors.none;
+        return getPriorityStyle(event.priority).color;
       }
       return typeColors[event.type] || "#6b7280";
     default:

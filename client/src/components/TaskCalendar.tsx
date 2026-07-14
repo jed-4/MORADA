@@ -7,6 +7,7 @@ import type { Task, FieldCategoryWithOptions } from "@shared/schema";
 import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { getPriorityStyle } from "@/lib/priorityConfig";
 
 // Setup the localizer for react-big-calendar
 const localizer = momentLocalizer(moment);
@@ -83,18 +84,7 @@ const TaskCalendarEvent = ({ event }: { event: CalendarEvent }) => {
     updateTaskMutation.mutate(updates);
   };
 
-  const getPriorityColor = (priority: string) => {
-    switch (priority) {
-      case "high":
-        return "bg-red-100 dark:bg-red-900/20 text-red-900 dark:text-red-100 border-red-300 dark:border-red-700";
-      case "medium":
-        return "bg-orange-100 dark:bg-orange-900/20 text-orange-900 dark:text-orange-100 border-orange-300 dark:border-orange-700";
-      case "low":
-        return "bg-green-100 dark:bg-green-900/20 text-green-900 dark:text-green-100 border-green-300 dark:border-green-700";
-      default:
-        return "bg-blue-100 dark:bg-blue-900/20 text-blue-900 dark:text-blue-100 border-blue-300 dark:border-blue-700";
-    }
-  };
+  const priorityStyle = getPriorityStyle(task.priority || "medium");
 
   const isCompleted = task.status === completedOption?.key;
   const isOverdue = task.dueDate && new Date(task.dueDate) < new Date() && !isCompleted;
@@ -102,11 +92,15 @@ const TaskCalendarEvent = ({ event }: { event: CalendarEvent }) => {
   return (
     <div
       className={`
-        ${getPriorityColor(task.priority || "medium")}
         ${isCompleted ? "opacity-60 line-through" : ""}
         ${isOverdue ? "bg-red-200 dark:bg-red-900/30 text-red-900 dark:text-red-100 border-red-400 dark:border-red-600" : ""}
         text-xs p-2 rounded border-l-4 cursor-pointer hover:opacity-80 transition-opacity
       `}
+      style={
+        isOverdue
+          ? undefined
+          : { backgroundColor: priorityStyle.bgColor, borderLeftColor: priorityStyle.color }
+      }
       data-testid={`calendar-task-${task.id}`}
     >
       <div className="flex items-start gap-2">

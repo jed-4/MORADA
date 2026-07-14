@@ -45,17 +45,17 @@ function hexToRgba(hex: string, alpha: number): string {
 }
 
 function statusDotColor(status: string): string {
-  if (status === "approved") return "#22c55e";
-  if (status === "submitted") return "#f59e0b";
-  if (status === "rejected") return "#ef4444";
+  if (status === "approved") return "hsl(var(--sage))";
+  if (status === "submitted") return "hsl(var(--amber))";
+  if (status === "rejected") return "hsl(var(--coral))";
   return "transparent";
 }
 
 function statusBadgeClass(status: string): string {
   switch (status) {
-    case "approved": return "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400";
-    case "submitted": return "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400";
-    case "rejected": return "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400";
+    case "approved": return "bg-status-success-bg text-status-success";
+    case "submitted": return "bg-status-action-bg text-status-action";
+    case "rejected": return "bg-status-danger-bg text-status-danger";
     default: return "bg-muted text-foreground";
   }
 }
@@ -306,13 +306,13 @@ export default function UserTime({ user, isOwnPage }: UserTimeProps) {
                     key={day.toISOString()}
                     style={{ flex }}
                     className={`text-center py-1.5 border-r border-border last:border-r-0 text-table font-medium min-w-0 ${
-                      today ? "bg-blue-50 dark:bg-blue-900/20" : "bg-muted/30 dark:bg-muted/10"
+                      today ? "bg-teal/10" : "bg-muted/30 dark:bg-muted/10"
                     }`}
                   >
-                    <div className={today ? "text-status-info dark:text-blue-400" : "text-muted-foreground"}>
+                    <div className={today ? "text-teal" : "text-muted-foreground"}>
                       {format(day, "EEE")}
                     </div>
-                    <div className={`text-body-sm font-semibold ${today ? "text-status-info dark:text-blue-400" : ""}`}>
+                    <div className={`text-body-sm font-semibold ${today ? "text-teal" : ""}`}>
                       {format(day, "d")}
                     </div>
                   </div>
@@ -396,7 +396,7 @@ export default function UserTime({ user, isOwnPage }: UserTimeProps) {
                   <div
                     key={dk}
                     style={{ flex }}
-                    className={`border-r border-border last:border-r-0 relative min-w-0 ${today ? "bg-blue-50/30 dark:bg-blue-900/10" : ""}`}
+                    className={`border-r border-border last:border-r-0 relative min-w-0 ${today ? "bg-teal/5" : ""}`}
                   >
                     {/* Hour lines */}
                     {Array.from({ length: TOTAL_HOURS }, (_, i) => (
@@ -611,7 +611,7 @@ export default function UserTime({ user, isOwnPage }: UserTimeProps) {
               </div>
 
               {selectedTimesheet.status === "rejected" && selectedTimesheet.rejectionReason && (
-                <div className="p-3 bg-red-50 dark:bg-red-900/20 rounded-md text-xs text-status-danger dark:text-red-400">
+                <div className="p-3 bg-status-danger-bg rounded-md text-xs text-status-danger">
                   <span className="font-medium">Rejection reason: </span>
                   {selectedTimesheet.rejectionReason}
                 </div>

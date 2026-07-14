@@ -1,6 +1,7 @@
 import { Card, CardContent } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
+import { PriorityBadge } from "@/components/PriorityBadge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
@@ -136,11 +137,6 @@ export default function TaskCard({
   } : undefined;
   
   const comments = 0; // TODO: Implement comments system
-  const priorityColors = {
-    low: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200",
-    medium: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200",
-    high: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200",
-  };
 
   const { getLabelInfo } = useTaskLabelOptions();
 
@@ -312,9 +308,7 @@ export default function TaskCard({
               )}
               
               {settings.showPriority && (
-                <Badge className={`text-xs ${priorityColors[priority as keyof typeof priorityColors] || priorityColors.medium}`}>
-                  {priority}
-                </Badge>
+                <PriorityBadge priority={priority} label={priority} className="text-xs" />
               )}
               
               {settings.showStatus && (

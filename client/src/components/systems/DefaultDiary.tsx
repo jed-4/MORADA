@@ -208,15 +208,6 @@ export const DefaultDiary = forwardRef<DefaultDiaryHandle, DefaultDiaryProps>(
       });
     };
 
-    const getPriorityColor = (priority?: string) => {
-      switch (priority) {
-        case "high": return "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200 border-red-200 dark:border-red-800";
-        case "medium": return "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200 border-amber-200 dark:border-amber-800";
-        case "low": return "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 border-blue-200 dark:border-blue-800";
-        default: return "bg-primary/10 text-primary border-primary/20";
-      }
-    };
-
     const isLoading = usersLoading || templatesLoading;
     const today = getDayOfWeekInTimezone(effectiveTimezone);
 

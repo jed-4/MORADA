@@ -845,10 +845,10 @@ function SortableScopeItem({ item, onUpdate, onDelete, onToggleSelect, isSelecte
     >
       {/* Drop indicator line - shows above or below based on position */}
       {dropIndicator === 'above' && (
-        <div className="absolute -top-[2px] left-0 right-0 h-1 bg-blue-500 z-50 rounded-full shadow-[0_0_8px_rgba(59,130,246,0.6)]" />
+        <div className="absolute -top-[2px] left-0 right-0 h-1 bg-primary z-50 rounded-full shadow-[0_0_8px_hsl(var(--primary)/0.6)]" />
       )}
       {dropIndicator === 'below' && (
-        <div className="absolute -bottom-[2px] left-0 right-0 h-1 bg-blue-500 z-50 rounded-full shadow-[0_0_8px_rgba(59,130,246,0.6)]" />
+        <div className="absolute -bottom-[2px] left-0 right-0 h-1 bg-primary z-50 rounded-full shadow-[0_0_8px_hsl(var(--primary)/0.6)]" />
       )}
       
       {/* Grid Row - compact by default; grows to fit when descriptions are inline */}
@@ -859,7 +859,7 @@ function SortableScopeItem({ item, onUpdate, onDelete, onToggleSelect, isSelecte
             : 'h-10 items-center'
         } ${
           isDetailOpen ? 'bg-primary/5' : isSelected ? 'bg-primary/5 border-primary/30' : ''
-        } ${isCompleted ? 'opacity-60' : ''} ${item.isTodo ? 'border-l-2 border-orange-400 bg-orange-50/30 dark:bg-orange-900/10' : ''}`}
+        } ${isCompleted ? 'opacity-60' : ''} ${item.isTodo ? 'border-l-2 border-amber bg-amber/5' : ''}`}
         style={{ 
           gridTemplateColumns: '24px 40px 24px minmax(200px, 1fr) 100px minmax(150px, 2fr) 24px',
         }}
@@ -982,7 +982,7 @@ function SortableScopeItem({ item, onUpdate, onDelete, onToggleSelect, isSelecte
           {gearList.length > 0 && (
             <button
               onClick={() => setShowGearList(true)}
-              className="h-4 px-1.5 text-data font-semibold rounded bg-green-100 text-green-800 border border-green-200 hover-elevate flex items-center gap-0.5"
+              className="h-4 px-1.5 text-data font-semibold rounded bg-status-success-bg text-status-success border border-status-success/30 hover-elevate flex items-center gap-0.5"
               title={`${gearList.filter(g => g.checked).length}/${gearList.length} gear items checked`}
               data-testid={`button-gear-${item.id}`}
             >
@@ -1013,7 +1013,7 @@ function SortableScopeItem({ item, onUpdate, onDelete, onToggleSelect, isSelecte
             <DropdownMenuItem 
               onClick={() => onUpdate(item.id, { isTodo: !item.isTodo })}
               data-testid={`menu-toggle-todo-${item.id}`}
-              className={item.isTodo ? 'text-status-warning dark:text-orange-400' : ''}
+              className={item.isTodo ? 'text-status-warning' : ''}
             >
               <Flag className="h-3 w-3 mr-2" />
               {item.isTodo ? 'Clear Action Flag' : 'Flag as Action Item'}
@@ -1108,7 +1108,7 @@ function SortableScopeItem({ item, onUpdate, onDelete, onToggleSelect, isSelecte
                     {gear.name}
                   </span>
                   {gear.photoUrl && (
-                    <Badge variant="outline" className="h-5 text-xs bg-green-100 text-green-800">
+                    <Badge variant="outline" className="h-5 text-xs bg-status-success-bg text-status-success">
                       Photo
                     </Badge>
                   )}
@@ -1349,7 +1349,7 @@ function LinkedChecklistPopoverContent({
                 data-testid={`popover-checklist-item-${it.id}`}
               >
                 {done ? (
-                  <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-500 shrink-0 mt-0.5" />
+                  <CheckCircle2 className="h-4 w-4 text-status-success shrink-0 mt-0.5" />
                 ) : na ? (
                   <X className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
                 ) : (
@@ -1518,7 +1518,7 @@ function DroppableStage({
           <div 
             className={`h-9 px-3 flex items-center justify-between border-b border-border group cursor-pointer hover-elevate transition-colors ${
               stageData.isCompleted
-                ? 'bg-green-50/60 dark:bg-green-950/20'
+                ? 'bg-sage/10'
                 : 'bg-muted/60 dark:bg-muted/40'
             }`}
             onClick={onToggleExpand}
@@ -1530,8 +1530,8 @@ function DroppableStage({
                 <button
                   className={`h-5 w-5 flex-shrink-0 flex items-center justify-center rounded border-2 transition-colors ${
                     stageData.isCompleted
-                      ? 'bg-green-500 border-green-500 text-white'
-                      : 'border-muted-foreground/40 bg-transparent hover:border-green-500'
+                      ? 'bg-sage border-sage text-white'
+                      : 'border-muted-foreground/40 bg-transparent hover:border-sage'
                   }`}
                   onClick={(e) => {
                     e.stopPropagation();
@@ -1579,7 +1579,7 @@ function DroppableStage({
                 </span>
               )}
               {stageData.isCompleted && (
-                <span className="text-data text-status-success dark:text-green-400 font-medium">✓ Complete</span>
+                <span className="text-data text-status-success font-medium">✓ Complete</span>
               )}
 
               {/* Item Count Badge */}
@@ -1592,7 +1592,7 @@ function DroppableStage({
               {/* Linked Checklists Badge */}
               {checklistCount > 0 && (
                 <button
-                  className="h-4 px-1.5 text-data font-semibold rounded bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-400 border border-violet-200 dark:border-violet-700/40 flex items-center gap-0.5 hover-elevate"
+                  className="h-4 px-1.5 text-data font-semibold rounded bg-primary/10 text-primary border border-primary/20 flex items-center gap-0.5 hover-elevate"
                   onClick={(e) => {
                     e.stopPropagation();
                     onNavigateToChecklists?.(stageData.id);
@@ -1803,12 +1803,12 @@ function DroppableStage({
                             <span className="text-sm font-medium">{po.poNumber}</span>
                             <span className={`text-data px-1.5 py-0.5 rounded ${
                               po.status === 'paid'
-                                ? 'bg-green-100 text-green-800'
+                                ? 'bg-status-success-bg text-status-success'
                                 : po.status === 'draft'
                                   ? 'bg-muted text-secondary'
                                   : po.status === 'cancelled'
                                     ? 'bg-muted text-muted-foreground'
-                                    : 'bg-amber-100 text-amber-800'
+                                    : 'bg-status-warning-bg text-status-warning'
                             }`}>
                               {po.status.replace('_', ' ')}
                             </span>
@@ -1855,12 +1855,12 @@ function DroppableStage({
                         <div className="flex items-center gap-2">
                           <span className="text-sm font-medium truncate">{item.name}</span>
                           <span className={`text-data px-1.5 py-0.5 rounded ${
-                            item.status === 'completed' 
-                              ? 'bg-green-100 text-green-800' 
-                              : item.status === 'in_progress' 
-                                ? 'bg-blue-100 text-blue-800' 
+                            item.status === 'completed'
+                              ? 'bg-status-success-bg text-status-success'
+                              : item.status === 'in_progress'
+                                ? 'bg-status-info-bg text-status-info'
                                 : item.status === 'on_hold'
-                                  ? 'bg-amber-100 text-amber-800'
+                                  ? 'bg-status-warning-bg text-status-warning'
                                   : 'bg-muted text-secondary'
                           }`}>
                             {item.status.replace('_', ' ')}
@@ -1910,7 +1910,7 @@ function DroppableStage({
                                   className="w-full text-left px-2 py-1.5 rounded hover-elevate active-elevate-2 flex items-center gap-2"
                                   onClick={() => onLinkChecklist?.(cl.id, stageData.id)}
                                 >
-                                  <ClipboardList className="h-3.5 w-3.5 text-violet-500 shrink-0" />
+                                  <ClipboardList className="h-3.5 w-3.5 text-primary shrink-0" />
                                   <div className="flex-1 min-w-0">
                                     <div className="text-xs font-medium truncate">{cl.name}</div>
                                     {(cl.totalCount ?? 0) > 0 && (
@@ -1920,7 +1920,7 @@ function DroppableStage({
                                     )}
                                   </div>
                                   <span className={`text-data px-1.5 py-0.5 rounded shrink-0 ${
-                                    cl.status === 'completed' ? 'bg-green-100 text-green-800' : 'bg-muted text-secondary'
+                                    cl.status === 'completed' ? 'bg-status-success-bg text-status-success' : 'bg-muted text-secondary'
                                   }`}>
                                     {cl.status.replace('_', ' ')}
                                   </span>
@@ -1937,7 +1937,7 @@ function DroppableStage({
                           className="h-10 flex items-center gap-3 px-3 rounded-lg border border-border/50 bg-background/80 hover-elevate group"
                           data-testid={`linked-checklist-${cl.id}`}
                         >
-                          <ClipboardList className="h-4 w-4 text-violet-500 shrink-0" />
+                          <ClipboardList className="h-4 w-4 text-primary shrink-0" />
                           <PopoverTrigger asChild>
                             <button
                               type="button"
@@ -1948,9 +1948,9 @@ function DroppableStage({
                                 <span className="text-sm font-medium truncate">{cl.name}</span>
                                 <span className={`text-data px-1.5 py-0.5 rounded ${
                                   cl.status === 'completed'
-                                    ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
+                                    ? 'bg-status-success-bg text-status-success'
                                     : cl.status === 'in_progress'
-                                      ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400'
+                                      ? 'bg-status-info-bg text-status-info'
                                       : 'bg-muted text-secondary '
                                 }`}>
                                   {cl.status.replace('_', ' ')}
@@ -2024,7 +2024,7 @@ function DroppableStage({
                                   className="w-full text-left px-2 py-1.5 rounded hover-elevate active-elevate-2 flex items-center gap-2"
                                   onClick={() => onLinkTask?.(task.id, stageData.id)}
                                 >
-                                  <CheckSquare className="h-3.5 w-3.5 text-blue-500 shrink-0" />
+                                  <CheckSquare className="h-3.5 w-3.5 text-primary shrink-0" />
                                   <div className="flex-1 min-w-0">
                                     <div className="text-xs font-medium truncate">{task.title}</div>
                                     {task.statusName && (
@@ -2043,7 +2043,7 @@ function DroppableStage({
                         key={task.id}
                         className="h-10 flex items-center gap-3 px-3 rounded-lg border border-border/50 bg-background/80 group"
                       >
-                        <CheckSquare className="h-4 w-4 text-blue-500 shrink-0" />
+                        <CheckSquare className="h-4 w-4 text-primary shrink-0" />
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2">
                             <span className="text-sm font-medium truncate">{task.title}</span>
@@ -2091,7 +2091,7 @@ function DroppableStage({
                           className="h-10 flex items-center gap-3 px-3 rounded-lg border border-border/50 bg-background/80 group"
                           data-testid={`labour-tracker-${stageData.id}-${tracker.costCodeId}`}
                         >
-                          <Clock className="h-4 w-4 text-amber-500 shrink-0" />
+                          <Clock className="h-4 w-4 text-teal shrink-0" />
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2">
                               <span className="text-sm font-medium truncate">{name}</span>
@@ -2102,7 +2102,7 @@ function DroppableStage({
                             {budgeted > 0 && (
                               <div className="h-1 mt-0.5 rounded-full bg-muted overflow-hidden">
                                 <div
-                                  className={`h-full rounded-full transition-all ${isOver ? 'bg-red-500' : 'bg-amber-400'}`}
+                                  className={`h-full rounded-full transition-all ${isOver ? 'bg-coral' : 'bg-teal'}`}
                                   style={{ width: `${pct}%` }}
                                 />
                               </div>
@@ -2317,7 +2317,7 @@ function DroppableStage({
                     }}
                     data-testid={`labour-picker-${row.costCodeId}`}
                   >
-                    <Clock className="h-4 w-4 text-amber-500 shrink-0" />
+                    <Clock className="h-4 w-4 text-teal shrink-0" />
                     <div className="flex-1 min-w-0">
                       <div className="text-sm font-medium truncate">{row.costCodeTitle || row.costCodeId}</div>
                       {row.categoryTitle && (
@@ -4505,11 +4505,11 @@ export default function ProjectScope() {
                               )}
                             </div>
                             {match.matched ? (
-                              <Badge variant="outline" className="shrink-0 bg-amber-100 text-amber-800 border-amber-200 text-data">
+                              <Badge variant="outline" className="shrink-0 bg-status-warning-bg text-status-warning border-status-warning/30 text-data">
                                 Matches: {match.existingStage}
                               </Badge>
                             ) : (
-                              <Badge variant="outline" className="shrink-0 bg-green-100 text-green-800 border-green-200 text-data">
+                              <Badge variant="outline" className="shrink-0 bg-status-success-bg text-status-success border-status-success/30 text-data">
                                 New
                               </Badge>
                             )}

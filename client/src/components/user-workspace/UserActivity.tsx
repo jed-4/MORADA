@@ -138,21 +138,21 @@ export default function UserActivity({ user, isOwnPage }: UserActivityProps) {
   const getActivityColor = (type: string) => {
     switch (type) {
       case "task":
-        return "text-status-info bg-blue-50 dark:text-blue-400 dark:bg-blue-950";
+        return "text-status-info bg-status-info-bg";
       case "estimate":
-        return "text-status-success bg-green-50 dark:text-green-400 dark:bg-green-950";
+        return "text-status-success bg-status-success-bg";
       case "bill":
-        return "text-status-warning bg-orange-50 dark:text-orange-400 dark:bg-orange-950";
+        return "text-status-warning bg-status-warning-bg";
       case "variation":
-        return "text-purple-600 bg-purple-50 dark:text-purple-400 dark:bg-purple-950";
+        return "text-primary bg-primary/10";
       case "invoice":
-        return "text-emerald-600 bg-emerald-50 dark:text-emerald-400 dark:bg-emerald-950";
+        return "text-sage bg-sage-light";
       case "project":
-        return "text-sky-600 bg-sky-50 dark:text-sky-400 dark:bg-sky-950";
+        return "text-status-info bg-status-info-bg";
       case "schedule":
-        return "text-cyan-600 bg-cyan-50 dark:text-cyan-400 dark:bg-cyan-950";
+        return "text-teal bg-teal-light";
       case "manual":
-        return "text-indigo-600 bg-indigo-50 dark:text-indigo-400 dark:bg-indigo-950";
+        return "text-primary bg-primary/10";
       default:
         return "text-secondary bg-muted";
     }

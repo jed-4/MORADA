@@ -3862,7 +3862,7 @@ export default function EstimateDetail() {
       if (editingCell?.itemId === rowItem.id) return "bg-primary/[0.04]";
       if (selectedItems.has(rowItem.id)) return "bg-[#f6f3ff]";
       const lc = (rowItem.status || '').toString().toLowerCase();
-      if (lc === 'done' || lc === 'complete') return "bg-green-50/70";
+      if (lc === 'done' || lc === 'complete') return "bg-sage/10";
       if (lc === 'not relevant' || lc === 'not_relevant') return "bg-muted/70";
       return idx % 2 === 0 ? "bg-card" : "bg-muted/20";
     };
@@ -4278,10 +4278,10 @@ export default function EstimateDetail() {
       case 'type': {
         const typeColors: Record<string, string> = {
           Material: 'bg-teal/10 text-teal dark:bg-teal/20',
-          Labour: 'bg-status-success-bg text-status-success dark:bg-green-900/30 dark:text-green-400',
-          Subcontractor: 'bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
+          Labour: 'bg-status-success-bg text-status-success',
+          Subcontractor: 'bg-amber-light text-amber',
           Fee: 'bg-primary/10 text-primary dark:bg-primary/20',
-          Equipment: 'bg-orange-50 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
+          Equipment: 'bg-status-warning-bg text-status-warning',
         };
         const typeColor = typeColors[item.type] || typeColors.Material;
         if (isEditing) {
@@ -4465,8 +4465,8 @@ export default function EstimateDetail() {
         // Chip color based on shown as value
         const shownAsChipClass = 
           currentShownAs === 'price' ? 'bg-primary/20 text-[#7c5bb0] border-primary/30' :
-          currentShownAs === 'included' ? 'bg-green-100 text-status-success border-green-200' :
-          currentShownAs === 'excluded' ? 'bg-red-100 text-status-danger border-red-200' :
+          currentShownAs === 'included' ? 'bg-status-success-bg text-status-success border-status-success/30' :
+          currentShownAs === 'excluded' ? 'bg-status-danger-bg text-status-danger border-status-danger/30' :
           'bg-muted text-muted-foreground border-border';
         
         return (
@@ -4519,10 +4519,10 @@ export default function EstimateDetail() {
             }
             // For non-hex colors (tailwind tokens, css variables), use a mapping
             const colorMap: Record<string, string> = {
-              'green': 'bg-green-100 text-status-success border-green-200 dark:bg-green-900/30 dark:text-green-400 dark:border-green-800',
-              'amber': 'bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-900/30 dark:text-amber-400 dark:border-amber-800',
-              'red': 'bg-red-100 text-status-danger border-red-200 dark:bg-red-900/30 dark:text-red-400 dark:border-red-800',
-              'blue': 'bg-blue-100 text-status-info border-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800',
+              'green': 'bg-status-success-bg text-status-success border-status-success/30',
+              'amber': 'bg-status-warning-bg text-status-warning border-status-warning/30',
+              'red': 'bg-status-danger-bg text-status-danger border-status-danger/30',
+              'blue': 'bg-status-info-bg text-status-info border-status-info/30',
               'gray': 'bg-muted text-muted-foreground border-border',
               'muted': 'bg-muted text-muted-foreground border-border',
             };
@@ -4536,10 +4536,10 @@ export default function EstimateDetail() {
           }
           // Fallback to hardcoded colors for legacy statuses
           const lc = currentStatus?.toLowerCase?.() ?? '';
-          if (lc === 'done' || lc === 'complete') return { className: 'bg-status-success-bg text-status-success dark:bg-green-900/30 dark:text-green-400' };
+          if (lc === 'done' || lc === 'complete') return { className: 'bg-status-success-bg text-status-success' };
           if (lc === 'not relevant' || lc === 'not_relevant') return { className: 'bg-muted text-muted-foreground dark:bg-muted/50' };
           if (lc === 'in progress' || lc === 'in_progress') return { className: 'bg-primary/10 text-primary dark:bg-primary/20' };
-          return { className: 'bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' }; // incomplete/todo/pending/default
+          return { className: 'bg-status-warning-bg text-status-warning' }; // incomplete/todo/pending/default
         };
         
         const statusChipStyle = getStatusChipStyle();
@@ -4574,8 +4574,8 @@ export default function EstimateDetail() {
         
         // Chip styling for allowance
         const allowanceChipClass = 
-          allowanceType === 'Prime Cost' ? 'bg-blue-100 text-status-info border-blue-200' :
-          allowanceType === 'Provisional Sum' ? 'bg-amber-100 text-amber-700 border-amber-200' :
+          allowanceType === 'Prime Cost' ? 'bg-status-info-bg text-status-info border-status-info/30' :
+          allowanceType === 'Provisional Sum' ? 'bg-status-warning-bg text-status-warning border-status-warning/30' :
           'bg-muted/50 text-muted-foreground border-border';
         
         const allowanceLabel = 
@@ -4657,9 +4657,9 @@ export default function EstimateDetail() {
         // Chip color based on wastage value
         const wastageChipClass = 
           currentWastage === 0 ? 'bg-muted/50 text-muted-foreground border-border' :
-          currentWastage === 10 ? 'bg-blue-100 text-status-info border-blue-200' :
-          currentWastage === 15 ? 'bg-amber-100 text-amber-700 border-amber-200' :
-          'bg-orange-100 text-status-warning border-orange-200'; // 20%
+          currentWastage === 10 ? 'bg-status-info-bg text-status-info border-status-info/30' :
+          currentWastage === 15 ? 'bg-status-warning-bg text-status-warning border-status-warning/30' :
+          'bg-status-danger-bg text-status-danger border-status-danger/30'; // 20%
         
         const wastageLabel = currentWastage === 0 ? '-' : `${currentWastage}%`;
         
@@ -5229,8 +5229,8 @@ export default function EstimateDetail() {
                         >
                           <Layers className="h-3 w-3 text-muted-foreground flex-shrink-0" />
                           <span className="truncate flex-1">{getRevLabel(v.version)}{v.name && v.name !== estimate?.name ? ` — ${v.name}` : ''}</span>
-                          {isContract && <Badge className="text-label px-1 h-4 bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border-emerald-500/30 no-default-active-elevate">Contract</Badge>}
-                          {isApprovedLive && <Badge className="text-label px-1 h-4 bg-blue-500/15 text-blue-700 dark:text-blue-400 border-blue-500/30 no-default-active-elevate">Approved</Badge>}
+                          {isContract && <Badge className="text-label px-1 h-4 bg-status-success-bg text-status-success border-status-success/30 no-default-active-elevate">Contract</Badge>}
+                          {isApprovedLive && <Badge className="text-label px-1 h-4 bg-status-info-bg text-status-info border-status-info/30 no-default-active-elevate">Approved</Badge>}
                           {!isContract && !isApprovedLive && v.isLocked && <Lock className="h-2.5 w-2.5 text-muted-foreground/50 flex-shrink-0" />}
                           {!v.isLocked && isCurrent && <span className="text-label text-primary flex-shrink-0">working</span>}
                         </button>
@@ -5276,7 +5276,7 @@ export default function EstimateDetail() {
                               onClick={() => setContractDialogRevisionId(v.id)}
                               data-testid={`revision-mark-contract-${v.id}`}
                             >
-                              <Lock className="w-3.5 h-3.5 mr-2 text-emerald-500" />
+                              <Lock className="w-3.5 h-3.5 mr-2 text-status-success" />
                               Mark as Contract
                             </DropdownMenuItem>
                           ) : (
@@ -5367,7 +5367,7 @@ export default function EstimateDetail() {
                     disabled={approveMutation.isPending}
                     data-testid="button-approve-estimate"
                   >
-                    <Check className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                    <Check className="w-3.5 h-3.5 text-status-success" />
                     Approve estimate
                   </button>
                 )}
@@ -5381,7 +5381,7 @@ export default function EstimateDetail() {
                       disabled={contractMutation.isPending}
                       data-testid="button-mark-contract"
                     >
-                      <Lock className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                      <Lock className="w-3.5 h-3.5 text-status-success" />
                       Mark as Contract
                     </button>
                     <button

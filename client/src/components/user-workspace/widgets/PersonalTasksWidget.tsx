@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { getWorkspacePreferences } from "@/lib/workspacePreferences";
+import { getPriorityStyle } from "@/lib/priorityConfig";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -267,13 +268,16 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
     return { label: formatInTimezone(dueDate, effectiveTimezone, { month: 'short', day: 'numeric' }), color: 'text-bp-muted bg-bp-subtle' };
   };
 
-  const getPriorityColor = (priority: string | null | undefined) => {
+  // Left-border accent from the shared Morada priority scale; transparent when unset.
+  const getPriorityBorderColor = (priority: string | null | undefined) => {
     switch (priority) {
-      case 'urgent': return 'border-l-bp-coral';
-      case 'high': return 'border-l-bp-amber';
-      case 'medium': return 'border-l-bp-amber/60';
-      case 'low': return 'border-l-bp-green';
-      default: return 'border-l-transparent';
+      case 'urgent':
+      case 'high':
+      case 'medium':
+      case 'low':
+        return getPriorityStyle(priority).color;
+      default:
+        return 'transparent';
     }
   };
 
@@ -527,7 +531,8 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
                 return (
                   <div 
                     key={task.id}
-                    className={`flex items-center gap-2 py-1.5 px-2 rounded border-l-2 hover-elevate cursor-pointer ${getPriorityColor(task.priority)} ${isCompleted ? 'opacity-50' : ''}`}
+                    className={`flex items-center gap-2 py-1.5 px-2 rounded border-l-2 hover-elevate cursor-pointer ${isCompleted ? 'opacity-50' : ''}`}
+                    style={{ borderLeftColor: getPriorityBorderColor(task.priority) }}
                     onClick={() => setSelectedTaskId(task.id)}
                     data-testid={`personal-task-${task.id}`}
                   >
@@ -611,7 +616,8 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
                     return (
                       <div 
                         key={task.id}
-                        className={`flex items-center gap-2 py-1.5 px-2 rounded border-l-2 hover-elevate cursor-pointer ${getPriorityColor(task.priority)} ${isCompleted ? 'opacity-50' : ''}`}
+                        className={`flex items-center gap-2 py-1.5 px-2 rounded border-l-2 hover-elevate cursor-pointer ${isCompleted ? 'opacity-50' : ''}`}
+                        style={{ borderLeftColor: getPriorityBorderColor(task.priority) }}
                         onClick={() => setSelectedTaskId(task.id)}
                         data-testid={`personal-task-${task.id}`}
                       >

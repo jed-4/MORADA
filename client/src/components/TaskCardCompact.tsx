@@ -17,6 +17,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useTimezone, formatInTimezone } from "@/hooks/useTimezone";
+import { getPriorityStyle, type PriorityStyle } from "@/lib/priorityConfig";
 
 interface TaskCardCompactProps {
   task: Task;
@@ -43,12 +44,10 @@ const getTaskStatusTone = (status: string | null, isCompleted: boolean): StatusT
   return 'neutral';
 };
 
-// Priority colors
-const getPriorityColor = (priority: string | null): string | null => {
+// Priority colors — shared Morada scale (no pill when priority is unset)
+const getPriorityColor = (priority: string | null): PriorityStyle | null => {
   const p = priority?.toLowerCase() || '';
-  if (p === 'high' || p === 'urgent') return 'bg-status-danger-bg text-status-danger border-status-danger/20';
-  if (p === 'medium') return 'bg-status-warning-bg text-status-warning border-status-warning/20';
-  if (p === 'low') return 'bg-muted text-secondary border-border-strong';
+  if (p === 'urgent' || p === 'high' || p === 'medium' || p === 'low') return getPriorityStyle(p);
   return null;
 };
 
@@ -185,7 +184,10 @@ export default function TaskCardCompact({ task, onClick, isDragging = false, dis
 
           {/* Priority tag - top right */}
           {priorityColor && (displaySettings?.showPriority !== false) && (
-            <Badge className={`text-data px-1 py-0 h-4 rounded-full ${priorityColor} border gap-0.5 no-default-hover-elevate no-default-active-elevate shrink-0`}>
+            <Badge
+              className="text-data px-1 py-0 h-4 rounded-full border gap-0.5 no-default-hover-elevate no-default-active-elevate shrink-0"
+              style={{ color: priorityColor.color, backgroundColor: priorityColor.bgColor, borderColor: priorityColor.bgColor }}
+            >
               <Flag className="h-2 w-2" />
             </Badge>
           )}

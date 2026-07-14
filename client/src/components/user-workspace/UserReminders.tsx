@@ -5,6 +5,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { format, formatDistanceToNow, isPast, isFuture, addMinutes } from "date-fns";
 import { useTimezone, formatInTimezone, formatDateTimeInTimezone } from "@/hooks/useTimezone";
+import { getPriorityStyle } from "@/lib/priorityConfig";
 import { 
   Bell, Plus, Clock, CheckSquare, ClipboardList, Timer, 
   Wrench, Trash2, Pencil, AlarmClockOff, AlarmClock, AlertTriangle
@@ -90,11 +91,9 @@ const REMINDER_TYPE_ICONS: Record<string, any> = {
   custom: Bell,
 };
 
-const PRIORITY_COLORS: Record<string, string> = {
-  low: "text-muted-foreground",
-  normal: "text-foreground",
-  high: "text-orange-500",
-};
+// Reminders use a low/normal/high scale — "normal" maps to the shared "medium" colour.
+const getReminderPriorityColor = (priority: string | null | undefined): string =>
+  getPriorityStyle((priority || "normal") === "normal" ? "medium" : priority).color;
 
 export default function UserReminders({ user, isOwnPage }: UserRemindersProps) {
   const { toast } = useToast();
@@ -424,11 +423,17 @@ export default function UserReminders({ user, isOwnPage }: UserRemindersProps) {
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-1">
-                          <span className={`font-semibold text-sm truncate ${PRIORITY_COLORS[reminder.priority || "normal"]}`}>
+                          <span
+                            className="font-semibold text-sm truncate"
+                            style={{ color: getReminderPriorityColor(reminder.priority) }}
+                          >
                             {reminder.title}
                           </span>
                           {reminder.priority === "high" && (
-                            <AlertTriangle className="h-3 w-3 text-orange-500 flex-shrink-0" />
+                            <AlertTriangle
+                              className="h-3 w-3 flex-shrink-0"
+                              style={{ color: getPriorityStyle("high").color }}
+                            />
                           )}
                         </div>
                       </div>

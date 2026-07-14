@@ -3,6 +3,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { StatusBadge, type StatusTone } from "@/components/StatusBadge";
+import { getPriorityStyle, type PriorityStyle } from "@/lib/priorityConfig";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
@@ -110,12 +111,10 @@ const getTaskStatusTone = (status: string | null): StatusTone => {
   return 'neutral';
 };
 
-// Priority colors
-const getPriorityColor = (priority: string | null): string | null => {
+// Priority colors — shared Morada scale (no pill when priority is unset)
+const getPriorityColor = (priority: string | null): PriorityStyle | null => {
   const p = priority?.toLowerCase() || '';
-  if (p === 'high' || p === 'urgent') return 'bg-status-danger-bg text-status-danger dark:text-red-400';
-  if (p === 'medium') return 'bg-status-warning-bg text-status-warning dark:text-yellow-400';
-  if (p === 'low') return 'bg-muted text-secondary dark:text-muted';
+  if (p === 'urgent' || p === 'high' || p === 'medium' || p === 'low') return getPriorityStyle(p);
   return null;
 };
 
@@ -435,7 +434,10 @@ function SortableTaskRow({
                   }}
                   className="group relative"
                 >
-                  <Badge className={`text-xs px-1.5 py-0.5 h-5 rounded-full ${priorityColor} border-0 gap-0.5 no-default-hover-elevate no-default-active-elevate cursor-pointer hover:opacity-80`}>
+                  <Badge
+                    className="text-xs px-1.5 py-0.5 h-5 rounded-full border-0 gap-0.5 no-default-hover-elevate no-default-active-elevate cursor-pointer hover:opacity-80"
+                    style={{ color: priorityColor.color, backgroundColor: priorityColor.bgColor }}
+                  >
                     <Flag className="h-2.5 w-2.5" />
                     {priorityOptions.find(opt => opt.key === task.priority)?.name || task.priority}
                   </Badge>

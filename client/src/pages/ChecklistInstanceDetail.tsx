@@ -585,9 +585,9 @@ export default function ChecklistInstanceDetail() {
   const getPriorityBadge = (priority: string) => {
     const styles: Record<string, string> = {
       low: "bg-muted text-secondary ",
-      medium: "bg-blue-100 text-status-info dark:bg-blue-900/30 dark:text-blue-400",
-      high: "bg-orange-100 text-status-warning dark:bg-orange-900/30 dark:text-orange-400",
-      urgent: "bg-red-100 text-status-danger dark:bg-red-900/30 dark:text-red-400",
+      medium: "bg-status-info-bg text-status-info",
+      high: "bg-status-warning-bg text-status-warning",
+      urgent: "bg-status-danger-bg text-status-danger",
     };
     return <Badge className={styles[priority] || styles.medium}>{priority}</Badge>;
   };
@@ -618,7 +618,7 @@ export default function ChecklistInstanceDetail() {
           <h1 className="text-sm font-semibold truncate max-w-[300px]">{checklist.name}</h1>
           {getPriorityBadge(checklist.priority || "medium")}
           {checklist.status === "completed" ? (
-            <Badge className="bg-green-100 text-status-success dark:bg-green-900/30 dark:text-green-400">
+            <Badge className="bg-status-success-bg text-status-success">
               <CheckCircle2 className="h-3 w-3 mr-1" />
               Completed
             </Badge>
@@ -655,7 +655,7 @@ export default function ChecklistInstanceDetail() {
           {checklist.status !== "completed" && (
             <Button
               size="sm"
-              className="h-6 text-xs bg-green-600 hover:bg-green-700 text-white"
+              className="h-6 text-xs bg-sage hover:bg-sage/90 text-white"
               onClick={handleCompleteChecklist}
               disabled={progress < 100}
               data-testid="button-complete-checklist"
@@ -806,7 +806,7 @@ export default function ChecklistInstanceDetail() {
                           <div key={item.id} className="border-b last:border-b-0">
                           <div
                             className={`flex items-center gap-2 px-3 py-1.5 ${
-                              item.status === "completed" ? "bg-green-50/50 dark:bg-green-900/10" :
+                              item.status === "completed" ? "bg-sage/10" :
                               item.status === "na" ? "bg-muted/50" : ""
                             }`}
                           >
@@ -832,7 +832,7 @@ export default function ChecklistInstanceDetail() {
                                   {item.description}
                                 </span>
                                 {item.isRequired && (
-                                  <Asterisk className="h-2.5 w-2.5 text-red-500 shrink-0" />
+                                  <Asterisk className="h-2.5 w-2.5 text-status-danger shrink-0" />
                                 )}
                                 {item.completedByName && item.status === "completed" && (
                                   <Tooltip>
@@ -934,7 +934,7 @@ export default function ChecklistInstanceDetail() {
                                 data-testid={`button-notes-${item.id}`}
                               >
                                 {item.notes ? (
-                                  <MessageSquareText className="h-3 w-3 text-blue-500" />
+                                  <MessageSquareText className="h-3 w-3 text-primary" />
                                 ) : (
                                   <MessageSquare className="h-3 w-3 text-muted-foreground/50" />
                                 )}
@@ -1001,7 +1001,7 @@ export default function ChecklistInstanceDetail() {
                               {itemAttachments.map((att: any, idx: number) => (
                                 <div key={idx} className="flex items-center gap-1 bg-card border rounded px-1.5 py-0.5 text-data group/att">
                                   {isImageType(att.contentType) ? (
-                                    <ImageIcon className="h-3 w-3 text-blue-500 shrink-0" />
+                                    <ImageIcon className="h-3 w-3 text-primary shrink-0" />
                                   ) : (
                                     <FileText className="h-3 w-3 text-muted-foreground shrink-0" />
                                   )}
