@@ -1557,11 +1557,17 @@ function getDefaultActionsForRole(
   }
 
   // --- CLIENT ---
+  // Starting point only — admins tick/untick these per company in Roles &
+  // Permissions, which is what actually drives what a client sees.
+  // Note: files.manage is deliberately NOT granted. The Files tab is backed by
+  // the company's Google Drive (browsable by folder id), not project-scoped
+  // storage, so it can't be safely confined to one project yet.
   if (n.includes('client')) {
     grant('projects.view', ['view']);
     grant('projects.schedule', ['view']);
     grant('projects.invoices', ['view']);
     grant('projects.selections', ['view']);
+    grant('projects.variations', ['view']);
     grant('projects.site_diary', ['view']);
     grant('projects.messages', ['view', 'add', 'send']);
     return result;

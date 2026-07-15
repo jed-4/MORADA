@@ -202,6 +202,36 @@ export function requireTeamMember(req: Request, res: Response, next: NextFunctio
 }
 
 /**
+ * Team members plus client-portal users.
+ *
+ * For the handful of routes a client legitimately needs that were previously
+ * team-only (project messaging). Clients only reach these after
+ * clientAccessGate has verified the matching permission and confined the
+ * request to a project they've been granted, so this does not widen access on
+ * its own. Suppliers remain excluded.
+ */
+export function requireTeamMemberOrClient(req: Request, res: Response, next: NextFunction): void {
+  // Development bypass — matches requireTeamMember. Client containment does not
+  // depend on this middleware; clientAccessGate has no dev bypass.
+  if (process.env.NODE_ENV === 'development') {
+    next();
+    return;
+  }
+
+  if (!req.user) {
+    res.status(401).json({ error: 'Authentication required' });
+    return;
+  }
+
+  if (req.user.userCategory !== 'team' && req.user.userCategory !== 'client') {
+    res.status(403).json({ error: 'Team member access required' });
+    return;
+  }
+
+  next();
+}
+
+/**
  * BuildPro platform-staff (super-admin) middleware. Gates cross-tenant features
  * that intentionally cross company isolation (e.g. the suggestion review page).
  * This is deliberately NOT bypassed in development — staff status is a real

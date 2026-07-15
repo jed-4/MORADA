@@ -186,7 +186,8 @@ import { z } from "zod";
 import { fromZodError } from "zod-validation-error";
 import { eq, and, asc, desc, or, isNull, isNotNull, sql, min, max, gte, lte, inArray, gt } from "drizzle-orm";
 import { PasswordUtils } from "./utils/auth";
-import { requireAuth, requireAdmin, requireTeamMember, requirePermission, requirePlatformStaff, toSafeUser, isAdminRole } from "./middleware/auth";
+import { requireAuth, requireAdmin, requireTeamMember, requireTeamMemberOrClient, requirePermission, requirePlatformStaff, toSafeUser, isAdminRole } from "./middleware/auth";
+import { clientAccessGate } from "./middleware/clientAccess";
 import { requireActivePlan } from "./middleware/plan";
 import { getStripe, isStripeConfigured } from "./stripe";
 import { isPlanKey, getPlan, PLANS, PLAN_KEYS, type PlanKey, type BillingCycle } from "./config/plans";
@@ -1102,6 +1103,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     // PRODUCTION - Require authentication for all other routes
     return requireAuth(req, res, next);
   });
+
+  // Client containment. Runs right after auth so it sees every /api request a
+  // client session makes. No-op for team/supplier/admin sessions.
+  app.use('/api', clientAccessGate);
 
   // Trial / subscription enforcement. Runs after auth so req.user is populated.
   // No-op when Stripe is not configured (billing not live) and skips auth,
@@ -12891,15 +12896,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Selection approval is driven by the permission system: admin-like roles keep
+  // their implicit bypass, everyone else needs projects.selections:approve. This
+  // is what lets a client with that permission ticked approve a selection and
+  // have it flow through exactly as a staff approval does.
+  // Resolves the acting user from the session because the dev auth block injects
+  // a req.user whose `id` may be a replitId rather than users.id.
+  async function resolveApprover(req: any): Promise<{ id: string; name: string } | null> {
+    const injected = req.user;
+    const dbUser = injected?.dbUser
+      ?? (injected?.userCategory ? injected : null)
+      ?? (req.session?.userId ? await storage.getUser(req.session.userId) : null);
+    if (!dbUser?.id) return null;
+    const name = [dbUser.firstName, dbUser.lastName].filter(Boolean).join(" ").trim()
+      || dbUser.email
+      || "User";
+    return { id: dbUser.id, name };
+  }
+
+  async function canApproveSelections(req: any): Promise<boolean> {
+    const approver = await resolveApprover(req);
+    if (!approver) return false;
+    const user = await storage.getUser(approver.id);
+    const role = user?.roleId ? await storage.getUserRole(user.roleId) : null;
+    if (role && isAdminRole(role)) return true;
+    return await storage.checkUserPermission(approver.id, "projects.selections", "approve");
+  }
+
   app.patch("/api/selection-options/:id/unapprove", requireAuth, async (req, res) => {
     try {
-      const user = (req as any).user;
-      const roleId: string = user?.roleId || user?.dbUser?.roleId || "";
-      const role = roleId ? await storage.getUserRole(roleId) : null;
-      const roleName = (role?.name || "").toLowerCase();
-      const isAdminLike = roleName.includes("admin") || roleName.includes("owner") || roleName.includes("general manager");
-      if (!isAdminLike) {
-        return res.status(403).json({ error: "Only admin users can unapprove selection options." });
+      if (!(await canApproveSelections(req))) {
+        return res.status(403).json({ error: "You don't have permission to unapprove selections." });
       }
       const existing = await assertOptionAccess(req, res, req.params.id);
       if (!existing) return;
@@ -12916,22 +12943,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/selection-options/:id/approve", requireAuth, async (req, res) => {
     try {
-      const user = (req as any).user;
-      const roleId: string = user?.roleId || user?.dbUser?.roleId || "";
-      const role = roleId ? await storage.getUserRole(roleId) : null;
-      const roleName = (role?.name || "").toLowerCase();
-      const isAdminLike = roleName.includes("admin") || roleName.includes("owner") || roleName.includes("general manager");
-      if (!isAdminLike) {
-        return res.status(403).json({ error: "Only admin users can approve selection options." });
+      const approver = await resolveApprover(req);
+      if (!approver || !(await canApproveSelections(req))) {
+        return res.status(403).json({ error: "You don't have permission to approve selections." });
       }
       // Verify the authenticated user's company owns this option (prevents cross-tenant approval)
       const existing = await assertOptionAccess(req, res, req.params.id);
       if (!existing) return;
-      const userName = user?.name || user?.dbUser?.name || user?.email || "Admin";
-      const option = await storage.approveSelectionOption(req.params.id, user?.id || user?.dbUser?.id, userName);
+      const option = await storage.approveSelectionOption(req.params.id, approver.id, approver.name);
       // Also mark the parent selection as approved
       if (existing.selectionId) {
         await storage.updateSelection(existing.selectionId, { status: "approved" });
+        // If this selection is linked to a PC allowance, mirror the approved
+        // option's costing into the allowance (upsert — never duplicates).
+        await syncSelectionCostingToAllowance(existing.selectionId);
       }
       res.json(option);
     } catch (error) {
@@ -25581,7 +25606,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get schedule items for a specific project (used by Gantt timeline)
   // Optional query params: limit, offset for pagination (omit for all items)
   // Always returns array for backwards compatibility
-  app.get("/api/projects/:projectId/schedule-items", requireAuth, requireTeamMember, async (req, res) => {
+  // Not requireTeamMember: clients with projects.schedule read their own
+  // project's schedule here, after clientAccessGate has scoped the request.
+  app.get("/api/projects/:projectId/schedule-items", requireAuth, requireTeamMemberOrClient, async (req, res) => {
     try {
       const limit = req.query.limit ? parseInt(req.query.limit as string) : undefined;
       const offset = req.query.offset ? parseInt(req.query.offset as string) : undefined;
@@ -29551,7 +29578,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ============================================================================
 
   // Channels
-  app.get("/api/channels", requireAuth, requireTeamMember, async (req, res) => {
+  // Not requireTeamMember: client-portal users hold projects.messages and reach
+  // this only after clientAccessGate has checked that permission and scoped the
+  // request to their own project.
+  app.get("/api/channels", requireAuth, requireTeamMemberOrClient, async (req, res) => {
     try {
       const companyId = req.user!.companyId!;
       const userId = req.user!.id;
@@ -29611,7 +29641,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/channels/:id", requireAuth, requireTeamMember, async (req, res) => {
+  app.get("/api/channels/:id", requireAuth, requireTeamMemberOrClient, async (req, res) => {
     try {
       const companyId = req.user!.companyId!;
       const channel = await storage.getChannel(req.params.id, companyId);
