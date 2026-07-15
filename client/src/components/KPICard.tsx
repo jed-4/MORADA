@@ -23,11 +23,11 @@ export default function KPICard({ title, value, change, icon }: KPICardProps) {
         {change && (
           <p className="text-xs text-muted-foreground flex items-center gap-1 mt-1">
             {change.direction === "up" ? (
-              <TrendingUp className="h-3 w-3 text-green-500" />
+              <TrendingUp className="h-3 w-3 text-status-success" />
             ) : (
-              <TrendingDown className="h-3 w-3 text-red-500" />
+              <TrendingDown className="h-3 w-3 text-status-danger" />
             )}
-            <span className={change.direction === "up" ? "text-green-500" : "text-red-500"}>
+            <span className={change.direction === "up" ? "text-status-success" : "text-status-danger"}>
               {change.value}
             </span>
             <span>from last month</span>

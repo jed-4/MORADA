@@ -164,9 +164,9 @@ export default function RFIs({ embedded }: { embedded?: boolean } = {}) {
   const getPriorityBadge = (priority: string) => {
     const config: Record<string, { color: string; label: string }> = {
       low: { color: "bg-muted text-foreground", label: "Low" },
-      normal: { color: "bg-blue-100 text-blue-800", label: "Normal" },
-      high: { color: "bg-orange-100 text-orange-800", label: "High" },
-      urgent: { color: "bg-red-100 text-red-800", label: "Urgent" },
+      normal: { color: "bg-status-info-bg text-status-info", label: "Normal" },
+      high: { color: "bg-status-warning-bg text-status-warning", label: "High" },
+      urgent: { color: "bg-status-danger-bg text-status-danger", label: "Urgent" },
     };
     const { color, label } = config[priority] || config.normal;
     return <Badge className={color}>{label}</Badge>;

@@ -20,6 +20,7 @@ import {
   siteDiaryTemplates,
   siteDiaryEntries,
   timesheets,
+  timesheetCostCodes,
   budgets,
   budgetLineItems,
   costCodes,
@@ -62,13 +63,43 @@ export async function seedLennyDemo(companyId: string, userId: string) {
 
   // Wrap everything in a transaction so a partial failure rolls back cleanly
   return await db.transaction(async (tx) => {
-    // ─── 0. COST CODE LOOKUP ───────────────────────────────────────────────────
-    // Look up cost codes by their numeric code for use throughout the seed
-    const CC_CODES = ['100','119','121','123','125','126','127','128','129','130','133','138','142'];
+    // ─── 0. COST CODES ─────────────────────────────────────────────────────────
+    // The seed references these codes throughout (timesheets, bills, estimate
+    // items). Companies don't get default cost codes at signup, so CREATE any
+    // that are missing — otherwise every costCodeId in the demo ends up null
+    // and cost-code features (allowance allocation, budget drill-downs) have
+    // nothing to show.
+    const CC_DEFS: Record<string, string> = {
+      '100': 'Project Management',
+      '119': 'Landscaping',
+      '121': 'Cleaning & Handover',
+      '123': 'Joinery & Cabinetry',
+      '125': 'Plumbing & Electrical',
+      '126': 'Demolition',
+      '127': 'Painting & Finishes',
+      '128': 'Site Supervision',
+      '129': 'Earthworks',
+      '130': 'Concrete & Footings',
+      '133': 'Framing',
+      '138': 'Roofing',
+      '142': 'External Works',
+    };
+    const CC_CODES = Object.keys(CC_DEFS);
     const ccRows = await tx.select({ id: costCodes.id, code: costCodes.code })
       .from(costCodes)
       .where(and(eq(costCodes.companyId, companyId), inArray(costCodes.code, CC_CODES)));
     const cc = Object.fromEntries(ccRows.map(r => [r.code, r.id]));
+    for (const code of CC_CODES) {
+      if (!cc[code]) {
+        const [created] = await tx.insert(costCodes).values({
+          companyId,
+          code,
+          title: CC_DEFS[code],
+          availableInTimesheets: true,
+        } as any).returning();
+        cc[code] = created.id;
+      }
+    }
 
     // Set hourly rate on the seeding user so timesheets have a rate
     await tx.update(users).set({ hourlyRate: '95.00' } as any).where(eq(users.id, userId));
@@ -1402,6 +1433,95 @@ export async function seedLennyDemo(companyId: string, userId: string) {
         tax: "GST on expenses",
         order: 0,
       });
+    }
+
+    // One NOT-yet-approved bill for project 2 — exercises "visible but not
+    // selectable" in the allowance Select-from-Bills modals.
+    {
+      const total = 484000;
+      const gst = Math.round(total / 11);
+      const subtotal = total - gst;
+      const [pendingBill] = await tx.insert(bills).values({
+        billNumber: "BILL-4502-004",
+        companyId,
+        projectId: proj2.id,
+        supplierId: mrSquiggle.id,
+        billType: "bill",
+        status: "awaiting_approval",
+        billDate: new Date("2025-12-05"),
+        subtotal,
+        tax: gst,
+        total,
+        paidAmount: 0,
+        createdById: userId,
+      }).returning();
+      await tx.insert(billLineItems).values({
+        billId: pendingBill.id,
+        lineType: "custom",
+        description: "Interior design consultation — fixtures & finishes",
+        quantity: 1,
+        unitPrice: subtotal,
+        total: subtotal,
+        tax: "GST on expenses",
+        order: 0,
+        costCodeId: cc['127'] || null,
+      });
+    }
+
+    // ─── TIMESHEETS for Project 2 ─────────────────────────────────────────────
+    // Mixed statuses (approved / submitted / rejected) so the allowance modal's
+    // approval gating is exercisable, plus one SPLIT timesheet (two cost codes)
+    // so per-split allocation rows appear.
+    const ts2Entries = [
+      { date: "2025-11-03", dur: 8,   desc: "Penthouse measure-up & scope walkthrough",       ccCode: '100', rate: 95, end: "15:00:00", status: "approved" },
+      { date: "2025-11-05", dur: 6.5, desc: "Kitchen strip-out supervision",                  ccCode: '126', rate: 95, end: "13:30:00", status: "approved" },
+      { date: "2025-11-10", dur: 9,   desc: "Bathroom demolition & waste coordination",       ccCode: '126', rate: 95, end: "16:00:00", status: "approved" },
+      { date: "2025-11-12", dur: 7.5, desc: "Joinery shop drawings review with cabinetmaker", ccCode: '123', rate: 95, end: "14:30:00", status: "approved" },
+      { date: "2025-11-17", dur: 8,   desc: "Plumbing rough-in supervision — bathrooms",      ccCode: '125', rate: 95, end: "15:00:00", status: "approved" },
+      { date: "2025-11-19", dur: 8,   desc: "Purple feature-wall paint sampling with client", ccCode: '127', rate: 95, end: "15:00:00", status: "submitted" },
+      { date: "2025-11-24", dur: 4,   desc: "Site clean & materials sorting",                 ccCode: '121', rate: 95, end: "11:00:00", status: "rejected" },
+    ];
+    for (const t of ts2Entries) {
+      await tx.insert(timesheets).values({
+        projectId: proj2.id,
+        userId,
+        date: new Date(t.date),
+        startTime: "07:00:00",
+        endTime: t.end,
+        duration: t.dur,
+        breakDuration: 0.5,
+        description: t.desc,
+        status: t.status,
+        hourlyRate: String(t.rate),
+        total: String(Math.round(t.dur * t.rate * 100) / 100),
+        costCodeId: cc[t.ccCode] || null,
+        invoiced: false,
+        isActive: false,
+      } as any);
+    }
+
+    // Split timesheet: one day across two cost codes (5h demolition + 3h painting)
+    {
+      const [splitTs] = await tx.insert(timesheets).values({
+        projectId: proj2.id,
+        userId,
+        date: new Date("2025-11-21"),
+        startTime: "07:00:00",
+        endTime: "15:30:00",
+        duration: 8,
+        breakDuration: 0.5,
+        description: "Morning demolition supervision, afternoon paint prep",
+        status: "approved",
+        hourlyRate: "95.00",
+        total: "760.00",
+        costCodeId: null,
+        invoiced: false,
+        isActive: false,
+      } as any).returning();
+      await tx.insert(timesheetCostCodes).values([
+        { timesheetId: splitTs.id, costCodeId: cc['126'], duration: "5.00", hourlyRate: "95.00", total: "475.00" },
+        { timesheetId: splitTs.id, costCodeId: cc['127'], duration: "3.00", hourlyRate: "95.00", total: "285.00" },
+      ] as any);
     }
 
     // Draft invoice for project 2

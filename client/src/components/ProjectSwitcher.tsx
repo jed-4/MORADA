@@ -1,14 +1,15 @@
-import { useState, useMemo, useEffect, useCallback, useRef } from "react";
+import { useState, useMemo, useEffect, useCallback, useRef, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
-import { 
-  ChevronDown, 
-  Search, 
+import {
+  ChevronDown,
+  Search,
   ArrowRight,
   FolderOpen,
   ChevronLeft,
   ChevronRight,
   Star,
+  Plus,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -45,9 +46,16 @@ const phases: { id: ProjectPhase; label: string }[] = [
 
 interface ProjectSwitcherProps {
   compact?: boolean;
+  /**
+   * Optional custom trigger element (rendered via PopoverTrigger asChild).
+   * Defaults to the full-width sidebar button showing the current project.
+   */
+  trigger?: ReactNode;
+  /** When provided, a "Create New Project" action is shown in the popover footer. */
+  onCreateProject?: () => void;
 }
 
-export function ProjectSwitcher({ compact = false }: ProjectSwitcherProps) {
+export function ProjectSwitcher({ compact = false, trigger, onCreateProject }: ProjectSwitcherProps) {
   const [location, navigate] = useLocation();
   const { currentProject, setCurrentProject } = useProject();
   const [isOpen, setIsOpen] = useState(false);
@@ -300,40 +308,42 @@ export function ProjectSwitcher({ compact = false }: ProjectSwitcherProps) {
 
   return (
     <>
-      <div className="flex flex-col gap-1 w-full">
+      <div className={trigger ? "flex" : "flex flex-col gap-1 w-full"}>
         <Popover open={isOpen} onOpenChange={setIsOpen}>
           <PopoverTrigger asChild>
-            <Button 
-              variant="ghost" 
-              className={`w-full justify-between h-auto hover-elevate ${
-                compact ? "py-1 px-2" : "py-1.5 px-2"
-              }`}
-              data-testid="button-project-switcher"
-              disabled={isLoading}
-            >
-              <div className="flex items-center gap-2 min-w-0 flex-1">
-                {currentProject ? (
-                  <>
-                    <ProjectIcon 
-                      icon={currentProject.icon} 
-                      color={currentProject.color} 
-                      className="w-4 h-4 flex-shrink-0" 
-                    />
-                    <span className="text-xs font-medium truncate">
-                      {currentProject.name}
-                    </span>
-                  </>
-                ) : (
-                  <>
-                    <FolderOpen className="w-4 h-4 flex-shrink-0 text-muted-foreground" />
-                    <span className="text-xs text-muted-foreground">
-                      {isLoading ? "..." : "Select Project"}
-                    </span>
-                  </>
-                )}
-              </div>
-              <ChevronDown className="h-3 w-3 flex-shrink-0 text-muted-foreground ml-1" />
-            </Button>
+            {trigger ?? (
+              <Button
+                variant="ghost"
+                className={`w-full justify-between h-auto hover-elevate ${
+                  compact ? "py-1 px-2" : "py-1.5 px-2"
+                }`}
+                data-testid="button-project-switcher"
+                disabled={isLoading}
+              >
+                <div className="flex items-center gap-2 min-w-0 flex-1">
+                  {currentProject ? (
+                    <>
+                      <ProjectIcon
+                        icon={currentProject.icon}
+                        color={currentProject.color}
+                        className="w-4 h-4 flex-shrink-0"
+                      />
+                      <span className="text-xs font-medium truncate">
+                        {currentProject.name}
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <FolderOpen className="w-4 h-4 flex-shrink-0 text-muted-foreground" />
+                      <span className="text-xs text-muted-foreground">
+                        {isLoading ? "..." : "Select Project"}
+                      </span>
+                    </>
+                  )}
+                </div>
+                <ChevronDown className="h-3 w-3 flex-shrink-0 text-muted-foreground ml-1" />
+              </Button>
+            )}
           </PopoverTrigger>
           
           <PopoverContent 
@@ -424,6 +434,20 @@ export function ProjectSwitcher({ compact = false }: ProjectSwitcherProps) {
                 <span>All Projects</span>
                 <ArrowRight className="h-3 w-3" />
               </button>
+              {onCreateProject && (
+                <button
+                  onClick={() => {
+                    setIsOpen(false);
+                    setSearchQuery("");
+                    onCreateProject();
+                  }}
+                  className="w-full flex items-center justify-center gap-1 px-2 py-1.5 rounded-md text-xs text-muted-foreground hover-elevate"
+                  data-testid="button-create-project"
+                >
+                  <Plus className="h-3 w-3" />
+                  <span>Create New Project</span>
+                </button>
+              )}
             </div>
           </PopoverContent>
         </Popover>

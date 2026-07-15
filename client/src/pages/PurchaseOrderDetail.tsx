@@ -1678,7 +1678,7 @@ export default function PurchaseOrderDetail() {
                     <DropdownMenuSeparator />
                     <DropdownMenuItem
                       onClick={() => setIsDeleteDialogOpen(true)}
-                      className="text-status-danger dark:text-red-400"
+                      className="text-status-danger"
                       data-testid="action-delete-po"
                     >
                       <Trash2 className="w-4 h-4 mr-2" />

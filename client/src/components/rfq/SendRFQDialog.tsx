@@ -232,8 +232,8 @@ export function SendRFQDialog({ open, onOpenChange, rfq, pdfBlob }: SendRFQDialo
           )}
 
           {/* Info Box */}
-          <div className="p-4 rounded-lg bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800">
-            <p className="text-sm text-blue-900 dark:text-blue-100">
+          <div className="p-4 rounded-lg bg-status-info-bg border border-status-info/30">
+            <p className="text-sm text-status-info">
               <strong>Note:</strong> After sending, automatic follow-up emails will be scheduled for
               Day 3, 7, and 14 if no response is received.
             </p>

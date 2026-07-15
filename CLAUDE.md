@@ -22,11 +22,17 @@ Built by Jed Smith — jed@lighthouseprojects.com.au
 ## Key conventions
 
 ### Money
-- All monetary values are stored in the database as **cents** (integers)
-- `formatCurrency(cents)` divides by 100 and formats as AUD
-- GST rate is 10% (Australia)
-- Inc GST → Ex GST: `Math.round(incGst / 1.1)`
-- Ex GST → Inc GST: `Math.round(exGst * 1.1)`
+**Use `shared/money.ts` for ALL conversions and formatting — never hand-roll `* 100` / `/ 1.1`.**
+
+Three storage conventions coexist (see shared/money.ts header for the full map):
+1. **Cents as integers** — the dominant convention (~90% of tables): bills, invoices, POs, variations, budgets, allowance items/allocations, selections, projects, price list
+2. **Dollars as float doubles** — `estimate_items` price fields (`unitCostExTax`, `taxAmount`, `priceIncTax`) and `variation_items.unitCostExTax`. 2dp policy via `shared/pricing.ts round2`
+3. **Dollars as numeric(10,2)** — timesheets, timesheet_cost_codes, user/contact hourly rates. **Drizzle returns these as STRINGS** — use the `timesheet*` accessors in shared/money.ts
+
+- `formatCents(cents)` in shared/money.ts is the canonical AUD formatter (takes cents)
+- GST rate is 10% (Australia): `exGstFromInc` / `incGstFromEx` / `gstSplit` in shared/money.ts
+- **Labour is EX GST**: `timesheets.total` = hours × rate with no GST component. Gross up ×1.1 when comparing against inc-GST client prices
+- `estimate_items.priceIncTax` is a denormalised cache — populated ONLY via `resolveEstimateStoredPrice` in shared/pricing.ts; recompute rather than trust it on read paths
 
 ### Allowances
 Two types with different behaviour:
@@ -83,7 +89,7 @@ Section cards use a 3px left accent border in the section colour. Use `hsl(var(-
 - All amounts are **inc GST** unless explicitly labelled ex GST
 - Schedules track working days — respect `include_saturday` and `include_sunday` flags
 - Bills: `bill.total` is cents inc GST; `bill.billNumber` is the invoice number
-- Timesheets: `duration` is hours; `total` is cents inc GST
+- Timesheets: `duration` is hours; `total` is **dollars EX GST as a numeric string** (hours × rate, no GST — wages aren't a taxable supply). Timesheet-allowance allocation `amount` is ex-GST cents
 - Purchase Orders link to subcontractor timesheets and get matched to incoming bills
 - Project hierarchy: Business → Project → (Estimates, Bills, Schedule, Allowances, Timesheets, Site Diary, Selections)
 

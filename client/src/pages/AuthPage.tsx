@@ -40,6 +40,10 @@ type RegisterFormValues = z.infer<typeof registerSchema>;
 export default function AuthPage() {
   const [, setLocation] = useLocation();
   const [isLoading, setIsLoading] = useState(false);
+  // True from a successful credential check until the workspace takes over.
+  // Without this the page sits on the login form after the success toast while
+  // /api/auth/user is still in flight, which reads as a hang.
+  const [isSigningIn, setIsSigningIn] = useState(false);
   const { toast } = useToast();
   const [forgotMode, setForgotMode] = useState(false);
   const [forgotEmail, setForgotEmail] = useState('');
@@ -100,10 +104,16 @@ export default function AuthPage() {
         throw new Error(data.message || 'Login failed');
       }
 
-      queryClient.invalidateQueries({ queryKey: ['/api/auth/user'] });
+      // Await the auth refetch before navigating. /api/auth/user returns more
+      // than the login response (company, plan, role), so it can't just be
+      // seeded from `data` — but navigating before it lands renders the app
+      // with user=null, which bounces straight back to this page.
+      setIsSigningIn(true);
+      await queryClient.refetchQueries({ queryKey: ['/api/auth/user'] });
       toast({ title: 'Welcome back!', description: 'You have been logged in successfully.' });
       setLocation('/');
     } catch (error: any) {
+      setIsSigningIn(false);
       toast({
         variant: 'destructive',
         title: 'Login failed',
@@ -135,10 +145,14 @@ export default function AuthPage() {
         throw new Error(data.message || 'Registration failed');
       }
 
-      queryClient.invalidateQueries({ queryKey: ['/api/auth/user'] });
+      // Same as login: resolve auth before navigating (see handleLogin).
+      // Signup also seeds demo data server-side, so this can take a moment.
+      setIsSigningIn(true);
+      await queryClient.refetchQueries({ queryKey: ['/api/auth/user'] });
       toast({ title: 'Account created!', description: 'Welcome to Morada.' });
       setLocation('/');
     } catch (error: any) {
+      setIsSigningIn(false);
       toast({
         variant: 'destructive',
         title: 'Registration failed',
@@ -152,6 +166,20 @@ export default function AuthPage() {
   const handleGoogleLogin = () => {
     window.location.href = '/api/auth/google';
   };
+
+  // Credentials accepted — hold a loading screen until the workspace renders,
+  // rather than leaving the login form on screen behind a success toast.
+  if (isSigningIn) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background p-4" data-testid="signing-in">
+        <div className="text-center space-y-4">
+          <img src={moradaLogo} alt="Morada" className="h-16 w-16 rounded-xl object-contain mx-auto" />
+          <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto" />
+          <p className="text-muted-foreground text-sm">Signing you in…</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background p-4">
@@ -195,7 +223,7 @@ export default function AuthPage() {
                     </button>
                     {forgotStatus === 'sent' ? (
                       <div className="space-y-3 py-2 text-center">
-                        <CheckCircle2 className="h-10 w-10 text-green-500 mx-auto" />
+                        <CheckCircle2 className="h-10 w-10 text-status-success mx-auto" />
                         <p className="font-semibold text-sm">Check your email</p>
                         <p className="text-sm text-muted-foreground">
                           If an account exists for <span className="font-medium">{forgotEmail}</span>, we've sent a reset link. It expires in 1 hour.

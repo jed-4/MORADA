@@ -1833,7 +1833,7 @@ export default function VariationDetail() {
                   {/* Allowances sub-section */}
                   <div className="border-t border-border/50" data-testid="section-allowances">
                     <SubHeader
-                      dotColor="bg-teal-400/70"
+                      dotColor="bg-teal/70"
                       label={allowanceLines.length > 0 ? `Allowances · ${formatCurrency(calculateAllowancesTotal())}` : "Allowances"}
                       collapsible
                       collapsed={allowancesCollapsed}
@@ -2207,7 +2207,7 @@ export default function VariationDetail() {
                 {isEditMode && variation?.approvalDeadline && (
                   <div className="rounded-lg border border-border bg-card overflow-hidden">
                     <div className="h-8 flex items-center px-3 gap-2 border-b border-border/50 bg-muted/40">
-                      <div className="w-1.5 h-1.5 rounded-full bg-rose-400/70 flex-shrink-0" />
+                      <div className="w-1.5 h-1.5 rounded-full bg-rose-accent/70 flex-shrink-0" />
                       <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Deadline</span>
                     </div>
                     <div className="p-4">

@@ -1,7 +1,6 @@
 import { useState, useMemo, useEffect } from "react";
-import { flushSync } from "react-dom";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { format, isWithinInterval, startOfWeek, startOfMonth, subMonths, addMonths, endOfWeek, endOfMonth } from "date-fns";
+import { format, isWithinInterval, startOfWeek, startOfMonth, subMonths, addMonths, endOfWeek, endOfMonth, eachDayOfInterval, getDay } from "date-fns";
 import {
   Select,
   SelectContent,
@@ -25,7 +24,12 @@ import {
   BookOpen,
   Timer,
 } from "lucide-react";
-import { EnhancedCalendar, CalendarEvent } from "@/components/EnhancedCalendar";
+import type { CalendarEvent } from "@/components/EnhancedCalendar";
+import {
+  MoradaCalendar,
+  type MoradaCalendarEvent,
+} from "@/components/calendar/MoradaCalendar";
+import { combineDateTime, toMoradaEvent, toMoradaView } from "@/components/calendar/legacy";
 import { TaskDetailModal } from "@/components/TaskDetailModal";
 import TaskEditModal from "@/components/TaskEditModal";
 import { FocusBlockCreator } from "@/components/FocusBlockCreator";
@@ -97,6 +101,10 @@ export default function PersonalCalendar() {
   const [viewToDelete, setViewToDelete] = useState<CalendarView | null>(null);
   const [newViewName, setNewViewName] = useState("");
   const [currentDate, setCurrentDate] = useState(new Date());
+  const [visibleRange, setVisibleRange] = useState<{ start: Date; end: Date }>(() => ({
+    start: startOfWeek(startOfMonth(new Date())),
+    end: endOfWeek(endOfMonth(new Date())),
+  }));
   const [showSettingsDialog, setShowSettingsDialog] = useState(false);
   const { toast } = useToast();
   const { user } = useAuth();
@@ -374,71 +382,6 @@ export default function PersonalCalendar() {
     }
   }, [views, selectedViewId]);
 
-  // Update task mutation
-  const updateTaskMutation = useMutation({
-    mutationFn: async ({ taskId, status }: { taskId: string; status: string }) => {
-      return await apiRequest(`/api/tasks/${taskId}`, "PATCH", { status });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
-      toast({ title: "Task status updated" });
-    },
-  });
-
-  // Reschedule task mutation with optimistic update
-  const rescheduleTaskMutation = useMutation({
-    mutationFn: async ({ taskId, dueDate, startTime }: { taskId: string; dueDate: string; startTime?: string }) => {
-      const payload: any = { dueDate };
-      if (startTime) {
-        payload.startTime = startTime;
-      }
-      return await apiRequest(`/api/tasks/${taskId}`, "PATCH", payload);
-    },
-    onMutate: async ({ taskId, dueDate, startTime }) => {
-      await queryClient.cancelQueries({ queryKey: ["/api/tasks", displayedUserId] });
-      const previousTasks = queryClient.getQueryData(["/api/tasks", displayedUserId]);
-      queryClient.setQueryData(["/api/tasks", displayedUserId], (old: any[]) => 
-        old?.map((task: any) => 
-          task.id === taskId 
-            ? { ...task, dueDate, ...(startTime && { startTime }) }
-            : task
-        ) || []
-      );
-      return { previousTasks };
-    },
-    onError: (err, variables, context) => {
-      if (context?.previousTasks) {
-        queryClient.setQueryData(["/api/tasks", displayedUserId], context.previousTasks);
-      }
-    },
-    // No onSettled - rely on optimistic update to prevent snap-back during drag-and-drop
-  });
-
-  // Resize task mutation with optimistic update
-  const resizeTaskMutation = useMutation({
-    mutationFn: async ({ taskId, startTime, endTime }: { taskId: string; startTime: string; endTime: string }) => {
-      return await apiRequest(`/api/tasks/${taskId}`, "PATCH", { startTime, endTime });
-    },
-    onMutate: async ({ taskId, startTime, endTime }) => {
-      await queryClient.cancelQueries({ queryKey: ["/api/tasks", displayedUserId] });
-      const previousTasks = queryClient.getQueryData(["/api/tasks", displayedUserId]);
-      queryClient.setQueryData(["/api/tasks", displayedUserId], (old: any[]) => 
-        old?.map((task: any) => 
-          task.id === taskId 
-            ? { ...task, startTime, endTime }
-            : task
-        ) || []
-      );
-      return { previousTasks };
-    },
-    onError: (err, variables, context) => {
-      if (context?.previousTasks) {
-        queryClient.setQueryData(["/api/tasks", displayedUserId], context.previousTasks);
-      }
-    },
-    // No onSettled - rely on optimistic update to prevent snap-back during drag-and-drop
-  });
-
   // Apply filters to events
   const filteredEvents = useMemo(() => {
     const taskEvents: CalendarEvent[] = userTasks
@@ -597,76 +540,6 @@ export default function PersonalCalendar() {
     return filtered;
   }, [userTasks, allScheduleItems, schedules, projects, completedOption, googleCalendarEvents, filters, displayedUserId, taskTemplates, companySettings?.brandColor, showParentItems, showChildItems, showLookback, lookbackTimesheets, lookbackDiaries]);
 
-  const handleEventComplete = (eventId: string, completed: boolean) => {
-    if (eventId.startsWith('google-') || eventId.startsWith('ts-') || eventId.startsWith('diary-')) {
-      return;
-    }
-    const defaultOption = statusOptions.find((opt: any) => opt.key === "todo");
-    const newStatus = completed 
-      ? (completedOption?.key || "done") 
-      : (defaultOption?.key || "todo");
-    updateTaskMutation.mutate({ taskId: eventId, status: newStatus });
-  };
-
-  const handleEventReschedule = (eventId: string, newDate: Date, eventType: CalendarEvent["type"], newTime?: string) => {
-    if (eventType === "google-calendar") {
-      toast({
-        title: "Cannot reschedule Google Calendar event",
-        description: "Please update this event in Google Calendar directly.",
-        variant: "destructive",
-      });
-      return;
-    }
-    
-    if (eventType === "task") {
-      const newDueDate = format(newDate, "yyyy-MM-dd");
-      
-      // Immediately update cache synchronously to prevent snap-back
-      flushSync(() => {
-        queryClient.setQueryData(["/api/tasks", displayedUserId], (old: any[]) => 
-          old?.map((task: any) => 
-            task.id === eventId 
-              ? { ...task, dueDate: newDueDate, ...(newTime && { startTime: newTime }) }
-              : task
-          ) || []
-        );
-      });
-      
-      // Then trigger the mutation (will skip onMutate cache update since already done)
-      rescheduleTaskMutation.mutate({ 
-        taskId: eventId, 
-        dueDate: newDueDate,
-        ...(newTime && { startTime: newTime })
-      });
-    }
-  };
-
-  const handleEventResize = (eventId: string, startTime: string, endTime: string, eventType: CalendarEvent["type"]) => {
-    if (eventType === "google-calendar") {
-      toast({
-        title: "Cannot resize Google Calendar event",
-        description: "Please update this event in Google Calendar directly.",
-        variant: "destructive",
-      });
-      return;
-    }
-    
-    if (eventType === "task") {
-      // Immediately update cache synchronously to prevent snap-back
-      flushSync(() => {
-        queryClient.setQueryData(["/api/tasks", displayedUserId], (old: any[]) => 
-          old?.map((task: any) => 
-            task.id === eventId 
-              ? { ...task, startTime, endTime }
-              : task
-          ) || []
-        );
-      });
-      
-      resizeTaskMutation.mutate({ taskId: eventId, startTime, endTime });
-    }
-  };
-
   const handleEventClick = (event: CalendarEvent) => {
     if (event.type === "timesheet" || event.type === "site_diary") {
       setLookbackEvent(event);
@@ -674,6 +547,46 @@ export default function PersonalCalendar() {
     }
     setSelectedEvent(event);
     setDetailDialogOpen(true);
+  };
+
+  // Convert filtered events + focus blocks into the MoradaCalendar event model.
+  // Focus blocks are expanded into per-day timed events across the visible range
+  // so clicking one still opens the FocusBlockPanel.
+  const moradaEvents: MoradaCalendarEvent[] = useMemo(() => {
+    const base = filteredEvents.map((event) => toMoradaEvent(event));
+
+    const focusBlockEvents: MoradaCalendarEvent[] = [];
+    if (focusBlocksWithTasks.length > 0 && visibleRange.start <= visibleRange.end) {
+      for (const day of eachDayOfInterval(visibleRange)) {
+        const dayKey = format(day, "yyyy-MM-dd");
+        for (const fb of focusBlocksWithTasks) {
+          const matches = fb.isRecurring
+            ? ((fb.daysOfWeek as number[] | null) || []).includes(getDay(day))
+            : fb.specificDate === dayKey;
+          if (!matches) continue;
+          focusBlockEvents.push({
+            id: `fb-${fb.id}-${dayKey}`,
+            title: fb.title,
+            start: combineDateTime(day, fb.startTime),
+            end: combineDateTime(day, fb.endTime),
+            color: fb.color,
+            meta: { focusBlock: fb },
+          });
+        }
+      }
+    }
+
+    return [...base, ...focusBlockEvents];
+  }, [filteredEvents, focusBlocksWithTasks, visibleRange]);
+
+  const handleMoradaEventClick = (event: MoradaCalendarEvent) => {
+    const focusBlock = event.meta?.focusBlock as FocusBlock | undefined;
+    if (focusBlock) {
+      setSelectedFocusBlock(focusBlock);
+      return;
+    }
+    const original = event.meta?.original as CalendarEvent | undefined;
+    if (original) handleEventClick(original);
   };
 
   const handleViewSelect = (view: CalendarView) => {
@@ -726,24 +639,20 @@ export default function PersonalCalendar() {
 
   const handleNavigatePrevious = () => {
     const newDate = new Date(currentDate);
-    if (calendarMode === 'month') {
-      newDate.setMonth(newDate.getMonth() - 1);
-    } else if (calendarMode === 'week') {
+    if (toMoradaView(calendarMode) === 'week') {
       newDate.setDate(newDate.getDate() - 7);
     } else {
-      newDate.setDate(newDate.getDate() - 1);
+      newDate.setMonth(newDate.getMonth() - 1);
     }
     setCurrentDate(newDate);
   };
 
   const handleNavigateNext = () => {
     const newDate = new Date(currentDate);
-    if (calendarMode === 'month') {
-      newDate.setMonth(newDate.getMonth() + 1);
-    } else if (calendarMode === 'week') {
+    if (toMoradaView(calendarMode) === 'week') {
       newDate.setDate(newDate.getDate() + 7);
     } else {
-      newDate.setDate(newDate.getDate() + 1);
+      newDate.setMonth(newDate.getMonth() + 1);
     }
     setCurrentDate(newDate);
   };
@@ -1220,7 +1129,7 @@ export default function PersonalCalendar() {
           {/* View Mode Selector */}
           <div className="flex items-center gap-0.5">
             {[
-              { value: 'day', label: 'Day' },
+              { value: 'agenda', label: 'Agenda' },
               { value: 'week', label: 'Week' },
               { value: 'month', label: 'Month' },
             ].map((mode) => (
@@ -1228,7 +1137,7 @@ export default function PersonalCalendar() {
                 key={mode.value}
                 onClick={() => setCalendarMode(mode.value)}
                 className={`h-6 w-auto px-2 text-xs border rounded-md ${
-                  calendarMode === mode.value
+                  toMoradaView(calendarMode) === mode.value
                     ? 'bg-primary text-white border-primary/20 hover:bg-primary/90'
                     : 'hover-elevate'
                 } active-elevate-2`}
@@ -1266,24 +1175,15 @@ export default function PersonalCalendar() {
       {/* Calendar Content - bordered bottom, rounded bottom like Tasks */}
       <div className="flex-1 min-h-0 border-x border-b border-border rounded-b-lg bg-card overflow-hidden flex">
         <div className={`flex-1 min-w-0 transition-all duration-200 ${selectedFocusBlock ? 'mr-0' : ''}`}>
-          <EnhancedCalendar
-            events={filteredEvents}
-            onEventClick={handleEventClick}
-            onEventComplete={handleEventComplete}
-            onEventReschedule={handleEventReschedule}
-            onEventResize={handleEventResize}
-            showCompletionCheckbox={true}
-            currentDate={currentDate}
-            onCurrentDateChange={setCurrentDate}
-            view={calendarMode as any}
+          <MoradaCalendar
+            events={moradaEvents}
+            onEventClick={handleMoradaEventClick}
+            date={currentDate}
+            onDateChange={setCurrentDate}
+            view={toMoradaView(calendarMode)}
             onViewChange={(newView) => setCalendarMode(newView)}
-            hideInternalHeader={true}
-            focusBlocks={focusBlocksWithTasks}
-            onFocusBlockClick={(fb) => setSelectedFocusBlock(fb as FocusBlock)}
-            onFocusBlockUpdate={async (blockId, startTime, endTime) => {
-              await apiRequest(`/api/focus-blocks/${blockId}`, "PATCH", { startTime, endTime });
-              queryClient.invalidateQueries({ queryKey: ["/api/focus-blocks"] });
-            }}
+            onRangeChange={({ start, end }) => setVisibleRange({ start, end })}
+            hideHeader
           />
         </div>
         {selectedFocusBlock && (

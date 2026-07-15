@@ -10,6 +10,7 @@ import { useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { EmptyState } from "@/components/EmptyState";
+import { useClientPortal } from "@/hooks/use-client-portal";
 
 // Tab content components — lazy-loaded to avoid circular module initialisation
 // (CustomizableProjectOverview is itself used inside the project page that App.tsx
@@ -76,8 +77,12 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Widget } from "@/types/widgets";
-import { widgetRegistry, getWidgetDefinition } from "./widgets/WidgetRegistry";
-import WidgetContainer from "./widgets/WidgetContainer";
+import { dashboardConfigs, dashboardPersistence } from "./dashboard/DashboardWidgetRegistry";
+import DashboardWidgetContainer from "./dashboard/DashboardWidgetContainer";
+
+// Per-dashboard config: widget registry + persisted-layout keys (unchanged)
+const projectDashboard = dashboardConfigs.project;
+const projectPersistence = dashboardPersistence.project;
 import { useProject } from "@/contexts/ProjectContext";
 import { useAuth } from "@/hooks/use-auth";
 import type { FieldCategoryWithOptions, DashboardView, UserRole, DashboardTheme, Contact } from "@shared/schema";
@@ -193,6 +198,13 @@ const visibilityOptions: { value: VisibilityOption; label: string; description: 
 
 export default function CustomizableProjectOverview() {
   const { currentProject } = useProject();
+  const { isClient, canSeeTab } = useClientPortal();
+  // Team members see every tab; clients see only what their role permits.
+  // Must sit above this component's early returns to keep hook order stable.
+  const visibleProjectTabs = useMemo(
+    () => (isClient ? PROJECT_TABS.filter((tab) => canSeeTab(tab.id)) : PROJECT_TABS),
+    [isClient, canSeeTab],
+  );
   const { data: contractMetrics } = useQuery<import("@shared/projectMetrics").ContractMetrics>({
     queryKey: ["/api/projects", currentProject?.id, "contract-metrics"],
     queryFn: () => fetch(`/api/projects/${currentProject!.id}/contract-metrics`, { credentials: "include" }).then((r) => {
@@ -266,16 +278,19 @@ export default function CustomizableProjectOverview() {
   const defaultViewCreatedRef = useRef(false);
 
   // Fetch dashboard views from database
+  // Dashboard views drive the builder's customisable widget overview. Clients
+  // never see that overview, and the routes behind these are team-only, so
+  // fetching them as a client just 403s and blocks the page below.
   const { data: dashboardViews = [], isLoading: isLoadingViews, isError: isViewsError } = useQuery<DashboardView[]>({
-    queryKey: ["/api/dashboard-views"],
-    enabled: !!user?.companyId,
+    queryKey: projectPersistence.viewsQueryKey,
+    enabled: !!user?.companyId && !isClient,
     retry: 2,
   });
 
   // Fetch user's active view preference
   const { data: dashboardPreference } = useQuery<{ activeViewId: string | null } | null>({
-    queryKey: ["/api/dashboard-preference"],
-    enabled: !!user?.companyId,
+    queryKey: projectPersistence.preferenceQueryKey,
+    enabled: !!user?.companyId && !isClient,
     retry: 1,
   });
 
@@ -310,7 +325,7 @@ export default function CustomizableProjectOverview() {
       return apiRequest("/api/dashboard-views", "POST", { ...data, viewType: data.viewType || "business" });
     },
     onSuccess: (newView: DashboardView) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/dashboard-views"] });
+      queryClient.invalidateQueries({ queryKey: projectPersistence.viewsQueryKey });
       setActiveViewId(newView.id);
       setWidgets((newView.widgets as Widget[]) || defaultWidgets);
       setIsNewViewModalOpen(false);
@@ -333,7 +348,7 @@ export default function CustomizableProjectOverview() {
       return apiRequest(`/api/dashboard-views/${viewId}/set-company-default`, "POST");
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/dashboard-views"] });
+      queryClient.invalidateQueries({ queryKey: projectPersistence.viewsQueryKey });
       toast({ title: "Company default set", description: "This view is now the default for everyone." });
     },
     onError: () => {
@@ -347,7 +362,7 @@ export default function CustomizableProjectOverview() {
       return apiRequest(`/api/dashboard-views/${id}`, "PATCH", data);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/dashboard-views"] });
+      queryClient.invalidateQueries({ queryKey: projectPersistence.viewsQueryKey });
     },
   });
 
@@ -357,7 +372,7 @@ export default function CustomizableProjectOverview() {
       return apiRequest(`/api/dashboard-views/${id}`, "DELETE");
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/dashboard-views"] });
+      queryClient.invalidateQueries({ queryKey: projectPersistence.viewsQueryKey });
       setViewToDelete(null);
       // Switch to first available view
       const remainingViews = dashboardViews.filter(v => v.id !== viewToDelete?.id);
@@ -377,7 +392,7 @@ export default function CustomizableProjectOverview() {
       return apiRequest("/api/dashboard-preference", "POST", data);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/dashboard-preference"] });
+      queryClient.invalidateQueries({ queryKey: projectPersistence.preferenceQueryKey });
     },
   });
 
@@ -470,14 +485,14 @@ export default function CustomizableProjectOverview() {
 
   // One-time creation of default view when none exist
   useEffect(() => {
-    if (!user?.id || isLoadingViews || defaultViewCreatedRef.current) return;
+    if (!user?.id || isClient || isLoadingViews || defaultViewCreatedRef.current) return;
     if (dashboardViews.length > 0) return;
 
     // Prevent multiple creation attempts
     defaultViewCreatedRef.current = true;
 
     // Check if there are any localStorage layouts to migrate
-    const projectKeys = Object.keys(localStorage).filter(k => k.startsWith('widgets-'));
+    const projectKeys = Object.keys(localStorage).filter(k => k.startsWith(projectPersistence.legacyLocalStoragePrefix));
     if (projectKeys.length > 0) {
       const firstKey = projectKeys[0];
       const savedWidgetsStr = localStorage.getItem(firstKey);
@@ -671,7 +686,7 @@ export default function CustomizableProjectOverview() {
   };
 
   const addWidget = (type: string) => {
-    const definition = getWidgetDefinition(type);
+    const definition = projectDashboard.getDefinition(type);
     if (!definition) return;
 
     const newWidget: Widget = {
@@ -724,7 +739,7 @@ export default function CustomizableProjectOverview() {
   };
 
   // Filter widgets for search
-  const filteredWidgetTypes = Object.values(widgetRegistry).filter(def =>
+  const filteredWidgetTypes = Object.values(projectDashboard.registry).filter(def =>
     def.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
     def.description.toLowerCase().includes(searchQuery.toLowerCase())
   );
@@ -732,13 +747,14 @@ export default function CustomizableProjectOverview() {
   const [widgetHeaderActions, setWidgetHeaderActions] = useState<Record<string, ReactNode>>({});
 
   const renderWidget = (widget: Widget) => {
-    const definition = getWidgetDefinition(widget.type);
+    const definition = projectDashboard.getDefinition(widget.type);
     if (!definition) return null;
 
     const WidgetComponent = definition.component;
 
     return (
-      <WidgetContainer
+      <DashboardWidgetContainer
+        variant="project"
         key={widget.id}
         widget={widget}
         onUpdate={updateWidget}
@@ -769,12 +785,12 @@ export default function CustomizableProjectOverview() {
             }
           />
         </ErrorBoundary>
-      </WidgetContainer>
+      </DashboardWidgetContainer>
     );
   };
 
   // Show loading state while fetching views
-  if (isLoadingViews) {
+  if (isLoadingViews && !isClient) {
     return (
       <div className="flex flex-col flex-1 min-h-0" data-testid="customizable-project-overview">
         <div className="flex-1 flex items-center justify-center text-muted-foreground">
@@ -787,8 +803,9 @@ export default function CustomizableProjectOverview() {
     );
   }
 
-  // Show error state if views failed to load
-  if (isViewsError) {
+  // Show error state if views failed to load (builder overview only — clients
+  // don't load views at all, so this must never gate their project page)
+  if (isViewsError && !isClient) {
     return (
       <div className="flex flex-col flex-1 min-h-0" data-testid="customizable-project-overview">
         <div className="flex-1 flex items-center justify-center text-muted-foreground">
@@ -796,7 +813,7 @@ export default function CustomizableProjectOverview() {
             <h2 className="text-xl font-medium mb-2">Unable to Load Dashboard</h2>
             <p className="mb-4">There was a problem loading your dashboard views.</p>
             <Button 
-              onClick={() => queryClient.invalidateQueries({ queryKey: ["/api/dashboard-views"] })}
+              onClick={() => queryClient.invalidateQueries({ queryKey: projectPersistence.viewsQueryKey })}
               className="bg-primary hover:bg-primary/90 text-white"
             >
               Try Again
@@ -889,6 +906,21 @@ export default function CustomizableProjectOverview() {
 
   // Render content for non-overview tabs
   const renderTabContent = () => {
+    // Clients only get the sections their role has view permission for. Gating
+    // the tab strip alone isn't enough — activeTab is derived from the URL, so
+    // a hidden tab's address would otherwise still render its content here.
+    if (isClient && !canSeeTab(activeTab)) {
+      return (
+        <EmptyState
+          icon={AlertCircle}
+          title="No access to this section"
+          description="You don't have permission to view this section of the project. Contact your builder if you think you should."
+          variant="inline"
+          className="h-full"
+          data-testid="client-section-denied"
+        />
+      );
+    }
     switch (activeTab) {
       case "activity":
         return <ProjectActivity />;
@@ -960,7 +992,9 @@ export default function CustomizableProjectOverview() {
   };
 
   // Check if we're on the overview tab (renders the widget dashboard)
-  const isOverviewTab = activeTab === "overview";
+  // Never for clients: the overview is the builder's widget dashboard (cash
+  // flow, budget vs actual, margins) and has no permission key of its own.
+  const isOverviewTab = activeTab === "overview" && !isClient;
 
   const isAdminOrOwner = user?.role === "owner" || user?.role === "admin";
 
@@ -1165,7 +1199,7 @@ export default function CustomizableProjectOverview() {
               variant="secondary"
               className={`text-xs ${
                 currentProject.status === 'active'
-                  ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
+                  ? 'bg-status-success-bg text-status-success'
                   : 'bg-muted text-secondary '
               }`}
             >
@@ -1190,7 +1224,7 @@ export default function CustomizableProjectOverview() {
 
         {/* Row 2 - Floating Tabs */}
         <div className="flex items-center gap-1 px-4 border-b border-border overflow-x-auto">
-        {PROJECT_TABS.map((tab) => {
+        {visibleProjectTabs.map((tab) => {
           const Icon = tab.icon;
           const tabPath = tab.path ? `/projects/${currentProject.id}${tab.path}` : `/projects/${currentProject.id}`;
           const currentPath = currentLocation.split(`/projects/${currentProject.id}`)[1] || "";

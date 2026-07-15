@@ -18,7 +18,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../contexts/AuthContext';
-import { apiRequest, uploadPhoto, API_BASE_URL, getSessionId } from '../services/api';
+import { apiRequest, uploadPhoto, getAuthedImageSource } from '../services/api';
 
 import { useTheme } from '../theme';
 type Props = {
@@ -299,7 +299,7 @@ export default function NoteEditorScreen({ navigation, route }: Props) {
   const [title, setTitle] = useState('');
   const [blocks, setBlocks] = useState<Block[]>([defaultBlock()]);
   const [savedNoteId, setSavedNoteId] = useState<string | null>(noteId);
-  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [loadingNote, setLoadingNote] = useState(!!noteId);
   const [focusedBlockId, setFocusedBlockId] = useState<string | null>(null);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
@@ -339,6 +339,7 @@ const colors = {
     checkboxBg: theme.border,
     checkboxChecked: theme.primary,
     dividerColor: theme.border,
+    danger: theme.statusDanger,
 };
 
   useEffect(() => {
@@ -347,12 +348,18 @@ const colors = {
     return () => {
       showSub.remove();
       hideSub.remove();
-      if (saveTimerRef.current) {
-        clearTimeout(saveTimerRef.current);
-        saveTimerRef.current = null;
-      }
+      // Flush (not just clear) any pending debounced save so a quick exit
+      // doesn't silently drop the last edit. Fire-and-forget on unmount.
+      flushPendingSaveRef.current();
     };
   }, []);
+
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('beforeRemove', () => {
+      flushPendingSaveRef.current();
+    });
+    return unsubscribe;
+  }, [navigation]);
 
   useEffect(() => {
     if (noteId) {
@@ -364,30 +371,25 @@ const colors = {
     setLoadingNote(true);
     try {
       const response = await apiRequest(`/api/notes/${id}`);
-      if (response.ok) {
-        const note = await response.json();
-        setTitle(note.title === 'Untitled' ? '' : (note.title || ''));
-        if (note.visibility === 'team_only' || note.visibility === 'everyone' || note.visibility === 'private') {
-          setVisibility(note.visibility);
-        }
-        if (note.contentHtml) {
-          setBlocks(htmlToBlocks(note.contentHtml));
-        } else if (note.content) {
-          const lines = note.content.split('\n');
-          setBlocks(
-            lines.length > 0
-              ? lines.map((l: string) => ({ id: makeBlockId(), type: 'text' as BlockType, text: l }))
-              : [defaultBlock()]
-          );
-        } else {
-          setBlocks([defaultBlock()]);
-        }
-      } else {
-        Alert.alert('Error', 'Failed to load note.');
-        navigation.goBack();
+      const note = await response.json();
+      setTitle(note.title === 'Untitled' ? '' : (note.title || ''));
+      if (note.visibility === 'team_only' || note.visibility === 'everyone' || note.visibility === 'private') {
+        setVisibility(note.visibility);
       }
-    } catch {
-      Alert.alert('Error', 'Failed to load note.');
+      if (note.contentHtml) {
+        setBlocks(htmlToBlocks(note.contentHtml));
+      } else if (note.content) {
+        const lines = note.content.split('\n');
+        setBlocks(
+          lines.length > 0
+            ? lines.map((l: string) => ({ id: makeBlockId(), type: 'text' as BlockType, text: l }))
+            : [defaultBlock()]
+        );
+      } else {
+        setBlocks([defaultBlock()]);
+      }
+    } catch (err) {
+      Alert.alert('Error', err instanceof Error ? err.message : 'Failed to load note.');
       navigation.goBack();
     } finally {
       setLoadingNote(false);
@@ -425,17 +427,13 @@ const colors = {
 
     try {
       if (currentSavedId) {
-        const response = await apiRequest(`/api/notes/${currentSavedId}`, 'PATCH', {
+        await apiRequest(`/api/notes/${currentSavedId}`, 'PATCH', {
           title: currentTitle || 'Untitled',
           content,
           contentHtml,
           contentText,
         });
-        if (response.ok) {
-          setSaveStatus('saved');
-        } else {
-          setSaveStatus('idle');
-        }
+        setSaveStatus('saved');
       } else {
         isCreatingRef.current = true;
         try {
@@ -450,23 +448,31 @@ const colors = {
             category: 'General',
             priority: 'low',
           });
-          if (response.ok) {
-            const newNote = await response.json();
-            setSavedNoteId(newNote.id);
-            savedNoteIdRef.current = newNote.id;
-            setSaveStatus('saved');
-          } else {
-            setSaveStatus('idle');
-          }
+          const newNote = await response.json();
+          setSavedNoteId(newNote.id);
+          savedNoteIdRef.current = newNote.id;
+          setSaveStatus('saved');
         } finally {
           isCreatingRef.current = false;
         }
       }
     } catch {
       isCreatingRef.current = false;
-      setSaveStatus('idle');
+      setSaveStatus('error');
     }
   };
+
+  // Flush a pending debounced save immediately — used when leaving the screen
+  // (unmount / beforeRemove) so the last edit isn't silently dropped.
+  const flushPendingSave = () => {
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+      doSave();
+    }
+  };
+  const flushPendingSaveRef = useRef(flushPendingSave);
+  flushPendingSaveRef.current = flushPendingSave;
 
   const updateTitle = (val: string) => {
     setTitle(val);
@@ -589,10 +595,12 @@ const colors = {
   };
 
   const getNumberForBlock = (blockId: string): number => {
+    // Numbering restarts for each contiguous run of numbered blocks.
     let count = 0;
     for (const b of blocksRef.current) {
       if (b.type === 'numbered') count++;
-      if (b.id === blockId) return count;
+      else count = 0;
+      if (b.id === blockId) return count || 1;
     }
     return 1;
   };
@@ -653,12 +661,9 @@ const colors = {
             </View>
           ) : block.src ? (
             <Image
-              source={{
-                uri: block.src,
-                headers: block.src.startsWith('http')
-                  ? { 'X-Session-ID': getSessionId() || '' }
-                  : undefined,
-              }}
+              // Resolves relative paths against our API host and attaches the
+              // session header ONLY for our own host — never third parties.
+              source={getAuthedImageSource(block.src)}
               style={styles.blockImage}
               resizeMode="cover"
             />
@@ -890,10 +895,12 @@ const colors = {
 
       try {
         const { objectPath } = await uploadPhoto(imageUri);
-        const src = `${API_BASE_URL}${objectPath}`;
+        // Store the relative path — resolved to an absolute authed source at
+        // render time (getAuthedImageSource) so stored HTML never bakes in a
+        // host. Already-stored absolute URLs keep working the same way.
         setBlocks((prev) =>
           prev.map((b) =>
-            b.id === imageBlock.id ? { ...b, src, uploading: false } : b
+            b.id === imageBlock.id ? { ...b, src: objectPath, uploading: false } : b
           )
         );
         scheduleSave();
@@ -939,6 +946,12 @@ const colors = {
               <Text style={[styles.saveText, { color: colors.accent }]}>Saved</Text>
             </>
           )}
+          {saveStatus === 'error' && (
+            <TouchableOpacity style={styles.saveIndicator} onPress={() => doSave()}>
+              <Ionicons name="alert-circle" size={16} color={colors.danger} />
+              <Text style={[styles.saveText, { color: colors.danger }]}>Unsaved — tap to retry</Text>
+            </TouchableOpacity>
+          )}
         </View>
         <TouchableOpacity
           onPress={handleImagePick}
@@ -973,16 +986,10 @@ const colors = {
                   onPress: async () => {
                     try {
                       const noteRes = await apiRequest(`/api/notes/${savedNoteId}`);
-                      if (noteRes.ok) {
-                        const n = await noteRes.json();
-                        const resp = await apiRequest(`/api/notes/${savedNoteId}`, 'PATCH', { pinned: !n.pinned });
-                        if (!resp.ok) {
-                          const err = await resp.json().catch(() => ({}));
-                          Alert.alert('Error', err.message || 'Failed to update pin status.');
-                        }
-                      }
-                    } catch {
-                      Alert.alert('Error', 'Failed to update note.');
+                      const n = await noteRes.json();
+                      await apiRequest(`/api/notes/${savedNoteId}`, 'PATCH', { pinned: !n.pinned });
+                    } catch (err) {
+                      Alert.alert('Error', err instanceof Error ? err.message : 'Failed to update note.');
                     }
                   },
                 },
@@ -993,24 +1000,38 @@ const colors = {
                 {
                   text: 'Archive',
                   onPress: async () => {
-                    const response = await apiRequest(`/api/notes/${savedNoteId}/archive`, 'POST');
-                    if (response.ok) {
+                    try {
+                      await apiRequest(`/api/notes/${savedNoteId}/archive`, 'POST');
                       navigation.goBack();
-                    } else {
-                      Alert.alert('Error', 'Failed to archive note.');
+                    } catch (err) {
+                      Alert.alert('Error', err instanceof Error ? err.message : 'Failed to archive note.');
                     }
                   },
                 },
                 {
                   text: 'Delete',
                   style: 'destructive',
-                  onPress: async () => {
-                    const response = await apiRequest(`/api/notes/${savedNoteId}`, 'DELETE');
-                    if (response.ok || response.status === 204) {
-                      navigation.goBack();
-                    } else {
-                      Alert.alert('Error', 'Failed to delete note.');
-                    }
+                  onPress: () => {
+                    Alert.alert('Delete note?', 'This note will be permanently deleted.', [
+                      { text: 'Cancel', style: 'cancel' },
+                      {
+                        text: 'Delete',
+                        style: 'destructive',
+                        onPress: async () => {
+                          try {
+                            await apiRequest(`/api/notes/${savedNoteId}`, 'DELETE');
+                            // Don't flush a pending autosave into a deleted note.
+                            if (saveTimerRef.current) {
+                              clearTimeout(saveTimerRef.current);
+                              saveTimerRef.current = null;
+                            }
+                            navigation.goBack();
+                          } catch (err) {
+                            Alert.alert('Error', err instanceof Error ? err.message : 'Failed to delete note.');
+                          }
+                        },
+                      },
+                    ]);
                   },
                 },
                 { text: 'Cancel', style: 'cancel' },
@@ -1084,7 +1105,7 @@ const colors = {
                 </TouchableOpacity>
               );
             })}
-            <View style={styles.toolbarDivider} />
+            <View style={[styles.toolbarDivider, { backgroundColor: colors.dividerColor }]} />
             <TouchableOpacity
               style={styles.toolbarBtn}
               onPress={handleImageToolbar}
@@ -1230,7 +1251,6 @@ const styles = StyleSheet.create({
     width: StyleSheet.hairlineWidth,
     alignSelf: 'stretch',
     marginHorizontal: 6,
-    backgroundColor: '#94a3b8',
     opacity: 0.4,
   },
   toolbarHidden: {

@@ -705,7 +705,7 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
               <SiGoogle className={`h-3 w-3 ${isGoogleCalendarConnected ? 'text-foreground' : 'text-muted-foreground/50'}`} />
               <span
                 className={`absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full border border-background ${
-                  isGoogleCalendarConnected ? 'bg-green-500' : 'bg-muted-foreground/40'
+                  isGoogleCalendarConnected ? 'bg-sage' : 'bg-muted-foreground/40'
                 }`}
               />
             </button>

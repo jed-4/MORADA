@@ -3,22 +3,30 @@ import {
   View,
   Text,
   StyleSheet,
-  FlatList,
-  TouchableOpacity,
-  useColorScheme,
+  SectionList,
   ActivityIndicator,
   RefreshControl,
-  Alert,
-  TextInput,
-  Modal,
 } from 'react-native';
+import Animated, { FadeInDown } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
-import { useFocusEffect } from '@react-navigation/native';
-import { apiFetch, apiRequest } from '../services/api';
+import { useFocusEffect, useIsFocused } from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { apiFetch, apiRequest, ApiError } from '../services/api';
+import { onSocketEvent, useSocketConnected } from '../services/socket';
 import { useAuth } from '../contexts/AuthContext';
+import { usePolling } from '../lib/usePolling';
+import { usePresence } from '../lib/usePresence';
+import { timeAgo, getInitials } from '../lib/format';
+import { haptic } from '../lib/haptics';
+import { PressableScale } from '../components/ui/PressableScale';
+import { PresenceDot } from '../components/messages/PresenceDot';
+import { markupToDisplay } from '../components/messages/mentions';
+import { Sheet, SheetTextInput, type SheetRef } from '../components/ui/Sheet';
+import { Skeleton, SkeletonRow } from '../components/ui/Skeleton';
+import { useToast } from '../components/ui/Toast';
+import { useTheme } from '../theme';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
-import { useTheme } from '../theme';
 interface Channel {
   id: string;
   name: string;
@@ -45,36 +53,12 @@ type Props = {
   route?: { params?: { projectId?: string } };
 };
 
-function timeAgo(dateStr?: string | null): string {
-  if (!dateStr) return '';
-  const d = new Date(dateStr);
-  const now = new Date();
-  const diffMs = now.getTime() - d.getTime();
-  const mins = Math.floor(diffMs / 60000);
-  if (mins < 1) return 'now';
-  if (mins < 60) return `${mins}m`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours}h`;
-  const days = Math.floor(hours / 24);
-  if (days < 7) return `${days}d`;
-  return d.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' });
-}
-
-function getInitials(name: string): string {
-  const parts = name.replace(/^#/, '').split(/[\s-]/);
-  return parts
-    .slice(0, 2)
-    .map(p => p[0]?.toUpperCase() || '')
-    .join('');
-}
-
 export default function MessagesScreen({ navigation, route }: Props) {
   const projectId = route?.params?.projectId;
   const { user } = useAuth();
-  const colorScheme = useColorScheme();
-  const isDark = colorScheme === 'dark';
   const theme = useTheme();
-const colors = {
+  const toast = useToast();
+  const colors = {
     bg: theme.background,
     card: theme.card,
     text: theme.textPrimary,
@@ -83,7 +67,7 @@ const colors = {
     accent: theme.primary,
     muted: theme.textMuted,
     input: theme.background,
-};
+  };
 
   const [channels, setChannels] = useState<Channel[]>([]);
   const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
@@ -92,28 +76,27 @@ const colors = {
   const [refreshing, setRefreshing] = useState(false);
   const [seeding, setSeeding] = useState(false);
 
-  const [showNewChannelModal, setShowNewChannelModal] = useState(false);
+  const newChannelSheetRef = useRef<SheetRef>(null);
   const [newChannelName, setNewChannelName] = useState('');
   const [creatingChannel, setCreatingChannel] = useState(false);
 
-  const [showNewDmModal, setShowNewDmModal] = useState(false);
+  const newDmSheetRef = useRef<SheetRef>(null);
   const [teamUsers, setTeamUsers] = useState<TeamUser[]>([]);
   const [creatingDm, setCreatingDm] = useState(false);
 
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const isFocused = useIsFocused();
+  const insets = useSafeAreaInsets();
+  const socketConnected = useSocketConnected();
+  const onlineUserIds = usePresence(isFocused);
 
-  const fetchData = useCallback(async () => {
+  const fetchChannels = useCallback(async () => {
     try {
-      const [chs, counts, allUsers] = await Promise.all([
+      const [chs, counts] = await Promise.all([
         apiFetch<Channel[]>('/api/channels'),
         apiFetch<Record<string, number>>('/api/channels/unread/counts'),
-        apiFetch<TeamUser[]>('/api/users/assignable').catch(() => [] as TeamUser[]),
       ]);
       setChannels(chs || []);
       setUnreadCounts(counts || {});
-      const byId: Record<string, TeamUser> = {};
-      for (const u of allUsers || []) byId[u.id] = u;
-      setUsersById(byId);
     } catch {
       // silently fail on poll
     } finally {
@@ -121,37 +104,58 @@ const colors = {
     }
   }, []);
 
+  const fetchAssignableUsers = useCallback(async () => {
+    try {
+      const allUsers = await apiFetch<TeamUser[]>('/api/users/assignable');
+      const byId: Record<string, TeamUser> = {};
+      for (const u of allUsers || []) byId[u.id] = u;
+      setUsersById(byId);
+    } catch {
+      // non-critical: DM names fall back to channel-name parsing
+    }
+  }, []);
+
+  // Assignable users are static — fetch once per focus, not on every poll tick.
   useFocusEffect(
     useCallback(() => {
-      fetchData();
-      pollRef.current = setInterval(fetchData, 5000);
-      return () => {
-        if (pollRef.current) clearInterval(pollRef.current);
-      };
-    }, [fetchData])
+      fetchAssignableUsers();
+    }, [fetchAssignableUsers])
   );
+
+  // Channels + unread counts. While the socket is connected new_message events
+  // refresh instantly and the poll is only a 60s safety net; when the socket
+  // drops, polling returns to 10s. Polls only while focused and foregrounded.
+  usePolling(fetchChannels, socketConnected ? 60000 : 10000, isFocused);
+
+  useEffect(() => {
+    if (!isFocused) return;
+    return onSocketEvent('new_message', () => {
+      fetchChannels();
+    });
+  }, [isFocused, fetchChannels]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await fetchData();
+    await Promise.all([fetchChannels(), fetchAssignableUsers()]);
     setRefreshing(false);
-  }, [fetchData]);
+  }, [fetchChannels, fetchAssignableUsers]);
 
   const handleSeedChannels = useCallback(async () => {
     setSeeding(true);
     try {
-      const res = await apiRequest('/api/channels/seed-sample', 'POST');
-      if (res.ok || res.status === 409) {
-        await fetchData();
+      await apiRequest('/api/channels/seed-sample', 'POST');
+      await fetchChannels();
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 409) {
+        // Channels already exist — just load them.
+        await fetchChannels();
       } else {
-        Alert.alert('Error', 'Could not create channels. Please try again.');
+        toast.error('Could not create channels. Check your connection.');
       }
-    } catch {
-      Alert.alert('Error', 'Could not create channels. Please check your connection.');
     } finally {
       setSeeding(false);
     }
-  }, [fetchData]);
+  }, [fetchChannels, toast]);
 
   const handleCreateChannel = useCallback(async () => {
     const name = newChannelName.trim().toLowerCase().replace(/\s+/g, '-');
@@ -160,41 +164,39 @@ const colors = {
     try {
       const body: Record<string, unknown> = { name, type: 'channel' };
       if (projectId) body.projectId = projectId;
-      const res = await apiRequest('/api/channels', 'POST', body);
-      if (res.ok) {
-        setShowNewChannelModal(false);
-        setNewChannelName('');
-        await fetchData();
-      } else {
-        const body = await res.json().catch(() => ({}));
-        Alert.alert('Error', body.error || 'Could not create channel.');
-      }
-    } catch {
-      Alert.alert('Error', 'Could not create channel. Please check your connection.');
+      await apiRequest('/api/channels', 'POST', body);
+      newChannelSheetRef.current?.dismiss();
+      setNewChannelName('');
+      haptic.success();
+      toast.success(`#${name} created`);
+      await fetchChannels();
+    } catch (err) {
+      const message = err instanceof ApiError
+        ? err.message
+        : 'Could not create channel. Check your connection.';
+      toast.error(message);
     } finally {
       setCreatingChannel(false);
     }
-  }, [newChannelName, fetchData, projectId]);
+  }, [newChannelName, fetchChannels, projectId, toast]);
 
   const handleOpenDm = useCallback(async (otherUserId: string) => {
     setCreatingDm(true);
     try {
       const res = await apiRequest('/api/channels/dm', 'POST', { otherUserId });
-      if (res.ok) {
-        const channel: Channel = await res.json();
-        setShowNewDmModal(false);
-        await fetchData();
-        const displayName = getDmDisplayName(channel, user?.id);
-        navigation.navigate('MessageThread', { channelId: channel.id, channelName: displayName });
-      } else {
-        Alert.alert('Error', 'Could not start conversation.');
-      }
+      const channel: Channel = await res.json();
+      newDmSheetRef.current?.dismiss();
+      haptic.success();
+      toast.success('Conversation started');
+      await fetchChannels();
+      const displayName = getDmDisplayName(channel, user?.id);
+      navigation.navigate('MessageThread', { channelId: channel.id, channelName: displayName });
     } catch {
-      Alert.alert('Error', 'Could not start conversation.');
+      toast.error('Could not start conversation.');
     } finally {
       setCreatingDm(false);
     }
-  }, [fetchData, navigation, user?.id]);
+  }, [fetchChannels, navigation, user?.id, toast]);
 
   const loadTeamUsers = useCallback(async () => {
     try {
@@ -222,66 +224,118 @@ const colors = {
     return stripped.replace(/-/g, ' ');
   }
 
-  const channelList = channels.filter(c => c.type === 'channel');
-  const dmList = channels.filter(c => c.type === 'dm');
-  const totalUnread = Object.values(unreadCounts).reduce((s, n) => s + n, 0);
+  // GET /api/channels already returns isPinned (resolved per-user from
+  // channel_members) and pre-sorts pinned-first-then-recent. This re-sort keeps
+  // pinned at the top of each *section* regardless of payload order; Array.sort
+  // is stable, so the server's recency ordering survives within each group.
+  const pinnedFirst = (list: Channel[]) =>
+    [...list].sort((a, b) => (a.isPinned ? 0 : 1) - (b.isPinned ? 0 : 1));
 
-  const renderChannelRow = ({ item }: { item: Channel }) => {
+  const channelList = pinnedFirst(channels.filter(c => c.type === 'channel'));
+  const dmList = pinnedFirst(channels.filter(c => c.type === 'dm'));
+
+  const sections: { title: string; data: Channel[] }[] = [
+    ...(channelList.length > 0 ? [{ title: 'CHANNELS', data: channelList }] : []),
+    ...(dmList.length > 0 ? [{ title: 'DIRECT MESSAGES', data: dmList }] : []),
+  ];
+
+  const renderChannelRow = ({ item, index }: { item: Channel; index: number }) => {
     const unread = unreadCounts[item.id] || 0;
     const displayName = item.type === 'dm' ? getDmDisplayName(item, user?.id) : item.name;
+    // Presence is only meaningful for a DM's counterpart — never for yourself,
+    // and never for a multi-member channel.
+    const dmOtherId =
+      item.type === 'dm'
+        ? (item.dmParticipants || []).find(id => id !== user?.id) || null
+        : null;
+    const dmOnline = !!dmOtherId && dmOtherId !== user?.id && onlineUserIds.has(dmOtherId);
     return (
-      <TouchableOpacity
-        style={[styles.channelRow, { borderBottomColor: colors.border }]}
-        onPress={() => navigation.navigate('MessageThread', { channelId: item.id, channelName: displayName })}
-        activeOpacity={0.7}
-      >
-        <View style={[styles.channelAvatar, { backgroundColor: colors.accent + '30' }]}>
-          {item.type === 'channel' ? (
-            <Text style={[styles.channelAvatarIcon, { color: colors.accent }]}>#</Text>
-          ) : (
-            <Text style={[styles.channelAvatarIcon, { color: colors.accent }]}>
-              {getInitials(displayName)}
-            </Text>
-          )}
-        </View>
-        <View style={styles.channelInfo}>
-          <View style={styles.channelNameRow}>
-            <Text style={[styles.channelName, { color: colors.text }, unread > 0 && styles.channelNameBold]} numberOfLines={1}>
-              {displayName}
-            </Text>
-            {item.lastMessageAt && (
-              <Text style={[styles.channelTime, { color: colors.secondary }]}>
-                {timeAgo(item.lastMessageAt)}
+      <Animated.View entering={FadeInDown.duration(300).delay(Math.min(index * 40, 240))}>
+        <PressableScale
+          haptics
+          style={[styles.channelRow, { borderBottomColor: colors.border }]}
+          onPress={() => navigation.navigate('MessageThread', { channelId: item.id, channelName: displayName })}
+        >
+          <View style={styles.channelAvatarWrap}>
+            <View style={[styles.channelAvatar, { backgroundColor: colors.accent + '30' }]}>
+              <Text style={[styles.channelAvatarIcon, { color: colors.accent }]}>
+                {item.type === 'channel' ? '#' : getInitials(displayName)}
+              </Text>
+            </View>
+            {dmOnline && <PresenceDot theme={theme} ringColor={colors.bg} />}
+          </View>
+          <View style={styles.channelInfo}>
+            <View style={styles.channelNameRow}>
+              {item.isPinned && (
+                <Ionicons name="pin" size={12} color={colors.muted} style={styles.pinIcon} />
+              )}
+              <Text style={[styles.channelName, { color: colors.text }, unread > 0 && styles.channelNameBold]} numberOfLines={1}>
+                {displayName}
+              </Text>
+              {item.lastMessageAt && (
+                <Text style={[styles.channelTime, { color: colors.secondary }]}>
+                  {timeAgo(item.lastMessageAt)}
+                </Text>
+              )}
+            </View>
+            {item.lastMessageContent ? (
+              <Text style={[styles.channelDesc, { color: colors.secondary }, unread > 0 && styles.channelDescBold]} numberOfLines={1}>
+                {item.lastMessageSender
+                  ? `${item.lastMessageSender}: ${markupToDisplay(item.lastMessageContent)}`
+                  : markupToDisplay(item.lastMessageContent)}
+              </Text>
+            ) : item.description ? (
+              <Text style={[styles.channelDesc, { color: colors.secondary }]} numberOfLines={1}>
+                {item.description}
+              </Text>
+            ) : (
+              <Text style={[styles.channelDesc, { color: colors.muted }]} numberOfLines={1}>
+                No messages yet
               </Text>
             )}
           </View>
-          {item.lastMessageContent ? (
-            <Text style={[styles.channelDesc, { color: colors.secondary }, unread > 0 && styles.channelDescBold]} numberOfLines={1}>
-              {item.lastMessageSender ? `${item.lastMessageSender}: ${item.lastMessageContent}` : item.lastMessageContent}
-            </Text>
-          ) : item.description ? (
-            <Text style={[styles.channelDesc, { color: colors.secondary }]} numberOfLines={1}>
-              {item.description}
-            </Text>
-          ) : (
-            <Text style={[styles.channelDesc, { color: colors.muted }]} numberOfLines={1}>
-              No messages yet
-            </Text>
+          {unread > 0 && (
+            <View style={[styles.unreadBadge, { backgroundColor: colors.accent }]}>
+              <Text style={styles.unreadBadgeText}>{unread > 99 ? '99+' : unread}</Text>
+            </View>
           )}
-        </View>
-        {unread > 0 && (
-          <View style={[styles.unreadBadge, { backgroundColor: colors.accent }]}>
-            <Text style={styles.unreadBadgeText}>{unread > 99 ? '99+' : unread}</Text>
-          </View>
-        )}
-      </TouchableOpacity>
+        </PressableScale>
+      </Animated.View>
     );
   };
 
+  const header = (
+    <View style={[styles.header, { paddingTop: insets.top + 8, borderBottomColor: colors.border, backgroundColor: colors.card }]}>
+      <Text style={[styles.headerTitle, { color: colors.text }]}>Messages</Text>
+      <View style={styles.headerActions}>
+        <PressableScale
+          haptics
+          style={[styles.headerBtn, { backgroundColor: colors.input }]}
+          onPress={() => { loadTeamUsers(); newDmSheetRef.current?.present(); }}
+        >
+          <Ionicons name="person-add-outline" size={18} color={colors.accent} />
+        </PressableScale>
+        <PressableScale
+          haptics
+          style={[styles.headerBtn, { backgroundColor: colors.input }]}
+          onPress={() => newChannelSheetRef.current?.present()}
+        >
+          <Ionicons name="add" size={20} color={colors.accent} />
+        </PressableScale>
+      </View>
+    </View>
+  );
+
   if (loading) {
     return (
-      <View style={[styles.container, styles.center, { backgroundColor: colors.bg }]}>
-        <ActivityIndicator size="large" color={colors.accent} />
+      <View style={[styles.container, { backgroundColor: colors.bg }]}>
+        {header}
+        <View style={styles.skeletonList}>
+          <Skeleton width={90} height={12} style={{ marginBottom: 4 }} />
+          {Array.from({ length: 7 }).map((_, i) => (
+            <SkeletonRow key={i} />
+          ))}
+        </View>
       </View>
     );
   }
@@ -289,19 +343,17 @@ const colors = {
   if (channels.length === 0) {
     return (
       <View style={[styles.container, { backgroundColor: colors.bg }]}>
-        <View style={[styles.header, { borderBottomColor: colors.border, backgroundColor: colors.card }]}>
-          <Text style={[styles.headerTitle, { color: colors.text }]}>Messages</Text>
-        </View>
-        <View style={styles.emptyState}>
+        {header}
+        <Animated.View entering={FadeInDown.duration(300)} style={styles.emptyState}>
           <Ionicons name="chatbubbles-outline" size={56} color={colors.muted} />
           <Text style={[styles.emptyTitle, { color: colors.text }]}>No channels yet</Text>
           <Text style={[styles.emptyDesc, { color: colors.secondary }]}>
             Set up your team channels to start communicating.
           </Text>
-          <TouchableOpacity
+          <PressableScale
+            haptics
             style={[styles.emptyBtn, { backgroundColor: colors.accent }]}
             onPress={handleSeedChannels}
-            activeOpacity={0.8}
             disabled={seeding}
           >
             {seeding ? (
@@ -309,165 +361,109 @@ const colors = {
             ) : (
               <Text style={styles.emptyBtnText}>Set Up Channels</Text>
             )}
-          </TouchableOpacity>
-        </View>
+          </PressableScale>
+        </Animated.View>
       </View>
     );
   }
 
   return (
     <View style={[styles.container, { backgroundColor: colors.bg }]}>
-      <View style={[styles.header, { borderBottomColor: colors.border, backgroundColor: colors.card }]}>
-        <Text style={[styles.headerTitle, { color: colors.text }]}>Messages</Text>
-        <View style={styles.headerActions}>
-          <TouchableOpacity
-            style={[styles.headerBtn, { backgroundColor: colors.input }]}
-            onPress={() => { loadTeamUsers(); setShowNewDmModal(true); }}
-            activeOpacity={0.7}
-          >
-            <Ionicons name="person-add-outline" size={18} color={colors.accent} />
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.headerBtn, { backgroundColor: colors.input }]}
-            onPress={() => setShowNewChannelModal(true)}
-            activeOpacity={0.7}
-          >
-            <Ionicons name="add" size={20} color={colors.accent} />
-          </TouchableOpacity>
-        </View>
-      </View>
+      {header}
 
-      <FlatList
-        data={[]}
-        renderItem={null}
-        keyExtractor={() => 'header'}
+      <SectionList
+        sections={sections}
+        keyExtractor={item => item.id}
+        renderItem={renderChannelRow}
+        renderSectionHeader={({ section }) => (
+          <Animated.View
+            entering={FadeInDown.duration(300)}
+            style={[styles.sectionHeader, { backgroundColor: colors.bg, borderBottomColor: colors.border }]}
+          >
+            <Text style={[styles.sectionTitle, { color: colors.secondary }]}>{section.title}</Text>
+          </Animated.View>
+        )}
+        stickySectionHeadersEnabled={false}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />
         }
-        ListHeaderComponent={
-          <>
-            {channelList.length > 0 && (
-              <>
-                <View style={[styles.sectionHeader, { backgroundColor: colors.bg, borderBottomColor: colors.border }]}>
-                  <Text style={[styles.sectionTitle, { color: colors.secondary }]}>CHANNELS</Text>
-                </View>
-                {channelList.map(item => (
-                  <View key={item.id}>{renderChannelRow({ item })}</View>
-                ))}
-              </>
-            )}
-            {dmList.length > 0 && (
-              <>
-                <View style={[styles.sectionHeader, { backgroundColor: colors.bg, borderBottomColor: colors.border }]}>
-                  <Text style={[styles.sectionTitle, { color: colors.secondary }]}>DIRECT MESSAGES</Text>
-                </View>
-                {dmList.map(item => (
-                  <View key={item.id}>{renderChannelRow({ item })}</View>
-                ))}
-              </>
-            )}
-          </>
-        }
-        ListEmptyComponent={null}
         contentContainerStyle={{ flexGrow: 1 }}
         style={{ flex: 1 }}
       />
 
-      {/* New Channel Modal */}
-      <Modal visible={showNewChannelModal} animationType="slide" transparent onRequestClose={() => setShowNewChannelModal(false)}>
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContainer, { backgroundColor: colors.card }]}>
-            <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
-              <Text style={[styles.modalTitle, { color: colors.text }]}>New Channel</Text>
-              <TouchableOpacity onPress={() => setShowNewChannelModal(false)} activeOpacity={0.7}>
-                <Ionicons name="close" size={22} color={colors.secondary} />
-              </TouchableOpacity>
-            </View>
-            <Text style={[styles.modalLabel, { color: colors.secondary }]}>Channel name</Text>
-            <TextInput
-              style={[styles.modalInput, { backgroundColor: colors.input, color: colors.text, borderColor: colors.border }]}
-              placeholder="e.g. site-updates"
-              placeholderTextColor={colors.muted}
-              value={newChannelName}
-              onChangeText={setNewChannelName}
-              autoCapitalize="none"
-              autoCorrect={false}
-            />
-            <TouchableOpacity
-              style={[styles.modalBtn, { backgroundColor: colors.accent }]}
-              onPress={handleCreateChannel}
-              activeOpacity={0.8}
-              disabled={creatingChannel || !newChannelName.trim()}
-            >
-              {creatingChannel ? (
-                <ActivityIndicator color="#ffffff" size="small" />
-              ) : (
-                <Text style={styles.modalBtnText}>Create Channel</Text>
-              )}
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
-
-      {/* New DM Modal */}
-      <Modal visible={showNewDmModal} animationType="slide" transparent onRequestClose={() => setShowNewDmModal(false)}>
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContainer, { backgroundColor: colors.card }]}>
-            <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
-              <Text style={[styles.modalTitle, { color: colors.text }]}>New Message</Text>
-              <TouchableOpacity onPress={() => setShowNewDmModal(false)} activeOpacity={0.7}>
-                <Ionicons name="close" size={22} color={colors.secondary} />
-              </TouchableOpacity>
-            </View>
-            {teamUsers.length === 0 ? (
-              <Text style={[styles.noUsersText, { color: colors.secondary }]}>No other team members found.</Text>
+      {/* New Channel Sheet */}
+      <Sheet ref={newChannelSheetRef} title="New Channel">
+        <View style={styles.sheetBody}>
+          <Text style={[styles.sheetLabel, { color: colors.secondary }]}>Channel name</Text>
+          <SheetTextInput
+            style={[styles.sheetInput, { backgroundColor: colors.input, color: colors.text, borderColor: colors.border }]}
+            placeholder="e.g. site-updates"
+            placeholderTextColor={colors.muted}
+            value={newChannelName}
+            onChangeText={setNewChannelName}
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
+          <PressableScale
+            style={[styles.sheetBtn, { backgroundColor: colors.accent, opacity: creatingChannel || !newChannelName.trim() ? 0.6 : 1 }]}
+            onPress={handleCreateChannel}
+            disabled={creatingChannel || !newChannelName.trim()}
+          >
+            {creatingChannel ? (
+              <ActivityIndicator color="#ffffff" size="small" />
             ) : (
-              <FlatList
-                data={teamUsers}
-                keyExtractor={u => u.id}
-                style={{ maxHeight: 320 }}
-                renderItem={({ item }) => {
-                  const name = [item.firstName, item.lastName].filter(Boolean).join(' ') || item.email;
-                  return (
-                    <TouchableOpacity
-                      style={[styles.dmUserRow, { borderBottomColor: colors.border }]}
-                      onPress={() => handleOpenDm(item.id)}
-                      activeOpacity={0.7}
-                      disabled={creatingDm}
-                    >
-                      <View style={[styles.dmUserAvatar, { backgroundColor: colors.accent + '30' }]}>
-                        <Text style={[styles.dmUserInitials, { color: colors.accent }]}>
-                          {getInitials(name)}
-                        </Text>
-                      </View>
-                      <Text style={[styles.dmUserName, { color: colors.text }]}>{name}</Text>
-                    </TouchableOpacity>
-                  );
-                }}
-              />
+              <Text style={styles.sheetBtnText}>Create Channel</Text>
             )}
-          </View>
+          </PressableScale>
         </View>
-      </Modal>
+      </Sheet>
+
+      {/* New DM Sheet */}
+      <Sheet ref={newDmSheetRef} title="New Message" scrollable>
+        <View style={styles.sheetBody}>
+          {teamUsers.length === 0 ? (
+            <Text style={[styles.noUsersText, { color: colors.secondary }]}>No other team members found.</Text>
+          ) : (
+            teamUsers.map(u => {
+              const name = [u.firstName, u.lastName].filter(Boolean).join(' ') || u.email;
+              return (
+                <PressableScale
+                  key={u.id}
+                  haptics
+                  style={[styles.dmUserRow, { borderBottomColor: colors.border }]}
+                  onPress={() => handleOpenDm(u.id)}
+                  disabled={creatingDm}
+                >
+                  <View style={[styles.dmUserAvatar, { backgroundColor: colors.accent + '30' }]}>
+                    <Text style={[styles.dmUserInitials, { color: colors.accent }]}>
+                      {getInitials(name)}
+                    </Text>
+                  </View>
+                  <Text style={[styles.dmUserName, { color: colors.text }]}>{name}</Text>
+                </PressableScale>
+              );
+            })
+          )}
+        </View>
+      </Sheet>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  center: { alignItems: 'center', justifyContent: 'center' },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingTop: 56,
     paddingBottom: 12,
     borderBottomWidth: 1,
   },
   headerTitle: { fontSize: 22, fontWeight: '700' },
   headerActions: { flexDirection: 'row', gap: 8 },
   headerBtn: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
+  skeletonList: { padding: 16, gap: 16 },
   sectionHeader: {
     paddingHorizontal: 16,
     paddingVertical: 8,
@@ -482,6 +478,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     gap: 12,
   },
+  channelAvatarWrap: { width: 40, height: 40, flexShrink: 0 },
   channelAvatar: {
     width: 40,
     height: 40,
@@ -491,6 +488,7 @@ const styles = StyleSheet.create({
     flexShrink: 0,
   },
   channelAvatarIcon: { fontSize: 18, fontWeight: '700' },
+  pinIcon: { marginRight: -2 },
   channelInfo: { flex: 1, minWidth: 0 },
   channelNameRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
   channelName: { fontSize: 15, fontWeight: '500', flex: 1 },
@@ -505,14 +503,11 @@ const styles = StyleSheet.create({
   emptyDesc: { fontSize: 14, textAlign: 'center', lineHeight: 20 },
   emptyBtn: { marginTop: 8, paddingVertical: 12, paddingHorizontal: 28, borderRadius: 8 },
   emptyBtnText: { color: '#ffffff', fontSize: 15, fontWeight: '600' },
-  modalOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.4)' },
-  modalContainer: { borderTopLeftRadius: 16, borderTopRightRadius: 16, padding: 20, paddingBottom: 40 },
-  modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 16, borderBottomWidth: 1, marginBottom: 16 },
-  modalTitle: { fontSize: 17, fontWeight: '700' },
-  modalLabel: { fontSize: 13, marginBottom: 6 },
-  modalInput: { borderWidth: 1, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, fontSize: 15, marginBottom: 16 },
-  modalBtn: { paddingVertical: 13, borderRadius: 8, alignItems: 'center' },
-  modalBtnText: { color: '#ffffff', fontSize: 15, fontWeight: '600' },
+  sheetBody: { paddingHorizontal: 20, paddingTop: 4 },
+  sheetLabel: { fontSize: 13, marginBottom: 6 },
+  sheetInput: { borderWidth: 1, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, fontSize: 15, marginBottom: 16 },
+  sheetBtn: { paddingVertical: 13, borderRadius: 8, alignItems: 'center' },
+  sheetBtnText: { color: '#ffffff', fontSize: 15, fontWeight: '600' },
   noUsersText: { textAlign: 'center', paddingVertical: 20, fontSize: 14 },
   dmUserRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth, gap: 12 },
   dmUserAvatar: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },

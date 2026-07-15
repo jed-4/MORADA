@@ -1,12 +1,15 @@
 import { useColorScheme } from 'react-native';
 
 // ── Colour tokens ─────────────────────────────────────────────────────────
+// Mirrors client/src/index.css (plum rebrand). Interactive purple is
+// `primary` (plum); `lavender` is a decorative accent and never carries
+// white text.
 const light = {
   // Surfaces
-  background:   '#FAFAF8',
+  background:   '#F9F6F1',
   card:         '#FFFFFF',
-  nav:          '#F5F4F0',
-  subtle:       '#F2EEF9',
+  nav:          '#F5F0E9',
+  subtle:       '#F1ECF6',
   // Borders
   border:       '#EAEAE8',
   borderStrong: '#D8D7D4',
@@ -15,62 +18,67 @@ const light = {
   textSecondary: '#6B6560',
   textMuted:     '#8A8680',
   // Brand
-  primary:      '#A890D4',
-  primaryHover: '#9278C4',
-  primaryLight: '#F2EEF9',
+  primary:      '#87749A',
+  primaryHover: '#7E6A92',
+  primaryLight: '#F1ECF6',
   // Organic accents
   teal:         '#70CAD0',
-  tealLight:    '#DFF5F6',
+  tealLight:    '#E8F6F8',
   sage:         '#82C8A2',
-  sageLight:    '#E0F5E9',
+  sageLight:    '#EBF6F0',
   amber:        '#D4B670',
-  amberLight:   '#F7EDDA',
+  amberLight:   '#F8F3E8',
   coral:        '#DA988A',
-  coralLight:   '#F7E5E2',
+  coralLight:   '#F9EFEC',
   rose:         '#D08AAF',
-  roseLight:    '#F5E2EE',
+  roseLight:    '#F8ECF2',
+  lavender:     '#A68AC7',
+  lavenderLight:'#F1ECF6',
   // Status
-  statusSuccess:    '#82C8A2',
-  statusSuccessBg:  '#E0F5E9',
-  statusWarning:    '#D4B670',
-  statusWarningBg:  '#F7EDDA',
-  statusDanger:     '#DA988A',
-  statusDangerBg:   '#F7E5E2',
-  statusInfo:       '#70CAD0',
-  statusInfoBg:     '#DFF5F6',
+  statusSuccess:    '#3C8160',
+  statusSuccessBg:  '#E9F3EE',
+  statusWarning:    '#A57A2E',
+  statusWarningBg:  '#F8F2E7',
+  statusDanger:     '#B03838',
+  statusDangerBg:   '#F8EAEA',
+  statusInfo:       '#597BC0',
+  statusInfoBg:     '#F1F4FB',
 };
 
 const dark = {
-  background:   '#1C1B19',
-  card:         '#252320',
-  nav:          '#1C1B19',
-  subtle:       '#2D2840',
-  border:       '#2E2C29',
+  background:   '#302E2A',
+  card:         '#3B3934',
+  nav:          '#242320',
+  subtle:       '#4C464A',
+  border:       '#48443E',
   borderStrong: '#3A3835',
   textPrimary:   '#E8E4DC',
   textSecondary: '#A8A49C',
   textMuted:     '#8A8680',
-  primary:      '#A890D4',
-  primaryHover: '#BEA8E0',
-  primaryLight: '#2D2840',
+  primary:      '#87749A',
+  primaryHover: '#93819F',
+  primaryLight: '#4C464A',
   teal:         '#70CAD0',
-  tealLight:    '#1A3035',
+  tealLight:    '#475956',
   sage:         '#82C8A2',
-  sageLight:    '#1A2E22',
+  sageLight:    '#4B584C',
   amber:        '#D4B670',
-  amberLight:   '#2E2410',
+  amberLight:   '#5D5441',
   coral:        '#DA988A',
-  coralLight:   '#2E1A18',
+  coralLight:   '#5E4E47',
   rose:         '#D08AAF',
-  roseLight:    '#2A1A24',
-  statusSuccess:    '#82C8A2',
-  statusSuccessBg:  '#1A2E22',
-  statusWarning:    '#D4B670',
-  statusWarningBg:  '#2E2410',
-  statusDanger:     '#DA988A',
-  statusDangerBg:   '#2E1A18',
-  statusInfo:       '#70CAD0',
-  statusInfoBg:     '#1A3035',
+  roseLight:    '#5C4B4F',
+  lavender:     '#A68AC7',
+  lavenderLight:'#534B54',
+  // Status pills in dark mode: same fg as light, bg = fg at 22% alpha
+  statusSuccess:    '#3C8160',
+  statusSuccessBg:  '#3C816038',
+  statusWarning:    '#A57A2E',
+  statusWarningBg:  '#A57A2E38',
+  statusDanger:     '#B03838',
+  statusDangerBg:   '#B0383838',
+  statusInfo:       '#597BC0',
+  statusInfoBg:     '#597BC038',
 };
 
 // ── Typography scale ──────────────────────────────────────────────────────
@@ -108,9 +116,9 @@ export const radius = {
   full: 9999,
 };
 
-// ── Schedule type colours (mirrors web TYPE_COLORS_HEX) ───────────────────
+// ── Schedule type colours (mirrors web TYPE_COLORS — task = --primary) ────
 export const typeColors = {
-  task:       '#A890D4',
+  task:       '#87749A',
   milestone:  '#D4B670',
   inspection: '#82C8A2',
   delivery:   '#70CAD0',
@@ -118,10 +126,10 @@ export const typeColors = {
   leave:      '#D08AAF',
 };
 
-// ── Project chip colours (mirrors web PROJECT_COLORS) ─────────────────────
+// ── Project chip colours (fallback cycle when a project has no colour) ────
 export const projectColors = [
-  '#70CAD0', '#A890D4', '#82C8A2', '#D4B670',
-  '#DA988A', '#D08AAF', '#9278C4', '#4ECAC8',
+  '#70CAD0', '#A68AC7', '#82C8A2', '#D4B670',
+  '#DA988A', '#D08AAF', '#87749A', '#4ECAC8',
 ];
 
 // ── Hook ──────────────────────────────────────────────────────────────────

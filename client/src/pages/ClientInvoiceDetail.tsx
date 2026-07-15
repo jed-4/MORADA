@@ -1767,7 +1767,7 @@ export default function ClientInvoiceDetail() {
                       <div className={cn(
                         "flex items-center gap-1.5 px-2 h-6 border rounded-md text-xs",
                         xeroStatus?.connected
-                          ? "text-status-info dark:text-blue-400 border-blue-300 dark:border-blue-600"
+                          ? "text-status-info border-status-info/30"
                           : "text-muted-foreground border-border opacity-60 cursor-not-allowed"
                       )}>
                         <Switch
@@ -1775,7 +1775,7 @@ export default function ClientInvoiceDetail() {
                           checked={sendToXero}
                           onCheckedChange={xeroStatus?.connected ? setSendToXero : undefined}
                           disabled={!xeroStatus?.connected}
-                          className="scale-75 data-[state=checked]:bg-blue-600"
+                          className="scale-75 data-[state=checked]:bg-status-info"
                           data-testid="toggle-send-to-xero"
                         />
                         <label htmlFor="sendToXero" className={cn("select-none whitespace-nowrap flex items-center gap-1", xeroStatus?.connected ? "cursor-pointer" : "cursor-not-allowed")}>
@@ -1825,7 +1825,7 @@ export default function ClientInvoiceDetail() {
                     type="button"
                     onClick={handlePushToXero}
                     disabled={xeroPushing}
-                    className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1 text-status-info dark:text-blue-400 border-blue-300 dark:border-blue-600"
+                    className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1 text-status-info border-status-info/30"
                     data-testid="button-send-to-xero"
                   >
                     {xeroPushing ? (
@@ -2147,7 +2147,7 @@ export default function ClientInvoiceDetail() {
                       onClick={() => setIntroCollapsed((v) => !v)}
                     >
                       <div className="flex items-center gap-2">
-                        <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-sky-400/70" />
+                        <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-teal/70" />
                         <span className="text-xs font-medium">Introduction</span>
                       </div>
                       {introCollapsed ? (
@@ -2195,7 +2195,7 @@ export default function ClientInvoiceDetail() {
                     <div data-testid="section-contract-price">
                       <div className="h-8 flex items-center justify-between px-3 gap-2 border-b border-border/50 bg-muted/40">
                         <div className="flex items-center gap-2">
-                          <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-blue-400/70" />
+                          <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-primary/70" />
                           <span className="text-xs font-medium">Contract Price</span>
                           {getEffectiveContractPrice() && (
                             <Tooltip>
@@ -2919,7 +2919,7 @@ export default function ClientInvoiceDetail() {
                     <div className="border-t border-border/50" data-testid="section-bills">
                       <div className="h-8 flex items-center justify-between px-3 gap-2 border-b border-border/50 bg-muted/40">
                         <div className="flex items-center gap-2">
-                          <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-orange-400/70" />
+                          <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-amber/70" />
                           <span className="text-xs font-medium">Bills</span>
                           {selectedBillIds.length > 0 && (
                             <span className="text-xs tabular-nums text-muted-foreground">
@@ -4156,7 +4156,7 @@ export default function ClientInvoiceDetail() {
                     const map: Record<string, { label: string; cls: string }> = {
                       draft: { label: "Draft", cls: "text-muted-foreground" },
                       awaiting_approval: { label: "Pending Approval", cls: "text-amber" },
-                      awaiting_payment: { label: "Awaiting Payment", cls: "text-status-info dark:text-blue-400" },
+                      awaiting_payment: { label: "Awaiting Payment", cls: "text-status-info" },
                       paid: { label: "Paid", cls: "text-sage" },
                     };
                     const s = map[status] || { label: status || "—", cls: "text-muted-foreground" };
@@ -4165,7 +4165,7 @@ export default function ClientInvoiceDetail() {
                         <div className={cn("w-1.5 h-1.5 rounded-full flex-shrink-0", {
                           "bg-muted-foreground/60": status === "draft",
                           "bg-amber": status === "awaiting_approval",
-                          "bg-blue-400": status === "awaiting_payment",
+                          "bg-status-info": status === "awaiting_payment",
                           "bg-sage": status === "paid",
                         })} />
                         {s.label}

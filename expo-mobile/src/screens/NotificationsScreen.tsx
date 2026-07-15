@@ -7,11 +7,14 @@ import {
   TouchableOpacity,
   useColorScheme,
   ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Notifications from 'expo-notifications';
-import { useFocusEffect } from '@react-navigation/native';
+import { useIsFocused } from '@react-navigation/native';
 import { apiFetch, apiRequest } from '../services/api';
+import { usePolling } from '../lib/usePolling';
+import { timeAgo } from '../lib/format';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { resolveNotificationTarget } from '../navigation/notificationRouting';
 
@@ -32,20 +35,6 @@ interface Notification {
 type Props = {
   navigation: NativeStackNavigationProp<any>;
 };
-
-function formatTimeAgo(dateStr: string): string {
-  const d = new Date(dateStr);
-  const now = new Date();
-  const diffMs = now.getTime() - d.getTime();
-  const mins = Math.floor(diffMs / (1000 * 60));
-  if (mins < 1) return 'Just now';
-  if (mins < 60) return `${mins}m ago`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  if (days < 7) return `${days}d ago`;
-  return d.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' });
-}
 
 function getNotifIcon(type: string): keyof typeof Ionicons.glyphMap {
   switch (type) {
@@ -77,40 +66,51 @@ const colors = {
 
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [markingAll, setMarkingAll] = useState(false);
+  const isFocused = useIsFocused();
 
   const unreadCount = notifications.filter(n => !n.isRead).length;
 
   const fetchNotifications = useCallback(async () => {
     try {
-      const data = await apiFetch<Notification[]>('/api/notifications?limit=100').catch(() => []);
+      const data = await apiFetch<Notification[]>('/api/notifications?limit=100');
       setNotifications(data || []);
+      setLoadError(false);
     } catch {
-      setNotifications([]);
+      // Keep any previously loaded list; only the error state changes.
+      setLoadError(true);
     } finally {
       setLoading(false);
     }
   }, []);
 
-  // Live updates: refetch whenever the screen regains focus, whenever a push
-  // arrives while the screen is open, and on a light poll as a fallback.
-  useFocusEffect(
-    useCallback(() => {
-      let active = true;
+  // Live updates: poll while the screen is focused and the app foregrounded
+  // (fires immediately on focus), plus refetch when a push arrives.
+  usePolling(fetchNotifications, 20000, isFocused);
+
+  useEffect(() => {
+    if (!isFocused) return;
+    const sub = Notifications.addNotificationReceivedListener(() => {
       fetchNotifications();
-      const poll = setInterval(() => {
-        if (active) fetchNotifications();
-      }, 20000);
-      const sub = Notifications.addNotificationReceivedListener(() => {
-        if (active) fetchNotifications();
-      });
-      return () => {
-        active = false;
-        clearInterval(poll);
-        sub.remove();
-      };
-    }, [fetchNotifications]),
-  );
+    });
+    return () => sub.remove();
+  }, [isFocused, fetchNotifications]);
+
+  const handleMarkAllRead = useCallback(async () => {
+    if (markingAll) return;
+    setMarkingAll(true);
+    const previous = notifications;
+    setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
+    try {
+      await apiRequest('/api/notifications/mark-all-read', 'POST');
+    } catch {
+      setNotifications(previous);
+      Alert.alert('Error', 'Could not mark notifications as read. Please try again.');
+    } finally {
+      setMarkingAll(false);
+    }
+  }, [markingAll, notifications]);
 
   useEffect(() => {
     navigation.setOptions({
@@ -128,26 +128,20 @@ const colors = {
           )
         : undefined,
     });
-  }, [unreadCount, markingAll, colors.accent]);
-
-  const handleMarkAllRead = useCallback(async () => {
-    if (markingAll) return;
-    setMarkingAll(true);
-    try {
-      await apiRequest('/api/notifications/mark-all-read', 'POST');
-      setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
-    } catch {
-    } finally {
-      setMarkingAll(false);
-    }
-  }, [markingAll]);
+  }, [unreadCount, markingAll, colors.accent, handleMarkAllRead]);
 
   const handleTap = useCallback(async (notif: Notification) => {
     if (!notif.isRead) {
       setNotifications(prev =>
         prev.map(n => n.id === notif.id ? { ...n, isRead: true } : n)
       );
-      apiRequest(`/api/notifications/${notif.id}/read`, 'PATCH').catch(() => {});
+      // Revert the optimistic flip if the server rejects it — the row will
+      // show unread again next time the user returns to this screen.
+      apiRequest(`/api/notifications/${notif.id}/read`, 'PATCH').catch(() => {
+        setNotifications(prev =>
+          prev.map(n => n.id === notif.id ? { ...n, isRead: false } : n)
+        );
+      });
     }
     const target = resolveNotificationTarget({
       type: notif.type,
@@ -166,6 +160,23 @@ const colors = {
     return (
       <View style={[styles.center, { flex: 1, backgroundColor: colors.bg }]}>
         <ActivityIndicator size="large" color={colors.accent} />
+      </View>
+    );
+  }
+
+  if (loadError && notifications.length === 0) {
+    return (
+      <View style={[styles.center, { flex: 1, backgroundColor: colors.bg }]}>
+        <Ionicons name="cloud-offline-outline" size={48} color={colors.muted} />
+        <Text style={[styles.emptyTitle, { color: colors.text }]}>Couldn't load notifications</Text>
+        <Text style={[styles.emptyMsg, { color: colors.secondary }]}>Check your connection and try again</Text>
+        <TouchableOpacity
+          style={[styles.retryBtn, { backgroundColor: colors.accent }]}
+          onPress={() => { setLoading(true); fetchNotifications(); }}
+          activeOpacity={0.8}
+        >
+          <Text style={styles.retryBtnText}>Retry</Text>
+        </TouchableOpacity>
       </View>
     );
   }
@@ -239,7 +250,7 @@ const colors = {
                   </Text>
                 ) : null}
                 <Text style={[styles.rowTime, { color: colors.muted }]}>
-                  {formatTimeAgo(notif.createdAt)}
+                  {timeAgo(notif.createdAt)}
                 </Text>
               </View>
             </View>
@@ -266,6 +277,17 @@ const styles = StyleSheet.create({
   },
   emptyMsg: {
     fontSize: 14,
+  },
+  retryBtn: {
+    marginTop: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 24,
+    borderRadius: 8,
+  },
+  retryBtnText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '600',
   },
   list: {
     paddingVertical: 8,

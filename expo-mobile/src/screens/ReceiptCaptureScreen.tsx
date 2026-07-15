@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -32,7 +32,7 @@ interface Contact {
 export default function ReceiptCaptureScreen({ route, navigation }: any) {
   const { projectId, projectName } = route.params as { projectId: string; projectName: string };
   const theme = useTheme();
-  const colors = {
+  const colors = useMemo(() => ({
     background: theme.background,
     card: theme.card,
     border: theme.border,
@@ -42,7 +42,7 @@ export default function ReceiptCaptureScreen({ route, navigation }: any) {
     accent: theme.primary,
     danger: theme.statusDanger,
     amber: '#F59E0B',
-  };
+  }), [theme]);
 
   const [photoUri, setPhotoUri] = useState<string | null>(null);
   const [amount, setAmount] = useState('');
@@ -60,22 +60,27 @@ export default function ReceiptCaptureScreen({ route, navigation }: any) {
       .then(data => setCostCodes(data || []))
       .catch(() => {});
     // Launch camera immediately on open
-    handleTakePhoto();
+    handleTakePhoto().catch(e => console.warn('Auto camera launch failed:', e));
   }, []);
 
   const handleTakePhoto = useCallback(async () => {
-    const { status } = await ImagePicker.requestCameraPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert('Permission Required', 'Camera access is needed to capture receipts.');
-      return;
-    }
-    const result = await ImagePicker.launchCameraAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      quality: 0.85,
-      allowsEditing: false,
-    });
-    if (!result.canceled && result.assets[0]) {
-      setPhotoUri(result.assets[0].uri);
+    try {
+      const { status } = await ImagePicker.requestCameraPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission Required', 'Camera access is needed to capture receipts.');
+        return;
+      }
+      const result = await ImagePicker.launchCameraAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        quality: 0.85,
+        allowsEditing: false,
+      });
+      if (!result.canceled && result.assets[0]) {
+        setPhotoUri(result.assets[0].uri);
+      }
+    } catch (e) {
+      console.warn('Camera launch failed:', e);
+      Alert.alert('Camera Unavailable', 'Could not open the camera. You can choose a photo from your library instead.');
     }
   }, []);
 
@@ -97,8 +102,10 @@ export default function ReceiptCaptureScreen({ route, navigation }: any) {
   const selectedCostCode = costCodes.find(c => c.id === costCodeId);
 
   const handleSubmit = async () => {
-    if (!amount || isNaN(parseFloat(amount))) {
-      Alert.alert('Missing Amount', 'Please enter the receipt amount.');
+    // Normalise comma decimal separators (e.g. "12,50" → "12.50")
+    const amountNum = parseFloat(amount.replace(',', '.'));
+    if (!amount.trim() || isNaN(amountNum) || amountNum <= 0) {
+      Alert.alert('Invalid Amount', 'Please enter a valid receipt amount greater than zero.');
       return;
     }
     if (!description.trim()) {
@@ -119,15 +126,18 @@ export default function ReceiptCaptureScreen({ route, navigation }: any) {
         objectPath = uploadResult.objectPath;
       }
 
-      const totalCents = Math.round(parseFloat(amount) * 100);
+      // Amount entered is inc GST — split into ex-GST subtotal + GST (10%).
+      const totalCents = Math.round(amountNum * 100);
+      const subtotal = Math.round(totalCents / 1.1);
+      const tax = totalCents - subtotal;
       await apiRequest('/api/bills', 'POST', {
         projectId,
         billType: 'receipt',
         billDate: new Date().toISOString(),
         status: 'draft',
         total: totalCents,
-        subtotal: totalCents,
-        tax: 0,
+        subtotal,
+        tax,
         notes: description.trim(),
         costCodeId,
         supplierName: supplierName.trim() || undefined,
@@ -145,7 +155,10 @@ export default function ReceiptCaptureScreen({ route, navigation }: any) {
     }
   };
 
-  const styles = StyleSheet.create({
+  // Memoised on theme — recreating a StyleSheet on every keystroke is wasteful.
+  // The single state-dependent property (photo divider border) is inlined at
+  // the usage site below.
+  const styles = useMemo(() => StyleSheet.create({
     container: { flex: 1, backgroundColor: colors.background },
     scroll: { flex: 1 },
     scrollContent: { padding: 16, paddingBottom: 32 },
@@ -169,7 +182,6 @@ export default function ReceiptCaptureScreen({ route, navigation }: any) {
       flexDirection: 'row',
       padding: 12,
       gap: 8,
-      borderTopWidth: photoUri ? 1 : 0,
       borderTopColor: colors.border,
     },
     photoBtn: {
@@ -294,7 +306,7 @@ export default function ReceiptCaptureScreen({ route, navigation }: any) {
       borderBottomColor: colors.border,
     },
     pickerItemText: { fontSize: 14, color: colors.text },
-  });
+  }), [colors]);
 
   return (
     <KeyboardAvoidingView
@@ -313,7 +325,7 @@ export default function ReceiptCaptureScreen({ route, navigation }: any) {
               <Text style={styles.photoPlaceholderText}>No photo taken yet</Text>
             </View>
           )}
-          <View style={styles.photoButtons}>
+          <View style={[styles.photoButtons, { borderTopWidth: photoUri ? 1 : 0 }]}>
             <TouchableOpacity style={styles.photoBtn} onPress={handleTakePhoto} activeOpacity={0.7}>
               <Ionicons name="camera-outline" size={16} color={colors.accent} />
               <Text style={styles.photoBtnText}>{photoUri ? 'Retake' : 'Take Photo'}</Text>

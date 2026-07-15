@@ -9,6 +9,7 @@ import { ThemeProvider, useTheme } from "@/contexts/ThemeContext";
 import { ProjectProvider } from "@/contexts/ProjectContext";
 import Header from "@/components/Header";
 import { SidebarNav } from "@/components/SidebarNav";
+import { ClientRouteGuard } from "@/components/ClientRouteGuard";
 import { useState, useEffect, lazy, Suspense } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useLocation, Redirect } from "wouter";
@@ -17,7 +18,7 @@ import { ErrorBoundary } from "@/components/ui/error-boundary";
 import { GlobalMessageNotifier } from "@/components/global-message-notifier";
 import { PlanGate } from "@/components/billing/PlanGate";
 import * as Sentry from "@sentry/react";
-import { Crisp } from "crisp-sdk-web";
+import { hideCrispChat, identifyCrispUser, resetCrispSession } from "@/lib/crisp";
 
 // All page imports are lazy-loaded so each route gets its own bundle chunk.
 // This eliminates the entire class of "Cannot access '…' before initialization"
@@ -105,6 +106,7 @@ const TermsOfService = lazy(() => import("@/pages/TermsOfService"));
 const LandingPage = lazy(() => import("@/pages/landing"));
 const OnboardingPage = lazy(() => import("@/pages/onboarding"));
 const AcceptInvitation = lazy(() => import("@/pages/AcceptInvitation"));
+const ClientHome = lazy(() => import("@/pages/ClientHome"));
 const AuthPage = lazy(() => import("@/pages/AuthPage"));
 const ResetPassword = lazy(() => import("@/pages/ResetPassword"));
 const Messages = lazy(() => import("@/pages/Messages"));
@@ -154,6 +156,10 @@ function Router() {
                 <div className="text-muted-foreground">Loading...</div>
               </div>
             );
+          }
+          // Clients land on their project, not the team workspace.
+          if ((user as any).userCategory === "client") {
+            return <ClientHome />;
           }
           return <Redirect to={`/users/${user.id}`} />;
         }}
@@ -398,35 +404,22 @@ function AuthWrapper() {
   }, [user]);
 
   // Crisp support chat: identify the signed-in user with account metadata only.
-  // Never pass financial figures, client names, or bill amounts here. No-op when
-  // VITE_CRISP_WEBSITE_ID is unset.
+  // Never pass financial figures, client names, or bill amounts here.
   useEffect(() => {
-    if (!import.meta.env.VITE_CRISP_WEBSITE_ID) return;
     if (!user) {
       // Signed out (logout or expired session): clear the Crisp identity so the
       // next visitor on this browser starts a fresh, anonymous chat session.
-      Crisp.session.reset();
+      resetCrispSession();
       return;
     }
-    if (user.email) Crisp.user.setEmail(user.email);
-    const nickname = [user.firstName, user.lastName].filter(Boolean).join(" ") || user.email || "";
-    if (nickname) Crisp.user.setNickname(nickname);
-    Crisp.session.setData({
-      user_id: String(user.id),
-      company_id: String(user.companyId ?? ""),
-      company_name: user.companyNickname ?? "",
-      plan_status: user.planStatus ?? "unknown",
-      role: user.roleName ?? "",
-    });
+    identifyCrispUser(user as any);
   }, [user]);
 
   // Crisp support chat: keep the floating bubble hidden at all times. It is only
   // shown on demand via "Chat with Support" in the user menu, and re-hides itself
-  // when the user closes the chat window (see main.tsx onChatClosed). No-op when
-  // VITE_CRISP_WEBSITE_ID is unset.
+  // when the user closes the chat window (see lib/crisp.ts initCrisp).
   useEffect(() => {
-    if (!import.meta.env.VITE_CRISP_WEBSITE_ID) return;
-    Crisp.chat.hide();
+    hideCrispChat();
   }, [location, user]);
 
   // Show loading while checking auth
@@ -561,7 +554,9 @@ function AuthWrapper() {
               <main className="flex-1 overflow-hidden flex flex-col">
                 <ErrorBoundary context={`route:${location}`} resetKeys={[location]}>
                   <Suspense fallback={<div className="flex items-center justify-center h-full"><div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" /></div>}>
-                    <Router />
+                    <ClientRouteGuard>
+                      <Router />
+                    </ClientRouteGuard>
                   </Suspense>
                 </ErrorBoundary>
               </main>

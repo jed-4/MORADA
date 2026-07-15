@@ -1,38 +1,11 @@
 import { useMemo, useState } from "react";
-import { useLocation } from "wouter";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { PriorityBadge } from "@/components/PriorityBadge";
-import { useToast } from "@/hooks/use-toast";
-import { useQuery, useMutation } from "@tanstack/react-query";
-import { queryClient, apiRequest } from "@/lib/queryClient";
-import { type RfiTemplate, type TemplateCategory } from "@shared/schema";
+import { useQuery } from "@tanstack/react-query";
+import { type RfiTemplate } from "@shared/schema";
 import { type ColumnDef } from "@tanstack/react-table";
-import {
-  DataTable,
-  DataTableColumnPicker,
-  type DataTableColumnMeta,
-} from "@/components/data-table/DataTable";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from "@/components/ui/dialog";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
+import { type DataTableColumnMeta } from "@/components/data-table/DataTable";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -48,22 +21,16 @@ import {
   TabsList,
   TabsTrigger,
 } from "@/components/ui/tabs";
-import {
-  HelpCircle,
-  Plus,
-  Search,
-  MoreVertical,
-  Edit3,
-  Trash2,
-  Copy,
-  Loader2,
-  MessageSquare,
-  Settings2,
-  Columns3,
-} from "lucide-react";
-import { useAuth } from "@/hooks/use-auth";
-import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { HelpCircle, MessageSquare, Settings2 } from "lucide-react";
 import { format } from "date-fns";
+import {
+  TemplateListPage,
+  type TemplateListConfig,
+} from "@/components/templates/TemplateListPage";
+import {
+  useTemplateCategories,
+  CategoryFilterSelect,
+} from "@/components/templates/useTemplateCategories";
 
 const DIRECTED_TO_TYPES = [
   { value: "client", label: "Client" },
@@ -81,269 +48,46 @@ const PRIORITIES = [
   { value: "urgent", label: "Urgent" },
 ];
 
+interface RfiTemplateForm {
+  name: string;
+  description: string;
+  categoryId: string | undefined;
+  subjectTemplate: string;
+  questionTemplate: string;
+  defaultDirectedToType: string;
+  defaultPriority: string;
+}
+
+const getDirectedToLabel = (type: string | null) => {
+  if (!type) return null;
+  return DIRECTED_TO_TYPES.find(t => t.value === type)?.label || type;
+};
+
+const getPriorityLabel = (priority: string | null) => {
+  if (!priority) return null;
+  return PRIORITIES.find(p => p.value === priority)?.label || priority;
+};
+
+const pickerColumns = [
+  { id: "name", label: "Name", pinned: true },
+  { id: "description", label: "Description" },
+  { id: "subject", label: "Subject" },
+  { id: "category", label: "Category" },
+  { id: "directedTo", label: "Directed To" },
+  { id: "priority", label: "Priority" },
+  { id: "updatedAt", label: "Updated" },
+  { id: "actions", label: "Actions", pinned: true },
+];
+
 export default function RfiTemplates() {
-  const [, navigate] = useLocation();
-  const [isAddingTemplate, setIsAddingTemplate] = useState(false);
-  const [editingTemplate, setEditingTemplate] = useState<RfiTemplate | null>(null);
-  const [confirmDelete, setConfirmDelete] = useState<{ id: string; name: string } | null>(null);
-  const [searchTerm, setSearchTerm] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
-  const [columnPickerOpen, setColumnPickerOpen] = useState(false);
-  const { toast } = useToast();
-  const { user } = useAuth();
+  const { categories, getCategoryBreadcrumb, categoryTree } = useTemplateCategories("rfi");
 
-  const [formData, setFormData] = useState({
-    name: "",
-    description: "",
-    categoryId: undefined as string | undefined,
-    subjectTemplate: "",
-    questionTemplate: "",
-    defaultDirectedToType: "",
-    defaultPriority: "normal",
-  });
-
-  const { data: templates = [], isLoading } = useQuery<RfiTemplate[]>({
+  const { data: templates = [] } = useQuery<RfiTemplate[]>({
     queryKey: ["/api/rfi-templates"],
   });
 
-  const { data: categories = [] } = useQuery<TemplateCategory[]>({
-    queryKey: ["/api/template-categories", "rfi"],
-    queryFn: async () => {
-      const response = await fetch("/api/template-categories?templateType=rfi");
-      if (!response.ok) throw new Error("Failed to fetch categories");
-      return response.json();
-    },
-  });
-
-  const getCategoryBreadcrumb = (categoryId: string | null | undefined): string => {
-    if (!categoryId) return "";
-    const category = categories.find((c) => c.id === categoryId);
-    if (!category) return "";
-
-    const breadcrumbParts: string[] = [category.name];
-    let currentCategory = category;
-
-    while (currentCategory.parentId) {
-      const parent = categories.find((c) => c.id === currentCategory.parentId);
-      if (parent) {
-        breadcrumbParts.unshift(parent.name);
-        currentCategory = parent;
-      } else {
-        break;
-      }
-    }
-
-    return breadcrumbParts.join(" / ");
-  };
-
-  const buildCategoryTree = () => {
-    const rootCategories = categories.filter((c) => !c.parentId);
-    const tree: { id: string; name: string; depth: number }[] = [];
-
-    const addChildren = (parentId: string | null, depth: number) => {
-      const children = categories.filter((c) => c.parentId === parentId);
-      children.forEach((child) => {
-        tree.push({ id: child.id, name: child.name, depth });
-        addChildren(child.id, depth + 1);
-      });
-    };
-
-    rootCategories.forEach((root) => {
-      tree.push({ id: root.id, name: root.name, depth: 0 });
-      addChildren(root.id, 1);
-    });
-
-    return tree;
-  };
-
-  const createMutation = useMutation({
-    mutationFn: async (data: {
-      name: string;
-      description?: string;
-      categoryId?: string;
-      subjectTemplate?: string;
-      questionTemplate?: string;
-      defaultDirectedToType?: string;
-      defaultPriority?: string;
-    }) => {
-      return await apiRequest("/api/rfi-templates", "POST", data);
-    },
-    onSuccess: (newTemplate: RfiTemplate) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/rfi-templates"] });
-      toast({
-        title: "Template created",
-        description: "Your new RFI template has been created.",
-      });
-      setIsAddingTemplate(false);
-      resetForm();
-      navigate(`/rfi-templates/${newTemplate.id}`);
-    },
-    onError: () => {
-      toast({
-        title: "Error",
-        description: "Failed to create template.",
-        variant: "destructive",
-      });
-    },
-  });
-
-  const updateMutation = useMutation({
-    mutationFn: async ({ id, data }: { id: string; data: Partial<RfiTemplate> }) => {
-      return await apiRequest(`/api/rfi-templates/${id}`, "PATCH", data);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/rfi-templates"] });
-      toast({
-        title: "Template updated",
-        description: "The template has been updated successfully.",
-      });
-      setEditingTemplate(null);
-      resetForm();
-    },
-    onError: () => {
-      toast({
-        title: "Error",
-        description: "Failed to update template.",
-        variant: "destructive",
-      });
-    },
-  });
-
-  const deleteMutation = useMutation({
-    mutationFn: async (id: string) => {
-      await apiRequest(`/api/rfi-templates/${id}`, "DELETE");
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/rfi-templates"] });
-      toast({
-        title: "Template deleted",
-        description: "The template has been deleted successfully.",
-      });
-    },
-    onError: () => {
-      toast({
-        title: "Error",
-        description: "Failed to delete template.",
-        variant: "destructive",
-      });
-    },
-  });
-
-  const duplicateMutation = useMutation({
-    mutationFn: async (template: RfiTemplate) => {
-      return await apiRequest("/api/rfi-templates", "POST", {
-        name: `${template.name} (Copy)`,
-        description: template.description,
-        categoryId: template.categoryId,
-        subjectTemplate: template.subjectTemplate,
-        questionTemplate: template.questionTemplate,
-        defaultDirectedToType: template.defaultDirectedToType,
-        defaultPriority: template.defaultPriority,
-      });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/rfi-templates"] });
-      toast({
-        title: "Template duplicated",
-        description: "The template has been duplicated successfully.",
-      });
-    },
-    onError: () => {
-      toast({
-        title: "Error",
-        description: "Failed to duplicate template.",
-        variant: "destructive",
-      });
-    },
-  });
-
-  const resetForm = () => {
-    setFormData({
-      name: "",
-      description: "",
-      categoryId: undefined,
-      subjectTemplate: "",
-      questionTemplate: "",
-      defaultDirectedToType: "",
-      defaultPriority: "normal",
-    });
-  };
-
-  const handleOpenAdd = () => {
-    resetForm();
-    setIsAddingTemplate(true);
-  };
-
-  const handleOpenEdit = (template: RfiTemplate) => {
-    setFormData({
-      name: template.name,
-      description: template.description || "",
-      categoryId: template.categoryId || undefined,
-      subjectTemplate: template.subjectTemplate || "",
-      questionTemplate: template.questionTemplate || "",
-      defaultDirectedToType: template.defaultDirectedToType || "",
-      defaultPriority: template.defaultPriority || "normal",
-    });
-    setEditingTemplate(template);
-  };
-
-  const handleSave = () => {
-    if (!formData.name.trim()) {
-      toast({
-        title: "Validation error",
-        description: "Template name is required.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    const data = {
-      name: formData.name.trim(),
-      description: formData.description.trim() || undefined,
-      categoryId: formData.categoryId || undefined,
-      subjectTemplate: formData.subjectTemplate.trim() || undefined,
-      questionTemplate: formData.questionTemplate.trim() || undefined,
-      defaultDirectedToType: formData.defaultDirectedToType || undefined,
-      defaultPriority: formData.defaultPriority || undefined,
-    };
-
-    if (editingTemplate) {
-      updateMutation.mutate({ id: editingTemplate.id, data });
-    } else {
-      createMutation.mutate(data);
-    }
-  };
-
-  const filteredTemplates = templates
-    .filter(template => {
-      const categoryBreadcrumb = getCategoryBreadcrumb(template.categoryId);
-      const matchesSearch =
-        template.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        template.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        template.subjectTemplate?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        categoryBreadcrumb.toLowerCase().includes(searchTerm.toLowerCase());
-
-      const matchesCategory = categoryFilter === "all" || template.categoryId === categoryFilter;
-
-      return matchesSearch && matchesCategory;
-    })
-    .sort((a, b) => a.name.localeCompare(b.name));
-
-  const getDirectedToLabel = (type: string | null) => {
-    if (!type) return null;
-    return DIRECTED_TO_TYPES.find(t => t.value === type)?.label || type;
-  };
-
-  const getPriorityLabel = (priority: string | null) => {
-    if (!priority) return null;
-    return PRIORITIES.find(p => p.value === priority)?.label || priority;
-  };
-
-  const uniqueCategoryIds = [...new Set(templates.map(t => t.categoryId).filter(Boolean))] as string[];
-
-  const handleRowClick = (template: RfiTemplate) => {
-    navigate(`/rfi-templates/${template.id}`);
-  };
+  const uniqueCategoryIds = Array.from(new Set(templates.map(t => t.categoryId).filter(Boolean))) as string[];
 
   const columns = useMemo<ColumnDef<RfiTemplate, unknown>[]>(() => [
     {
@@ -449,212 +193,68 @@ export default function RfiTemplates() {
       size: 110,
       meta: { defaultWidth: 110, headerLabel: "Updated" } satisfies DataTableColumnMeta,
     },
-    {
-      id: "actions",
-      header: "",
-      enableSorting: false,
-      cell: ({ row }) => (
-        <div className="flex items-center justify-end" onClick={(e) => e.stopPropagation()}>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-6 w-6"
-                data-testid={`button-menu-${row.original.id}`}
-              >
-                <MoreVertical className="h-3 w-3" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleOpenEdit(row.original);
-                }}
-                data-testid={`button-edit-${row.original.id}`}
-              >
-                <Edit3 className="h-4 w-4 mr-2" />
-                Edit
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={(e) => {
-                  e.stopPropagation();
-                  duplicateMutation.mutate(row.original);
-                }}
-                data-testid={`button-duplicate-${row.original.id}`}
-              >
-                <Copy className="h-4 w-4 mr-2" />
-                Duplicate
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setConfirmDelete({ id: row.original.id, name: row.original.name });
-                }}
-                className="text-destructive"
-                data-testid={`button-delete-${row.original.id}`}
-              >
-                <Trash2 className="h-4 w-4 mr-2" />
-                Delete
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-      ),
-      size: 56,
-      meta: { defaultWidth: 56, align: "right", headerLabel: "Actions" } satisfies DataTableColumnMeta,
-    },
-  ], [categories, duplicateMutation]);
+  ], [getCategoryBreadcrumb]);
 
-  const pickerColumns = useMemo(
-    () => [
-      { id: "name", label: "Name", pinned: true },
-      { id: "description", label: "Description" },
-      { id: "subject", label: "Subject" },
-      { id: "category", label: "Category" },
-      { id: "directedTo", label: "Directed To" },
-      { id: "priority", label: "Priority" },
-      { id: "updatedAt", label: "Updated" },
-      { id: "actions", label: "Actions", pinned: true },
-    ],
-    [],
-  );
-
-  return (
-    <div className="h-full flex flex-col">
-      <div className="h-9 bg-background flex items-center justify-between px-2 gap-4 flex-shrink-0">
-        <div className="flex items-center gap-3">
-          <h2 className="text-sm font-semibold" data-testid="text-page-title">
-            RFI Templates
-          </h2>
-          <Badge variant="secondary" className="text-xs" data-testid="text-template-count">
-            {templates.length} {templates.length === 1 ? 'template' : 'templates'}
-          </Badge>
-        </div>
-
-        <div className="flex items-center gap-1.5">
-          <button
-            className="h-6 w-auto px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-0.5"
-            onClick={handleOpenAdd}
-            data-testid="button-add-template"
-          >
-            <Plus className="w-3 h-3" />
-            <span>New Template</span>
-          </button>
-        </div>
-      </div>
-
-      <div className="h-9 bg-background flex items-center justify-between px-2 gap-1.5 border-b border-border flex-shrink-0">
-        <div className="flex items-center gap-1.5 flex-1">
-          <div className="relative w-48">
-            <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
-            <Input
-              placeholder="Search..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-7 pr-2 py-0 h-6 text-xs border"
-              data-testid="input-search-templates"
-            />
-          </div>
-
-          {(categories.length > 0 || uniqueCategoryIds.length > 0) && (
-            <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-              <SelectTrigger className="h-6 w-40 text-xs" data-testid="select-category-filter">
-                <SelectValue placeholder="Category" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Categories</SelectItem>
-                {buildCategoryTree().map((cat) => (
-                  <SelectItem key={cat.id} value={cat.id}>
-                    <span style={{ paddingLeft: `${cat.depth * 12}px` }}>
-                      {cat.depth > 0 ? "└ " : ""}{cat.name}
-                    </span>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
-        </div>
-
-        <Popover open={columnPickerOpen} onOpenChange={setColumnPickerOpen}>
-          <PopoverTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-6 w-6"
-              data-testid="button-column-picker"
-            >
-              <Columns3 className="h-3 w-3" />
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent align="end" className="p-0 w-auto">
-            <DataTableColumnPicker storageKey="rfi-templates" columns={pickerColumns} />
-          </PopoverContent>
-        </Popover>
-      </div>
-
-      <div className="flex-1 overflow-hidden">
-        {isLoading ? (
-          <div className="text-center py-8 text-muted-foreground text-sm">
-            Loading templates...
-          </div>
-        ) : filteredTemplates.length === 0 ? (
-          <div className="text-center py-8">
-            <HelpCircle className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-            <h3 className="text-sm font-medium mb-2">
-              {searchTerm || categoryFilter !== "all" ? "No templates found" : "No templates yet"}
-            </h3>
-            <p className="text-xs text-muted-foreground mb-4">
-              {searchTerm || categoryFilter !== "all"
-                ? "Try adjusting your search or filter"
-                : "Start by adding your first RFI template"}
-            </p>
-            {!searchTerm && categoryFilter === "all" && (
-              <button
-                onClick={handleOpenAdd}
-                className="h-6 px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-0.5 mx-auto"
-                data-testid="button-create-first-template"
-              >
-                <Plus className="h-3 w-3" />
-                Add Your First Template
-              </button>
-            )}
-          </div>
-        ) : (
-          <DataTable
-            data={filteredTemplates}
-            columns={columns}
-            storageKey="rfi-templates"
-            legacyConfigKey="rfi-templates-column-config-v1"
-            rowKey={(t) => t.id}
-            onRowClick={handleRowClick}
-          />
-        )}
-      </div>
-
-      <Dialog
-        open={isAddingTemplate || !!editingTemplate}
-        onOpenChange={(open) => {
-          if (!open) {
-            setIsAddingTemplate(false);
-            setEditingTemplate(null);
-            resetForm();
-          }
-        }}
-      >
-        <DialogContent className="sm:max-w-xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>
-              {editingTemplate ? "Edit RFI Template" : "New RFI Template"}
-            </DialogTitle>
-            <DialogDescription>
-              {editingTemplate
-                ? "Update the template details below."
-                : "Create a new RFI template to speed up creating information requests."}
-            </DialogDescription>
-          </DialogHeader>
-
+  const config = useMemo<TemplateListConfig<RfiTemplate, RfiTemplateForm>>(
+    () => ({
+      pageTitle: "RFI Templates",
+      emptyIcon: HelpCircle,
+      emptyDescription: "Start by adding your first RFI template",
+      emptyFilteredDescription: "Try adjusting your search or filter",
+      api: { base: "/api/rfi-templates" },
+      detailRoute: (id) => `/rfi-templates/${id}`,
+      table: {
+        storageKey: "rfi-templates",
+        legacyConfigKey: "rfi-templates-column-config-v1",
+        columns,
+        pickerColumns,
+      },
+      searchFields: (t) => [
+        t.name,
+        t.description,
+        t.subjectTemplate,
+        getCategoryBreadcrumb(t.categoryId),
+      ],
+      extraFilter: (t) => categoryFilter === "all" || t.categoryId === categoryFilter,
+      filtersActive: categoryFilter !== "all",
+      sort: (a, b) => a.name.localeCompare(b.name),
+      form: {
+        initialValues: {
+          name: "",
+          description: "",
+          categoryId: undefined,
+          subjectTemplate: "",
+          questionTemplate: "",
+          defaultDirectedToType: "",
+          defaultPriority: "normal",
+        },
+        fromEntity: (t) => ({
+          name: t.name,
+          description: t.description || "",
+          categoryId: t.categoryId || undefined,
+          subjectTemplate: t.subjectTemplate || "",
+          questionTemplate: t.questionTemplate || "",
+          defaultDirectedToType: t.defaultDirectedToType || "",
+          defaultPriority: t.defaultPriority || "normal",
+        }),
+        validate: (f) => (f.name.trim() ? null : "Template name is required."),
+        toPayload: (f) => ({
+          name: f.name.trim(),
+          description: f.description.trim() || undefined,
+          categoryId: f.categoryId || undefined,
+          subjectTemplate: f.subjectTemplate.trim() || undefined,
+          questionTemplate: f.questionTemplate.trim() || undefined,
+          defaultDirectedToType: f.defaultDirectedToType || undefined,
+          defaultPriority: f.defaultPriority || undefined,
+        }),
+        dialogClassName: "sm:max-w-xl max-h-[90vh] overflow-y-auto",
+        titles: {
+          create: "New RFI Template",
+          edit: "Edit RFI Template",
+          createDescription: "Create a new RFI template to speed up creating information requests.",
+          editDescription: "Update the template details below.",
+        },
+        render: ({ form, setForm }) => (
           <Tabs defaultValue="details" className="w-full">
             <TabsList className="grid w-full grid-cols-2">
               <TabsTrigger value="details" className="text-xs">
@@ -672,8 +272,8 @@ export default function RfiTemplates() {
                 <Label htmlFor="name">Template Name *</Label>
                 <Input
                   id="name"
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  value={form.name}
+                  onChange={(e) => setForm({ ...form, name: e.target.value })}
                   placeholder="e.g., Structural Clarification Request"
                   data-testid="input-template-name"
                 />
@@ -683,8 +283,8 @@ export default function RfiTemplates() {
                 <Label htmlFor="description">Description</Label>
                 <Textarea
                   id="description"
-                  value={formData.description}
-                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                  value={form.description}
+                  onChange={(e) => setForm({ ...form, description: e.target.value })}
                   placeholder="Brief description of when to use this template..."
                   rows={2}
                   data-testid="textarea-template-description"
@@ -695,15 +295,15 @@ export default function RfiTemplates() {
                 <div className="space-y-2">
                   <Label>Category</Label>
                   <Select
-                    value={formData.categoryId || "none"}
-                    onValueChange={(value) => setFormData({ ...formData, categoryId: value === "none" ? undefined : value })}
+                    value={form.categoryId || "none"}
+                    onValueChange={(value) => setForm({ ...form, categoryId: value === "none" ? undefined : value })}
                   >
                     <SelectTrigger data-testid="select-template-category">
                       <SelectValue placeholder="Select category" />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="none">No category</SelectItem>
-                      {buildCategoryTree().map((cat) => (
+                      {categoryTree.map((cat) => (
                         <SelectItem key={cat.id} value={cat.id}>
                           <span style={{ paddingLeft: `${cat.depth * 12}px` }}>
                             {cat.depth > 0 ? "└ " : ""}{cat.name}
@@ -717,8 +317,8 @@ export default function RfiTemplates() {
                 <div className="space-y-2">
                   <Label htmlFor="defaultPriority">Default Priority</Label>
                   <Select
-                    value={formData.defaultPriority}
-                    onValueChange={(value) => setFormData({ ...formData, defaultPriority: value })}
+                    value={form.defaultPriority}
+                    onValueChange={(value) => setForm({ ...form, defaultPriority: value })}
                   >
                     <SelectTrigger data-testid="select-template-priority">
                       <SelectValue placeholder="Select priority" />
@@ -737,8 +337,8 @@ export default function RfiTemplates() {
               <div className="space-y-2">
                 <Label htmlFor="defaultDirectedToType">Default Directed To</Label>
                 <Select
-                  value={formData.defaultDirectedToType}
-                  onValueChange={(value) => setFormData({ ...formData, defaultDirectedToType: value })}
+                  value={form.defaultDirectedToType}
+                  onValueChange={(value) => setForm({ ...form, defaultDirectedToType: value })}
                 >
                   <SelectTrigger data-testid="select-template-directed-to">
                     <SelectValue placeholder="Select recipient type" />
@@ -762,8 +362,8 @@ export default function RfiTemplates() {
                 <Label htmlFor="subjectTemplate">Subject Line Template</Label>
                 <Input
                   id="subjectTemplate"
-                  value={formData.subjectTemplate}
-                  onChange={(e) => setFormData({ ...formData, subjectTemplate: e.target.value })}
+                  value={form.subjectTemplate}
+                  onChange={(e) => setForm({ ...form, subjectTemplate: e.target.value })}
                   placeholder="e.g., Clarification Required - [Drawing Reference]"
                   data-testid="input-template-subject"
                 />
@@ -776,8 +376,8 @@ export default function RfiTemplates() {
                 <Label htmlFor="questionTemplate">Question Template</Label>
                 <Textarea
                   id="questionTemplate"
-                  value={formData.questionTemplate}
-                  onChange={(e) => setFormData({ ...formData, questionTemplate: e.target.value })}
+                  value={form.questionTemplate}
+                  onChange={(e) => setForm({ ...form, questionTemplate: e.target.value })}
                   placeholder="Please clarify the following regarding [SUBJECT]:
 
 1. [Question 1]
@@ -806,9 +406,9 @@ Response Required By: [Date]"
                       variant="secondary"
                       className="text-data cursor-pointer hover:bg-secondary/80"
                       onClick={() => {
-                        setFormData({
-                          ...formData,
-                          questionTemplate: formData.questionTemplate + placeholder,
+                        setForm({
+                          ...form,
+                          questionTemplate: form.questionTemplate + placeholder,
                         });
                       }}
                     >
@@ -819,46 +419,30 @@ Response Required By: [Date]"
               </div>
             </TabsContent>
           </Tabs>
-
-          <DialogFooter className="mt-4">
-            <Button
-              variant="outline"
-              onClick={() => {
-                setIsAddingTemplate(false);
-                setEditingTemplate(null);
-                resetForm();
-              }}
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={handleSave}
-              disabled={createMutation.isPending || updateMutation.isPending}
-              data-testid="button-save-template"
-            >
-              {(createMutation.isPending || updateMutation.isPending) ? (
-                <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Saving...
-                </>
-              ) : editingTemplate ? (
-                "Update Template"
-              ) : (
-                "Create Template"
-              )}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-      <ConfirmDialog
-        open={!!confirmDelete}
-        onOpenChange={(open) => { if (!open) setConfirmDelete(null); }}
-        title={`Delete "${confirmDelete?.name ?? ""}"?`}
-        description="This permanently deletes it and cannot be undone."
-        confirmLabel="Delete"
-        destructive
-        onConfirm={() => { if (confirmDelete) deleteMutation.mutate(confirmDelete.id); setConfirmDelete(null); }}
-      />
-    </div>
+        ),
+      },
+      duplicatePayload: (template) => ({
+        name: `${template.name} (Copy)`,
+        description: template.description,
+        categoryId: template.categoryId,
+        subjectTemplate: template.subjectTemplate,
+        questionTemplate: template.questionTemplate,
+        defaultDirectedToType: template.defaultDirectedToType,
+        defaultPriority: template.defaultPriority,
+      }),
+      toasts: { created: "Your new RFI template has been created." },
+      filterBar:
+        categories.length > 0 || uniqueCategoryIds.length > 0 ? (
+          <CategoryFilterSelect
+            value={categoryFilter}
+            onValueChange={setCategoryFilter}
+            tree={categoryTree}
+          />
+        ) : null,
+    }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [columns, categories, categoryTree, getCategoryBreadcrumb, categoryFilter, uniqueCategoryIds.length],
   );
+
+  return <TemplateListPage config={config} />;
 }

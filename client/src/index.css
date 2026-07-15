@@ -18,9 +18,9 @@
 
   /* Figma IMPLEMENT > Light (Hybrid Notion) — exact hex values */
   /* Surfaces */
-  --background: 60 15% 98%;       /* #FAFAF8 — warm cream page */
+  --background: 38 40% 96%;       /* #F9F6F1 — favicon cream */
 
-  --page-background: 60 15% 98%;  /* #FAFAF8 — matches --background */
+  --page-background: 38 40% 96%;  /* #F9F6F1 — matches --background */
 
   --foreground: 26 9% 16%;        /* #2C2825 — deep warm ink */
 
@@ -32,21 +32,26 @@
 
   --card-border: 60 5% 91%;
 
-  --sidebar: 48 20% 95%;          /* #F5F4F0 — warm cream sidebar */
+  --sidebar: 40 33% 98%;          /* #FCFBF8 — near-white, faint warmth. Sits in
+                                     the same family as the white cards, with the
+                                     cream --background as the page canvas behind. */
 
   --sidebar-foreground: 26 9% 16%;
 
   --sidebar-border: 60 5% 91%;
 
-  --sidebar-primary: 261 44% 70%; /* #A890D4 lavender */
+  --sidebar-primary: 270 16% 53%; /* #87749A plum */
 
   --sidebar-primary-foreground: 0 0% 100%;
 
-  --sidebar-accent: 48 20% 95%;   /* matches sidebar */
+  --sidebar-accent: 38 30% 93%;   /* #F2EDE5 — one step down from --sidebar so
+                                     hover/active nav states actually read. It
+                                     previously matched --sidebar exactly, which
+                                     made them invisible. */
 
   --sidebar-accent-foreground: 26 9% 16%;
 
-  --sidebar-ring: 261 44% 70%;
+  --sidebar-ring: 270 16% 53%;
 
   --popover: 0 0% 100%;
 
@@ -55,11 +60,11 @@
   --popover-border: 60 5% 91%;
 
   /* Morada Lavender Brand */
-  --primary: 261 44% 70%;         /* #A890D4 */
+  --primary: 270 16% 53%;         /* #87749A deep plum */
 
   --primary-foreground: 0 0% 100%;
 
-  --secondary: 262 48% 95%;       /* #F2EEF9 — lavender wash */
+  --secondary: 270 36% 95%;       /* #F1ECF6 — plum wash */
 
   --secondary-foreground: 26 9% 16%;
 
@@ -67,16 +72,16 @@
 
   --muted-foreground: 27 5% 40%;  /* #6B6560 */
 
-  --accent: 261 44% 70%;          /* matches primary lavender */
+  --accent: 270 16% 53%;          /* matches primary plum */
 
   --accent-foreground: 0 0% 100%;
 
   /* Status colors — Figma palette */
-  --success: 147 39% 65%;         /* #82C8A2 sage */
+  --success: 151 37% 37%;         /* #3C8160 status success */
 
-  --warning: 42 54% 64%;          /* #D4B670 amber */
+  --warning: 38 56% 41%;          /* #A57A2E status warning */
 
-  --destructive: 11 52% 70%;      /* #DA988A coral */
+  --destructive: 0 52% 45%;       /* #B03838 status danger */
 
   --destructive-foreground: 0 0% 100%;
 
@@ -84,31 +89,33 @@
   --border-strong: 45 5% 84%;     /* #D8D7D4 */
   --text-secondary: 27 5% 40%;    /* #6B6560 */
   --text-muted: 36 4% 52%;        /* #8A8680 */
-  --primary-hover: 261 39% 62%;   /* #9278C4 */
-  --primary-light: 262 48% 95%;   /* #F2EEF9 */
+  --primary-hover: 270 16% 49%;   /* #7E6A92 */
+  --primary-light: 270 36% 95%;   /* #F1ECF6 */
 
   /* Organic accent palette — Figma exact hex */
   --teal: 184 51% 63%;            /* #70CAD0 */
-  --teal-light: 183 56% 92%;      /* #DFF5F6 */
+  --teal-light: 187 53% 94%;      /* #E8F6F8 */
   --sage: 147 39% 65%;            /* #82C8A2 */
-  --sage-light: 146 51% 92%;      /* #E0F5E9 */
-  --sage-bg: 146 51% 92%;         /* alias of --sage-light for status backgrounds */
+  --sage-light: 147 38% 94%;      /* #EBF6F0 */
+  --sage-bg: 147 38% 94%;         /* alias of --sage-light for status backgrounds */
   --amber: 42 54% 64%;            /* #D4B670 */
-  --amber-light: 39 64% 91%;      /* #F7EDDA */
-  --amber-bg: 39 64% 91%;         /* alias of --amber-light for status backgrounds */
+  --amber-light: 41 53% 94%;      /* #F8F3E8 */
+  --amber-bg: 41 53% 94%;         /* alias of --amber-light for status backgrounds */
   --coral: 11 52% 70%;            /* #DA988A */
-  --coral-light: 9 57% 93%;       /* #F7E5E2 */
-  --coral-bg: 9 57% 93%;          /* alias of --coral-light for status backgrounds */
+  --coral-light: 14 52% 95%;      /* #F9EFEC */
+  --coral-bg: 14 52% 95%;         /* alias of --coral-light for status backgrounds */
   --rose: 328 43% 68%;            /* #D08AAF */
-  --rose-light: 322 49% 92%;      /* #F5E2EE */
+  --rose-light: 330 46% 95%;      /* #F8ECF2 */
+  --lavender: 268 35% 66%;        /* #A68AC7 — accent purple; never carries white text (interactive purple is --primary) */
+  --lavender-light: 270 36% 95%;  /* #F1ECF6 */
 
   --input: 60 5% 91%;
-  --ring: 261 44% 70%;
-  --chart-1: 210 40% 50%;
-  --chart-2: 142 70% 40%;
-  --chart-3: 38 85% 50%;
-  --chart-4: 280 50% 50%;
-  --chart-5: 15 75% 50%;
+  --ring: 270 16% 53%;
+  --chart-1: 268 35% 66%;         /* #A68AC7 lavender */
+  --chart-2: 184 51% 63%;         /* #70CAD0 teal */
+  --chart-3: 42 54% 64%;          /* #D4B670 amber */
+  --chart-4: 11 52% 70%;          /* #DA988A coral */
+  --chart-5: 147 39% 65%;         /* #82C8A2 sage */
 
   --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
   --font-serif: Georgia, serif;
@@ -138,19 +145,19 @@
   --table-row-divider: 0 0% 0% / 0.06;
   --table-text-muted: 290 5% 63%;
   --tab-inactive: 290 5% 63%;                /* #A29AA5 */
-  --tab-active: 261 44% 70%;                 /* #A890D4 */
+  --tab-active: 270 16% 53%;                 /* #87749A */
 
   /* Status pill tokens (soft pastel pills) — Figma palette */
-  --status-success-fg: 147 39% 65%;          /* #82C8A2 sage */
-  --status-success-bg: 146 51% 92%;          /* #E0F5E9 */
-  --status-warning-fg: 42 54% 64%;           /* #D4B670 amber */
-  --status-warning-bg: 39 64% 91%;           /* #F7EDDA */
-  --status-info-fg:    261 44% 70%;          /* #A890D4 lavender */
-  --status-info-bg:    262 48% 95%;          /* #F2EEF9 */
-  --status-danger-fg:  11 52% 70%;           /* #DA988A coral */
-  --status-danger-bg:  9 57% 93%;            /* #F7E5E2 */
-  --status-action-fg:  184 51% 63%;          /* #70CAD0 teal */
-  --status-action-bg:  183 56% 92%;          /* #DFF5F6 */
+  --status-success-fg: 151 37% 37%;          /* #3C8160 */
+  --status-success-bg: 150 29% 93%;          /* #E9F3EE */
+  --status-warning-fg: 38 56% 41%;           /* #A57A2E */
+  --status-warning-bg: 39 55% 94%;           /* #F8F2E7 */
+  --status-info-fg:    220 45% 55%;          /* #597BC0 */
+  --status-info-bg:    222 56% 96%;          /* #F1F4FB */
+  --status-danger-fg:  0 52% 45%;            /* #B03838 */
+  --status-danger-bg:  0 50% 95%;            /* #F8EAEA */
+  --status-action-fg:  270 16% 53%;          /* #87749A plum */
+  --status-action-bg:  270 36% 95%;          /* #F1ECF6 */
 
   /* ====================================================
    * BUILDPRO DESIGN TOKENS — Foundation (light)
@@ -164,7 +171,7 @@
   --bp-subtle: 48 14% 96%;                   /* skeleton / divider tint */
 
   /* Accent palette — drives the WidgetCard top accent bar */
-  --bp-purple: 261 44% 70%;                  /* #A890D4 */
+  --bp-purple: 268 35% 66%;                  /* #A68AC7 lavender accent */
   --bp-teal:   184 51% 63%;                  /* #70CAD0 */
   --bp-green:  147 39% 65%;                  /* #82C8A2 */
   --bp-amber:  42 54% 64%;                   /* #D4B670 */
@@ -220,11 +227,11 @@
 
   /* Figma IMPLEMENTATION > Dark (Claude Dark) — exact hex values */
   /* Surfaces */
-  --background: 40 6% 10%;        /* #1C1B19 */
+  --background: 40 7% 18%;        /* #302E2A */
 
   --page-background: 40 6% 10%;   /* #1C1B19 — locked default dark floor (matches --background) */
 
-  --card: 36 7% 14%;              /* #252320 — neutral warm dark surface, slight elevation above canvas */
+  --card: 43 6% 22%;              /* #3B3934 — warm dark surface */
 
   --card-foreground: 40 21% 89%;
 
@@ -239,13 +246,13 @@
   --muted: 36 7% 14%;             /* #252320 */
 
   /* Sidebar — codebase consumes --sidebar (Tailwind: bg-sidebar) */
-  --sidebar: 40 6% 10%;           /* #1C1B19 — matches main canvas, blends in (Claude pattern) */
+  --sidebar: 45 6% 13%;           /* #242320 */
 
   --sidebar-foreground: 40 21% 89%;
 
   --sidebar-border: 36 6% 17%;
 
-  --sidebar-primary: 261 44% 70%; /* #A890D4 */
+  --sidebar-primary: 270 16% 53%; /* #87749A */
 
   --sidebar-primary-foreground: 40 6% 10%;
 
@@ -253,14 +260,14 @@
 
   --sidebar-accent-foreground: 40 21% 89%;
 
-  --sidebar-ring: 261 44% 70%;
+  --sidebar-ring: 270 16% 53%;
 
   /* Borders */
-  --border: 36 6% 17%;            /* #2E2C29 */
+  --border: 36 7% 26%;            /* #48443E */
 
   --input: 36 6% 17%;             /* #2E2C29 */
 
-  --ring: 261 44% 70%;            /* #A890D4 */
+  --ring: 270 16% 53%;            /* #87749A */
 
   /* Text */
   --foreground: 40 21% 89%;       /* #E8E4DC */
@@ -268,26 +275,26 @@
   --muted-foreground: 40 6% 64%;  /* #A8A49C */
 
   /* Primary — lavender */
-  --primary: 261 44% 70%;         /* #A890D4 */
+  --primary: 270 16% 53%;         /* #87749A — same both modes */
 
   --primary-foreground: 40 6% 10%;
 
   /* Secondary — lavender subtle wash */
-  --secondary: 253 23% 20%;       /* #2D2840 */
+  --secondary: 320 4% 29%;        /* #4C464A — plum wash over card */
 
   --secondary-foreground: 40 21% 89%;
 
-  --accent: 253 23% 20%;          /* #2D2840 */
+  --accent: 320 4% 29%;           /* matches secondary plum wash */
 
   --accent-foreground: 40 21% 89%;
 
   /* Status colors - Dark Mode (Figma palette) */
-  --success: 147 39% 65%;         /* #82C8A2 sage */
+  --success: 151 37% 37%;         /* #3C8160 */
 
-  --warning: 42 54% 64%;          /* #D4B670 amber */
+  --warning: 38 56% 41%;          /* #A57A2E */
 
   /* Destructive — coral */
-  --destructive: 11 52% 70%;      /* #DA988A */
+  --destructive: 0 52% 45%;       /* #B03838 */
 
   --destructive-foreground: 40 21% 89%;
 
@@ -295,29 +302,31 @@
   --border-strong: 36 4% 22%; /* #3A3835 */
   --text-secondary: 30 8% 65%; /* #A8A49C */
   --text-muted: 33 4% 51%; /* #8A8680 */
-  --primary-hover: 265 50% 77%; /* #BEA8E0 */
-  --primary-light: 253 23% 20%; /* #2D2840 */
+  --primary-hover: 276 14% 56%; /* #93819F — lighter in dark */
+  --primary-light: 320 4% 29%; /* #4C464A */
 
   /* Organic accent palette — Figma exact hex (brand colour same as light) */
   --teal: 184 51% 63%;            /* #70CAD0 */
-  --teal-light: 191 34% 15%;      /* #1A3035 */
+  --teal-light: 170 11% 31%;      /* #475956 — 22% tint over card */
   --sage: 147 39% 65%;            /* #82C8A2 */
-  --sage-light: 144 28% 14%;      /* #1A2E22 */
-  --sage-bg: 144 28% 14%;         /* alias of --sage-light for status backgrounds */
+  --sage-light: 125 8% 32%;       /* #4B584C */
+  --sage-bg: 125 8% 32%;          /* alias of --sage-light for status backgrounds */
   --amber: 42 54% 64%;            /* #D4B670 */
-  --amber-light: 40 48% 12%;      /* #2E2410 */
-  --amber-bg: 40 48% 12%;         /* alias of --amber-light for status backgrounds */
+  --amber-light: 41 18% 31%;      /* #5D5441 */
+  --amber-bg: 41 18% 31%;         /* alias of --amber-light for status backgrounds */
   --coral: 11 52% 70%;            /* #DA988A */
-  --coral-light: 5 31% 14%;       /* #2E1A18 */
-  --coral-bg: 5 31% 14%;          /* alias of --coral-light for status backgrounds */
+  --coral-light: 18 14% 32%;      /* #5E4E47 */
+  --coral-bg: 18 14% 32%;         /* alias of --coral-light for status backgrounds */
   --rose: 328 43% 68%;            /* #D08AAF */
-  --rose-light: 323 24% 13%;      /* #2A1A24 */
+  --rose-light: 346 10% 33%;      /* #5C4B4F */
+  --lavender: 268 35% 66%;        /* #A68AC7 accent purple */
+  --lavender-light: 293 6% 31%;   /* #534B54 — 22% tint over card */
 
-  --chart-1: 210 80% 60%;
-  --chart-2: 142 65% 55%;
-  --chart-3: 38 85% 60%;
-  --chart-4: 280 55% 65%;
-  --chart-5: 15 75% 60%;
+  --chart-1: 268 35% 66%;
+  --chart-2: 184 51% 63%;
+  --chart-3: 42 54% 64%;
+  --chart-4: 11 52% 70%;
+  --chart-5: 147 39% 65%;
 
   /* Softer shadows for charcoal theme */
   --shadow-2xs: 0px 1px 2px 0px hsl(220 20% 8% / 0.20);
@@ -341,19 +350,19 @@
   --table-row-divider: 0 0% 100% / 0.06;
   --table-text-muted: 290 5% 63%;
   --tab-inactive: 290 5% 63%;
-  --tab-active: 261 44% 70%;
+  --tab-active: 270 16% 53%;
 
   /* Status pill tokens (Figma palette, dark mode = translucent on tint) */
-  --status-success-fg: 147 39% 65%;
-  --status-success-bg: 147 39% 65% / 0.18;
-  --status-warning-fg: 42 54% 64%;
-  --status-warning-bg: 42 54% 64% / 0.18;
-  --status-info-fg:    261 44% 70%;
-  --status-info-bg:    261 44% 70% / 0.18;
-  --status-danger-fg:  11 52% 70%;
-  --status-danger-bg:  11 52% 70% / 0.18;
-  --status-action-fg:  184 51% 63%;
-  --status-action-bg:  184 51% 63% / 0.18;
+  --status-success-fg: 151 37% 37%;
+  --status-success-bg: 151 37% 37% / 0.22;
+  --status-warning-fg: 38 56% 41%;
+  --status-warning-bg: 38 56% 41% / 0.22;
+  --status-info-fg:    220 45% 55%;
+  --status-info-bg:    220 45% 55% / 0.22;
+  --status-danger-fg:  0 52% 45%;
+  --status-danger-bg:  0 52% 45% / 0.22;
+  --status-action-fg:  270 16% 53%;
+  --status-action-bg:  270 16% 53% / 0.22;
 
   /* ====================================================
    * BUILDPRO DESIGN TOKENS — Foundation (dark)
@@ -365,7 +374,7 @@
   --bp-subtle: 36 7% 18%;                    /* skeleton tint on dark */
 
   /* Accent palette — same hues as light, dark mode keeps brand colour */
-  --bp-purple: 261 44% 70%;
+  --bp-purple: 268 35% 66%;
   --bp-teal:   184 51% 63%;
   --bp-green:  147 39% 65%;
   --bp-amber:  42 54% 64%;

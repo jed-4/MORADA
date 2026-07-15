@@ -22,7 +22,7 @@ import NetInfo from '@react-native-community/netinfo';
 import { useAuth } from '../contexts/AuthContext';
 import { apiFetch, apiRequest, API_BASE_URL } from '../services/api';
 import { getCached, setCached } from '../services/cache';
-import { addToQueue, syncQueue, getQueueCount, isOnline, getQueue, clearFailedActions, addSyncListener } from '../services/offlineQueue';
+import { addToQueue, syncQueue, getQueueCount, isOnline, getQueue, clearFailedActions, getFailedActions, retryFailedActions, addSyncListener } from '../services/offlineQueue';
 import { useTheme, lightTheme, darkTheme } from '../theme';
 
 const BUSINESS_ID = '__business__';
@@ -309,7 +309,7 @@ function WeeklyTimeGrid({
     return h * 60 + m;
   }
 
-  function getBlockPosition(ts: Timesheet): { top: number; height: number } | null {
+  function getBlockPosition(ts: Timesheet): { top: number; height: number; clippedTop: boolean; clippedBottom: boolean } | null {
     if (!ts.startTime) return null;
     const startMin = timeToMinutes(ts.startTime);
     const gridStartMin = GRID_START_HOUR * 60;
@@ -326,13 +326,26 @@ function WeeklyTimeGrid({
       endMin = startMin + dur * 60;
     }
 
-    const clampedStart = Math.max(startMin, gridStartMin);
-    const clampedEnd = Math.min(endMin, gridEndMin);
-    if (clampedStart >= clampedEnd) return null;
+    const clippedTop = startMin < gridStartMin;
+    const clippedBottom = endMin > gridEndMin;
+    let clampedStart = Math.max(startMin, gridStartMin);
+    let clampedEnd = Math.min(endMin, gridEndMin);
+    if (clampedStart >= clampedEnd) {
+      // Entry lies entirely outside the 05:00–22:00 window — pin a small block
+      // to the nearest grid edge so it stays visible and tappable rather than
+      // vanishing while still counting in the weekly total.
+      if (endMin <= gridStartMin) {
+        clampedStart = gridStartMin;
+        clampedEnd = gridStartMin + 20;
+      } else {
+        clampedStart = gridEndMin - 20;
+        clampedEnd = gridEndMin;
+      }
+    }
 
     const top = ((clampedStart - gridStartMin) / 60) * HOUR_HEIGHT;
     const height = Math.max(((clampedEnd - clampedStart) / 60) * HOUR_HEIGHT, 20);
-    return { top, height };
+    return { top, height, clippedTop, clippedBottom };
   }
 
   const today = toLocalDateStr(new Date());
@@ -542,6 +555,12 @@ function WeeklyTimeGrid({
                           {ts.description}
                         </Text>
                       ) : null}
+                      {pos.clippedTop ? (
+                        <Ionicons name="caret-up" size={9} color={textColor} style={gridStyles.clipIndicatorTop} />
+                      ) : null}
+                      {pos.clippedBottom ? (
+                        <Ionicons name="caret-down" size={9} color={textColor} style={gridStyles.clipIndicatorBottom} />
+                      ) : null}
                     </TouchableOpacity>
                   );
                 })}
@@ -629,6 +648,8 @@ const gridStyles = StyleSheet.create({
   blockProject: { fontSize: 9, fontWeight: '700', lineHeight: 12 },
   blockCostCode: { fontSize: 8, lineHeight: 11, opacity: 0.85 },
   blockDesc: { fontSize: 8, lineHeight: 11, opacity: 0.75 },
+  clipIndicatorTop: { position: 'absolute', top: 0, right: 2 },
+  clipIndicatorBottom: { position: 'absolute', bottom: 0, right: 2 },
 });
 
 export default function TimesheetsScreen() {
@@ -771,8 +792,27 @@ export default function TimesheetsScreen() {
         await fetchData();
       }
       if (failed > 0) {
-        Alert.alert('Sync Issue', `${failed} action(s) could not be synced. They may need to be re-entered.`);
-        await clearFailedActions();
+        const failedActions = await getFailedActions();
+        const firstError = failedActions.map(a => a.error).find(Boolean);
+        Alert.alert(
+          'Sync Issue',
+          `${failedActions.length} action(s) could not be synced.${firstError ? `\n\n${firstError}` : ''}`,
+          [
+            {
+              text: 'Discard',
+              style: 'destructive',
+              onPress: () => {
+                clearFailedActions().then(() => getQueueCount().then(setPendingQueueCount));
+              },
+            },
+            {
+              text: 'Retry',
+              onPress: () => {
+                retryFailedActions().then(() => handleSync());
+              },
+            },
+          ],
+        );
       }
     } catch {
     } finally {
@@ -983,18 +1023,24 @@ export default function TimesheetsScreen() {
       if (isEditMode && editingId) {
         await apiRequest(`/api/timesheets/${editingId}`, 'PATCH', body);
         if (formCostCodeId) {
-          try {
-            const existing = await apiFetch<any[]>(`/api/timesheets/${editingId}/cost-codes`);
-            for (const cc of (existing || [])) {
-              await apiRequest(`/api/timesheets/cost-codes/${cc.id}`, 'DELETE', {});
-            }
-          } catch {}
-          await apiRequest(`/api/timesheets/${editingId}/cost-codes`, 'POST', {
+          // Replace the cost-code splits with the form's single split. Create
+          // the new row FIRST, then delete the old ones — the previous
+          // delete-then-create order lost every split when the create failed
+          // partway through. `total` is a dollars decimal string (numeric 10,2),
+          // matching the server (routes.ts PATCH /api/timesheets computes
+          // (duration * rate).toFixed(2)) and the web TimesheetDialog.
+          const existing = await apiFetch<any[]>(`/api/timesheets/${editingId}/cost-codes`).catch(() => [] as any[]);
+          const createRes = await apiRequest(`/api/timesheets/${editingId}/cost-codes`, 'POST', {
             costCodeId: formCostCodeId,
             duration,
-            hourlyRate: formHourlyRate,
+            hourlyRate: formHourlyRate || '0',
             total: (parseFloat(duration) * parseFloat(formHourlyRate || '0')).toFixed(2),
           });
+          const createdSplit = await createRes.json().catch(() => null);
+          for (const cc of (existing || [])) {
+            if (createdSplit?.id && cc.id === createdSplit.id) continue;
+            await apiRequest(`/api/timesheets/cost-codes/${cc.id}`, 'DELETE', {});
+          }
         }
       } else {
         const res = await apiRequest('/api/timesheets', 'POST', body);
@@ -1003,7 +1049,7 @@ export default function TimesheetsScreen() {
           await apiRequest(`/api/timesheets/${created.id}/cost-codes`, 'POST', {
             costCodeId: formCostCodeId,
             duration,
-            hourlyRate: formHourlyRate,
+            hourlyRate: formHourlyRate || '0',
             total: (parseFloat(duration) * parseFloat(formHourlyRate || '0')).toFixed(2),
           });
         }
@@ -1035,7 +1081,12 @@ export default function TimesheetsScreen() {
         setShowLogSheet(false);
         resetForm();
       } else {
-        Alert.alert('Error', 'Could not save timesheet. Please try again when online.');
+        // Keep the form open (state preserved) and re-sync from the server so
+        // the list reflects exactly what was persisted — the PATCH may have
+        // succeeded even if a later cost-code step failed.
+        const msg = e instanceof Error && e.message ? e.message : 'Could not save timesheet. Please try again.';
+        Alert.alert('Update Failed', msg);
+        fetchData();
       }
     } finally {
       setSubmitting(false);
@@ -1258,12 +1309,12 @@ export default function TimesheetsScreen() {
 
       {pendingQueueCount > 0 && networkOnline && (
         <TouchableOpacity
-          style={[styles.offlineBanner, { backgroundColor: '#dbeafe' }]}
+          style={[styles.offlineBanner, { backgroundColor: theme.statusInfoBg }]}
           onPress={handleSync}
           disabled={syncing}
         >
-          <Ionicons name={syncing ? 'sync' : 'cloud-upload'} size={16} color="#1e40af" />
-          <Text style={{ color: '#1e40af', fontSize: 13, marginLeft: 6, flex: 1 }}>
+          <Ionicons name={syncing ? 'sync' : 'cloud-upload'} size={16} color={theme.statusInfo} />
+          <Text style={{ color: theme.statusInfo, fontSize: 13, marginLeft: 6, flex: 1 }}>
             {syncing ? 'Syncing...' : `${pendingQueueCount} pending action(s) to sync`}
           </Text>
         </TouchableOpacity>
@@ -1286,7 +1337,7 @@ export default function TimesheetsScreen() {
               <View style={[
                 styles.clockCard,
                 {
-                  backgroundColor: activeTimesheet ? (isDark ? '#052e16' : '#f0fdf4') : colors.card,
+                  backgroundColor: activeTimesheet ? theme.statusSuccessBg : colors.card,
                   borderColor: activeTimesheet ? colors.green : colors.border,
                   borderWidth: activeTimesheet ? 2 : 1,
                 },

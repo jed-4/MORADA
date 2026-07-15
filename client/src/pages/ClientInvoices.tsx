@@ -318,7 +318,7 @@ export default function ClientInvoices({ embedded }: { embedded?: boolean } = {}
         break;
       case "paid":
         content = (
-          <span className="text-xs font-medium tabular-nums text-emerald-600 dark:text-emerald-400" data-testid={`cell-paid-${invoice.id}`}>
+          <span className="text-xs font-medium tabular-nums text-status-success" data-testid={`cell-paid-${invoice.id}`}>
             {invoice.paidAmount > 0 ? formatCurrency(invoice.paidAmount) : <span className="text-muted-foreground/40">—</span>}
           </span>
         );
@@ -330,7 +330,7 @@ export default function ClientInvoices({ embedded }: { embedded?: boolean } = {}
           </span>
         ) : (
           <span
-            className={cn("text-xs font-medium tabular-nums", invoice.balanceAmount <= 0 ? "text-emerald-600 dark:text-emerald-400" : "")}
+            className={cn("text-xs font-medium tabular-nums", invoice.balanceAmount <= 0 ? "text-status-success" : "")}
             data-testid={`cell-due-${invoice.id}`}
           >
             {invoice.balanceAmount <= 0 ? "Paid" : formatCurrency(invoice.balanceAmount)}
@@ -527,7 +527,7 @@ export default function ClientInvoices({ embedded }: { embedded?: boolean } = {}
                   <span className="text-muted-foreground/40">·</span>
                   <span className="tabular-nums">
                     {financials.approvedVariationsTotal > 0
-                      ? <span className="text-emerald-600 dark:text-emerald-400">+{formatCurrency(financials.approvedVariationsTotal)}</span>
+                      ? <span className="text-status-success">+{formatCurrency(financials.approvedVariationsTotal)}</span>
                       : <span className="text-muted-foreground/50">—</span>}
                   </span>
                 </div>
@@ -538,7 +538,7 @@ export default function ClientInvoices({ embedded }: { embedded?: boolean } = {}
                     {financials.allowancesTotal === 0
                       ? <span className="text-muted-foreground/50">—</span>
                       : financials.allowancesVariation !== 0
-                      ? <span className={financials.allowancesVariation > 0 ? "text-amber-600 dark:text-amber-400" : "text-emerald-600 dark:text-emerald-400"}>
+                      ? <span className={financials.allowancesVariation > 0 ? "text-status-warning" : "text-status-success"}>
                           {financials.allowancesVariation > 0 ? "+" : ""}{formatCurrency(financials.allowancesVariation)}
                         </span>
                       : <span className="text-muted-foreground">{formatCurrency(financials.allowancesTotal)}</span>}
@@ -556,7 +556,7 @@ export default function ClientInvoices({ embedded }: { embedded?: boolean } = {}
             <div className="flex items-end gap-6">
               <div className="flex flex-col">
                 <span className="text-data text-muted-foreground">Paid</span>
-                <span className="text-base font-bold tabular-nums text-emerald-600 dark:text-emerald-400 leading-tight">
+                <span className="text-base font-bold tabular-nums text-status-success leading-tight">
                   {formatCurrency(financials.paidTotal)}
                 </span>
               </div>
@@ -571,9 +571,9 @@ export default function ClientInvoices({ embedded }: { embedded?: boolean } = {}
                 <span className={cn(
                   "text-base font-bold tabular-nums leading-tight",
                   financials.balanceTotal <= 0
-                    ? "text-emerald-600 dark:text-emerald-400"
+                    ? "text-status-success"
                     : financials.paidTotal > 0
-                    ? "text-amber-600 dark:text-amber-400"
+                    ? "text-status-warning"
                     : "text-foreground"
                 )}>
                   {formatCurrency(financials.balanceTotal)}

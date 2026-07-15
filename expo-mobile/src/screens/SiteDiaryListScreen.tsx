@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   View,
   Text,
@@ -7,7 +7,6 @@ import {
   TouchableOpacity,
   RefreshControl,
   ActivityIndicator,
-  useColorScheme,
   Alert,
   Animated,
   PanResponder,
@@ -23,11 +22,17 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { Audio } from 'expo-av';
 import * as ImagePicker from 'expo-image-picker';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import NetInfo from '@react-native-community/netinfo';
 import { useAuth } from '../contexts/AuthContext';
 import { apiFetch, apiRequest, uploadPhoto, uploadAudio, API_BASE_URL } from '../services/api';
-import { isOnline, addToQueue } from '../services/offlineQueue';
+import { isOnline, addToQueue, getQueue, saveQueue, syncQueue, addSyncListener } from '../services/offlineQueue';
+import {
+  getOfflineDiaryEntries,
+  saveOfflineDiaryEntries,
+  removeOfflineDiaryEntry,
+  DIARY_LIST_OFFLINE_KEY,
+} from '../services/diaryOffline';
+import { toLocalDateStr, dateStrOf, localDayISOString } from '../lib/dates';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
 import { useTheme } from '../theme';
@@ -123,10 +128,6 @@ function getSortedProjectItems(projects: Project[]): { id: string; label: string
   return items;
 }
 
-function localISOString(): string {
-  return new Date().toISOString();
-}
-
 function formatDayHeader(date: Date): string {
   const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
   const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -149,13 +150,6 @@ function formatDateTime(dateStr: string): string {
   const period = h >= 12 ? 'PM' : 'AM';
   const displayH = h === 0 ? 12 : h > 12 ? h - 12 : h;
   return `${days[d.getDay()]} ${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}, ${displayH}:${d.getMinutes().toString().padStart(2, '0')} ${period}`;
-}
-
-function getDateStr(date: Date): string {
-  const y = date.getFullYear();
-  const m = (date.getMonth() + 1).toString().padStart(2, '0');
-  const d = date.getDate().toString().padStart(2, '0');
-  return `${y}-${m}-${d}`;
 }
 
 function isToday(date: Date): boolean {
@@ -181,7 +175,8 @@ function countPhotos(entry: SiteDiaryEntry): number {
   let count = 0;
   if (entry.overallPhotos) count += entry.overallPhotos.length;
   if (entry.fieldValues) {
-    Object.values(entry.fieldValues).forEach((val) => {
+    Object.entries(entry.fieldValues).forEach(([key, val]) => {
+      if (key.startsWith('_')) return; // internal keys (e.g. _voiceNotes) are not photos
       if (Array.isArray(val) && val.length > 0 && typeof val[0] === 'string' && (val[0].startsWith('http') || val[0].startsWith('file') || val[0].startsWith('/'))) {
         count += val.length;
       }
@@ -190,15 +185,15 @@ function countPhotos(entry: SiteDiaryEntry): number {
   return count;
 }
 
+type FeedItem =
+  | { type: 'header'; dateKey: string }
+  | { type: 'entry'; entry: SiteDiaryEntry };
 
 const SWIPE_THRESHOLD = 50;
 const SCREEN_WIDTH = Dimensions.get('window').width;
-const OFFLINE_DIARY_KEY = 'buildpro_diary_list_offline';
 
 export default function SiteDiaryListScreen({ navigation }: Props) {
   const { user } = useAuth();
-  const colorScheme = useColorScheme();
-  const isDark = colorScheme === 'dark';
 
   const [currentDate, setCurrentDate] = useState(new Date());
   const [entries, setEntries] = useState<SiteDiaryEntry[]>([]);
@@ -209,6 +204,7 @@ export default function SiteDiaryListScreen({ navigation }: Props) {
   const [activeTemplate, setActiveTemplate] = useState<SiteDiaryTemplate | null>(null);
   const [showTemplatePicker, setShowTemplatePicker] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [dayLoading, setDayLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [networkOnline, setNetworkOnline] = useState(true);
 
@@ -234,7 +230,7 @@ export default function SiteDiaryListScreen({ navigation }: Props) {
 
   const [formTitle, setFormTitle] = useState('');
   const [formProjectId, setFormProjectId] = useState('');
-  const [formDateTime, setFormDateTime] = useState(localISOString());
+  const [formDateTime, setFormDateTime] = useState(localDayISOString());
   const [formFieldValues, setFormFieldValues] = useState<Record<string, any>>({});
   const [formOverallPhotos, setFormOverallPhotos] = useState<string[]>([]);
   const [formVoiceNotes, setFormVoiceNotes] = useState<string[]>([]);
@@ -298,64 +294,57 @@ const colors = {
   ).current;
 
   const loadOfflineEntries = useCallback(async () => {
-    try {
-      const data = await AsyncStorage.getItem(OFFLINE_DIARY_KEY);
-      if (data) setOfflineEntries(JSON.parse(data));
-      else setOfflineEntries([]);
-    } catch {
-      setOfflineEntries([]);
-    }
-  }, []);
-
-  const saveOfflineEntry = useCallback(async (entry: SiteDiaryEntry) => {
-    try {
-      const data = await AsyncStorage.getItem(OFFLINE_DIARY_KEY);
-      const current: SiteDiaryEntry[] = data ? JSON.parse(data) : [];
-      current.push(entry);
-      await AsyncStorage.setItem(OFFLINE_DIARY_KEY, JSON.stringify(current));
-      setOfflineEntries(current);
-    } catch (e) {
-      console.warn('Failed to save offline entry:', e);
-    }
+    setOfflineEntries(await getOfflineDiaryEntries(DIARY_LIST_OFFLINE_KEY));
   }, []);
 
   const saveOfflineEntries = useCallback(async (items: SiteDiaryEntry[]) => {
-    try {
-      await AsyncStorage.setItem(OFFLINE_DIARY_KEY, JSON.stringify(items));
-      setOfflineEntries(items);
-    } catch (e) {
-      console.warn('Failed to save offline entries:', e);
-    }
+    await saveOfflineDiaryEntries(DIARY_LIST_OFFLINE_KEY, items);
+    setOfflineEntries(items);
   }, []);
 
-  const fetchData = useCallback(async () => {
+  // Projects and templates rarely change — fetch them once (previously they
+  // were refetched on every focus and every day swipe).
+  const fetchStaticData = useCallback(async () => {
     try {
-      const dateStr = getDateStr(currentDate);
-      const [entriesData, projectsData, templatesData] = await Promise.all([
-        apiFetch<SiteDiaryEntry[]>(`/api/company/site-diary-entries?date=${dateStr}`).catch(() => []),
+      const [projectsData, templatesData] = await Promise.all([
         apiFetch<Project[]>('/api/projects').catch(() => []),
         user?.companyId
           ? apiFetch<SiteDiaryTemplate[]>(`/api/site-diary-templates?companyId=${user.companyId}`).catch(() => [])
           : Promise.resolve([]),
       ]);
-      setEntries(entriesData || []);
       setProjects(projectsData || []);
       if (templatesData && templatesData.length > 0) {
         setAllTemplates(templatesData);
         const defaultTpl = templatesData.find(t => t.isDefault) || templatesData[0];
-        if (!template) setTemplate(defaultTpl);
-        if (!activeTemplate) setActiveTemplate(defaultTpl);
-      } else if (!template && user?.companyId) {
+        setTemplate(prev => prev || defaultTpl);
+        setActiveTemplate(prev => prev || defaultTpl);
+      } else if (user?.companyId) {
         apiFetch<SiteDiaryTemplate>(`/api/site-diary-templates/default/${user.companyId}`)
-          .then(t => { if (t) setTemplate(t); })
+          .then(t => { if (t) setTemplate(prev => prev || t); })
           .catch(() => {});
       }
     } catch (e) {
       console.error('Failed to fetch diary data:', e);
+    }
+  }, [user?.companyId]);
+
+  const fetchEntries = useCallback(async () => {
+    setDayLoading(true);
+    try {
+      const dateStr = toLocalDateStr(currentDate);
+      const entriesData = await apiFetch<SiteDiaryEntry[]>(
+        `/api/company/site-diary-entries?date=${dateStr}`
+      ).catch(() => []);
+      setEntries(entriesData || []);
     } finally {
       setLoading(false);
+      setDayLoading(false);
     }
-  }, [currentDate, user?.companyId, template]);
+  }, [currentDate]);
+
+  const fetchData = useCallback(async () => {
+    await Promise.all([fetchStaticData(), fetchEntries()]);
+  }, [fetchStaticData, fetchEntries]);
 
   const fetchFeedData = useCallback(async () => {
     setFeedLoading(true);
@@ -370,15 +359,72 @@ const colors = {
   }, []);
 
   useEffect(() => {
-    setLoading(true);
-    fetchData();
+    fetchStaticData();
     loadOfflineEntries();
     fetchFeedData();
-  }, [fetchData, loadOfflineEntries, fetchFeedData]);
+  }, [fetchStaticData, loadOfflineEntries, fetchFeedData]);
 
+  // Refetch the day's entries only when the selected day changes (and on mount).
+  useEffect(() => {
+    fetchEntries();
+  }, [fetchEntries]);
+
+  // Migrate any locally saved entries that were never enqueued (legacy bug —
+  // offline creates used to be stored but never queued, so they never synced).
+  useEffect(() => {
+    (async () => {
+      const items: SiteDiaryEntry[] = await getOfflineDiaryEntries(DIARY_LIST_OFFLINE_KEY);
+      if (items.length === 0) return;
+      const queue = await getQueue();
+      const queuedIds = new Set(
+        queue
+          .filter(a => a.type === 'create-diary-entry')
+          .map(a => a.payload?._offlineId)
+          .filter(Boolean),
+      );
+      for (const entry of items) {
+        if (queuedIds.has(entry.id)) continue;
+        await addToQueue({
+          type: 'create-diary-entry',
+          payload: {
+            templateId: entry.templateId || null,
+            projectId: entry.projectId,
+            title: entry.title,
+            entryDateTime: entry.entryDateTime,
+            fieldValues: entry.fieldValues,
+            overallPhotos: entry.overallPhotos || [],
+            weather: entry.weather,
+            _offlineId: entry.id,
+            _storageKey: DIARY_LIST_OFFLINE_KEY,
+          },
+        });
+      }
+    })();
+  }, []);
+
+  // Refresh after the app-level sync service drains the queue.
+  useEffect(() => {
+    const unsubscribe = addSyncListener(() => {
+      loadOfflineEntries();
+      isOnline().then(online => {
+        if (online) {
+          fetchEntries();
+          fetchFeedData();
+        }
+      });
+    });
+    return unsubscribe;
+  }, [loadOfflineEntries, fetchEntries, fetchFeedData]);
+
+  // Only jump back to "today" on focus when the calendar day actually differs —
+  // a new Date object on every focus used to force a full refetch each time.
+  const currentDateRef = useRef(currentDate);
+  currentDateRef.current = currentDate;
   useEffect(() => {
     const unsubscribe = navigation.addListener('focus', () => {
-      setCurrentDate(new Date());
+      if (toLocalDateStr(new Date()) !== toLocalDateStr(currentDateRef.current)) {
+        setCurrentDate(new Date());
+      }
     });
     return unsubscribe;
   }, [navigation]);
@@ -503,78 +549,83 @@ const colors = {
     setRefreshing(false);
   }, [fetchData, loadOfflineEntries, fetchFeedData]);
 
-  const activeProjects = projects.filter(p => p.isActive && !p.isArchived && !p.isBusiness);
+  const projectMap = useMemo(() => {
+    const map = new Map<string, Project>();
+    projects.forEach(p => map.set(p.id, p));
+    return map;
+  }, [projects]);
 
-  const projectMap = new Map<string, Project>();
-  projects.forEach(p => projectMap.set(p.id, p));
-
-  const getProjectLabel = (projectId: string): string => {
+  const getProjectLabel = useCallback((projectId: string): string => {
     const p = projectMap.get(projectId);
     if (!p) return 'Unknown Project';
     return p.jobNumber ? `${p.jobNumber} - ${p.name}` : p.name;
-  };
+  }, [projectMap]);
 
-  const dateStr = getDateStr(currentDate);
-  const offlineForDay = offlineEntries.filter(e => {
-    const entryDate = e.entryDateTime.split('T')[0];
-    return entryDate === dateStr;
-  });
-
-  const allEntries: SiteDiaryEntry[] = [
-    ...offlineForDay.map(e => ({ ...e, _isOffline: true })),
-    ...entries.map(e => ({ ...e, _isOffline: false })),
-  ];
-
-  const filteredEntries = allEntries.filter(entry => {
-    if (filterProjectId && entry.projectId !== filterProjectId) return false;
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      const titleMatch = entry.title?.toLowerCase().includes(q);
-      const creatorMatch = entry.createdByName?.toLowerCase().includes(q);
-      const projectMatch = getProjectLabel(entry.projectId).toLowerCase().includes(q);
-      const weatherMatch = entry.weather?.condition?.toLowerCase().includes(q);
-      let fieldMatch = false;
-      if (entry.fieldValues) {
-        for (const value of Object.values(entry.fieldValues)) {
-          if (!value) continue;
-          if (typeof value === 'string' || typeof value === 'number') {
-            if (String(value).toLowerCase().includes(q)) { fieldMatch = true; break; }
-          } else if (Array.isArray(value)) {
-            for (const item of value) {
-              if (typeof item === 'string' && item.toLowerCase().includes(q)) { fieldMatch = true; break; }
-              if (typeof item === 'number' && String(item).includes(q)) { fieldMatch = true; break; }
-              if (typeof item === 'object' && item !== null) {
-                const label = item.label || item.value || item.name || '';
-                if (String(label).toLowerCase().includes(q)) { fieldMatch = true; break; }
-              }
+  // Shared by the day view and the feed so both search the same fields.
+  const entryMatchesSearch = useCallback((entry: SiteDiaryEntry, q: string): boolean => {
+    const titleMatch = entry.title?.toLowerCase().includes(q);
+    const creatorMatch = entry.createdByName?.toLowerCase().includes(q);
+    const projectMatch = getProjectLabel(entry.projectId).toLowerCase().includes(q);
+    const weatherMatch = entry.weather?.condition?.toLowerCase().includes(q);
+    let fieldMatch = false;
+    if (entry.fieldValues) {
+      for (const value of Object.values(entry.fieldValues)) {
+        if (!value) continue;
+        if (typeof value === 'string' || typeof value === 'number') {
+          if (String(value).toLowerCase().includes(q)) { fieldMatch = true; break; }
+        } else if (Array.isArray(value)) {
+          for (const item of value) {
+            if (typeof item === 'string' && item.toLowerCase().includes(q)) { fieldMatch = true; break; }
+            if (typeof item === 'number' && String(item).includes(q)) { fieldMatch = true; break; }
+            if (typeof item === 'object' && item !== null) {
+              const label = item.label || item.value || item.name || '';
+              if (String(label).toLowerCase().includes(q)) { fieldMatch = true; break; }
             }
-            if (fieldMatch) break;
-          } else if (typeof value === 'object' && value !== null) {
-            if ('checkedByName' in value && value.checkedByName && String(value.checkedByName).toLowerCase().includes(q)) { fieldMatch = true; break; }
-            if ('value' in value && typeof value.value === 'string' && value.value.toLowerCase().includes(q)) { fieldMatch = true; break; }
           }
+          if (fieldMatch) break;
+        } else if (typeof value === 'object' && value !== null) {
+          if ('checkedByName' in value && value.checkedByName && String(value.checkedByName).toLowerCase().includes(q)) { fieldMatch = true; break; }
+          if ('value' in value && typeof value.value === 'string' && value.value.toLowerCase().includes(q)) { fieldMatch = true; break; }
         }
       }
-      if (!titleMatch && !creatorMatch && !projectMatch && !weatherMatch && !fieldMatch) return false;
     }
-    return true;
-  });
+    return !!(titleMatch || creatorMatch || projectMatch || weatherMatch || fieldMatch);
+  }, [getProjectLabel]);
 
-  const groupedByProject = new Map<string, SiteDiaryEntry[]>();
-  filteredEntries.forEach(entry => {
-    const key = entry.projectId;
-    if (!groupedByProject.has(key)) groupedByProject.set(key, []);
-    groupedByProject.get(key)!.push(entry);
-  });
+  const { filteredEntries, groupedByProject, sortedProjectIds } = useMemo(() => {
+    const dateStr = toLocalDateStr(currentDate);
+    const offlineForDay = offlineEntries.filter(e => dateStrOf(e.entryDateTime) === dateStr);
 
-  const sortedProjectIds = Array.from(groupedByProject.keys()).sort((a, b) => {
-    return getProjectLabel(a).localeCompare(getProjectLabel(b));
-  });
+    const all: SiteDiaryEntry[] = [
+      ...offlineForDay.map(e => ({ ...e, _isOffline: true })),
+      ...entries.map(e => ({ ...e, _isOffline: false })),
+    ];
+
+    const q = searchQuery.trim().toLowerCase();
+    const filtered = all.filter(entry => {
+      if (filterProjectId && entry.projectId !== filterProjectId) return false;
+      if (q && !entryMatchesSearch(entry, q)) return false;
+      return true;
+    });
+
+    const grouped = new Map<string, SiteDiaryEntry[]>();
+    filtered.forEach(entry => {
+      const key = entry.projectId;
+      if (!grouped.has(key)) grouped.set(key, []);
+      grouped.get(key)!.push(entry);
+    });
+
+    const sorted = Array.from(grouped.keys()).sort((a, b) =>
+      getProjectLabel(a).localeCompare(getProjectLabel(b))
+    );
+
+    return { filteredEntries: filtered, groupedByProject: grouped, sortedProjectIds: sorted };
+  }, [entries, offlineEntries, searchQuery, filterProjectId, currentDate, entryMatchesSearch, getProjectLabel]);
 
   const resetForm = () => {
     setFormTitle('');
     setFormProjectId('');
-    setFormDateTime(localISOString());
+    setFormDateTime(localDayISOString());
     setFormFieldValues({});
     setFormOverallPhotos([]);
     setFormVoiceNotes([]);
@@ -722,16 +773,15 @@ const colors = {
     }
   };
 
+  // Throws on upload failure — a device-local URI must never reach the server
+  // (it can't render on any other device). The caller aborts the save and
+  // surfaces the error, keeping the form state intact.
   const uploadAllPhotos = async (photos: string[]): Promise<string[]> => {
     const uploaded: string[] = [];
     for (const uri of photos) {
       if (uri.startsWith('file://') || uri.startsWith('content://')) {
-        try {
-          const { objectPath } = await uploadPhoto(uri);
-          uploaded.push(objectPath);
-        } catch {
-          uploaded.push(uri);
-        }
+        const { objectPath } = await uploadPhoto(uri);
+        uploaded.push(objectPath);
       } else {
         uploaded.push(uri);
       }
@@ -834,6 +884,15 @@ const colors = {
     setPlaybackDuration(0);
   };
 
+  // Stop any in-progress recording/playback and clear the timer on unmount —
+  // navigating away mid-recording used to leak the audio session.
+  useEffect(() => {
+    return () => {
+      cleanupRecording();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const removeVoiceNote = (index: number) => {
     setFormVoiceNotes(prev => {
       const copy = [...prev];
@@ -881,6 +940,41 @@ const colors = {
     }
   };
 
+  // Build the entry payload from the current form state. Voice notes are set
+  // or removed explicitly so deleting the last one persists.
+  const buildEntryPayload = () => {
+    const fieldValues = { ...formFieldValues };
+    if (formVoiceNotes.length > 0) {
+      fieldValues._voiceNotes = formVoiceNotes;
+    } else {
+      delete fieldValues._voiceNotes;
+    }
+    return {
+      templateId: activeTemplate?.id || template?.id || null,
+      projectId: formProjectId,
+      title: formTitle.trim(),
+      entryDateTime: formDateTime,
+      fieldValues,
+      overallPhotos: formOverallPhotos,
+    };
+  };
+
+  // Update the still-pending queued create for a local-only entry in place.
+  // Returns false if the queue no longer holds it (already synced).
+  const updateQueuedCreate = async (offlineId: string, payload: any): Promise<boolean> => {
+    const queue = await getQueue();
+    const action = queue.find(
+      a => a.type === 'create-diary-entry' && a.payload?._offlineId === offlineId,
+    );
+    if (!action) return false;
+    action.payload = { ...payload, _offlineId: offlineId, _storageKey: DIARY_LIST_OFFLINE_KEY };
+    action.status = 'pending';
+    action.retryCount = 0;
+    action.error = undefined;
+    await saveQueue(queue);
+    return true;
+  };
+
   const handleSaveEntry = async () => {
     if (!formTitle.trim()) {
       Alert.alert('Missing Title', 'Please enter a title for this diary entry.');
@@ -891,64 +985,107 @@ const colors = {
       return;
     }
 
+    const missingRequired = (activeTemplate?.fields || [])
+      .filter(f => f.required)
+      .filter(f => {
+        const v = formFieldValues[f.id];
+        if (f.type === 'checkbox') return false;
+        if (f.type === 'photo-gallery') return !Array.isArray(v) || v.length === 0;
+        return v === undefined || v === null || String(v).trim() === '';
+      });
+    if (missingRequired.length > 0) {
+      Alert.alert(
+        'Missing Required Fields',
+        `Please fill in: ${missingRequired.map(f => f.title).join(', ')}`,
+      );
+      return;
+    }
+
     setSubmitting(true);
     try {
+      const payload = buildEntryPayload();
       const online = await isOnline();
+
       if (!online) {
-        const entryId = (isEditMode && selectedEntry?.id.startsWith('_offline_'))
-          ? selectedEntry.id
-          : `_offline_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-
-        const offlineFieldValues = { ...formFieldValues };
-        if (formVoiceNotes.length > 0) {
-          offlineFieldValues._voiceNotes = formVoiceNotes;
-        }
-
-        const offlineEntry: SiteDiaryEntry = {
-          id: entryId,
-          templateId: activeTemplate?.id || template?.id || '',
-          projectId: formProjectId,
-          title: formTitle.trim(),
-          entryDateTime: formDateTime,
-          fieldValues: offlineFieldValues,
-          overallPhotos: formOverallPhotos,
-          createdBy: user?.id,
-          createdByName: user ? `${user.firstName || ''} ${user.lastName || ''}`.trim() : undefined,
-          createdAt: selectedEntry?.createdAt || new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        };
-
-        if (isEditMode && selectedEntry?.id.startsWith('_offline_')) {
-          const updated = offlineEntries.map(e => e.id === selectedEntry.id ? offlineEntry : e);
-          await saveOfflineEntries(updated);
-        } else if (isEditMode && selectedEntry && !selectedEntry.id.startsWith('_offline_')) {
+        if (isEditMode && selectedEntry && !selectedEntry.id.startsWith('_offline_')) {
+          // Offline edit of a server entry — queue a PATCH. The queue uploads
+          // any local photo/voice assets before sending.
           await addToQueue({
             type: 'edit-diary-entry',
-            payload: {
-              id: selectedEntry.id,
-              title: formTitle.trim(),
-              entryDateTime: formDateTime,
-              fieldValues: formFieldValues,
-              overallPhotos: formOverallPhotos,
-            },
+            payload: { id: selectedEntry.id, ...payload },
           });
           Alert.alert('Queued for Sync', 'Your edit will be synced when you reconnect.');
         } else {
-          await saveOfflineEntry(offlineEntry);
+          const isOfflineEdit = !!(isEditMode && selectedEntry?.id.startsWith('_offline_'));
+          const entryId = isOfflineEdit
+            ? selectedEntry!.id
+            : `_offline_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+
+          const offlineEntry: SiteDiaryEntry = {
+            id: entryId,
+            templateId: payload.templateId || '',
+            projectId: payload.projectId,
+            title: payload.title,
+            entryDateTime: payload.entryDateTime,
+            fieldValues: payload.fieldValues,
+            overallPhotos: payload.overallPhotos,
+            createdBy: user?.id,
+            createdByName: user ? `${user.firstName || ''} ${user.lastName || ''}`.trim() : undefined,
+            createdAt: selectedEntry?.createdAt || new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          };
+
+          const updated = isOfflineEdit
+            ? offlineEntries.map(e => (e.id === entryId ? offlineEntry : e))
+            : [...offlineEntries, offlineEntry];
+          await saveOfflineEntries(updated);
+
+          // Keep the queued create in step with the local copy.
+          const updatedInQueue = isOfflineEdit && (await updateQueuedCreate(entryId, payload));
+          if (!updatedInQueue) {
+            await addToQueue({
+              type: 'create-diary-entry',
+              payload: { ...payload, _offlineId: entryId, _storageKey: DIARY_LIST_OFFLINE_KEY },
+            });
+          }
+          Alert.alert('Saved Offline', 'Your diary entry has been saved locally and will sync when you have a connection.');
         }
 
         setShowEntryModal(false);
         resetForm();
-        if (!isEditMode || selectedEntry?.id.startsWith('_offline_')) {
-          Alert.alert('Saved Offline', 'Your diary entry has been saved locally and will sync when you have a connection.');
-        }
         return;
       }
 
-      const uploadedFieldValues = { ...formFieldValues };
+      // ONLINE. Editing an entry that only exists locally: if its queued
+      // create is still pending, update it in place (the queue handles the
+      // uploads) and drain the queue now.
+      if (isEditMode && selectedEntry?.id.startsWith('_offline_')) {
+        const updatedInQueue = await updateQueuedCreate(selectedEntry.id, payload);
+        if (updatedInQueue) {
+          const updated = offlineEntries.map(e =>
+            e.id === selectedEntry.id
+              ? { ...e, ...payload, updatedAt: new Date().toISOString() }
+              : e,
+          );
+          await saveOfflineEntries(updated);
+          setShowEntryModal(false);
+          resetForm();
+          syncQueue().then(() => {
+            fetchData();
+            fetchFeedData();
+            loadOfflineEntries();
+          });
+          return;
+        }
+        // No queued create (already synced or legacy) — fall through and POST
+        // it now, removing the local copy on success so it doesn't duplicate.
+      }
+
+      const uploadedFieldValues = { ...payload.fieldValues };
       for (const [key, val] of Object.entries(uploadedFieldValues)) {
+        if (key === '_voiceNotes') continue;
         if (Array.isArray(val) && val.length > 0 && typeof val[0] === 'string') {
-          uploadedFieldValues[key] = await uploadAllPhotos(val);
+          uploadedFieldValues[key] = await uploadAllPhotos(val as string[]);
         }
       }
 
@@ -957,42 +1094,40 @@ const colors = {
       const uploadedVoiceNotes: string[] = [];
       for (const uri of formVoiceNotes) {
         if (uri.startsWith('file://') || uri.startsWith('content://')) {
-          try {
-            const { objectPath } = await uploadAudio(uri);
-            uploadedVoiceNotes.push(objectPath);
-          } catch {
-            uploadedVoiceNotes.push(uri);
-          }
+          const { objectPath } = await uploadAudio(uri);
+          uploadedVoiceNotes.push(objectPath);
         } else {
           uploadedVoiceNotes.push(uri);
         }
       }
       if (uploadedVoiceNotes.length > 0) {
         uploadedFieldValues._voiceNotes = uploadedVoiceNotes;
+      } else {
+        delete uploadedFieldValues._voiceNotes;
       }
 
       const body: any = {
-        templateId: activeTemplate?.id || template?.id || null,
-        projectId: formProjectId,
-        title: formTitle.trim(),
-        entryDateTime: formDateTime,
+        ...payload,
         fieldValues: uploadedFieldValues,
         overallPhotos: uploadedOverallPhotos,
       };
 
       if (isEditMode && selectedEntry && !selectedEntry.id.startsWith('_offline_')) {
-        const res = await apiRequest(`/api/site-diary-entries/${selectedEntry.id}`, 'PATCH', body);
-        if (!res.ok) throw new Error('Failed to update entry');
+        await apiRequest(`/api/site-diary-entries/${selectedEntry.id}`, 'PATCH', body);
       } else {
-        const res = await apiRequest('/api/site-diary-entries', 'POST', body);
-        if (!res.ok) throw new Error('Failed to create entry');
+        await apiRequest('/api/site-diary-entries', 'POST', body);
+        if (isEditMode && selectedEntry?.id.startsWith('_offline_')) {
+          await removeOfflineDiaryEntry(DIARY_LIST_OFFLINE_KEY, selectedEntry.id);
+          await loadOfflineEntries();
+        }
       }
 
       setShowEntryModal(false);
       resetForm();
       await fetchData();
+      fetchFeedData();
     } catch (e: any) {
-      Alert.alert('Error', e.message || 'Failed to save diary entry. Please try again.');
+      Alert.alert('Error', e?.message || 'Failed to save diary entry. Please try again.');
     } finally {
       setSubmitting(false);
     }
@@ -1007,6 +1142,13 @@ const colors = {
         onPress: async () => {
           try {
             if (entry.id.startsWith('_offline_')) {
+              // Drop the queued create too, or the queue would still POST it.
+              const queue = await getQueue();
+              await saveQueue(
+                queue.filter(
+                  a => !(a.type === 'create-diary-entry' && a.payload?._offlineId === entry.id),
+                ),
+              );
               const updated = offlineEntries.filter(e => e.id !== entry.id);
               await saveOfflineEntries(updated);
             } else {
@@ -1014,6 +1156,7 @@ const colors = {
               if (online) {
                 await apiRequest(`/api/site-diary-entries/${entry.id}`, 'DELETE', {});
                 await fetchData();
+                fetchFeedData();
               } else {
                 await addToQueue({ type: 'delete-diary-entry', payload: { id: entry.id } });
                 setEntries(prev => prev.filter(e => e.id !== entry.id));
@@ -1022,8 +1165,8 @@ const colors = {
             }
             setShowDetailModal(false);
             setSelectedEntry(null);
-          } catch {
-            Alert.alert('Error', 'Could not delete entry.');
+          } catch (e: any) {
+            Alert.alert('Error', e?.message || 'Could not delete entry.');
           }
         },
       },
@@ -1239,39 +1382,42 @@ const colors = {
   const pendingCount = offlineEntries.length;
   const filterProject = filterProjectId ? projectMap.get(filterProjectId) : null;
 
-  const allFeedEntries = [...feedEntries, ...offlineEntries];
-  const feedByDate = new Map<string, SiteDiaryEntry[]>();
-  allFeedEntries.forEach(entry => {
-    let dateKey = 'unknown';
-    if (entry.entryDateTime) {
-      const d = new Date(entry.entryDateTime);
-      const pad = (n: number) => String(n).padStart(2, '0');
-      dateKey = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-    }
-    if (!feedByDate.has(dateKey)) feedByDate.set(dateKey, []);
-    feedByDate.get(dateKey)!.push(entry);
-  });
-  const feedDateKeys = Array.from(feedByDate.keys()).sort((a, b) => b.localeCompare(a));
-  type FeedItem =
-    | { type: 'header'; dateKey: string }
-    | { type: 'entry'; entry: SiteDiaryEntry };
-  const feedItems: FeedItem[] = [];
-  feedDateKeys.forEach(dateKey => {
-    feedItems.push({ type: 'header', dateKey });
-    const dayEntries = (feedByDate.get(dateKey) || [])
-      .filter(e => {
-        if (searchQuery && !e.title?.toLowerCase().includes(searchQuery.toLowerCase())) return false;
-        if (filterProjectId && e.projectId !== filterProjectId) return false;
-        return true;
-      })
-      .sort((a, b) => b.entryDateTime.localeCompare(a.entryDateTime));
-    dayEntries.forEach(entry => feedItems.push({ type: 'entry', entry }));
-  });
-  const filteredFeedItems = feedItems.filter((item, idx) => {
-    if (item.type === 'entry') return true;
-    const next = feedItems[idx + 1];
-    return next && next.type === 'entry';
-  });
+  const filteredFeedItems = useMemo(() => {
+    const allFeedEntries: SiteDiaryEntry[] = [
+      ...feedEntries,
+      ...offlineEntries.map(e => ({ ...e, _isOffline: true })),
+    ];
+    const feedByDate = new Map<string, SiteDiaryEntry[]>();
+    allFeedEntries.forEach(entry => {
+      const dateKey = dateStrOf(entry.entryDateTime) || 'unknown';
+      if (!feedByDate.has(dateKey)) feedByDate.set(dateKey, []);
+      feedByDate.get(dateKey)!.push(entry);
+    });
+    const feedDateKeys = Array.from(feedByDate.keys()).sort((a, b) => b.localeCompare(a));
+
+    const q = searchQuery.trim().toLowerCase();
+    const items: FeedItem[] = [];
+    feedDateKeys.forEach(dateKey => {
+      const dayEntries = (feedByDate.get(dateKey) || [])
+        .filter(e => {
+          if (filterProjectId && e.projectId !== filterProjectId) return false;
+          if (q && !entryMatchesSearch(e, q)) return false;
+          return true;
+        })
+        .sort((a, b) => b.entryDateTime.localeCompare(a.entryDateTime));
+      if (dayEntries.length > 0) {
+        items.push({ type: 'header', dateKey });
+        dayEntries.forEach(entry => items.push({ type: 'entry', entry }));
+      }
+    });
+    return items;
+  }, [feedEntries, offlineEntries, searchQuery, filterProjectId, entryMatchesSearch]);
+
+  // The detail modal must render the fields of the ENTRY's template, not the
+  // one currently active in the form.
+  const detailTemplate = selectedEntry
+    ? allTemplates.find(t => t.id === selectedEntry.templateId) || template
+    : null;
 
   return (
     <View style={[styles.container, { backgroundColor: colors.bg }]}>
@@ -1316,7 +1462,7 @@ const colors = {
           )}
         </View>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-          <View style={[styles.viewToggle, { backgroundColor: isDark ? '#1e293b' : '#f1f5f9', borderColor: colors.border }]}>
+          <View style={[styles.viewToggle, { backgroundColor: theme.nav, borderColor: colors.border }]}>
             <TouchableOpacity
               style={[styles.viewToggleBtn, viewMode === 'feed' && { backgroundColor: colors.accent }]}
               onPress={() => setViewMode('feed')}
@@ -1371,7 +1517,7 @@ const colors = {
       </View>
 
       {filterProjectId && (
-        <View style={[styles.activeFilter, { backgroundColor: isDark ? '#1e293b' : '#eff6ff' }]}>
+        <View style={[styles.activeFilter, { backgroundColor: theme.primaryLight }]}>
           <Text style={[styles.activeFilterText, { color: colors.accent }]} numberOfLines={1}>
             {getProjectLabel(filterProjectId)}
           </Text>
@@ -1382,9 +1528,9 @@ const colors = {
       )}
 
       {!networkOnline && (
-        <View style={[styles.offlineBanner, { backgroundColor: '#fef3c7' }]}>
-          <Ionicons name="cloud-offline" size={14} color="#92400e" />
-          <Text style={styles.offlineBannerText}>
+        <View style={[styles.offlineBanner, { backgroundColor: theme.statusWarningBg }]}>
+          <Ionicons name="cloud-offline" size={14} color={theme.statusWarning} />
+          <Text style={[styles.offlineBannerText, { color: theme.statusWarning }]}>
             Offline{pendingCount > 0 ? ` \u00B7 ${pendingCount} pending` : ''}
           </Text>
         </View>
@@ -1433,7 +1579,7 @@ const colors = {
               const entry = item.entry;
               return (
                 <TouchableOpacity
-                  style={[styles.entryCard, { backgroundColor: colors.card, borderColor: entry._isOffline ? '#f59e0b' : colors.border, marginHorizontal: 16 }]}
+                  style={[styles.entryCard, { backgroundColor: colors.card, borderColor: entry._isOffline ? theme.statusWarning : colors.border, marginHorizontal: 16 }]}
                   activeOpacity={0.7}
                   onPress={() => openDetailModal(entry)}
                 >
@@ -1444,7 +1590,7 @@ const colors = {
                           {entry.title}
                         </Text>
                         {entry._isOffline && (
-                          <Ionicons name="cloud-offline" size={14} color="#f59e0b" style={{ marginRight: 4 }} />
+                          <Ionicons name="cloud-offline" size={14} color={theme.statusWarning} style={{ marginRight: 4 }} />
                         )}
                         <Text style={[styles.entryTime, { color: colors.secondary }]}>
                           {formatTime(entry.entryDateTime)}
@@ -1493,6 +1639,12 @@ const colors = {
             <ActivityIndicator size="large" color={colors.accent} />
           </View>
         ) : (
+          <>
+          {dayLoading && (
+            <View style={{ paddingVertical: 6, alignItems: 'center' }}>
+              <ActivityIndicator size="small" color={colors.accent} />
+            </View>
+          )}
           <ScrollView
             style={styles.scrollView}
             contentContainerStyle={styles.scrollContent}
@@ -1524,7 +1676,7 @@ const colors = {
                   const projectEntries = groupedByProject.get(projectId) || [];
                   return (
                     <View key={projectId} style={styles.projectGroup}>
-                      <View style={[styles.projectHeader, { backgroundColor: isDark ? '#1e293b' : '#f1f5f9' }]}>
+                      <View style={[styles.projectHeader, { backgroundColor: theme.nav }]}>
                         <Ionicons name="briefcase-outline" size={16} color={colors.accent} />
                         <Text style={[styles.projectName, { color: colors.text }]} numberOfLines={1}>
                           {getProjectLabel(projectId)}
@@ -1537,7 +1689,7 @@ const colors = {
                       {projectEntries.map(entry => (
                         <TouchableOpacity
                           key={entry.id}
-                          style={[styles.entryCard, { backgroundColor: colors.card, borderColor: entry._isOffline ? '#f59e0b' : colors.border }]}
+                          style={[styles.entryCard, { backgroundColor: colors.card, borderColor: entry._isOffline ? theme.statusWarning : colors.border }]}
                           activeOpacity={0.7}
                           onPress={() => openDetailModal(entry)}
                         >
@@ -1548,7 +1700,7 @@ const colors = {
                                   {entry.title}
                                 </Text>
                                 {entry._isOffline && (
-                                  <Ionicons name="cloud-offline" size={14} color="#f59e0b" style={{ marginRight: 4 }} />
+                                  <Ionicons name="cloud-offline" size={14} color={theme.statusWarning} style={{ marginRight: 4 }} />
                                 )}
                                 <Text style={[styles.entryTime, { color: colors.secondary }]}>
                                   {formatTime(entry.entryDateTime)}
@@ -1595,6 +1747,7 @@ const colors = {
               </>
             )}
           </ScrollView>
+          </>
         )}
       </Animated.View>
       )}
@@ -1622,7 +1775,7 @@ const colors = {
 
           {allTemplates.length > 1 && (
             <TouchableOpacity
-              style={[styles.templateBar, { backgroundColor: isDark ? '#1e293b' : '#f1f5f9', borderBottomColor: colors.border }]}
+              style={[styles.templateBar, { backgroundColor: theme.nav, borderBottomColor: colors.border }]}
               onPress={() => setShowTemplatePicker(true)}
             >
               <Ionicons name="document-text-outline" size={16} color={colors.accent} />
@@ -1672,7 +1825,7 @@ const colors = {
                     {activeTemplate.name || 'Template Fields'}
                   </Text>
                 </View>
-                {activeTemplate.fields
+                {[...activeTemplate.fields]
                   .sort((a, b) => a.order - b.order)
                   .map(field => renderFieldInput(field))}
               </>
@@ -1693,9 +1846,9 @@ const colors = {
                   <Text style={[styles.recordBtnText, { color: colors.text }]}>Record Voice Note</Text>
                 </TouchableOpacity>
               ) : (
-                <View style={[styles.recordingRow, { backgroundColor: '#ef444415', borderColor: '#ef4444' }]}>
+                <View style={[styles.recordingRow, { backgroundColor: theme.statusDangerBg, borderColor: colors.danger }]}>
                   <Animated.View style={[styles.recordingIndicator, { transform: [{ scale: pulseAnim2 }] }]}>
-                    <View style={styles.recordingDot} />
+                    <View style={[styles.recordingDot, { backgroundColor: colors.danger }]} />
                   </Animated.View>
                   <Text style={[styles.recordingTime, { color: colors.danger }]}>
                     {formatRecordingTime(recordingDuration)}
@@ -1762,13 +1915,13 @@ const colors = {
 
           <Modal visible={showProjectPicker} transparent animationType="slide">
             <View style={[styles.modalOverlay, { justifyContent: 'flex-end' }]}>
-              <View style={[styles.pickerSheet, { backgroundColor: isDark ? '#1e293b' : '#ffffff' }]}>
-                <View style={[styles.pickerHeader, { borderBottomColor: isDark ? '#334155' : '#e2e8f0' }]}>
-                  <Text style={[styles.pickerHeaderTitle, { color: isDark ? '#f1f5f9' : '#0f172a' }]}>
+              <View style={[styles.pickerSheet, { backgroundColor: colors.card }]}>
+                <View style={[styles.pickerHeader, { borderBottomColor: colors.border }]}>
+                  <Text style={[styles.pickerHeaderTitle, { color: colors.text }]}>
                     Select Project
                   </Text>
                   <TouchableOpacity onPress={() => setShowProjectPicker(false)}>
-                    <Ionicons name="close" size={24} color={isDark ? '#94a3b8' : '#64748b'} />
+                    <Ionicons name="close" size={24} color={colors.secondary} />
                   </TouchableOpacity>
                 </View>
                 <FlatList
@@ -1778,14 +1931,14 @@ const colors = {
                   renderItem={({ item }) => {
                     if (item.isHeader) {
                       return (
-                        <View style={[styles.phaseSectionHeader, { backgroundColor: isDark ? '#1e293b' : '#f1f5f9' }]}>
+                        <View style={[styles.phaseSectionHeader, { backgroundColor: theme.nav }]}>
                           <Text style={[styles.phaseSectionText, { color: colors.secondary }]}>{item.label}</Text>
                         </View>
                       );
                     }
                     return (
                       <TouchableOpacity
-                        style={[styles.projectPickerRow, { borderBottomColor: isDark ? '#334155' : '#f1f5f9' }]}
+                        style={[styles.projectPickerRow, { borderBottomColor: colors.border }]}
                         onPress={() => {
                           setFormProjectId(item.id);
                           if (!isEditMode) {
@@ -1795,7 +1948,7 @@ const colors = {
                         }}
                       >
                         <Ionicons name="briefcase-outline" size={18} color={colors.accent} />
-                        <Text style={[styles.projectPickerName, { color: isDark ? '#f1f5f9' : '#0f172a' }]} numberOfLines={1}>
+                        <Text style={[styles.projectPickerName, { color: colors.text }]} numberOfLines={1}>
                           {item.label}
                         </Text>
                         {formProjectId === item.id && (
@@ -1811,13 +1964,13 @@ const colors = {
 
           <Modal visible={showTemplatePicker} transparent animationType="slide">
             <View style={[styles.tpOverlay, { justifyContent: 'flex-end' }]}>
-              <View style={[styles.tpSheet, { backgroundColor: isDark ? '#1e293b' : '#ffffff' }]}>
-                <View style={[styles.tpHeader, { borderBottomColor: isDark ? '#334155' : '#e2e8f0' }]}>
-                  <Text style={[styles.tpHeaderTitle, { color: isDark ? '#f1f5f9' : '#0f172a' }]}>
+              <View style={[styles.tpSheet, { backgroundColor: colors.card }]}>
+                <View style={[styles.tpHeader, { borderBottomColor: colors.border }]}>
+                  <Text style={[styles.tpHeaderTitle, { color: colors.text }]}>
                     Select Template
                   </Text>
                   <TouchableOpacity onPress={() => setShowTemplatePicker(false)}>
-                    <Ionicons name="close" size={24} color={isDark ? '#94a3b8' : '#64748b'} />
+                    <Ionicons name="close" size={24} color={colors.secondary} />
                   </TouchableOpacity>
                 </View>
                 <FlatList
@@ -1826,12 +1979,12 @@ const colors = {
                   contentContainerStyle={{ paddingBottom: 40 }}
                   renderItem={({ item }) => (
                     <TouchableOpacity
-                      style={[styles.tpRow, { borderBottomColor: isDark ? '#334155' : '#f1f5f9' }]}
+                      style={[styles.tpRow, { borderBottomColor: colors.border }]}
                       onPress={() => switchTemplate(item)}
                     >
                       <Ionicons name="document-text-outline" size={18} color={colors.accent} />
                       <View style={styles.tpRowContent}>
-                        <Text style={[styles.tpRowName, { color: isDark ? '#f1f5f9' : '#0f172a' }]} numberOfLines={1}>
+                        <Text style={[styles.tpRowName, { color: colors.text }]} numberOfLines={1}>
                           {item.name}
                         </Text>
                         {item.isDefault && (
@@ -1871,9 +2024,9 @@ const colors = {
           {selectedEntry && (
             <ScrollView contentContainerStyle={styles.detailContent}>
               {selectedEntry._isOffline && (
-                <View style={[styles.offlineDetailTag, { backgroundColor: '#f59e0b20', borderColor: '#f59e0b' }]}>
-                  <Ionicons name="cloud-offline-outline" size={16} color="#f59e0b" />
-                  <Text style={{ color: '#f59e0b', marginLeft: 6, fontWeight: '500' }}>Pending sync</Text>
+                <View style={[styles.offlineDetailTag, { backgroundColor: theme.statusWarningBg, borderColor: theme.statusWarning }]}>
+                  <Ionicons name="cloud-offline-outline" size={16} color={theme.statusWarning} />
+                  <Text style={{ color: theme.statusWarning, marginLeft: 6, fontWeight: '500' }}>Pending sync</Text>
                 </View>
               )}
 
@@ -1908,9 +2061,9 @@ const colors = {
                 </View>
               )}
 
-              {activeTemplate && activeTemplate.fields.length > 0 && (
+              {detailTemplate && detailTemplate.fields.length > 0 && (
                 <View style={[styles.detailSection, { borderTopColor: colors.border }]}>
-                  {activeTemplate.fields
+                  {[...detailTemplate.fields]
                     .sort((a, b) => a.order - b.order)
                     .map(field => renderDetailFieldValue(field, selectedEntry.fieldValues?.[field.id]))}
                 </View>
@@ -1958,21 +2111,21 @@ const colors = {
 
       <Modal visible={showFilterPicker} transparent animationType="slide">
         <View style={[styles.modalOverlay, { justifyContent: 'flex-end' }]}>
-          <View style={[styles.pickerSheet, { backgroundColor: isDark ? '#1e293b' : '#ffffff' }]}>
-            <View style={[styles.pickerHeader, { borderBottomColor: isDark ? '#334155' : '#e2e8f0' }]}>
-              <Text style={[styles.pickerHeaderTitle, { color: isDark ? '#f1f5f9' : '#0f172a' }]}>
+          <View style={[styles.pickerSheet, { backgroundColor: colors.card }]}>
+            <View style={[styles.pickerHeader, { borderBottomColor: colors.border }]}>
+              <Text style={[styles.pickerHeaderTitle, { color: colors.text }]}>
                 Filter by Project
               </Text>
               <TouchableOpacity onPress={() => setShowFilterPicker(false)}>
-                <Ionicons name="close" size={24} color={isDark ? '#94a3b8' : '#64748b'} />
+                <Ionicons name="close" size={24} color={colors.secondary} />
               </TouchableOpacity>
             </View>
             <TouchableOpacity
-              style={[styles.projectPickerRow, { borderBottomColor: isDark ? '#334155' : '#f1f5f9' }]}
+              style={[styles.projectPickerRow, { borderBottomColor: colors.border }]}
               onPress={() => { setFilterProjectId(null); setShowFilterPicker(false); }}
             >
               <Ionicons name="apps-outline" size={18} color={colors.secondary} />
-              <Text style={[styles.projectPickerName, { color: isDark ? '#f1f5f9' : '#0f172a' }]}>
+              <Text style={[styles.projectPickerName, { color: colors.text }]}>
                 All Projects
               </Text>
               {!filterProjectId && <Ionicons name="checkmark-circle" size={20} color={colors.accent} />}
@@ -1984,21 +2137,21 @@ const colors = {
               renderItem={({ item }) => {
                 if (item.isHeader) {
                   return (
-                    <View style={[styles.phaseSectionHeader, { backgroundColor: isDark ? '#1e293b' : '#f1f5f9' }]}>
+                    <View style={[styles.phaseSectionHeader, { backgroundColor: theme.nav }]}>
                       <Text style={[styles.phaseSectionText, { color: colors.secondary }]}>{item.label}</Text>
                     </View>
                   );
                 }
                 return (
                   <TouchableOpacity
-                    style={[styles.projectPickerRow, { borderBottomColor: isDark ? '#334155' : '#f1f5f9' }]}
+                    style={[styles.projectPickerRow, { borderBottomColor: colors.border }]}
                     onPress={() => {
                       setFilterProjectId(item.id);
                       setShowFilterPicker(false);
                     }}
                   >
                     <Ionicons name="briefcase-outline" size={18} color={colors.accent} />
-                    <Text style={[styles.projectPickerName, { color: isDark ? '#f1f5f9' : '#0f172a' }]} numberOfLines={1}>
+                    <Text style={[styles.projectPickerName, { color: colors.text }]} numberOfLines={1}>
                       {item.label}
                     </Text>
                     {filterProjectId === item.id && (
@@ -2014,13 +2167,13 @@ const colors = {
 
       <Modal visible={showCalendar} transparent animationType="slide">
         <View style={[styles.modalOverlay, { justifyContent: 'flex-end' }]}>
-          <View style={[styles.calendarSheet, { backgroundColor: isDark ? '#1e293b' : '#ffffff' }]}>
-            <View style={[styles.calendarHeader, { borderBottomColor: isDark ? '#334155' : '#e2e8f0' }]}>
-              <Text style={[styles.pickerHeaderTitle, { color: isDark ? '#f1f5f9' : '#0f172a' }]}>
+          <View style={[styles.calendarSheet, { backgroundColor: colors.card }]}>
+            <View style={[styles.calendarHeader, { borderBottomColor: colors.border }]}>
+              <Text style={[styles.pickerHeaderTitle, { color: colors.text }]}>
                 Select Date
               </Text>
               <TouchableOpacity onPress={() => setShowCalendar(false)}>
-                <Ionicons name="close" size={24} color={isDark ? '#94a3b8' : '#64748b'} />
+                <Ionicons name="close" size={24} color={colors.secondary} />
               </TouchableOpacity>
             </View>
 
@@ -2038,8 +2191,8 @@ const colors = {
 
             {(() => {
               const { orderedDayNames, rows } = getCalendarGrid();
-              const todayStr = getDateStr(new Date());
-              const selectedStr = getDateStr(currentDate);
+              const todayStr = toLocalDateStr(new Date());
+              const selectedStr = toLocalDateStr(currentDate);
               return (
                 <View style={styles.calendarGrid}>
                   <View style={styles.calendarDayHeaderRow}>
@@ -2765,7 +2918,7 @@ const styles = StyleSheet.create({
     width: 5,
     height: 5,
     borderRadius: 2.5,
-    backgroundColor: '#A890D4',
+    backgroundColor: '#87749A',
   },
   calendarTodayBtn: {
     flexDirection: 'row',

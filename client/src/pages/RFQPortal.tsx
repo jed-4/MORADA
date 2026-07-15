@@ -21,7 +21,6 @@ import {
   FileText,
   CalendarIcon,
   CheckCircle2,
-  AlertCircle,
   Building,
   Clock,
   Download,
@@ -30,6 +29,8 @@ import {
 } from "lucide-react";
 import { format, isPast } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
+import { PortalLayout } from "@/components/portal/PortalLayout";
+import { PortalLoading, PortalError } from "@/components/portal/PortalStateBoundary";
 
 interface RFQItem {
   id: string;
@@ -148,36 +149,11 @@ export default function RFQPortal() {
   };
 
   if (isLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-muted/30">
-        <Card className="w-full max-w-md">
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-center gap-3">
-              <Loader2 className="h-5 w-5 animate-spin" />
-              <span>Loading quote request...</span>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    );
+    return <PortalLoading message="Loading quote request…" />;
   }
 
   if (error) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-muted/30">
-        <Card className="w-full max-w-md">
-          <CardHeader>
-            <div className="flex items-center gap-2 text-destructive">
-              <AlertCircle className="h-5 w-5" />
-              <CardTitle>Error</CardTitle>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <p className="text-muted-foreground">{error}</p>
-          </CardContent>
-        </Card>
-      </div>
-    );
+    return <PortalError title="Unable to load quote request" description={error} />;
   }
 
   if (!portalData) {
@@ -189,8 +165,13 @@ export default function RFQPortal() {
 
   if (isSubmitted) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-muted/30">
-        <Card className="w-full max-w-md">
+      <PortalLayout
+        title="Request for Quote"
+        subtitle={`RFQ #${rfq.rfqNumber}`}
+        maxWidth="max-w-4xl"
+      >
+        <div className="flex justify-center py-12">
+          <Card className="w-full max-w-md">
           <CardHeader>
             <div className="flex items-center gap-2 text-status-success">
               <CheckCircle2 className="h-6 w-6" />
@@ -203,21 +184,23 @@ export default function RFQPortal() {
               The builder will review your submission and contact you if they have any questions.
             </p>
           </CardContent>
-        </Card>
-      </div>
+          </Card>
+        </div>
+      </PortalLayout>
     );
   }
 
   return (
-    <div className="min-h-screen bg-muted/30 py-8 px-4">
-      <div className="max-w-4xl mx-auto space-y-6">
+    <PortalLayout
+      title="Request for Quote"
+      subtitle={`RFQ #${rfq.rfqNumber}`}
+      maxWidth="max-w-4xl"
+    >
+      <div className="space-y-6">
         <Card>
           <CardHeader className="pb-2">
             <div className="flex items-center justify-between">
               <div>
-                <CardDescription className="text-sm font-medium text-muted-foreground mb-1">
-                  Request for Quote
-                </CardDescription>
                 <CardTitle className="text-2xl">{rfq.title}</CardTitle>
               </div>
               <Badge variant="outline" className="text-sm">
@@ -437,6 +420,6 @@ export default function RFQPortal() {
           </form>
         </Card>
       </div>
-    </div>
+    </PortalLayout>
   );
 }

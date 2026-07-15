@@ -2111,8 +2111,11 @@ export const timesheetAllowances = pgTable("timesheet_allowances", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   timesheetId: varchar("timesheet_id").notNull().references(() => timesheets.id, { onDelete: "cascade" }),
   estimateItemId: varchar("estimate_item_id").notNull().references(() => estimateItems.id, { onDelete: "cascade" }), // The PS allowance
+  // When a split timesheet is allocated one cost-code portion at a time, this
+  // points at the specific split; null = the whole timesheet was allocated.
+  timesheetCostCodeId: varchar("timesheet_cost_code_id").references((): any => timesheetCostCodes.id, { onDelete: "cascade" }),
   hours: numeric("hours", { precision: 10, scale: 2 }).notNull().default("0"), // Hours allocated to this PS allowance
-  amount: integer("amount").notNull().default(0), // Amount allocated (hours * rate) in cents
+  amount: integer("amount").notNull().default(0), // Amount allocated (hours * rate) in cents, EX GST — labour carries no GST
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
@@ -2127,14 +2130,24 @@ export const insertTimesheetAllowanceSchema = createInsertSchema(timesheetAllowa
 export type InsertTimesheetAllowance = z.infer<typeof insertTimesheetAllowanceSchema>;
 export type TimesheetAllowance = typeof timesheetAllowances.$inferSelect;
 
-// Allowance Items (custom line items for PS allowances)
+// Allowance Items (custom line items for PS/PC allowances)
 export const allowanceItems = pgTable("allowance_items", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   estimateItemId: varchar("estimate_item_id").notNull().references(() => estimateItems.id, { onDelete: "cascade" }), // The PS allowance
+  itemName: text("item_name"), // Short item label; description holds the detail
   description: text("description").notNull(),
-  quantity: integer("quantity").notNull().default(1),
-  unitPrice: integer("unit_price").notNull().default(0), // Price in cents
-  totalPrice: integer("total_price").notNull().default(0), // Total price in cents
+  costCode: text("cost_code"), // Same convention as estimate_items.costCode
+  quantity: doublePrecision("quantity").notNull().default(1),
+  unitType: text("unit_type").notNull().default("each"), // "each" | "m" | "m2" | hrs etc
+  // New-style costed rows: builder cost + optional markup, all derived amounts
+  // computed via shared/pricing.ts. Older rows have only unitPrice/totalPrice.
+  unitCostExTaxCents: integer("unit_cost_ex_tax_cents"), // Builder unit cost EX GST in cents
+  markupPercent: doublePrecision("markup_percent"), // Optional markup % (e.g. trade discount recovery on PC)
+  unitPrice: integer("unit_price").notNull().default(0), // Charge price per unit in cents INC GST
+  totalPrice: integer("total_price").notNull().default(0), // Line total in cents INC GST (authoritative)
+  // Set when this row was synced from a linked selection's chosen option —
+  // lets the sync upsert (one costed row per selection) instead of duplicating.
+  sourceSelectionId: varchar("source_selection_id").references(() => selections.id, { onDelete: "set null" }),
   sortOrder: integer("sort_order").notNull().default(0), // For ordering
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
@@ -2145,9 +2158,15 @@ export const insertAllowanceItemSchema = createInsertSchema(allowanceItems).omit
   createdAt: true,
   updatedAt: true,
 }).extend({
+  itemName: z.string().optional().nullable(),
+  costCode: z.string().optional().nullable(),
   quantity: z.number().default(1),
+  unitType: z.string().default("each"),
+  unitCostExTaxCents: z.number().optional().nullable(),
+  markupPercent: z.number().optional().nullable(),
   unitPrice: z.number().default(0),
   totalPrice: z.number().default(0),
+  sourceSelectionId: z.string().optional().nullable(),
   sortOrder: z.number().default(0),
 });
 
@@ -2562,7 +2581,8 @@ export type InvoiceSelection = typeof invoiceSelections.$inferSelect;
 // Proposals (client-facing proposals generated from estimates)
 export const proposals = pgTable("proposals", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  proposalNumber: text("proposal_number").notNull().unique(),
+  proposalNumber: text("proposal_number").notNull(), // Auto-generated number, unique per company (composite index below)
+  companyId: varchar("company_id").references(() => companies.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
   estimateId: varchar("estimate_id").references(() => estimates.id), // Source estimate
@@ -2630,7 +2650,10 @@ export const proposals = pgTable("proposals", {
 
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  // Composite unique constraint: proposal numbers must be unique per company
+  uniqueProposalNumberPerCompany: uniqueIndex("proposals_company_proposal_number_unique").on(table.companyId, table.proposalNumber),
+}));
 
 export const insertProposalSchema = createInsertSchema(proposals).omit({
   id: true,

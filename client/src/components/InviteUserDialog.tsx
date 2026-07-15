@@ -156,8 +156,8 @@ export default function InviteUserDialog({
           // Success state - show invite link
           <div className="space-y-4 py-4">
             <div className="flex items-center justify-center py-4">
-              <div className="h-12 w-12 rounded-full bg-green-100 dark:bg-green-900 flex items-center justify-center">
-                <Check className="h-6 w-6 text-status-success dark:text-green-400" />
+              <div className="h-12 w-12 rounded-full bg-status-success-bg flex items-center justify-center">
+                <Check className="h-6 w-6 text-status-success" />
               </div>
             </div>
             <div className="text-center">

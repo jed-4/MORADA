@@ -131,7 +131,7 @@ export default function PhaseTransitionDialog({
       <DialogContent className="sm:max-w-md" data-testid="dialog-phase-transition">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <AlertTriangle className="h-5 w-5 text-amber-500" />
+            <AlertTriangle className="h-5 w-5 text-status-warning" />
             Phase Transition
           </DialogTitle>
           <DialogDescription>
@@ -177,11 +177,11 @@ export default function PhaseTransitionDialog({
                   />
                 </div>
               ) : (
-                <div className="border rounded-md p-3 bg-green-50 dark:bg-green-900/20">
+                <div className="border rounded-md p-3 bg-status-success-bg">
                   <div className="flex items-center gap-2">
                     <CheckCircle2 className="h-4 w-4 text-status-success" />
                     <span className="text-sm">Auto-generated number:</span>
-                    <span className="font-mono font-bold text-status-success dark:text-green-400">
+                    <span className="font-mono font-bold text-status-success">
                       {previewJobNumber || "Loading..."}
                     </span>
                   </div>
@@ -191,8 +191,8 @@ export default function PhaseTransitionDialog({
           )}
 
           {fromPhase === "pre_construction" && toPhase === "construction" && (
-            <div className="border rounded-md p-3 bg-amber-50 dark:bg-amber-900/20">
-              <div className="text-sm text-amber-800 dark:text-amber-300">
+            <div className="border rounded-md p-3 bg-status-warning-bg">
+              <div className="text-sm text-status-warning">
                 <strong>Note:</strong> Pre-construction data (costs, timesheets) will be locked and preserved separately from construction data.
               </div>
             </div>

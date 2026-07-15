@@ -763,7 +763,7 @@ export interface IStorage {
   getBillById(id: string): Promise<Bill | null>;
   getBillByXeroId(xeroInvoiceId: string, companyId?: string): Promise<Bill | null>;
   getBillByGmailMessageId(messageId: string): Promise<Bill | null>;
-  getNextBillNumber(): Promise<string>;
+  getNextBillNumber(companyId: string): Promise<string>;
   createBill(bill: InsertBill): Promise<Bill>;
   updateBill(id: string, bill: Partial<InsertBill>): Promise<Bill>;
   deleteBill(id: string): Promise<void>;
@@ -931,7 +931,7 @@ export interface IStorage {
   replaceProposalPaymentMilestones(proposalId: string, items: InsertProposalPaymentMilestone[]): Promise<ProposalPaymentMilestone[]>;
 
   // Proposal revisions / numbering / snapshots
-  getNextProposalNumber(): Promise<string>;
+  getNextProposalNumber(companyId: string): Promise<string>;
   createProposalRevision(parentId: string, overrides?: Partial<InsertProposal>): Promise<Proposal>;
   recordProposalView(id: string, device?: string | null): Promise<Proposal | undefined>;
   reorderProposalPaymentMilestones(proposalId: string, orderedIds: string[]): Promise<ProposalPaymentMilestone[]>;
@@ -4546,10 +4546,21 @@ export class MemStorage implements IStorage {
       const estimate = estimates.find(e => e.id === item.estimateId);
       const group = item.groupId ? this.estimateGroups.get(item.groupId) : undefined;
       
-      // Since we don't have bill/timesheet allocations in memory, return 0 for now
+      // Since we don't have bill/timesheet allocations in memory, return 0 for now.
+      // Match the DB implementation's shape (cents, recomputed price, ex/inc splits).
+      const resolved = resolveEstimateStoredPrice({
+        unitCostExTax: item.unitCostExTax,
+        quantity: item.quantity,
+        markupPercent: item.markupPercent,
+        projectMarkupPercent: estimate?.projectMarkupPercent,
+        taxRate: estimate?.taxRate,
+        existingPriceIncTax: item.priceIncTax,
+      });
+      const priceInCents = Math.round(Number(resolved.priceIncTax.toFixed(2)) * 100);
+      const priceExCents = Math.round(Number((resolved.priceIncTax - resolved.taxAmount).toFixed(2)) * 100);
       const actualCost = 0;
-      const variance = actualCost - (item.priceIncTax || 0);
-      
+      const variance = actualCost - priceInCents;
+
       return {
         item: {
           ...item,
@@ -4557,8 +4568,16 @@ export class MemStorage implements IStorage {
           estimateVersion: estimate?.version || 1,
           groupName: group?.name || null,
           groupOrder: group?.order ?? null,
+          priceIncTax: priceInCents,
+          priceExTax: priceExCents,
         },
         actualCost,
+        actualCostIncGst: 0,
+        actualCostExGst: 0,
+        billCostIncGst: 0,
+        billCostExGst: 0,
+        timesheetCostExGst: 0,
+        timesheetCostIncGst: 0,
         variance,
       };
     });
@@ -10339,13 +10358,47 @@ export class DbStorage implements IStorage {
           .where(eq(schema.timesheetAllowances.estimateItemId, item.id));
           
           const timesheetCost = timesheetAllocations.reduce((sum, a) => sum + (a.amount || 0), 0);
-          
-          const actualCost = billCost + timesheetCost;
-          // price_inc_tax is stored in dollars; round to 2dp first to eliminate any
-          // floating-point drift from the 3dp rounding used in older calculation paths
-          const priceInCents = Math.round(Number((item.priceIncTax || 0).toFixed(2)) * 100);
-          const variance = actualCost - priceInCents;
-          
+
+          // Custom lines / PC cost entries (allowance_items) are part of actual
+          // spend too — totalPrice is inc GST cents. Previously these were never
+          // summed, so saved PC entries left the actual cost at $0.
+          const itemAllocations = await db.select({
+            totalPrice: schema.allowanceItems.totalPrice,
+          })
+          .from(schema.allowanceItems)
+          .where(eq(schema.allowanceItems.estimateItemId, item.id));
+
+          const itemCostIncGst = itemAllocations.reduce((sum, a) => sum + (a.totalPrice || 0), 0);
+
+          // Bills are stored inc GST; timesheet allocations are EX GST (labour =
+          // hours × rate, wages carry no GST). Gross labour up for the inc-GST
+          // basis so the comparison against the client price is apples-to-apples.
+          const taxRate = Number(estimate?.taxRate ?? 10);
+          const billCostIncGst = billCost;
+          const billCostExGst = Math.round(billCostIncGst / (1 + taxRate / 100));
+          const timesheetCostExGst = timesheetCost;
+          const timesheetCostIncGst = Math.round(timesheetCostExGst * (1 + taxRate / 100));
+          const itemCostExGst = Math.round(itemCostIncGst / (1 + taxRate / 100));
+          const actualCostExGst = billCostExGst + timesheetCostExGst + itemCostExGst;
+          const actualCostIncGst = billCostIncGst + timesheetCostIncGst + itemCostIncGst;
+
+          // Never trust the denormalised priceIncTax cache here — stale rows from
+          // older write paths (e.g. a cache still holding the single-unit rate)
+          // surface directly on the Allowances pages. Re-resolve through the same
+          // function every write path uses: priced lines recompute from
+          // qty × unitCost × markup; fixed-price lines keep their typed amount.
+          const resolved = resolveEstimateStoredPrice({
+            unitCostExTax: item.unitCostExTax,
+            quantity: item.quantity,
+            markupPercent: item.markupPercent,
+            projectMarkupPercent: estimate?.projectMarkupPercent,
+            taxRate: estimate?.taxRate,
+            existingPriceIncTax: item.priceIncTax,
+          });
+          const priceInCents = Math.round(Number(resolved.priceIncTax.toFixed(2)) * 100);
+          const priceExCents = Math.round(Number((resolved.priceIncTax - resolved.taxAmount).toFixed(2)) * 100);
+          const variance = actualCostIncGst - priceInCents;
+
           return {
             item: {
               ...item,
@@ -10354,8 +10407,17 @@ export class DbStorage implements IStorage {
               groupName: group?.name || null,
               groupOrder: group?.order ?? null,
               priceIncTax: priceInCents,
+              priceExTax: priceExCents,
             },
-            actualCost,
+            actualCost: actualCostIncGst,
+            actualCostIncGst,
+            actualCostExGst,
+            billCostIncGst,
+            billCostExGst,
+            timesheetCostExGst,
+            timesheetCostIncGst,
+            itemCostIncGst,
+            itemCostExGst,
             variance,
           };
         })
@@ -15299,14 +15361,17 @@ export class DbStorage implements IStorage {
     }
   }
 
-  async getNextBillNumber(): Promise<string> {
+  async getNextBillNumber(companyId: string): Promise<string> {
     try {
       const sysConfig = await this.getSystemConfiguration();
       const prefix = sysConfig?.billPrefix || "BILL-";
       const startNumber = sysConfig?.billStartNumber || 1000;
 
+      // Company-scoped: bill numbers are unique per company, and one company's
+      // sequence must never advance off another company's bills.
       const existingBills = await db.select({ billNumber: schema.bills.billNumber })
         .from(schema.bills)
+        .where(eq(schema.bills.companyId, companyId))
         .orderBy(desc(schema.bills.billNumber));
 
       let maxNumber = startNumber - 1;
@@ -17322,15 +17387,18 @@ export class DbStorage implements IStorage {
     });
   }
 
-  async getNextProposalNumber(): Promise<string> {
+  async getNextProposalNumber(companyId: string): Promise<string> {
     const year = new Date().getFullYear();
     const prefix = `PROP-${year}-`;
     return await db.transaction(async (tx) => {
-      await tx.execute(sql`SELECT pg_advisory_xact_lock(42, ${year})`);
+      // Company-scoped lock + MAX: proposal numbers are unique per company, and
+      // one company's sequence must never advance off another company's proposals.
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(42, hashtext(${companyId + ':' + year}))`);
       const result = await tx.execute(sql`
-        SELECT COALESCE(MAX(CAST(SUBSTRING(proposal_number FROM ${prefix.length + 1}) AS INTEGER)), 0) AS max_num
+        SELECT COALESCE(MAX(CAST(SUBSTRING(proposal_number FROM ${prefix.length + 1}::int) AS INTEGER)), 0) AS max_num
         FROM proposals
         WHERE proposal_number LIKE ${prefix + '%'}
+          AND company_id IS NOT DISTINCT FROM ${companyId}
       `);
       const row = (result as unknown as { rows: Array<{ max_num: number | string }> }).rows?.[0];
       const max = row ? Number(row.max_num) || 0 : 0;
@@ -17342,17 +17410,24 @@ export class DbStorage implements IStorage {
     const year = new Date().getFullYear();
     const prefix = `PROP-${year}-`;
     return await db.transaction(async (tx) => {
-      await tx.execute(sql`SELECT pg_advisory_xact_lock(42, ${year})`);
+      // Derive the tenant from the owning project — never trust a client-supplied
+      // companyId. Numbering, locking and the stored row all use this value.
+      const projectRows = await tx.select({ companyId: schema.projects.companyId })
+        .from(schema.projects)
+        .where(eq(schema.projects.id, proposal.projectId));
+      const companyId = projectRows[0]?.companyId ?? null;
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(42, hashtext(${(companyId ?? '') + ':' + year}))`);
       const result = await tx.execute(sql`
-        SELECT COALESCE(MAX(CAST(SUBSTRING(proposal_number FROM ${prefix.length + 1}) AS INTEGER)), 0) AS max_num
+        SELECT COALESCE(MAX(CAST(SUBSTRING(proposal_number FROM ${prefix.length + 1}::int) AS INTEGER)), 0) AS max_num
         FROM proposals
         WHERE proposal_number LIKE ${prefix + '%'}
+          AND company_id IS NOT DISTINCT FROM ${companyId}
       `);
       const row = (result as unknown as { rows: Array<{ max_num: number | string }> }).rows?.[0];
       const max = row ? Number(row.max_num) || 0 : 0;
       const proposalNumber = `${prefix}${String(max + 1).padStart(4, '0')}`;
       const inserted = await tx.insert(schema.proposals)
-        .values({ ...proposal, proposalNumber })
+        .values({ ...proposal, proposalNumber, companyId })
         .returning();
       return inserted[0];
     });
@@ -17375,7 +17450,16 @@ export class DbStorage implements IStorage {
     return await db.transaction(async (tx) => {
       const year = new Date().getFullYear();
       const numPrefix = `PROP-${year}-`;
-      await tx.execute(sql`SELECT pg_advisory_xact_lock(42, ${year})`);
+      // Resolve the tenant: newer proposals carry companyId directly; legacy
+      // rows fall back to the owning project. Numbering below is per company.
+      let companyId: string | null = (parent as any).companyId ?? null;
+      if (!companyId) {
+        const projectRows = await tx.select({ companyId: schema.projects.companyId })
+          .from(schema.projects)
+          .where(eq(schema.projects.id, parent.projectId));
+        companyId = projectRows[0]?.companyId ?? null;
+      }
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(42, hashtext(${(companyId ?? '') + ':' + year}))`);
       await tx.execute(sql`SELECT pg_advisory_xact_lock(43, hashtext(${rootId}))`);
 
       const familyRows = await tx
@@ -17395,9 +17479,10 @@ export class DbStorage implements IStorage {
       const nextVersion = maxVersion + 1;
 
       const numResult = await tx.execute(sql`
-        SELECT COALESCE(MAX(CAST(SUBSTRING(proposal_number FROM ${numPrefix.length + 1}) AS INTEGER)), 0) AS max_num
+        SELECT COALESCE(MAX(CAST(SUBSTRING(proposal_number FROM ${numPrefix.length + 1}::int) AS INTEGER)), 0) AS max_num
         FROM proposals
         WHERE proposal_number LIKE ${numPrefix + '%'}
+          AND company_id IS NOT DISTINCT FROM ${companyId}
       `);
       const numRow = (numResult as unknown as { rows: Array<{ max_num: number | string }> }).rows?.[0];
       const numMax = numRow ? Number(numRow.max_num) || 0 : 0;
@@ -17405,6 +17490,7 @@ export class DbStorage implements IStorage {
 
       const baseValues: typeof schema.proposals.$inferInsert = {
         proposalNumber: newNumber,
+        companyId,
         name: parent.name,
         projectId: parent.projectId,
         estimateId: parent.estimateId,
@@ -24618,6 +24704,24 @@ export class DbStorage implements IStorage {
       await db.execute(sql`
         CREATE UNIQUE INDEX IF NOT EXISTS bills_company_bill_number_unique
         ON bills (company_id, bill_number)
+      `);
+
+      // proposals: same treatment — proposal numbers are unique PER COMPANY,
+      // not globally. Add the scoping column, backfill from the owning project,
+      // then swap the legacy global unique constraint for a composite one.
+      await db.execute(sql`ALTER TABLE proposals ADD COLUMN IF NOT EXISTS company_id varchar`);
+      await db.execute(sql`
+        UPDATE proposals pr
+        SET company_id = p.company_id
+        FROM projects p
+        WHERE pr.company_id IS NULL
+          AND pr.project_id = p.id
+          AND p.company_id IS NOT NULL
+      `);
+      await db.execute(sql`ALTER TABLE proposals DROP CONSTRAINT IF EXISTS proposals_proposal_number_unique`);
+      await db.execute(sql`
+        CREATE UNIQUE INDEX IF NOT EXISTS proposals_company_proposal_number_unique
+        ON proposals (company_id, proposal_number)
       `);
 
       // business_schedule_projects: Gantt "Build End" divider calculation mode.

@@ -404,11 +404,11 @@ export default function UserProfile() {
                     </div>
                   </div>
 
-                  <div className="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
-                    <h4 className="font-medium text-blue-900 dark:text-blue-100 mb-2">
+                  <div className="bg-status-info-bg border border-status-info/30 rounded-lg p-4">
+                    <h4 className="font-medium text-status-info mb-2">
                       Sync Features
                     </h4>
-                    <ul className="text-sm text-status-info dark:text-blue-300 space-y-1">
+                    <ul className="text-sm text-status-info space-y-1">
                       <li>• Tasks with due dates sync to Google Calendar</li>
                       <li>• Schedule items appear as calendar events</li>
                       <li>• Changes in Morada update your Google Calendar</li>
@@ -438,15 +438,15 @@ export default function UserProfile() {
                       />
                     </div>
                     {user?.useGmailForSending && (
-                      <div className="bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800 rounded-lg p-3">
-                        <p className="text-sm text-status-success dark:text-green-300">
+                      <div className="bg-status-success-bg border border-status-success/30 rounded-lg p-3">
+                        <p className="text-sm text-status-success">
                           <Check className="h-4 w-4 inline mr-1" />
                           Emails sent by Morada will come from your Gmail. Replies go straight to your inbox.
                         </p>
                       </div>
                     )}
                     {isTokenExpired && (
-                      <p className="text-xs text-amber-600 dark:text-amber-400">
+                      <p className="text-xs text-status-warning">
                         Reconnect your Google account to enable this feature.
                       </p>
                     )}

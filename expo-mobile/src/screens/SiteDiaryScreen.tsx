@@ -7,7 +7,6 @@ import {
   TouchableOpacity,
   RefreshControl,
   ActivityIndicator,
-  useColorScheme,
   Alert,
   Modal,
   TextInput,
@@ -21,11 +20,18 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { Audio } from 'expo-av';
 import * as ImagePicker from 'expo-image-picker';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import NetInfo from '@react-native-community/netinfo';
 import { useAuth } from '../contexts/AuthContext';
 import { apiFetch, apiRequest, uploadPhoto, uploadAudio, API_BASE_URL } from '../services/api';
-import { isOnline, addToQueue } from '../services/offlineQueue';
+import { isOnline, addToQueue, getQueue, saveQueue, syncQueue, addSyncListener } from '../services/offlineQueue';
+import {
+  getOfflineDiaryEntries,
+  saveOfflineDiaryEntries,
+  removeOfflineDiaryEntry,
+  DIARY_PROJECT_OFFLINE_KEY,
+} from '../services/diaryOffline';
+import { localDayISOString } from '../lib/dates';
+import { plural } from '../lib/format';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RouteProp } from '@react-navigation/native';
 
@@ -73,10 +79,6 @@ type Props = {
   route: RouteProp<any>;
 };
 
-function localISOString(): string {
-  return new Date().toISOString();
-}
-
 function formatDateTime(dateStr: string): string {
   const d = new Date(dateStr);
   const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -109,7 +111,8 @@ function countPhotos(entry: SiteDiaryEntry): number {
   let count = 0;
   if (entry.overallPhotos) count += entry.overallPhotos.length;
   if (entry.fieldValues) {
-    Object.values(entry.fieldValues).forEach((val) => {
+    Object.entries(entry.fieldValues).forEach(([key, val]) => {
+      if (key.startsWith('_')) return; // internal keys (e.g. _voiceNotes) are not photos
       if (Array.isArray(val) && val.length > 0 && typeof val[0] === 'string' && (val[0].startsWith('http') || val[0].startsWith('file') || val[0].startsWith('/'))) {
         count += val.length;
       }
@@ -118,13 +121,9 @@ function countPhotos(entry: SiteDiaryEntry): number {
   return count;
 }
 
-const OFFLINE_KEY_PREFIX = 'buildpro_diary_offline_';
-
 export default function SiteDiaryScreen({ navigation, route }: Props) {
   const { projectId, projectName } = route.params as { projectId: string; projectName: string };
   const { user } = useAuth();
-  const colorScheme = useColorScheme();
-  const isDark = colorScheme === 'dark';
 
   const [entries, setEntries] = useState<SiteDiaryEntry[]>([]);
   const [offlineEntries, setOfflineEntries] = useState<SiteDiaryEntry[]>([]);
@@ -143,7 +142,7 @@ export default function SiteDiaryScreen({ navigation, route }: Props) {
   const [activeTemplate, setActiveTemplate] = useState<SiteDiaryTemplate | null>(null);
 
   const [formTitle, setFormTitle] = useState('');
-  const [formDateTime, setFormDateTime] = useState(localISOString());
+  const [formDateTime, setFormDateTime] = useState(localDayISOString());
   const [formFieldValues, setFormFieldValues] = useState<Record<string, any>>({});
   const [formOverallPhotos, setFormOverallPhotos] = useState<string[]>([]);
   const [formVoiceNotes, setFormVoiceNotes] = useState<string[]>([]);
@@ -170,28 +169,15 @@ const colors = {
     inputBg: theme.card,
 };
 
-  const offlineKey = `${OFFLINE_KEY_PREFIX}${projectId}`;
+  const offlineKey = `${DIARY_PROJECT_OFFLINE_KEY}_${projectId}`;
 
   const loadOfflineEntries = useCallback(async () => {
-    try {
-      const data = await AsyncStorage.getItem(offlineKey);
-      if (data) {
-        setOfflineEntries(JSON.parse(data));
-      } else {
-        setOfflineEntries([]);
-      }
-    } catch {
-      setOfflineEntries([]);
-    }
+    setOfflineEntries(await getOfflineDiaryEntries(offlineKey));
   }, [offlineKey]);
 
   const saveOfflineEntries = useCallback(async (items: SiteDiaryEntry[]) => {
-    try {
-      await AsyncStorage.setItem(offlineKey, JSON.stringify(items));
-      setOfflineEntries(items);
-    } catch (e) {
-      console.warn('Failed to save offline entries:', e);
-    }
+    await saveOfflineDiaryEntries(offlineKey, items);
+    setOfflineEntries(items);
   }, [offlineKey]);
 
   const fetchData = useCallback(async () => {
@@ -228,87 +214,65 @@ const colors = {
     return () => unsubscribe();
   }, []);
 
-  const syncOfflineEntries = useCallback(async () => {
-    if (offlineEntries.length === 0) return;
-    const online = await isOnline();
-    if (!online) return;
-
-    const remaining: SiteDiaryEntry[] = [];
-    for (const entry of offlineEntries) {
-      try {
-        const photoUris: string[] = [];
-        const fieldValues = { ...entry.fieldValues };
-
-        for (const [key, val] of Object.entries(fieldValues)) {
-          if (Array.isArray(val)) {
-            const uploaded: string[] = [];
-            const isAudio = key === '_voiceNotes';
-            for (const uri of val) {
-              if (typeof uri === 'string' && (uri.startsWith('file://') || uri.startsWith('content://'))) {
-                try {
-                  const { objectPath } = isAudio ? await uploadAudio(uri) : await uploadPhoto(uri);
-                  uploaded.push(objectPath);
-                } catch {
-                  uploaded.push(uri);
-                }
-              } else {
-                uploaded.push(uri);
-              }
-            }
-            fieldValues[key] = uploaded;
-          }
-        }
-
-        let overallPhotos: string[] = [];
-        if (entry.overallPhotos && entry.overallPhotos.length > 0) {
-          for (const uri of entry.overallPhotos) {
-            if (uri.startsWith('file://') || uri.startsWith('content://')) {
-              try {
-                const { objectPath } = await uploadPhoto(uri);
-                overallPhotos.push(objectPath);
-              } catch {
-                overallPhotos.push(uri);
-              }
-            } else {
-              overallPhotos.push(uri);
-            }
-          }
-        }
-
-        const body: any = {
-          templateId: entry.templateId,
-          projectId,
-          title: entry.title,
-          entryDateTime: entry.entryDateTime,
-          fieldValues,
-          overallPhotos,
-          weather: entry.weather,
-        };
-
-        const res = await apiRequest('/api/site-diary-entries', 'POST', body);
-        if (!res.ok) throw new Error('Failed to sync entry');
-      } catch {
-        remaining.push(entry);
+  // Migrate any locally saved entries that were never enqueued (legacy — the
+  // screen used to POST them itself on refresh) into the offline queue, so the
+  // app-level sync service uploads their assets and syncs them.
+  useEffect(() => {
+    (async () => {
+      const items: SiteDiaryEntry[] = await getOfflineDiaryEntries(offlineKey);
+      if (items.length === 0) return;
+      const queue = await getQueue();
+      const queuedIds = new Set(
+        queue
+          .filter(a => a.type === 'create-diary-entry')
+          .map(a => a.payload?._offlineId)
+          .filter(Boolean),
+      );
+      for (const entry of items) {
+        if (queuedIds.has(entry.id)) continue;
+        await addToQueue({
+          type: 'create-diary-entry',
+          payload: {
+            templateId: entry.templateId || null,
+            projectId: entry.projectId,
+            title: entry.title,
+            entryDateTime: entry.entryDateTime,
+            fieldValues: entry.fieldValues,
+            overallPhotos: entry.overallPhotos || [],
+            weather: entry.weather,
+            _offlineId: entry.id,
+            _storageKey: offlineKey,
+          },
+        });
       }
-    }
+    })();
+  }, [offlineKey]);
 
-    await saveOfflineEntries(remaining);
-  }, [offlineEntries, projectId, saveOfflineEntries]);
+  // Refresh after the app-level sync service drains the queue.
+  useEffect(() => {
+    const unsubscribe = addSyncListener(() => {
+      loadOfflineEntries();
+      isOnline().then(online => {
+        if (online) fetchData();
+      });
+    });
+    return unsubscribe;
+  }, [loadOfflineEntries, fetchData]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     const online = await isOnline();
     if (online) {
-      await syncOfflineEntries();
+      await syncQueue();
     }
     await fetchData();
     await loadOfflineEntries();
     setRefreshing(false);
-  }, [fetchData, loadOfflineEntries, syncOfflineEntries]);
+  }, [fetchData, loadOfflineEntries]);
 
   const resetForm = () => {
     setFormTitle('');
-    setFormDateTime(localISOString());
+    setFormDateTime(localDayISOString());
     setFormFieldValues({});
     setFormOverallPhotos([]);
     setFormVoiceNotes([]);
@@ -424,7 +388,7 @@ const colors = {
     if (fieldId) {
       setFormFieldValues(prev => {
         const current = Array.isArray(prev[fieldId]) ? prev[fieldId] : [];
-        const field = template?.fields.find(f => f.id === fieldId);
+        const field = (activeTemplate || template)?.fields.find(f => f.id === fieldId);
         const maxPhotos = field?.maxPhotos || 3;
         if (current.length >= maxPhotos) {
           Alert.alert('Limit Reached', `Maximum ${maxPhotos} photos allowed for this field.`);
@@ -453,16 +417,15 @@ const colors = {
     }
   };
 
+  // Throws on upload failure — a device-local URI must never reach the server
+  // (it can't render on any other device). The caller aborts the save and
+  // surfaces the error, keeping the form state intact.
   const uploadAllPhotos = async (photos: string[]): Promise<string[]> => {
     const uploaded: string[] = [];
     for (const uri of photos) {
       if (uri.startsWith('file://') || uri.startsWith('content://')) {
-        try {
-          const { objectPath } = await uploadPhoto(uri);
-          uploaded.push(objectPath);
-        } catch {
-          uploaded.push(uri);
-        }
+        const { objectPath } = await uploadPhoto(uri);
+        uploaded.push(objectPath);
       } else {
         uploaded.push(uri);
       }
@@ -565,6 +528,15 @@ const colors = {
     setPlaybackDuration(0);
   };
 
+  // Stop any in-progress recording/playback and clear the timer on unmount —
+  // navigating away mid-recording used to leak the audio session.
+  useEffect(() => {
+    return () => {
+      cleanupRecording();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const removeVoiceNote = (index: number) => {
     setFormVoiceNotes(prev => {
       const copy = [...prev];
@@ -607,70 +579,149 @@ const colors = {
     }
   };
 
+  // Build the entry payload from the current form state. Voice notes are set
+  // or removed explicitly so deleting the last one persists.
+  const buildEntryPayload = () => {
+    const fieldValues = { ...formFieldValues };
+    if (formVoiceNotes.length > 0) {
+      fieldValues._voiceNotes = formVoiceNotes;
+    } else {
+      delete fieldValues._voiceNotes;
+    }
+    const payload: any = {
+      projectId,
+      title: formTitle.trim(),
+      entryDateTime: formDateTime,
+      fieldValues,
+      overallPhotos: formOverallPhotos,
+    };
+    const resolvedTemplateId = activeTemplate?.id || template?.id;
+    if (resolvedTemplateId) payload.templateId = resolvedTemplateId;
+    return payload;
+  };
+
+  // Update the still-pending queued create for a local-only entry in place.
+  // Returns false if the queue no longer holds it (already synced).
+  const updateQueuedCreate = async (offlineId: string, payload: any): Promise<boolean> => {
+    const queue = await getQueue();
+    const action = queue.find(
+      a => a.type === 'create-diary-entry' && a.payload?._offlineId === offlineId,
+    );
+    if (!action) return false;
+    action.payload = { ...payload, _offlineId: offlineId, _storageKey: offlineKey };
+    action.status = 'pending';
+    action.retryCount = 0;
+    action.error = undefined;
+    await saveQueue(queue);
+    return true;
+  };
+
   const handleSaveEntry = async () => {
     if (!formTitle.trim()) {
       Alert.alert('Missing Title', 'Please enter a title for this diary entry.');
       return;
     }
 
+    const missingRequired = (activeTemplate?.fields || [])
+      .filter(f => f.required)
+      .filter(f => {
+        const v = formFieldValues[f.id];
+        if (f.type === 'checkbox') return false;
+        if (f.type === 'photo-gallery') return !Array.isArray(v) || v.length === 0;
+        return v === undefined || v === null || String(v).trim() === '';
+      });
+    if (missingRequired.length > 0) {
+      Alert.alert(
+        'Missing Required Fields',
+        `Please fill in: ${missingRequired.map(f => f.title).join(', ')}`,
+      );
+      return;
+    }
+
     setSubmitting(true);
     try {
+      const payload = buildEntryPayload();
       const online = await isOnline();
+
       if (!online) {
-        const entryId = (isEditMode && selectedEntry?.id.startsWith('_offline_'))
-          ? selectedEntry.id
-          : `_offline_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-
-        const offlineFieldValues = { ...formFieldValues };
-        if (formVoiceNotes.length > 0) {
-          offlineFieldValues._voiceNotes = formVoiceNotes;
-        }
-
-        const offlineEntry: SiteDiaryEntry = {
-          id: entryId,
-          templateId: activeTemplate?.id || template?.id || '',
-          projectId,
-          title: formTitle.trim(),
-          entryDateTime: formDateTime,
-          fieldValues: offlineFieldValues,
-          overallPhotos: formOverallPhotos,
-          createdBy: user?.id,
-          createdByName: user ? `${user.firstName || ''} ${user.lastName || ''}`.trim() : undefined,
-          createdAt: selectedEntry?.createdAt || new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        };
-
-        if (isEditMode && selectedEntry?.id.startsWith('_offline_')) {
-          const updated = offlineEntries.map(e => e.id === selectedEntry.id ? offlineEntry : e);
-          await saveOfflineEntries(updated);
-        } else if (isEditMode && selectedEntry && !selectedEntry.id.startsWith('_offline_')) {
+        if (isEditMode && selectedEntry && !selectedEntry.id.startsWith('_offline_')) {
+          // Offline edit of a server entry — queue a PATCH. The queue uploads
+          // any local photo/voice assets before sending.
           await addToQueue({
             type: 'edit-diary-entry',
-            payload: {
-              id: selectedEntry.id,
-              title: formTitle.trim(),
-              entryDateTime: formDateTime,
-              fieldValues: formFieldValues,
-              overallPhotos: formOverallPhotos,
-            },
+            payload: { id: selectedEntry.id, ...payload },
           });
           Alert.alert('Queued for Sync', 'Your edit will be synced when you reconnect.');
         } else {
-          await saveOfflineEntries([...offlineEntries, offlineEntry]);
+          const isOfflineEdit = !!(isEditMode && selectedEntry?.id.startsWith('_offline_'));
+          const entryId = isOfflineEdit
+            ? selectedEntry!.id
+            : `_offline_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+
+          const offlineEntry: SiteDiaryEntry = {
+            id: entryId,
+            templateId: payload.templateId || '',
+            projectId,
+            title: payload.title,
+            entryDateTime: payload.entryDateTime,
+            fieldValues: payload.fieldValues,
+            overallPhotos: payload.overallPhotos,
+            createdBy: user?.id,
+            createdByName: user ? `${user.firstName || ''} ${user.lastName || ''}`.trim() : undefined,
+            createdAt: selectedEntry?.createdAt || new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          };
+
+          const updated = isOfflineEdit
+            ? offlineEntries.map(e => (e.id === entryId ? offlineEntry : e))
+            : [...offlineEntries, offlineEntry];
+          await saveOfflineEntries(updated);
+
+          // Keep the queued create in step with the local copy.
+          const updatedInQueue = isOfflineEdit && (await updateQueuedCreate(entryId, payload));
+          if (!updatedInQueue) {
+            await addToQueue({
+              type: 'create-diary-entry',
+              payload: { ...payload, _offlineId: entryId, _storageKey: offlineKey },
+            });
+          }
+          Alert.alert('Saved Offline', 'Your diary entry has been saved locally and will sync when you have a connection.');
         }
 
         setShowEntryModal(false);
         resetForm();
-        if (!isEditMode || selectedEntry?.id.startsWith('_offline_')) {
-          Alert.alert('Saved Offline', 'Your diary entry has been saved locally and will sync when you have a connection.');
-        }
         return;
       }
 
-      const uploadedFieldValues = { ...formFieldValues };
+      // ONLINE. Editing an entry that only exists locally: if its queued
+      // create is still pending, update it in place (the queue handles the
+      // uploads) and drain the queue now.
+      if (isEditMode && selectedEntry?.id.startsWith('_offline_')) {
+        const updatedInQueue = await updateQueuedCreate(selectedEntry.id, payload);
+        if (updatedInQueue) {
+          const updated = offlineEntries.map(e =>
+            e.id === selectedEntry.id
+              ? { ...e, ...payload, updatedAt: new Date().toISOString() }
+              : e,
+          );
+          await saveOfflineEntries(updated);
+          setShowEntryModal(false);
+          resetForm();
+          syncQueue().then(() => {
+            fetchData();
+            loadOfflineEntries();
+          });
+          return;
+        }
+        // No queued create (already synced or legacy) — fall through and POST
+        // it now, removing the local copy on success so it doesn't duplicate.
+      }
+
+      const uploadedFieldValues = { ...payload.fieldValues };
       for (const [key, val] of Object.entries(uploadedFieldValues)) {
+        if (key === '_voiceNotes') continue;
         if (Array.isArray(val) && val.length > 0 && typeof val[0] === 'string') {
-          uploadedFieldValues[key] = await uploadAllPhotos(val);
+          uploadedFieldValues[key] = await uploadAllPhotos(val as string[]);
         }
       }
 
@@ -679,43 +730,39 @@ const colors = {
       const uploadedVoiceNotes: string[] = [];
       for (const uri of formVoiceNotes) {
         if (uri.startsWith('file://') || uri.startsWith('content://')) {
-          try {
-            const { objectPath } = await uploadAudio(uri);
-            uploadedVoiceNotes.push(objectPath);
-          } catch {
-            uploadedVoiceNotes.push(uri);
-          }
+          const { objectPath } = await uploadAudio(uri);
+          uploadedVoiceNotes.push(objectPath);
         } else {
           uploadedVoiceNotes.push(uri);
         }
       }
       if (uploadedVoiceNotes.length > 0) {
         uploadedFieldValues._voiceNotes = uploadedVoiceNotes;
+      } else {
+        delete uploadedFieldValues._voiceNotes;
       }
 
       const body: any = {
-        projectId,
-        title: formTitle.trim(),
-        entryDateTime: formDateTime,
+        ...payload,
         fieldValues: uploadedFieldValues,
         overallPhotos: uploadedOverallPhotos,
       };
-      const resolvedTemplateId = activeTemplate?.id || template?.id;
-      if (resolvedTemplateId) body.templateId = resolvedTemplateId;
 
       if (isEditMode && selectedEntry && !selectedEntry.id.startsWith('_offline_')) {
-        const res = await apiRequest(`/api/site-diary-entries/${selectedEntry.id}`, 'PATCH', body);
-        if (!res.ok) throw new Error('Failed to update entry');
+        await apiRequest(`/api/site-diary-entries/${selectedEntry.id}`, 'PATCH', body);
       } else {
-        const res = await apiRequest('/api/site-diary-entries', 'POST', body);
-        if (!res.ok) throw new Error('Failed to create entry');
+        await apiRequest('/api/site-diary-entries', 'POST', body);
+        if (isEditMode && selectedEntry?.id.startsWith('_offline_')) {
+          await removeOfflineDiaryEntry(offlineKey, selectedEntry.id);
+          await loadOfflineEntries();
+        }
       }
 
       setShowEntryModal(false);
       resetForm();
       await fetchData();
     } catch (e: any) {
-      Alert.alert('Error', e.message || 'Failed to save diary entry. Please try again.');
+      Alert.alert('Error', e?.message || 'Failed to save diary entry. Please try again.');
     } finally {
       setSubmitting(false);
     }
@@ -730,6 +777,13 @@ const colors = {
         onPress: async () => {
           try {
             if (entry.id.startsWith('_offline_')) {
+              // Drop the queued create too, or the queue would still POST it.
+              const queue = await getQueue();
+              await saveQueue(
+                queue.filter(
+                  a => !(a.type === 'create-diary-entry' && a.payload?._offlineId === entry.id),
+                ),
+              );
               const updated = offlineEntries.filter(e => e.id !== entry.id);
               await saveOfflineEntries(updated);
             } else {
@@ -745,8 +799,8 @@ const colors = {
             }
             setShowDetailModal(false);
             setSelectedEntry(null);
-          } catch {
-            Alert.alert('Error', 'Could not delete entry.');
+          } catch (e: any) {
+            Alert.alert('Error', e?.message || 'Could not delete entry.');
           }
         },
       },
@@ -762,6 +816,13 @@ const colors = {
     ...offlineEntries.map(e => ({ ...e, _isOffline: true })),
     ...entries.map(e => ({ ...e, _isOffline: false })),
   ].sort((a, b) => new Date(b.entryDateTime).getTime() - new Date(a.entryDateTime).getTime());
+
+  // The detail modal must render the fields of the ENTRY's template, not the
+  // company default — entries created from other templates were showing the
+  // wrong (or no) fields.
+  const detailTemplate = selectedEntry
+    ? allTemplates.find(t => t.id === selectedEntry.templateId) || template
+    : null;
 
   const renderFieldInput = (field: TemplateField) => {
     const value = formFieldValues[field.id];
@@ -980,17 +1041,17 @@ const colors = {
   return (
     <View style={[styles.container, { backgroundColor: colors.bg }]}>
       {!networkOnline && (
-        <View style={[styles.offlineBanner, { backgroundColor: '#f59e0b' }]}>
+        <View style={[styles.offlineBanner, { backgroundColor: theme.statusWarning }]}>
           <Ionicons name="cloud-offline-outline" size={16} color="#ffffff" />
           <Text style={styles.offlineBannerText}>You are offline. Changes will sync when reconnected.</Text>
         </View>
       )}
 
       {offlineEntries.length > 0 && (
-        <View style={[styles.syncBanner, { backgroundColor: isDark ? '#1e3a5f' : '#dbeafe' }]}>
+        <View style={[styles.syncBanner, { backgroundColor: theme.statusInfoBg }]}>
           <Ionicons name="sync-outline" size={16} color={colors.accent} />
           <Text style={[styles.syncBannerText, { color: colors.accent }]}>
-            {offlineEntries.length} entry{offlineEntries.length > 1 ? 'ies' : ''} pending sync
+            {offlineEntries.length} {plural(offlineEntries.length, 'entry', 'entries')} pending sync
           </Text>
         </View>
       )}
@@ -998,7 +1059,7 @@ const colors = {
       <View style={[styles.headerArea, { borderBottomColor: colors.border }]}>
         <Text style={[styles.headerTitle, { color: colors.text }]}>Site Diary</Text>
         <Text style={[styles.headerCount, { color: colors.secondary }]}>
-          {allEntries.length} entr{allEntries.length === 1 ? 'y' : 'ies'}
+          {allEntries.length} {plural(allEntries.length, 'entry', 'entries')}
         </Text>
       </View>
 
@@ -1028,9 +1089,9 @@ const colors = {
                 activeOpacity={0.7}
               >
                 {(item as any)._isOffline && (
-                  <View style={[styles.offlineTag, { backgroundColor: '#f59e0b20' }]}>
-                    <Ionicons name="cloud-offline-outline" size={12} color="#f59e0b" />
-                    <Text style={[styles.offlineTagText, { color: '#f59e0b' }]}>Offline</Text>
+                  <View style={[styles.offlineTag, { backgroundColor: theme.statusWarningBg }]}>
+                    <Ionicons name="cloud-offline-outline" size={12} color={theme.statusWarning} />
+                    <Text style={[styles.offlineTagText, { color: theme.statusWarning }]}>Offline</Text>
                   </View>
                 )}
                 <View style={styles.cardHeader}>
@@ -1101,7 +1162,7 @@ const colors = {
 
           {allTemplates.length > 1 && (
             <TouchableOpacity
-              style={[styles.templateBar, { backgroundColor: isDark ? '#1e293b' : '#f1f5f9', borderBottomColor: colors.border }]}
+              style={[styles.templateBar, { backgroundColor: theme.nav, borderBottomColor: colors.border }]}
               onPress={() => setShowTemplatePicker(true)}
             >
               <Ionicons name="document-text-outline" size={16} color={colors.accent} />
@@ -1138,7 +1199,7 @@ const colors = {
                     {activeTemplate.name || 'Template Fields'}
                   </Text>
                 </View>
-                {activeTemplate.fields
+                {[...activeTemplate.fields]
                   .sort((a, b) => a.order - b.order)
                   .map(field => renderFieldInput(field))}
               </>
@@ -1159,9 +1220,9 @@ const colors = {
                   <Text style={[styles.recordBtnText, { color: colors.text }]}>Record Voice Note</Text>
                 </TouchableOpacity>
               ) : (
-                <View style={[styles.recordingRow, { backgroundColor: '#ef444415', borderColor: '#ef4444' }]}>
+                <View style={[styles.recordingRow, { backgroundColor: theme.statusDangerBg, borderColor: colors.danger }]}>
                   <Animated.View style={[styles.recordingIndicator, { transform: [{ scale: pulseAnim }] }]}>
-                    <View style={styles.recordingDot} />
+                    <View style={[styles.recordingDot, { backgroundColor: colors.danger }]} />
                   </Animated.View>
                   <Text style={[styles.recordingTime, { color: colors.danger }]}>
                     {formatRecordingTime(recordingDuration)}
@@ -1248,9 +1309,9 @@ const colors = {
           {selectedEntry && (
             <ScrollView contentContainerStyle={styles.detailContent}>
               {selectedEntry.id.startsWith('_offline_') && (
-                <View style={[styles.offlineDetailTag, { backgroundColor: '#f59e0b20', borderColor: '#f59e0b' }]}>
-                  <Ionicons name="cloud-offline-outline" size={16} color="#f59e0b" />
-                  <Text style={{ color: '#f59e0b', marginLeft: 6, fontWeight: '500' }}>Pending sync</Text>
+                <View style={[styles.offlineDetailTag, { backgroundColor: theme.statusWarningBg, borderColor: theme.statusWarning }]}>
+                  <Ionicons name="cloud-offline-outline" size={16} color={theme.statusWarning} />
+                  <Text style={{ color: theme.statusWarning, marginLeft: 6, fontWeight: '500' }}>Pending sync</Text>
                 </View>
               )}
 
@@ -1280,9 +1341,9 @@ const colors = {
                 </View>
               )}
 
-              {template && template.fields.length > 0 && (
+              {detailTemplate && detailTemplate.fields.length > 0 && (
                 <View style={[styles.detailSection, { borderTopColor: colors.border }]}>
-                  {template.fields
+                  {[...detailTemplate.fields]
                     .sort((a, b) => a.order - b.order)
                     .map(field => renderDetailFieldValue(field, selectedEntry.fieldValues?.[field.id]))}
                 </View>
@@ -1330,13 +1391,13 @@ const colors = {
 
       <Modal visible={showTemplatePicker} transparent animationType="slide">
         <View style={[styles.tpOverlay, { justifyContent: 'flex-end' }]}>
-          <View style={[styles.tpSheet, { backgroundColor: isDark ? '#1e293b' : '#ffffff' }]}>
-            <View style={[styles.tpHeader, { borderBottomColor: isDark ? '#334155' : '#e2e8f0' }]}>
-              <Text style={[styles.tpHeaderTitle, { color: isDark ? '#f1f5f9' : '#0f172a' }]}>
+          <View style={[styles.tpSheet, { backgroundColor: colors.card }]}>
+            <View style={[styles.tpHeader, { borderBottomColor: colors.border }]}>
+              <Text style={[styles.tpHeaderTitle, { color: colors.text }]}>
                 Select Template
               </Text>
               <TouchableOpacity onPress={() => setShowTemplatePicker(false)}>
-                <Ionicons name="close" size={24} color={isDark ? '#94a3b8' : '#64748b'} />
+                <Ionicons name="close" size={24} color={colors.secondary} />
               </TouchableOpacity>
             </View>
             <FlatList
@@ -1345,12 +1406,12 @@ const colors = {
               contentContainerStyle={{ paddingBottom: 40 }}
               renderItem={({ item }) => (
                 <TouchableOpacity
-                  style={[styles.tpRow, { borderBottomColor: isDark ? '#334155' : '#f1f5f9' }]}
+                  style={[styles.tpRow, { borderBottomColor: colors.border }]}
                   onPress={() => switchTemplate(item)}
                 >
                   <Ionicons name="document-text-outline" size={18} color={colors.accent} />
                   <View style={styles.tpRowContent}>
-                    <Text style={[styles.tpRowName, { color: isDark ? '#f1f5f9' : '#0f172a' }]} numberOfLines={1}>
+                    <Text style={[styles.tpRowName, { color: colors.text }]} numberOfLines={1}>
                       {item.name}
                     </Text>
                     {item.isDefault && (

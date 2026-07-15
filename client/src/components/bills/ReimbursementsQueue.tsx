@@ -46,9 +46,9 @@ interface ReimbursementsQueueProps {
 }
 
 function reimbStatusBadge(status: string | null | undefined) {
-  if (!status || status === "pending") return <Badge variant="outline" className="border-amber-500/40 text-amber-600 bg-amber-500/10 text-xs">Pending</Badge>;
-  if (status === "approved") return <Badge variant="outline" className="border-blue-500/40 text-blue-600 bg-blue-500/10 text-xs">Approved</Badge>;
-  if (status === "paid") return <Badge variant="outline" className="border-green-500/40 text-green-600 bg-green-500/10 text-xs">Paid</Badge>;
+  if (!status || status === "pending") return <Badge variant="outline" className="border-status-warning/40 text-status-warning bg-status-warning-bg text-xs">Pending</Badge>;
+  if (status === "approved") return <Badge variant="outline" className="border-status-info/40 text-status-info bg-status-info-bg text-xs">Approved</Badge>;
+  if (status === "paid") return <Badge variant="outline" className="border-status-success/40 text-status-success bg-status-success-bg text-xs">Paid</Badge>;
   if (status === "rejected") return <Badge variant="outline" className="border-destructive/40 text-destructive bg-destructive/10 text-xs">Returned</Badge>;
   return <Badge variant="outline" className="text-xs">{status}</Badge>;
 }

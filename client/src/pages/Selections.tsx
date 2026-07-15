@@ -6,6 +6,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useProject } from "@/contexts/ProjectContext";
+import { useClientPortal } from "@/hooks/use-client-portal";
 import { cn } from "@/lib/utils";
 import { DndContext, closestCenter, DragEndEvent, useSensor, useSensors, PointerSensor } from "@dnd-kit/core";
 import { arrayMove, SortableContext, verticalListSortingStrategy, useSortable } from "@dnd-kit/sortable";
@@ -654,6 +655,7 @@ export default function Selections() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const { currentProject } = useProject();
+  const { isClient } = useClientPortal();
 
   const dndSensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
@@ -1300,7 +1302,8 @@ export default function Selections() {
               </DropdownMenuContent>
             </DropdownMenu>
 
-            {/* Add Selection primary */}
+            {/* Add Selection primary — builder-only; clients view and approve. */}
+            {!isClient && (
             <button
               className="h-6 w-auto px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-0.5 disabled:opacity-60 disabled:pointer-events-none"
               onClick={handleAddSelection}
@@ -1314,8 +1317,10 @@ export default function Selections() {
               )}
               <span>Add Selection</span>
             </button>
+            )}
 
-            {/* Options dropdown */}
+            {/* Options dropdown — templates, exports, share links: builder-only. */}
+            {!isClient && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button
@@ -1379,6 +1384,7 @@ export default function Selections() {
                 )}
               </DropdownMenuContent>
             </DropdownMenu>
+            )}
           </div>
         </div>
 
@@ -1428,7 +1434,7 @@ export default function Selections() {
                   ? "Try adjusting your filters."
                   : "Create your first selection to get started."}
               </p>
-              {!searchTerm && !categoryFilter && statusTab === "all" && (
+              {!isClient && !searchTerm && !categoryFilter && statusTab === "all" && (
                 <Button onClick={handleAddSelection} disabled={createSelectionMutation.isPending} size="sm">
                   <Plus className="w-4 h-4 mr-2" />
                   Add Selection

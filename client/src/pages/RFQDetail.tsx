@@ -625,7 +625,7 @@ export default function RFQDetail() {
           {/* Scope & Items Card */}
           <Card className="overflow-hidden">
             <div className="h-8 flex items-center px-3 gap-2 border-b border-border/50 bg-muted/40">
-              <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-amber-400/70" />
+              <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-amber/70" />
               <span className="text-xs font-medium">Scope & Items</span>
             </div>
 
@@ -767,7 +767,7 @@ export default function RFQDetail() {
                 onClick={() => setTcCollapsed((v) => !v)}
               >
                 <div className="flex items-center gap-2">
-                  <div className="w-1 h-1 rounded-full flex-shrink-0 bg-blue-400/70" />
+                  <div className="w-1 h-1 rounded-full flex-shrink-0 bg-primary/70" />
                   <span className="text-xs font-medium">Terms & Conditions</span>
                 </div>
                 <div className="flex items-center gap-2">
@@ -815,7 +815,7 @@ export default function RFQDetail() {
                 onClick={() => setAttachCollapsed((v) => !v)}
               >
                 <div className="flex items-center gap-2">
-                  <div className="w-1 h-1 rounded-full flex-shrink-0 bg-orange-400/70" />
+                  <div className="w-1 h-1 rounded-full flex-shrink-0 bg-amber/70" />
                   <span className="text-xs font-medium">Attachments</span>
                   {(rfq.attachmentUrls?.length ?? 0) > 0 && (
                     <Badge variant="secondary" className="text-xs h-4 px-1.5">{rfq.attachmentUrls!.length}</Badge>
@@ -867,7 +867,7 @@ export default function RFQDetail() {
           <Card className="overflow-hidden">
             <div className="h-8 flex items-center justify-between px-3 gap-2 border-b border-border/50 bg-muted/40">
               <div className="flex items-center gap-2">
-                <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-emerald-400/70" />
+                <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-sage/70" />
                 <span className="text-xs font-medium">Quotes Received</span>
                 {quotes.length > 0 && (
                   <Badge variant="secondary" className="text-xs h-4 px-1.5">{quotes.length}</Badge>
@@ -952,7 +952,7 @@ export default function RFQDetail() {
           <Card className="overflow-hidden">
             <div className="h-8 flex items-center justify-between px-3 gap-2 border-b border-border/50 bg-muted/40">
               <div className="flex items-center gap-2">
-                <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-amber-400/70" />
+                <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-amber/70" />
                 <span className="text-xs font-medium">Auto Follow-up</span>
               </div>
               <Switch
@@ -978,7 +978,7 @@ export default function RFQDetail() {
                   </SelectContent>
                 </Select>
                 {rfq.followUpSentAt && (
-                  <p className="text-data text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                  <p className="text-data text-status-success flex items-center gap-1">
                     <CheckCircle2 className="w-3 h-3" />
                     Sent {format(new Date(rfq.followUpSentAt), "MMM d")}
                   </p>

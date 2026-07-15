@@ -59,6 +59,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { useTemplateCrud } from "@/components/templates/useTemplateCrud";
 import { format } from "date-fns";
 import * as XLSX from "xlsx";
 
@@ -120,7 +121,6 @@ export default function EstimateTemplates() {
   const [activeTab, setActiveTab] = useState<'items' | 'labour' | 'enotes'>('items');
   const [isAddingTemplate, setIsAddingTemplate] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<EstimateTemplate | null>(null);
-  const [confirmDelete, setConfirmDelete] = useState<{ id: string; name: string } | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   // Shared group state (Labour + E-Notes)
   const [selectedGroup, setSelectedGroup] = useState<string>("");
@@ -379,104 +379,46 @@ export default function EstimateTemplates() {
     return { display: costCodeStr.trim() };
   };
 
-  const createMutation = useMutation({
-    mutationFn: async (data: { name: string; description?: string; category?: string; templateData?: TemplateItem[] }) => {
-      return await apiRequest("/api/estimate-templates", "POST", {
-        ...data,
-        templateData: data.templateData || [],
+  const {
+    createMutation,
+    updateMutation,
+    deleteMutation,
+    duplicateMutation,
+    confirmDelete,
+    setConfirmDelete,
+  } = useTemplateCrud<EstimateTemplate>({
+    apiBase: "/api/estimate-templates",
+    toasts: { created: "Your new estimate template has been created." },
+    duplicatePayload: (template) => {
+      const { id, createdAt, updatedAt, isArchived, ...rest } = template;
+      return {
+        ...rest,
+        name: `${template.name} (Copy)`,
         createdBy: user?.id,
-        createdByName: user?.firstName && user?.lastName 
-          ? `${user.firstName} ${user.lastName}` 
+        createdByName: user?.firstName && user?.lastName
+          ? `${user.firstName} ${user.lastName}`
           : user?.email,
-      });
+      };
     },
-    onSuccess: (template: EstimateTemplate) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/estimate-templates"] });
-      toast({
-        title: "Template created",
-        description: "Your new estimate template has been created.",
-      });
+    onCreateSuccess: (template) => {
       setIsAddingTemplate(false);
       setFormData({ name: "", description: "", category: "" });
       navigate(`/estimate-templates/${template.id}`);
     },
-    onError: () => {
-      toast({
-        title: "Error",
-        description: "Failed to create template.",
-        variant: "destructive",
-      });
-    },
-  });
-
-  const updateMutation = useMutation({
-    mutationFn: async ({ id, data }: { id: string; data: Partial<EstimateTemplate> }) => {
-      return await apiRequest(`/api/estimate-templates/${id}`, "PATCH", data);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/estimate-templates"] });
-      toast({
-        title: "Template updated",
-        description: "The template has been updated successfully.",
-      });
+    onUpdateSuccess: () => {
       setEditingTemplate(null);
       setFormData({ name: "", description: "", category: "" });
     },
-    onError: () => {
-      toast({
-        title: "Error",
-        description: "Failed to update template.",
-        variant: "destructive",
-      });
-    },
   });
 
-  const deleteMutation = useMutation({
-    mutationFn: async (id: string) => {
-      await apiRequest(`/api/estimate-templates/${id}`, "DELETE");
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/estimate-templates"] });
-      toast({
-        title: "Template deleted",
-        description: "The template has been deleted successfully.",
-      });
-    },
-    onError: () => {
-      toast({
-        title: "Error",
-        description: "Failed to delete template.",
-        variant: "destructive",
-      });
-    },
-  });
-
-  const duplicateMutation = useMutation({
-    mutationFn: async (template: EstimateTemplate) => {
-      const { id, createdAt, updatedAt, isArchived, ...rest } = template;
-      return await apiRequest("/api/estimate-templates", "POST", {
-        ...rest,
-        name: `${template.name} (Copy)`,
-        createdBy: user?.id,
-        createdByName: user?.firstName && user?.lastName 
-          ? `${user.firstName} ${user.lastName}` 
-          : user?.email,
-      });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/estimate-templates"] });
-      toast({
-        title: "Template duplicated",
-        description: "The template has been duplicated successfully.",
-      });
-    },
-    onError: () => {
-      toast({
-        title: "Error",
-        description: "Failed to duplicate template.",
-        variant: "destructive",
-      });
-    },
+  /** POST-body enrichment shared by manual create and the XLSX import. */
+  const buildCreatePayload = (data: { name: string; description?: string; category?: string; templateData?: TemplateItem[] }) => ({
+    ...data,
+    templateData: data.templateData || [],
+    createdBy: user?.id,
+    createdByName: user?.firstName && user?.lastName
+      ? `${user.firstName} ${user.lastName}`
+      : user?.email,
   });
 
   const autoDetectColumns = (headers: string[]) => {
@@ -672,12 +614,12 @@ export default function EstimateTemplates() {
         };
       });
 
-    createMutation.mutate({
+    createMutation.mutate(buildCreatePayload({
       name: templateName.trim(),
       description: `Imported from ${selectedFile?.name}`,
       category: templateCategory || undefined,
       templateData: templateItems,
-    }, {
+    }), {
       onSuccess: () => {
         setIsImportDialogOpen(false);
         setSelectedFile(null);
@@ -733,11 +675,11 @@ export default function EstimateTemplates() {
         },
       });
     } else {
-      createMutation.mutate({
+      createMutation.mutate(buildCreatePayload({
         name: formData.name.trim(),
         description: formData.description.trim() || undefined,
         category: formData.category || undefined,
-      });
+      }));
     }
   };
 
@@ -877,9 +819,9 @@ export default function EstimateTemplates() {
 
   const getCategoryColor = (category: string | null) => {
     switch (category?.toLowerCase()) {
-      case "residential": return "bg-status-success-bg text-status-success dark:text-green-400";
-      case "commercial": return "bg-status-info-bg text-status-info dark:text-blue-400";
-      case "renovation": return "bg-status-warning-bg text-status-warning dark:text-orange-400";
+      case "residential": return "bg-status-success-bg text-status-success";
+      case "commercial": return "bg-status-info-bg text-status-info";
+      case "renovation": return "bg-status-warning-bg text-status-warning";
       default: return "bg-muted text-secondary dark:text-muted";
     }
   };
@@ -982,7 +924,7 @@ export default function EstimateTemplates() {
                     <div className="flex items-center gap-1.5">
                       {labourCount > 0 && <span className="text-data text-muted-foreground">{labourCount} item{labourCount !== 1 ? 's' : ''}</span>}
                       {hasEnotes && isRequired !== undefined && (
-                        <span className={`text-label px-1 rounded font-medium ${isRequired ? 'bg-green-500/15 text-status-success dark:text-green-400' : 'bg-muted text-muted-foreground'}`}>
+                        <span className={`text-label px-1 rounded font-medium ${isRequired ? 'bg-status-success-bg text-status-success' : 'bg-muted text-muted-foreground'}`}>
                           {isRequired ? 'Required' : 'Not req.'}
                         </span>
                       )}
@@ -1204,7 +1146,7 @@ export default function EstimateTemplates() {
                           }}
                           className={`text-label px-1.5 py-0.5 rounded font-medium flex-shrink-0 border transition-colors ${
                             isRequired !== false
-                              ? 'bg-green-500/15 text-status-success dark:text-green-400 border-green-500/20'
+                              ? 'bg-status-success-bg text-status-success border-status-success/30'
                               : 'bg-muted text-muted-foreground border-border'
                           }`}
                           title="Click to toggle Required/Not Required"
@@ -1588,14 +1530,14 @@ export default function EstimateTemplates() {
                 isDragging
                   ? "border-primary bg-primary/5"
                   : selectedFile
-                  ? "border-green-500 bg-green-500/5"
+                  ? "border-sage bg-sage/10"
                   : "border-muted-foreground/25 hover:border-muted-foreground/50"
               }`}
               data-testid="dropzone-file-upload"
             >
               {selectedFile ? (
                 <div className="flex flex-col items-center gap-2">
-                  <FileSpreadsheet className="h-8 w-8 text-green-500" />
+                  <FileSpreadsheet className="h-8 w-8 text-status-success" />
                   <p className="font-medium text-sm">{selectedFile.name}</p>
                   <p className="text-xs text-muted-foreground">
                     {(selectedFile.size / 1024).toFixed(1)} KB

@@ -377,7 +377,7 @@ export default function QuickReviewPanel({
       <Dialog open={open} onOpenChange={(next) => { if (!next) onClose(); }}>
         <DialogContent className="max-w-md" data-testid="quick-review-empty">
           <div className="text-center py-8 space-y-4">
-            <Check className="h-16 w-16 text-green-500 mx-auto" />
+            <Check className="h-16 w-16 text-status-success mx-auto" />
             <h2 className="text-xl font-semibold">All Done!</h2>
             <p className="text-muted-foreground">All contacts have been reviewed.</p>
             <Button onClick={onClose} data-testid="button-close-review">
@@ -683,8 +683,8 @@ export default function QuickReviewPanel({
             {similarContacts.length > 0 && (
               <div className="border-t pt-3 space-y-2">
                 <div className="flex items-center gap-2">
-                  <Users className="h-3.5 w-3.5 text-amber-500" />
-                  <h3 className="text-table font-medium text-amber-600 dark:text-amber-400">
+                  <Users className="h-3.5 w-3.5 text-status-warning" />
+                  <h3 className="text-table font-medium text-status-warning">
                     Possible Duplicates ({similarContacts.length})
                   </h3>
                 </div>

@@ -413,12 +413,12 @@ export default function Contacts() {
               variant="secondary"
               className={`text-xs capitalize ${
                 contact.contactType === "team"
-                  ? "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200"
+                  ? "bg-status-info-bg text-status-info"
                   : contact.contactType === "trade"
-                  ? "bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200"
+                  ? "bg-status-warning-bg text-status-warning"
                   : contact.contactType === "supplier"
                   ? "bg-primary/20 text-primary"
-                  : "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200"
+                  : "bg-status-success-bg text-status-success"
               }`}
             >
               {contact.contactType}
@@ -512,13 +512,13 @@ export default function Contacts() {
             <Button
               size="sm"
               variant="outline"
-              className="h-6 px-2 text-xs border-amber-500/50 text-amber-600 dark:text-amber-400 hover:bg-amber-500/10"
+              className="h-6 px-2 text-xs border-status-warning/50 text-status-warning hover:bg-status-warning-bg"
               onClick={() => setIsQuickReviewOpen(true)}
               data-testid="button-quick-review"
             >
               <Zap className="w-3 h-3 mr-0.5" />
               Quick Review
-              <Badge variant="secondary" className="ml-1 h-4 px-1 text-data bg-amber-500/20 text-amber-600 dark:text-amber-400">
+              <Badge variant="secondary" className="ml-1 h-4 px-1 text-data bg-status-warning-bg text-status-warning">
                 {unreviewedCount}
               </Badge>
             </Button>

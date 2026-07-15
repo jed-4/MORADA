@@ -218,31 +218,49 @@ export function QuoteComparisonView({ rfqId, quotes, rfq }: QuoteComparisonViewP
         })}
       </div>
 
-      {/* Desktop: Table view */}
-      <div className="hidden md:block overflow-x-auto">
-        <table className="w-full border-collapse">
+      {/* Desktop: Comparison matrix. Suppliers are columns and attributes are
+          rows, so this intentionally is NOT the shared DataTable (its
+          row-model, sorting and persisted column layout don't apply here);
+          instead it mirrors DataTable's visual language: h-7 uppercase muted
+          header, ~36px rows, border-border/40 dividers, hover-elevate,
+          auto-hide scrollbars. */}
+      <div className="hidden md:block overflow-x-auto dt-autohide-scrollbar">
+        <table className="w-full border-separate border-spacing-0">
           <thead>
-            <tr className="border-b">
-              <th className="text-left p-3 font-medium text-sm text-muted-foreground w-32">
+            <tr>
+              <th className="h-7 px-2 text-left text-data font-medium uppercase tracking-wide text-muted-foreground/70 border-b border-border bg-muted w-32">
                 Supplier
               </th>
               {quotes.map((quote) => (
-                <th key={quote.id} className="p-3 text-center min-w-[200px]">
-                  <div className="font-medium">{quote.supplierName}</div>
-                  <div className="text-xs font-normal text-muted-foreground mt-1">
-                    {format(new Date(quote.createdAt), "MMM d, yyyy")}
-                  </div>
+                <th
+                  key={quote.id}
+                  className="h-7 px-2 text-center text-data font-medium uppercase tracking-wide text-muted-foreground/70 border-b border-border bg-muted min-w-[200px]"
+                >
+                  {quote.supplierName}
                 </th>
               ))}
             </tr>
           </thead>
           <tbody>
-            <tr className="border-b">
-              <td className="p-3 font-medium text-sm text-muted-foreground">
+            <tr className="hover-elevate" style={{ height: 36 }}>
+              <td className="px-2 py-1.5 border-b border-border/40 text-xs font-medium text-muted-foreground">
+                Uploaded
+              </td>
+              {quotes.map((quote) => (
+                <td key={quote.id} className="px-2 py-1.5 border-b border-border/40 text-center">
+                  <span className="text-xs text-muted-foreground">
+                    {format(new Date(quote.createdAt), "MMM d, yyyy")}
+                  </span>
+                </td>
+              ))}
+            </tr>
+
+            <tr className="hover-elevate" style={{ height: 36 }}>
+              <td className="px-2 py-1.5 border-b border-border/40 text-xs font-medium text-muted-foreground">
                 Status
               </td>
               {quotes.map((quote) => (
-                <td key={quote.id} className="p-3 text-center">
+                <td key={quote.id} className="px-2 py-1.5 border-b border-border/40 text-center">
                   <div className="flex justify-center">
                     <Badge
                       variant={
@@ -260,15 +278,15 @@ export function QuoteComparisonView({ rfqId, quotes, rfq }: QuoteComparisonViewP
               ))}
             </tr>
 
-            <tr className="border-b bg-muted/20">
-              <td className="p-3 font-medium text-sm text-muted-foreground">
+            <tr className="hover-elevate bg-muted/20" style={{ height: 36 }}>
+              <td className="px-2 py-1.5 border-b border-border/40 text-xs font-medium text-muted-foreground">
                 Total Amount
               </td>
               {quotes.map((quote) => {
                 const isLowest = quote.id === lowestQuote.id && quotes.length > 1;
-                
+
                 return (
-                  <td key={quote.id} className="p-3 text-center">
+                  <td key={quote.id} className="px-2 py-1.5 border-b border-border/40 text-center">
                     <div className="text-xl font-bold">
                       ${(quote.totalAmount / 100).toFixed(2)}
                     </div>
@@ -283,25 +301,25 @@ export function QuoteComparisonView({ rfqId, quotes, rfq }: QuoteComparisonViewP
               })}
             </tr>
 
-            <tr className="border-b">
-              <td className="p-3 font-medium text-sm text-muted-foreground align-top">
+            <tr className="hover-elevate" style={{ height: 36 }}>
+              <td className="px-2 py-1.5 border-b border-border/40 text-xs font-medium text-muted-foreground align-top">
                 Notes
               </td>
               {quotes.map((quote) => (
-                <td key={quote.id} className="p-3 text-center">
-                  <div className="text-sm text-muted-foreground">
+                <td key={quote.id} className="px-2 py-1.5 border-b border-border/40 text-center">
+                  <div className="text-xs text-muted-foreground">
                     {quote.notes || "-"}
                   </div>
                 </td>
               ))}
             </tr>
 
-            <tr className="border-b">
-              <td className="p-3 font-medium text-sm text-muted-foreground align-top">
+            <tr className="hover-elevate" style={{ height: 36 }}>
+              <td className="px-2 py-1.5 border-b border-border/40 text-xs font-medium text-muted-foreground align-top">
                 Attachments
               </td>
               {quotes.map((quote) => (
-                <td key={quote.id} className="p-3">
+                <td key={quote.id} className="px-2 py-1.5 border-b border-border/40">
                   {quote.attachments && Array.isArray(quote.attachments) && quote.attachments.length > 0 ? (
                     <div className="flex flex-col gap-1 items-center">
                       {(quote.attachments as any[]).map((attachment: any, index: number) => (
@@ -312,18 +330,18 @@ export function QuoteComparisonView({ rfqId, quotes, rfq }: QuoteComparisonViewP
                       ))}
                     </div>
                   ) : (
-                    <div className="text-sm text-muted-foreground text-center">-</div>
+                    <div className="text-xs text-muted-foreground text-center">-</div>
                   )}
                 </td>
               ))}
             </tr>
 
-            <tr>
-              <td className="p-3 font-medium text-sm text-muted-foreground">
+            <tr className="hover-elevate" style={{ height: 36 }}>
+              <td className="px-2 py-1.5 border-b border-border/40 text-xs font-medium text-muted-foreground">
                 Actions
               </td>
               {quotes.map((quote) => (
-                <td key={quote.id} className="p-3">
+                <td key={quote.id} className="px-2 py-1.5 border-b border-border/40">
                   {quote.status === "pending" ? (
                     <div className="flex flex-col gap-2">
                       <Button
@@ -359,7 +377,7 @@ export function QuoteComparisonView({ rfqId, quotes, rfq }: QuoteComparisonViewP
                       </Button>
                     </div>
                   ) : (
-                    <div className="text-sm text-muted-foreground text-center">-</div>
+                    <div className="text-xs text-muted-foreground text-center">-</div>
                   )}
                 </td>
               ))}

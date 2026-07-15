@@ -407,8 +407,8 @@ export const DefaultDiary = forwardRef<DefaultDiaryHandle, DefaultDiaryProps>(
                           style={{ top: `${currentTimeTop}px` }}
                         >
                           <div className="flex items-center">
-                            <div className="w-2 h-2 rounded-full bg-red-500" />
-                            <div className="flex-1 h-0.5 bg-red-500" />
+                            <div className="w-2 h-2 rounded-full bg-coral" />
+                            <div className="flex-1 h-0.5 bg-coral" />
                           </div>
                         </div>
                       )}

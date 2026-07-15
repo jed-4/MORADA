@@ -237,7 +237,7 @@ export function DriveFilePicker({
             </div>
           ) : filesError ? (
             <div className="flex flex-col items-center justify-center h-full text-center p-4">
-              <AlertCircle className="h-12 w-12 text-amber-500 mb-4" />
+              <AlertCircle className="h-12 w-12 text-status-warning mb-4" />
               <p className="text-sm text-muted-foreground mb-4">
                 {(filesError as any).message || "Failed to load files from Google Drive"}
               </p>

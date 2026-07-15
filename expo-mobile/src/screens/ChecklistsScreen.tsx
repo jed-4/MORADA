@@ -4,6 +4,7 @@ import {
   Text,
   StyleSheet,
   ScrollView,
+  FlatList,
   RefreshControl,
   TouchableOpacity,
   ActivityIndicator,
@@ -68,6 +69,12 @@ type Props = {
   route: RouteProp<any>;
 };
 
+// Items render in their authored `order`, falling back to description for
+// ties or missing values (previously sorted alphabetically, ignoring order).
+function compareItems(a: ChecklistItem, b: ChecklistItem): number {
+  return (a.order ?? 0) - (b.order ?? 0) || (a.description || '').localeCompare(b.description || '');
+}
+
 export default function ChecklistsScreen({ navigation, route }: Props) {
   const projectId = (route.params as any)?.projectId as string | undefined;
   const colorScheme = useColorScheme();
@@ -130,45 +137,37 @@ const colors = {
     }
   }, [projectId, selectedProjectId]);
 
-  const fetchData = useCallback(async () => {
-    try {
-      const promises: Promise<any>[] = [fetchInstances()];
-      if (!projectId) {
-        promises.push(
-          apiFetch<Project[]>('/api/projects').then(p => setProjects(p || [])).catch(() => setProjects([]))
-        );
-      } else {
-        promises.push(
-          apiFetch<Project>(`/api/projects/${projectId}`).then(p => setProjectName(p?.name || '')).catch(() => {})
-        );
-      }
-      await Promise.all(promises);
-    } catch {
-    } finally {
-      setLoading(false);
+  const fetchMeta = useCallback(async () => {
+    if (!projectId) {
+      await apiFetch<Project[]>('/api/projects').then(p => setProjects(p || [])).catch(() => setProjects([]));
+    } else {
+      await apiFetch<Project>(`/api/projects/${projectId}`).then(p => setProjectName(p?.name || '')).catch(() => {});
     }
-  }, [projectId, fetchInstances]);
+  }, [projectId]);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  // Meta (project list / project name) only needs loading once per project;
+  // instances refetch when the filter changes. Keeping these separate avoids
+  // the old overlapping effects that double/triple-fetched on mount.
+  useEffect(() => { fetchMeta(); }, [fetchMeta]);
 
   useEffect(() => {
-    if (!projectId) fetchInstances();
-  }, [selectedProjectId]);
+    fetchInstances().finally(() => setLoading(false));
+  }, [fetchInstances]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     setItemsByInstance({});
     setLoadingItems({});
-    await fetchData();
+    await Promise.all([fetchMeta(), fetchInstances()]);
     setRefreshing(false);
-  }, [fetchData]);
+  }, [fetchMeta, fetchInstances]);
 
   const fetchItems = useCallback(async (instanceId: string) => {
     if (itemsByInstance[instanceId]) return;
     setLoadingItems(prev => ({ ...prev, [instanceId]: true }));
     try {
       const items = await apiFetch<ChecklistItem[]>(`/api/checklist-instances/${instanceId}/items`);
-      const sorted = (items || []).sort((a, b) => (a.description || '').localeCompare(b.description || ''));
+      const sorted = (items || []).sort(compareItems);
       setItemsByInstance(prev => ({ ...prev, [instanceId]: sorted }));
     } catch {
       setItemsByInstance(prev => ({ ...prev, [instanceId]: [] }));
@@ -207,7 +206,7 @@ const colors = {
     (async () => {
       const online = await isOnline();
       if (online) {
-        apiRequest(`/api/checklist-instance-items/${item.id}`, 'PATCH', { status: newStatus }).catch(() => {
+        apiRequest(`/api/checklist-instance-items/${item.id}`, 'PATCH', { status: newStatus }).catch((e: any) => {
           setItemsByInstance(prev => {
             const items = prev[item.instanceId] || [];
             return {
@@ -222,6 +221,7 @@ const colors = {
                 : inst
             )
           );
+          Alert.alert('Error', e?.message || 'Failed to update item.');
         });
       } else {
         await addToQueue({ type: 'update-checklist-item', payload: { id: item.id, status: newStatus } });
@@ -262,9 +262,9 @@ const colors = {
       }
     }
     for (const key of Object.keys(groups)) {
-      groups[key].sort((a, b) => (a.description || '').localeCompare(b.description || ''));
+      groups[key].sort(compareItems);
     }
-    ungrouped.sort((a, b) => (a.description || '').localeCompare(b.description || ''));
+    ungrouped.sort(compareItems);
     return { groups, ungrouped };
   };
 
@@ -338,8 +338,8 @@ const colors = {
         return { ...prev, [menuItem.instanceId]: items.map(i => i.id === menuItem.id ? { ...i, notes: updatedNotes } : i) };
       });
       setNoteText('');
-    } catch {
-      Alert.alert('Error', 'Failed to add note');
+    } catch (e: any) {
+      Alert.alert('Error', e?.message || 'Failed to add note');
     } finally {
       setSavingNote(false);
     }
@@ -352,11 +352,22 @@ const colors = {
       Alert.alert('Limit reached', 'Maximum 3 attachments per item.');
       return;
     }
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.All,
-      quality: 0.8,
-      allowsMultipleSelection: false,
-    });
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission Required', 'Photo library access is needed to attach files.');
+      return;
+    }
+    let result: ImagePicker.ImagePickerResult;
+    try {
+      result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images', 'videos'],
+        quality: 0.8,
+        allowsMultipleSelection: false,
+      });
+    } catch {
+      Alert.alert('Error', 'Could not open the photo library.');
+      return;
+    }
     if (result.canceled || !result.assets?.[0]) return;
     const asset = result.assets[0];
     const fileName = asset.fileName || `attachment-${Date.now()}.jpg`;
@@ -384,8 +395,8 @@ const colors = {
         const items = prev[menuItem.instanceId] || [];
         return { ...prev, [menuItem.instanceId]: items.map(i => i.id === menuItem.id ? { ...i, attachmentIds: updatedAttachments } : i) };
       });
-    } catch {
-      Alert.alert('Error', 'Failed to upload attachment');
+    } catch (e: any) {
+      Alert.alert('Error', e?.message || 'Failed to upload attachment');
     } finally {
       setUploadingAttachment(false);
     }
@@ -403,8 +414,8 @@ const colors = {
         const items = prev[menuItem.instanceId] || [];
         return { ...prev, [menuItem.instanceId]: items.map(i => i.id === menuItem.id ? { ...i, attachmentIds: currentAttachments } : i) };
       });
-    } catch {
-      Alert.alert('Error', 'Failed to remove attachment');
+    } catch (e: any) {
+      Alert.alert('Error', e?.message || 'Failed to remove attachment');
     }
   };
 
@@ -418,8 +429,8 @@ const colors = {
         return { ...prev, [menuItem.instanceId]: items.map(i => i.id === menuItem.id ? { ...i, assigneeId: memberId || undefined, assigneeName: memberName || undefined } : i) };
       });
       closeMenu();
-    } catch {
-      Alert.alert('Error', 'Failed to update assignee');
+    } catch (e: any) {
+      Alert.alert('Error', e?.message || 'Failed to update assignee');
     } finally {
       setSavingAssignee(false);
     }
@@ -679,13 +690,15 @@ const colors = {
         </ScrollView>
       )}
 
-      <ScrollView
+      <FlatList
+        data={instances}
+        keyExtractor={inst => inst.id}
+        renderItem={({ item }) => renderInstance(item)}
         contentContainerStyle={styles.scrollContent}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
         automaticallyAdjustContentInsets={false}
         contentInsetAdjustmentBehavior="never"
-      >
-        {instances.length === 0 ? (
+        ListEmptyComponent={
           <View style={[styles.emptyState, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <Ionicons name="checkmark-done-outline" size={40} color={colors.muted} />
             <Text style={[styles.emptyTitle, { color: colors.text }]}>No checklists</Text>
@@ -693,10 +706,8 @@ const colors = {
               {projectId || selectedProjectId ? 'No checklists found for this project' : 'No checklists have been created yet'}
             </Text>
           </View>
-        ) : (
-          instances.map(renderInstance)
-        )}
-      </ScrollView>
+        }
+      />
 
       <Modal
         visible={!!menuItem}

@@ -1747,7 +1747,7 @@ export default function ProjectChecklists() {
                                                   </Tooltip>
                                                 )}
                                                 {item.isRequired && (
-                                                  <Badge variant="outline" className="text-label px-1 py-0 text-status-warning border-orange-300">
+                                                  <Badge variant="outline" className="text-label px-1 py-0 text-status-warning border-status-warning/30">
                                                     Required
                                                   </Badge>
                                                 )}

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -8,23 +8,26 @@ import {
   RefreshControl,
   ActivityIndicator,
   useColorScheme,
-  Modal,
   FlatList,
-  TextInput,
-  KeyboardAvoidingView,
+  SectionList,
   Platform,
-  Dimensions,
-  Alert,
+  useWindowDimensions,
 } from 'react-native';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../contexts/AuthContext';
 import { apiFetch, apiRequest } from '../services/api';
+import { dateStrOf, toLocalDateStr, fromLocalDateStr } from '../lib/dates';
+import { doneStatusKey, defaultStatusKey, isDoneStatus, type TaskStatusOption } from '../lib/taskStatus';
 import TaskComments from '../components/TaskComments';
+import { Sheet, SheetTextInput, type SheetRef } from '../components/ui/Sheet';
+import { useToast } from '../components/ui/Toast';
+import { haptic } from '../lib/haptics';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
-import { useTheme } from '../theme';
+import { useTheme, lightTheme } from '../theme';
 const TASKS_PREFS_KEY = '@buildpro_tasks_prefs';
 
 function stripHtml(html?: string): string {
@@ -67,6 +70,7 @@ interface Task {
 interface Project {
   id: string;
   name: string;
+  color?: string;
 }
 
 type ViewMode = 'list' | 'board';
@@ -97,21 +101,21 @@ const PRIORITY_ORDER = ['urgent', 'high', 'medium', 'low'];
 
 function getPriorityColor(priority?: string): string {
   switch (priority) {
-    case 'urgent': return '#ef4444';
-    case 'high': return '#f97316';
-    case 'medium': return '#eab308';
-    case 'low': return '#22c55e';
-    default: return '#94a3b8';
+    case 'urgent': return lightTheme.statusDanger;
+    case 'high': return lightTheme.coral;
+    case 'medium': return lightTheme.statusWarning;
+    case 'low': return lightTheme.statusSuccess;
+    default: return lightTheme.textMuted;
   }
 }
 
 function getStatusColorFallback(status?: string): string {
   switch (status) {
-    case 'todo': return '#94a3b8';
-    case 'in-progress': return '#3b82f6';
+    case 'todo': return lightTheme.textMuted;
+    case 'in-progress': return lightTheme.statusInfo;
     case 'done':
-    case 'completed': return '#22c55e';
-    default: return '#94a3b8';
+    case 'completed': return lightTheme.statusSuccess;
+    default: return lightTheme.textMuted;
   }
 }
 
@@ -152,11 +156,11 @@ const DUE_DATE_ORDER = ['Overdue', 'Today', 'This Week', 'Later', 'No Date'];
 
 function getDueDateColor(group: string): string {
   switch (group) {
-    case 'Overdue': return '#ef4444';
-    case 'Today': return '#3b82f6';
-    case 'This Week': return '#f97316';
-    case 'Later': return '#22c55e';
-    default: return '#94a3b8';
+    case 'Overdue': return lightTheme.statusDanger;
+    case 'Today': return lightTheme.statusInfo;
+    case 'This Week': return lightTheme.statusWarning;
+    case 'Later': return lightTheme.statusSuccess;
+    default: return lightTheme.textMuted;
   }
 }
 
@@ -173,13 +177,17 @@ export default function TasksScreen({ navigation, route }: Props) {
   const [viewMode, setViewMode] = useState<ViewMode>('list');
   const [groupBy, setGroupBy] = useState<GroupBy>('status');
   const [datePreset, setDatePreset] = useState<DatePreset>('all');
-  const [showGroupByModal, setShowGroupByModal] = useState(false);
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
   const [prefsLoaded, setPrefsLoaded] = useState(false);
 
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
-  const [showViewModal, setShowViewModal] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
+
+  const groupBySheetRef = useRef<SheetRef>(null);
+  const taskSheetRef = useRef<SheetRef>(null);
+  const statusSheetRef = useRef<SheetRef>(null);
+  const prioritySheetRef = useRef<SheetRef>(null);
+  const filterSheetRef = useRef<SheetRef>(null);
 
   const [editTitle, setEditTitle] = useState('');
   const [editStatus, setEditStatus] = useState('');
@@ -188,13 +196,16 @@ export default function TasksScreen({ navigation, route }: Props) {
   const [editDescription, setEditDescription] = useState('');
   const [saving, setSaving] = useState(false);
 
-  const [showStatusPicker, setShowStatusPicker] = useState(false);
-  const [showPriorityPicker, setShowPriorityPicker] = useState(false);
+  const [showEditDatePicker, setShowEditDatePicker] = useState(false);
 
-  const [statusOptions, setStatusOptions] = useState<{key: string; name: string; color: string | null; sortOrder: number}[]>([]);
-  const [showFilterModal, setShowFilterModal] = useState(false);
+  // Plain text seeded into the description field — only PATCH `content` when
+  // the user actually edited it, so rich text authored on web isn't destroyed.
+  const seededDescriptionRef = useRef('');
+
+  const [statusOptions, setStatusOptions] = useState<TaskStatusOption[]>([]);
   const [filters, setFilters] = useState<{statuses: string[]; priorities: string[]; projects: string[]}>({statuses: [], priorities: [], projects: []});
 
+  const toast = useToast();
   const theme = useTheme();
 const colors = {
     bg: theme.background,
@@ -211,7 +222,7 @@ const colors = {
       const [tasksData, projectsData, statusData] = await Promise.all([
         apiFetch<Task[]>('/api/tasks').catch(() => []),
         apiFetch<Project[]>('/api/projects').catch(() => []),
-        apiFetch<{ options: {key: string; name: string; color: string | null; sortOrder: number}[] }>('/api/field-categories/by-key/task.status').catch(() => ({ options: [] })),
+        apiFetch<{ options: TaskStatusOption[] }>('/api/field-categories/by-key/task.status').catch(() => ({ options: [] })),
       ]);
 
       const filtered = (tasksData || []).filter(t => {
@@ -264,12 +275,17 @@ const colors = {
       setEditTitle(task.title || '');
       setEditStatus(task.status || 'todo');
       setEditPriority(task.priority || 'low');
-      setEditDueDate(task.dueDate ? new Date(task.dueDate).toISOString().split('T')[0] : '');
-      setEditDescription(stripHtml(task.contentText || task.content));
+      setEditDueDate(task.dueDate ? dateStrOf(task.dueDate) : '');
+      const seeded = stripHtml(task.contentText || task.content);
+      seededDescriptionRef.current = seeded;
+      setEditDescription(seeded);
+      setShowEditDatePicker(false);
       setIsEditing(true);
-      setShowViewModal(true);
+      taskSheetRef.current?.present();
+      // Clear the param so a refetch doesn't reopen the sheet.
+      navigation.setParams({ openTaskId: undefined });
     }
-  }, [openTaskId, loading, tasks]);
+  }, [openTaskId, loading, tasks, navigation]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -284,9 +300,9 @@ const colors = {
   }, [projects]);
 
   const getProjectColor = useCallback((projectId?: string): string => {
-    if (!projectId) return '#94a3b8';
+    if (!projectId) return lightTheme.textMuted;
     const p = projects.find(pr => pr.id === projectId);
-    return p?.color || '#94a3b8';
+    return p?.color || lightTheme.textMuted;
   }, [projects]);
 
   const getStatusColor = useCallback((status?: string): string => {
@@ -340,6 +356,12 @@ const colors = {
           groups.push({ key: status, label: STATUS_LABELS[status] || status, color: getStatusColor(status), tasks: items });
         }
       }
+      // Tasks whose status isn't in the known set must stay visible.
+      const knownStatuses = new Set(groups.map(g => g.key));
+      const otherTasks = filteredTasks.filter(t => !knownStatuses.has(t.status || 'todo'));
+      if (otherTasks.length > 0) {
+        groups.push({ key: '__other', label: 'Other', color: '#94a3b8', tasks: otherTasks });
+      }
     } else if (groupBy === 'priority') {
       for (const priority of PRIORITY_ORDER) {
         const items = filteredTasks.filter(t => (t.priority || 'low') === priority);
@@ -380,16 +402,25 @@ const colors = {
   const handleViewTask = (task: Task) => {
     setSelectedTask(task);
     setIsEditing(false);
-    setShowViewModal(true);
+    taskSheetRef.current?.present();
   };
+
+  const handleTaskSheetDismiss = useCallback(() => {
+    setIsEditing(false);
+    setSelectedTask(null);
+    setShowEditDatePicker(false);
+  }, []);
 
   const handleEditTask = () => {
     if (!selectedTask) return;
     setEditTitle(selectedTask.title || '');
     setEditStatus(selectedTask.status || 'todo');
     setEditPriority(selectedTask.priority || 'low');
-    setEditDueDate(selectedTask.dueDate ? new Date(selectedTask.dueDate).toISOString().split('T')[0] : '');
-    setEditDescription(stripHtml(selectedTask.contentText || selectedTask.content));
+    setEditDueDate(selectedTask.dueDate ? dateStrOf(selectedTask.dueDate) : '');
+    const seeded = stripHtml(selectedTask.contentText || selectedTask.content);
+    seededDescriptionRef.current = seeded;
+    setEditDescription(seeded);
+    setShowEditDatePicker(false);
     setIsEditing(true);
   };
 
@@ -401,32 +432,44 @@ const colors = {
         title: editTitle,
         status: editStatus,
         priority: editPriority,
-        content: editDescription,
       };
+      // Only send content if the user actually changed the description —
+      // sending the stripped plain text back would destroy rich text.
+      if (editDescription !== seededDescriptionRef.current) {
+        body.content = editDescription;
+      }
       if (editDueDate) {
         body.dueDate = new Date(editDueDate).toISOString();
       } else {
         body.dueDate = null;
       }
       await apiRequest(`/api/tasks/${selectedTask.id}`, 'PATCH', body);
-      setIsEditing(false);
-      setShowViewModal(false);
-      setSelectedTask(null);
+      taskSheetRef.current?.dismiss();
+      toast.success('Task saved');
       await fetchData();
     } catch (e: any) {
-      Alert.alert('Error', 'Failed to save task. Please try again.');
+      // Keep the sheet open so edits aren't lost.
+      toast.error(e?.message || 'Failed to save task. Please try again.');
     } finally {
       setSaving(false);
     }
   };
 
+  const isTaskDone = useCallback(
+    (status?: string) => isDoneStatus(status, statusOptions),
+    [statusOptions],
+  );
+
   const handleToggleDone = async (task: Task) => {
-    const newStatus = task.status === 'done' ? 'todo' : 'done';
+    const wasDone = isTaskDone(task.status);
+    const newStatus = wasDone ? defaultStatusKey(statusOptions) : doneStatusKey(statusOptions);
+    if (wasDone) haptic.select(); else haptic.success();
+    setTasks(prev => prev.map(t => t.id === task.id ? { ...t, status: newStatus } : t));
     try {
       await apiRequest(`/api/tasks/${task.id}`, 'PATCH', { status: newStatus });
-      await fetchData();
-    } catch {
-      Alert.alert('Error', 'Failed to update task status.');
+    } catch (e: any) {
+      setTasks(prev => prev.map(t => t.id === task.id ? { ...t, status: task.status } : t));
+      toast.error(e?.message || 'Failed to update task status.');
     }
   };
 
@@ -437,56 +480,59 @@ const colors = {
     { key: 'dueDate', label: 'Due Date', icon: 'calendar-outline' },
   ];
 
-  const renderTaskRow = (task: Task) => (
-    <TouchableOpacity
-      key={task.id}
-      style={[styles.taskRow, { backgroundColor: colors.card, borderColor: colors.border }]}
-      onPress={() => handleViewTask(task)}
-      activeOpacity={0.7}
-    >
-      <View style={[styles.priorityStrip, { backgroundColor: getProjectColor(task.projectId) }]} />
+  const renderTaskRow = (task: Task) => {
+    const done = isTaskDone(task.status);
+    return (
       <TouchableOpacity
-        style={styles.checkbox}
-        onPress={() => handleToggleDone(task)}
-        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        key={task.id}
+        style={[styles.taskRow, { backgroundColor: colors.card, borderColor: colors.border }]}
+        onPress={() => handleViewTask(task)}
+        activeOpacity={0.7}
       >
-        <View style={[
-          styles.checkCircle,
-          { borderColor: task.status === 'done' ? '#22c55e' : colors.muted },
-          task.status === 'done' && { backgroundColor: '#22c55e' },
-        ]}>
-          {task.status === 'done' && (
-            <Ionicons name="checkmark" size={12} color="#ffffff" />
-          )}
-        </View>
-      </TouchableOpacity>
-      <View style={styles.taskContent}>
-        <Text
-          style={[
-            styles.taskTitle,
-            { color: colors.text },
-            task.status === 'done' && { textDecorationLine: 'line-through', color: colors.muted },
-          ]}
-          numberOfLines={1}
+        <View style={[styles.priorityStrip, { backgroundColor: getProjectColor(task.projectId) }]} />
+        <TouchableOpacity
+          style={styles.checkbox}
+          onPress={() => handleToggleDone(task)}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         >
-          {task.title}
-        </Text>
-        {getProjectName(task.projectId) ? (
-          <Text style={[styles.taskSubtext, { color: colors.secondary }]} numberOfLines={1}>
-            {getProjectName(task.projectId)}
+          <View style={[
+            styles.checkCircle,
+            { borderColor: done ? lightTheme.statusSuccess : colors.muted },
+            done && { backgroundColor: lightTheme.statusSuccess },
+          ]}>
+            {done && (
+              <Ionicons name="checkmark" size={12} color="#ffffff" />
+            )}
+          </View>
+        </TouchableOpacity>
+        <View style={styles.taskContent}>
+          <Text
+            style={[
+              styles.taskTitle,
+              { color: colors.text },
+              done && { textDecorationLine: 'line-through', color: colors.muted },
+            ]}
+            numberOfLines={1}
+          >
+            {task.title}
           </Text>
-        ) : null}
-      </View>
-      {task.dueDate && (
-        <Text style={[
-          styles.taskDue,
-          { color: getDueDateGroup(task.dueDate) === 'Overdue' ? '#ef4444' : colors.secondary },
-        ]}>
-          {getRelativeDate(task.dueDate)}
-        </Text>
-      )}
-    </TouchableOpacity>
-  );
+          {getProjectName(task.projectId) ? (
+            <Text style={[styles.taskSubtext, { color: colors.secondary }]} numberOfLines={1}>
+              {getProjectName(task.projectId)}
+            </Text>
+          ) : null}
+        </View>
+        {task.dueDate && (
+          <Text style={[
+            styles.taskDue,
+            { color: getDueDateGroup(task.dueDate) === 'Overdue' ? lightTheme.statusDanger : colors.secondary },
+          ]}>
+            {getRelativeDate(task.dueDate)}
+          </Text>
+        )}
+      </TouchableOpacity>
+    );
+  };
 
   const renderBoardCard = (task: Task) => (
     <TouchableOpacity
@@ -508,7 +554,7 @@ const colors = {
         {task.dueDate && (
           <Text style={[
             styles.boardCardDate,
-            { color: getDueDateGroup(task.dueDate) === 'Overdue' ? '#ef4444' : colors.secondary },
+            { color: getDueDateGroup(task.dueDate) === 'Overdue' ? lightTheme.statusDanger : colors.secondary },
           ]}>
             {formatDate(task.dueDate)}
           </Text>
@@ -522,7 +568,7 @@ const colors = {
     </TouchableOpacity>
   );
 
-  const screenWidth = Dimensions.get('window').width;
+  const { width: screenWidth, height: screenHeight } = useWindowDimensions();
   const columnWidth = Math.max(screenWidth * 0.7, 260);
 
   if (loading) {
@@ -550,13 +596,13 @@ const colors = {
         <View style={styles.headerActions}>
           <TouchableOpacity
             style={[styles.groupByBtn, { borderColor: colors.accent + '60', backgroundColor: colors.accent + '15' }]}
-            onPress={() => setShowGroupByModal(true)}
+            onPress={() => groupBySheetRef.current?.present()}
           >
             <Ionicons name="funnel-outline" size={16} color={colors.text} />
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.groupByBtn, { borderColor: colors.accent + '60', backgroundColor: colors.accent + '15' }]}
-            onPress={() => setShowFilterModal(true)}
+            onPress={() => filterSheetRef.current?.present()}
           >
             <Ionicons name="options-outline" size={16} color={colors.text} />
             {hasActiveFilters && (
@@ -576,9 +622,9 @@ const colors = {
       >
         {([
           { key: 'all', label: 'All' },
-          { key: 'overdue', label: 'Overdue', color: '#ef4444' },
-          { key: 'today', label: 'Today', color: '#3b82f6' },
-          { key: 'this-week', label: 'This Week', color: '#f97316' },
+          { key: 'overdue', label: 'Overdue', color: lightTheme.statusDanger },
+          { key: 'today', label: 'Today', color: lightTheme.statusInfo },
+          { key: 'this-week', label: 'This Week', color: lightTheme.statusWarning },
         ] as { key: DatePreset; label: string; color?: string }[]).map(preset => {
           const active = datePreset === preset.key;
           const chipColor = preset.color || colors.accent;
@@ -592,7 +638,7 @@ const colors = {
                   backgroundColor: active ? chipColor + '20' : 'transparent',
                 },
               ]}
-              onPress={() => setDatePreset(preset.key)}
+              onPress={() => { haptic.select(); setDatePreset(preset.key); }}
               activeOpacity={0.7}
             >
               <Text style={[styles.datePresetText, { color: active ? chipColor : colors.secondary }]}>
@@ -604,14 +650,38 @@ const colors = {
       </ScrollView>
 
       {viewMode === 'list' ? (
-        <ScrollView
+        <SectionList
           style={styles.listScroll}
           contentContainerStyle={styles.listContent}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
-          automaticallyAdjustContentInsets={false}
-          contentInsetAdjustmentBehavior="never"
-        >
-          {groupedTasks.length === 0 && (
+          sections={groupedTasks.map(group => ({
+            ...group,
+            data: collapsedSections[group.key] ? [] : group.tasks,
+          }))}
+          keyExtractor={task => task.id}
+          renderItem={({ item }) => renderTaskRow(item)}
+          renderSectionHeader={({ section }) => (
+            <TouchableOpacity
+              style={styles.sectionHeader}
+              onPress={() => toggleSection(section.key)}
+              activeOpacity={0.7}
+            >
+              <View style={styles.sectionHeaderLeft}>
+                <View style={[styles.sectionDot, { backgroundColor: section.color }]} />
+                <Text style={[styles.sectionTitle, { color: colors.text }]}>{section.label}</Text>
+                <View style={[styles.sectionCount, { backgroundColor: section.color + '20' }]}>
+                  <Text style={[styles.sectionCountText, { color: section.color }]}>{section.tasks.length}</Text>
+                </View>
+              </View>
+              <Ionicons
+                name={collapsedSections[section.key] ? 'chevron-forward' : 'chevron-down'}
+                size={18}
+                color={colors.secondary}
+              />
+            </TouchableOpacity>
+          )}
+          renderSectionFooter={() => <View style={styles.section} />}
+          stickySectionHeadersEnabled={false}
+          ListEmptyComponent={
             <View style={[styles.emptyState, { backgroundColor: colors.card, borderColor: colors.border }]}>
               <Ionicons name="checkbox-outline" size={40} color={colors.muted} />
               <Text style={[styles.emptyText, { color: colors.secondary }]}>
@@ -621,31 +691,11 @@ const colors = {
                   : 'No tasks found'}
               </Text>
             </View>
-          )}
-          {groupedTasks.map(group => (
-            <View key={group.key} style={styles.section}>
-              <TouchableOpacity
-                style={styles.sectionHeader}
-                onPress={() => toggleSection(group.key)}
-                activeOpacity={0.7}
-              >
-                <View style={styles.sectionHeaderLeft}>
-                  <View style={[styles.sectionDot, { backgroundColor: group.color }]} />
-                  <Text style={[styles.sectionTitle, { color: colors.text }]}>{group.label}</Text>
-                  <View style={[styles.sectionCount, { backgroundColor: group.color + '20' }]}>
-                    <Text style={[styles.sectionCountText, { color: group.color }]}>{group.tasks.length}</Text>
-                  </View>
-                </View>
-                <Ionicons
-                  name={collapsedSections[group.key] ? 'chevron-forward' : 'chevron-down'}
-                  size={18}
-                  color={colors.secondary}
-                />
-              </TouchableOpacity>
-              {!collapsedSections[group.key] && group.tasks.map(renderTaskRow)}
-            </View>
-          ))}
-        </ScrollView>
+          }
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
+          automaticallyAdjustContentInsets={false}
+          contentInsetAdjustmentBehavior="never"
+        />
       ) : (
         <ScrollView
           horizontal
@@ -665,14 +715,18 @@ const colors = {
                   <Text style={[styles.sectionCountText, { color: group.color }]}>{group.tasks.length}</Text>
                 </View>
               </View>
-              <ScrollView style={styles.boardColumnScroll} nestedScrollEnabled>
-                {group.tasks.map(renderBoardCard)}
-                {group.tasks.length === 0 && (
+              <FlatList
+                style={{ maxHeight: screenHeight - 240 }}
+                data={group.tasks}
+                keyExtractor={t => t.id}
+                renderItem={({ item }) => renderBoardCard(item)}
+                nestedScrollEnabled
+                ListEmptyComponent={
                   <View style={[styles.boardEmptyCol, { borderColor: colors.border }]}>
                     <Text style={[styles.boardEmptyText, { color: colors.muted }]}>No tasks</Text>
                   </View>
-                )}
-              </ScrollView>
+                }
+              />
             </View>
           ))}
           {groupedTasks.length === 0 && (
@@ -684,403 +738,405 @@ const colors = {
         </ScrollView>
       )}
 
-      <Modal visible={showGroupByModal} transparent animationType="fade">
-        <TouchableOpacity
-          style={styles.modalOverlay}
-          activeOpacity={1}
-          onPress={() => setShowGroupByModal(false)}
-        >
-          <View style={[styles.groupBySheet, { backgroundColor: colors.card }]}>
-            <Text style={[styles.groupByTitle, { color: colors.text }]}>Group by</Text>
-            {groupByOptions.map(opt => (
-              <TouchableOpacity
-                key={opt.key}
-                style={[styles.groupByOption, groupBy === opt.key && { backgroundColor: colors.accent + '15' }]}
-                onPress={() => { setGroupBy(opt.key); setShowGroupByModal(false); }}
-              >
-                <Ionicons name={opt.icon} size={20} color={groupBy === opt.key ? colors.accent : colors.secondary} />
-                <Text style={[styles.groupByOptionText, { color: groupBy === opt.key ? colors.accent : colors.text }]}>
-                  {opt.label}
-                </Text>
-                {groupBy === opt.key && <Ionicons name="checkmark" size={20} color={colors.accent} />}
-              </TouchableOpacity>
-            ))}
-          </View>
-        </TouchableOpacity>
-      </Modal>
-
-      <Modal visible={showViewModal} animationType="slide" transparent>
-        <View style={styles.taskModalOverlay}>
-          <KeyboardAvoidingView
-            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-            style={styles.taskModalContainer}
-          >
-            <View style={[styles.taskModalSheet, { backgroundColor: colors.card }]}>
-              <View style={[styles.taskModalHeader, { borderBottomColor: colors.border }]}>
-                <TouchableOpacity onPress={() => { setShowViewModal(false); setIsEditing(false); setSelectedTask(null); }}>
-                  <Ionicons name="close" size={24} color={colors.secondary} />
-                </TouchableOpacity>
-                <Text style={[styles.taskModalHeaderTitle, { color: colors.text }]}>
-                  {isEditing ? 'Edit Task' : 'Task Details'}
-                </Text>
-                {!isEditing ? (
-                  <TouchableOpacity onPress={handleEditTask}>
-                    <Text style={{ color: colors.accent, fontWeight: '600', fontSize: 15 }}>Edit</Text>
-                  </TouchableOpacity>
-                ) : (
-                  <View style={{ width: 40 }} />
-                )}
-              </View>
-
-              <ScrollView style={styles.taskModalBody} contentContainerStyle={{ paddingBottom: 40 }}>
-                {!isEditing && selectedTask && (
-                  <>
-                    <Text style={[styles.viewTitle, { color: colors.text }]}>{selectedTask.title}</Text>
-
-                    <View style={styles.viewBadgeRow}>
-                      <View style={[styles.viewBadge, { backgroundColor: getStatusColor(selectedTask.status) + '20' }]}>
-                        <Text style={[styles.viewBadgeText, { color: getStatusColor(selectedTask.status) }]}>
-                          {getStatusLabel(selectedTask.status)}
-                        </Text>
-                      </View>
-                      <View style={[styles.viewBadge, { backgroundColor: getPriorityColor(selectedTask.priority) + '20' }]}>
-                        <Text style={[styles.viewBadgeText, { color: getPriorityColor(selectedTask.priority) }]}>
-                          {PRIORITY_LABELS[selectedTask.priority || 'low'] || 'Low'}
-                        </Text>
-                      </View>
-                    </View>
-
-                    {selectedTask.dueDate && (
-                      <View style={styles.viewField}>
-                        <Ionicons name="calendar-outline" size={18} color={colors.secondary} />
-                        <Text style={[styles.viewFieldText, { color: colors.text }]}>
-                          {new Date(selectedTask.dueDate).toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}
-                        </Text>
-                      </View>
-                    )}
-
-                    {getProjectName(selectedTask.projectId) ? (
-                      <View style={styles.viewField}>
-                        <Ionicons name="briefcase-outline" size={18} color={colors.secondary} />
-                        <Text style={[styles.viewFieldText, { color: colors.text }]}>
-                          {getProjectName(selectedTask.projectId)}
-                        </Text>
-                      </View>
-                    ) : null}
-
-                    {stripHtml(selectedTask.contentText || selectedTask.content) ? (
-                      <View style={styles.viewSection}>
-                        <Text style={[styles.viewSectionLabel, { color: colors.secondary }]}>Notes</Text>
-                        <Text style={[styles.viewDescription, { color: colors.text }]}>
-                          {stripHtml(selectedTask.contentText || selectedTask.content)}
-                        </Text>
-                      </View>
-                    ) : null}
-
-                    {(selectedTask.assigneeNames || []).length > 0 && (
-                      <View style={styles.viewSection}>
-                        <Text style={[styles.viewSectionLabel, { color: colors.secondary }]}>Assignees</Text>
-                        {(selectedTask.assigneeNames || []).map((name: string, idx: number) => (
-                          <View key={idx} style={styles.assigneeRow}>
-                            <View style={[styles.assigneeAvatar, { backgroundColor: colors.accent }]}>
-                              <Text style={styles.assigneeAvatarText}>
-                                {(name || '').split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0, 2)}
-                              </Text>
-                            </View>
-                            <Text style={[styles.assigneeName, { color: colors.text }]}>{name}</Text>
-                          </View>
-                        ))}
-                      </View>
-                    )}
-
-                    {(selectedTask.checklist || []).length > 0 && (
-                      <View style={styles.viewSection}>
-                        <Text style={[styles.viewSectionLabel, { color: colors.secondary }]}>Checklist</Text>
-                        {(selectedTask.checklist || []).map((item: any) => (
-                          <View key={item.id} style={styles.checklistRow}>
-                            <Ionicons
-                              name={item.completed ? 'checkbox' : 'square-outline'}
-                              size={20}
-                              color={item.completed ? '#22c55e' : colors.muted}
-                            />
-                            <Text style={[
-                              styles.checklistText,
-                              { color: colors.text },
-                              item.completed && { textDecorationLine: 'line-through', color: colors.muted },
-                            ]}>
-                              {item.text}
-                            </Text>
-                          </View>
-                        ))}
-                      </View>
-                    )}
-
-                    {(selectedTask.tags || []).length > 0 && (
-                      <View style={styles.viewSection}>
-                        <Text style={[styles.viewSectionLabel, { color: colors.secondary }]}>Tags</Text>
-                        <View style={styles.tagsRow}>
-                          {(selectedTask.tags || []).map((tag: string, idx: number) => (
-                            <View key={idx} style={[styles.tagBadge, { backgroundColor: colors.accent + '15' }]}>
-                              <Text style={[styles.tagText, { color: colors.accent }]}>{tag}</Text>
-                            </View>
-                          ))}
-                        </View>
-                      </View>
-                    )}
-
-                    <TaskComments
-                      taskId={selectedTask.id}
-                      currentUserId={user?.id}
-                      colors={colors}
-                      isDark={isDark}
-                    />
-                  </>
-                )}
-
-                {isEditing && (
-                  <>
-                    <View style={styles.editField}>
-                      <Text style={[styles.editLabel, { color: colors.secondary }]}>Title</Text>
-                      <TextInput
-                        style={[styles.editInput, { backgroundColor: isDark ? '#0f172a' : '#f1f5f9', color: colors.text, borderColor: colors.border }]}
-                        value={editTitle}
-                        onChangeText={setEditTitle}
-                        placeholder="Task title"
-                        placeholderTextColor={colors.muted}
-                      />
-                    </View>
-
-                    <View style={styles.editField}>
-                      <Text style={[styles.editLabel, { color: colors.secondary }]}>Status</Text>
-                      <TouchableOpacity
-                        style={[styles.editSelect, { backgroundColor: isDark ? '#0f172a' : '#f1f5f9', borderColor: colors.border }]}
-                        onPress={() => setShowStatusPicker(true)}
-                      >
-                        <View style={[styles.selectDot, { backgroundColor: getStatusColor(editStatus) }]} />
-                        <Text style={[styles.editSelectText, { color: colors.text }]}>
-                          {getStatusLabel(editStatus)}
-                        </Text>
-                        <Ionicons name="chevron-down" size={16} color={colors.secondary} />
-                      </TouchableOpacity>
-                    </View>
-
-                    <View style={styles.editField}>
-                      <Text style={[styles.editLabel, { color: colors.secondary }]}>Priority</Text>
-                      <TouchableOpacity
-                        style={[styles.editSelect, { backgroundColor: isDark ? '#0f172a' : '#f1f5f9', borderColor: colors.border }]}
-                        onPress={() => setShowPriorityPicker(true)}
-                      >
-                        <View style={[styles.selectDot, { backgroundColor: getPriorityColor(editPriority) }]} />
-                        <Text style={[styles.editSelectText, { color: colors.text }]}>
-                          {PRIORITY_LABELS[editPriority] || editPriority}
-                        </Text>
-                        <Ionicons name="chevron-down" size={16} color={colors.secondary} />
-                      </TouchableOpacity>
-                    </View>
-
-                    <View style={styles.editField}>
-                      <Text style={[styles.editLabel, { color: colors.secondary }]}>Due Date</Text>
-                      <TextInput
-                        style={[styles.editInput, { backgroundColor: isDark ? '#0f172a' : '#f1f5f9', color: colors.text, borderColor: colors.border }]}
-                        value={editDueDate}
-                        onChangeText={setEditDueDate}
-                        placeholder="YYYY-MM-DD"
-                        placeholderTextColor={colors.muted}
-                      />
-                    </View>
-
-                    <View style={styles.editField}>
-                      <Text style={[styles.editLabel, { color: colors.secondary }]}>Notes</Text>
-                      <TextInput
-                        style={[styles.editTextArea, { backgroundColor: isDark ? '#0f172a' : '#f1f5f9', color: colors.text, borderColor: colors.border }]}
-                        value={editDescription}
-                        onChangeText={setEditDescription}
-                        placeholder="Add a description..."
-                        placeholderTextColor={colors.muted}
-                        multiline
-                        numberOfLines={4}
-                        textAlignVertical="top"
-                      />
-                    </View>
-
-                    <View style={styles.editActions}>
-                      <TouchableOpacity
-                        style={[styles.editCancelBtn, { borderColor: colors.border }]}
-                        onPress={() => setIsEditing(false)}
-                      >
-                        <Text style={[styles.editCancelText, { color: colors.secondary }]}>Cancel</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        style={[styles.editSaveBtn, { backgroundColor: colors.accent }]}
-                        onPress={handleSaveTask}
-                        disabled={saving}
-                      >
-                        {saving ? (
-                          <ActivityIndicator size="small" color="#ffffff" />
-                        ) : (
-                          <Text style={styles.editSaveText}>Save</Text>
-                        )}
-                      </TouchableOpacity>
-                    </View>
-                  </>
-                )}
-              </ScrollView>
-            </View>
-          </KeyboardAvoidingView>
+      <Sheet ref={groupBySheetRef} title="Group by">
+        <View style={styles.sheetBody}>
+          {groupByOptions.map(opt => (
+            <TouchableOpacity
+              key={opt.key}
+              style={[styles.groupByOption, groupBy === opt.key && { backgroundColor: colors.accent + '15' }]}
+              onPress={() => { haptic.select(); setGroupBy(opt.key); groupBySheetRef.current?.dismiss(); }}
+            >
+              <Ionicons name={opt.icon} size={20} color={groupBy === opt.key ? colors.accent : colors.secondary} />
+              <Text style={[styles.groupByOptionText, { color: groupBy === opt.key ? colors.accent : colors.text }]}>
+                {opt.label}
+              </Text>
+              {groupBy === opt.key && <Ionicons name="checkmark" size={20} color={colors.accent} />}
+            </TouchableOpacity>
+          ))}
         </View>
-      </Modal>
+      </Sheet>
 
-      <Modal visible={showStatusPicker} transparent animationType="fade">
-        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowStatusPicker(false)}>
-          <View style={[styles.pickerSheet, { backgroundColor: colors.card }]}>
-            <Text style={[styles.pickerSheetTitle, { color: colors.text }]}>Status</Text>
-            {(statusOptions.length > 0 ? statusOptions : STATUS_ORDER.map(s => ({ key: s, name: STATUS_LABELS[s] || s, color: getStatusColor(s), sortOrder: 0 }))).map(opt => (
-              <TouchableOpacity
-                key={opt.key}
-                style={[styles.pickerOption, editStatus === opt.key && { backgroundColor: colors.accent + '15' }]}
-                onPress={() => { setEditStatus(opt.key); setShowStatusPicker(false); }}
-              >
-                <View style={[styles.selectDot, { backgroundColor: opt.color || '#94a3b8' }]} />
-                <Text style={[styles.pickerOptionText, { color: editStatus === opt.key ? colors.accent : colors.text }]}>
-                  {opt.name}
-                </Text>
-                {editStatus === opt.key && <Ionicons name="checkmark" size={20} color={colors.accent} />}
-              </TouchableOpacity>
-            ))}
-          </View>
-        </TouchableOpacity>
-      </Modal>
+      <Sheet
+        ref={taskSheetRef}
+        scrollable
+        snapPoints={['70%', '92%']}
+        onDismiss={handleTaskSheetDismiss}
+      >
+        <View style={[styles.sheetHeaderRow, { borderBottomColor: colors.border }]}>
+          <Text style={[styles.sheetHeaderTitle, { color: colors.text }]}>
+            {isEditing ? 'Edit Task' : 'Task Details'}
+          </Text>
+          {!isEditing && (
+            <TouchableOpacity onPress={handleEditTask} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Text style={{ color: colors.accent, fontWeight: '600', fontSize: 15 }}>Edit</Text>
+            </TouchableOpacity>
+          )}
+        </View>
 
-      <Modal visible={showPriorityPicker} transparent animationType="fade">
-        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowPriorityPicker(false)}>
-          <View style={[styles.pickerSheet, { backgroundColor: colors.card }]}>
-            <Text style={[styles.pickerSheetTitle, { color: colors.text }]}>Priority</Text>
-            {PRIORITY_ORDER.map(p => (
-              <TouchableOpacity
-                key={p}
-                style={[styles.pickerOption, editPriority === p && { backgroundColor: colors.accent + '15' }]}
-                onPress={() => { setEditPriority(p); setShowPriorityPicker(false); }}
-              >
-                <View style={[styles.selectDot, { backgroundColor: getPriorityColor(p) }]} />
-                <Text style={[styles.pickerOptionText, { color: editPriority === p ? colors.accent : colors.text }]}>
-                  {PRIORITY_LABELS[p]}
-                </Text>
-                {editPriority === p && <Ionicons name="checkmark" size={20} color={colors.accent} />}
-              </TouchableOpacity>
-            ))}
-          </View>
-        </TouchableOpacity>
-      </Modal>
+        <View style={styles.taskSheetBody}>
+          {!isEditing && selectedTask && (
+            <>
+              <Text style={[styles.viewTitle, { color: colors.text }]}>{selectedTask.title}</Text>
 
-      <Modal visible={showFilterModal} transparent animationType="fade">
-        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowFilterModal(false)}>
-          <View style={[styles.filterSheet, { backgroundColor: colors.card }]}>
-            <View style={styles.filterHeader}>
-              <Text style={[styles.groupByTitle, { color: colors.text }]}>Filters</Text>
-              {hasActiveFilters && (
-                <TouchableOpacity onPress={() => setFilters({ statuses: [], priorities: [], projects: [] })}>
-                  <Text style={{ color: colors.accent, fontWeight: '600', fontSize: 14 }}>Show All</Text>
-                </TouchableOpacity>
+              <View style={styles.viewBadgeRow}>
+                <View style={[styles.viewBadge, { backgroundColor: getStatusColor(selectedTask.status) + '20' }]}>
+                  <Text style={[styles.viewBadgeText, { color: getStatusColor(selectedTask.status) }]}>
+                    {getStatusLabel(selectedTask.status)}
+                  </Text>
+                </View>
+                <View style={[styles.viewBadge, { backgroundColor: getPriorityColor(selectedTask.priority) + '20' }]}>
+                  <Text style={[styles.viewBadgeText, { color: getPriorityColor(selectedTask.priority) }]}>
+                    {PRIORITY_LABELS[selectedTask.priority || 'low'] || 'Low'}
+                  </Text>
+                </View>
+              </View>
+
+              {selectedTask.dueDate && (
+                <View style={styles.viewField}>
+                  <Ionicons name="calendar-outline" size={18} color={colors.secondary} />
+                  <Text style={[styles.viewFieldText, { color: colors.text }]}>
+                    {new Date(selectedTask.dueDate).toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}
+                  </Text>
+                </View>
               )}
-            </View>
 
-            <ScrollView style={{ maxHeight: 400 }} nestedScrollEnabled>
-              <Text style={[styles.filterSectionLabel, { color: colors.secondary }]}>Status</Text>
-              <View style={styles.filterChips}>
-                {(statusOptions.length > 0 ? statusOptions : STATUS_ORDER.map(s => ({ key: s, name: STATUS_LABELS[s] || s, color: getStatusColor(s), sortOrder: 0 }))).map(opt => {
-                  const excluded = filters.statuses.includes(opt.key);
-                  const chipColor = opt.color || colors.accent;
-                  return (
-                    <TouchableOpacity
-                      key={opt.key}
-                      style={[styles.filterChip, {
-                        borderColor: excluded ? colors.border : chipColor,
-                        backgroundColor: excluded ? 'transparent' : chipColor + '20',
-                        opacity: excluded ? 0.45 : 1,
-                      }]}
-                      onPress={() => {
-                        setFilters(prev => ({
-                          ...prev,
-                          statuses: excluded ? prev.statuses.filter(s => s !== opt.key) : [...prev.statuses, opt.key],
-                        }));
-                      }}
-                    >
-                      <View style={[styles.selectDot, { backgroundColor: opt.color || '#94a3b8' }]} />
-                      <Text style={[styles.filterChipText, { color: excluded ? colors.secondary : chipColor }]}>{opt.name}</Text>
-                    </TouchableOpacity>
-                  );
-                })}
+              {getProjectName(selectedTask.projectId) ? (
+                <View style={styles.viewField}>
+                  <Ionicons name="briefcase-outline" size={18} color={colors.secondary} />
+                  <Text style={[styles.viewFieldText, { color: colors.text }]}>
+                    {getProjectName(selectedTask.projectId)}
+                  </Text>
+                </View>
+              ) : null}
+
+              {stripHtml(selectedTask.contentText || selectedTask.content) ? (
+                <View style={styles.viewSection}>
+                  <Text style={[styles.viewSectionLabel, { color: colors.secondary }]}>Notes</Text>
+                  <Text style={[styles.viewDescription, { color: colors.text }]}>
+                    {stripHtml(selectedTask.contentText || selectedTask.content)}
+                  </Text>
+                </View>
+              ) : null}
+
+              {(selectedTask.assigneeNames || []).length > 0 && (
+                <View style={styles.viewSection}>
+                  <Text style={[styles.viewSectionLabel, { color: colors.secondary }]}>Assignees</Text>
+                  {(selectedTask.assigneeNames || []).map((name: string, idx: number) => (
+                    <View key={idx} style={styles.assigneeRow}>
+                      <View style={[styles.assigneeAvatar, { backgroundColor: colors.accent }]}>
+                        <Text style={styles.assigneeAvatarText}>
+                          {(name || '').split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0, 2)}
+                        </Text>
+                      </View>
+                      <Text style={[styles.assigneeName, { color: colors.text }]}>{name}</Text>
+                    </View>
+                  ))}
+                </View>
+              )}
+
+              {(selectedTask.checklist || []).length > 0 && (
+                <View style={styles.viewSection}>
+                  <Text style={[styles.viewSectionLabel, { color: colors.secondary }]}>Checklist</Text>
+                  {(selectedTask.checklist || []).map((item: any) => (
+                    <View key={item.id} style={styles.checklistRow}>
+                      <Ionicons
+                        name={item.completed ? 'checkbox' : 'square-outline'}
+                        size={20}
+                        color={item.completed ? '#22c55e' : colors.muted}
+                      />
+                      <Text style={[
+                        styles.checklistText,
+                        { color: colors.text },
+                        item.completed && { textDecorationLine: 'line-through', color: colors.muted },
+                      ]}>
+                        {item.text}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+              )}
+
+              {(selectedTask.tags || []).length > 0 && (
+                <View style={styles.viewSection}>
+                  <Text style={[styles.viewSectionLabel, { color: colors.secondary }]}>Tags</Text>
+                  <View style={styles.tagsRow}>
+                    {(selectedTask.tags || []).map((tag: string, idx: number) => (
+                      <View key={idx} style={[styles.tagBadge, { backgroundColor: colors.accent + '15' }]}>
+                        <Text style={[styles.tagText, { color: colors.accent }]}>{tag}</Text>
+                      </View>
+                    ))}
+                  </View>
+                </View>
+              )}
+
+              <TaskComments
+                taskId={selectedTask.id}
+                currentUserId={user?.id}
+                colors={colors}
+                isDark={isDark}
+              />
+            </>
+          )}
+
+          {isEditing && (
+            <>
+              <View style={styles.editField}>
+                <Text style={[styles.editLabel, { color: colors.secondary }]}>Title</Text>
+                <SheetTextInput
+                  style={[styles.editInput, { backgroundColor: isDark ? '#0f172a' : '#f1f5f9', color: colors.text, borderColor: colors.border }]}
+                  value={editTitle}
+                  onChangeText={setEditTitle}
+                  placeholder="Task title"
+                  placeholderTextColor={colors.muted}
+                />
               </View>
 
-              <Text style={[styles.filterSectionLabel, { color: colors.secondary }]}>Priority</Text>
-              <View style={styles.filterChips}>
-                {PRIORITY_ORDER.map(p => {
-                  const excluded = filters.priorities.includes(p);
-                  const chipColor = getPriorityColor(p);
-                  return (
-                    <TouchableOpacity
-                      key={p}
-                      style={[styles.filterChip, {
-                        borderColor: excluded ? colors.border : chipColor,
-                        backgroundColor: excluded ? 'transparent' : chipColor + '20',
-                        opacity: excluded ? 0.45 : 1,
-                      }]}
-                      onPress={() => {
-                        setFilters(prev => ({
-                          ...prev,
-                          priorities: excluded ? prev.priorities.filter(pr => pr !== p) : [...prev.priorities, p],
-                        }));
-                      }}
-                    >
-                      <View style={[styles.selectDot, { backgroundColor: chipColor }]} />
-                      <Text style={[styles.filterChipText, { color: excluded ? colors.secondary : chipColor }]}>{PRIORITY_LABELS[p]}</Text>
-                    </TouchableOpacity>
-                  );
-                })}
+              <View style={styles.editField}>
+                <Text style={[styles.editLabel, { color: colors.secondary }]}>Status</Text>
+                <TouchableOpacity
+                  style={[styles.editSelect, { backgroundColor: isDark ? '#0f172a' : '#f1f5f9', borderColor: colors.border }]}
+                  onPress={() => statusSheetRef.current?.present()}
+                >
+                  <View style={[styles.selectDot, { backgroundColor: getStatusColor(editStatus) }]} />
+                  <Text style={[styles.editSelectText, { color: colors.text }]}>
+                    {getStatusLabel(editStatus)}
+                  </Text>
+                  <Ionicons name="chevron-down" size={16} color={colors.secondary} />
+                </TouchableOpacity>
               </View>
 
-              <Text style={[styles.filterSectionLabel, { color: colors.secondary }]}>Project</Text>
-              <View style={styles.filterChips}>
-                {projects.map(proj => {
-                  const excluded = filters.projects.includes(proj.id);
-                  const chipColor = proj.color || colors.accent;
-                  return (
-                    <TouchableOpacity
-                      key={proj.id}
-                      style={[styles.filterChip, {
-                        borderColor: excluded ? colors.border : chipColor,
-                        backgroundColor: excluded ? 'transparent' : chipColor + '20',
-                        opacity: excluded ? 0.45 : 1,
-                      }]}
-                      onPress={() => {
-                        setFilters(prev => ({
-                          ...prev,
-                          projects: excluded ? prev.projects.filter(id => id !== proj.id) : [...prev.projects, proj.id],
-                        }));
-                      }}
-                    >
-                      <View style={[styles.selectDot, { backgroundColor: chipColor }]} />
-                      <Text style={[styles.filterChipText, { color: excluded ? colors.secondary : chipColor }]}>{proj.name}</Text>
-                    </TouchableOpacity>
-                  );
-                })}
+              <View style={styles.editField}>
+                <Text style={[styles.editLabel, { color: colors.secondary }]}>Priority</Text>
+                <TouchableOpacity
+                  style={[styles.editSelect, { backgroundColor: isDark ? '#0f172a' : '#f1f5f9', borderColor: colors.border }]}
+                  onPress={() => prioritySheetRef.current?.present()}
+                >
+                  <View style={[styles.selectDot, { backgroundColor: getPriorityColor(editPriority) }]} />
+                  <Text style={[styles.editSelectText, { color: colors.text }]}>
+                    {PRIORITY_LABELS[editPriority] || editPriority}
+                  </Text>
+                  <Ionicons name="chevron-down" size={16} color={colors.secondary} />
+                </TouchableOpacity>
               </View>
-            </ScrollView>
+
+              <View style={styles.editField}>
+                <Text style={[styles.editLabel, { color: colors.secondary }]}>Due Date</Text>
+                <TouchableOpacity
+                  style={[styles.editSelect, { backgroundColor: isDark ? '#0f172a' : '#f1f5f9', borderColor: showEditDatePicker ? colors.accent : colors.border }]}
+                  onPress={() => setShowEditDatePicker(v => !v)}
+                >
+                  <Ionicons name="calendar-outline" size={16} color={colors.secondary} />
+                  <Text style={[styles.editSelectText, { color: editDueDate ? colors.text : colors.muted }]}>
+                    {editDueDate ? fromLocalDateStr(editDueDate).toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }) : 'No due date'}
+                  </Text>
+                  {editDueDate ? (
+                    <TouchableOpacity onPress={(e) => { e.stopPropagation?.(); setEditDueDate(''); setShowEditDatePicker(false); }} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                      <Ionicons name="close-circle" size={16} color={colors.muted} />
+                    </TouchableOpacity>
+                  ) : (
+                    <Ionicons name={showEditDatePicker ? 'chevron-up' : 'chevron-down'} size={16} color={colors.secondary} />
+                  )}
+                </TouchableOpacity>
+                {showEditDatePicker && (
+                  <DateTimePicker
+                    value={editDueDate ? fromLocalDateStr(editDueDate) : new Date()}
+                    mode="date"
+                    display={Platform.OS === 'ios' ? 'inline' : 'default'}
+                    themeVariant={isDark ? 'dark' : 'light'}
+                    onChange={(_event, date) => {
+                      if (Platform.OS === 'android') setShowEditDatePicker(false);
+                      if (date) setEditDueDate(toLocalDateStr(date));
+                    }}
+                    style={{ marginTop: 4 }}
+                  />
+                )}
+              </View>
+
+              <View style={styles.editField}>
+                <Text style={[styles.editLabel, { color: colors.secondary }]}>Notes</Text>
+                <SheetTextInput
+                  style={[styles.editTextArea, { backgroundColor: isDark ? '#0f172a' : '#f1f5f9', color: colors.text, borderColor: colors.border }]}
+                  value={editDescription}
+                  onChangeText={setEditDescription}
+                  placeholder="Add a description..."
+                  placeholderTextColor={colors.muted}
+                  multiline
+                  numberOfLines={4}
+                  textAlignVertical="top"
+                />
+              </View>
+
+              <View style={styles.editActions}>
+                <TouchableOpacity
+                  style={[styles.editCancelBtn, { borderColor: colors.border }]}
+                  onPress={() => setIsEditing(false)}
+                >
+                  <Text style={[styles.editCancelText, { color: colors.secondary }]}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.editSaveBtn, { backgroundColor: colors.accent }]}
+                  onPress={handleSaveTask}
+                  disabled={saving}
+                >
+                  {saving ? (
+                    <ActivityIndicator size="small" color="#ffffff" />
+                  ) : (
+                    <Text style={styles.editSaveText}>Save</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </>
+          )}
+        </View>
+      </Sheet>
+
+      <Sheet ref={statusSheetRef} title="Status" stackBehavior="push">
+        <View style={styles.sheetBody}>
+          {(statusOptions.length > 0 ? statusOptions : STATUS_ORDER.map(s => ({ key: s, name: STATUS_LABELS[s] || s, color: getStatusColor(s), sortOrder: 0 }))).map(opt => (
+            <TouchableOpacity
+              key={opt.key}
+              style={[styles.pickerOption, editStatus === opt.key && { backgroundColor: colors.accent + '15' }]}
+              onPress={() => { haptic.select(); setEditStatus(opt.key); statusSheetRef.current?.dismiss(); }}
+            >
+              <View style={[styles.selectDot, { backgroundColor: opt.color || '#94a3b8' }]} />
+              <Text style={[styles.pickerOptionText, { color: editStatus === opt.key ? colors.accent : colors.text }]}>
+                {opt.name}
+              </Text>
+              {editStatus === opt.key && <Ionicons name="checkmark" size={20} color={colors.accent} />}
+            </TouchableOpacity>
+          ))}
+        </View>
+      </Sheet>
+
+      <Sheet ref={prioritySheetRef} title="Priority" stackBehavior="push">
+        <View style={styles.sheetBody}>
+          {PRIORITY_ORDER.map(p => (
+            <TouchableOpacity
+              key={p}
+              style={[styles.pickerOption, editPriority === p && { backgroundColor: colors.accent + '15' }]}
+              onPress={() => { haptic.select(); setEditPriority(p); prioritySheetRef.current?.dismiss(); }}
+            >
+              <View style={[styles.selectDot, { backgroundColor: getPriorityColor(p) }]} />
+              <Text style={[styles.pickerOptionText, { color: editPriority === p ? colors.accent : colors.text }]}>
+                {PRIORITY_LABELS[p]}
+              </Text>
+              {editPriority === p && <Ionicons name="checkmark" size={20} color={colors.accent} />}
+            </TouchableOpacity>
+          ))}
+        </View>
+      </Sheet>
+
+      <Sheet ref={filterSheetRef} scrollable>
+        <View style={[styles.sheetHeaderRow, { borderBottomColor: colors.border }]}>
+          <Text style={[styles.sheetHeaderTitle, { color: colors.text }]}>Filters</Text>
+          {hasActiveFilters && (
+            <TouchableOpacity
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              onPress={() => { haptic.select(); setFilters({ statuses: [], priorities: [], projects: [] }); }}
+            >
+              <Text style={{ color: colors.accent, fontWeight: '600', fontSize: 14 }}>Show All</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+
+        <View style={styles.taskSheetBody}>
+          <Text style={[styles.filterSectionLabel, { color: colors.secondary }]}>Status</Text>
+          <View style={styles.filterChips}>
+            {(statusOptions.length > 0 ? statusOptions : STATUS_ORDER.map(s => ({ key: s, name: STATUS_LABELS[s] || s, color: getStatusColor(s), sortOrder: 0 }))).map(opt => {
+              const excluded = filters.statuses.includes(opt.key);
+              const chipColor = opt.color || colors.accent;
+              return (
+                <TouchableOpacity
+                  key={opt.key}
+                  style={[styles.filterChip, {
+                    borderColor: excluded ? colors.border : chipColor,
+                    backgroundColor: excluded ? 'transparent' : chipColor + '20',
+                    opacity: excluded ? 0.45 : 1,
+                  }]}
+                  onPress={() => {
+                    haptic.select();
+                    setFilters(prev => ({
+                      ...prev,
+                      statuses: excluded ? prev.statuses.filter(s => s !== opt.key) : [...prev.statuses, opt.key],
+                    }));
+                  }}
+                >
+                  <View style={[styles.selectDot, { backgroundColor: opt.color || '#94a3b8' }]} />
+                  <Text style={[styles.filterChipText, { color: excluded ? colors.secondary : chipColor }]}>{opt.name}</Text>
+                </TouchableOpacity>
+              );
+            })}
           </View>
-        </TouchableOpacity>
-      </Modal>
+
+          <Text style={[styles.filterSectionLabel, { color: colors.secondary }]}>Priority</Text>
+          <View style={styles.filterChips}>
+            {PRIORITY_ORDER.map(p => {
+              const excluded = filters.priorities.includes(p);
+              const chipColor = getPriorityColor(p);
+              return (
+                <TouchableOpacity
+                  key={p}
+                  style={[styles.filterChip, {
+                    borderColor: excluded ? colors.border : chipColor,
+                    backgroundColor: excluded ? 'transparent' : chipColor + '20',
+                    opacity: excluded ? 0.45 : 1,
+                  }]}
+                  onPress={() => {
+                    haptic.select();
+                    setFilters(prev => ({
+                      ...prev,
+                      priorities: excluded ? prev.priorities.filter(pr => pr !== p) : [...prev.priorities, p],
+                    }));
+                  }}
+                >
+                  <View style={[styles.selectDot, { backgroundColor: chipColor }]} />
+                  <Text style={[styles.filterChipText, { color: excluded ? colors.secondary : chipColor }]}>{PRIORITY_LABELS[p]}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          <Text style={[styles.filterSectionLabel, { color: colors.secondary }]}>Project</Text>
+          <View style={styles.filterChips}>
+            {projects.map(proj => {
+              const excluded = filters.projects.includes(proj.id);
+              const chipColor = proj.color || colors.accent;
+              return (
+                <TouchableOpacity
+                  key={proj.id}
+                  style={[styles.filterChip, {
+                    borderColor: excluded ? colors.border : chipColor,
+                    backgroundColor: excluded ? 'transparent' : chipColor + '20',
+                    opacity: excluded ? 0.45 : 1,
+                  }]}
+                  onPress={() => {
+                    haptic.select();
+                    setFilters(prev => ({
+                      ...prev,
+                      projects: excluded ? prev.projects.filter(id => id !== proj.id) : [...prev.projects, proj.id],
+                    }));
+                  }}
+                >
+                  <View style={[styles.selectDot, { backgroundColor: chipColor }]} />
+                  <Text style={[styles.filterChipText, { color: excluded ? colors.secondary : chipColor }]}>{proj.name}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </View>
+      </Sheet>
 
       <View style={[styles.bottomBar, { backgroundColor: colors.card, borderTopColor: colors.border }]}>
         <TouchableOpacity
           style={[styles.bottomBarBtn, viewMode === 'list' && { backgroundColor: colors.accent }]}
-          onPress={() => setViewMode('list')}
+          onPress={() => { haptic.select(); setViewMode('list'); }}
         >
           <Ionicons name="list-outline" size={18} color={viewMode === 'list' ? '#ffffff' : colors.secondary} />
           <Text style={[styles.bottomBarBtnText, { color: viewMode === 'list' ? '#ffffff' : colors.secondary }]}>List</Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.bottomBarBtn, viewMode === 'board' && { backgroundColor: colors.accent }]}
-          onPress={() => setViewMode('board')}
+          onPress={() => { haptic.select(); setViewMode('board'); }}
         >
           <Ionicons name="grid-outline" size={18} color={viewMode === 'board' ? '#ffffff' : colors.secondary} />
           <Text style={[styles.bottomBarBtnText, { color: viewMode === 'board' ? '#ffffff' : colors.secondary }]}>Board</Text>
@@ -1301,9 +1357,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     flex: 1,
   },
-  boardColumnScroll: {
-    maxHeight: Dimensions.get('window').height - 240,
-  },
   boardCard: {
     borderRadius: 10,
     borderWidth: 1,
@@ -1355,21 +1408,27 @@ const styles = StyleSheet.create({
   boardEmptyText: {
     fontSize: 13,
   },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.4)',
-    justifyContent: 'center',
+  sheetHeaderRow: {
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingTop: 4,
+    paddingBottom: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    marginBottom: 8,
   },
-  groupBySheet: {
-    width: '80%',
-    borderRadius: 14,
-    padding: 16,
-  },
-  groupByTitle: {
+  sheetHeaderTitle: {
     fontSize: 16,
     fontWeight: '700',
-    marginBottom: 12,
+  },
+  // Option lists inside sheets: options carry 12px inner padding, +8 = 20 gutter.
+  sheetBody: {
+    paddingHorizontal: 8,
+  },
+  taskSheetBody: {
+    paddingHorizontal: 16,
+    paddingTop: 8,
   },
   groupByOption: {
     flexDirection: 'row',
@@ -1384,34 +1443,6 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '500',
     flex: 1,
-  },
-  taskModalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.4)',
-    justifyContent: 'flex-end',
-  },
-  taskModalContainer: {
-    maxHeight: '92%',
-  },
-  taskModalSheet: {
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    maxHeight: Dimensions.get('window').height * 0.9,
-  },
-  taskModalHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-  },
-  taskModalHeaderTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  taskModalBody: {
-    padding: 16,
   },
   viewTitle: {
     fontSize: 22,
@@ -1568,16 +1599,6 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '600',
   },
-  pickerSheet: {
-    width: '80%',
-    borderRadius: 14,
-    padding: 16,
-  },
-  pickerSheetTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    marginBottom: 12,
-  },
   pickerOption: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1600,18 +1621,6 @@ const styles = StyleSheet.create({
     height: 8,
     borderRadius: 4,
     backgroundColor: '#ef4444',
-  },
-  filterSheet: {
-    width: '85%',
-    borderRadius: 14,
-    padding: 16,
-    maxHeight: '70%',
-  },
-  filterHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 4,
   },
   filterSectionLabel: {
     fontSize: 12,

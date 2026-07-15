@@ -353,7 +353,7 @@ export function ImportContactsDialog({ open, onOpenChange }: ImportContactsDialo
         {step === "complete" && (
           <div className="space-y-4 py-4">
             <div className="flex items-center justify-center gap-3">
-              <CheckCircle className="h-12 w-12 text-green-500" />
+              <CheckCircle className="h-12 w-12 text-status-success" />
               <div>
                 <p className="text-lg font-medium">Import Complete</p>
                 <p className="text-sm text-muted-foreground">

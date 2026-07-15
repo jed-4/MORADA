@@ -60,7 +60,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { insertSupplierSchema, type Supplier, type InsertSupplier, type CostCode, type SupplierContact, type SupplierInsurance, type SupplierLabel } from "@shared/schema";
 import { Plus, MoreHorizontal, Pencil, Trash2, Store, Search, X, Building2, Users, Shield, Tag, Calendar, AlertTriangle, ChevronRight, Link2, Settings2, Loader2 } from "lucide-react";
 import { z } from "zod";
-import BulkXeroContactMappingDialog from "@/components/BulkXeroContactMappingDialog";
+import { BulkXeroContactMappingDialog } from "@/components/BulkXeroMappingDialog";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { format } from "date-fns";
 
@@ -524,11 +524,11 @@ export default function Suppliers() {
     if (daysUntilExpiry < 0) {
       return <Badge variant="destructive">Expired</Badge>;
     } else if (daysUntilExpiry <= 7) {
-      return <Badge variant="destructive" className="bg-orange-500">Expires Soon</Badge>;
+      return <Badge variant="destructive" className="bg-amber">Expires Soon</Badge>;
     } else if (daysUntilExpiry <= 30) {
-      return <Badge variant="secondary" className="bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200">Expires in {daysUntilExpiry} days</Badge>;
+      return <Badge variant="secondary" className="bg-status-warning-bg text-status-warning">Expires in {daysUntilExpiry} days</Badge>;
     }
-    return <Badge variant="secondary" className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">Valid</Badge>;
+    return <Badge variant="secondary" className="bg-status-success-bg text-status-success">Valid</Badge>;
   };
 
   const getPaymentTermsLabel = (value: string | null | undefined) => {
@@ -606,7 +606,7 @@ export default function Suppliers() {
         cell: ({ row }) => (
           <span data-testid={`text-supplier-xero-status-${row.original.id}`}>
             {row.original.xeroContactId ? (
-              <Badge variant="secondary" className="text-xs bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">
+              <Badge variant="secondary" className="text-xs bg-status-success-bg text-status-success">
                 Linked
               </Badge>
             ) : (

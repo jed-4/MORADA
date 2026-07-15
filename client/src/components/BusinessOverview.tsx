@@ -53,12 +53,12 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import type { Widget } from "@/types/widgets";
 import type { UserRole, User } from "@shared/schema";
-import { 
-  businessWidgetRegistry, 
-  getBusinessWidgetDefinition,
-  getAvailableBusinessWidgets 
-} from "./business-widgets/BusinessWidgetRegistry";
-import BusinessWidgetContainer from "./business-widgets/BusinessWidgetContainer";
+import { dashboardConfigs, dashboardPersistence, getAvailableWidgets } from "./dashboard/DashboardWidgetRegistry";
+import DashboardWidgetContainer from "./dashboard/DashboardWidgetContainer";
+
+// Per-dashboard config: widget registry + persisted-layout keys (unchanged)
+const businessDashboard = dashboardConfigs.business;
+const businessPersistence = dashboardPersistence.business;
 import {
   BusinessFinancialsPeriodBadge,
   BusinessFinancialsMenuItems,
@@ -209,7 +209,7 @@ function SortableWidget({
 }) {
   const [isResizing, setIsResizing] = useState(false);
   const hasFinancialAccess = useFinancialPermission();
-  const definitionForPerm = getBusinessWidgetDefinition(widget.type);
+  const definitionForPerm = businessDashboard.getDefinition(widget.type);
   const reqPerm = definitionForPerm?.requiredPermission;
   const hasSpecificPermission = usePermission(
     reqPerm?.key ?? "__noop__",
@@ -225,7 +225,7 @@ function SortableWidget({
     isDragging,
   } = useSortable({ id: widget.id, disabled: isResizing });
 
-  const definition = getBusinessWidgetDefinition(widget.type);
+  const definition = businessDashboard.getDefinition(widget.type);
   if (!definition) return null;
 
   const WidgetComponent = definition.component;
@@ -276,7 +276,8 @@ function SortableWidget({
       style={style}
       className={getColSpanClass()}
     >
-      <BusinessWidgetContainer
+      <DashboardWidgetContainer
+        variant="business"
         title={widget.title}
         icon={<definition.icon className="h-3.5 w-3.5" />}
         onRemove={() => onRemove(widget.id)}
@@ -333,7 +334,7 @@ function SortableWidget({
           isConfiguring={isConfiguring}
           onCloseConfig={() => onConfigure(null)}
         />
-      </BusinessWidgetContainer>
+      </DashboardWidgetContainer>
     </div>
   );
 }
@@ -375,7 +376,7 @@ export default function BusinessOverview() {
 
   // Fetch views from database
   const { data: savedViews = [], isLoading: viewsLoading } = useQuery<BusinessDashboardView[]>({
-    queryKey: ["/api/business-dashboard-views"],
+    queryKey: businessPersistence.viewsQueryKey,
   });
 
   // Fetch roles and users for access control
@@ -393,7 +394,7 @@ export default function BusinessOverview() {
   );
 
   // Active view key for localStorage (just stores which view is selected)
-  const activeViewKey = `business-dashboard-active-view-${user?.id || 'default'}`;
+  const activeViewKey = businessPersistence.activeViewStorageKey(user?.id);
 
   // Initialize active view when views are loaded
   useEffect(() => {
@@ -416,7 +417,7 @@ export default function BusinessOverview() {
       return apiRequest(`/api/business-dashboard-views/${viewId}`, "PATCH", updates);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/business-dashboard-views"] });
+      queryClient.invalidateQueries({ queryKey: businessPersistence.viewsQueryKey });
     },
     onError: (error) => {
       toast({ title: "Failed to save changes", variant: "destructive" });
@@ -435,7 +436,7 @@ export default function BusinessOverview() {
       });
     },
     onSuccess: (newView) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/business-dashboard-views"] });
+      queryClient.invalidateQueries({ queryKey: businessPersistence.viewsQueryKey });
       setActiveViewId(newView.id);
       setWidgets((newView.widgets as Widget[]) || DEFAULT_WIDGETS);
       localStorage.setItem(activeViewKey, newView.id);
@@ -455,7 +456,7 @@ export default function BusinessOverview() {
       return apiRequest(`/api/business-dashboard-views/${viewId}`, "DELETE");
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/business-dashboard-views"] });
+      queryClient.invalidateQueries({ queryKey: businessPersistence.viewsQueryKey });
       toast({ title: "View deleted" });
     },
     onError: (error: any) => {
@@ -479,7 +480,7 @@ export default function BusinessOverview() {
   };
 
   const handleAddWidget = (type: string) => {
-    const definition = getBusinessWidgetDefinition(type);
+    const definition = businessDashboard.getDefinition(type);
     if (!definition) return;
 
     const fallbackColumns =
@@ -614,10 +615,10 @@ export default function BusinessOverview() {
   };
 
   const activeView = savedViews.find(v => v.id === activeViewId);
-  const availableWidgets = getAvailableBusinessWidgets();
+  const availableWidgets = getAvailableWidgets("business");
   const addedWidgetTypes = new Set(
     widgets
-      .filter(w => !getBusinessWidgetDefinition(w.type)?.multiInstance)
+      .filter(w => !businessDashboard.getDefinition(w.type)?.multiInstance)
       .map(w => w.type)
   );
 

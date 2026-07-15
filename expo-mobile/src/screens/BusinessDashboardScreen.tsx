@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { apiFetch } from '../services/api';
+import { toLocalDateStr, dateStrOf } from '../lib/dates';
 
 import { useTheme } from '../theme';
 interface Project {
@@ -27,8 +28,10 @@ interface Task {
 
 interface TimesheetEntry {
   id: string;
+  date: string;
   duration: string;
   status: string;
+  isActive?: boolean;
   clockInTime?: string;
 }
 
@@ -82,25 +85,35 @@ const colors = {
 
   const openTasks = tasks.filter(t => !['completed', 'done', 'Completed', 'Done'].includes(t.status || '')).length;
 
+  // Current week starting Monday (Australian convention), compared on local calendar days
   const now = new Date();
+  const day = now.getDay();
   const weekStart = new Date(now);
-  weekStart.setDate(now.getDate() - now.getDay());
+  weekStart.setDate(now.getDate() + (day === 0 ? -6 : 1 - day));
   weekStart.setHours(0, 0, 0, 0);
+  const weekEnd = new Date(weekStart);
+  weekEnd.setDate(weekStart.getDate() + 6);
+  const weekStartStr = toLocalDateStr(weekStart);
+  const weekEndStr = toLocalDateStr(weekEnd);
 
   const hoursThisWeek = timesheets.reduce((sum, ts) => {
+    const dayStr = dateStrOf(ts.date);
+    if (!dayStr || dayStr < weekStartStr || dayStr > weekEndStr) return sum;
     return sum + (parseFloat(ts.duration) || 0);
   }, 0);
 
-  const activeTimers = timesheets.filter(ts => ts.status === 'active' || ts.clockInTime).length;
+  // Only timers that are actually running (isActive) — a completed entry keeps
+  // its clockInTime, so that alone must not count as an active timer.
+  const activeTimers = timesheets.filter(ts => ts.isActive).length;
 
   const screenWidth = Dimensions.get('window').width;
   const tileSize = Math.floor((screenWidth - 32 - 30) / 4);
 
   const statTiles = [
-    { label: 'Active Projects', value: activeProjects, icon: 'briefcase-outline' as keyof typeof Ionicons.glyphMap, color: '#3b82f6' },
-    { label: 'Open Tasks', value: openTasks, icon: 'checkbox-outline' as keyof typeof Ionicons.glyphMap, color: '#f59e0b' },
-    { label: 'Hours (Week)', value: hoursThisWeek.toFixed(1), icon: 'time-outline' as keyof typeof Ionicons.glyphMap, color: '#10b981' },
-    { label: 'Active Timers', value: activeTimers, icon: 'timer-outline' as keyof typeof Ionicons.glyphMap, color: '#8b5cf6' },
+    { label: 'Active Projects', value: activeProjects, icon: 'briefcase-outline' as keyof typeof Ionicons.glyphMap, color: theme.statusInfo },
+    { label: 'Open Tasks', value: openTasks, icon: 'checkbox-outline' as keyof typeof Ionicons.glyphMap, color: theme.amber },
+    { label: 'Hours (Week)', value: hoursThisWeek.toFixed(1), icon: 'time-outline' as keyof typeof Ionicons.glyphMap, color: theme.sage },
+    { label: 'Active Timers', value: activeTimers, icon: 'timer-outline' as keyof typeof Ionicons.glyphMap, color: theme.primary },
   ];
 
   if (loading) {

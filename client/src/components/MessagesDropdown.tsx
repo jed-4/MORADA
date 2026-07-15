@@ -224,8 +224,8 @@ export function MessagesDropdown() {
           <MessageSquare className="h-3.5 w-3.5" />
           {totalUnread > 0 && (
             <span className="absolute -top-0.5 -right-0.5 flex h-3.5 w-3.5" data-testid="badge-unread-count">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
-              <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-red-500 items-center justify-center text-label font-bold text-white">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-coral opacity-75" />
+              <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-coral items-center justify-center text-label font-bold text-white">
                 {totalUnread > 9 ? "9+" : totalUnread}
               </span>
             </span>

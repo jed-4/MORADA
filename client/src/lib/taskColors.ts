@@ -1,4 +1,4 @@
-import { BUILDPRO_PALETTE_HEXES } from './colors';
+import { MORADA_PROJECT_PALETTE_HEXES } from './colors';
 
 // Notion-style color utilities: Generate pastel backgrounds and dark text from any hex color
 
@@ -32,8 +32,9 @@ export type ScheduleItemType = keyof typeof TYPE_COLORS;
 
 // Project colour palette — used as the swatch picker in Create / Edit Project,
 // and assigned cyclically as new projects are created (see getProjectColor below).
-// Organised in four hue families so the swatch grid reads as a coherent palette.
-export const PROJECT_COLORS = BUILDPRO_PALETTE_HEXES;
+// Curated to 10 Morada-harmonised hues so project colours fit the brand
+// across web and mobile (full BUILDPRO_PALETTE remains for other pickers).
+export const PROJECT_COLORS = MORADA_PROJECT_PALETTE_HEXES;
 
 // Cyclic project-colour selector — always returns a colour from PROJECT_COLORS for any non-negative index.
 export function getProjectColor(index: number): string {

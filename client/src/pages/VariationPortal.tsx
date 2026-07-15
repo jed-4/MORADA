@@ -1,7 +1,8 @@
 import { useParams } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Loader2, AlertCircle } from "lucide-react";
 import { VariationPreviewContent } from "@/components/variations/VariationPreviewContent";
+import { PortalLayout } from "@/components/portal/PortalLayout";
+import { PortalLoading, PortalError } from "@/components/portal/PortalStateBoundary";
 
 export default function VariationPortal() {
   const { token } = useParams<{ token: string }>();
@@ -32,27 +33,15 @@ export default function VariationPortal() {
   };
 
   if (isLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-muted">
-        <div className="flex flex-col items-center gap-3 text-muted">
-          <Loader2 className="w-8 h-8 animate-spin" />
-          <p className="text-sm">Loading variation...</p>
-        </div>
-      </div>
-    );
+    return <PortalLoading message="Loading variation…" />;
   }
 
   if (error || !data) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-muted">
-        <div className="flex flex-col items-center gap-3 text-center max-w-sm px-4">
-          <AlertCircle className="w-10 h-10 text-destructive" />
-          <h1 className="text-lg font-semibold">Link not found</h1>
-          <p className="text-sm text-muted">
-            This variation link is invalid or has expired. Please contact your builder for a new link.
-          </p>
-        </div>
-      </div>
+      <PortalError
+        title="Link not found"
+        description="This variation link is invalid or has expired. Please contact your builder for a new link."
+      />
     );
   }
 
@@ -61,8 +50,12 @@ export default function VariationPortal() {
     : null;
 
   return (
-    <div className="min-h-screen bg-muted py-8 px-4">
-      <div className="shadow-lg rounded-xl overflow-hidden bg-white max-w-4xl mx-auto">
+    <PortalLayout
+      title="Variation"
+      subtitle={data.company?.name}
+      maxWidth="max-w-4xl"
+    >
+      <div className="shadow-lg rounded-xl overflow-hidden bg-white">
         <VariationPreviewContent
           variation={data.variation}
           items={data.items}
@@ -75,6 +68,6 @@ export default function VariationPortal() {
           onSigned={handleSigned}
         />
       </div>
-    </div>
+    </PortalLayout>
   );
 }

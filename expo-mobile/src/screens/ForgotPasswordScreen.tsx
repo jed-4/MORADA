@@ -169,6 +169,8 @@ export default function ForgotPasswordScreen({ navigation }: Props) {
               keyboardType="email-address"
               autoCapitalize="none"
               autoCorrect={false}
+              textContentType="emailAddress"
+              autoComplete="email"
               editable={!isLoading}
               onSubmitEditing={handleSubmit}
               returnKeyType="send"

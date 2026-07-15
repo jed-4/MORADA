@@ -267,7 +267,7 @@ export default function TaskCardCompact({ task, onClick, isDragging = false, dis
             {(task as any).checklistInstanceId && (
               <Badge 
                 variant="outline" 
-                className="text-data px-1.5 py-0 h-4 rounded-full bg-purple-500/10 text-purple-700 dark:text-purple-400 border-purple-500/20 no-default-hover-elevate no-default-active-elevate max-w-[100px] truncate"
+                className="text-data px-1.5 py-0 h-4 rounded-full bg-primary/10 text-primary border-primary/20 no-default-hover-elevate no-default-active-elevate max-w-[100px] truncate"
               >
                 <ClipboardList className="h-2 w-2 mr-0.5 shrink-0" />
                 <span className="truncate">{(task as any).checklistInstanceName || 'Checklist'}</span>

@@ -17,7 +17,12 @@ import {
 } from "lucide-react";
 import { format, isWithinInterval, startOfMonth, endOfMonth, startOfWeek, endOfWeek, addMonths, subMonths } from "date-fns";
 import type { Task, ScheduleItem, Project, User as UserType, FieldCategoryWithOptions, Schedule, CompanySettings } from "@shared/schema";
-import { EnhancedCalendar, CalendarEvent, CalendarDisplayOptions } from "@/components/EnhancedCalendar";
+import type { CalendarEvent, CalendarDisplayOptions } from "@/components/EnhancedCalendar";
+import {
+  MoradaCalendar,
+  type MoradaCalendarEvent,
+} from "@/components/calendar/MoradaCalendar";
+import { toMoradaEvent, toMoradaView } from "@/components/calendar/legacy";
 import { CalendarFilters as CalendarFiltersType } from "@/components/CalendarFilters";
 import { CalendarView } from "@/components/SavedViews";
 import { apiRequest } from "@/lib/queryClient";
@@ -237,7 +242,6 @@ export default function BusinessCalendar() {
     }
   }, [views, selectedViewId]);
 
-  // Update task status mutation
   const deleteTaskMutation = useMutation({
     mutationFn: async (taskId: string) => {
       await apiRequest(`/api/tasks/${taskId}`, "DELETE");
@@ -247,114 +251,6 @@ export default function BusinessCalendar() {
       setEditingTask(null);
       setShowTaskDialog(false);
       toast({ title: "Task deleted" });
-    },
-  });
-
-  const updateTaskMutation = useMutation({
-    mutationFn: async ({ taskId, status }: { taskId: string; status: string }) => {
-      return await apiRequest(`/api/tasks/${taskId}`, "PATCH", { status });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
-      toast({
-        title: "Task updated",
-        description: "Task status has been updated successfully.",
-      });
-    },
-  });
-
-  // Reschedule task mutation with optimistic update
-  const rescheduleTaskMutation = useMutation({
-    mutationFn: async ({ taskId, dueDate, startTime }: { taskId: string; dueDate: string; startTime?: string }) => {
-      const payload: any = { dueDate };
-      if (startTime !== undefined) {
-        payload.startTime = startTime;
-      }
-      return await apiRequest(`/api/tasks/${taskId}`, "PATCH", payload);
-    },
-    onMutate: async ({ taskId, dueDate, startTime }) => {
-      await queryClient.cancelQueries({ queryKey: ["/api/tasks"] });
-      const queryKey = ["/api/tasks", { startDate: dateRange.startDate, endDate: dateRange.endDate }];
-      const previousTasks = queryClient.getQueryData(queryKey);
-      queryClient.setQueryData(queryKey, (old: Task[] | undefined) => 
-        old?.map((task) => 
-          task.id === taskId 
-            ? { ...task, dueDate, ...(startTime && { startTime }) }
-            : task
-        ) || []
-      );
-      return { previousTasks, queryKey };
-    },
-    onError: (err, variables, context) => {
-      if (context?.previousTasks && context?.queryKey) {
-        queryClient.setQueryData(context.queryKey, context.previousTasks);
-      }
-    },
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
-    },
-  });
-
-  // Reschedule schedule item mutation
-  const rescheduleScheduleItemMutation = useMutation({
-    mutationFn: async ({ itemId, startDate, endDate, startTime, endTime }: { itemId: string; startDate: string; endDate: string; startTime?: string; endTime?: string }) => {
-      const payload: any = { startDate, endDate };
-      if (startTime !== undefined) {
-        payload.startTime = startTime;
-      }
-      if (endTime !== undefined) {
-        payload.endTime = endTime;
-      }
-      return await apiRequest(`/api/schedule-items/${itemId}`, "PATCH", payload);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/schedule-items/all"] });
-      toast({
-        title: "Event rescheduled",
-        description: "Schedule item has been moved to the new date.",
-      });
-    },
-  });
-
-  // Resize task mutation with optimistic update
-  const resizeTaskMutation = useMutation({
-    mutationFn: async ({ taskId, startTime, endTime }: { taskId: string; startTime: string; endTime: string }) => {
-      return await apiRequest(`/api/tasks/${taskId}`, "PATCH", { startTime, endTime });
-    },
-    onMutate: async ({ taskId, startTime, endTime }) => {
-      await queryClient.cancelQueries({ queryKey: ["/api/tasks"] });
-      const queryKey = ["/api/tasks", { startDate: dateRange.startDate, endDate: dateRange.endDate }];
-      const previousTasks = queryClient.getQueryData(queryKey);
-      queryClient.setQueryData(queryKey, (old: Task[] | undefined) => 
-        old?.map((task) => 
-          task.id === taskId 
-            ? { ...task, startTime, endTime }
-            : task
-        ) || []
-      );
-      return { previousTasks, queryKey };
-    },
-    onError: (err, variables, context) => {
-      if (context?.previousTasks && context?.queryKey) {
-        queryClient.setQueryData(context.queryKey, context.previousTasks);
-      }
-    },
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
-    },
-  });
-
-  // Resize schedule item mutation
-  const resizeScheduleItemMutation = useMutation({
-    mutationFn: async ({ itemId, startTime, endTime }: { itemId: string; startTime: string; endTime: string }) => {
-      return await apiRequest(`/api/schedule-items/${itemId}`, "PATCH", { startTime, endTime });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/schedule-items/all"] });
-      toast({
-        title: "Event time updated",
-        description: "Schedule item time has been updated successfully.",
-      });
     },
   });
 
@@ -490,72 +386,6 @@ export default function BusinessCalendar() {
     return filtered;
   }, [allTasks, allScheduleItems, schedules, projects, users, completedOption, filters, selectedViewUserId, showParentItems, showChildItems]);
 
-  const handleEventComplete = (eventId: string, completed: boolean) => {
-    const event = filteredEvents.find(e => e.id === eventId);
-    if (event?.type === "task") {
-      const newStatus = completed 
-        ? (completedOption?.key || "done") 
-        : (defaultOption?.key || "todo");
-      updateTaskMutation.mutate({ taskId: eventId, status: newStatus });
-    }
-  };
-
-  const handleEventReschedule = (eventId: string, newDate: Date, eventType: "task" | "schedule" | "meeting" | "google-calendar", newTime?: string) => {
-    if (eventType === "task") {
-      const updatePayload: any = { 
-        taskId: eventId, 
-        dueDate: format(newDate, "yyyy-MM-dd")
-      };
-      
-      if (newTime) {
-        updatePayload.startTime = newTime;
-      }
-      
-      rescheduleTaskMutation.mutate(updatePayload);
-    } else if (eventType === "schedule") {
-      const event = allScheduleItems.find(item => item.id === eventId);
-      if (event) {
-        const oldStart = new Date(event.startDate);
-        const oldEnd = new Date(event.endDate);
-        const duration = oldEnd.getTime() - oldStart.getTime();
-        
-        const newStartDate = format(newDate, "yyyy-MM-dd");
-        const newEndDate = format(new Date(newDate.getTime() + duration), "yyyy-MM-dd");
-        
-        const updatePayload: any = {
-          itemId: eventId,
-          startDate: newStartDate,
-          endDate: newEndDate,
-        };
-        
-        if (newTime) {
-          updatePayload.startTime = newTime;
-          if (event.startTime && event.endTime) {
-            const [startHour, startMin] = event.startTime.split(':').map(Number);
-            const [endHour, endMin] = event.endTime.split(':').map(Number);
-            const durationMinutes = (endHour * 60 + endMin) - (startHour * 60 + startMin);
-            
-            const [newHour, newMin] = newTime.split(':').map(Number);
-            const endTotalMinutes = newHour * 60 + newMin + durationMinutes;
-            const endH = Math.floor(endTotalMinutes / 60) % 24;
-            const endM = endTotalMinutes % 60;
-            updatePayload.endTime = `${endH.toString().padStart(2, '0')}:${endM.toString().padStart(2, '0')}`;
-          }
-        }
-        
-        rescheduleScheduleItemMutation.mutate(updatePayload);
-      }
-    }
-  };
-
-  const handleEventResize = (eventId: string, startTime: string, endTime: string, eventType: "task" | "schedule" | "meeting" | "google-calendar") => {
-    if (eventType === "task") {
-      resizeTaskMutation.mutate({ taskId: eventId, startTime, endTime });
-    } else if (eventType === "schedule") {
-      resizeScheduleItemMutation.mutate({ itemId: eventId, startTime, endTime });
-    }
-  };
-
   const handleEventClick = (event: CalendarEvent) => {
     if (event.type === "task") {
       const task = allTasks.find(t => t.id === event.id);
@@ -570,6 +400,26 @@ export default function BusinessCalendar() {
         setShowScheduleItemDialog(true);
       }
     }
+  };
+
+  // Convert to the MoradaCalendar event model, honouring the "Display on Cards"
+  // options via extra chip lines / time visibility.
+  const moradaEvents: MoradaCalendarEvent[] = useMemo(() => {
+    return filteredEvents.map((event) => {
+      const lines: string[] = [];
+      if (displayOptions.showProject && event.projectName) lines.push(event.projectName);
+      if (displayOptions.showAssignee && event.assigneeName) lines.push(event.assigneeName);
+      if (displayOptions.showStatus && event.status) lines.push(event.status.replace(/[_-]+/g, " "));
+      return toMoradaEvent(event, {
+        lines,
+        hideTime: displayOptions.showTime === false,
+      });
+    });
+  }, [filteredEvents, displayOptions]);
+
+  const handleMoradaEventClick = (event: MoradaCalendarEvent) => {
+    const original = event.meta?.original as CalendarEvent | undefined;
+    if (original) handleEventClick(original);
   };
 
   const createViewMutation = useMutation({
@@ -655,9 +505,7 @@ export default function BusinessCalendar() {
 
   const handleNavigatePrevious = () => {
     const newDate = new Date(currentDate);
-    if (calendarMode === "day") {
-      newDate.setDate(newDate.getDate() - 1);
-    } else if (calendarMode === "week") {
+    if (toMoradaView(calendarMode) === "week") {
       newDate.setDate(newDate.getDate() - 7);
     } else {
       newDate.setMonth(newDate.getMonth() - 1);
@@ -667,9 +515,7 @@ export default function BusinessCalendar() {
 
   const handleNavigateNext = () => {
     const newDate = new Date(currentDate);
-    if (calendarMode === "day") {
-      newDate.setDate(newDate.getDate() + 1);
-    } else if (calendarMode === "week") {
+    if (toMoradaView(calendarMode) === "week") {
       newDate.setDate(newDate.getDate() + 7);
     } else {
       newDate.setMonth(newDate.getMonth() + 1);
@@ -1248,7 +1094,7 @@ export default function BusinessCalendar() {
           {/* View Mode Selector */}
           <div className="flex items-center gap-0.5">
             {[
-              { value: 'day', label: 'Day' },
+              { value: 'agenda', label: 'Agenda' },
               { value: 'week', label: 'Week' },
               { value: 'month', label: 'Month' },
             ].map((mode) => (
@@ -1256,7 +1102,7 @@ export default function BusinessCalendar() {
                 key={mode.value}
                 onClick={() => setCalendarMode(mode.value)}
                 className={`h-6 w-auto px-2 text-xs border rounded-md ${
-                  calendarMode === mode.value
+                  toMoradaView(calendarMode) === mode.value
                     ? 'bg-primary text-white border-primary/20 hover:bg-primary/90'
                     : 'hover-elevate'
                 } active-elevate-2`}
@@ -1283,19 +1129,14 @@ export default function BusinessCalendar() {
 
       {/* Calendar Content - No Card Wrapper, Flush with Header */}
       <div className="flex-1 min-h-0">
-        <EnhancedCalendar
-          events={filteredEvents}
-          onEventClick={handleEventClick}
-          onEventComplete={handleEventComplete}
-          onEventReschedule={handleEventReschedule}
-          onEventResize={handleEventResize}
-          showCompletionCheckbox={true}
-          currentDate={currentDate}
-          onCurrentDateChange={setCurrentDate}
-          view={calendarMode as any}
+        <MoradaCalendar
+          events={moradaEvents}
+          onEventClick={handleMoradaEventClick}
+          date={currentDate}
+          onDateChange={setCurrentDate}
+          view={toMoradaView(calendarMode)}
           onViewChange={(newView) => setCalendarMode(newView)}
-          displayOptions={displayOptions}
-          hideInternalHeader={true}
+          hideHeader
         />
       </div>
      </div>

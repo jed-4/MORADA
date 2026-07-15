@@ -352,9 +352,9 @@ export function RapidApprovalModal({
 
         <div className="space-y-2">
           {hasMissingInfo && (
-            <div className="flex items-center gap-2 px-2 py-1.5 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded text-data">
-              <AlertTriangle className="w-3 h-3 text-amber-600 dark:text-amber-400 flex-shrink-0" />
-              <span className="text-amber-700 dark:text-amber-300">{missingInfo.join(" • ")}</span>
+            <div className="flex items-center gap-2 px-2 py-1.5 bg-status-warning-bg border border-status-warning/30 rounded text-data">
+              <AlertTriangle className="w-3 h-3 text-status-warning flex-shrink-0" />
+              <span className="text-status-warning">{missingInfo.join(" • ")}</span>
             </div>
           )}
 
@@ -452,7 +452,7 @@ export function RapidApprovalModal({
             <div>
               <Label className="text-data text-muted-foreground">Cost Code</Label>
               <Select value={editedCostCodeId || "none"} onValueChange={(val) => setEditedCostCodeId(val === "none" ? "" : val)}>
-                <SelectTrigger className={`h-7 text-table ${!editedCostCodeId ? "border-amber-300" : ""}`}>
+                <SelectTrigger className={`h-7 text-table ${!editedCostCodeId ? "border-status-warning/50" : ""}`}>
                   <SelectValue placeholder="Select" />
                 </SelectTrigger>
                 <SelectContent>
@@ -518,7 +518,7 @@ export function RapidApprovalModal({
                 <Button 
                   variant="ghost" 
                   size="sm" 
-                  className={`h-6 w-6 p-0 ${rejectionComment ? "text-amber-600" : "text-muted-foreground"}`}
+                  className={`h-6 w-6 p-0 ${rejectionComment ? "text-status-warning" : "text-muted-foreground"}`}
                   title="Add comment"
                 >
                   <MessageSquare className="w-3.5 h-3.5" />
@@ -583,7 +583,7 @@ export function RapidApprovalModal({
               size="sm"
               onClick={() => rejectMutation.mutate(currentTimesheet.id)}
               disabled={rejectMutation.isPending}
-              className="h-7 gap-1 text-xs text-status-danger dark:text-red-400 border-red-200 dark:border-red-800 hover:bg-red-50 dark:hover:bg-red-900/20"
+              className="h-7 gap-1 text-xs text-status-danger border-status-danger/30 hover:bg-status-danger-bg"
               data-testid="button-rapid-reject"
             >
               <X className="w-3 h-3" />
@@ -593,7 +593,7 @@ export function RapidApprovalModal({
               size="sm"
               onClick={() => approveMutation.mutate(currentTimesheet.id)}
               disabled={approveMutation.isPending || updateMutation.isPending}
-              className="h-7 gap-1 text-xs bg-green-600 hover:bg-green-700 text-white"
+              className="h-7 gap-1 text-xs bg-sage hover:bg-sage/90 text-white"
               data-testid="button-rapid-approve"
             >
               <Check className="w-3 h-3" />

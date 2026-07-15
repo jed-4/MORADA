@@ -68,6 +68,7 @@ import {
   X,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
+import { useTemplateCrud } from "@/components/templates/useTemplateCrud";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
@@ -86,9 +87,9 @@ const COLLAPSED_GROUPS_KEY = "template-groups-collapsed";
 
 function getCategoryColor(category: string | null | undefined) {
   switch (category?.toLowerCase()) {
-    case "residential": return "bg-status-success-bg text-status-success dark:text-green-400";
-    case "commercial": return "bg-status-info-bg text-status-info dark:text-blue-400";
-    case "renovation": return "bg-status-warning-bg text-status-warning dark:text-orange-400";
+    case "residential": return "bg-status-success-bg text-status-success";
+    case "commercial": return "bg-status-info-bg text-status-info";
+    case "renovation": return "bg-status-warning-bg text-status-warning";
     default: return "bg-muted text-secondary";
   }
 }
@@ -119,7 +120,6 @@ export default function SelectionTemplates() {
   const [, navigate] = useLocation();
   const [isAddingTemplate, setIsAddingTemplate] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<TemplateWithGroups | null>(null);
-  const [confirmDelete, setConfirmDelete] = useState<{ id: string; name: string } | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [groupBy, setGroupBy] = useState<"category" | "group" | "none">("category");
   const [isManagingGroups, setIsManagingGroups] = useState(false);
@@ -196,80 +196,35 @@ export default function SelectionTemplates() {
     enabled: !!roomFieldCategory?.id,
   });
 
-  const createMutation = useMutation({
-    mutationFn: async (data: typeof initialFormData) => {
-      return await apiRequest("/api/selection-templates", "POST", {
-        name: data.name,
-        description: data.description || undefined,
-        category: data.category || undefined,
-        room: data.room || undefined,
-        allowanceType: data.allowanceType || undefined,
-        budgetAmount: data.budgetAmount !== "" ? Math.round(Number(data.budgetAmount) * 100) : undefined,
-        deadline: data.deadline || undefined,
-        clientCanSeePrice: data.clientCanSeePrice,
-        clientCanChange: data.clientCanChange,
-        groupIds: data.groupIds,
-        templateData: [],
-        createdBy: user?.id,
-        createdByName: user?.firstName && user?.lastName
-          ? `${user.firstName} ${user.lastName}`
-          : user?.email,
-      });
-    },
-    onSuccess: (newTemplate: any) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/selection-templates"] });
-      toast({ title: "Template created", description: "Your new selection template has been created." });
-      setIsAddingTemplate(false);
-      setFormData({ ...initialFormData });
-      navigate(`/selection-templates/${newTemplate.id}`);
-    },
-    onError: () => toast({ title: "Error", description: "Failed to create template.", variant: "destructive" }),
-  });
-
-  const updateMutation = useMutation({
-    mutationFn: async ({ id, data }: { id: string; data: Partial<typeof initialFormData> }) => {
-      return await apiRequest(`/api/selection-templates/${id}`, "PATCH", {
-        ...data,
-        budgetAmount: data.budgetAmount !== "" && data.budgetAmount != null
-          ? Math.round(Number(data.budgetAmount) * 100)
-          : undefined,
-      });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/selection-templates"] });
-      toast({ title: "Template updated", description: "The template has been updated successfully." });
-      setEditingTemplate(null);
-      setFormData({ ...initialFormData });
-    },
-    onError: () => toast({ title: "Error", description: "Failed to update template.", variant: "destructive" }),
-  });
-
-  const deleteMutation = useMutation({
-    mutationFn: async (id: string) => {
-      await apiRequest(`/api/selection-templates/${id}`, "DELETE");
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/selection-templates"] });
-      toast({ title: "Template deleted", description: "The template has been deleted successfully." });
-    },
-    onError: () => toast({ title: "Error", description: "Failed to delete template.", variant: "destructive" }),
-  });
-
-  const duplicateMutation = useMutation({
-    mutationFn: async (template: TemplateWithGroups) => {
+  const {
+    createMutation,
+    updateMutation,
+    deleteMutation,
+    duplicateMutation,
+    isSaving,
+    confirmDelete,
+    setConfirmDelete,
+  } = useTemplateCrud<TemplateWithGroups>({
+    apiBase: "/api/selection-templates",
+    toasts: { created: "Your new selection template has been created." },
+    duplicatePayload: (template) => {
       const { id, createdAt, updatedAt, isArchived, groups: _g, groupIds: _gIds, ...rest } = template as any;
-      return await apiRequest("/api/selection-templates", "POST", {
+      return {
         ...rest,
         name: `${template.name} (Copy)`,
         createdBy: user?.id,
         createdByName: user?.firstName && user?.lastName ? `${user.firstName} ${user.lastName}` : user?.email,
-      });
+      };
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/selection-templates"] });
-      toast({ title: "Template duplicated", description: "The template has been duplicated successfully." });
+    onCreateSuccess: (newTemplate) => {
+      setIsAddingTemplate(false);
+      setFormData({ ...initialFormData });
+      navigate(`/selection-templates/${newTemplate.id}`);
     },
-    onError: () => toast({ title: "Error", description: "Failed to duplicate template.", variant: "destructive" }),
+    onUpdateSuccess: () => {
+      setEditingTemplate(null);
+      setFormData({ ...initialFormData });
+    },
   });
 
   const bulkApplyMutation = useMutation({
@@ -374,10 +329,31 @@ export default function SelectionTemplates() {
     if (editingTemplate) {
       updateMutation.mutate({
         id: editingTemplate.id,
-        data: formData,
+        data: {
+          ...formData,
+          budgetAmount: formData.budgetAmount !== "" && formData.budgetAmount != null
+            ? Math.round(Number(formData.budgetAmount) * 100)
+            : undefined,
+        },
       });
     } else {
-      createMutation.mutate(formData);
+      createMutation.mutate({
+        name: formData.name,
+        description: formData.description || undefined,
+        category: formData.category || undefined,
+        room: formData.room || undefined,
+        allowanceType: formData.allowanceType || undefined,
+        budgetAmount: formData.budgetAmount !== "" ? Math.round(Number(formData.budgetAmount) * 100) : undefined,
+        deadline: formData.deadline || undefined,
+        clientCanSeePrice: formData.clientCanSeePrice,
+        clientCanChange: formData.clientCanChange,
+        groupIds: formData.groupIds,
+        templateData: [],
+        createdBy: user?.id,
+        createdByName: user?.firstName && user?.lastName
+          ? `${user.firstName} ${user.lastName}`
+          : user?.email,
+      });
     }
   };
 
@@ -974,8 +950,8 @@ export default function SelectionTemplates() {
             >
               Cancel
             </Button>
-            <Button onClick={handleSave} disabled={createMutation.isPending || updateMutation.isPending}>
-              {(createMutation.isPending || updateMutation.isPending) ? (
+            <Button onClick={handleSave} disabled={isSaving}>
+              {isSaving ? (
                 <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Saving...</>
               ) : editingTemplate ? "Save Changes" : "Create & Edit Options"}
             </Button>

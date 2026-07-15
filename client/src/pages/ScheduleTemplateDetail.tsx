@@ -772,7 +772,7 @@ export default function ScheduleTemplateDetail() {
             <Badge variant="outline" className="text-xs">{template.category}</Badge>
           )}
           {hasUnsavedChanges && (
-            <Badge variant="secondary" className="text-xs bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200">
+            <Badge variant="secondary" className="text-xs bg-status-warning-bg text-status-warning">
               Unsaved
             </Badge>
           )}

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -12,6 +12,8 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { apiFetch } from '../services/api';
+import { usePolling } from '../lib/usePolling';
+import { timeAgo } from '../lib/format';
 
 import { useTheme } from '../theme';
 type Entry = {
@@ -31,25 +33,6 @@ const PAGE_SIZE = 20;
 
 function lastSeenKey(scheduleId: string, userId?: string | null) {
   return `@buildpro/schedule_feed_last_seen:${userId || 'anon'}:${scheduleId}`;
-}
-
-function timeLabel(iso: string) {
-  const d = new Date(iso).getTime();
-  const now = Date.now();
-  const diffSec = Math.max(1, Math.floor((now - d) / 1000));
-  if (diffSec < 60) return `${diffSec}s ago`;
-  const diffMin = Math.floor(diffSec / 60);
-  if (diffMin < 60) return `${diffMin}m ago`;
-  const diffH = Math.floor(diffMin / 60);
-  if (diffH < 24) return `${diffH}h ago`;
-  const diffD = Math.floor(diffH / 24);
-  if (diffD < 7) return `${diffD}d ago`;
-  const diffW = Math.floor(diffD / 7);
-  if (diffW < 5) return `${diffW}w ago`;
-  const diffMo = Math.floor(diffD / 30);
-  if (diffMo < 12) return `${diffMo}mo ago`;
-  const diffY = Math.floor(diffD / 365);
-  return `${diffY}y ago`;
 }
 
 export function ScheduleActivityFeedButton({
@@ -80,51 +63,66 @@ const colors = {
   const [loading, setLoading] = useState(false);
   const [unread, setUnread] = useState(0);
   const [lastSeen, setLastSeen] = useState<string>('');
+  const requestIdRef = useRef(0);
 
   useEffect(() => {
     AsyncStorage.getItem(lastSeenKey(scheduleId, userId)).then(v => setLastSeen(v || ''));
   }, [scheduleId, userId]);
 
+  const markSeen = useCallback(async () => {
+    const stamp = new Date().toISOString();
+    try { await AsyncStorage.setItem(lastSeenKey(scheduleId, userId), stamp); } catch {}
+    setLastSeen(stamp);
+    setUnread(0);
+  }, [scheduleId, userId]);
+
   const loadPage = useCallback(
     async (pageNum: number, currentFilter: Filter) => {
+      // A newer request (filter/page/schedule change) invalidates this one —
+      // stale responses must not append to the freshly reset list.
+      const requestId = ++requestIdRef.current;
       setLoading(true);
       const offset = (pageNum - 1) * PAGE_SIZE;
       try {
         const data = await apiFetch<{ entries: Entry[]; hasMore: boolean }>(
           `/api/schedules/${scheduleId}/activity-feed?limit=${PAGE_SIZE}&offset=${offset}&filter=${currentFilter}`
         );
+        if (requestId !== requestIdRef.current) return;
         const newEntries = data?.entries || [];
         setEntries(prev => offset === 0 ? newEntries : [...prev, ...newEntries]);
         setHasMore(!!data?.hasMore);
+        // Only stamp everything "seen" once the feed has actually loaded.
+        if (offset === 0) markSeen();
       } catch {
+        if (requestId !== requestIdRef.current) return;
         if (offset === 0) setEntries([]);
         setHasMore(false);
       } finally {
-        setLoading(false);
+        if (requestId === requestIdRef.current) setLoading(false);
       }
     },
-    [scheduleId]
+    [scheduleId, markSeen]
   );
 
   // Poll unread count via dedicated endpoint
-  useEffect(() => {
-    let cancelled = false;
-    const fetchUnread = async () => {
-      try {
-        const url = lastSeen
-          ? `/api/schedules/${scheduleId}/activity-feed/unread-count?since=${encodeURIComponent(lastSeen)}`
-          : `/api/schedules/${scheduleId}/activity-feed/unread-count`;
-        const data = await apiFetch<{ count: number }>(url);
-        if (cancelled) return;
-        setUnread(data?.count ?? 0);
-      } catch {
-        // ignore
-      }
-    };
-    fetchUnread();
-    const t = setInterval(fetchUnread, 60_000);
-    return () => { cancelled = true; clearInterval(t); };
+  const fetchUnread = useCallback(async () => {
+    try {
+      const url = lastSeen
+        ? `/api/schedules/${scheduleId}/activity-feed/unread-count?since=${encodeURIComponent(lastSeen)}`
+        : `/api/schedules/${scheduleId}/activity-feed/unread-count`;
+      const data = await apiFetch<{ count: number }>(url);
+      setUnread(data?.count ?? 0);
+    } catch {
+      // ignore
+    }
   }, [scheduleId, lastSeen]);
+
+  // Refetch immediately when the schedule or last-seen stamp changes…
+  useEffect(() => {
+    fetchUnread();
+  }, [fetchUnread]);
+  // …and poll while the app is foregrounded (overlap-guarded).
+  usePolling(fetchUnread, 60_000, true);
 
   useEffect(() => {
     if (open) loadPage(page, filter);
@@ -138,15 +136,11 @@ const colors = {
     }
   }, [filter, scheduleId]);
 
-  const handleOpen = async () => {
+  const handleOpen = () => {
     setOpen(true);
     setPage(1);
     setEntries([]);
-    // mark seen using current time so unread = 0
-    const stamp = new Date().toISOString();
-    try { await AsyncStorage.setItem(lastSeenKey(scheduleId, userId), stamp); } catch {}
-    setLastSeen(stamp);
-    setUnread(0);
+    // "seen" is stamped by loadPage once the list successfully loads.
   };
 
   const grouped = useMemo(() => {
@@ -237,7 +231,7 @@ const colors = {
                             {e.authorType === 'ai' ? 'AI' : (e.userName || 'System')}
                           </Text>
                           <Text style={{ color: colors.secondary, fontSize: 11, marginLeft: 'auto' }}>
-                            {timeLabel(e.createdAt)}
+                            {timeAgo(e.createdAt)}
                           </Text>
                         </View>
                         <Text style={[styles.entryContent, { color: colors.text }]}>{e.content}</Text>

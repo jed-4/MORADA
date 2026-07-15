@@ -380,7 +380,7 @@ export default function RFIDetail() {
               )}
             </div>
             {rfi.response ? (
-              <div className="p-4 rounded-lg bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-900">
+              <div className="p-4 rounded-lg bg-status-success-bg border border-status-success/30">
                 <p className="text-sm whitespace-pre-wrap">{rfi.response}</p>
                 {rfi.respondedByName && (
                   <p className="text-xs text-muted-foreground mt-2">— {rfi.respondedByName}</p>
@@ -399,7 +399,7 @@ export default function RFIDetail() {
                   size="sm"
                   onClick={handleSubmitResponse}
                   disabled={!responseText.trim() || isSubmittingResponse}
-                  className="bg-green-600 hover:bg-green-700 text-white"
+                  className="bg-sage hover:bg-sage/90 text-white"
                   data-testid="button-submit-response"
                 >
                   {isSubmittingResponse ? (
@@ -516,7 +516,7 @@ export default function RFIDetail() {
               )}
               {rfi.respondedAt && (
                 <div className="flex items-start gap-2">
-                  <MessageSquare className="w-4 h-4 text-green-500 mt-0.5" />
+                  <MessageSquare className="w-4 h-4 text-status-success mt-0.5" />
                   <div>
                     <p className="text-xs">Response received</p>
                     <p className="text-data text-muted-foreground">

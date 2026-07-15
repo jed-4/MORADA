@@ -3181,8 +3181,8 @@ export default function BillDetail() {
                               <span
                                 className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-data font-medium ${
                                   approval.status === "approved"
-                                    ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200"
-                                    : "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200"
+                                    ? "bg-status-success-bg text-status-success"
+                                    : "bg-status-danger-bg text-status-danger"
                                 }`}
                               >
                                 {approval.status === "approved" ? "Approved" : "Rejected"}

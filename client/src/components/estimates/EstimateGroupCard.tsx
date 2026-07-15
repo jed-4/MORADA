@@ -35,11 +35,11 @@ const STATUS_CONFIG: Record<GroupStatus, { label: string; className: string }> =
   },
   in_progress: {
     label: "In Progress",
-    className: "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-400 dark:border-amber-800",
+    className: "bg-status-warning-bg text-status-warning border-status-warning/30",
   },
   complete: {
     label: "Complete",
-    className: "bg-green-50 text-green-700 border-green-200 dark:bg-green-950/40 dark:text-green-400 dark:border-green-800",
+    className: "bg-status-success-bg text-status-success border-status-success/30",
   },
 };
 
@@ -301,8 +301,8 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
                           >
                             <span className={`inline-block w-2 h-2 rounded-full mr-2 flex-shrink-0 ${
                               s === 'not_started' ? 'bg-muted-foreground/50' :
-                              s === 'in_progress' ? 'bg-amber-500' :
-                              'bg-green-500'
+                              s === 'in_progress' ? 'bg-amber' :
+                              'bg-sage'
                             }`} />
                             {STATUS_CONFIG[s].label}
                           </DropdownMenuItem>

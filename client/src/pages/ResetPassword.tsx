@@ -93,7 +93,7 @@ export default function ResetPassword() {
           <CardContent>
             {status === 'success' ? (
               <div className="space-y-4 text-center py-2">
-                <CheckCircle2 className="h-12 w-12 text-green-500 mx-auto" />
+                <CheckCircle2 className="h-12 w-12 text-status-success mx-auto" />
                 <p className="font-semibold">Password updated!</p>
                 <p className="text-sm text-muted-foreground">You can now log in with your new password.</p>
                 <Button className="w-full" onClick={() => setLocation('/auth')}>Go to Login</Button>

@@ -8,6 +8,7 @@ import { usePageTitle } from "@/hooks/usePageTitle";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { TYPE_COLORS } from "@/lib/taskColors";
 import { computeMoveCascade } from "@/lib/scheduleCascade";
+import * as workingDaysLib from "@/lib/workingDays";
 import { ScheduleViewProvider } from "@/contexts/ScheduleViewContext";
 import { type Schedule as ScheduleType, type ScheduleItem, type Contact, type CompanySettings } from "@shared/schema";
 import { Calendar as BigCalendar, momentLocalizer, Views } from "react-big-calendar";
@@ -1161,40 +1162,25 @@ export default function Schedule() {
   const companyHolidays = (nonWorkingDays as any[]).filter((d: any) => !d.scheduleId);
   const scheduleSpecificDays = (nonWorkingDays as any[]).filter((d: any) => d.scheduleId);
 
-  const isNonWorkingDay = (date: Date): boolean => {
-    const day = date.getDay();
-    if (day === 0 && !schedule?.includeSunday) return true;
-    if (day === 6 && !schedule?.includeSaturday) return true;
-    return false;
-  };
+  // Working-day math is shared with Gantt.tsx and scheduleCascade.ts —
+  // see client/src/lib/workingDays.ts.
+  // NOTE: this page's calendar deliberately checks only the weekend flags and
+  // does NOT consult the fetched non-working-day (holiday) list, matching its
+  // historical behaviour. Gantt.tsx's calendar includes holidays.
+  const isNonWorkingDay = (date: Date): boolean =>
+    workingDaysLib.isNonWorkingDay(date, {
+      includeSaturday: schedule?.includeSaturday,
+      includeSunday: schedule?.includeSunday,
+    });
 
-  const addWorkingDays = (date: Date, days: number): Date => {
-    let d = new Date(date);
-    let remaining = Math.abs(days);
-    const step = days >= 0 ? 1 : -1;
-    while (remaining > 0) {
-      d = new Date(d);
-      d.setDate(d.getDate() + step);
-      if (!isNonWorkingDay(d)) remaining--;
-    }
-    return d;
-  };
+  const addWorkingDays = (date: Date, days: number): Date =>
+    workingDaysLib.addWorkingDays(date, days, isNonWorkingDay);
 
-  const countWorkingDays = (start: Date, end: Date): number => {
-    let count = 0;
-    const s = new Date(start);
-    s.setHours(0, 0, 0, 0);
-    const e = new Date(end);
-    e.setHours(0, 0, 0, 0);
-    if (s <= e) {
-      let current = new Date(s);
-      while (current <= e) {
-        if (!isNonWorkingDay(current)) count++;
-        current.setDate(current.getDate() + 1);
-      }
-    }
-    return count;
-  };
+  // Inclusive of BOTH start and end (D0 -> D0 = 1); returns 0 when start > end.
+  // This differs from Gantt.tsx's end-exclusive count — callers here use the
+  // result directly as a duration in working days.
+  const countWorkingDays = (start: Date, end: Date): number =>
+    workingDaysLib.countWorkingDays(start, end, isNonWorkingDay, { inclusive: true });
 
   const { data: companySettings } = useQuery<CompanySettings>({
     queryKey: ["/api/company-settings"],

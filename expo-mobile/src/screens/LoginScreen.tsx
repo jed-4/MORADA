@@ -160,6 +160,10 @@ export default function LoginScreen({ navigation }: { navigation: any }) {
           }
         } else if (error) {
           Alert.alert('Google Login Failed', `Authentication error: ${error}`);
+        } else {
+          // Redirect came back without a session or an error — surface it
+          // rather than silently doing nothing.
+          Alert.alert('Google Login Failed', 'Sign-in did not complete. Please try again.');
         }
       }
     } catch (err) {
@@ -234,6 +238,8 @@ export default function LoginScreen({ navigation }: { navigation: any }) {
             keyboardType="email-address"
             autoCapitalize="none"
             autoCorrect={false}
+            textContentType="username"
+            autoComplete="email"
             editable={!isLoading}
           />
 
@@ -245,6 +251,8 @@ export default function LoginScreen({ navigation }: { navigation: any }) {
             value={password}
             onChangeText={setPassword}
             secureTextEntry
+            textContentType="password"
+            autoComplete="current-password"
             editable={!isLoading}
             onSubmitEditing={handleLogin}
           />

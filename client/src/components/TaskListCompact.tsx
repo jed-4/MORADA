@@ -312,7 +312,7 @@ function SortableTaskRow({
       ref={setNodeRef}
       style={style}
       className={`h-10 px-2 flex items-center gap-1.5 border-b border-border/50 cursor-pointer transition-all duration-100 ${
-        isBulkSelected ? 'bg-blue-50 dark:bg-blue-900/20' : isSelected ? 'bg-primary/5 border-l-2 border-l-primary' : 'hover:bg-muted/50'
+        isBulkSelected ? 'bg-primary/10' : isSelected ? 'bg-primary/5 border-l-2 border-l-primary' : 'hover:bg-muted/50'
       } ${isHovered ? 'shadow-sm' : ''}`}
       onClick={onClick}
       onMouseEnter={() => setIsHovered(true)}
@@ -1112,7 +1112,7 @@ export default function TaskListCompact({
       <div className="border border-border rounded-md bg-background overflow-hidden">
         {/* Bulk Action Toolbar - shows in grouped view when selection mode is active */}
         {selectionMode && (
-          <div className="h-10 px-3 flex items-center gap-2 border-b border-border bg-blue-50 dark:bg-blue-900/20">
+          <div className="h-10 px-3 flex items-center gap-2 border-b border-border bg-primary/10">
             <Badge variant="secondary" className="text-xs">
               {selectedTasks.length} selected
             </Badge>
@@ -1285,7 +1285,7 @@ export default function TaskListCompact({
     >
       {/* Bulk Action Toolbar - only shows when in selection mode with selections */}
       {selectionMode && (
-        <div className="h-10 px-3 flex items-center gap-2 border-b border-border bg-blue-50 dark:bg-blue-900/20">
+        <div className="h-10 px-3 flex items-center gap-2 border-b border-border bg-primary/10">
           <Badge variant="secondary" className="text-xs">
             {selectedTasks.length} selected
           </Badge>

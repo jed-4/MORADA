@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -10,6 +10,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { apiFetch, apiRequest } from '../services/api';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
@@ -69,6 +70,7 @@ export default function CustomizeHomeScreen({ navigation }: Props) {
   const [tiles, setTiles] = useState<ItemConfig[]>(DEFAULT_TILES);
   const [sections, setSections] = useState<ItemConfig[]>(DEFAULT_SECTIONS);
   const [loading, setLoading] = useState(true);
+  const insets = useSafeAreaInsets();
 
   const theme = useTheme();
 const colors = {
@@ -99,50 +101,50 @@ const colors = {
       .finally(() => setLoading(false));
   }, []);
 
+  // Serialize saves so a fast tap sequence can't land an older layout after a
+  // newer one — each save waits for the previous to finish (SettingsScreen pattern).
+  const saveChain = useRef<Promise<unknown>>(Promise.resolve());
   const savePreferences = useCallback((newTiles: ItemConfig[], newSections: ItemConfig[]) => {
-    apiRequest('/api/user-view-preferences', 'POST', {
-      viewKey: 'mobile-dashboard-layout',
-      preferences: { tiles: newTiles, sections: newSections },
-    }).catch(() => {});
+    saveChain.current = saveChain.current
+      .catch(() => {})
+      .then(() =>
+        apiRequest('/api/user-view-preferences', 'POST', {
+          viewKey: 'mobile-dashboard-layout',
+          preferences: { tiles: newTiles, sections: newSections },
+        }),
+      )
+      .catch(() => {});
   }, []);
 
   const toggleTile = useCallback((index: number) => {
-    setTiles(prev => {
-      const next = prev.map((t, i) => i === index ? { ...t, visible: !t.visible } : t);
-      savePreferences(next, sections);
-      return next;
-    });
-  }, [sections, savePreferences]);
+    const next = tiles.map((t, i) => i === index ? { ...t, visible: !t.visible } : t);
+    setTiles(next);
+    savePreferences(next, sections);
+  }, [tiles, sections, savePreferences]);
 
   const toggleSection = useCallback((index: number) => {
-    setSections(prev => {
-      const next = prev.map((s, i) => i === index ? { ...s, visible: !s.visible } : s);
-      savePreferences(tiles, next);
-      return next;
-    });
-  }, [tiles, savePreferences]);
+    const next = sections.map((s, i) => i === index ? { ...s, visible: !s.visible } : s);
+    setSections(next);
+    savePreferences(tiles, next);
+  }, [tiles, sections, savePreferences]);
 
   const moveTile = useCallback((index: number, direction: -1 | 1) => {
-    setTiles(prev => {
-      const target = index + direction;
-      if (target < 0 || target >= prev.length) return prev;
-      const next = [...prev];
-      [next[index], next[target]] = [next[target], next[index]];
-      savePreferences(next, sections);
-      return next;
-    });
-  }, [sections, savePreferences]);
+    const target = index + direction;
+    if (target < 0 || target >= tiles.length) return;
+    const next = [...tiles];
+    [next[index], next[target]] = [next[target], next[index]];
+    setTiles(next);
+    savePreferences(next, sections);
+  }, [tiles, sections, savePreferences]);
 
   const moveSection = useCallback((index: number, direction: -1 | 1) => {
-    setSections(prev => {
-      const target = index + direction;
-      if (target < 0 || target >= prev.length) return prev;
-      const next = [...prev];
-      [next[index], next[target]] = [next[target], next[index]];
-      savePreferences(tiles, next);
-      return next;
-    });
-  }, [tiles, savePreferences]);
+    const target = index + direction;
+    if (target < 0 || target >= sections.length) return;
+    const next = [...sections];
+    [next[index], next[target]] = [next[target], next[index]];
+    setSections(next);
+    savePreferences(tiles, next);
+  }, [tiles, sections, savePreferences]);
 
   const renderItem = (
     item: ItemConfig,
@@ -200,7 +202,7 @@ const colors = {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.bg }]}>
-      <View style={[styles.header, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
+      <View style={[styles.header, { backgroundColor: colors.card, borderBottomColor: colors.border, paddingTop: insets.top + 12 }]}>
         <Text style={[styles.headerTitle, { color: colors.text }]}>Customize Home</Text>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.closeBtn} activeOpacity={0.7}>
           <Ionicons name="close" size={24} color={colors.secondary} />
@@ -211,7 +213,7 @@ const colors = {
         <View style={styles.sectionBlock}>
           <Text style={[styles.sectionTitle, { color: colors.text }]}>Customize tiles</Text>
           <Text style={[styles.sectionSubtitle, { color: colors.secondary }]}>
-            Hold and drag to reorder tiles in Home
+            Use the arrows to reorder tiles in Home
           </Text>
           {tiles.map((item, i) => renderItem(item, i, TILE_META, tiles.length, moveTile, toggleTile))}
         </View>
@@ -219,7 +221,7 @@ const colors = {
         <View style={styles.sectionBlock}>
           <Text style={[styles.sectionTitle, { color: colors.text }]}>Customize sections</Text>
           <Text style={[styles.sectionSubtitle, { color: colors.secondary }]}>
-            Hold and drag to reorder sections in Home
+            Use the arrows to reorder sections in Home
           </Text>
           {sections.map((item, i) => renderItem(item, i, SECTION_META, sections.length, moveSection, toggleSection))}
         </View>
@@ -241,7 +243,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingTop: 56,
     paddingBottom: 14,
     borderBottomWidth: 1,
   },

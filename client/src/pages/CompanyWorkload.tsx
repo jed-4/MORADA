@@ -790,8 +790,8 @@ export default function CompanyWorkload({ onSwitchView, className }: CompanyWork
                           <AlertTriangle className={cn(
                             "w-3.5 h-3.5",
                             (assigneeOverloads.get(row.id)?.maxConcurrent ?? 0) >= OVERLOAD_THRESHOLD + 2
-                              ? "text-red-500"
-                              : "text-amber-500"
+                              ? "text-status-danger"
+                              : "text-status-warning"
                           )} />
                         </div>
                       </TooltipTrigger>
@@ -946,7 +946,7 @@ export default function CompanyWorkload({ onSwitchView, className }: CompanyWork
                             "absolute top-0 h-full border-l border-border/10",
                             isWkend && "bg-muted/30",
                             isToday && "bg-primary/5",
-                            isOverloadedDay && "bg-red-500/8"
+                            isOverloadedDay && "bg-destructive/[0.08]"
                           )}
                           style={{ left: pct(dayIdx), width: pct(1) }}
                         />

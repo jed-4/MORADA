@@ -404,11 +404,11 @@ export default function BusinessFiles() {
     if (file.isFolder) return <Folder className="w-5 h-5 text-primary" />;
     
     const mimeType = file.mimeType || "";
-    if (mimeType.includes("image")) return <FileImage className="w-5 h-5 text-green-500" />;
-    if (mimeType.includes("video")) return <FileVideo className="w-5 h-5 text-purple-500" />;
-    if (mimeType.includes("audio")) return <FileAudio className="w-5 h-5 text-orange-500" />;
+    if (mimeType.includes("image")) return <FileImage className="w-5 h-5 text-status-success" />;
+    if (mimeType.includes("video")) return <FileVideo className="w-5 h-5 text-primary" />;
+    if (mimeType.includes("audio")) return <FileAudio className="w-5 h-5 text-status-warning" />;
     if (mimeType.includes("spreadsheet") || mimeType.includes("excel")) return <FileSpreadsheet className="w-5 h-5 text-status-success" />;
-    if (mimeType.includes("pdf") || mimeType.includes("document") || mimeType.includes("word")) return <FileText className="w-5 h-5 text-blue-500" />;
+    if (mimeType.includes("pdf") || mimeType.includes("document") || mimeType.includes("word")) return <FileText className="w-5 h-5 text-status-info" />;
     return <File className="w-5 h-5 text-muted" />;
   };
 
@@ -471,8 +471,8 @@ export default function BusinessFiles() {
             <span className="text-sm font-medium">Google Drive</span>
           </div>
           {driveStatus?.email && (
-            <Badge variant="outline" className="text-xs bg-green-50 dark:bg-green-950 text-status-success dark:text-green-300 border-green-200 dark:border-green-800">
-              <div className="w-1.5 h-1.5 rounded-full bg-green-500 mr-1.5" />
+            <Badge variant="outline" className="text-xs bg-status-success-bg text-status-success border-status-success/30">
+              <div className="w-1.5 h-1.5 rounded-full bg-sage mr-1.5" />
               Connected
             </Badge>
           )}
@@ -932,7 +932,7 @@ export default function BusinessFiles() {
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
               onClick={() => selectedFile && deleteMutation.mutate(selectedFile.id)}
-              className="bg-red-600 hover:bg-red-700"
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
               {deleteMutation.isPending ? (
                 <Loader2 className="w-4 h-4 mr-2 animate-spin" />
@@ -981,7 +981,7 @@ export default function BusinessFiles() {
               </div>
             ) : driveConnectionError ? (
               <div className="flex flex-col items-center justify-center h-full text-center p-4">
-                <AlertCircle className="w-10 h-10 text-amber-500 mb-2" />
+                <AlertCircle className="w-10 h-10 text-status-warning mb-2" />
                 <p className="text-sm text-muted-foreground mb-3">{driveConnectionError}</p>
                 <Button
                   variant="outline"

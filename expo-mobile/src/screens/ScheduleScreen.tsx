@@ -21,6 +21,7 @@ import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from '../contexts/AuthContext';
 import { apiFetch, apiRequest } from '../services/api';
+import { fromLocalDateStr, toLocalDateStr } from '../lib/dates';
 import { ScheduleActivityFeedButton } from '../components/ScheduleActivityFeedButton';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
@@ -202,12 +203,6 @@ function getItemColor(item: ScheduleItem): string {
   return item.color || item.assignedToColor || lightTheme.textMuted;
 }
 
-function isFutureDate(dateStr: string): boolean {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  return new Date(dateStr) > today;
-}
-
 function isSameDay(d1: Date, d2: Date): boolean {
   return d1.getFullYear() === d2.getFullYear() && d1.getMonth() === d2.getMonth() && d1.getDate() === d2.getDate();
 }
@@ -223,11 +218,6 @@ function getMondayOfWeek(date: Date): Date {
   d.setDate(d.getDate() + diff);
   d.setHours(0, 0, 0, 0);
   return d;
-}
-
-function parseTimeToHour(timeStr: string): number {
-  const [h, m] = timeStr.split(':').map(Number);
-  return h + (m || 0) / 60;
 }
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
@@ -291,8 +281,8 @@ export default function ScheduleScreen({ navigation, route }: Props) {
   const [showAddModal, setShowAddModal] = useState(false);
   const [addName, setAddName] = useState('');
   const [addType, setAddType] = useState('task');
-  const [addStartDate, setAddStartDate] = useState(new Date().toISOString().split('T')[0]);
-  const [addEndDate, setAddEndDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [addStartDate, setAddStartDate] = useState(() => toLocalDateStr(new Date()));
+  const [addEndDate, setAddEndDate] = useState(() => toLocalDateStr(new Date()));
   const [addPriority, setAddPriority] = useState('medium');
   const [addDescription, setAddDescription] = useState('');
   const [addNotes, setAddNotes] = useState('');
@@ -348,15 +338,12 @@ const colors = {
         ).catch(() => null),
       ]);
       if (statusData?.options) {
-        setStatusOptions(statusData.options.map(o => ({ key: o.key, name: o.name, color: o.color || '#9ca3af' })));
-      }
-      if (selectedProjectId) {
-        await fetchItems(selectedProjectId);
+        setStatusOptions(statusData.options.map(o => ({ key: o.key, name: o.name, color: o.color || theme.textMuted })));
       }
     } finally {
       setLoading(false);
     }
-  }, [fetchProjects, fetchItems, selectedProjectId]);
+  }, [fetchProjects, theme.textMuted]);
 
   useEffect(() => {
     const incoming = route?.params?.projectId;
@@ -452,15 +439,15 @@ const colors = {
     } else {
       setLinkedChecklists([]);
     }
-    if (tIds.length > 0) {
+    if (tIds.length > 0 && selectedProjectId) {
       try {
-        const allTasks = await apiFetch<any[]>(`/api/projects/${item.scheduleId}/tasks`).catch(() => []);
+        const allTasks = await apiFetch<any[]>(`/api/tasks?projectId=${selectedProjectId}`).catch(() => []);
         setLinkedTasks((allTasks || []).filter((t: any) => tIds.includes(String(t.id))).map((t: any) => ({ id: String(t.id), title: t.title || 'Untitled' })));
       } catch { setLinkedTasks([]); }
     } else {
       setLinkedTasks([]);
     }
-  }, []);
+  }, [selectedProjectId]);
 
   const openDetail = useCallback((item: ScheduleItem) => {
     setSelectedItem(item);
@@ -511,7 +498,7 @@ const colors = {
       }
       setShowDetailSheet(false);
     } catch (e: any) {
-      Alert.alert('Error', 'Could not save changes. Please try again.');
+      Alert.alert('Error', e?.message || 'Could not save changes. Please try again.');
     } finally {
       setSaving(false);
     }
@@ -527,8 +514,8 @@ const colors = {
       });
       setNewNoteText('');
       await fetchActivityNotes(selectedItem.id);
-    } catch {
-      Alert.alert('Error', 'Could not add note.');
+    } catch (e: any) {
+      Alert.alert('Error', e?.message || 'Could not add note.');
     } finally {
       setAddingNote(false);
     }
@@ -538,8 +525,8 @@ const colors = {
     try {
       await apiRequest(`/api/schedule-item-steps/${step.id}`, 'PATCH', { isCompleted: !step.isCompleted });
       if (selectedItem) await fetchSteps(selectedItem.id);
-    } catch {
-      Alert.alert('Error', 'Could not update step.');
+    } catch (e: any) {
+      Alert.alert('Error', e?.message || 'Could not update step.');
     }
   };
 
@@ -550,8 +537,8 @@ const colors = {
       await apiRequest(`/api/schedule-items/${selectedItem.id}/steps`, 'POST', { name: newStepName.trim() });
       setNewStepName('');
       await fetchSteps(selectedItem.id);
-    } catch {
-      Alert.alert('Error', 'Could not add step.');
+    } catch (e: any) {
+      Alert.alert('Error', e?.message || 'Could not add step.');
     } finally {
       setAddingStep(false);
     }
@@ -561,8 +548,8 @@ const colors = {
     try {
       await apiRequest(`/api/schedule-item-steps/${stepId}`, 'DELETE');
       if (selectedItem) await fetchSteps(selectedItem.id);
-    } catch {
-      Alert.alert('Error', 'Could not delete step.');
+    } catch (e: any) {
+      Alert.alert('Error', e?.message || 'Could not delete step.');
     }
   };
 
@@ -583,8 +570,8 @@ const colors = {
   const resetAddForm = () => {
     setAddName('');
     setAddType('task');
-    setAddStartDate(new Date().toISOString().split('T')[0]);
-    setAddEndDate(new Date().toISOString().split('T')[0]);
+    setAddStartDate(toLocalDateStr(new Date()));
+    setAddEndDate(toLocalDateStr(new Date()));
     setAddPriority('medium');
     setAddDescription('');
     setAddNotes('');
@@ -617,13 +604,23 @@ const colors = {
     if (!selectedProjectId) return;
     setAddSaving(true);
     try {
-      const schedule = await apiFetch<{ id: string }>(`/api/projects/${selectedProjectId}/schedule`);
+      const schedule = await apiFetch<{ id: string; includeSaturday?: boolean; includeSunday?: boolean }>(`/api/projects/${selectedProjectId}/schedule`);
       if (!schedule?.id) {
         Alert.alert('Error', 'Could not find schedule for this project.');
         return;
       }
-      const diffMs = endD.getTime() - startD.getTime();
-      const duration = Math.max(1, Math.ceil(diffMs / (1000 * 60 * 60 * 24)) + 1);
+      // Duration in WORKING days, respecting the schedule's weekend flags.
+      const inclSat = schedule.includeSaturday === true;
+      const inclSun = schedule.includeSunday === true;
+      const cursor = fromLocalDateStr(addStartDate);
+      const endLocal = fromLocalDateStr(addEndDate);
+      let workingDays = 0;
+      while (cursor <= endLocal) {
+        const dow = cursor.getDay();
+        if (!((dow === 6 && !inclSat) || (dow === 0 && !inclSun))) workingDays++;
+        cursor.setDate(cursor.getDate() + 1);
+      }
+      const duration = Math.max(1, workingDays);
 
       await apiRequest('/api/schedule-items', 'POST', {
         scheduleId: schedule.id,
@@ -641,7 +638,7 @@ const colors = {
       setShowAddModal(false);
       resetAddForm();
     } catch (e: any) {
-      Alert.alert('Error', 'Could not create schedule item. Please try again.');
+      Alert.alert('Error', e?.message || 'Could not create schedule item. Please try again.');
     } finally {
       setAddSaving(false);
     }
@@ -704,7 +701,7 @@ const colors = {
     const dotColors: string[] = [];
     const seen = new Set<string>();
     dayItems.forEach(item => {
-      const c = STATUS_COLORS[item.status] || '#3b82f6';
+      const c = STATUS_COLORS[item.status] || theme.statusInfo;
       if (!seen.has(c) && dotColors.length < 3) {
         seen.add(c);
         dotColors.push(c);
@@ -765,8 +762,14 @@ const colors = {
 
   const getStatusOption = (key: string) => {
     const opt = statusOptions.find(s => s.key === key);
-    return opt || { name: key, color: '#9ca3af' };
+    return opt || { name: STATUS_LABELS[key] || key, color: STATUS_COLORS[key] || theme.textMuted };
   };
+
+  // Server-defined statuses drive the pickers (same source as the cards);
+  // the hardcoded five are only a fallback while options haven't loaded.
+  const pickerStatusOptions = statusOptions.length > 0
+    ? statusOptions
+    : Object.entries(STATUS_LABELS).map(([key, label]) => ({ key, name: label, color: STATUS_COLORS[key] || theme.textMuted }));
 
   const renderItemCard = (item: ScheduleItem) => {
     const status = getStatusOption(item.status);
@@ -912,7 +915,7 @@ const colors = {
           {dateHeaders.map((dh, i) => {
             const todayHighlight = isToday(dh.date);
             const bg = todayHighlight
-              ? (isDark ? '#1e3a5f' : '#dbeafe')
+              ? theme.primaryLight
               : dh.isWeekend ? weekendBg : colors.card;
             return (
               <View key={i} style={[styles.ganttDateCell, { backgroundColor: bg, borderRightColor: colors.border }]}>
@@ -988,6 +991,11 @@ const colors = {
                   ) : null
                 )}
 
+                {/* Day gridlines — drawn once as full-height columns, not per row */}
+                {dateHeaders.map((_, ci) => (
+                  <View key={`gl-${ci}`} style={[styles.ganttGridLine, { left: ci * DAY_COL_WIDTH, height: barAreaHeight, borderRightColor: colors.border }]} />
+                ))}
+
                 {/* Bar rows */}
                 {sortedItems.map((item, idx) => {
                   const itemStart = parseLocalMidnight(item.startDate);
@@ -1005,9 +1013,6 @@ const colors = {
                       key={item.id}
                       style={[styles.ganttBarRow, { position: 'absolute', left: 0, right: 0, top: idx * GANTT_ROW_HEIGHT, backgroundColor: idx % 2 === 0 ? 'transparent' : (isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)'), borderBottomColor: colors.border }]}
                     >
-                      {dateHeaders.map((_, ci) => (
-                        <View key={ci} style={[styles.ganttGridLine, { left: ci * DAY_COL_WIDTH, borderRightColor: colors.border }]} />
-                      ))}
                       {showBarStatus && (
                         <View
                           style={[styles.ganttStatusChip, {
@@ -1058,7 +1063,7 @@ const colors = {
                     const predEndDay = Math.max(1, Math.round((predEnd.getTime() - minDate.getTime()) / MS_PER_DAY) + 1);
                     const predBarRight = predEndDay * DAY_COL_WIDTH - 2;
                     const predRowMid = predIdx * GANTT_ROW_HEIGHT + GANTT_ROW_HEIGHT / 2;
-                    const lineColor = '#a78bfa';
+                    const lineColor = colors.accent;
                     const cornerX = Math.min(predBarRight + 8, depBarLeft);
                     const hLineWidth = Math.abs(cornerX - predBarRight);
                     const vTop = Math.min(predRowMid, depRowTop);
@@ -1158,7 +1163,7 @@ const colors = {
                     key={ci}
                     style={[
                       styles.calendarCell,
-                      today && !selected && { backgroundColor: isDark ? '#1e3a5f' : '#dbeafe' },
+                      today && !selected && { backgroundColor: theme.primaryLight },
                       selected && { backgroundColor: colors.accent },
                     ]}
                     onPress={() => setSelectedDate(cellDate)}
@@ -1339,8 +1344,8 @@ const colors = {
 
   const renderDetailSheet = () => {
     if (!selectedItem) return null;
-    const typeColor = TYPE_COLORS[selectedItem.type] || '#3b82f6';
-    const statusColor = STATUS_COLORS[detailStatus] || '#94a3b8';
+    const detailStatusOpt = getStatusOption(detailStatus);
+    const statusColor = detailStatusOpt.color;
 
     return (
       <Modal visible={showDetailSheet} animationType="slide" presentationStyle="fullScreen">
@@ -1391,14 +1396,14 @@ const colors = {
                   style={[styles.fieldPicker, { backgroundColor: colors.inputBg, borderColor: colors.border }]}
                   onPress={() => { setShowDetailTypePicker(!showDetailTypePicker); setShowDetailPriorityPicker(false); setShowStatusPicker(false); }}
                 >
-                  <View style={[styles.statusDot, { backgroundColor: TYPE_COLORS[detailType] || '#3b82f6' }]} />
+                  <View style={[styles.statusDot, { backgroundColor: TYPE_COLORS[detailType] || colors.accent }]} />
                   <Text style={[styles.fieldPickerText, { color: colors.text }]}>{TYPE_LABELS[detailType] || detailType}</Text>
                   <Ionicons name={showDetailTypePicker ? 'chevron-up' : 'chevron-down'} size={16} color={colors.secondary} />
                 </TouchableOpacity>
                 {showDetailTypePicker && (
                   <View style={[styles.inlineStatusList, { backgroundColor: colors.inputBg, borderColor: colors.border }]}>
                     {Object.entries(TYPE_LABELS).map(([key, label]) => {
-                      const tc = TYPE_COLORS[key] || '#3b82f6';
+                      const tc = TYPE_COLORS[key] || colors.accent;
                       const isSelected = detailType === key;
                       return (
                         <TouchableOpacity
@@ -1440,14 +1445,14 @@ const colors = {
                   style={[styles.fieldPicker, { backgroundColor: colors.inputBg, borderColor: colors.border }]}
                   onPress={() => { setShowDetailPriorityPicker(!showDetailPriorityPicker); setShowDetailTypePicker(false); setShowStatusPicker(false); }}
                 >
-                  <View style={[styles.statusDot, { backgroundColor: PRIORITY_COLORS[detailPriority] || '#3b82f6' }]} />
+                  <View style={[styles.statusDot, { backgroundColor: PRIORITY_COLORS[detailPriority] || colors.accent }]} />
                   <Text style={[styles.fieldPickerText, { color: colors.text }]}>{PRIORITY_LABELS[detailPriority] || detailPriority}</Text>
                   <Ionicons name={showDetailPriorityPicker ? 'chevron-up' : 'chevron-down'} size={16} color={colors.secondary} />
                 </TouchableOpacity>
                 {showDetailPriorityPicker && (
                   <View style={[styles.inlineStatusList, { backgroundColor: colors.inputBg, borderColor: colors.border }]}>
                     {Object.entries(PRIORITY_LABELS).map(([key, label]) => {
-                      const pc = PRIORITY_COLORS[key] || '#3b82f6';
+                      const pc = PRIORITY_COLORS[key] || colors.accent;
                       const isSelected = detailPriority === key;
                       return (
                         <TouchableOpacity
@@ -1485,30 +1490,30 @@ const colors = {
                   onPress={() => setShowStatusPicker(!showStatusPicker)}
                 >
                   <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
-                  <Text style={[styles.fieldPickerText, { color: colors.text }]}>{STATUS_LABELS[detailStatus] || detailStatus}</Text>
+                  <Text style={[styles.fieldPickerText, { color: colors.text }]}>{detailStatusOpt.name}</Text>
                   <Ionicons name={showStatusPicker ? 'chevron-up' : 'chevron-down'} size={16} color={colors.secondary} />
                 </TouchableOpacity>
 
                 {showStatusPicker && (
                   <View style={[styles.inlineStatusList, { backgroundColor: colors.inputBg, borderColor: colors.border }]}>
-                    {Object.entries(STATUS_LABELS).map(([key, label]) => {
-                      const sc = STATUS_COLORS[key] || '#94a3b8';
-                      const isSelected = detailStatus === key;
+                    {pickerStatusOptions.map(opt => {
+                      const sc = opt.color;
+                      const isSelected = detailStatus === opt.key;
                       return (
                         <TouchableOpacity
-                          key={key}
+                          key={opt.key}
                           style={[
                             styles.inlineStatusOption,
                             { borderBottomColor: colors.border },
                             isSelected && { backgroundColor: sc + '15' },
                           ]}
                           onPress={() => {
-                            setDetailStatus(key);
+                            setDetailStatus(opt.key);
                             setShowStatusPicker(false);
                           }}
                         >
                           <View style={[styles.statusDot, { backgroundColor: sc }]} />
-                          <Text style={[styles.inlineStatusText, { color: colors.text }]}>{label}</Text>
+                          <Text style={[styles.inlineStatusText, { color: colors.text }]}>{opt.name}</Text>
                           {isSelected && <Ionicons name="checkmark" size={18} color={colors.accent} />}
                         </TouchableOpacity>
                       );
@@ -1573,7 +1578,7 @@ const colors = {
                       </TouchableOpacity>
                       <Text style={[styles.stepName, { color: colors.text }, step.isCompleted && styles.stepCompleted]}>{step.name}</Text>
                       <TouchableOpacity onPress={() => handleDeleteStep(step.id)} style={styles.stepDeleteBtn}>
-                        <Ionicons name="trash-outline" size={16} color="#ef4444" />
+                        <Ionicons name="trash-outline" size={16} color={theme.statusDanger} />
                       </TouchableOpacity>
                     </View>
                   ))
@@ -1727,14 +1732,14 @@ const colors = {
               style={[styles.fieldPicker, { backgroundColor: colors.inputBg, borderColor: colors.border }]}
               onPress={() => { setShowAddTypePicker(!showAddTypePicker); setShowAddPriorityPicker(false); setShowAddStatusPicker(false); }}
             >
-              <View style={[styles.statusDot, { backgroundColor: TYPE_COLORS[addType] || '#3b82f6' }]} />
+              <View style={[styles.statusDot, { backgroundColor: TYPE_COLORS[addType] || colors.accent }]} />
               <Text style={[styles.fieldPickerText, { color: colors.text }]}>{TYPE_LABELS[addType] || addType}</Text>
               <Ionicons name={showAddTypePicker ? 'chevron-up' : 'chevron-down'} size={16} color={colors.secondary} />
             </TouchableOpacity>
             {showAddTypePicker && (
               <View style={[styles.inlineStatusList, { backgroundColor: colors.inputBg, borderColor: colors.border }]}>
                 {Object.entries(TYPE_LABELS).map(([key, label]) => {
-                  const tc = TYPE_COLORS[key] || '#3b82f6';
+                  const tc = TYPE_COLORS[key] || colors.accent;
                   const isSelected = addType === key;
                   return (
                     <TouchableOpacity
@@ -1776,14 +1781,14 @@ const colors = {
               style={[styles.fieldPicker, { backgroundColor: colors.inputBg, borderColor: colors.border }]}
               onPress={() => { setShowAddPriorityPicker(!showAddPriorityPicker); setShowAddTypePicker(false); setShowAddStatusPicker(false); }}
             >
-              <View style={[styles.statusDot, { backgroundColor: PRIORITY_COLORS[addPriority] || '#3b82f6' }]} />
+              <View style={[styles.statusDot, { backgroundColor: PRIORITY_COLORS[addPriority] || colors.accent }]} />
               <Text style={[styles.fieldPickerText, { color: colors.text }]}>{PRIORITY_LABELS[addPriority] || addPriority}</Text>
               <Ionicons name={showAddPriorityPicker ? 'chevron-up' : 'chevron-down'} size={16} color={colors.secondary} />
             </TouchableOpacity>
             {showAddPriorityPicker && (
               <View style={[styles.inlineStatusList, { backgroundColor: colors.inputBg, borderColor: colors.border }]}>
                 {Object.entries(PRIORITY_LABELS).map(([key, label]) => {
-                  const pc = PRIORITY_COLORS[key] || '#3b82f6';
+                  const pc = PRIORITY_COLORS[key] || colors.accent;
                   const isSelected = addPriority === key;
                   return (
                     <TouchableOpacity
@@ -1805,23 +1810,23 @@ const colors = {
               style={[styles.fieldPicker, { backgroundColor: colors.inputBg, borderColor: colors.border }]}
               onPress={() => { setShowAddStatusPicker(!showAddStatusPicker); setShowAddTypePicker(false); setShowAddPriorityPicker(false); }}
             >
-              <View style={[styles.statusDot, { backgroundColor: STATUS_COLORS[addStatus] || '#94a3b8' }]} />
-              <Text style={[styles.fieldPickerText, { color: colors.text }]}>{STATUS_LABELS[addStatus] || addStatus}</Text>
+              <View style={[styles.statusDot, { backgroundColor: getStatusOption(addStatus).color }]} />
+              <Text style={[styles.fieldPickerText, { color: colors.text }]}>{getStatusOption(addStatus).name}</Text>
               <Ionicons name={showAddStatusPicker ? 'chevron-up' : 'chevron-down'} size={16} color={colors.secondary} />
             </TouchableOpacity>
             {showAddStatusPicker && (
               <View style={[styles.inlineStatusList, { backgroundColor: colors.inputBg, borderColor: colors.border }]}>
-                {Object.entries(STATUS_LABELS).map(([key, label]) => {
-                  const sc = STATUS_COLORS[key] || '#94a3b8';
-                  const isSelected = addStatus === key;
+                {pickerStatusOptions.map(opt => {
+                  const sc = opt.color;
+                  const isSelected = addStatus === opt.key;
                   return (
                     <TouchableOpacity
-                      key={key}
+                      key={opt.key}
                       style={[styles.inlineStatusOption, { borderBottomColor: colors.border }, isSelected && { backgroundColor: sc + '15' }]}
-                      onPress={() => { setAddStatus(key); setShowAddStatusPicker(false); }}
+                      onPress={() => { setAddStatus(opt.key); setShowAddStatusPicker(false); }}
                     >
                       <View style={[styles.statusDot, { backgroundColor: sc }]} />
-                      <Text style={[styles.inlineStatusText, { color: colors.text }]}>{label}</Text>
+                      <Text style={[styles.inlineStatusText, { color: colors.text }]}>{opt.name}</Text>
                       {isSelected && <Ionicons name="checkmark" size={18} color={colors.accent} />}
                     </TouchableOpacity>
                   );
@@ -1873,7 +1878,7 @@ const colors = {
             renderItem={({ item }) => {
               if (item.isHeader) {
                 return (
-                  <View style={[styles.pickerSectionHeader, { backgroundColor: isDark ? '#1e293b' : '#f1f5f9' }]}>
+                  <View style={[styles.pickerSectionHeader, { backgroundColor: theme.nav }]}>
                     <Text style={[styles.pickerSectionText, { color: colors.secondary }]}>{item.label}</Text>
                   </View>
                 );
@@ -2085,7 +2090,7 @@ const styles = StyleSheet.create({
   ganttDateCell: { width: DAY_COL_WIDTH, justifyContent: 'center', alignItems: 'center', borderRightWidth: StyleSheet.hairlineWidth },
   ganttDateText: { fontSize: 9, fontWeight: '500' },
   ganttBarRow: { height: GANTT_ROW_HEIGHT, position: 'relative', borderBottomWidth: StyleSheet.hairlineWidth },
-  ganttGridLine: { position: 'absolute', top: 0, bottom: 0, width: 0, borderRightWidth: StyleSheet.hairlineWidth },
+  ganttGridLine: { position: 'absolute', top: 0, width: 0, borderRightWidth: StyleSheet.hairlineWidth },
   ganttBar: { position: 'absolute', top: 6, height: GANTT_ROW_HEIGHT - 12, borderRadius: 4, justifyContent: 'center', paddingHorizontal: 4 },
   ganttBarText: { color: '#fff', fontSize: 9, fontWeight: '600' },
   ganttBarOuterText: { position: 'absolute', top: 0, height: GANTT_ROW_HEIGHT, lineHeight: GANTT_ROW_HEIGHT, fontSize: 10, fontWeight: '500', maxWidth: DAY_COL_WIDTH * 5 },

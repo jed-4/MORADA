@@ -1,5 +1,3 @@
-import { Calendar, momentLocalizer, Views } from "react-big-calendar";
-import moment from "moment";
 import { useMemo } from "react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { User } from "lucide-react";
@@ -8,42 +6,44 @@ import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { getPriorityStyle } from "@/lib/priorityConfig";
-
-// Setup the localizer for react-big-calendar
-const localizer = momentLocalizer(moment);
+import { cn } from "@/lib/utils";
+import {
+  MoradaCalendar,
+  type MoradaCalendarEvent,
+  type MoradaCalendarView,
+} from "@/components/calendar/MoradaCalendar";
 
 interface TaskCalendarProps {
   tasks: Task[];
   projectId: string;
   onTaskClick: (task: Task) => void;
   currentDate: Date;
-  currentView: typeof Views[keyof typeof Views];
+  /** Accepts legacy react-big-calendar view strings ("month" | "week" | "day" | "agenda" | "work_week"). */
+  currentView: string;
   onNavigate: (date: Date) => void;
-  onViewChange: (view: typeof Views[keyof typeof Views]) => void;
+  onViewChange: (view: string) => void;
 }
 
-interface CalendarEvent {
-  id: string;
-  title: string;
-  start: Date;
-  end: Date;
-  resource: Task;
+function toMoradaView(view: string): MoradaCalendarView {
+  if (view === "month") return "month";
+  if (view === "week" || view === "work_week") return "week";
+  return "agenda";
 }
 
-const TaskCalendarEvent = ({ event }: { event: CalendarEvent }) => {
+const TaskCalendarEvent = ({ event }: { event: MoradaCalendarEvent }) => {
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const task = event.resource;
+  const task = event.meta?.task as Task;
 
   // Fetch field categories to get completed status option
   const { data: fieldCategories = [] } = useQuery<FieldCategoryWithOptions[]>({
     queryKey: ["/api/field-categories"],
   });
-  
+
   // Find the task status category and its completed option
-  const statusCategory = fieldCategories.find(cat => cat.key === "task.status");
-  const completedOption = statusCategory?.options.find(opt => opt.isCompleted);
-  const defaultOption = statusCategory?.options.find(opt => opt.isDefault);
+  const statusCategory = fieldCategories.find((cat) => cat.key === "task.status");
+  const completedOption = statusCategory?.options.find((opt) => opt.isCompleted);
+  const defaultOption = statusCategory?.options.find((opt) => opt.isDefault);
 
   const updateTaskMutation = useMutation({
     mutationFn: async (updates: Partial<Task>) => {
@@ -56,7 +56,7 @@ const TaskCalendarEvent = ({ event }: { event: CalendarEvent }) => {
         description: "Task status has been updated successfully.",
       });
     },
-    onError: (error) => {
+    onError: () => {
       toast({
         title: "Error",
         description: "Failed to update task status.",
@@ -74,14 +74,10 @@ const TaskCalendarEvent = ({ event }: { event: CalendarEvent }) => {
       });
       return;
     }
-    
+
     // Set status based on checked state
-    const newStatus = checked
-      ? completedOption.key
-      : (defaultOption?.key || "todo");
-    
-    const updates: Partial<Task> = { status: newStatus };
-    updateTaskMutation.mutate(updates);
+    const newStatus = checked ? completedOption.key : defaultOption?.key || "todo";
+    updateTaskMutation.mutate({ status: newStatus });
   };
 
   const priorityStyle = getPriorityStyle(task.priority || "medium");
@@ -91,131 +87,71 @@ const TaskCalendarEvent = ({ event }: { event: CalendarEvent }) => {
 
   return (
     <div
-      className={`
-        ${isCompleted ? "opacity-60 line-through" : ""}
-        ${isOverdue ? "bg-red-200 dark:bg-red-900/30 text-red-900 dark:text-red-100 border-red-400 dark:border-red-600" : ""}
-        text-xs p-2 rounded border-l-4 cursor-pointer hover:opacity-80 transition-opacity
-      `}
+      className={cn("w-full rounded px-1.5 py-0.5 text-xs", isCompleted && "opacity-60")}
       style={
         isOverdue
-          ? undefined
-          : { backgroundColor: priorityStyle.bgColor, borderLeftColor: priorityStyle.color }
+          ? { backgroundColor: "hsl(var(--coral) / 0.18)", color: "hsl(var(--coral))" }
+          : { backgroundColor: `${priorityStyle.color}20`, color: priorityStyle.color }
       }
       data-testid={`calendar-task-${task.id}`}
     >
-      <div className="flex items-start gap-2">
+      <div className="flex items-center gap-1.5">
         <Checkbox
           checked={isCompleted}
           onCheckedChange={handleCompleteToggle}
-          className="mt-0.5 h-3 w-3"
+          onClick={(e) => e.stopPropagation()}
+          className="h-3 w-3 shrink-0"
           data-testid={`checkbox-task-${task.id}`}
         />
-        <div className="flex-1 min-w-0">
-          <div className="font-medium truncate">{task.title}</div>
-          {task.assigneeName && (
-            <div className="flex items-center gap-1 mt-1 opacity-90">
-              <User className="h-3 w-3" />
-              <span className="text-xs truncate">{task.assigneeName}</span>
-            </div>
-          )}
-        </div>
+        <span className={cn("min-w-0 truncate font-medium", isCompleted && "line-through")}>
+          {task.title}
+        </span>
       </div>
+      {task.assigneeName && (
+        <div className="mt-0.5 flex items-center gap-1 opacity-70">
+          <User className="h-2.5 w-2.5 shrink-0" />
+          <span className="truncate text-data">{task.assigneeName}</span>
+        </div>
+      )}
     </div>
   );
 };
 
-export function TaskCalendar({ 
-  tasks, 
-  projectId, 
+export function TaskCalendar({
+  tasks,
+  projectId: _projectId,
   onTaskClick,
   currentDate,
   currentView,
   onNavigate,
   onViewChange,
 }: TaskCalendarProps) {
-  const { toast } = useToast();
-  const queryClient = useQueryClient();
-
-  const updateTaskMutation = useMutation({
-    mutationFn: async ({ taskId, updates }: { taskId: string; updates: Partial<Task> }) => {
-      return await apiRequest(`/api/tasks/${taskId}`, "PATCH", updates);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/tasks", projectId] });
-      toast({
-        title: "Task updated",
-        description: "Task due date has been updated successfully.",
-      });
-    },
-    onError: (error) => {
-      toast({
-        title: "Error",
-        description: "Failed to update task due date.",
-        variant: "destructive",
-      });
-    },
-  });
-
   // Convert tasks to calendar events
-  const events: CalendarEvent[] = useMemo(() => {
+  const events: MoradaCalendarEvent[] = useMemo(() => {
     return tasks
-      .filter(task => task.dueDate)
-      .map(task => ({
+      .filter((task) => task.dueDate)
+      .map((task) => ({
         id: task.id,
         title: task.title,
         start: new Date(task.dueDate!),
-        end: new Date(task.dueDate!),
-        resource: task,
+        allDay: true,
+        color: getPriorityStyle(task.priority || "medium").color,
+        meta: { task },
       }));
   }, [tasks]);
 
-  const handleSelectEvent = (event: CalendarEvent) => {
-    onTaskClick(event.resource);
-  };
-
-  const handleEventDrop = ({ event, start }: { event: CalendarEvent; start: Date }) => {
-    // Normalize to end of day to prevent premature overdue states
-    const endOfDay = new Date(start);
-    endOfDay.setHours(23, 59, 59, 999);
-    
-    updateTaskMutation.mutate({ 
-      taskId: event.id, 
-      updates: { dueDate: endOfDay } 
-    });
-  };
-
   return (
-    <div className="h-full w-full flex flex-col" data-testid="task-calendar">
-      <div className="flex-1 min-h-0">
-        <Calendar
-          localizer={localizer}
+    <div className="flex h-full w-full flex-col" data-testid="task-calendar">
+      <div className="min-h-0 flex-1">
+        <MoradaCalendar
           events={events}
-          startAccessor="start"
-          endAccessor="end"
-          style={{ height: "100%" }}
-          view={currentView}
+          view={toMoradaView(currentView)}
+          onViewChange={(view) => onViewChange(view)}
           date={currentDate}
-          onNavigate={onNavigate}
-          onView={onViewChange}
-          onSelectEvent={handleSelectEvent}
-          onEventDrop={handleEventDrop as any}
-          onEventResize={handleEventDrop as any}
-          draggableAccessor={() => true}
-          resizable
-          popup
-          toolbar={false}
-          components={{
-            event: TaskCalendarEvent,
-          }}
-          formats={{
-            timeGutterFormat: "HH:mm",
-            eventTimeRangeFormat: () => "",
-          }}
-          step={60}
-          timeslots={1}
-          defaultView={Views.WEEK}
-          views={[Views.MONTH, Views.WEEK, Views.DAY]}
-          className="rbc-calendar"
+          onDateChange={onNavigate}
+          onEventClick={(event) => onTaskClick(event.meta?.task as Task)}
+          renderEvent={(event) => <TaskCalendarEvent event={event} />}
+          hideHeader
         />
       </div>
     </div>

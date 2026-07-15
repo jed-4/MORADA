@@ -1,6 +1,8 @@
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
-import { apiRequest, apiFetch, loadSession, saveSession, clearSession, getSessionId } from '../services/api';
+import { apiRequest, apiFetch, loadSession, saveSession, clearSession, getSessionId, setUnauthorizedHandler } from '../services/api';
 import { registerForPushNotifications, unregisterPushNotifications } from '../services/pushNotifications';
+import { startSyncService, stopSyncService } from '../services/syncService';
+import { connectSocket, disconnectSocket } from '../services/socket';
 
 interface User {
   id: string;
@@ -50,6 +52,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           const userData = await apiFetch<User>('/api/auth/user');
           setUser(userData);
           registerForPushNotifications();
+          startSyncService();
+          connectSocket();
         } catch {
           await clearSession();
           setUser(null);
@@ -60,24 +64,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     init();
   }, []);
 
+  // Expired/revoked session (401 on an authenticated request): clear local
+  // state so the navigator returns to the login screen, instead of every
+  // screen failing individually with generic errors.
+  useEffect(() => {
+    setUnauthorizedHandler(() => {
+      clearSession();
+      stopSyncService();
+      disconnectSocket();
+      setUser(null);
+    });
+    return () => setUnauthorizedHandler(null);
+  }, []);
+
   const login = async (email: string, password: string) => {
     try {
+      // apiRequest throws on non-2xx with the server's message.
       const response = await apiRequest('/api/auth/login', 'POST', { email, password });
       const data = await response.json();
 
-      if (response.ok && data.sessionId) {
-        await saveSession(data.sessionId);
-        const userData = await apiFetch<User>('/api/auth/user');
-        setUser(userData);
-        registerForPushNotifications();
-        return { success: true };
-      }
-
-      if (response.ok && !data.sessionId) {
+      if (!data.sessionId) {
         return { success: false, error: 'Session not returned. Please try again.' };
       }
 
-      return { success: false, error: data.message || 'Login failed' };
+      await saveSession(data.sessionId);
+      const userData = await apiFetch<User>('/api/auth/user');
+      setUser(userData);
+      registerForPushNotifications();
+      startSyncService();
+      connectSocket();
+      return { success: true };
     } catch (error: any) {
       return { success: false, error: error.message || 'Network error. Check your connection.' };
     }
@@ -89,6 +105,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const userData = await apiFetch<User>('/api/auth/user');
       setUser(userData);
       registerForPushNotifications();
+      startSyncService();
+      connectSocket();
       return { success: true };
     } catch (error: any) {
       await clearSession();
@@ -97,6 +115,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const logout = async () => {
+    stopSyncService();
+    disconnectSocket();
     // Unregister this device first, while the session is still valid.
     await unregisterPushNotifications();
     try {

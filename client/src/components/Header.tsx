@@ -1,13 +1,10 @@
-import { Calendar, User, Settings, LogOut, Plus, FileText, CheckSquare, Folder, Palette, ChevronDown, Home, MessageSquare, Clock, Calculator, FileBarChart, FileSearch, HelpCircle, File, DollarSign, Receipt, BookOpen, Timer, PiggyBank, FolderOpen, Users, ClipboardList, Kanban, Search, ChevronLeft, ChevronRight, Star, GanttChart, HardDrive, Clipboard, LayoutDashboard, Check, Lightbulb, Bug, LifeBuoy, Gift } from "lucide-react";
+import { Calendar, User, Settings, LogOut, Plus, FileText, CheckSquare, Folder, Palette, FileBarChart, FileSearch, HelpCircle, File, Receipt, BookOpen, Timer, ClipboardList, Kanban, Search, Clipboard, LayoutDashboard, Check, Lightbulb, Bug, LifeBuoy, Gift } from "lucide-react";
 import moradaLogo from "@assets/icon_1783074833445.png";
 import { useLocation } from "wouter";
-import { Crisp } from "crisp-sdk-web";
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { openCrispChat, resetCrispSession } from "@/lib/crisp";
+import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import CreateProjectDialog from "./CreateProjectDialog";
 import TaskEditModal from "./TaskEditModal";
 import {
@@ -28,31 +25,13 @@ import { UserCalendarDialog } from "./UserCalendarDialog";
 import { MessagesDropdown } from "./MessagesDropdown";
 import { NotificationBell } from "./NotificationBell";
 import { MoradaAI } from "./MoradaAI";
-import { ProjectIcon } from "./ProjectIcon";
 import { GlobalSearch } from "./GlobalSearch";
-import { useProject } from "@/contexts/ProjectContext";
+import { ProjectSwitcher } from "./ProjectSwitcher";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
+import { useClientPortal } from "@/hooks/use-client-portal";
 import { useToolbarVisible } from "@/hooks/useToolbarVisible";
-import type { Project, Company } from "@shared/schema";
-
-const SELECTED_PHASE_KEY = "selectedProjectPhase_v2";
-const FAVORITE_PROJECTS_KEY = "sidebar_favorite_projects";
-
-type ProjectPhase = "all" | "lead" | "pre_construction" | "construction" | "post_construction";
-
-interface FavoriteProject {
-  id: string;
-  order: number;
-}
-
-const phases: { id: ProjectPhase; label: string }[] = [
-  { id: "all", label: "All" },
-  { id: "post_construction", label: "Post-Con" },
-  { id: "construction", label: "Construction" },
-  { id: "pre_construction", label: "Pre-Con" },
-  { id: "lead", label: "Lead" },
-];
+import type { Company } from "@shared/schema";
 
 export default function Header() {
   const [location, navigate] = useLocation();
@@ -64,32 +43,9 @@ export default function Header() {
   const [reportIssueOpen, setReportIssueOpen] = useState(false);
   const [referBuilderOpen, setReferBuilderOpen] = useState(false);
 
-  const [searchQuery, setSearchQuery] = useState("");
-  const [isProjectSearchOpen, setIsProjectSearchOpen] = useState(false);
-  const [isProjectDropdownOpen, setIsProjectDropdownOpen] = useState(false);
-  const [selectedPhaseIndex, setSelectedPhaseIndex] = useState<number>(() => {
-    try {
-      const saved = localStorage.getItem(SELECTED_PHASE_KEY);
-      if (saved === null) return 0;
-      const index = parseInt(saved, 10);
-      if (index >= 0 && index < phases.length) return index;
-      localStorage.removeItem(SELECTED_PHASE_KEY);
-      return 0;
-    } catch {
-      return 0;
-    }
-  });
-  const [favoriteProjects, setFavoriteProjects] = useState<FavoriteProject[]>(() => {
-    try {
-      const saved = localStorage.getItem(FAVORITE_PROJECTS_KEY);
-      return saved ? JSON.parse(saved) : [];
-    } catch {
-      return [];
-    }
-  });
   const { toast } = useToast();
   const { user, logout } = useAuth();
-  const { currentProject, setCurrentProject } = useProject();
+  const { isClient } = useClientPortal();
   const { toolbarVisible, toggleToolbar } = useToolbarVisible();
 
   // Fetch company data
@@ -97,132 +53,6 @@ export default function Header() {
     queryKey: ["/api/companies", user?.companyId],
     enabled: !!user?.companyId,
   });
-
-  // Fetch projects for dropdown
-  const { data: projects = [] } = useQuery<Project[]>({
-    queryKey: ["/api/projects"],
-  });
-
-  // Filter out archived projects
-  const activeProjects = useMemo(() => projects.filter(p => !p.isArchived), [projects]);
-
-  const selectedPhase = phases[selectedPhaseIndex];
-
-  const phaseProjects = useMemo(() => {
-    if (selectedPhase.id === "all") return activeProjects;
-    return activeProjects.filter(p => 
-      p.currentSystemPhase === selectedPhase.id || 
-      (!p.currentSystemPhase && selectedPhase.id === "construction")
-    );
-  }, [activeProjects, selectedPhase.id]);
-
-  const groupedByPhase = useMemo(() => {
-    const groups: { phase: typeof phases[0]; projects: Project[] }[] = [];
-    for (const phase of phases) {
-      if (phase.id === "all") continue;
-      const matching = activeProjects.filter(p =>
-        p.currentSystemPhase === phase.id ||
-        (!p.currentSystemPhase && phase.id === "construction")
-      );
-      if (matching.length > 0) {
-        groups.push({ phase, projects: matching });
-      }
-    }
-    return groups;
-  }, [activeProjects]);
-
-  const filteredProjects = useMemo(() => {
-    if (!searchQuery.trim()) {
-      return phaseProjects;
-    }
-    const query = searchQuery.toLowerCase();
-    return activeProjects.filter(p => 
-      p.name.toLowerCase().includes(query) ||
-      p.description?.toLowerCase().includes(query)
-    );
-  }, [searchQuery, phaseProjects, activeProjects]);
-
-  const searchFilteredGrouped = useMemo(() => {
-    if (!searchQuery.trim()) return groupedByPhase;
-    const query = searchQuery.toLowerCase();
-    return groupedByPhase
-      .map(g => ({
-        ...g,
-        projects: g.projects.filter(p =>
-          p.name.toLowerCase().includes(query) ||
-          p.description?.toLowerCase().includes(query)
-        ),
-      }))
-      .filter(g => g.projects.length > 0);
-  }, [searchQuery, groupedByPhase]);
-
-  const handlePrevPhase = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    e.preventDefault();
-    const newIndex = selectedPhaseIndex > 0 ? selectedPhaseIndex - 1 : phases.length - 1;
-    setSelectedPhaseIndex(newIndex);
-    localStorage.setItem(SELECTED_PHASE_KEY, String(newIndex));
-  };
-
-  const handleNextPhase = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    e.preventDefault();
-    const newIndex = selectedPhaseIndex < phases.length - 1 ? selectedPhaseIndex + 1 : 0;
-    setSelectedPhaseIndex(newIndex);
-    localStorage.setItem(SELECTED_PHASE_KEY, String(newIndex));
-  };
-
-  const toggleFavoriteProject = useCallback((projectId: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    e.preventDefault();
-    setFavoriteProjects(prev => {
-      const existingIndex = prev.findIndex(p => p.id === projectId);
-      let updated: FavoriteProject[];
-      if (existingIndex >= 0) {
-        updated = prev.filter(p => p.id !== projectId);
-      } else {
-        updated = [...prev, { id: projectId, order: prev.length }];
-      }
-      localStorage.setItem(FAVORITE_PROJECTS_KEY, JSON.stringify(updated));
-      window.dispatchEvent(new StorageEvent('storage', {
-        key: FAVORITE_PROJECTS_KEY,
-        newValue: JSON.stringify(updated)
-      }));
-      return updated;
-    });
-  }, []);
-
-  const isProjectFavorite = useCallback((projectId: string) => {
-    return favoriteProjects.some(p => p.id === projectId);
-  }, [favoriteProjects]);
-
-  // Listen for favorites changes from sidebar/other components
-  useEffect(() => {
-    const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === FAVORITE_PROJECTS_KEY && e.newValue) {
-        try {
-          const parsed = JSON.parse(e.newValue);
-          if (JSON.stringify(parsed) !== JSON.stringify(favoriteProjects)) {
-            setFavoriteProjects(parsed);
-          }
-        } catch {}
-      }
-    };
-    window.addEventListener('storage', handleStorageChange);
-    return () => window.removeEventListener('storage', handleStorageChange);
-  }, [favoriteProjects]);
-
-  // Sync phase with current project when it changes
-  useEffect(() => {
-    if (currentProject && selectedPhaseIndex !== 0) {
-      const projectPhase = currentProject.currentSystemPhase || "construction";
-      const phaseIndex = phases.findIndex(p => p.id === projectPhase);
-      if (phaseIndex !== -1 && phaseIndex !== selectedPhaseIndex) {
-        setSelectedPhaseIndex(phaseIndex);
-        localStorage.setItem(SELECTED_PHASE_KEY, String(phaseIndex));
-      }
-    }
-  }, [currentProject?.id, currentProject?.currentSystemPhase]);
 
   // Prioritize: company nickname (Display Name) > company name > fallback
   const companyDisplayName = company?.nickname || company?.name || "Morada";
@@ -266,9 +96,7 @@ export default function Header() {
   };
 
   const handleLogout = () => {
-    if (import.meta.env.VITE_CRISP_WEBSITE_ID) {
-      Crisp.session.reset();
-    }
+    resetCrispSession();
     logout();
   };
 
@@ -289,10 +117,7 @@ export default function Header() {
   };
 
   const handleChatWithSupport = () => {
-    if (typeof window !== "undefined" && (window as any).$crisp) {
-      Crisp.chat.show();
-      Crisp.chat.open();
-    } else {
+    if (!openCrispChat()) {
       toast({
         title: "Support chat unavailable",
         description: "Email us at hello@moradaco.com.au",
@@ -307,18 +132,29 @@ export default function Header() {
         {/* Logo */}
         <img src={moradaLogo} alt="Morada" className="w-6 h-6 rounded object-contain" data-testid="company-logo" />
 
-        {/* Business Name Button (link only — section dropdown removed; sections live in the sidebar) */}
-        <button
-          onClick={() => navigate('/business')}
-          className="h-7 px-3 rounded-md bg-muted/60 hover-elevate active-elevate-2 text-sm font-semibold flex items-center"
-          data-testid="business-name-link"
-        >
-          {companyDisplayName}
-        </button>
+        {/* Business Name Button (link only — section dropdown removed; sections live in the sidebar).
+            Clients see the builder's name but can't open business mode. */}
+        {isClient ? (
+          <span
+            className="h-7 px-3 rounded-md text-sm font-semibold hidden md:flex items-center"
+            data-testid="business-name-label"
+          >
+            {companyDisplayName}
+          </span>
+        ) : (
+          <button
+            onClick={() => navigate('/business')}
+            className="h-7 px-3 rounded-md bg-muted/60 hover-elevate active-elevate-2 text-sm font-semibold hidden md:flex items-center"
+            data-testid="business-name-link"
+          >
+            {companyDisplayName}
+          </button>
+        )}
 
-        {/* Projects Dropdown with Phase Selector */}
-        <DropdownMenu open={isProjectDropdownOpen} onOpenChange={setIsProjectDropdownOpen}>
-          <DropdownMenuTrigger asChild>
+        {/* Shared project switcher (same popover as the sidebar) with a compact icon trigger.
+            Clients can still switch between their own projects, but can't create one. */}
+        <ProjectSwitcher
+          trigger={
             <button
               className="h-7 w-7 border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
               data-testid="button-header-projects"
@@ -326,203 +162,12 @@ export default function Header() {
             >
               <Kanban className="h-3.5 w-3.5" />
             </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="w-56 p-0">
-            {/* Phase selector row with search toggle */}
-            <div className="flex items-center px-2 py-1.5 border-b">
-              <div className="flex-1 flex items-center justify-center gap-1">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={handlePrevPhase}
-                  className="h-5 w-5 flex-shrink-0"
-                  data-testid="button-header-prev-phase"
-                >
-                  <ChevronLeft className="h-3 w-3" />
-                </Button>
-                <span className="text-data text-muted-foreground font-medium min-w-[70px] text-center">
-                  {selectedPhase.label}
-                </span>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={handleNextPhase}
-                  className="h-5 w-5 flex-shrink-0"
-                  data-testid="button-header-next-phase"
-                >
-                  <ChevronRight className="h-3 w-3" />
-                </Button>
-              </div>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  e.preventDefault();
-                  setIsProjectSearchOpen(!isProjectSearchOpen);
-                  if (!isProjectSearchOpen) {
-                    setSearchQuery("");
-                  }
-                }}
-                className={`h-5 w-5 flex-shrink-0 ${isProjectSearchOpen ? "text-primary" : ""}`}
-                data-testid="button-header-project-search-toggle"
-              >
-                <Search className="h-3 w-3" />
-              </Button>
-            </div>
+          }
+          onCreateProject={isClient ? undefined : () => setIsCreateProjectOpen(true)}
+        />
 
-            {/* Collapsible search input */}
-            {isProjectSearchOpen && (
-              <div className="p-2 border-b">
-                <Input
-                  placeholder="Search all projects..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="h-7 text-xs"
-                  autoFocus
-                  data-testid="input-header-project-search"
-                />
-              </div>
-            )}
-
-            {/* Project list */}
-            <div className="max-h-[220px] overflow-y-auto">
-              <div className="p-1">
-                {selectedPhase.id === "all" ? (
-                  <>
-                    {searchFilteredGrouped.length === 0 ? (
-                      <div className="px-2 py-4 text-center text-xs text-muted-foreground">
-                        {searchQuery.trim() ? "No projects found" : "No active projects"}
-                      </div>
-                    ) : (
-                      searchFilteredGrouped.map((group) => (
-                        <div key={group.phase.id}>
-                          <div className="px-2 pt-[0px] pb-[0px]">
-                            <span className="text-2xs font-medium text-muted-foreground uppercase tracking-wider leading-none">
-                              {group.phase.label}
-                            </span>
-                            <span className="text-2xs text-muted-foreground ml-0.5 leading-none">
-                              ({group.projects.length})
-                            </span>
-                          </div>
-                          {group.projects.map((project) => {
-                            const isFavorite = isProjectFavorite(project.id);
-                            return (
-                              <div key={project.id} className="group flex items-center">
-                                <button
-                                  onClick={() => {
-                                    setIsProjectDropdownOpen(false);
-                                    setSearchQuery("");
-                                    setCurrentProject(project);
-                                    navigate(`/projects/${project.id}`);
-                                  }}
-                                  className={`flex-1 flex items-center gap-2 px-2 py-1.5 rounded-md text-left hover-elevate transition-colors ${
-                                    currentProject?.id === project.id 
-                                      ? "bg-primary/10 text-primary" 
-                                      : ""
-                                  }`}
-                                  data-testid={`header-project-option-${project.id}`}
-                                >
-                                  <ProjectIcon 
-                                    icon={project.icon} 
-                                    color={project.color} 
-                                    className="w-3.5 h-3.5 flex-shrink-0" 
-                                  />
-                                  <span className={`text-xs truncate flex-1 ${
-                                    currentProject?.id === project.id ? "font-medium" : ""
-                                  }`}>
-                                    {project.name}
-                                  </span>
-                                </button>
-                                <button
-                                  onClick={(e) => toggleFavoriteProject(project.id, e)}
-                                  className={`p-1 rounded transition-opacity ${
-                                    isFavorite 
-                                      ? "text-primary opacity-100" 
-                                      : "text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-primary"
-                                  }`}
-                                  data-testid={`button-header-favorite-project-${project.id}`}
-                                >
-                                  <Star className={`h-3 w-3 ${isFavorite ? "fill-current" : ""}`} />
-                                </button>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      ))
-                    )}
-                  </>
-                ) : (
-                  <>
-                    {filteredProjects.length === 0 ? (
-                      <div className="px-2 py-4 text-center text-xs text-muted-foreground">
-                        {searchQuery.trim() ? "No projects found" : `No ${selectedPhase.label.toLowerCase()} projects`}
-                      </div>
-                    ) : (
-                      filteredProjects.map((project) => {
-                        const isFavorite = isProjectFavorite(project.id);
-                        return (
-                          <div key={project.id} className="group flex items-center">
-                            <button
-                              onClick={() => {
-                                setIsProjectDropdownOpen(false);
-                                setSearchQuery("");
-                                setCurrentProject(project);
-                                navigate(`/projects/${project.id}`);
-                              }}
-                              className={`flex-1 flex items-center gap-2 px-2 py-1.5 rounded-md text-left hover-elevate transition-colors ${
-                                currentProject?.id === project.id 
-                                  ? "bg-primary/10 text-primary" 
-                                  : ""
-                              }`}
-                              data-testid={`header-project-option-${project.id}`}
-                            >
-                              <ProjectIcon 
-                                icon={project.icon} 
-                                color={project.color} 
-                                className="w-3.5 h-3.5 flex-shrink-0" 
-                              />
-                              <span className={`text-xs truncate flex-1 ${
-                                currentProject?.id === project.id ? "font-medium" : ""
-                              }`}>
-                                {project.name}
-                              </span>
-                            </button>
-                            <button
-                              onClick={(e) => toggleFavoriteProject(project.id, e)}
-                              className={`p-1 rounded transition-opacity ${
-                                isFavorite 
-                                  ? "text-primary opacity-100" 
-                                  : "text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-primary"
-                              }`}
-                              data-testid={`button-header-favorite-project-${project.id}`}
-                            >
-                              <Star className={`h-3 w-3 ${isFavorite ? "fill-current" : ""}`} />
-                            </button>
-                          </div>
-                        );
-                      })
-                    )}
-                  </>
-                )}
-              </div>
-            </div>
-
-            {/* Footer actions */}
-            <div className="border-t p-1">
-              <DropdownMenuItem onClick={() => navigate('/business/projects')} className="text-xs">
-                <Kanban className="h-3.5 w-3.5 mr-2" />
-                Projects Board
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setIsCreateProjectOpen(true)} className="text-xs">
-                <Plus className="h-3.5 w-3.5 mr-2" />
-                Create New Project
-              </DropdownMenuItem>
-            </div>
-          </DropdownMenuContent>
-        </DropdownMenu>
-
-        {/* All Items Dropdown */}
+        {/* All Items Dropdown — cross-project builder navigation, hidden from clients */}
+        {!isClient && (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button
@@ -590,10 +235,13 @@ export default function Header() {
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
+        )}
       </div>
-      {/* Global Search Bar - Centered */}
-      <div className="flex-1 flex justify-center px-4">
-        <button 
+      {/* Global Search Bar - Centered (collapses to an icon below md).
+          Hidden from clients: it searches across every project and contact. */}
+      {!isClient && (
+      <div className="flex-1 hidden md:flex justify-center px-4">
+        <button
           onClick={() => setIsGlobalSearchOpen(true)}
           className="flex items-center gap-2 h-7 px-3 w-full max-w-md rounded-md bg-muted/60 hover-elevate active-elevate-2 text-muted-foreground text-xs"
           data-testid="button-global-search"
@@ -603,14 +251,29 @@ export default function Header() {
           <kbd className="ml-auto text-data bg-muted px-1.5 py-0.5 rounded">⌘K</kbd>
         </button>
       </div>
+      )}
+      {isClient && <div className="flex-1" />}
       <div className="flex items-center gap-1">
+        {/* Mobile-only search icon (opens the same GlobalSearch dialog) */}
+        {!isClient && (
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() => setIsGlobalSearchOpen(true)}
+          data-testid="button-global-search-mobile"
+          className="h-7 w-7 md:hidden"
+        >
+          <Search className="h-3.5 w-3.5" />
+        </Button>
+        )}
+
         {/* Calendar Button */}
-        <Button 
-          variant="ghost" 
-          size="icon" 
+        <Button
+          variant="ghost"
+          size="icon"
           onClick={() => setIsCalendarOpen(true)}
           data-testid="button-calendar"
-          className="h-7 w-7"
+          className="h-7 w-7 hidden md:inline-flex"
         >
           <Calendar className="h-3.5 w-3.5" />
         </Button>
@@ -618,17 +281,23 @@ export default function Header() {
         {/* Messages Dropdown */}
         <MessagesDropdown />
 
-        {/* Morada AI */}
-        <MoradaAI />
+        {/* Morada AI (hidden on mobile to reduce crowding) */}
+        <div className="hidden md:flex items-center">
+          <MoradaAI />
+        </div>
 
         {/* Notifications Bell */}
         <NotificationBell />
 
-        {/* Time Clock Widget */}
-        <TimeClockWidget />
+        {/* Time Clock Widget (hidden on mobile to reduce crowding) */}
+        <div className="hidden md:flex items-center">
+          <TimeClockWidget />
+        </div>
 
-        {/* Dark Mode Toggle */}
-        <ThemeToggle />
+        {/* Dark Mode Toggle (hidden on mobile to reduce crowding) */}
+        <div className="hidden md:flex items-center">
+          <ThemeToggle />
+        </div>
 
         {/* New Button with Dropdown */}
         <DropdownMenu>

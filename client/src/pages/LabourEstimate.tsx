@@ -54,8 +54,8 @@ import { usePageTitle } from "@/hooks/usePageTitle";
 
 const STATUS_CONFIG: Record<string, { label: string; icon: typeof Circle; color: string }> = {
   not_required: { label: "Not Required", icon: MinusCircle, color: "text-muted-foreground" },
-  not_complete: { label: "Not Complete", icon: Circle, color: "text-amber-500" },
-  complete: { label: "Complete", icon: CheckCircle2, color: "text-green-500" },
+  not_complete: { label: "Not Complete", icon: Circle, color: "text-status-warning" },
+  complete: { label: "Complete", icon: CheckCircle2, color: "text-status-success" },
 };
 
 const STATUS_CYCLE: Record<string, string> = {

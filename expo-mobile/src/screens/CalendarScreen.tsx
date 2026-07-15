@@ -5,28 +5,45 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  TouchableWithoutFeedback,
-  RefreshControl,
   ActivityIndicator,
-  useColorScheme,
   Alert,
-  Dimensions,
-  Modal,
-  TextInput,
-  KeyboardAvoidingView,
   Platform,
-  FlatList,
   NativeSyntheticEvent,
   NativeScrollEvent,
 } from 'react-native';
+import DateTimePicker from '@react-native-community/datetimepicker';
+import Animated, { FadeInDown } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../contexts/AuthContext';
 import { apiFetch, apiRequest } from '../services/api';
-import { getCached, setCached } from '../services/cache';
+import { fetchCached, clearCache } from '../services/cache';
+import { dateStrOf, toLocalDateStr, fromLocalDateStr } from '../lib/dates';
+import { doneStatusKey, defaultStatusKey, isDoneStatus, type TaskStatusOption as LibStatusOption } from '../lib/taskStatus';
+import { haptic } from '../lib/haptics';
 import { useFocusEffect } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
-import { useTheme } from '../theme';
+import { useTheme, fontSize, fontWeight, radius } from '../theme';
+import { Sheet, SheetTextInput, type SheetRef } from '../components/ui/Sheet';
+import { useToast } from '../components/ui/Toast';
+import { Skeleton } from '../components/ui/Skeleton';
+import { PressableScale } from '../components/ui/PressableScale';
+import {
+  EVENT_COLORS,
+  SCHEDULE_STATUS_COLORS,
+  MONTHS,
+  getProjectEventColor,
+  getMondayOfWeek,
+  isSameDay,
+  type CalendarEvent,
+  type EventsByDay,
+} from '../components/calendar/shared';
+import { FeedView } from '../components/calendar/FeedView';
+import { WeekView, GRID_COL_WIDTH, HOUR_HEIGHT, WEEK_TOTAL_DAYS } from '../components/calendar/WeekView';
+import { MonthView, type MonthCell } from '../components/calendar/MonthView';
+import { FilterSheet, EVENT_TYPE_OPTIONS } from '../components/calendar/FilterSheet';
+import { EventPeekSheet } from '../components/calendar/EventPeekSheet';
+
 interface Task {
   id: string;
   title: string;
@@ -64,23 +81,6 @@ interface Project {
   color?: string;
 }
 
-interface CalendarEvent {
-  id: string;
-  title: string;
-  date: string;
-  endDate?: string;
-  startTime?: string | null;
-  endTime?: string | null;
-  type: 'task' | 'schedule' | 'timesheet' | 'site_diary' | 'google_cal';
-  color: string;
-  statusColor?: string;
-  status?: string;
-  projectId?: string;
-  projectName?: string;
-  assigneeId?: string;
-  raw?: any;
-}
-
 interface SavedView {
   id: string;
   name: string;
@@ -107,175 +107,28 @@ type Props = {
   navigation: NativeStackNavigationProp<any>;
 };
 
-const SCREEN_WIDTH = Dimensions.get('window').width;
-const DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-
-const EVENT_COLORS: Record<string, string> = {
-  task:       '#A890D4',
-  schedule:   '#82C8A2',
-  timesheet:  '#70CAD0',
-  site_diary: '#DA988A',
-  google_cal: '#A890D4',
-};
-
-const SCHEDULE_STATUS_COLORS: Record<string, string> = {
-  'not-started':   '#8A8680',
-  'not_started':   '#8A8680',
-  'in-progress':   '#A890D4',
-  'in_progress':   '#A890D4',
-  'completed':     '#82C8A2',
-  'complete':      '#82C8A2',
-  'done':          '#82C8A2',
-  'on-hold':       '#F0B964',
-  'on_hold':       '#F0B964',
-  'delayed':       '#DA988A',
-  'blocked':       '#DA988A',
-  'cancelled':     '#8A8680',
-  'booked':        '#70CAD0',
-  'requested':     '#F0B964',
-};
-
-const SCHEDULE_STATUS_LABELS: Record<string, string> = {
-  'not-started':   'Not Started',
-  'not_started':   'Not Started',
-  'in-progress':   'In Progress',
-  'in_progress':   'In Progress',
-  'completed':     'Completed',
-  'complete':      'Completed',
-  'done':          'Done',
-  'on-hold':       'On Hold',
-  'on_hold':       'On Hold',
-  'delayed':       'Delayed',
-  'blocked':       'Blocked',
-  'cancelled':     'Cancelled',
-  'booked':        'Booked',
-  'requested':     'Requested',
-};
-
-const DEFAULT_PROJECT_COLOR = '#3b82f6';
-
-const PROJECT_PALETTE = [
-  '#6366f1', '#8b5cf6', '#ec4899', '#f43f5e',
-  '#f97316', '#eab308', '#10b981', '#14b8a6',
-  '#06b6d4', '#3b82f6', '#a855f7', '#84cc16',
+const PRIORITY_OPTIONS = [
+  { key: 'urgent', label: 'Urgent' },
+  { key: 'high', label: 'High' },
+  { key: 'medium', label: 'Medium' },
+  { key: 'low', label: 'Low' },
 ];
 
-function hashProjectColor(projectId: string): string {
-  let h = 5381;
-  for (let i = 0; i < projectId.length; i++) {
-    h = (h * 33) ^ projectId.charCodeAt(i);
-  }
-  return PROJECT_PALETTE[Math.abs(h) % PROJECT_PALETTE.length];
-}
-
-function getProjectEventColor(
-  projectId: string | undefined,
-  customColor: string | null | undefined,
-  fallbackColor: string,
-  brandColor?: string | null,
-): string {
-  const isValidHex = (c: string | null | undefined): c is string =>
-    typeof c === 'string' && /^#[0-9a-fA-F]{3,8}$/.test(c);
-  if (isValidHex(customColor) && customColor.toLowerCase() !== DEFAULT_PROJECT_COLOR) {
-    return customColor;
-  }
-  if (isValidHex(brandColor)) {
-    return brandColor;
-  }
-  if (projectId) {
-    return hashProjectColor(projectId);
-  }
-  return fallbackColor;
-}
-
-const EVENT_TYPE_OPTIONS = [
-  { value: 'task', label: 'Tasks', icon: 'checkmark-circle-outline' as const },
-  { value: 'schedule', label: 'Schedule', icon: 'construct-outline' as const },
-  { value: 'timesheet', label: 'Timesheets', icon: 'time-outline' as const },
-  { value: 'site_diary', label: 'Site Diary', icon: 'book-outline' as const },
-  { value: 'google_cal', label: 'Google', icon: 'calendar-outline' as const },
+const VIEW_MODES: { key: ViewMode; label: string }[] = [
+  { key: 'list', label: 'List' },
+  { key: 'week', label: 'Week' },
+  { key: 'month', label: 'Month' },
 ];
 
-const HOUR_HEIGHT = 56;
-const TIME_LABEL_WIDTH = 50;
-const GRID_COL_WIDTH = Math.floor((SCREEN_WIDTH - TIME_LABEL_WIDTH) / 3);
-const TOTAL_GRID_HEIGHT = 24 * HOUR_HEIGHT;
-const MIN_EVENT_HEIGHT = 24;
-const DAY_HEADER_HEIGHT = 56;
-
-function isSameDay(d1: Date, d2: Date): boolean {
-  return d1.getFullYear() === d2.getFullYear() && d1.getMonth() === d2.getMonth() && d1.getDate() === d2.getDate();
-}
-
-function isToday(d: Date): boolean {
-  return isSameDay(d, new Date());
-}
-
-function getMondayOfWeek(date: Date): Date {
-  const d = new Date(date);
-  const day = d.getDay();
-  const diff = day === 0 ? -6 : 1 - day;
-  d.setDate(d.getDate() + diff);
-  d.setHours(0, 0, 0, 0);
-  return d;
-}
-
-function formatTime(timeStr: string | null | undefined): string {
-  if (!timeStr) return '';
-  const [h, m] = timeStr.split(':').map(Number);
-  const period = h >= 12 ? 'PM' : 'AM';
-  const displayH = h === 0 ? 12 : h > 12 ? h - 12 : h;
-  return `${displayH}:${(m || 0).toString().padStart(2, '0')} ${period}`;
-}
-
-function formatTimeShort(timeStr: string | null | undefined): string {
-  if (!timeStr) return '';
-  const [h, m] = timeStr.split(':').map(Number);
-  const period = h >= 12 ? 'PM' : 'AM';
-  const displayH = h === 0 ? 12 : h > 12 ? h - 12 : h;
-  if (m === 0) return `${displayH} ${period}`;
-  return `${displayH}:${(m || 0).toString().padStart(2, '0')} ${period}`;
-}
-
-function formatDateShort(dateStr: string): string {
-  const d = new Date(dateStr);
-  return `${d.getDate()} ${MONTHS_SHORT[d.getMonth()]} ${d.getFullYear()}`;
-}
-
-function formatDayHeader(date: Date): string {
-  const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-  const today = new Date();
-  const yesterday = new Date(today);
-  yesterday.setDate(yesterday.getDate() - 1);
-  const tomorrow = new Date(today);
-  tomorrow.setDate(tomorrow.getDate() + 1);
-  if (isSameDay(date, today)) return `Today — ${date.getDate()} ${MONTHS_SHORT[date.getMonth()]}`;
-  if (isSameDay(date, yesterday)) return `Yesterday — ${date.getDate()} ${MONTHS_SHORT[date.getMonth()]}`;
-  if (isSameDay(date, tomorrow)) return `Tomorrow — ${date.getDate()} ${MONTHS_SHORT[date.getMonth()]}`;
-  return `${days[date.getDay()]}, ${date.getDate()} ${MONTHS_SHORT[date.getMonth()]} ${date.getFullYear()}`;
-}
-
-function timeToMinutes(timeStr: string): number {
-  const parts = timeStr.split(':').map(Number);
-  return (parts[0] || 0) * 60 + (parts[1] || 0);
-}
-
-function getEventDurationMinutes(startTime: string, endTime: string | null | undefined): number {
-  if (!endTime) return 60;
-  const start = timeToMinutes(startTime);
-  const end = timeToMinutes(endTime);
-  return Math.max(end - start, 15);
-}
-
-let defaultViewCreated = false;
-let cleanupRan = false;
+// Keyed by user id so switching accounts (logout/login) re-runs these once
+// for the new user instead of silently skipping them for the whole app life.
+const defaultViewCreatedFor = new Set<string>();
+const cleanupRanFor = new Set<string>();
 
 export default function CalendarScreen({ navigation }: Props) {
   const { user } = useAuth();
-  const colorScheme = useColorScheme();
-  const isDark = colorScheme === 'dark';
+  const theme = useTheme();
+  const toast = useToast();
 
   const [viewMode, setViewMode] = useState<ViewMode>('week');
   const [loading, setLoading] = useState(true);
@@ -285,6 +138,7 @@ export default function CalendarScreen({ navigation }: Props) {
   const [projects, setProjects] = useState<Project[]>([]);
   const [googleConnected, setGoogleConnected] = useState(false);
   const [taskStatusOptions, setTaskStatusOptions] = useState<TaskStatusOption[]>([]);
+  const [rawStatusOptions, setRawStatusOptions] = useState<LibStatusOption[]>([]);
   const [brandColor, setBrandColor] = useState<string | null>(null);
 
   const [views, setViews] = useState<SavedView[]>([]);
@@ -301,14 +155,10 @@ export default function CalendarScreen({ navigation }: Props) {
   }>({});
 
   const [showStatusChips, setShowStatusChips] = useState(true);
-  const [showFilterModal, setShowFilterModal] = useState(false);
-  const [showViewsModal, setShowViewsModal] = useState(false);
-  const [showCreateViewModal, setShowCreateViewModal] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
   const [newViewName, setNewViewName] = useState('');
   const [savingView, setSavingView] = useState(false);
   const [allDayExpanded, setAllDayExpanded] = useState(false);
-  const [allDayRowHeight, setAllDayRowHeight] = useState(0);
   const [nowMinutes, setNowMinutes] = useState(() => {
     const n = new Date();
     return n.getHours() * 60 + n.getMinutes();
@@ -319,20 +169,33 @@ export default function CalendarScreen({ navigation }: Props) {
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [weekStartDate, setWeekStartDate] = useState<Date>(getMondayOfWeek(new Date()));
 
+  // Create-task form state
+  const [createTitle, setCreateTitle] = useState('');
+  const [createProjectId, setCreateProjectId] = useState<string | null>(null);
+  const [createDate, setCreateDate] = useState('');
+  const [createTime, setCreateTime] = useState('');
+  const [createPriority, setCreatePriority] = useState('medium');
+  const [creatingTask, setCreatingTask] = useState(false);
+  const [showCreateDatePicker, setShowCreateDatePicker] = useState(false);
+  const [showCreateTimePicker, setShowCreateTimePicker] = useState(false);
+
+  const viewsSheetRef = useRef<SheetRef>(null);
+  const filterSheetRef = useRef<SheetRef>(null);
+  const createViewSheetRef = useRef<SheetRef>(null);
+  const eventSheetRef = useRef<SheetRef>(null);
+  const createTaskSheetRef = useRef<SheetRef>(null);
+  const projectPickerSheetRef = useRef<SheetRef>(null);
+
   const timeGridScrollRef = useRef<ScrollView>(null);
   const weekScrollRef = useRef<ScrollView>(null);
   const timeLabelScrollRef = useRef<ScrollView>(null);
-  const dayHeaderScrollRef = useRef<ScrollView>(null);
-  const allDayScrollRef = useRef<ScrollView>(null);
-
 
   const weekBaseDate = useRef<Date>((() => {
     const d = new Date();
-    d.setDate(d.getDate() - 30);
+    d.setDate(d.getDate() - 7);
     d.setHours(0, 0, 0, 0);
     return d;
   })());
-  const WEEK_TOTAL_DAYS = 120;
 
   const weekDays = useMemo(() => {
     const base = weekBaseDate.current;
@@ -353,18 +216,6 @@ export default function CalendarScreen({ navigation }: Props) {
   // even before the first onScroll event fires from weekScrollRef.
   const weekScrollOffset = useRef(Math.max(0, (todayWeekIndex - 1) * GRID_COL_WIDTH));
 
-  const theme = useTheme();
-const colors = {
-    bg: theme.background,
-    card: theme.card,
-    text: theme.textPrimary,
-    secondary: theme.textSecondary,
-    border: theme.border,
-    accent: theme.primary,
-    muted: theme.textMuted,
-    input: theme.background,
-};
-
   const buildDateRange = useCallback(() => {
     const now = new Date();
     const start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
@@ -373,49 +224,56 @@ const colors = {
     return { startDate: fmt(start), endDate: fmt(end) };
   }, []);
 
-  const fetchData = useCallback(async () => {
+  // One-time (per mount) guard so focus refetches don't re-apply the default
+  // view, plus a timestamp to throttle focus refetches to every 30s.
+  const didInitViewsRef = useRef(false);
+  const lastFetchRef = useRef(0);
+
+  const fetchData = useCallback(async (force = false) => {
     if (!user?.id) return;
+    // Focus refetches are throttled: fast-moving data refreshes at most every
+    // 30s; slow-moving data (projects, views, settings, ...) comes from the
+    // 5-minute cache. Pull-to-refresh passes force=true and bypasses both.
+    if (!force && Date.now() - lastFetchRef.current < 30_000) return;
     try {
       const dateRange = buildDateRange();
 
-      const cachedProjects = getCached<Project[]>('projects');
-      const cachedSettings = getCached<any>('companySettings');
-
       const [tasksData, projectsData, scheduleData, timesheetsData, diariesData, gcalStatus, viewsData, taskStatusCat, companySettings] = await Promise.all([
         apiFetch<Task[]>('/api/tasks').catch(() => [] as Task[]),
-        cachedProjects
-          ? Promise.resolve(cachedProjects)
-          : apiFetch<Project[]>('/api/projects').catch(() => [] as Project[]),
+        fetchCached<Project[]>('projects', () => apiFetch<Project[]>('/api/projects'), force).catch(() => [] as Project[]),
         apiFetch<ScheduleItem[]>(`/api/schedule-items/all?startDate=${dateRange.startDate}&endDate=${dateRange.endDate}`).catch(() => [] as ScheduleItem[]),
         apiFetch<any[]>(`/api/timesheets?userId=${user.id}`).catch(() => []),
         apiFetch<any[]>('/api/company/site-diary-entries').catch(() => []),
-        apiFetch<{ connected: boolean }>('/api/google-calendar/status').catch(() => ({ connected: false })),
-        apiFetch<SavedView[]>('/api/calendar-views?calendarType=personal').catch(() => [] as SavedView[]),
-        apiFetch<any>('/api/field-categories/by-key/task.status').catch(() => null),
-        cachedSettings
-          ? Promise.resolve(cachedSettings)
-          : apiFetch<any>('/api/company-settings').catch(() => null),
+        fetchCached<{ connected: boolean }>('gcalStatus', () => apiFetch<{ connected: boolean }>('/api/google-calendar/status'), force).catch(() => ({ connected: false })),
+        fetchCached<SavedView[]>('calendarViews:personal', () => apiFetch<SavedView[]>('/api/calendar-views?calendarType=personal'), force).catch(() => [] as SavedView[]),
+        fetchCached<any>('fieldCategory:task.status', () => apiFetch<any>('/api/field-categories/by-key/task.status'), force).catch(() => null),
+        fetchCached<any>('companySettings', () => apiFetch<any>('/api/company-settings'), force).catch(() => null),
       ]);
-      if (!cachedProjects && projectsData?.length) setCached('projects', projectsData);
-      if (!cachedSettings && companySettings) setCached('companySettings', companySettings);
+      lastFetchRef.current = Date.now();
 
       const resolvedBrandColor: string | null = companySettings?.brandColor || null;
       setBrandColor(resolvedBrandColor);
 
-      if (taskStatusCat?.options && Array.isArray(taskStatusCat.options)) {
+      const statusList: any[] | null =
+        taskStatusCat?.options && Array.isArray(taskStatusCat.options) ? taskStatusCat.options
+        : Array.isArray(taskStatusCat) ? taskStatusCat
+        : null;
+      if (statusList) {
         setTaskStatusOptions(
-          taskStatusCat.options.map((o: any) => ({
+          statusList.map((o: any) => ({
             value: o.key || o.value,
             label: o.name || o.label,
-            color: o.color || '#6b7280',
+            color: o.color || theme.textMuted,
           }))
         );
-      } else if (taskStatusCat && Array.isArray(taskStatusCat)) {
-        setTaskStatusOptions(
-          taskStatusCat.map((o: any) => ({
-            value: o.key || o.value,
-            label: o.name || o.label,
-            color: o.color || '#6b7280',
+        setRawStatusOptions(
+          statusList.map((o: any) => ({
+            key: o.key || o.value,
+            name: o.name || o.label,
+            color: o.color || null,
+            sortOrder: o.sortOrder ?? 0,
+            isDefault: o.isDefault,
+            isCompleted: o.isCompleted,
           }))
         );
       }
@@ -482,7 +340,7 @@ const colors = {
         calEvents.push({
           id: `ts-${ts.id}`,
           title: `${proj?.name ?? 'Timesheet'} · ${hours % 1 === 0 ? hours : hours.toFixed(1)}h`,
-          date: (ts.date || '').split('T')[0],
+          date: dateStrOf(ts.date),
           startTime: ts.startTime ?? null,
           endTime: ts.endTime ?? null,
           type: 'timesheet',
@@ -501,7 +359,7 @@ const colors = {
           calEvents.push({
             id: `diary-${d.id}`,
             title: d.title,
-            date: (d.entryDateTime || '').split('T')[0],
+            date: dateStrOf(d.entryDateTime),
             type: 'site_diary',
             color: EVENT_COLORS.site_diary,
             projectId: d.projectId,
@@ -514,9 +372,6 @@ const colors = {
       if (isGCalConnected) {
         try {
           const gcalEvents = await apiFetch<any[]>('/api/google-calendar/events').catch(() => []);
-          const pad = (n: number) => String(n).padStart(2, '0');
-          const toLocalDateStr = (d: Date) =>
-            `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
           (gcalEvents || []).forEach((ev: any) => {
             // Server returns processed format: ev.startDate (ISO), ev.startTime ("HH:MM"), etc.
             const startDate = ev.startDate ? new Date(ev.startDate) : null;
@@ -548,8 +403,8 @@ const colors = {
 
       setViews(fetchedViews);
 
-      if (fetchedViews.length === 0 && !defaultViewCreated) {
-        defaultViewCreated = true;
+      if (fetchedViews.length === 0 && !defaultViewCreatedFor.has(user.id)) {
+        defaultViewCreatedFor.add(user.id);
         try {
           const res = await apiRequest('/api/calendar-views', 'POST', {
             name: 'All Events',
@@ -560,13 +415,18 @@ const colors = {
           });
           const newView: SavedView = await res.json();
           if (newView?.id) {
+            clearCache('calendarViews:personal');
+            didInitViewsRef.current = true;
             setViews([newView]);
             setSelectedViewId(newView.id);
             setActiveFilters({});
             setViewMode('week');
           }
         } catch {}
-      } else if (fetchedViews.length > 0 && !selectedViewId) {
+      } else if (fetchedViews.length > 0 && !didInitViewsRef.current) {
+        // Apply the default view ONCE per mount — later focus refetches must
+        // not clobber the view/filters/mode the user picked in-session.
+        didInitViewsRef.current = true;
         const defaultView = fetchedViews.find(v => v.isDefault) || fetchedViews[0];
         setSelectedViewId(defaultView.id);
         setActiveFilters(defaultView.filters || {});
@@ -588,25 +448,33 @@ const colors = {
   useFocusEffect(useCallback(() => { fetchData(); }, [fetchData]));
 
   useEffect(() => {
-    if (cleanupRan) return;
-    cleanupRan = true;
+    if (!user?.id || cleanupRanFor.has(user.id)) return;
+    cleanupRanFor.add(user.id);
     apiRequest('/api/calendar-views/cleanup-duplicates', 'POST', { calendarType: 'personal' })
-      .then(() => fetchData())
+      .then(() => {
+        clearCache('calendarViews:personal');
+        return fetchData(true);
+      })
       .catch(() => {});
-  }, []);
+  }, [user?.id, fetchData]);
 
+  // The minute tick only drives the "now" line, which only week view renders —
+  // FeedView/MonthView are memoized and don't receive nowMinutes, so the tick
+  // re-renders the week grid only.
   useEffect(() => {
+    if (viewMode !== 'week') return;
     const tick = () => {
       const n = new Date();
       setNowMinutes(n.getHours() * 60 + n.getMinutes());
     };
+    tick();
     const id = setInterval(tick, 60_000);
     return () => clearInterval(id);
-  }, []);
+  }, [viewMode]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await fetchData();
+    await fetchData(true);
     setRefreshing(false);
   }, [fetchData]);
 
@@ -654,6 +522,34 @@ const colors = {
     return events;
   }, [allEvents, activeFilters]);
 
+  // Bucket events by local day ONCE per filter change — every view reads from
+  // this instead of re-filtering the whole list per visible day per render.
+  const eventsByDay = useMemo<EventsByDay>(() => {
+    const map: EventsByDay = {};
+    const push = (key: string, e: CalendarEvent) => {
+      (map[key] ||= []).push(e);
+    };
+    for (const e of filteredEvents) {
+      const startKey = dateStrOf(e.date);
+      if (!startKey) continue;
+      const endKey = e.endDate ? dateStrOf(e.endDate) : startKey;
+      if (!endKey || endKey <= startKey) {
+        push(startKey, e);
+        continue;
+      }
+      const start = fromLocalDateStr(startKey);
+      const end = fromLocalDateStr(endKey);
+      // Cap runaway ranges (bad data) at ~400 days of expansion.
+      const spanDays = Math.min(Math.round((end.getTime() - start.getTime()) / 86_400_000), 400);
+      for (let i = 0; i <= spanDays; i++) {
+        const d = new Date(start);
+        d.setDate(start.getDate() + i);
+        push(toLocalDateStr(d), e);
+      }
+    }
+    return map;
+  }, [filteredEvents]);
+
   const anyAllDayEvents = useMemo(
     () => allEvents.some(e => {
       if (e.type === 'task' || e.type === 'site_diary') return true;
@@ -663,55 +559,12 @@ const colors = {
     [allEvents],
   );
 
-  // Sync all secondary horizontal refs to the initial offset on mount.
-  useEffect(() => {
-    const offset = weekScrollOffset.current;
-    const timer = setTimeout(() => {
-      dayHeaderScrollRef.current?.scrollTo({ x: offset, animated: false });
-      allDayScrollRef.current?.scrollTo({ x: offset, animated: false });
-    }, 80);
-    return () => clearTimeout(timer);
-  }, []);
+  const weekIsEmpty = useMemo(
+    () => weekDays.every(d => !(eventsByDay[toLocalDateStr(d)]?.length)),
+    [weekDays, eventsByDay],
+  );
 
-  // Re-sync when the all-day row first appears (events load after mount).
-  useEffect(() => {
-    if (!anyAllDayEvents) return;
-    const offset = weekScrollOffset.current;
-    const timer = setTimeout(() => {
-      allDayScrollRef.current?.scrollTo({ x: offset, animated: false });
-    }, 50);
-    return () => clearTimeout(timer);
-  }, [anyAllDayEvents]);
-
-  const getEventsForDate = useCallback((date: Date): CalendarEvent[] => {
-    return filteredEvents.filter(event => {
-      const eventDate = new Date(event.date);
-      eventDate.setHours(0, 0, 0, 0);
-      const checkDate = new Date(date);
-      checkDate.setHours(0, 0, 0, 0);
-      if (event.endDate) {
-        const endDate = new Date(event.endDate);
-        endDate.setHours(23, 59, 59, 999);
-        return checkDate >= eventDate && checkDate <= endDate;
-      }
-      return isSameDay(eventDate, checkDate);
-    });
-  }, [filteredEvents]);
-
-  const getDotsForDate = useCallback((date: Date): string[] => {
-    const dayEvents = getEventsForDate(date);
-    const dotColors: string[] = [];
-    const seen = new Set<string>();
-    dayEvents.forEach(event => {
-      if (!seen.has(event.color) && dotColors.length < 3) {
-        seen.add(event.color);
-        dotColors.push(event.color);
-      }
-    });
-    return dotColors;
-  }, [getEventsForDate]);
-
-  const calendarGrid = useMemo(() => {
+  const calendarGrid = useMemo<MonthCell[][]>(() => {
     const firstDay = new Date(currentYear, currentMonth, 1);
     const lastDay = new Date(currentYear, currentMonth + 1, 0);
     const daysInMonth = lastDay.getDate();
@@ -719,7 +572,7 @@ const colors = {
     startOffset = startOffset === 0 ? 6 : startOffset - 1;
 
     const prevMonthLastDay = new Date(currentYear, currentMonth, 0).getDate();
-    const cells: { day: number; month: number; year: number; isCurrentMonth: boolean }[] = [];
+    const cells: MonthCell[] = [];
 
     const prevMonth = currentMonth === 0 ? 11 : currentMonth - 1;
     const prevYear = currentMonth === 0 ? currentYear - 1 : currentYear;
@@ -735,7 +588,7 @@ const colors = {
       const d = cells.length - startOffset - daysInMonth + 1;
       cells.push({ day: d, month: nextMonth, year: nextYear, isCurrentMonth: false });
     }
-    const rows: typeof cells[] = [];
+    const rows: MonthCell[][] = [];
     for (let i = 0; i < cells.length; i += 7) {
       rows.push(cells.slice(i, i + 7));
     }
@@ -745,25 +598,31 @@ const colors = {
   const scrollWeekTo = (offsetX: number, animated = true) => {
     const clamped = Math.max(0, Math.min(offsetX, (WEEK_TOTAL_DAYS - 1) * GRID_COL_WIDTH));
     weekScrollRef.current?.scrollTo({ x: clamped, animated });
-    dayHeaderScrollRef.current?.scrollTo({ x: clamped, animated: false });
-    allDayScrollRef.current?.scrollTo({ x: clamped, animated: false });
     weekScrollOffset.current = clamped;
   };
 
-  const navigatePeriod = (direction: number) => {
+  const onNavigateMonth = useCallback((direction: number) => {
+    haptic.select();
+    let newMonth = currentMonth + direction;
+    let newYear = currentYear;
+    if (newMonth < 0) { newMonth = 11; newYear--; }
+    if (newMonth > 11) { newMonth = 0; newYear++; }
+    setCurrentMonth(newMonth);
+    setCurrentYear(newYear);
+  }, [currentMonth, currentYear]);
+
+  const navigatePeriod = useCallback((direction: number) => {
     if (viewMode === 'month') {
-      let newMonth = currentMonth + direction;
-      let newYear = currentYear;
-      if (newMonth < 0) { newMonth = 11; newYear--; }
-      if (newMonth > 11) { newMonth = 0; newYear++; }
-      setCurrentMonth(newMonth);
-      setCurrentYear(newYear);
+      onNavigateMonth(direction);
     } else if (viewMode === 'week') {
+      haptic.select();
       scrollWeekTo(weekScrollOffset.current + direction * 3 * GRID_COL_WIDTH);
     }
-  };
+  }, [viewMode, onNavigateMonth]);
 
   const handleViewModeChange = (mode: ViewMode) => {
+    if (mode === viewMode) return;
+    haptic.select();
     if (mode === 'week') {
       setWeekStartDate(getMondayOfWeek(new Date()));
       setTimeout(() => {
@@ -781,6 +640,7 @@ const colors = {
   };
 
   const goToToday = () => {
+    haptic.select();
     const now = new Date();
     setCurrentMonth(now.getMonth());
     setCurrentYear(now.getFullYear());
@@ -805,9 +665,12 @@ const colors = {
         return prev;
       });
     }
-  }, [weekDays, GRID_COL_WIDTH]);
+  }, [weekDays]);
+
+  // ── Saved views ────────────────────────────────────────────────────────────
 
   const handleSelectView = (view: SavedView) => {
+    haptic.select();
     setSelectedViewId(view.id);
     setActiveFilters(view.filters || {});
     const rawMode = view.calendarMode as string;
@@ -817,11 +680,12 @@ const colors = {
       rawMode === 'list' ? 'list' :
       'week';
     setViewMode(resolved);
-    setShowViewsModal(false);
+    viewsSheetRef.current?.dismiss();
   };
 
   const handleDeleteView = (view: SavedView) => {
     if (view.isDefault) return;
+    haptic.warning();
     Alert.alert(
       'Delete View',
       `Delete "${view.name}"?`,
@@ -833,6 +697,7 @@ const colors = {
           onPress: async () => {
             try {
               await apiRequest(`/api/calendar-views/${view.id}`, 'DELETE');
+              clearCache('calendarViews:personal');
               const updated = views.filter(v => v.id !== view.id);
               setViews(updated);
               if (selectedViewId === view.id) {
@@ -845,8 +710,9 @@ const colors = {
                   setActiveFilters({});
                 }
               }
-            } catch {
-              Alert.alert('Error', 'Could not delete view.');
+              toast.success('View deleted');
+            } catch (e: any) {
+              toast.error(e?.message || 'Could not delete view.');
             }
           },
         },
@@ -867,13 +733,17 @@ const colors = {
       });
       const newView: SavedView = await res.json();
       if (newView?.id) {
+        clearCache('calendarViews:personal');
         setViews(prev => [...prev, newView]);
         setSelectedViewId(newView.id);
         setNewViewName('');
-        setShowCreateViewModal(false);
+        createViewSheetRef.current?.dismiss();
+        viewsSheetRef.current?.dismiss();
+        haptic.success();
+        toast.success('View saved');
       }
-    } catch {
-      Alert.alert('Error', 'Could not create view.');
+    } catch (e: any) {
+      toast.error(e?.message || 'Could not create view.');
     } finally {
       setSavingView(false);
     }
@@ -885,9 +755,13 @@ const colors = {
     if (!cv || cv.isDefault) return;
     try {
       await apiRequest(`/api/calendar-views/${selectedViewId}`, 'PATCH', { filters: activeFilters, calendarMode: viewMode });
+      clearCache('calendarViews:personal');
       setViews(prev => prev.map(v => v.id === selectedViewId ? { ...v, filters: activeFilters, calendarMode: viewMode } : v));
-    } catch {}
-    setShowFilterModal(false);
+      filterSheetRef.current?.dismiss();
+      toast.success('Filters saved to view');
+    } catch (e: any) {
+      toast.error(e?.message || 'Could not save filters to view.');
+    }
   };
 
   const activeFilterCount = (activeFilters.eventTypes?.length || 0)
@@ -901,1408 +775,667 @@ const colors = {
   const currentView = views.find(v => v.id === selectedViewId);
   const canSaveFilters = currentView && !currentView.isDefault;
 
-  const handleEventTap = (event: CalendarEvent) => {
+  // ── Event peek ─────────────────────────────────────────────────────────────
+
+  const handleEventTap = useCallback((event: CalendarEvent) => {
     setSelectedEvent(event);
-  };
+    eventSheetRef.current?.present();
+  }, []);
 
-  const getEventTypeLabel = (type: string) => {
-    switch (type) {
-      case 'task': return 'Task';
-      case 'schedule': return 'Schedule';
-      case 'timesheet': return 'Time';
-      case 'site_diary': return 'Diary';
-      case 'google_cal': return 'Google';
-      default: return type;
+  const selectedTaskIsDone = selectedEvent?.type === 'task'
+    ? isDoneStatus(selectedEvent.status, rawStatusOptions)
+    : false;
+
+  const handleToggleTaskComplete = async () => {
+    if (!selectedEvent || selectedEvent.type !== 'task') return;
+    const taskId: string | undefined = selectedEvent.raw?.id;
+    if (!taskId) return;
+    const eventId = selectedEvent.id;
+    const previousStatus = selectedEvent.status;
+    const wasDone = isDoneStatus(previousStatus, rawStatusOptions);
+    const newStatus = wasDone ? defaultStatusKey(rawStatusOptions) : doneStatusKey(rawStatusOptions);
+    if (wasDone) haptic.select(); else haptic.success();
+    const apply = (status: string | undefined) => {
+      setSelectedEvent(prev => prev && prev.id === eventId
+        ? { ...prev, status, raw: { ...prev.raw, status } }
+        : prev);
+      setAllEvents(prev => prev.map(e => e.id === eventId
+        ? { ...e, status, raw: { ...e.raw, status } }
+        : e));
+    };
+    apply(newStatus);
+    try {
+      await apiRequest(`/api/tasks/${taskId}`, 'PATCH', { status: newStatus });
+      toast.success(wasDone ? 'Task reopened' : 'Task completed');
+    } catch (e: any) {
+      apply(previousStatus);
+      toast.error(e?.message || 'Could not update task.');
     }
   };
 
-  const getTypeIcon = (type: string): React.ComponentProps<typeof Ionicons>['name'] => {
-    switch (type) {
-      case 'task': return 'checkmark-circle-outline';
-      case 'schedule': return 'construct-outline';
-      case 'timesheet': return 'time-outline';
-      case 'site_diary': return 'book-outline';
-      case 'google_cal': return 'logo-google';
-      default: return 'calendar-outline';
+  // Cross-tab deep link: works both when Calendar is the tab screen
+  // (navigation IS the tab navigator) and when mounted as MyCalendar inside
+  // the More stack (navigate bubbles up to the tab navigator).
+  const navigateToMoreScreen = (screen: string, params?: Record<string, unknown>) => {
+    eventSheetRef.current?.dismiss();
+    navigation.navigate('More', params ? { screen, params } : { screen });
+  };
+
+  // ── Create task ────────────────────────────────────────────────────────────
+
+  const openCreateTask = useCallback((dateKey?: string, hour?: number) => {
+    haptic.light();
+    setCreateTitle('');
+    setCreateProjectId(null);
+    setCreateDate(dateKey || toLocalDateStr(new Date()));
+    setCreateTime(hour != null ? `${String(hour).padStart(2, '0')}:00` : '');
+    setCreatePriority('medium');
+    setShowCreateDatePicker(false);
+    setShowCreateTimePicker(false);
+    createTaskSheetRef.current?.present();
+  }, []);
+
+  const handleHeaderCreate = () => {
+    openCreateTask(viewMode === 'month' ? toLocalDateStr(selectedDate) : undefined);
+  };
+
+  const handleDayLongPress = useCallback((dateKey: string) => {
+    openCreateTask(dateKey);
+  }, [openCreateTask]);
+
+  const handleSlotLongPress = useCallback((dateKey: string, hour: number) => {
+    openCreateTask(dateKey, hour);
+  }, [openCreateTask]);
+
+  const handleCreateTask = async () => {
+    if (!createTitle.trim() || creatingTask) return;
+    setCreatingTask(true);
+    try {
+      // Field shape copied from ProjectTasksScreen.handleCreateTask — the
+      // app's existing POST /api/tasks path. projectId is optional here; the
+      // server derives business context when it's absent.
+      await apiRequest('/api/tasks', 'POST', {
+        type: 'task',
+        title: createTitle.trim(),
+        priority: createPriority,
+        status: defaultStatusKey(rawStatusOptions),
+        content: '',
+        dueDate: createDate ? new Date(createDate).toISOString() : undefined,
+        startTime: createTime || undefined,
+        projectId: createProjectId || undefined,
+        assigneeIds: user?.id ? [user.id] : undefined,
+      });
+      createTaskSheetRef.current?.dismiss();
+      haptic.success();
+      toast.success('Task created');
+      await fetchData(true);
+    } catch (e: any) {
+      // Keep the sheet open so the entered task isn't lost.
+      toast.error(e?.message || 'Could not create task.');
+    } finally {
+      setCreatingTask(false);
     }
   };
 
-  const formatDateRange = (startDate: string, endDate?: string): string | null => {
-    if (!endDate || endDate === startDate) return null;
-    const s = new Date(startDate + 'T12:00:00');
-    const e = new Date(endDate + 'T12:00:00');
-    const sStr = `${s.getDate()} ${MONTHS_SHORT[s.getMonth()]}`;
-    const eStr = `${e.getDate()} ${MONTHS_SHORT[e.getMonth()]}`;
-    return `${sStr} – ${eStr}`;
-  };
+  const onSelectDay = useCallback((date: Date) => {
+    haptic.select();
+    setSelectedDate(date);
+  }, []);
 
-  const getPeriodLabel = (): string => {
-    if (viewMode === 'month') {
-      return `${MONTHS[currentMonth]} ${currentYear}`;
-    } else if (viewMode === 'week') {
-      const endDate = new Date(weekStartDate);
-      endDate.setDate(endDate.getDate() + 6);
-      const startStr = `${weekStartDate.getDate()} ${MONTHS_SHORT[weekStartDate.getMonth()]}`;
-      const endStr = `${endDate.getDate()} ${MONTHS_SHORT[endDate.getMonth()]}`;
-      return `${startStr} – ${endStr}`;
-    } else {
-      const now = new Date();
-      return `${MONTHS_SHORT[now.getMonth()]} ${now.getFullYear()}`;
-    }
-  };
+  // ── Render ─────────────────────────────────────────────────────────────────
 
-  const isEventAllDay = (event: CalendarEvent): boolean => {
-    if (event.type === 'site_diary') return true;
-    if (event.type === 'google_cal' && !event.startTime) return true;
-    if (!event.startTime) return true;
-    return false;
-  };
+  const todayDate = new Date();
+  const headerMonth = viewMode === 'month'
+    ? `${MONTHS[currentMonth]} ${currentYear}`
+    : `${MONTHS[weekStartDate.getMonth()]} ${weekStartDate.getFullYear()}`;
+  const createProject = projects.find(p => p.id === createProjectId);
 
-  const renderFeedView = () => {
-    const now = new Date();
-    now.setHours(0, 0, 0, 0);
-    const cutoffEnd = new Date(now);
-    cutoffEnd.setDate(cutoffEnd.getDate() + 60);
-    const cutoffStart = new Date(now);
-    cutoffStart.setDate(cutoffStart.getDate() - 30);
-
-    const inRange = filteredEvents.filter(e => {
-      const d = new Date(e.date);
-      d.setHours(0, 0, 0, 0);
-      return d >= cutoffStart && d <= cutoffEnd;
-    });
-
-    const byDate: Record<string, CalendarEvent[]> = {};
-    inRange.forEach(e => {
-      const key = e.date.split('T')[0];
-      if (!byDate[key]) byDate[key] = [];
-      byDate[key].push(e);
-    });
-
-    const sortedDates = Object.keys(byDate).sort();
-    type FeedItem = { type: 'header'; dateKey: string; count: number } | { type: 'event'; event: CalendarEvent; dateKey: string };
-    const items: FeedItem[] = [];
-    sortedDates.forEach(dateKey => {
-      items.push({ type: 'header', dateKey, count: byDate[dateKey].length });
-      byDate[dateKey].forEach(event => items.push({ type: 'event', event, dateKey }));
-    });
-
-    return (
-      <FlatList
-        style={{ flex: 1 }}
-        contentContainerStyle={[{ paddingBottom: 40 }, items.length === 0 && { flex: 1 }]}
-        data={items}
-        keyExtractor={(item, idx) => item.type === 'header' ? `hdr-${item.dateKey}` : `ev-${(item as any).event.id}-${idx}`}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
-        ListEmptyComponent={
-          <View style={styles.emptyState}>
-            <Ionicons name="calendar-outline" size={52} color={colors.muted} />
-            <Text style={[styles.emptyTitle, { color: colors.secondary }]}>No events</Text>
-            <Text style={[styles.emptyDesc, { color: colors.muted }]}>Events from the next 60 days will appear here.</Text>
-          </View>
-        }
-        renderItem={({ item }) => {
-          if (item.type === 'header') {
-            const d = new Date(item.dateKey + 'T12:00:00');
-            const headerIsToday = isToday(d);
-            return (
-              <View style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                marginHorizontal: 16,
-                marginTop: 20,
-                marginBottom: 8,
-              }}>
-                <Text style={{ fontSize: 15, fontWeight: '600', color: colors.text, flex: 1 }}>
-                  {headerIsToday ? "Today's Events" : formatDayHeader(d)}
-                </Text>
-                <Text style={{ fontSize: 12, color: colors.accent }}>
-                  {item.count} {item.count === 1 ? 'event' : 'events'}
-                </Text>
-              </View>
-            );
-          }
-          const { event } = item as { type: 'event'; event: CalendarEvent; dateKey: string };
-          const barColor = event.color;
-          const dateRange = event.type === 'schedule' ? formatDateRange(event.date, event.endDate) : null;
-          const timesheetHours = event.type === 'timesheet'
-            ? (() => {
-                const h = parseFloat(event.raw?.duration ?? event.raw?.totalHours ?? '');
-                if (!isFinite(h) || h <= 0) return '';
-                return h % 1 === 0 ? `${h}h` : `${h.toFixed(1)}h`;
-              })()
-            : '';
-          return (
-            <TouchableOpacity
-              style={{
-                flexDirection: 'row',
-                backgroundColor: colors.card,
-                borderRadius: 12,
-                borderWidth: 1,
-                borderColor: colors.border,
-                marginHorizontal: 16,
-                marginBottom: 10,
-                overflow: 'hidden',
-                minHeight: 64,
-              }}
-              activeOpacity={0.7}
-              onPress={() => handleEventTap(event)}
-            >
-              <View style={{ width: 4, backgroundColor: barColor }} />
-              <View style={{ flex: 1, paddingHorizontal: 12, paddingVertical: 12 }}>
-                <Text style={{ fontSize: 13, fontWeight: '600', color: colors.text, marginBottom: 4 }} numberOfLines={2}>
-                  {event.title}
-                </Text>
-                <Text style={{ fontSize: 11, color: colors.secondary }}>
-                  {event.startTime
-                    ? `${formatTime(event.startTime)}${event.endTime ? ` – ${formatTime(event.endTime)}` : ''}`
-                    : (dateRange || 'All day')}
-                </Text>
-                {event.projectName && (
-                  <View style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    marginTop: 6,
-                    backgroundColor: barColor + '20',
-                    alignSelf: 'flex-start',
-                    paddingHorizontal: 8,
-                    paddingVertical: 3,
-                    borderRadius: 8,
-                  }}>
-                    <View style={{
-                      width: 6,
-                      height: 6,
-                      borderRadius: 3,
-                      backgroundColor: barColor,
-                      marginRight: 5,
-                    }} />
-                    <Text style={{ fontSize: 9, fontWeight: '500', color: colors.secondary }}>
-                      {event.projectName}
-                    </Text>
-                  </View>
-                )}
-              </View>
-              {!!timesheetHours && (
-                <Text style={{
-                  fontSize: 15,
-                  fontWeight: '700',
-                  color: colors.text,
-                  paddingRight: 14,
-                  alignSelf: 'center',
-                }}>
-                  {timesheetHours}
-                </Text>
-              )}
-            </TouchableOpacity>
-          );
-        }}
-      />
-    );
-  };
-
-  const renderWeekView = () => {
-    const initialOffset = Math.max(0, (todayWeekIndex - 1) * GRID_COL_WIDTH);
-    const dayColsWidth = WEEK_TOTAL_DAYS * GRID_COL_WIDTH;
-
-    const hourLabels = Array.from({ length: 24 }, (_, i) => {
-      if (i === 0) return '12 AM';
-      if (i < 12) return `${i} AM`;
-      if (i === 12) return '12 PM';
-      return `${i - 12} PM`;
-    });
-
-    return (
-      // Single outer flex-row guarantees the left panel and right panel
-      // are measured by the SAME layout pass, so their 44 px widths are
-      // pixel-perfect matches with zero drift between rows.
-      <View style={{ flex: 1, flexDirection: 'row' }}>
-
-        {/* ══ LEFT PANEL (fixed TIME_LABEL_WIDTH) ══════════════════════════ */}
-        <View style={{ width: TIME_LABEL_WIDTH, flexDirection: 'column' }}>
-
-          {/* Row 1 spacer — same height as day-header row */}
-          <View style={{
-            height: DAY_HEADER_HEIGHT,
-            backgroundColor: 'transparent',
-            borderBottomWidth: StyleSheet.hairlineWidth,
-            borderBottomColor: colors.border + '60',
-          }} />
-
-          {/* Row 2 label — height driven by right panel via allDayRowHeight state */}
-          {anyAllDayEvents && allDayRowHeight > 0 && (
-            <View style={{
-              height: allDayRowHeight,
-              justifyContent: 'center',
-              alignItems: 'flex-end',
-              paddingRight: 6,
-              borderBottomWidth: StyleSheet.hairlineWidth,
-              borderBottomColor: colors.border,
-              backgroundColor: colors.card,
-            }}>
-              <Text style={{ fontSize: 9, color: colors.secondary, fontWeight: '500' }}>ALL</Text>
-              <Text style={{ fontSize: 9, color: colors.secondary, fontWeight: '500' }}>DAY</Text>
-            </View>
-          )}
-
-          {/* Row 3 time labels — vertical scroll synced with timeGridScrollRef */}
-          <ScrollView
-            ref={timeLabelScrollRef}
-            scrollEnabled={false}
-            showsVerticalScrollIndicator={false}
-            style={{ flex: 1 }}
-          >
-            {hourLabels.map((label, i) => (
-              <View key={i} style={{ height: HOUR_HEIGHT, justifyContent: 'flex-start' }}>
-                <Text style={{
-                  fontSize: 9,
-                  color: colors.secondary,
-                  textAlign: 'right',
-                  paddingRight: 8,
-                  fontWeight: '400',
-                  lineHeight: 12,
-                  marginTop: -6,
-                }}>
-                  {i > 0 ? label : ''}
-                </Text>
-              </View>
-            ))}
-          </ScrollView>
+  const renderSkeleton = () => {
+    if (viewMode === 'list') {
+      return (
+        <View style={{ padding: 16, gap: 10 }}>
+          <Skeleton width={150} height={14} style={{ marginBottom: 6 }} />
+          {Array.from({ length: 6 }, (_, i) => (
+            <Skeleton key={i} height={64} borderRadius={radius.xl} />
+          ))}
         </View>
-
-        {/* ══ RIGHT PANEL (flex:1) — single horizontal ScrollView ═════════ */}
-        <ScrollView
-          ref={weekScrollRef}
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={{ flex: 1 }}
-          contentOffset={{ x: initialOffset, y: 0 }}
-          onScroll={handleWeekScroll}
-          scrollEventThrottle={32}
-          decelerationRate="normal"
-          nestedScrollEnabled
-        >
-          <View style={{ width: dayColsWidth, flex: 1 }}>
-
-            {/* Row 1: Day headers */}
-            <View style={{
-              flexDirection: 'row',
-              height: DAY_HEADER_HEIGHT,
-              backgroundColor: 'transparent',
-              borderBottomWidth: StyleSheet.hairlineWidth,
-              borderBottomColor: colors.border + '60',
-            }}>
-              {weekDays.map((day, idx) => {
-                const currentDay = isToday(day);
-                const dowName = (DAY_NAMES[(day.getDay() + 6) % 7] || '').toUpperCase();
-                const dateNum = day.getDate();
-                return (
-                  <View
-                    key={idx}
-                    style={{
-                      width: GRID_COL_WIDTH,
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      borderLeftWidth: StyleSheet.hairlineWidth,
-                      borderLeftColor: colors.border + '60',
-                      backgroundColor: 'transparent',
-                    }}
-                  >
-                    <Text style={{
-                      fontSize: 10,
-                      fontWeight: '500',
-                      color: currentDay ? colors.accent : colors.secondary,
-                      marginBottom: 4,
-                    }}>
-                      {dowName}
-                    </Text>
-                    {currentDay ? (
-                      <View style={{
-                        width: 32,
-                        height: 32,
-                        borderRadius: 16,
-                        backgroundColor: colors.accent,
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                      }}>
-                        <Text style={{ fontSize: 15, fontWeight: '700', color: '#FFFFFF' }}>
-                          {dateNum}
-                        </Text>
-                      </View>
-                    ) : (
-                      <Text style={{ fontSize: 17, fontWeight: '400', color: colors.text }}>
-                        {dateNum}
-                      </Text>
-                    )}
-                  </View>
-                );
-              })}
+      );
+    }
+    if (viewMode === 'month') {
+      return (
+        <View style={{ paddingHorizontal: 16, paddingTop: 8, gap: 4 }}>
+          {Array.from({ length: 6 }, (_, r) => (
+            <View key={r} style={{ flexDirection: 'row', gap: 4 }}>
+              {Array.from({ length: 7 }, (_, c) => (
+                <Skeleton key={c} height={64} borderRadius={radius.md} style={{ flex: 1 }} />
+              ))}
             </View>
-
-            {/* Row 2: All-day chips — fixed 36px single row when collapsed */}
-            {anyAllDayEvents && (
-              <View
-                style={{
-                  flexDirection: 'row',
-                  borderBottomWidth: StyleSheet.hairlineWidth,
-                  borderBottomColor: colors.border,
-                  backgroundColor: colors.card,
-                  height: allDayExpanded ? undefined : 36,
-                }}
-                onLayout={(e) => setAllDayRowHeight(e.nativeEvent.layout.height)}
-              >
-                {weekDays.map((day, dayIdx) => {
-                  const dayAllEvents = getEventsForDate(day).filter(e => isEventAllDay(e));
-                  const visibleEvents = allDayExpanded ? dayAllEvents : dayAllEvents.slice(0, 1);
-                  const overflowCount = !allDayExpanded ? Math.max(0, dayAllEvents.length - 1) : 0;
-                  return (
-                    <View
-                      key={dayIdx}
-                      style={{
-                        width: GRID_COL_WIDTH,
-                        borderLeftWidth: StyleSheet.hairlineWidth,
-                        borderLeftColor: colors.border,
-                        paddingHorizontal: 2,
-                        paddingVertical: 5,
-                        gap: 2,
-                        overflow: 'hidden',
-                        position: 'relative',
-                      }}
-                    >
-                      {visibleEvents.map(event => (
-                        <TouchableOpacity
-                          key={event.id}
-                          style={{
-                            height: 22,
-                            backgroundColor: (event.color || '#94a3b8') + '45',
-                            borderRadius: 5,
-                            borderLeftWidth: 3,
-                            borderLeftColor: event.color || '#94a3b8',
-                            paddingLeft: 4,
-                            paddingRight: overflowCount > 0 ? 22 : 4,
-                            justifyContent: 'center',
-                            overflow: 'hidden',
-                          }}
-                          onPress={() => handleEventTap(event)}
-                          activeOpacity={0.75}
-                        >
-                          <Text
-                            style={{ fontSize: 12, fontWeight: '600', color: event.color || colors.text }}
-                            numberOfLines={1}
-                          >
-                            {event.title}
-                          </Text>
-                        </TouchableOpacity>
-                      ))}
-                      {allDayExpanded && dayAllEvents.length > 1 && (
-                        <Text style={{ fontSize: 9, color: colors.secondary, textAlign: 'center' }}>
-                          +{dayAllEvents.length - 1} more
-                        </Text>
-                      )}
-                      {!allDayExpanded && overflowCount > 0 && (
-                        <View style={{
-                          position: 'absolute',
-                          right: 4,
-                          top: 6,
-                          height: 20,
-                          minWidth: 20,
-                          paddingHorizontal: 4,
-                          borderRadius: 10,
-                          backgroundColor: colors.secondary + '30',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                        }}>
-                          <Text style={{ fontSize: 9, fontWeight: '600', color: colors.secondary }}>
-                            +{overflowCount}
-                          </Text>
-                        </View>
-                      )}
-                    </View>
-                  );
-                })}
-              </View>
-            )}
-
-            {/* Row 3: Time grid */}
-            <ScrollView
-              ref={timeGridScrollRef}
-              style={{ flex: 1 }}
-              showsVerticalScrollIndicator={false}
-              contentContainerStyle={{ height: TOTAL_GRID_HEIGHT }}
-              onLayout={() => {
-                setTimeout(() => {
-                  const n = new Date();
-                  const mins = n.getHours() * 60 + n.getMinutes();
-                  const y = Math.max(0, (mins / 60) * HOUR_HEIGHT - 120);
-                  timeGridScrollRef.current?.scrollTo({ y, animated: false });
-                  timeLabelScrollRef.current?.scrollTo({ y, animated: false });
-                }, 100);
-              }}
-              onScroll={(e) => {
-                timeLabelScrollRef.current?.scrollTo({
-                  y: e.nativeEvent.contentOffset.y,
-                  animated: false,
-                });
-              }}
-              scrollEventThrottle={16}
-            >
-              <View style={{ flexDirection: 'row', height: TOTAL_GRID_HEIGHT }}>
-                {weekDays.map((day, dayIdx) => {
-                  const currentDay = isToday(day);
-                  const isWeekend = day.getDay() === 0 || day.getDay() === 6;
-                  const dayEvents = getEventsForDate(day).filter(e => !isEventAllDay(e) && e.startTime);
-
-                  const allLayoutEvents = dayEvents.map(event => {
-                    const startMin = timeToMinutes(event.startTime!);
-                    const durationMin = getEventDurationMinutes(event.startTime!, event.endTime);
-                    return { event, startMin, endMin: startMin + durationMin };
-                  }).sort((a, b) => a.startMin - b.startMin || a.endMin - b.endMin);
-
-                  // Collapse events that share the exact same start time:
-                  // keep only the first one and remember how many were hidden.
-                  const overlapCounts = new Map<string, number>();
-                  const seenStartMin = new Set<number>();
-                  const layoutEvents: typeof allLayoutEvents = [];
-                  for (const le of allLayoutEvents) {
-                    if (seenStartMin.has(le.startMin)) {
-                      const prev = layoutEvents.find(x => x.startMin === le.startMin);
-                      if (prev) {
-                        overlapCounts.set(prev.event.id, (overlapCounts.get(prev.event.id) ?? 0) + 1);
-                      }
-                      continue;
-                    }
-                    seenStartMin.add(le.startMin);
-                    layoutEvents.push(le);
-                  }
-
-                  // Assign each event to the first available column (lane)
-                  const laneEndTimes: number[] = [];
-                  const laneAssignment = new Map<string, { lane: number; totalLanes: number }>();
-                  for (const le of layoutEvents) {
-                    let placed = false;
-                    for (let i = 0; i < laneEndTimes.length; i++) {
-                      if (laneEndTimes[i] <= le.startMin) {
-                        laneEndTimes[i] = le.endMin;
-                        laneAssignment.set(le.event.id, { lane: i, totalLanes: 1 });
-                        placed = true;
-                        break;
-                      }
-                    }
-                    if (!placed) {
-                      laneAssignment.set(le.event.id, { lane: laneEndTimes.length, totalLanes: 1 });
-                      laneEndTimes.push(le.endMin);
-                    }
-                  }
-                  // For each event, totalLanes = max simultaneous events during its duration.
-                  // This means non-overlapping events keep full width; only truly concurrent
-                  // events split the column — matching the web calendar behaviour.
-                  for (const le of layoutEvents) {
-                    const checkTimes = [le.startMin, ...layoutEvents.map(x => x.startMin).filter(t => t > le.startMin && t < le.endMin)];
-                    let max = 1;
-                    for (const t of checkTimes) {
-                      const concurrent = layoutEvents.filter(x => x.startMin <= t && x.endMin > t).length;
-                      if (concurrent > max) max = concurrent;
-                    }
-                    laneAssignment.get(le.event.id)!.totalLanes = max;
-                  }
-
-                  const colPad = 2;
-                  const usableWidth = GRID_COL_WIDTH - colPad * 2;
-                  const minLaneWidth = GRID_COL_WIDTH * 0.55;
-                  const STACK_OFFSET = 10;
-
-                  return (
-                    <View
-                      key={dayIdx}
-                      style={{
-                        width: GRID_COL_WIDTH,
-                        height: TOTAL_GRID_HEIGHT,
-                        borderLeftWidth: StyleSheet.hairlineWidth,
-                        borderLeftColor: colors.border,
-                        backgroundColor: currentDay ? colors.accent + '0D' : isWeekend ? colors.border + '30' : 'transparent',
-                      }}
-                    >
-                      {hourLabels.map((_, hourIdx) => (
-                        <View
-                          key={hourIdx}
-                          style={{
-                            position: 'absolute',
-                            top: hourIdx * HOUR_HEIGHT,
-                            left: 0,
-                            right: 0,
-                            height: 1,
-                            backgroundColor: colors.border,
-                            opacity: 0.6,
-                          }}
-                        />
-                      ))}
-
-                      {currentDay && (
-                        <View
-                          pointerEvents="none"
-                          style={{
-                            position: 'absolute',
-                            left: 0,
-                            width: GRID_COL_WIDTH,
-                            top: (nowMinutes / 60) * HOUR_HEIGHT - 1,
-                            zIndex: 10,
-                          }}
-                        >
-                          <View style={{
-                            position: 'absolute',
-                            left: 0,
-                            top: -3,
-                            width: 8,
-                            height: 8,
-                            borderRadius: 4,
-                            backgroundColor: colors.accent,
-                          }} />
-                          <View style={{
-                            position: 'absolute',
-                            left: 0,
-                            width: GRID_COL_WIDTH,
-                            height: 2,
-                            backgroundColor: colors.accent,
-                          }} />
-                        </View>
-                      )}
-
-                      {layoutEvents.map(({ event, startMin, endMin }) => {
-                        const top = (startMin / 60) * HOUR_HEIGHT;
-                        const height = Math.max(((endMin - startMin) / 60) * HOUR_HEIGHT, MIN_EVENT_HEIGHT);
-                        const eventColor = event.color || '#94a3b8';
-                        const la = laneAssignment.get(event.id);
-                        const lane = la?.lane ?? 0;
-                        const tl = la?.totalLanes ?? 1;
-                        const naturalLaneWidth = usableWidth / tl;
-                        const stacking = naturalLaneWidth < minLaneWidth && tl > 1;
-                        const left = stacking
-                          ? colPad + lane * STACK_OFFSET
-                          : colPad + lane * naturalLaneWidth;
-                        const rawBlockWidth = stacking
-                          ? Math.max(usableWidth - lane * STACK_OFFSET, minLaneWidth)
-                          : naturalLaneWidth - 1;
-                        const blockWidth = Math.min(rawBlockWidth, GRID_COL_WIDTH - left - colPad);
-                        const zIndex = stacking ? 1 + lane : 1;
-
-                        const overlapCount = overlapCounts.get(event.id) ?? 0;
-
-                        return (
-                          <TouchableOpacity
-                            key={event.id}
-                            style={{
-                              position: 'absolute',
-                              top,
-                              left,
-                              width: blockWidth,
-                              height,
-                              backgroundColor: eventColor,
-                              borderRadius: 6,
-                              overflow: 'hidden',
-                              flexDirection: 'row',
-                              zIndex,
-                            }}
-                            onPress={() => handleEventTap(event)}
-                            activeOpacity={0.75}
-                          >
-                            <View style={{
-                              width: 4,
-                              backgroundColor: 'rgba(0,0,0,0.22)',
-                              borderTopLeftRadius: 6,
-                              borderBottomLeftRadius: 6,
-                            }} />
-                            <View style={{ flex: 1, paddingHorizontal: 5, paddingTop: 4, overflow: 'hidden' }}>
-                              <Text
-                                style={{
-                                  fontSize: 10,
-                                  fontWeight: '600',
-                                  color: '#FFFFFF',
-                                  lineHeight: 13,
-                                }}
-                                numberOfLines={2}
-                              >
-                                {event.title}
-                              </Text>
-                              {height > 34 && event.startTime && (
-                                <Text style={{ fontSize: 9, color: 'rgba(255,255,255,0.8)', marginTop: 1 }}>
-                                  {formatTimeShort(event.startTime)}
-                                </Text>
-                              )}
-                            </View>
-                            {overlapCount > 0 && (
-                              <View style={{
-                                position: 'absolute',
-                                bottom: 4,
-                                right: 4,
-                                backgroundColor: 'rgba(0,0,0,0.25)',
-                                borderRadius: 8,
-                                paddingHorizontal: 5,
-                                paddingVertical: 2,
-                              }}>
-                                <Text style={{ fontSize: 8, color: '#FFFFFF', fontWeight: '600' }}>
-                                  +{overlapCount}
-                                </Text>
-                              </View>
-                            )}
-                          </TouchableOpacity>
-                        );
-                      })}
-                    </View>
-                  );
-                })}
-              </View>
-            </ScrollView>
-
+          ))}
+          <Skeleton width={120} height={14} style={{ marginTop: 14 }} />
+          <Skeleton height={64} borderRadius={radius.xl} style={{ marginTop: 8 }} />
+        </View>
+      );
+    }
+    // week
+    return (
+      <View style={{ flex: 1, flexDirection: 'row', paddingHorizontal: 12, gap: 10, paddingTop: 8 }}>
+        <View style={{ width: 38, gap: 44, paddingTop: 64 }}>
+          {Array.from({ length: 8 }, (_, i) => (
+            <Skeleton key={i} width={32} height={9} />
+          ))}
+        </View>
+        {Array.from({ length: 3 }, (_, col) => (
+          <View key={col} style={{ flex: 1, gap: 8 }}>
+            <Skeleton height={44} borderRadius={radius.lg} />
+            <Skeleton height={72} borderRadius={radius.md} style={{ marginTop: 24 + col * 30 }} />
+            <Skeleton height={48} borderRadius={radius.md} style={{ marginTop: 40 }} />
           </View>
-        </ScrollView>
+        ))}
       </View>
     );
   };
 
-  const renderMonthView = () => {
-    const cellWidth = (SCREEN_WIDTH - 32) / 7;
-    const selectedEvents = getEventsForDate(selectedDate);
-
-    return (
-      <ScrollView
-        style={{ flex: 1 }}
-        contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 40, paddingTop: 8 }}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
-        showsVerticalScrollIndicator={false}
-      >
-        <View style={styles.dayNamesRow}>
-          {DAY_NAMES.map(name => (
-            <View key={name} style={[styles.dayNameCell, { width: cellWidth }]}>
-              <Text style={[styles.dayNameText, { color: colors.secondary }]}>{name}</Text>
-            </View>
-          ))}
+  return (
+    <View style={[styles.container, { backgroundColor: theme.background }]}>
+      <Animated.View entering={FadeInDown.duration(300)}>
+        <View style={styles.header}>
+          <View style={styles.headerLeft}>
+            <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>My Calendar</Text>
+            <Text style={[styles.headerMonthLabel, { color: theme.textSecondary }]}>{headerMonth}</Text>
+          </View>
+          <PressableScale
+            style={[styles.viewsBtn, { borderColor: theme.border, backgroundColor: theme.card }]}
+            onPress={() => { haptic.select(); viewsSheetRef.current?.present(); }}
+          >
+            <Ionicons name="layers-outline" size={15} color={theme.primary} />
+            <Text style={[styles.viewsBtnText, { color: theme.textPrimary }]} numberOfLines={1}>
+              {currentView?.name || 'Views'}
+            </Text>
+            <Ionicons name="chevron-down" size={13} color={theme.textSecondary} />
+          </PressableScale>
         </View>
 
-        {calendarGrid.map((row, rowIdx) => (
-          <View key={rowIdx} style={styles.calendarRow}>
-            {row.map((cell, cellIdx) => {
-              const cellDate = new Date(cell.year, cell.month, cell.day);
-              const isCurrentDay = isToday(cellDate);
-              const isSelected = isSameDay(cellDate, selectedDate);
-              const dots = getDotsForDate(cellDate);
-
+        <View style={styles.toolbar}>
+          <View style={[styles.segmented, { borderColor: theme.border, backgroundColor: theme.card }]}>
+            {VIEW_MODES.map(m => {
+              const active = viewMode === m.key;
               return (
                 <TouchableOpacity
-                  key={cellIdx}
-                  style={[styles.calendarCell, { width: cellWidth }]}
-                  onPress={() => setSelectedDate(cellDate)}
-                  activeOpacity={0.6}
+                  key={m.key}
+                  style={[styles.segment, active && { backgroundColor: theme.primary }]}
+                  onPress={() => handleViewModeChange(m.key)}
+                  activeOpacity={0.7}
                 >
-                  <View style={[
-                    styles.dayCellInner,
-                    isSelected && { backgroundColor: colors.accent },
-                    isCurrentDay && !isSelected && { backgroundColor: colors.accent + '30' },
+                  <Text style={[
+                    styles.segmentText,
+                    { color: active ? '#FFFFFF' : theme.textSecondary },
+                    active && { fontWeight: fontWeight.semibold },
                   ]}>
-                    <Text style={[
-                      styles.dayNumber,
-                      { color: cell.isCurrentMonth ? colors.text : colors.muted },
-                      isSelected && { color: '#ffffff', fontWeight: '700' },
-                      isCurrentDay && !isSelected && { color: colors.accent, fontWeight: '700' },
-                    ]}>
-                      {cell.day}
-                    </Text>
-                  </View>
-                  <View style={styles.dotsRow}>
-                    {dots.map((dotColor, i) => (
-                      <View key={i} style={[styles.dot, { backgroundColor: dotColor }]} />
-                    ))}
-                  </View>
+                    {m.label}
+                  </Text>
                 </TouchableOpacity>
               );
             })}
           </View>
-        ))}
 
-        <View style={[styles.selectedDateHeader, { borderTopColor: colors.border }]}>
-          <Text style={[styles.selectedDateText, { color: colors.text }]}>
-            {isToday(selectedDate) ? 'Today' : `${DAY_NAMES[(selectedDate.getDay() + 6) % 7]}, ${selectedDate.getDate()} ${MONTHS_SHORT[selectedDate.getMonth()]}`}
-          </Text>
-          <Text style={[styles.selectedEventCount, { color: colors.secondary }]}>
-            {selectedEvents.length} {selectedEvents.length === 1 ? 'event' : 'events'}
-          </Text>
-        </View>
-
-        {selectedEvents.length === 0 ? (
-          <View style={[styles.emptySection, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <Ionicons name="calendar-outline" size={28} color={colors.muted} />
-            <Text style={[styles.emptySectionText, { color: colors.secondary }]}>No events on this day</Text>
+          <View style={styles.toolbarRight}>
+            {viewMode !== 'list' && (
+              <>
+                <TouchableOpacity
+                  style={styles.navArrowBtn}
+                  onPress={() => navigatePeriod(-1)}
+                  hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+                >
+                  <Ionicons name="chevron-back" size={20} color={theme.textSecondary} />
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.navArrowBtn}
+                  onPress={() => navigatePeriod(1)}
+                  hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+                >
+                  <Ionicons name="chevron-forward" size={20} color={theme.textSecondary} />
+                </TouchableOpacity>
+              </>
+            )}
+            <PressableScale
+              style={[styles.addBtn, { backgroundColor: theme.primary }]}
+              onPress={handleHeaderCreate}
+            >
+              <Ionicons name="add" size={22} color="#FFFFFF" />
+            </PressableScale>
+            <TouchableOpacity
+              onPress={goToToday}
+              style={[styles.todayBadge, { borderColor: theme.primary }]}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.todayBadgeText, { color: theme.primary }]}>{todayDate.getDate()}</Text>
+            </TouchableOpacity>
           </View>
-        ) : (
-          selectedEvents.map(event => {
-            const statusOpt = event.type === 'task' ? taskStatusOptions.find(o => o.value === (event.status || 'todo')) : null;
-            const schedStatusColor = event.statusColor;
-            const schedStatusLabel = event.status ? (SCHEDULE_STATUS_LABELS[event.status] || event.status) : null;
-            const barColor = event.color;
-            const dateRange = event.type === 'schedule' ? formatDateRange(event.date, event.endDate) : null;
-            return (
-              <TouchableOpacity
-                key={event.id}
-                style={{
-                  flexDirection: 'row',
-                  backgroundColor: colors.card,
-                  borderRadius: 12,
-                  borderWidth: 1,
-                  borderColor: colors.border,
-                  marginBottom: 10,
-                  overflow: 'hidden',
-                  minHeight: 64,
-                }}
-                activeOpacity={0.7}
-                onPress={() => handleEventTap(event)}
-              >
-                <View style={{ width: 4, backgroundColor: barColor }} />
-                <View style={{ flex: 1, paddingHorizontal: 12, paddingVertical: 12 }}>
-                  <Text style={{ fontSize: 13, fontWeight: '600', color: colors.text, marginBottom: 4 }} numberOfLines={2}>
-                    {event.title}
-                  </Text>
-                  <Text style={{ fontSize: 11, color: colors.secondary }}>
-                    {event.startTime
-                      ? `${formatTime(event.startTime)}${event.endTime ? ` – ${formatTime(event.endTime)}` : ''}`
-                      : (dateRange || 'All day')}
-                  </Text>
-                  {showStatusChips && statusOpt && (
-                    <View style={{ flexDirection: 'row', marginTop: 6 }}>
-                      <View style={{ backgroundColor: statusOpt.color + '22', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 }}>
-                        <Text style={{ fontSize: 10, fontWeight: '600', color: statusOpt.color }}>{statusOpt.label}</Text>
-                      </View>
-                    </View>
-                  )}
-                  {showStatusChips && event.type === 'schedule' && schedStatusColor && schedStatusLabel && (
-                    <View style={{ flexDirection: 'row', marginTop: 6 }}>
-                      <View style={{ backgroundColor: schedStatusColor + '22', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 }}>
-                        <Text style={{ fontSize: 10, fontWeight: '600', color: schedStatusColor }}>{schedStatusLabel}</Text>
-                      </View>
-                    </View>
-                  )}
-                  {event.projectName && (
-                    <View style={{
-                      flexDirection: 'row',
-                      alignItems: 'center',
-                      marginTop: 6,
-                      backgroundColor: barColor + '20',
-                      alignSelf: 'flex-start',
-                      paddingHorizontal: 8,
-                      paddingVertical: 3,
-                      borderRadius: 8,
-                    }}>
-                      <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: barColor, marginRight: 5 }} />
-                      <Text style={{ fontSize: 9, fontWeight: '500', color: colors.secondary }}>
-                        {event.projectName}
-                      </Text>
-                    </View>
-                  )}
-                </View>
-              </TouchableOpacity>
-            );
-          })
+        </View>
+      </Animated.View>
+
+      <Animated.View entering={FadeInDown.duration(300).delay(60)} style={{ flex: 1 }}>
+        {loading ? renderSkeleton() : (
+          <>
+            {viewMode === 'list' && (
+              <FeedView
+                theme={theme}
+                eventsByDay={eventsByDay}
+                refreshing={refreshing}
+                onRefresh={onRefresh}
+                onEventPress={handleEventTap}
+                onDayLongPress={handleDayLongPress}
+              />
+            )}
+            {viewMode === 'week' && (
+              <WeekView
+                theme={theme}
+                weekDays={weekDays}
+                eventsByDay={eventsByDay}
+                nowMinutes={nowMinutes}
+                anyAllDayEvents={anyAllDayEvents}
+                allDayExpanded={allDayExpanded}
+                initialOffset={Math.max(0, (todayWeekIndex - 1) * GRID_COL_WIDTH)}
+                weekScrollRef={weekScrollRef}
+                timeGridScrollRef={timeGridScrollRef}
+                timeLabelScrollRef={timeLabelScrollRef}
+                onWeekScroll={handleWeekScroll}
+                onEventPress={handleEventTap}
+                onSlotLongPress={handleSlotLongPress}
+                isEmpty={weekIsEmpty}
+              />
+            )}
+            {viewMode === 'month' && (
+              <MonthView
+                theme={theme}
+                calendarGrid={calendarGrid}
+                selectedDate={selectedDate}
+                eventsByDay={eventsByDay}
+                refreshing={refreshing}
+                onRefresh={onRefresh}
+                onSelectDay={onSelectDay}
+                onDayLongPress={handleDayLongPress}
+                onEventPress={handleEventTap}
+                onNavigateMonth={onNavigateMonth}
+                showStatusChips={showStatusChips}
+                taskStatusOptions={taskStatusOptions}
+              />
+            )}
+          </>
         )}
-      </ScrollView>
-    );
-  };
+      </Animated.View>
 
-  if (loading) {
-    return (
-      <View style={[styles.container, styles.center, { backgroundColor: colors.bg }]}>
-        <ActivityIndicator size="large" color={colors.accent} />
-      </View>
-    );
-  }
-
-  const todayDate = new Date();
-  const headerMonth = `${MONTHS[weekStartDate.getMonth()]} ${weekStartDate.getFullYear()}`;
-
-  return (
-    <View style={[styles.container, { backgroundColor: colors.bg }]}>
-      <View style={[styles.header, { backgroundColor: colors.bg }]}>
-        <View style={styles.headerLeft}>
-          <Ionicons name="menu" size={22} color={colors.secondary + '80'} style={{ marginRight: 10 }} />
-          <View>
-            <Text style={[styles.headerTitle, { color: colors.text }]}>My Calendar</Text>
-            <Text style={[styles.headerMonthLabel, { color: colors.secondary }]}>
-              {viewMode === 'month' ? `${MONTHS[currentMonth]} ${currentYear}` : headerMonth}
-            </Text>
-          </View>
-        </View>
-
-        <View style={styles.headerRight}>
-          <TouchableOpacity
-            style={{
-              paddingHorizontal: 12,
-              paddingVertical: 6,
-              borderRadius: 14,
-              backgroundColor: colors.accent + '10',
-              borderWidth: 1,
-              borderColor: colors.accent,
-            }}
-            onPress={() => {
-              const modes: ViewMode[] = ['list', 'week', 'month'];
-              const nextIdx = (modes.indexOf(viewMode) + 1) % modes.length;
-              handleViewModeChange(modes[nextIdx]);
-            }}
-            activeOpacity={0.7}
-          >
-            <Text style={{ fontSize: 12, fontWeight: '500', color: colors.accent }}>
-              {viewMode === 'list' ? 'List' : viewMode === 'week' ? 'Week' : 'Month'}
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={goToToday}
-            style={[styles.todayBadge, { backgroundColor: colors.accent }]}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.todayBadgeText}>{todayDate.getDate()}</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-
-      <View style={{ flex: 1 }}>
-        {viewMode === 'list' && renderFeedView()}
-        {viewMode === 'week' && renderWeekView()}
-        {viewMode === 'month' && renderMonthView()}
-      </View>
-
-      <View style={[styles.chipBar, { backgroundColor: colors.bg, borderTopColor: colors.border }]}>
+      <Animated.View
+        entering={FadeInDown.duration(300).delay(120)}
+        style={[styles.chipBar, { backgroundColor: theme.background, borderTopColor: theme.border }]}
+      >
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.chipRow}
         >
           {viewMode === 'week' && (
-            <TouchableOpacity
+            <PressableScale
               style={[
                 styles.chip,
-                {
-                  backgroundColor: allDayExpanded
-                    ? colors.accent
-                    : (isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)'),
-                },
+                { backgroundColor: allDayExpanded ? theme.primary : theme.subtle },
               ]}
-              onPress={() => setAllDayExpanded(v => !v)}
-              activeOpacity={0.7}
+              onPress={() => { haptic.select(); setAllDayExpanded(v => !v); }}
             >
               <Text style={[
                 styles.chipLabel,
                 {
-                  color: allDayExpanded ? '#FFFFFF' : colors.secondary,
-                  fontWeight: allDayExpanded ? '600' : '400',
+                  color: allDayExpanded ? '#FFFFFF' : theme.textSecondary,
+                  fontWeight: allDayExpanded ? fontWeight.semibold : fontWeight.regular,
                 },
               ]}>
                 All Day
               </Text>
-            </TouchableOpacity>
+            </PressableScale>
           )}
 
           {EVENT_TYPE_OPTIONS.filter(opt => opt.value !== 'google_cal' || googleConnected).map(opt => {
             const isSelected = activeFilters.eventTypes?.includes(opt.value) ?? false;
             return (
-              <TouchableOpacity
+              <PressableScale
                 key={opt.value}
                 style={[
                   styles.chip,
-                  {
-                    backgroundColor: isSelected
-                      ? colors.accent
-                      : (isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)'),
-                  },
+                  { backgroundColor: isSelected ? theme.primary : theme.subtle },
                 ]}
                 onPress={() => {
+                  haptic.select();
                   const current = activeFilters.eventTypes || [];
                   const updated = isSelected
                     ? current.filter(t => t !== opt.value)
                     : [...current, opt.value];
                   setActiveFilters({ ...activeFilters, eventTypes: updated.length > 0 ? updated : undefined });
                 }}
-                activeOpacity={0.7}
               >
                 <Text style={[
                   styles.chipLabel,
                   {
-                    color: isSelected ? '#FFFFFF' : colors.secondary,
-                    fontWeight: isSelected ? '600' : '400',
+                    color: isSelected ? '#FFFFFF' : theme.textSecondary,
+                    fontWeight: isSelected ? fontWeight.semibold : fontWeight.regular,
                   },
                 ]}>
                   {opt.label}
                 </Text>
-              </TouchableOpacity>
+              </PressableScale>
             );
           })}
 
-          <TouchableOpacity
+          <PressableScale
             style={[
               styles.chip,
-              {
-                backgroundColor: activeFilterCount > 0
-                  ? colors.accent
-                  : (isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)'),
-              },
+              { backgroundColor: activeFilterCount > 0 ? theme.primary : theme.subtle },
             ]}
-            onPress={() => setShowFilterModal(true)}
-            activeOpacity={0.7}
+            onPress={() => { haptic.select(); filterSheetRef.current?.present(); }}
           >
             <Ionicons
               name="options-outline"
               size={14}
-              color={activeFilterCount > 0 ? '#FFFFFF' : colors.secondary}
+              color={activeFilterCount > 0 ? '#FFFFFF' : theme.textSecondary}
             />
             <Text style={[
               styles.chipLabel,
               {
-                color: activeFilterCount > 0 ? '#FFFFFF' : colors.secondary,
-                fontWeight: activeFilterCount > 0 ? '600' : '400',
+                color: activeFilterCount > 0 ? '#FFFFFF' : theme.textSecondary,
+                fontWeight: activeFilterCount > 0 ? fontWeight.semibold : fontWeight.regular,
               },
             ]}>
               Filter{activeFilterCount > 0 ? ` (${activeFilterCount})` : ''}
             </Text>
-          </TouchableOpacity>
+          </PressableScale>
         </ScrollView>
-      </View>
+      </Animated.View>
 
-      <Modal
-        visible={showViewsModal}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setShowViewsModal(false)}
-      >
-        <TouchableWithoutFeedback onPress={() => setShowViewsModal(false)}>
-          <View style={styles.modalOverlay} />
-        </TouchableWithoutFeedback>
-        <View style={[styles.bottomSheet, { backgroundColor: colors.card }]}>
-          <View style={[styles.bottomSheetHandle, { backgroundColor: colors.border }]} />
-          <Text style={[styles.bottomSheetTitle, { color: colors.text }]}>Views</Text>
-          <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 360 }}>
-            {views.map(view => {
-              const isActive = view.id === selectedViewId;
-              return (
-                <TouchableOpacity
-                  key={view.id}
-                  style={[
-                    styles.viewRow,
-                    { borderColor: colors.border },
-                    isActive && { backgroundColor: colors.accent + '15', borderColor: colors.accent + '40' },
-                  ]}
-                  onPress={() => handleSelectView(view)}
-                  onLongPress={() => handleDeleteView(view)}
-                  activeOpacity={0.7}
-                >
-                  <Ionicons name="layers-outline" size={18} color={isActive ? colors.accent : colors.secondary} />
-                  <Text style={[styles.viewRowText, { color: isActive ? colors.text : colors.secondary }]}>
-                    {view.name}
-                  </Text>
-                  {isActive && (
-                    <Ionicons name="checkmark-circle" size={18} color={colors.accent} style={{ marginLeft: 'auto' }} />
-                  )}
-                  {!view.isDefault && !isActive && (
-                    <TouchableOpacity onPress={() => handleDeleteView(view)} style={{ marginLeft: 'auto', padding: 4 }}>
-                      <Ionicons name="trash-outline" size={16} color={colors.muted} />
-                    </TouchableOpacity>
-                  )}
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
-          <TouchableOpacity
-            style={[styles.newViewBtn, { borderColor: colors.border }]}
-            onPress={() => { setShowViewsModal(false); setShowCreateViewModal(true); }}
-            activeOpacity={0.7}
-          >
-            <Ionicons name="add-circle-outline" size={18} color={colors.secondary} />
-            <Text style={[styles.newViewBtnText, { color: colors.secondary }]}>New View</Text>
-          </TouchableOpacity>
-        </View>
-      </Modal>
-
-      <Modal
-        visible={showFilterModal}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setShowFilterModal(false)}
-      >
-        <TouchableWithoutFeedback onPress={() => setShowFilterModal(false)}>
-          <View style={styles.modalOverlay} />
-        </TouchableWithoutFeedback>
-        <View style={[styles.bottomSheet, { backgroundColor: colors.card }]}>
-          <View style={[styles.bottomSheetHandle, { backgroundColor: colors.border }]} />
-          <Text style={[styles.bottomSheetTitle, { color: colors.text }]}>Filter Events</Text>
-          <Text style={[styles.bottomSheetSubtitle, { color: colors.secondary }]}>
-            Select types to show. Leave all off to show everything.
-          </Text>
-          <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 440 }}>
-            <View style={{ marginTop: 12, gap: 4 }}>
+      {/* ── Views sheet ──────────────────────────────────────────────────── */}
+      <Sheet ref={viewsSheetRef} title="Views" scrollable>
+        <View style={styles.sheetBody}>
+          {views.map(view => {
+            const isActive = view.id === selectedViewId;
+            return (
               <TouchableOpacity
+                key={view.id}
                 style={[
-                  styles.filterRow,
-                  { borderColor: colors.border },
-                  activeFilters.assignedToMe && { backgroundColor: colors.accent + '15', borderColor: colors.accent + '40' },
+                  styles.viewRow,
+                  { borderColor: theme.border },
+                  isActive && { backgroundColor: theme.primary + '15', borderColor: theme.primary + '40' },
                 ]}
-                onPress={() => setActiveFilters({ ...activeFilters, assignedToMe: activeFilters.assignedToMe ? undefined : true })}
+                onPress={() => handleSelectView(view)}
+                onLongPress={() => handleDeleteView(view)}
                 activeOpacity={0.7}
               >
-                <View style={[styles.filterColorDot, { backgroundColor: colors.accent }]} />
-                <Ionicons name="person-outline" size={18} color={activeFilters.assignedToMe ? colors.accent : colors.secondary} />
-                <Text style={[styles.filterRowText, { color: activeFilters.assignedToMe ? colors.text : colors.secondary }]}>
-                  Assigned to me
+                <Ionicons name="layers-outline" size={18} color={isActive ? theme.primary : theme.textSecondary} />
+                <Text style={[styles.viewRowText, { color: isActive ? theme.textPrimary : theme.textSecondary }]}>
+                  {view.name}
                 </Text>
-                {activeFilters.assignedToMe && (
-                  <Ionicons name="checkmark-circle" size={18} color={colors.accent} style={{ marginLeft: 'auto' }} />
+                {isActive && (
+                  <Ionicons name="checkmark-circle" size={18} color={theme.primary} style={{ marginLeft: 'auto' }} />
+                )}
+                {!view.isDefault && !isActive && (
+                  <TouchableOpacity onPress={() => handleDeleteView(view)} style={{ marginLeft: 'auto', padding: 4 }}>
+                    <Ionicons name="trash-outline" size={16} color={theme.textMuted} />
+                  </TouchableOpacity>
                 )}
               </TouchableOpacity>
-            </View>
+            );
+          })}
+          <TouchableOpacity
+            style={[styles.newViewBtn, { borderColor: theme.border }]}
+            onPress={() => { haptic.light(); setNewViewName(''); createViewSheetRef.current?.present(); }}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="add-circle-outline" size={18} color={theme.textSecondary} />
+            <Text style={[styles.newViewBtnText, { color: theme.textSecondary }]}>New View</Text>
+          </TouchableOpacity>
+        </View>
+      </Sheet>
 
-            {(!activeFilters.eventTypes || activeFilters.eventTypes.includes('schedule')) && (
-              <View style={{ marginTop: 16 }}>
-                <Text style={[styles.filterSectionLabel, { color: colors.secondary }]}>Schedule Items</Text>
-                <View style={{ gap: 4, marginTop: 6 }}>
-                  {([
-                    { key: 'scheduleAssignedToMe' as const, label: 'Assigned to me', icon: 'person-outline' as const },
-                    { key: 'scheduleAssignedToCompany' as const, label: 'Assigned to company', icon: 'business-outline' as const },
-                  ] as const).map(opt => {
-                    const isOn = !!activeFilters[opt.key];
-                    const scheduleColor = EVENT_COLORS.schedule;
-                    return (
-                      <TouchableOpacity
-                        key={opt.key}
-                        style={[
-                          styles.filterRow,
-                          { borderColor: colors.border },
-                          isOn && { backgroundColor: scheduleColor + '15', borderColor: scheduleColor + '40' },
-                        ]}
-                        onPress={() => setActiveFilters({ ...activeFilters, [opt.key]: isOn ? undefined : true })}
-                        activeOpacity={0.7}
-                      >
-                        <View style={[styles.filterColorDot, { backgroundColor: isOn ? scheduleColor : colors.muted }]} />
-                        <Ionicons name={opt.icon} size={18} color={isOn ? scheduleColor : colors.secondary} />
-                        <Text style={[styles.filterRowText, { color: isOn ? colors.text : colors.secondary }]}>
-                          {opt.label}
-                        </Text>
-                        {isOn && (
-                          <Ionicons name="checkmark-circle" size={18} color={scheduleColor} style={{ marginLeft: 'auto' }} />
-                        )}
-                      </TouchableOpacity>
-                    );
-                  })}
-                  {(() => {
-                    const scheduleColor = EVENT_COLORS.schedule;
-                    const parentsVisible = !activeFilters.hideScheduleParents;
-                    const childrenVisible = !activeFilters.hideScheduleChildren;
-                    return (
-                      <View style={{ flexDirection: 'row', gap: 8 }}>
-                        {([
-                          { hideKey: 'hideScheduleParents' as const, label: 'Parents', icon: 'git-branch-outline' as const, isOn: parentsVisible },
-                          { hideKey: 'hideScheduleChildren' as const, label: 'Sub-items', icon: 'return-down-forward-outline' as const, isOn: childrenVisible },
-                        ]).map(btn => (
-                          <TouchableOpacity
-                            key={btn.hideKey}
-                            style={[
-                              styles.filterRow,
-                              { flex: 1, justifyContent: 'center', borderColor: colors.border },
-                              btn.isOn && { backgroundColor: scheduleColor + '15', borderColor: scheduleColor + '40' },
-                            ]}
-                            onPress={() => setActiveFilters({ ...activeFilters, [btn.hideKey]: btn.isOn ? true : undefined })}
-                            activeOpacity={0.7}
-                          >
-                            <Ionicons name={btn.icon} size={16} color={btn.isOn ? scheduleColor : colors.secondary} />
-                            <Text style={[styles.filterRowText, { color: btn.isOn ? colors.text : colors.secondary }]}>
-                              {btn.label}
-                            </Text>
-                          </TouchableOpacity>
-                        ))}
-                      </View>
-                    );
-                  })()}
-                </View>
-              </View>
+      {/* ── Create-view sheet (stacks over the views sheet) ─────────────── */}
+      <Sheet ref={createViewSheetRef} title="Save View" stackBehavior="push">
+        <View style={styles.sheetBody}>
+          <Text style={[styles.sheetSubtitle, { color: theme.textSecondary }]}>
+            Save your current filters and view mode as a named view.
+          </Text>
+          <SheetTextInput
+            style={[styles.viewNameInput, { backgroundColor: theme.background, borderColor: theme.border, color: theme.textPrimary }]}
+            placeholder="View name (e.g. My Tasks)"
+            placeholderTextColor={theme.textMuted}
+            value={newViewName}
+            onChangeText={setNewViewName}
+            autoFocus
+            returnKeyType="done"
+            onSubmitEditing={handleCreateView}
+          />
+          <View style={styles.sheetActions}>
+            <TouchableOpacity
+              style={[styles.secondaryBtn, { borderColor: theme.border }]}
+              onPress={() => { setNewViewName(''); createViewSheetRef.current?.dismiss(); }}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.secondaryBtnText, { color: theme.textSecondary }]}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.primaryBtn, { backgroundColor: newViewName.trim() ? theme.primary : theme.textMuted }]}
+              onPress={handleCreateView}
+              disabled={!newViewName.trim() || savingView}
+              activeOpacity={0.8}
+            >
+              {savingView
+                ? <ActivityIndicator size="small" color="#FFFFFF" />
+                : <Text style={styles.primaryBtnText}>Save View</Text>
+              }
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Sheet>
+
+      {/* ── Filters sheet ────────────────────────────────────────────────── */}
+      <FilterSheet
+        sheetRef={filterSheetRef}
+        theme={theme}
+        activeFilters={activeFilters}
+        setActiveFilters={setActiveFilters}
+        activeFilterCount={activeFilterCount}
+        taskStatusOptions={taskStatusOptions}
+        googleConnected={googleConnected}
+        showStatusChips={showStatusChips}
+        onToggleStatusChips={() => setShowStatusChips(v => !v)}
+        canSaveFilters={!!canSaveFilters}
+        onSaveFiltersToView={handleSaveFiltersToView}
+      />
+
+      {/* ── Event peek sheet ─────────────────────────────────────────────── */}
+      <EventPeekSheet
+        sheetRef={eventSheetRef}
+        theme={theme}
+        event={selectedEvent}
+        onDismiss={() => setSelectedEvent(null)}
+        taskIsDone={selectedTaskIsDone}
+        onToggleTaskComplete={handleToggleTaskComplete}
+        onOpenMoreScreen={navigateToMoreScreen}
+      />
+      {/* ── Create-task sheet ────────────────────────────────────────────── */}
+      <Sheet ref={createTaskSheetRef} title="New Task" scrollable snapPoints={['70%', '92%']}>
+        <View style={styles.eventSheetBody}>
+          <View style={styles.editField}>
+            <Text style={[styles.editLabel, { color: theme.textSecondary }]}>Title</Text>
+            <SheetTextInput
+              style={[styles.editInput, { backgroundColor: theme.background, color: theme.textPrimary, borderColor: theme.border }]}
+              value={createTitle}
+              onChangeText={setCreateTitle}
+              placeholder="Task title"
+              placeholderTextColor={theme.textMuted}
+            />
+          </View>
+
+          <View style={styles.editField}>
+            <Text style={[styles.editLabel, { color: theme.textSecondary }]}>Project</Text>
+            <TouchableOpacity
+              style={[styles.editSelect, { backgroundColor: theme.background, borderColor: theme.border }]}
+              onPress={() => { haptic.select(); projectPickerSheetRef.current?.present(); }}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="briefcase-outline" size={16} color={theme.textSecondary} />
+              <Text style={[styles.editSelectText, { color: createProject ? theme.textPrimary : theme.textMuted }]}>
+                {createProject?.name || 'No project'}
+              </Text>
+              <Ionicons name="chevron-down" size={16} color={theme.textSecondary} />
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.editField}>
+            <Text style={[styles.editLabel, { color: theme.textSecondary }]}>Due Date</Text>
+            <TouchableOpacity
+              style={[styles.editSelect, { backgroundColor: theme.background, borderColor: showCreateDatePicker ? theme.primary : theme.border }]}
+              onPress={() => { setShowCreateTimePicker(false); setShowCreateDatePicker(v => !v); }}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="calendar-outline" size={16} color={theme.textSecondary} />
+              <Text style={[styles.editSelectText, { color: theme.textPrimary }]}>
+                {createDate ? fromLocalDateStr(createDate).toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }) : 'Pick a date'}
+              </Text>
+              <Ionicons name={showCreateDatePicker ? 'chevron-up' : 'chevron-down'} size={16} color={theme.textSecondary} />
+            </TouchableOpacity>
+            {showCreateDatePicker && (
+              <DateTimePicker
+                value={createDate ? fromLocalDateStr(createDate) : new Date()}
+                mode="date"
+                display={Platform.OS === 'ios' ? 'inline' : 'default'}
+                onChange={(_event, date) => {
+                  if (Platform.OS === 'android') setShowCreateDatePicker(false);
+                  if (date) setCreateDate(toLocalDateStr(date));
+                }}
+                style={{ marginTop: 4 }}
+              />
             )}
+          </View>
 
-            <View style={{ marginTop: 12, gap: 4 }}>
-              {EVENT_TYPE_OPTIONS.filter(opt => opt.value !== 'google_cal' || googleConnected).map(opt => {
-                const isSelected = activeFilters.eventTypes?.includes(opt.value) ?? false;
+          <View style={styles.editField}>
+            <Text style={[styles.editLabel, { color: theme.textSecondary }]}>Time (optional)</Text>
+            <TouchableOpacity
+              style={[styles.editSelect, { backgroundColor: theme.background, borderColor: showCreateTimePicker ? theme.primary : theme.border }]}
+              onPress={() => { setShowCreateDatePicker(false); setShowCreateTimePicker(v => !v); }}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="time-outline" size={16} color={theme.textSecondary} />
+              <Text style={[styles.editSelectText, { color: createTime ? theme.textPrimary : theme.textMuted }]}>
+                {createTime || 'No time'}
+              </Text>
+              {createTime ? (
+                <TouchableOpacity
+                  onPress={() => { setCreateTime(''); setShowCreateTimePicker(false); }}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Ionicons name="close-circle" size={16} color={theme.textMuted} />
+                </TouchableOpacity>
+              ) : (
+                <Ionicons name={showCreateTimePicker ? 'chevron-up' : 'chevron-down'} size={16} color={theme.textSecondary} />
+              )}
+            </TouchableOpacity>
+            {showCreateTimePicker && (
+              <DateTimePicker
+                value={(() => {
+                  const d = new Date();
+                  if (createTime) {
+                    const [h, m] = createTime.split(':').map(Number);
+                    d.setHours(h || 0, m || 0, 0, 0);
+                  }
+                  return d;
+                })()}
+                mode="time"
+                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                onChange={(_event, date) => {
+                  if (Platform.OS === 'android') setShowCreateTimePicker(false);
+                  if (date) {
+                    setCreateTime(`${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`);
+                  }
+                }}
+                style={{ marginTop: 4 }}
+              />
+            )}
+          </View>
+
+          <View style={styles.editField}>
+            <Text style={[styles.editLabel, { color: theme.textSecondary }]}>Priority</Text>
+            <View style={styles.priorityRow}>
+              {PRIORITY_OPTIONS.map(p => {
+                const active = createPriority === p.key;
                 return (
                   <TouchableOpacity
-                    key={opt.value}
+                    key={p.key}
                     style={[
-                      styles.filterRow,
-                      { borderColor: colors.border },
-                      isSelected && { backgroundColor: EVENT_COLORS[opt.value] + '15', borderColor: EVENT_COLORS[opt.value] + '40' },
+                      styles.priorityChip,
+                      { borderColor: active ? theme.primary : theme.border, backgroundColor: active ? theme.primary + '20' : 'transparent' },
                     ]}
-                    onPress={() => {
-                      const current = activeFilters.eventTypes || [];
-                      const updated = isSelected
-                        ? current.filter(t => t !== opt.value)
-                        : [...current, opt.value];
-                      setActiveFilters({ ...activeFilters, eventTypes: updated.length > 0 ? updated : undefined });
-                    }}
+                    onPress={() => { haptic.select(); setCreatePriority(p.key); }}
                     activeOpacity={0.7}
                   >
-                    <View style={[styles.filterColorDot, { backgroundColor: EVENT_COLORS[opt.value] }]} />
-                    <Ionicons name={opt.icon} size={18} color={isSelected ? EVENT_COLORS[opt.value] : colors.secondary} />
-                    <Text style={[styles.filterRowText, { color: isSelected ? colors.text : colors.secondary }]}>
-                      {opt.label}
+                    <Text style={[styles.priorityChipText, { color: active ? theme.primary : theme.textSecondary }]}>
+                      {p.label}
                     </Text>
-                    {isSelected && (
-                      <Ionicons name="checkmark-circle" size={18} color={EVENT_COLORS[opt.value]} style={{ marginLeft: 'auto' }} />
-                    )}
                   </TouchableOpacity>
                 );
               })}
             </View>
-
-            {(!activeFilters.eventTypes || activeFilters.eventTypes.includes('task')) && taskStatusOptions.length > 0 && (
-              <View style={{ marginTop: 16 }}>
-                <Text style={[styles.filterSectionLabel, { color: colors.secondary }]}>Task Status</Text>
-                <View style={{ gap: 4, marginTop: 6 }}>
-                  {taskStatusOptions.map(opt => {
-                    const isOff = activeFilters.excludedTaskStatuses?.includes(opt.value) ?? false;
-                    return (
-                      <TouchableOpacity
-                        key={opt.value}
-                        style={[
-                          styles.filterRow,
-                          { borderColor: colors.border },
-                          !isOff && { backgroundColor: opt.color + '15', borderColor: opt.color + '40' },
-                          isOff && { opacity: 0.45 },
-                        ]}
-                        onPress={() => {
-                          const current = activeFilters.excludedTaskStatuses || [];
-                          const updated = isOff
-                            ? current.filter(s => s !== opt.value)
-                            : [...current, opt.value];
-                          setActiveFilters({ ...activeFilters, excludedTaskStatuses: updated.length > 0 ? updated : undefined });
-                        }}
-                        activeOpacity={0.7}
-                      >
-                        <View style={[styles.filterColorDot, { backgroundColor: isOff ? colors.muted : opt.color }]} />
-                        <Text style={[styles.filterRowText, { color: isOff ? colors.secondary : colors.text }]}>
-                          {opt.label}
-                        </Text>
-                        {!isOff && (
-                          <Ionicons name="checkmark-circle" size={18} color={opt.color} style={{ marginLeft: 'auto' }} />
-                        )}
-                        {isOff && (
-                          <Ionicons name="close-circle-outline" size={18} color={colors.muted} style={{ marginLeft: 'auto' }} />
-                        )}
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-              </View>
-            )}
-          </ScrollView>
-
-          <View style={{ paddingHorizontal: 16, paddingTop: 12, borderTopWidth: 1, borderTopColor: colors.border, marginTop: 4 }}>
-            <Text style={[styles.filterSectionLabel, { color: colors.secondary, marginBottom: 6 }]}>Display</Text>
-            <TouchableOpacity
-              style={[
-                styles.filterRow,
-                { borderColor: colors.border },
-                showStatusChips && { backgroundColor: colors.accent + '15', borderColor: colors.accent + '40' },
-              ]}
-              onPress={() => setShowStatusChips(v => !v)}
-              activeOpacity={0.7}
-            >
-              <View style={[styles.filterColorDot, { backgroundColor: showStatusChips ? colors.accent : colors.muted }]} />
-              <Ionicons name="pricetag-outline" size={18} color={showStatusChips ? colors.accent : colors.secondary} />
-              <Text style={[styles.filterRowText, { color: showStatusChips ? colors.text : colors.secondary }]}>
-                Show status chips
-              </Text>
-              {showStatusChips && (
-                <Ionicons name="checkmark-circle" size={18} color={colors.accent} style={{ marginLeft: 'auto' }} />
-              )}
-            </TouchableOpacity>
           </View>
 
-          <View style={styles.filterActions}>
-            {activeFilterCount > 0 && (
-              <TouchableOpacity
-                style={[styles.filterClearBtn, { borderColor: colors.border }]}
-                onPress={() => setActiveFilters({})}
-                activeOpacity={0.7}
-              >
-                <Text style={[styles.filterClearText, { color: colors.secondary }]}>Clear all</Text>
-              </TouchableOpacity>
-            )}
-            {canSaveFilters && (
-              <TouchableOpacity
-                style={[styles.filterSaveBtn, { backgroundColor: colors.accent }]}
-                onPress={handleSaveFiltersToView}
-                activeOpacity={0.8}
-              >
-                <Text style={styles.filterSaveBtnText}>Save to view</Text>
-              </TouchableOpacity>
-            )}
-            <TouchableOpacity
-              style={[styles.filterDoneBtn, { backgroundColor: colors.accent }]}
-              onPress={() => setShowFilterModal(false)}
-              activeOpacity={0.8}
-            >
-              <Text style={styles.filterDoneBtnText}>Done</Text>
-            </TouchableOpacity>
-          </View>
+          <TouchableOpacity
+            style={[styles.primaryBtn, { backgroundColor: createTitle.trim() ? theme.primary : theme.textMuted, marginTop: 8 }]}
+            onPress={handleCreateTask}
+            disabled={!createTitle.trim() || creatingTask}
+            activeOpacity={0.8}
+          >
+            {creatingTask
+              ? <ActivityIndicator size="small" color="#FFFFFF" />
+              : <Text style={styles.primaryBtnText}>Create Task</Text>
+            }
+          </TouchableOpacity>
         </View>
-      </Modal>
+      </Sheet>
 
-      <Modal
-        visible={showCreateViewModal}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setShowCreateViewModal(false)}
-      >
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
-          <TouchableWithoutFeedback onPress={() => setShowCreateViewModal(false)}>
-            <View style={styles.modalOverlay} />
-          </TouchableWithoutFeedback>
-          <View style={[styles.bottomSheet, { backgroundColor: colors.card }]}>
-            <View style={[styles.bottomSheetHandle, { backgroundColor: colors.border }]} />
-            <Text style={[styles.bottomSheetTitle, { color: colors.text }]}>Save View</Text>
-            <Text style={[styles.bottomSheetSubtitle, { color: colors.secondary }]}>
-              Save your current filters and view mode as a named view.
+      {/* ── Project picker (stacks over the create sheet) ────────────────── */}
+      <Sheet ref={projectPickerSheetRef} title="Project" stackBehavior="push" scrollable snapPoints={['60%']}>
+        <View style={styles.sheetBody}>
+          <TouchableOpacity
+            style={[styles.pickerOption, !createProjectId && { backgroundColor: theme.primary + '15' }]}
+            onPress={() => { haptic.select(); setCreateProjectId(null); projectPickerSheetRef.current?.dismiss(); }}
+            activeOpacity={0.7}
+          >
+            <View style={[styles.filterColorDot, { backgroundColor: theme.textMuted }]} />
+            <Text style={[styles.pickerOptionText, { color: !createProjectId ? theme.primary : theme.textPrimary }]}>
+              No project
             </Text>
-            <TextInput
-              style={[styles.viewNameInput, { backgroundColor: colors.input, borderColor: colors.border, color: colors.text }]}
-              placeholder="View name (e.g. My Tasks)"
-              placeholderTextColor={colors.muted}
-              value={newViewName}
-              onChangeText={setNewViewName}
-              autoFocus
-              returnKeyType="done"
-              onSubmitEditing={handleCreateView}
-            />
-            <View style={styles.filterActions}>
+            {!createProjectId && <Ionicons name="checkmark" size={20} color={theme.primary} />}
+          </TouchableOpacity>
+          {projects.map(proj => {
+            const active = createProjectId === proj.id;
+            const projColor = getProjectEventColor(proj.id, proj.color, EVENT_COLORS.task, brandColor);
+            return (
               <TouchableOpacity
-                style={[styles.filterClearBtn, { borderColor: colors.border }]}
-                onPress={() => { setShowCreateViewModal(false); setNewViewName(''); }}
+                key={proj.id}
+                style={[styles.pickerOption, active && { backgroundColor: theme.primary + '15' }]}
+                onPress={() => { haptic.select(); setCreateProjectId(proj.id); projectPickerSheetRef.current?.dismiss(); }}
                 activeOpacity={0.7}
               >
-                <Text style={[styles.filterClearText, { color: colors.secondary }]}>Cancel</Text>
+                <View style={[styles.filterColorDot, { backgroundColor: projColor }]} />
+                <Text style={[styles.pickerOptionText, { color: active ? theme.primary : theme.textPrimary }]}>
+                  {proj.name}
+                </Text>
+                {active && <Ionicons name="checkmark" size={20} color={theme.primary} />}
               </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.filterDoneBtn, { backgroundColor: newViewName.trim() ? colors.accent : colors.muted, flex: 1 }]}
-                onPress={handleCreateView}
-                disabled={!newViewName.trim() || savingView}
-                activeOpacity={0.8}
-              >
-                {savingView
-                  ? <ActivityIndicator size="small" color="#fff" />
-                  : <Text style={styles.filterDoneBtnText}>Save View</Text>
-                }
-              </TouchableOpacity>
-            </View>
-          </View>
-        </KeyboardAvoidingView>
-      </Modal>
-
-      {/* Event Detail Modal */}
-      <Modal visible={!!selectedEvent} animationType="slide" transparent onRequestClose={() => setSelectedEvent(null)}>
-        <View style={styles.evtModalOverlay}>
-          <View style={[styles.evtModalSheet, { backgroundColor: colors.card }]}>
-            {selectedEvent && (() => {
-              const ev = selectedEvent;
-              const raw = ev.raw;
-              return (
-                <>
-                  {/* Coloured accent strip at top */}
-                  <View style={[styles.evtModalAccent, { backgroundColor: ev.color }]} />
-
-                  <View style={[styles.evtModalHeader, { borderBottomColor: colors.border }]}>
-                    <TouchableOpacity onPress={() => setSelectedEvent(null)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                      <Ionicons name="close" size={24} color={colors.secondary} />
-                    </TouchableOpacity>
-                    <View style={[styles.evtTypeBadge, { backgroundColor: ev.color + '25' }]}>
-                      <Text style={[styles.evtTypeBadgeText, { color: ev.color }]}>{getEventTypeLabel(ev.type)}</Text>
-                    </View>
-                    <View style={{ width: 32 }} />
-                  </View>
-
-                  <ScrollView style={styles.evtModalBody} contentContainerStyle={{ paddingBottom: 40 }}>
-                    <Text style={[styles.evtModalTitle, { color: colors.text }]}>{ev.title}</Text>
-
-                    {/* Status badge */}
-                    {ev.status && (
-                      <View style={styles.evtBadgeRow}>
-                        <View style={[styles.evtBadge, { backgroundColor: (ev.statusColor || ev.color) + '20' }]}>
-                          <Text style={[styles.evtBadgeText, { color: ev.statusColor || ev.color }]}>
-                            {ev.type === 'schedule'
-                              ? (SCHEDULE_STATUS_LABELS[ev.status] || ev.status)
-                              : ev.status.charAt(0).toUpperCase() + ev.status.slice(1).replace(/_/g, ' ')}
-                          </Text>
-                        </View>
-                      </View>
-                    )}
-
-                    {/* Project */}
-                    {ev.projectName ? (
-                      <View style={styles.evtField}>
-                        <Ionicons name="briefcase-outline" size={16} color={colors.secondary} />
-                        <Text style={[styles.evtFieldText, { color: colors.text }]}>{ev.projectName}</Text>
-                      </View>
-                    ) : null}
-
-                    {/* Date / time */}
-                    {ev.type === 'schedule' && raw ? (
-                      <View style={styles.evtField}>
-                        <Ionicons name="calendar-outline" size={16} color={colors.secondary} />
-                        <Text style={[styles.evtFieldText, { color: colors.text }]}>
-                          {formatDateShort(raw.startDate)}{raw.endDate && raw.endDate !== raw.startDate ? ` → ${formatDateShort(raw.endDate)}` : ''}
-                        </Text>
-                      </View>
-                    ) : ev.type === 'task' && raw?.dueDate ? (
-                      <View style={styles.evtField}>
-                        <Ionicons name="calendar-outline" size={16} color={colors.secondary} />
-                        <Text style={[styles.evtFieldText, { color: colors.text }]}>{formatDateShort(raw.dueDate)}</Text>
-                      </View>
-                    ) : ev.date ? (
-                      <View style={styles.evtField}>
-                        <Ionicons name="calendar-outline" size={16} color={colors.secondary} />
-                        <Text style={[styles.evtFieldText, { color: colors.text }]}>{formatDateShort(ev.date)}</Text>
-                      </View>
-                    ) : null}
-
-                    {/* Time range */}
-                    {ev.startTime ? (
-                      <View style={styles.evtField}>
-                        <Ionicons name="time-outline" size={16} color={colors.secondary} />
-                        <Text style={[styles.evtFieldText, { color: colors.text }]}>
-                          {ev.startTime}{ev.endTime ? ` – ${ev.endTime}` : ''}
-                        </Text>
-                      </View>
-                    ) : null}
-
-                    {/* Timesheet hours */}
-                    {ev.type === 'timesheet' && raw?.duration ? (
-                      <View style={styles.evtField}>
-                        <Ionicons name="hourglass-outline" size={16} color={colors.secondary} />
-                        <Text style={[styles.evtFieldText, { color: colors.text }]}>
-                          {(() => { const h = parseFloat(raw.duration ?? '0'); return `${h % 1 === 0 ? h : h.toFixed(1)} hrs`; })()}
-                        </Text>
-                      </View>
-                    ) : null}
-
-                    {/* Notes / description */}
-                    {(raw?.description || raw?.contentText || raw?.content) ? (
-                      <View style={[styles.evtSection, { borderTopColor: colors.border }]}>
-                        <Text style={[styles.evtSectionLabel, { color: colors.secondary }]}>Notes</Text>
-                        <Text style={[styles.evtSectionText, { color: colors.text }]}>
-                          {raw.description || raw.contentText || raw.content}
-                        </Text>
-                      </View>
-                    ) : null}
-                  </ScrollView>
-                </>
-              );
-            })()}
-          </View>
+            );
+          })}
         </View>
-      </Modal>
+      </Sheet>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  center: { justifyContent: 'center', alignItems: 'center' },
 
   header: {
     flexDirection: 'row',
@@ -2310,42 +1443,81 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingTop: 56,
-    paddingBottom: 14,
+    paddingBottom: 8,
+    gap: 10,
   },
-  headerLeft: {
+  headerLeft: { flex: 1 },
+  headerTitle: {
+    fontSize: fontSize.xl,
+    fontWeight: fontWeight.bold,
+  },
+  headerMonthLabel: {
+    fontSize: fontSize.xs,
+    fontWeight: fontWeight.regular,
+    marginTop: 1,
+  },
+  viewsBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: radius.full,
+    borderWidth: 1,
+    maxWidth: 180,
+  },
+  viewsBtnText: {
+    fontSize: fontSize.xs,
+    fontWeight: fontWeight.semibold,
+    flexShrink: 1,
+  },
+  toolbar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingBottom: 10,
+    gap: 8,
+  },
+  segmented: {
+    flexDirection: 'row',
+    borderWidth: 1,
+    borderRadius: radius.lg + 1,
+    overflow: 'hidden',
+  },
+  segment: {
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: radius.lg,
+  },
+  segmentText: {
+    fontSize: fontSize.xs,
+    fontWeight: fontWeight.medium,
+  },
+  toolbarRight: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    flex: 1,
   },
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-  },
-  headerMonthLabel: {
-    fontSize: 12,
-    fontWeight: '400',
-    marginTop: 1,
-  },
-  headerRight: {
-    flexDirection: 'row',
+  navArrowBtn: { padding: 4 },
+  addBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: radius.lg + 2,
     alignItems: 'center',
-    gap: 10,
-  },
-  navArrowBtn: {
-    padding: 4,
+    justifyContent: 'center',
   },
   todayBadge: {
     width: 34,
     height: 34,
-    borderRadius: 5,
+    borderRadius: radius.lg + 2,
+    borderWidth: 1.5,
     alignItems: 'center',
     justifyContent: 'center',
   },
   todayBadgeText: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#ffffff',
+    fontSize: fontSize.sm,
+    fontWeight: fontWeight.bold,
   },
 
   chipBar: {
@@ -2364,96 +1536,48 @@ const styles = StyleSheet.create({
     gap: 5,
     paddingHorizontal: 14,
     paddingVertical: 7,
-    borderRadius: 18,
+    borderRadius: radius.full,
   },
   chipLabel: {
-    fontSize: 12,
-    fontWeight: '400',
+    fontSize: fontSize.xs,
+    fontWeight: fontWeight.regular,
   },
 
-  feedDateHeader: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    marginTop: 8,
+  // Sheets
+  sheetBody: {
+    paddingHorizontal: 20,
+    paddingTop: 4,
   },
-  feedDateHeaderText: { fontSize: 13, fontWeight: '700', letterSpacing: 0.2 },
-  feedEventCard: {
+  sheetSubtitle: {
+    fontSize: fontSize.bodySm,
+    lineHeight: 18,
+  },
+  sheetActions: {
     flexDirection: 'row',
-    alignItems: 'center',
-    marginHorizontal: 16,
-    marginTop: 8,
-    borderRadius: 10,
-    borderWidth: 1,
-    overflow: 'hidden',
-  },
-  feedEventColorBar: { width: 5, alignSelf: 'stretch' },
-  feedEventContent: { flex: 1, paddingVertical: 11, paddingHorizontal: 11 },
-  feedEventTop: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
-  feedEventTitle: { flex: 1, fontSize: 14, fontWeight: '500', lineHeight: 20 },
-  feedEventBadge: {
-    paddingHorizontal: 7,
-    paddingVertical: 2,
-    borderRadius: 6,
-    flexShrink: 0,
-  },
-  feedEventBadgeText: { fontSize: 10, fontWeight: '600' },
-  feedEventMeta: { flexDirection: 'row', gap: 10, marginTop: 4 },
-  feedEventProject: { fontSize: 12 },
-  feedEventTime: { fontSize: 12 },
-
-  emptyState: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 60,
-    paddingHorizontal: 32,
     gap: 10,
+    marginTop: 20,
   },
-  emptyTitle: { fontSize: 16, fontWeight: '600' },
-  emptyDesc: { fontSize: 13, textAlign: 'center', lineHeight: 18 },
-
-  dayNamesRow: { flexDirection: 'row', marginBottom: 4 },
-  dayNameCell: { alignItems: 'center', paddingVertical: 6 },
-  dayNameText: { fontSize: 12, fontWeight: '600' },
-  calendarRow: { flexDirection: 'row' },
-  calendarCell: { alignItems: 'center', paddingVertical: 4 },
-  dayCellInner: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+  primaryBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    gap: 6,
+    paddingVertical: 12,
+    borderRadius: radius.xl,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  dayNumber: { fontSize: 14 },
-  dotsRow: {
+  primaryBtnText: { color: '#FFFFFF', fontSize: fontSize.sm, fontWeight: fontWeight.semibold },
+  secondaryBtn: {
     flexDirection: 'row',
-    gap: 3,
-    marginTop: 2,
-    height: 6,
-    alignItems: 'center',
-  },
-  dot: { width: 5, height: 5, borderRadius: 2.5 },
-  selectedDateHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingTop: 14,
-    paddingBottom: 8,
-    marginTop: 8,
-    borderTopWidth: 1,
-  },
-  selectedDateText: { fontSize: 16, fontWeight: '600' },
-  selectedEventCount: { fontSize: 13 },
-  emptySection: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 28,
-    borderRadius: 10,
+    gap: 6,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: radius.xl,
     borderWidth: 1,
-    gap: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  emptySectionText: { fontSize: 14 },
+  secondaryBtnText: { fontSize: fontSize.sm, fontWeight: fontWeight.medium },
 
   viewRow: {
     flexDirection: 'row',
@@ -2461,190 +1585,94 @@ const styles = StyleSheet.create({
     gap: 10,
     paddingVertical: 13,
     paddingHorizontal: 14,
-    borderRadius: 10,
+    borderRadius: radius.xl,
     borderWidth: 1,
     marginBottom: 6,
     marginTop: 2,
   },
-  viewRowText: { fontSize: 15, fontWeight: '500' },
+  viewRowText: { fontSize: fontSize.bodyLg, fontWeight: fontWeight.medium },
   newViewBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
     paddingVertical: 13,
     paddingHorizontal: 14,
-    borderRadius: 10,
+    borderRadius: radius.xl,
     borderWidth: 1,
     marginTop: 8,
   },
-  newViewBtnText: { fontSize: 15, fontWeight: '500' },
-
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.4)',
-  },
-  bottomSheet: {
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    paddingHorizontal: 20,
-    paddingBottom: 36,
-    paddingTop: 12,
-  },
-  bottomSheetHandle: {
-    width: 40,
-    height: 4,
-    borderRadius: 2,
-    alignSelf: 'center',
-    marginBottom: 16,
-  },
-  bottomSheetTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    marginBottom: 4,
-  },
-  bottomSheetSubtitle: {
-    fontSize: 13,
-    lineHeight: 18,
-  },
-  filterRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    borderRadius: 10,
-    borderWidth: 1,
-  },
-  filterColorDot: { width: 8, height: 8, borderRadius: 4 },
-  filterRowText: { fontSize: 15, fontWeight: '500' },
-  filterSectionLabel: {
-    fontSize: 12,
-    fontWeight: '600',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  filterActions: {
-    flexDirection: 'row',
-    gap: 10,
-    marginTop: 20,
-  },
-  filterClearBtn: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 10,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  filterClearText: { fontSize: 14, fontWeight: '500' },
-  filterSaveBtn: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 10,
-    alignItems: 'center',
-  },
-  filterSaveBtnText: { color: '#fff', fontSize: 14, fontWeight: '600' },
-  filterDoneBtn: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  filterDoneBtnText: { color: '#fff', fontSize: 14, fontWeight: '600' },
+  newViewBtnText: { fontSize: fontSize.bodyLg, fontWeight: fontWeight.medium },
   viewNameInput: {
     marginTop: 16,
     borderWidth: 1,
-    borderRadius: 10,
+    borderRadius: radius.xl,
     paddingHorizontal: 14,
     paddingVertical: 12,
-    fontSize: 15,
+    fontSize: fontSize.bodyLg,
   },
 
-  // Event detail modal
-  evtModalOverlay: {
-    flex: 1,
-    justifyContent: 'flex-end',
-    backgroundColor: 'rgba(0,0,0,0.45)',
+  filterColorDot: { width: 8, height: 8, borderRadius: radius.sm },
+
+  // Create/picker sheet bodies
+  eventSheetBody: {
+    paddingHorizontal: 20,
+    paddingTop: 4,
   },
-  evtModalSheet: {
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    overflow: 'hidden',
-    maxHeight: '80%',
+
+  // Create-task form
+  editField: { marginBottom: 16 },
+  editLabel: {
+    fontSize: fontSize.bodySm,
+    fontWeight: fontWeight.semibold,
+    marginBottom: 6,
   },
-  evtModalAccent: {
-    height: 4,
+  editInput: {
+    borderWidth: 1,
+    borderRadius: radius.xl,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: fontSize.bodyLg,
   },
-  evtModalHeader: {
+  editSelect: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-  },
-  evtTypeBadge: {
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  evtTypeBadgeText: {
-    fontSize: 12,
-    fontWeight: '600',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  evtModalBody: {
-    paddingHorizontal: 20,
-    paddingTop: 16,
-  },
-  evtModalTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    marginBottom: 12,
-    lineHeight: 26,
-  },
-  evtBadgeRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
     gap: 8,
-    marginBottom: 16,
+    borderWidth: 1,
+    borderRadius: radius.xl,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
   },
-  evtBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 8,
+  editSelectText: {
+    fontSize: fontSize.bodyLg,
+    flex: 1,
   },
-  evtBadgeText: {
-    fontSize: 13,
-    fontWeight: '600',
+  priorityRow: {
+    flexDirection: 'row',
+    gap: 8,
   },
-  evtField: {
+  priorityChip: {
+    flex: 1,
+    paddingVertical: 9,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    alignItems: 'center',
+  },
+  priorityChipText: {
+    fontSize: fontSize.xs,
+    fontWeight: fontWeight.semibold,
+  },
+  pickerOption: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    marginBottom: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderRadius: radius.lg,
+    marginBottom: 2,
   },
-  evtFieldText: {
-    fontSize: 15,
+  pickerOptionText: {
+    fontSize: fontSize.bodyLg,
+    fontWeight: fontWeight.medium,
     flex: 1,
-  },
-  evtSection: {
-    borderTopWidth: 1,
-    marginTop: 8,
-    paddingTop: 16,
-    marginBottom: 12,
-  },
-  evtSectionLabel: {
-    fontSize: 12,
-    fontWeight: '600',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginBottom: 8,
-  },
-  evtSectionText: {
-    fontSize: 15,
-    lineHeight: 22,
   },
 });

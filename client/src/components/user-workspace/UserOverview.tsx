@@ -28,7 +28,7 @@ import {
 import type { User, DashboardTheme } from "@shared/schema";
 import type { Widget } from "@/types/widgets";
 import DashboardThemeSettings from "../DashboardThemeSettings";
-import { personalWidgetRegistry, getPersonalWidgetDefinition } from "./widgets/PersonalWidgetRegistry";
+import { dashboardConfigs, dashboardPersistence } from "../dashboard/DashboardWidgetRegistry";
 import {
   DndContext,
   closestCenter,
@@ -46,9 +46,13 @@ import {
   rectSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import PersonalWidgetContainer from "./widgets/PersonalWidgetContainer";
+import DashboardWidgetContainer from "../dashboard/DashboardWidgetContainer";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+
+// Per-dashboard config: widget registry + persisted-layout keys (unchanged)
+const personalDashboard = dashboardConfigs.personal;
+const personalPersistence = dashboardPersistence.personal;
 
 interface UserOverviewProps {
   user: User;
@@ -95,7 +99,7 @@ function SortableWidget({
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: widget.id, disabled: isResizing });
 
-  const definition = getPersonalWidgetDefinition(widget.type);
+  const definition = personalDashboard.getDefinition(widget.type);
   if (!definition) return null;
 
   const WidgetComponent = definition.component;
@@ -127,7 +131,8 @@ function SortableWidget({
 
   return (
     <div ref={setNodeRef} style={style} className={colSpanClass}>
-      <PersonalWidgetContainer
+      <DashboardWidgetContainer
+        variant="personal"
         title={widget.title}
         icon={<definition.icon className="h-3.5 w-3.5" />}
         accent={definition.accent}
@@ -154,7 +159,7 @@ function SortableWidget({
           onCloseConfig={() => onConfigure(null)}
           userId={userId}
         />
-      </PersonalWidgetContainer>
+      </DashboardWidgetContainer>
     </div>
   );
 }
@@ -178,7 +183,7 @@ export default function UserOverview({ user, isOwnPage, currentUserId }: UserOve
 
   // Server-side persisted layout (one row per user)
   const viewQueryKey = useMemo(
-    () => ["/api/user-workspace/views", user.id] as const,
+    () => personalPersistence.viewsQueryKey(user.id),
     [user.id],
   );
   const { data: serverView, isLoading: isLoadingView } = useQuery<UserWorkspaceView | null>({
@@ -188,7 +193,7 @@ export default function UserOverview({ user, isOwnPage, currentUserId }: UserOve
 
   const saveMutation = useMutation({
     mutationFn: async (next: Widget[]) => {
-      return apiRequest(`/api/user-workspace/views/${user.id}`, "POST", {
+      return apiRequest(personalPersistence.saveEndpoint(user.id), "POST", {
         name: "Overview",
         widgets: next,
       });
@@ -217,7 +222,7 @@ export default function UserOverview({ user, isOwnPage, currentUserId }: UserOve
     }
 
     // No server doc — try one-time migration from localStorage
-    const legacyKey = `user-workspace-widgets-${user.id}`;
+    const legacyKey = personalPersistence.legacyWidgetsKey(user.id);
     const legacy = localStorage.getItem(legacyKey);
     if (legacy) {
       try {
@@ -227,8 +232,8 @@ export default function UserOverview({ user, isOwnPage, currentUserId }: UserOve
           saveMutation.mutate(parsed, {
             onSuccess: () => {
               localStorage.removeItem(legacyKey);
-              localStorage.removeItem(`user-workspace-views-${user.id}`);
-              localStorage.removeItem(`user-workspace-active-view-${user.id}`);
+              localStorage.removeItem(personalPersistence.legacyViewsKey(user.id));
+              localStorage.removeItem(personalPersistence.legacyActiveViewKey(user.id));
             },
           });
           initializedRef.current = true;
@@ -252,7 +257,7 @@ export default function UserOverview({ user, isOwnPage, currentUserId }: UserOve
   };
 
   const addWidget = (type: string) => {
-    const definition = getPersonalWidgetDefinition(type);
+    const definition = personalDashboard.getDefinition(type);
     if (!definition) return;
     const newWidget: Widget = {
       id: Date.now().toString(),
@@ -421,7 +426,7 @@ export default function UserOverview({ user, isOwnPage, currentUserId }: UserOve
             <DialogTitle className="text-sm">Add Widget</DialogTitle>
           </DialogHeader>
           <div className="grid grid-cols-2 gap-3 py-4">
-            {Object.values(personalWidgetRegistry).map((definition) => (
+            {Object.values(personalDashboard.registry).map((definition) => (
               <button
                 key={definition.type}
                 onClick={() => addWidget(definition.type)}

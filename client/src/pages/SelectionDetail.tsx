@@ -17,6 +17,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useProject } from "@/contexts/ProjectContext";
 import { useAuth } from "@/hooks/use-auth";
+import { usePermission } from "@/hooks/use-permission";
 import { useSelectionStatusOptions } from "@/hooks/useSelectionStatusOptions";
 import { 
   insertSelectionOptionSchema, 
@@ -1002,6 +1003,9 @@ export default function SelectionDetail() {
   const allowanceAmount = Number(selection.allowance) || 0;
 
   const isAdminUser = !!user?.isAdminLike;
+  // Approval follows the permission system rather than admin-ness, so any role
+  // granted projects.selections:approve — including a client — can approve.
+  const canApproveSelections = usePermission("projects.selections", "approve");
   const isOverAllowance = allowanceAmount > 0 && selectedPrice > allowanceAmount;
 
   return (
@@ -1131,7 +1135,7 @@ export default function SelectionDetail() {
                 <div className="w-full mt-1">
                   <div className="text-data text-muted-foreground uppercase tracking-wide mb-1">Notes to Trades</div>
                   {localNotes && (
-                    <p className="mb-1.5 text-xs px-2 py-1 rounded-md bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800">
+                    <p className="mb-1.5 text-xs px-2 py-1 rounded-md bg-status-warning-bg text-status-warning border border-status-warning/30">
                       Visible to your internal team only — not the client.
                     </p>
                   )}
@@ -2008,7 +2012,7 @@ export default function SelectionDetail() {
                           Edit
                         </DropdownMenuItem>
                         )}
-                        {isAdminUser && !isApprovedRow && (
+                        {canApproveSelections && !isApprovedRow && (
                           <DropdownMenuItem
                             onClick={(e) => { e.stopPropagation(); approveMutation.mutate(option.id); }}
                             disabled={approveMutation.isPending}
@@ -2017,7 +2021,7 @@ export default function SelectionDetail() {
                             Approve
                           </DropdownMenuItem>
                         )}
-                        {isAdminUser && isApprovedRow && (
+                        {canApproveSelections && isApprovedRow && (
                           <DropdownMenuItem
                             onClick={(e) => { e.stopPropagation(); unapproveMutation.mutate(option.id); }}
                             disabled={unapproveMutation.isPending}
@@ -2144,7 +2148,7 @@ export default function SelectionDetail() {
                         className={cn(
                           "rounded-md p-2.5 text-sm",
                           comment.isClientComment
-                            ? "bg-blue-50 dark:bg-blue-950/20 ml-4"
+                            ? "bg-status-info-bg ml-4"
                             : "bg-muted mr-4"
                         )}
                       >
@@ -2921,7 +2925,7 @@ export default function SelectionDetail() {
                         <span className="flex items-center gap-2">
                           {notesOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                           Notes to trades
-                          {field.value && <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-500" />}
+                          {field.value && <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber" />}
                         </span>
                       </button>
                       {notesOpen && (
@@ -2936,7 +2940,7 @@ export default function SelectionDetail() {
                             />
                           </FormControl>
                           {field.value && (
-                            <p className="text-xs px-2 py-1 rounded-md bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800">
+                            <p className="text-xs px-2 py-1 rounded-md bg-status-warning-bg text-status-warning border border-status-warning/30">
                               Visible to your internal team only — not the client.
                             </p>
                           )}

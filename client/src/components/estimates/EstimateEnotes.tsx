@@ -833,7 +833,7 @@ export default function EstimateEnotes({ estimateId }: Props) {
   };
 
   const RequiredIcon = ({ val }: { val: boolean | null }) => {
-    if (val === true) return <CheckCircle2 className="w-4 h-4 text-green-500 cursor-pointer flex-shrink-0" />;
+    if (val === true) return <CheckCircle2 className="w-4 h-4 text-status-success cursor-pointer flex-shrink-0" />;
     if (val === false) return <MinusCircle className="w-4 h-4 text-muted-foreground cursor-pointer flex-shrink-0" />;
     return <Circle className="w-4 h-4 text-muted-foreground/40 cursor-pointer flex-shrink-0" />;
   };

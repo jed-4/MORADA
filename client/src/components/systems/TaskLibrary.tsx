@@ -1014,11 +1014,11 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
                   {/* Status (Published/Draft/Archived) */}
                   <div>
                     {(template.status === 'published' || template.status === 'active' || !template.status) ? (
-                      <Badge className="bg-status-info-bg text-status-info dark:text-blue-400 h-5 px-2 py-0.5 rounded-full text-xs border-0 no-default-hover-elevate no-default-active-elevate">
+                      <Badge className="bg-status-info-bg text-status-info h-5 px-2 py-0.5 rounded-full text-xs border-0 no-default-hover-elevate no-default-active-elevate">
                         Published
                       </Badge>
                     ) : template.status === 'draft' ? (
-                      <Badge className="bg-amber-500/10 text-amber-700 dark:text-amber-400 h-5 px-2 py-0.5 rounded-full text-xs border-0 no-default-hover-elevate no-default-active-elevate">
+                      <Badge className="bg-status-warning-bg text-status-warning h-5 px-2 py-0.5 rounded-full text-xs border-0 no-default-hover-elevate no-default-active-elevate">
                         Draft
                       </Badge>
                     ) : (
@@ -1031,7 +1031,7 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
                   {/* Active/Inactive */}
                   <div>
                     {template.isActive ? (
-                      <Badge className="bg-status-success-bg text-status-success dark:text-green-400 h-5 px-2 py-0.5 rounded-full text-xs border-0 no-default-hover-elevate no-default-active-elevate">
+                      <Badge className="bg-status-success-bg text-status-success h-5 px-2 py-0.5 rounded-full text-xs border-0 no-default-hover-elevate no-default-active-elevate">
                         On
                       </Badge>
                     ) : (

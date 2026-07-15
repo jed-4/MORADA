@@ -786,9 +786,9 @@ export default function RFQs({ embedded }: { embedded?: boolean } = {}) {
                   data-testid={`button-attachment-file-${idx}`}
                 >
                   {isImage(file.name)
-                    ? <ImageIcon className="w-3.5 h-3.5 text-sky-500 flex-shrink-0" />
+                    ? <ImageIcon className="w-3.5 h-3.5 text-status-info flex-shrink-0" />
                     : isPdf(file.name)
-                    ? <FileText className="w-3.5 h-3.5 text-red-400 flex-shrink-0" />
+                    ? <FileText className="w-3.5 h-3.5 text-coral flex-shrink-0" />
                     : <FileIcon className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />}
                   <div className="flex flex-col min-w-0">
                     <span className="text-xs font-medium truncate">{file.name}</span>

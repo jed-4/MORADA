@@ -52,8 +52,13 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import type { TaskTemplate, TaskTag, TaskTemplateStatus, TemplateCategory } from "@shared/schema";
+import type { TaskTemplate, TaskTag, TaskTemplateStatus } from "@shared/schema";
 import { useAuth } from "@/hooks/use-auth";
+import { useTemplateCrud } from "@/components/templates/useTemplateCrud";
+import {
+  useTemplateCategories,
+  CategoryFilterSelect,
+} from "@/components/templates/useTemplateCategories";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 
 interface RecurringScheduleItem {
@@ -99,7 +104,6 @@ export default function TaskTemplates() {
   const [filterRecurring, setFilterRecurring] = useState<string>("all");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<TaskTemplate | null>(null);
-  const [confirmDelete, setConfirmDelete] = useState<{ id: string; name: string } | null>(null);
   const [formData, setFormData] = useState<TaskTemplateFormData>({
     title: "",
     goal: "",
@@ -126,141 +130,39 @@ export default function TaskTemplates() {
     queryKey: ["/api/task-template-statuses"],
   });
   const { data: userRoles = [] } = useQuery<any[]>({ queryKey: ["/api/user-roles"] });
-  const { data: categories = [] } = useQuery<TemplateCategory[]>({
-    queryKey: ["/api/template-categories", "task"],
-    queryFn: async () => {
-      const response = await fetch("/api/template-categories?templateType=task");
-      if (!response.ok) throw new Error("Failed to fetch categories");
-      return response.json();
-    },
-  });
+  const { getCategoryBreadcrumb, categoryTree } = useTemplateCategories("task");
 
-  const getCategoryBreadcrumb = (categoryId: string | null | undefined): string => {
-    if (!categoryId) return "";
-    const category = categories.find((c) => c.id === categoryId);
-    if (!category) return "";
-    
-    const breadcrumbParts: string[] = [category.name];
-    let currentCategory = category;
-    
-    while (currentCategory.parentId) {
-      const parent = categories.find((c) => c.id === currentCategory.parentId);
-      if (parent) {
-        breadcrumbParts.unshift(parent.name);
-        currentCategory = parent;
-      } else {
-        break;
-      }
-    }
-    
-    return breadcrumbParts.join(" / ");
-  };
-
-  const buildCategoryTree = () => {
-    const rootCategories = categories.filter((c) => !c.parentId);
-    const tree: { id: string; name: string; depth: number }[] = [];
-    
-    const addChildren = (parentId: string | null, depth: number) => {
-      const children = categories.filter((c) => c.parentId === parentId);
-      children.forEach((child) => {
-        tree.push({ id: child.id, name: child.name, depth });
-        addChildren(child.id, depth + 1);
-      });
-    };
-    
-    rootCategories.forEach((root) => {
-      tree.push({ id: root.id, name: root.name, depth: 0 });
-      addChildren(root.id, 1);
-    });
-    
-    return tree;
-  };
-
-  const createMutation = useMutation({
-    mutationFn: async (data: Partial<TaskTemplateFormData>) =>
-      await apiRequest("/api/systems/task-templates", "POST", data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/systems/task-templates"] });
-      toast({
-        title: "Template created",
-        description: "The task template has been created successfully.",
-      });
-      handleCloseDialog();
+  const {
+    createMutation,
+    updateMutation,
+    deleteMutation,
+    duplicateMutation,
+    isSaving,
+    confirmDelete,
+    setConfirmDelete,
+  } = useTemplateCrud<TaskTemplate & { name: string }>({
+    apiBase: "/api/systems/task-templates",
+    toasts: {
+      created: "The task template has been created successfully.",
+      updated: "The task template has been updated successfully.",
+      deleted: "The task template has been deleted successfully.",
     },
-    onError: () =>
-      toast({
-        title: "Error",
-        description: "Failed to create task template.",
-        variant: "destructive",
-      }),
-  });
-
-  const updateMutation = useMutation({
-    mutationFn: async ({ id, data }: { id: string; data: Partial<TaskTemplateFormData> }) =>
-      await apiRequest(`/api/systems/task-templates/${id}`, "PATCH", data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/systems/task-templates"] });
-      toast({
-        title: "Template updated",
-        description: "The task template has been updated successfully.",
-      });
-      handleCloseDialog();
-    },
-    onError: () =>
-      toast({
-        title: "Error",
-        description: "Failed to update task template.",
-        variant: "destructive",
-      }),
-  });
-
-  const deleteMutation = useMutation({
-    mutationFn: async (id: string) => await apiRequest(`/api/systems/task-templates/${id}`, "DELETE"),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/systems/task-templates"] });
-      toast({
-        title: "Template deleted",
-        description: "The task template has been deleted successfully.",
-      });
-    },
-    onError: () =>
-      toast({
-        title: "Error",
-        description: "Failed to delete task template.",
-        variant: "destructive",
-      }),
-  });
-
-  const duplicateMutation = useMutation({
-    mutationFn: async (template: TaskTemplate) => {
-      return await apiRequest("/api/systems/task-templates", "POST", {
-        title: `${template.title} (Copy)`,
-        goal: template.goal,
-        description: template.description,
-        categoryId: template.categoryId,
-        statusId: template.statusId,
-        defaultRoleId: template.defaultRoleId,
-        tagIds: template.tagIds,
-        isRecurringTemplate: template.isRecurringTemplate,
-        recurringDays: template.recurringDays,
-        recurringSchedule: template.recurringSchedule,
-        estimatedDuration: template.estimatedDuration,
-        checklist: template.checklist,
-      });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/systems/task-templates"] });
-      toast({
-        title: "Template duplicated",
-        description: "The template has been duplicated successfully.",
-      });
-    },
-    onError: () =>
-      toast({
-        title: "Error",
-        description: "Failed to duplicate template.",
-        variant: "destructive",
-      }),
+    duplicatePayload: (template) => ({
+      title: `${template.title} (Copy)`,
+      goal: template.goal,
+      description: template.description,
+      categoryId: template.categoryId,
+      statusId: template.statusId,
+      defaultRoleId: template.defaultRoleId,
+      tagIds: template.tagIds,
+      isRecurringTemplate: template.isRecurringTemplate,
+      recurringDays: template.recurringDays,
+      recurringSchedule: template.recurringSchedule,
+      estimatedDuration: template.estimatedDuration,
+      checklist: template.checklist,
+    }),
+    onCreateSuccess: () => handleCloseDialog(),
+    onUpdateSuccess: () => handleCloseDialog(),
   });
 
   // Create task from template functionality
@@ -459,7 +361,7 @@ export default function TaskTemplates() {
       <div className="h-9 bg-background flex items-center justify-between px-2 gap-4 flex-shrink-0 border-b border-border">
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2">
-            <ListTodo className="h-4 w-4 text-orange-500" />
+            <ListTodo className="h-4 w-4 text-amber" />
             <span className="text-sm font-semibold text-foreground" data-testid="text-page-title">
               Task Templates
             </span>
@@ -494,19 +396,13 @@ export default function TaskTemplates() {
           />
         </div>
         
-        <Select value={filterCategory} onValueChange={setFilterCategory}>
-          <SelectTrigger className="h-7 w-32 text-xs flex-shrink-0" data-testid="select-filter-category">
-            <SelectValue placeholder="Category" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Categories</SelectItem>
-            {buildCategoryTree().map((cat) => (
-              <SelectItem key={cat.id} value={cat.id}>
-                {"  ".repeat(cat.depth)}{cat.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <CategoryFilterSelect
+          value={filterCategory}
+          onValueChange={setFilterCategory}
+          tree={categoryTree}
+          className="h-7 w-32 text-xs flex-shrink-0"
+          testId="select-filter-category"
+        />
 
         <Select value={filterStatus} onValueChange={setFilterStatus}>
           <SelectTrigger className="h-7 w-28 text-xs flex-shrink-0" data-testid="select-filter-status">
@@ -670,7 +566,7 @@ export default function TaskTemplates() {
                           <Pencil className="h-3 w-3 mr-2" />
                           Edit
                         </DropdownMenuItem>
-                        <DropdownMenuItem onClick={(e) => { e.stopPropagation(); duplicateMutation.mutate(template); }}>
+                        <DropdownMenuItem onClick={(e) => { e.stopPropagation(); duplicateMutation.mutate(template as TaskTemplate & { name: string }); }}>
                           <Copy className="h-3 w-3 mr-2" />
                           Duplicate
                         </DropdownMenuItem>
@@ -731,7 +627,7 @@ export default function TaskTemplates() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="none">No category</SelectItem>
-                    {buildCategoryTree().map((cat) => (
+                    {categoryTree.map((cat) => (
                       <SelectItem key={cat.id} value={cat.id}>
                         <span style={{ paddingLeft: `${cat.depth * 12}px` }}>
                           {cat.depth > 0 ? "└ " : ""}{cat.name}
@@ -968,10 +864,10 @@ export default function TaskTemplates() {
             </Button>
             <Button
               onClick={handleSubmit}
-              disabled={createMutation.isPending || updateMutation.isPending}
+              disabled={isSaving}
               data-testid="button-save-template"
             >
-              {(createMutation.isPending || updateMutation.isPending) && (
+              {isSaving && (
                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
               )}
               {editingTemplate ? "Update Template" : "Create Template"}

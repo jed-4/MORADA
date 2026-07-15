@@ -147,7 +147,7 @@ export function TimeClockWidget() {
         >
           <Clock className="h-5 w-5" />
           {activeTimesheet && (
-            <span className="absolute -top-1 -right-1 h-3 w-3 bg-green-500 rounded-full animate-pulse" />
+            <span className="absolute -top-1 -right-1 h-3 w-3 bg-sage rounded-full animate-pulse" />
           )}
         </Button>
       </PopoverTrigger>
@@ -156,7 +156,7 @@ export function TimeClockWidget() {
           <div className="flex items-center justify-between">
             <h3 className="font-semibold">Time Clock</h3>
             {activeTimesheet && (
-              <Badge variant="outline" className="bg-green-50 text-status-success border-green-200">
+              <Badge variant="outline" className="bg-status-success-bg text-status-success border-status-success/30">
                 Active
               </Badge>
             )}
@@ -227,7 +227,7 @@ export function TimeClockWidget() {
               <Button
                 onClick={handleClockIn}
                 disabled={!selectedProjectId || clockInMutation.isPending}
-                className="w-full bg-green-600 hover:bg-green-700 dark:bg-green-600 dark:hover:bg-green-700 text-white"
+                className="w-full bg-sage hover:bg-sage/90 text-white"
                 data-testid="button-clock-in"
               >
                 <Play className="h-4 w-4 mr-2" />

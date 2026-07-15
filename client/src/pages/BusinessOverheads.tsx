@@ -518,10 +518,10 @@ function RegisterTab({ data, xeroConnected }: { data: OverheadsData; xeroConnect
   const grandAnnual = useMemo(() => data.items.reduce((s, i) => s + toAnnualCents(i), 0), [data.items]);
 
   const FREQ_COLORS: Record<Frequency, string> = {
-    weekly:    "bg-status-info-bg text-status-info dark:text-blue-400",
+    weekly:    "bg-status-info-bg text-status-info",
     monthly:   "bg-primary/10 text-[#8b6db5] dark:text-primary",
-    quarterly: "bg-status-warning-bg text-status-warning dark:text-yellow-400",
-    annual:    "bg-status-success-bg text-status-success dark:text-green-400",
+    quarterly: "bg-status-warning-bg text-status-warning",
+    annual:    "bg-status-success-bg text-status-success",
   };
 
   const commitField = (itemId: string, field: string, rawVal: string) => {
@@ -624,7 +624,7 @@ function RegisterTab({ data, xeroConnected }: { data: OverheadsData; xeroConnect
                 {item.budgetCents > 0
                   ? fmtDollars(item.budgetCents)
                   : item.xeroSynced
-                    ? <span className="text-amber-500 dark:text-amber-400 text-data">Set budget</span>
+                    ? <span className="text-status-warning text-data">Set budget</span>
                     : <span className="text-muted-foreground/40">—</span>}
               </button>
             )}
@@ -674,7 +674,7 @@ function RegisterTab({ data, xeroConnected }: { data: OverheadsData; xeroConnect
           <div className="h-full flex items-center justify-end px-1">
             {item.xeroAccountType ? (
               <Badge className={`text-data no-default-active-elevate ${
-                item.xeroAccountType === "DIRECTCOSTS" ? "bg-status-warning-bg text-status-warning dark:text-orange-400" :
+                item.xeroAccountType === "DIRECTCOSTS" ? "bg-status-warning-bg text-status-warning" :
                 item.xeroAccountType === "OVERHEADS" ? "bg-[#00B9D7]/10 text-[#00B9D7] dark:bg-[#5FD9F0]/15 dark:text-[#5FD9F0]" :
                 "bg-muted text-muted-foreground"
               }`}>{XERO_TYPE_LABELS[item.xeroAccountType] ?? item.xeroAccountType}</Badge>
@@ -857,7 +857,7 @@ function RegisterTab({ data, xeroConnected }: { data: OverheadsData; xeroConnect
                             className="h-6 w-6"
                             onClick={() => editingCatName.trim() && updateCatMut.mutate({ id: cat.id, name: editingCatName.trim() })}
                           >
-                            <Check className="w-3 h-3 text-status-success dark:text-green-400" />
+                            <Check className="w-3 h-3 text-status-success" />
                           </Button>
                           <Button
                             size="icon"
@@ -2303,7 +2303,7 @@ function ForecastTab({ data }: { data: OverheadsData }) {
           return (
             <div key={cat.id} className="flex items-center gap-1.5">
               <span className="text-xs text-muted-foreground">{cat.name}:</span>
-              <Badge variant="secondary" className={`text-data no-default-active-elevate ${rate > 0 ? "text-destructive" : rate < 0 ? "text-status-success dark:text-green-400" : ""}`}>
+              <Badge variant="secondary" className={`text-data no-default-active-elevate ${rate > 0 ? "text-destructive" : rate < 0 ? "text-status-success" : ""}`}>
                 {rate > 0 ? "+" : ""}{(rate * 100).toFixed(1)}% YoY
               </Badge>
             </div>
@@ -2464,7 +2464,7 @@ function OhRecoveryTab({ data }: { data: OverheadsData }) {
 
   // Traffic light: green ≥ 100%, amber 90–100%, red < 90%
   const isAmber = !isCovered && coveragePct >= 90;
-  const trafficColor = isCovered ? "text-status-success dark:text-green-400" : isAmber ? "text-status-warning dark:text-yellow-400" : "text-destructive";
+  const trafficColor = isCovered ? "text-status-success" : isAmber ? "text-status-warning" : "text-destructive";
   const TrafficIcon = isCovered ? CheckCircle2 : AlertTriangle;
 
   // Gap callout: additional revenue needed at current OH% to close the shortfall
@@ -2484,7 +2484,7 @@ function OhRecoveryTab({ data }: { data: OverheadsData }) {
                 <div className="flex items-center gap-1">
                   <Input autoFocus type="number" value={targetOhPct} onChange={e => setTargetOhPct(e.target.value)} className="h-7 w-20 text-xs text-right" />
                   <span className="text-xs text-muted-foreground">%</span>
-                  <Button size="icon" variant="ghost" onClick={() => updateSettingsMut.mutate(targetOhPct)}><Check className="w-3 h-3 text-status-success dark:text-green-400" /></Button>
+                  <Button size="icon" variant="ghost" onClick={() => updateSettingsMut.mutate(targetOhPct)}><Check className="w-3 h-3 text-status-success" /></Button>
                   <Button size="icon" variant="ghost" onClick={() => { setEditingTarget(false); setTargetOhPct(data.settings?.targetOhPercent || "15"); }}><X className="w-3 h-3 text-muted-foreground" /></Button>
                 </div>
               ) : (
@@ -2514,7 +2514,7 @@ function OhRecoveryTab({ data }: { data: OverheadsData }) {
             <div className="flex items-center gap-2">
               <TrafficIcon className={`w-4 h-4 ${trafficColor}`} />
               <CardTitle className="text-sm font-semibold">Coverage Status</CardTitle>
-              <Badge className={`text-data no-default-active-elevate ${isCovered ? "bg-status-success-bg text-status-success dark:text-green-400" : isAmber ? "bg-status-warning-bg text-status-warning dark:text-yellow-400" : "bg-destructive/10 text-destructive"}`}>
+              <Badge className={`text-data no-default-active-elevate ${isCovered ? "bg-status-success-bg text-status-success" : isAmber ? "bg-status-warning-bg text-status-warning" : "bg-destructive/10 text-destructive"}`}>
                 {isCovered ? "Fully Covered" : isAmber ? "Close to Target" : "Under-Recovered"}
               </Badge>
             </div>
@@ -2541,7 +2541,7 @@ function OhRecoveryTab({ data }: { data: OverheadsData }) {
               <p className="text-data text-muted-foreground mt-1">{coveragePct.toFixed(0)}% of breakeven revenue ({fmtDollars(breakevenCents)})</p>
             </div>
             {!isCovered && revenueGapCents > 0 && (
-              <div className={`text-xs font-medium rounded-md px-3 py-2 ${isAmber ? "bg-status-warning-bg text-yellow-800 dark:text-yellow-300" : "bg-destructive/10 text-destructive"}`}>
+              <div className={`text-xs font-medium rounded-md px-3 py-2 ${isAmber ? "bg-status-warning-bg text-status-warning" : "bg-destructive/10 text-destructive"}`}>
                 Need {fmtDollars(revenueGapCents)} more in contracted/pipeline revenue to close the gap at {ohPct}% OH.
               </div>
             )}

@@ -24,7 +24,7 @@ const templateTypes = [
     description: "Create reusable note templates with custom fields",
     icon: FileText,
     url: "/note-templates",
-    color: "text-blue-500",
+    color: "text-primary",
     implemented: true,
   },
   {
@@ -33,7 +33,7 @@ const templateTypes = [
     description: "Manage site diary templates for daily construction logs",
     icon: BookOpen,
     url: "/site-diary-templates",
-    color: "text-purple-500",
+    color: "text-primary",
     implemented: true,
   },
   {
@@ -42,7 +42,7 @@ const templateTypes = [
     description: "Build schedule templates for project timelines",
     icon: Clock,
     url: "/schedule-templates",
-    color: "text-green-500",
+    color: "text-sage",
     implemented: true,
   },
   {
@@ -51,7 +51,7 @@ const templateTypes = [
     description: "Manage scope templates with stages and items",
     icon: Layers,
     url: "/scope-templates",
-    color: "text-amber-500",
+    color: "text-amber",
     implemented: true,
   },
   {
@@ -60,7 +60,7 @@ const templateTypes = [
     description: "Create task templates for recurring workflows",
     icon: CheckSquare,
     url: "/task-templates",
-    color: "text-orange-500",
+    color: "text-coral",
     implemented: true,
   },
   {
@@ -69,7 +69,7 @@ const templateTypes = [
     description: "Design take-off templates for quantity surveying",
     icon: Calculator,
     url: "/takeoff-templates",
-    color: "text-cyan-500",
+    color: "text-teal",
     implemented: false,
   },
   {
@@ -78,7 +78,7 @@ const templateTypes = [
     description: "Set up estimate templates with standard line items",
     icon: FileBarChart,
     url: "/estimate-templates",
-    color: "text-indigo-500",
+    color: "text-primary",
     implemented: true,
   },
   {
@@ -87,7 +87,7 @@ const templateTypes = [
     description: "Build RFQ templates for vendor requests",
     icon: FileSearch,
     url: "/rfq-templates",
-    color: "text-pink-500",
+    color: "text-rose-accent",
     implemented: true,
   },
   {
@@ -96,7 +96,7 @@ const templateTypes = [
     description: "Create RFI templates for project clarifications",
     icon: HelpCircle,
     url: "/rfi-templates",
-    color: "text-yellow-500",
+    color: "text-amber",
     implemented: true,
   },
   {
@@ -105,7 +105,7 @@ const templateTypes = [
     description: "Design proposal templates for client submissions",
     icon: File,
     url: "/proposal-templates",
-    color: "text-teal-500",
+    color: "text-teal",
     implemented: false,
   },
   {
@@ -114,7 +114,7 @@ const templateTypes = [
     description: "Manage selection templates for client choices",
     icon: CheckCircle,
     url: "/selection-templates",
-    color: "text-emerald-500",
+    color: "text-sage",
     implemented: true,
   },
   {
@@ -123,7 +123,7 @@ const templateTypes = [
     description: "Set up purchase order templates for procurement",
     icon: Receipt,
     url: "/po-templates",
-    color: "text-rose-500",
+    color: "text-coral",
     implemented: true,
   },
   {
@@ -132,7 +132,7 @@ const templateTypes = [
     description: "Create reusable templates containing checklists and items",
     icon: CheckSquare,
     url: "/checklist-templates",
-    color: "text-violet-500",
+    color: "text-rose-accent",
     implemented: true,
   },
 ];

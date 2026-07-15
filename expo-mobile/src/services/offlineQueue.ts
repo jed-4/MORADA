@@ -1,8 +1,10 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import NetInfo from '@react-native-community/netinfo';
-import { apiRequest, uploadPhoto } from './api';
+import { apiRequest, uploadPhoto, uploadAudio, isPermanentError } from './api';
+import { removeOfflineDiaryEntry } from './diaryOffline';
 
 const QUEUE_KEY = 'buildpro_offline_queue';
+const MAX_RETRIES = 5;
 
 export interface QueuedAction {
   id: string;
@@ -60,27 +62,63 @@ export const isOnline = async (): Promise<boolean> => {
   return !!(state.isConnected && state.isInternetReachable !== false);
 };
 
-const processAction = async (action: QueuedAction): Promise<boolean> => {
+const isLocalUri = (val: unknown): val is string =>
+  typeof val === 'string' && (val.startsWith('file://') || val.startsWith('content://'));
+
+/**
+ * Upload any device-local photo/audio URIs in a diary payload, replacing them
+ * with server object paths. THROWS on upload failure — a local URI must never
+ * be persisted to the server (it can't render on any other device).
+ */
+const uploadDiaryAssets = async (entryData: any): Promise<any> => {
+  const fieldValues = { ...(entryData.fieldValues || {}) };
+  for (const [key, val] of Object.entries(fieldValues)) {
+    if (Array.isArray(val)) {
+      const isVoice = key === '_voiceNotes';
+      fieldValues[key] = await Promise.all(
+        val.map(async (uri: any) => {
+          if (!isLocalUri(uri)) return uri;
+          const { objectPath } = isVoice ? await uploadAudio(uri) : await uploadPhoto(uri);
+          return objectPath;
+        }),
+      );
+    }
+  }
+
+  let overallPhotos = entryData.overallPhotos;
+  if (Array.isArray(overallPhotos)) {
+    overallPhotos = await Promise.all(
+      overallPhotos.map(async (uri: string) => {
+        if (!isLocalUri(uri)) return uri;
+        const { objectPath } = await uploadPhoto(uri);
+        return objectPath;
+      }),
+    );
+  }
+
+  return { ...entryData, fieldValues, overallPhotos };
+};
+
+type ProcessResult = 'success' | 'retry' | 'permanent';
+
+const processAction = async (action: QueuedAction): Promise<ProcessResult> => {
   try {
     switch (action.type) {
       case 'clock-in': {
-        const res = await apiRequest('/api/timesheets/clock-in', 'POST', {
+        await apiRequest('/api/timesheets/clock-in', 'POST', {
           projectId: action.payload.projectId,
           costCodeId: action.payload.costCodeId,
         });
-        if (!res.ok) throw new Error('Clock-in failed');
-        return true;
+        return 'success';
       }
       case 'clock-out': {
-        const res = await apiRequest('/api/timesheets/clock-out', 'POST', {
+        await apiRequest('/api/timesheets/clock-out', 'POST', {
           timesheetId: action.payload.timesheetId,
         });
-        if (!res.ok) throw new Error('Clock-out failed');
-        return true;
+        return 'success';
       }
       case 'log-hours': {
         const res = await apiRequest('/api/timesheets', 'POST', action.payload);
-        if (!res.ok) throw new Error('Log hours failed');
         const created = await res.json();
         if (action.payload.costCodeId && created?.id) {
           await apiRequest(`/api/timesheets/${created.id}/cost-codes`, 'POST', {
@@ -89,82 +127,79 @@ const processAction = async (action: QueuedAction): Promise<boolean> => {
             hourlyRate: action.payload.hourlyRate || '0',
           });
         }
-        return true;
+        return 'success';
       }
       case 'edit-timesheet': {
         const { id, ...data } = action.payload;
-        const res = await apiRequest(`/api/timesheets/${id}`, 'PATCH', data);
-        if (!res.ok) throw new Error('Edit failed');
-        return true;
+        await apiRequest(`/api/timesheets/${id}`, 'PATCH', data);
+        return 'success';
       }
       case 'delete-timesheet': {
-        const res = await apiRequest(`/api/timesheets/${action.payload.id}`, 'DELETE');
-        if (!res.ok) throw new Error('Delete failed');
-        return true;
+        await apiRequest(`/api/timesheets/${action.payload.id}`, 'DELETE');
+        return 'success';
       }
       case 'create-diary-entry': {
-        const { localPhotos, ...entryData } = action.payload;
-        const fieldValues = { ...entryData.fieldValues };
-        for (const [key, val] of Object.entries(fieldValues)) {
-          if (Array.isArray(val)) {
-            const uploaded: string[] = [];
-            for (const uri of val) {
-              if (typeof uri === 'string' && (uri.startsWith('file://') || uri.startsWith('content://'))) {
-                try {
-                  const { objectPath } = await uploadPhoto(uri);
-                  uploaded.push(objectPath);
-                } catch { uploaded.push(uri); }
-              } else { uploaded.push(uri); }
-            }
-            fieldValues[key] = uploaded;
-          }
+        const { localPhotos, _offlineId, _storageKey, ...entryData } = action.payload;
+        const uploaded = await uploadDiaryAssets(entryData);
+        await apiRequest('/api/site-diary-entries', 'POST', uploaded);
+        // Entry is on the server — drop the local offline copy it mirrored.
+        if (_offlineId && _storageKey) {
+          await removeOfflineDiaryEntry(_storageKey, _offlineId);
         }
-        let overallPhotos: string[] = [];
-        if (entryData.overallPhotos?.length) {
-          for (const uri of entryData.overallPhotos) {
-            if (uri.startsWith('file://') || uri.startsWith('content://')) {
-              try { const { objectPath } = await uploadPhoto(uri); overallPhotos.push(objectPath); }
-              catch { overallPhotos.push(uri); }
-            } else { overallPhotos.push(uri); }
-          }
-        }
-        const res = await apiRequest('/api/site-diary-entries', 'POST', { ...entryData, fieldValues, overallPhotos });
-        if (!res.ok) throw new Error('Create diary entry failed');
-        return true;
+        return 'success';
       }
       case 'edit-diary-entry': {
-        const { id, ...data } = action.payload;
-        const res = await apiRequest(`/api/site-diary-entries/${id}`, 'PATCH', data);
-        if (!res.ok) throw new Error('Edit diary entry failed');
-        return true;
+        const { id, _offlineId, _storageKey, ...data } = action.payload;
+        const uploaded = await uploadDiaryAssets(data);
+        await apiRequest(`/api/site-diary-entries/${id}`, 'PATCH', uploaded);
+        if (_offlineId && _storageKey) {
+          await removeOfflineDiaryEntry(_storageKey, _offlineId);
+        }
+        return 'success';
       }
       case 'delete-diary-entry': {
-        const res = await apiRequest(`/api/site-diary-entries/${action.payload.id}`, 'DELETE');
-        if (!res.ok) throw new Error('Delete diary entry failed');
-        return true;
+        await apiRequest(`/api/site-diary-entries/${action.payload.id}`, 'DELETE');
+        return 'success';
       }
       case 'update-checklist-item': {
         const { id, ...data } = action.payload;
-        const res = await apiRequest(`/api/checklist-instance-items/${id}`, 'PATCH', data);
-        if (!res.ok) throw new Error('Update checklist item failed');
-        return true;
+        await apiRequest(`/api/checklist-instance-items/${id}`, 'PATCH', data);
+        return 'success';
       }
       case 'complete-checklist': {
         const { id, ...data } = action.payload;
-        const res = await apiRequest(`/api/checklist-instances/${id}`, 'PATCH', data);
-        if (!res.ok) throw new Error('Complete checklist failed');
-        return true;
+        await apiRequest(`/api/checklist-instances/${id}`, 'PATCH', data);
+        return 'success';
       }
       default:
-        return false;
+        return 'permanent';
     }
   } catch (err) {
     console.warn(`[OfflineQueue] Failed to process action ${action.type}:`, err);
-    return false;
+    if (isPermanentError(err)) {
+      action.error = err instanceof Error ? err.message : 'Rejected by server';
+      return 'permanent';
+    }
+    return 'retry';
   }
 };
 
-export const syncQueue = async (): Promise<{ synced: number; failed: number }> => {
+let syncInFlight: Promise<{ synced: number; failed: number }> | null = null;
+
+/**
+ * Drain the queue. Concurrent calls share one drain (no double-processing —
+ * a duplicate clock-in was previously possible when a NetInfo listener and a
+ * screen-level sync fired together).
+ */
+export const syncQueue = (): Promise<{ synced: number; failed: number }> => {
+  if (syncInFlight) return syncInFlight;
+  syncInFlight = doSyncQueue().finally(() => {
+    syncInFlight = null;
+  });
+  return syncInFlight;
+};
+
+const doSyncQueue = async (): Promise<{ synced: number; failed: number }> => {
   const online = await isOnline();
   if (!online) return { synced: 0, failed: 0 };
 
@@ -176,12 +211,23 @@ export const syncQueue = async (): Promise<{ synced: number; failed: number }> =
   const remaining: QueuedAction[] = [];
 
   for (const action of queue) {
-    const success = await processAction(action);
-    if (success) {
+    if (action.status === 'failed') {
+      // Already exhausted or permanently rejected — keep for user review.
+      remaining.push(action);
+      continue;
+    }
+    const result = await processAction(action);
+    if (result === 'success') {
       synced++;
+    } else if (result === 'permanent') {
+      // Server rejected it — retrying is pointless.
+      action.status = 'failed';
+      action.error = action.error || 'Rejected by server';
+      failed++;
+      remaining.push(action);
     } else {
       action.retryCount++;
-      if (action.retryCount >= 5) {
+      if (action.retryCount >= MAX_RETRIES) {
         action.status = 'failed';
         action.error = 'Max retries exceeded';
         failed++;
@@ -200,6 +246,24 @@ export const clearFailedActions = async (): Promise<void> => {
   const queue = await getQueue();
   const remaining = queue.filter(a => a.status !== 'failed');
   await saveQueue(remaining);
+};
+
+export const getFailedActions = async (): Promise<QueuedAction[]> => {
+  const queue = await getQueue();
+  return queue.filter(a => a.status === 'failed');
+};
+
+/** Re-queue failed actions for another round of retries. */
+export const retryFailedActions = async (): Promise<void> => {
+  const queue = await getQueue();
+  for (const action of queue) {
+    if (action.status === 'failed') {
+      action.status = 'pending';
+      action.retryCount = 0;
+      action.error = undefined;
+    }
+  }
+  await saveQueue(queue);
 };
 
 export const getQueueCount = async (): Promise<number> => {

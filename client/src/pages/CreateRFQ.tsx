@@ -279,7 +279,7 @@ export default function CreateRFQ() {
           {/* Supplier & Dates */}
           <Card className="overflow-hidden">
             <div className="h-8 flex items-center px-3 gap-2 border-b border-border/50 bg-muted/40">
-              <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-sky-400/70" />
+              <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-teal/70" />
               <span className="text-xs font-medium">Suppliers & Dates</span>
             </div>
             <div className="p-3">
@@ -434,7 +434,7 @@ export default function CreateRFQ() {
           <Card className="overflow-hidden">
             <div className="h-8 flex items-center justify-between px-3 gap-2 border-b border-border/50 bg-muted/40">
               <div className="flex items-center gap-2">
-                <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-amber-400/70" />
+                <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-amber/70" />
                 <span className="text-xs font-medium">Line Items</span>
                 {form.items.length > 0 && (
                   <Badge variant="secondary" className="text-xs h-4 px-1.5">{form.items.length}</Badge>
@@ -523,7 +523,7 @@ export default function CreateRFQ() {
           <Card className="overflow-hidden">
             <div className="h-8 flex items-center justify-between px-3 gap-2 border-b border-border/50 bg-muted/40">
               <div className="flex items-center gap-2">
-                <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-blue-400/70" />
+                <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-primary/70" />
                 <span className="text-xs font-medium">Terms & Conditions</span>
               </div>
               <Select value={form.termsTemplateId || "custom"} onValueChange={handleTermsTemplateChange}>
@@ -587,7 +587,7 @@ export default function CreateRFQ() {
           <Card className="overflow-hidden">
             <div className="h-8 flex items-center justify-between px-3 gap-2 border-b border-border/50 bg-muted/40">
               <div className="flex items-center gap-2">
-                <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-amber-400/70" />
+                <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-amber/70" />
                 <span className="text-xs font-medium">Auto Follow-up</span>
               </div>
               <Switch

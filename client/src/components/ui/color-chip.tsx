@@ -32,8 +32,8 @@ const priorityColors: Record<string, string> = {
 
 const roleColors: Record<string, string> = {
   admin: "bg-status-info-bg text-status-info",
-  manager: "bg-indigo-100 text-indigo-700",
-  member: "bg-blue-100 text-status-info",
+  manager: "bg-teal-light text-teal",
+  member: "bg-status-info-bg text-status-info",
   viewer: "bg-muted text-secondary",
 };
 

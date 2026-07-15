@@ -3,8 +3,10 @@
  * legacy rows whose cached values disagree with the current shared pricing
  * formula (shared/pricing.ts).
  *
- * Skips fixed-price lines (qty * unit_cost_ex_tax === 0) — those are PC sums /
- * provisional allowances and the cached value IS the authoritative price.
+ * Skips fixed-price lines (unit_cost_ex_tax === 0, per isFixedPriceLine) — those
+ * are PC sums / provisional allowances and the cached value IS the authoritative
+ * price. A priced line (unitCost > 0) with quantity 0 is NOT fixed-price and
+ * recomputes to $0 — the old `qty * unit === 0` test wrongly preserved those.
  *
  * Usage:
  *   tsx scripts/backfill-estimate-prices.ts            # dry-run (default)
@@ -13,7 +15,7 @@
 import { pool, db } from "../server/db";
 import { estimateItems, estimates } from "../shared/schema";
 import { eq, sql } from "drizzle-orm";
-import { computeEstimateItemPrice, round2 } from "../shared/pricing";
+import { computeEstimateItemPrice, isFixedPriceLine, round2 } from "../shared/pricing";
 
 const APPLY = process.argv.includes("--apply");
 
@@ -63,8 +65,10 @@ async function main() {
     const qty = Number(r.quantity ?? 0);
     const unit = Number(r.unitCostExTax ?? 0);
 
-    // Fixed-price line — skip per task spec.
-    if (qty * unit === 0) {
+    // Fixed-price line (flat PC/PS amount, no per-unit cost) — the cached
+    // price is authoritative. Classified on unitCost ALONE so a zeroed
+    // priced line still recomputes to $0 below.
+    if (isFixedPriceLine(unit)) {
       fixedPriceCount++;
       continue;
     }
@@ -167,7 +171,7 @@ async function main() {
     SELECT COUNT(*)::int AS n
     FROM estimate_items ei
     JOIN estimates e ON e.id = ei.estimate_id
-    WHERE ei.quantity * ei.unit_cost_ex_tax > 0
+    WHERE ei.unit_cost_ex_tax > 0
   `);
   console.log(
     `[backfill] post-apply: ${(after as any).rows?.[0]?.n ?? "?"} non-fixed-price rows total in db`,

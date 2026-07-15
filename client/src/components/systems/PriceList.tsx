@@ -6,14 +6,12 @@ import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { type ColumnDef } from "@tanstack/react-table";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+  DataTable,
+  type DataTableColumnMeta,
+} from "@/components/data-table/DataTable";
+import { EmptyState } from "@/components/EmptyState";
 import {
   Dialog,
   DialogContent,
@@ -177,14 +175,179 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
     return new Intl.NumberFormat("en-AU", { style: "currency", currency: "AUD" }).format(incGst);
   };
 
-  const getMarkup = (cost: string | null, sell: string | null) => {
+  const getMarkup = (cost: string | number | null, sell: string | number | null) => {
     if (!cost || !sell) return "-";
-    const costNum = parseFloat(cost);
-    const sellNum = parseFloat(sell);
+    const costNum = typeof cost === "string" ? parseFloat(cost) : cost;
+    const sellNum = typeof sell === "string" ? parseFloat(sell) : sell;
     if (costNum === 0) return "-";
     const markup = ((sellNum - costNum) / costNum) * 100;
     return `${markup.toFixed(1)}%`;
   };
+
+  const columns = useMemo<ColumnDef<PriceListItem, unknown>[]>(
+    () => [
+      {
+        id: "name",
+        header: "Name",
+        accessorFn: (i) => i.name || "",
+        cell: ({ row }) => <span className="text-xs font-medium">{row.original.name}</span>,
+        size: 180,
+        meta: { defaultWidth: 180, headerLabel: "Name" } satisfies DataTableColumnMeta,
+      },
+      {
+        id: "nickname",
+        header: "Nickname",
+        accessorFn: (i) => i.nickname || "",
+        cell: ({ row }) => (
+          <span className="text-xs text-muted-foreground">{row.original.nickname || "-"}</span>
+        ),
+        size: 110,
+        meta: { defaultWidth: 110, headerLabel: "Nickname" } satisfies DataTableColumnMeta,
+      },
+      {
+        id: "code",
+        header: "Code",
+        accessorFn: (i) => i.code || "",
+        cell: ({ row }) => (
+          <span className="text-xs font-mono">{row.original.code || "-"}</span>
+        ),
+        size: 90,
+        meta: { defaultWidth: 90, headerLabel: "Code" } satisfies DataTableColumnMeta,
+      },
+      {
+        id: "supplier",
+        header: "Supplier",
+        accessorFn: (i) => suppliers.find((s) => s.id === i.supplierId)?.name || "",
+        cell: ({ row }) => (
+          <span className="text-xs">
+            {suppliers.find((s) => s.id === row.original.supplierId)?.name || "-"}
+          </span>
+        ),
+        size: 120,
+        meta: { defaultWidth: 120, headerLabel: "Supplier" } satisfies DataTableColumnMeta,
+      },
+      {
+        id: "unit",
+        header: "Unit",
+        accessorFn: (i) => i.unitType || "",
+        cell: ({ row }) => <span className="text-xs">{row.original.unitType || "-"}</span>,
+        size: 60,
+        meta: { defaultWidth: 60, headerLabel: "Unit" } satisfies DataTableColumnMeta,
+      },
+      {
+        id: "costEx",
+        header: "Cost (ex)",
+        accessorFn: (i) => Number(i.costPrice) || 0,
+        cell: ({ row }) => (
+          <span className="text-xs font-mono">{formatCurrency(row.original.costPrice)}</span>
+        ),
+        size: 90,
+        meta: { defaultWidth: 90, align: "right", headerLabel: "Cost (ex)" } satisfies DataTableColumnMeta,
+      },
+      {
+        id: "costInc",
+        header: "Cost (inc)",
+        accessorFn: (i) => Number(i.costPrice) || 0,
+        cell: ({ row }) => (
+          <span className="text-xs font-mono text-muted-foreground">
+            {formatCurrencyIncGst(row.original.costPrice)}
+          </span>
+        ),
+        size: 90,
+        meta: { defaultWidth: 90, align: "right", headerLabel: "Cost (inc)" } satisfies DataTableColumnMeta,
+      },
+      {
+        id: "sellEx",
+        header: "Sell (ex)",
+        accessorFn: (i) => Number(i.sellPrice) || 0,
+        cell: ({ row }) => (
+          <span className="text-xs font-mono">{formatCurrency(row.original.sellPrice)}</span>
+        ),
+        size: 90,
+        meta: { defaultWidth: 90, align: "right", headerLabel: "Sell (ex)" } satisfies DataTableColumnMeta,
+      },
+      {
+        id: "sellInc",
+        header: "Sell (inc)",
+        accessorFn: (i) => Number(i.sellPrice) || 0,
+        cell: ({ row }) => (
+          <span className="text-xs font-mono text-muted-foreground">
+            {formatCurrencyIncGst(row.original.sellPrice)}
+          </span>
+        ),
+        size: 90,
+        meta: { defaultWidth: 90, align: "right", headerLabel: "Sell (inc)" } satisfies DataTableColumnMeta,
+      },
+      {
+        id: "markup",
+        header: "Markup",
+        accessorFn: (i) => {
+          const cost = Number(i.costPrice);
+          const sell = Number(i.sellPrice);
+          if (!cost || !sell) return -Infinity;
+          return ((sell - cost) / cost) * 100;
+        },
+        cell: ({ row }) => (
+          <span className="text-xs">{getMarkup(row.original.costPrice, row.original.sellPrice)}</span>
+        ),
+        size: 70,
+        meta: { defaultWidth: 70, align: "right", headerLabel: "Markup" } satisfies DataTableColumnMeta,
+      },
+      {
+        id: "status",
+        header: "Status",
+        accessorFn: (i) => (i.isActive ? "Active" : "Inactive"),
+        cell: ({ row }) => (
+          <Badge
+            variant={row.original.isActive ? "outline" : "secondary"}
+            className="h-4 text-label"
+          >
+            {row.original.isActive ? "Active" : "Inactive"}
+          </Badge>
+        ),
+        size: 80,
+        meta: { defaultWidth: 80, headerLabel: "Status" } satisfies DataTableColumnMeta,
+      },
+      {
+        id: "actions",
+        header: "",
+        enableSorting: false,
+        cell: ({ row }) => (
+          <div className="flex items-center justify-center gap-1">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-5 w-5"
+              onClick={() => setEditingItem(row.original)}
+              data-testid={`button-edit-${row.original.id}`}
+            >
+              <Edit className="h-3 w-3" />
+            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-5 w-5">
+                  <Trash2 className="h-3 w-3 text-destructive" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent>
+                <DropdownMenuItem
+                  className="text-destructive"
+                  onClick={() => deleteMutation.mutate(row.original.id)}
+                  data-testid={`button-confirm-delete-${row.original.id}`}
+                >
+                  Confirm Delete
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        ),
+        size: 64,
+        meta: { defaultWidth: 64, align: "center", headerLabel: "Actions" } satisfies DataTableColumnMeta,
+      },
+    ],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [suppliers],
+  );
 
   const groups = useMemo(() => groupedItems(), [groupBy, items, categories, suppliers]);
 
@@ -319,17 +482,18 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
             <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
           </div>
         ) : items.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-64 text-center">
-            <Box className="h-12 w-12 text-muted-foreground mb-4" />
-            <h3 className="text-sm font-medium mb-1">No price list items yet</h3>
-            <p className="text-xs text-muted-foreground mb-4">
-              Add your first item to start building your price list.
-            </p>
-            <Button size="sm" onClick={() => setShowAddModal(true)} data-testid="button-add-first-item">
-              <Plus className="h-3 w-3 mr-1" />
-              Add Item
-            </Button>
-          </div>
+          <EmptyState
+            variant="inline"
+            icon={Box}
+            title="No price list items yet"
+            description="Add your first item to start building your price list."
+            action={{
+              label: "Add Item",
+              icon: Plus,
+              onClick: () => setShowAddModal(true),
+              "data-testid": "button-add-first-item",
+            }}
+          />
         ) : (
           <div className="p-2">
             {groups.map((group) => (
@@ -353,100 +517,14 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
                 )}
 
                 {(groupBy === "none" || expandedGroups.has(group.id)) && (
-                  <Table>
-                    <TableHeader>
-                      <TableRow className="h-7">
-                        <TableHead className="text-data w-[160px]">Name</TableHead>
-                        <TableHead className="text-data w-[100px]">Nickname</TableHead>
-                        <TableHead className="text-data w-[80px]">Code</TableHead>
-                        <TableHead className="text-data w-[100px]">Supplier</TableHead>
-                        <TableHead className="text-data w-[60px]">Unit</TableHead>
-                        <TableHead className="text-data w-[80px] text-right">Cost (ex)</TableHead>
-                        <TableHead className="text-data w-[80px] text-right">Cost (inc)</TableHead>
-                        <TableHead className="text-data w-[80px] text-right">Sell (ex)</TableHead>
-                        <TableHead className="text-data w-[80px] text-right">Sell (inc)</TableHead>
-                        <TableHead className="text-data w-[60px] text-right">Markup</TableHead>
-                        <TableHead className="text-data w-[60px]">Status</TableHead>
-                        <TableHead className="text-data w-[60px]"></TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {group.items.map((item) => {
-                        const supplier = suppliers.find((s) => s.id === item.supplierId);
-                        return (
-                          <TableRow key={item.id} className="h-7" data-testid={`row-item-${item.id}`}>
-                            <TableCell className="text-table font-medium py-1">
-                              {item.name}
-                            </TableCell>
-                            <TableCell className="text-table text-muted-foreground py-1">
-                              {item.nickname || "-"}
-                            </TableCell>
-                            <TableCell className="text-table font-mono py-1">
-                              {item.code || "-"}
-                            </TableCell>
-                            <TableCell className="text-table py-1">
-                              {supplier?.name || "-"}
-                            </TableCell>
-                            <TableCell className="text-table py-1">
-                              {item.unitType || "-"}
-                            </TableCell>
-                            <TableCell className="text-table text-right py-1 font-mono">
-                              {formatCurrency(item.costPrice)}
-                            </TableCell>
-                            <TableCell className="text-table text-right py-1 font-mono text-muted-foreground">
-                              {formatCurrencyIncGst(item.costPrice)}
-                            </TableCell>
-                            <TableCell className="text-table text-right py-1 font-mono">
-                              {formatCurrency(item.sellPrice)}
-                            </TableCell>
-                            <TableCell className="text-table text-right py-1 font-mono text-muted-foreground">
-                              {formatCurrencyIncGst(item.sellPrice)}
-                            </TableCell>
-                            <TableCell className="text-table text-right py-1">
-                              {getMarkup(item.costPrice, item.sellPrice)}
-                            </TableCell>
-                            <TableCell className="py-1">
-                              <Badge
-                                variant={item.isActive ? "outline" : "secondary"}
-                                className="h-4 text-label"
-                              >
-                                {item.isActive ? "Active" : "Inactive"}
-                              </Badge>
-                            </TableCell>
-                            <TableCell className="py-1">
-                              <div className="flex items-center gap-1">
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-5 w-5"
-                                  onClick={() => setEditingItem(item)}
-                                  data-testid={`button-edit-${item.id}`}
-                                >
-                                  <Edit className="h-3 w-3" />
-                                </Button>
-                                <DropdownMenu>
-                                  <DropdownMenuTrigger asChild>
-                                    <Button variant="ghost" size="icon" className="h-5 w-5">
-                                      <Trash2 className="h-3 w-3 text-destructive" />
-                                    </Button>
-                                  </DropdownMenuTrigger>
-                                  <DropdownMenuContent>
-                                    <DropdownMenuItem
-                                      className="text-destructive"
-                                      onClick={() => deleteMutation.mutate(item.id)}
-                                      data-testid={`button-confirm-delete-${item.id}`}
-                                    >
-                                      Confirm Delete
-                                    </DropdownMenuItem>
-                                  </DropdownMenuContent>
-                                </DropdownMenu>
-                              </div>
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })}
-                    </TableBody>
-                  </Table>
+                  <DataTable
+                    data={group.items}
+                    columns={columns}
+                    storageKey="price-list"
+                    rowKey={(item) => `item-${item.id}`}
+                    rowHeight={28}
+                    emptyState={<EmptyState variant="inline" title="No items" />}
+                  />
                 )}
               </div>
             ))}

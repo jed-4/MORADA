@@ -1001,7 +1001,7 @@ export default function BusinessSchedule() {
                   </div>
                   <label className="flex items-center justify-between gap-2 py-1 cursor-pointer">
                     <span className="flex items-center gap-2 text-xs">
-                      <span className="inline-block w-2.5 h-2.5 rounded-sm bg-blue-500" />
+                      <span className="inline-block w-2.5 h-2.5 rounded-sm bg-primary" />
                       Online
                     </span>
                     <Switch
@@ -1012,7 +1012,7 @@ export default function BusinessSchedule() {
                   </label>
                   <label className="flex items-center justify-between gap-2 py-1 cursor-pointer">
                     <span className="flex items-center gap-2 text-xs">
-                      <span className="inline-block w-2.5 h-2.5 rounded-sm border-2 border-dashed border-amber-600" />
+                      <span className="inline-block w-2.5 h-2.5 rounded-sm border-2 border-dashed border-amber" />
                       Offline
                     </span>
                     <Switch
@@ -1268,7 +1268,7 @@ export default function BusinessSchedule() {
                 </div>
                 <label className="flex items-center justify-between gap-2 py-1 cursor-pointer">
                   <span className="flex items-center gap-2 text-xs">
-                    <span className="inline-block w-2.5 h-2.5 rounded-sm bg-blue-500" />
+                    <span className="inline-block w-2.5 h-2.5 rounded-sm bg-primary" />
                     Online
                   </span>
                   <Switch
@@ -1279,7 +1279,7 @@ export default function BusinessSchedule() {
                 </label>
                 <label className="flex items-center justify-between gap-2 py-1 cursor-pointer">
                   <span className="flex items-center gap-2 text-xs">
-                    <span className="inline-block w-2.5 h-2.5 rounded-sm border-2 border-dashed border-amber-600" />
+                    <span className="inline-block w-2.5 h-2.5 rounded-sm border-2 border-dashed border-amber" />
                     Offline
                   </span>
                   <Switch
@@ -1384,7 +1384,7 @@ export default function BusinessSchedule() {
           <Tooltip>
             <TooltipTrigger asChild>
               <div className="flex items-center gap-1.5 cursor-default">
-                <div className="w-5 h-3 rounded-sm bg-blue-500" />
+                <div className="w-5 h-3 rounded-sm bg-primary" />
                 <span className="text-data text-muted-foreground">Online</span>
               </div>
             </TooltipTrigger>
@@ -1395,7 +1395,7 @@ export default function BusinessSchedule() {
           <Tooltip>
             <TooltipTrigger asChild>
               <div className="flex items-center gap-1.5 cursor-default">
-                <div className="w-5 h-3 rounded-sm border-2 border-dashed border-amber-600" />
+                <div className="w-5 h-3 rounded-sm border-2 border-dashed border-amber" />
                 <span className="text-data text-muted-foreground">Offline</span>
               </div>
             </TooltipTrigger>
@@ -1727,7 +1727,7 @@ export default function BusinessSchedule() {
 
               <div className="text-data text-muted-foreground space-y-1 mt-2">
                 {settingsProject.milestoneStartDate && (
-                  <div className="text-emerald-600 dark:text-emerald-400">Build Start: {format(new Date(settingsProject.milestoneStartDate), 'MMM d, yyyy')}{settingsProject.milestoneEndDate ? ` — Build End: ${format(new Date(settingsProject.milestoneEndDate), 'MMM d, yyyy')}` : ''}</div>
+                  <div className="text-status-success">Build Start: {format(new Date(settingsProject.milestoneStartDate), 'MMM d, yyyy')}{settingsProject.milestoneEndDate ? ` — Build End: ${format(new Date(settingsProject.milestoneEndDate), 'MMM d, yyyy')}` : ''}</div>
                 )}
                 {settingsProject.projectStartDate && (
                   <div>Project dates: {format(new Date(settingsProject.projectStartDate), 'MMM d, yyyy')} - {settingsProject.projectEndDate ? format(new Date(settingsProject.projectEndDate), 'MMM d, yyyy') : 'not set'}</div>
@@ -1736,10 +1736,10 @@ export default function BusinessSchedule() {
                   <div>Schedule items: {format(new Date(settingsProject.itemStartDate), 'MMM d, yyyy')} - {format(new Date(settingsProject.itemEndDate!), 'MMM d, yyyy')}</div>
                 )}
                 {settingsProject.dateMode === "milestone" && !settingsProject.milestoneStartDate && (
-                  <div className="text-amber-600">No Build Start marker set. Right-click a task in the schedule to set one.</div>
+                  <div className="text-status-warning">No Build Start marker set. Right-click a task in the schedule to set one.</div>
                 )}
                 {!settingsProject.projectStartDate && !settingsProject.itemStartDate && settingsProject.dateMode !== "custom" && settingsProject.dateMode !== "milestone" && (
-                  <div className="text-amber-600">No dates available. Use custom mode to set dates manually.</div>
+                  <div className="text-status-warning">No dates available. Use custom mode to set dates manually.</div>
                 )}
               </div>
             </div>

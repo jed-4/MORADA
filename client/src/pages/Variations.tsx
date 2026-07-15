@@ -497,7 +497,7 @@ export default function Variations({ embedded }: { embedded?: boolean } = {}) {
               "text-xs font-medium tabular-nums",
               row.original.balanceAmount > 0
                 ? "text-destructive"
-                : "text-emerald-600 dark:text-emerald-400",
+                : "text-status-success",
             )}
             data-testid={`cell-balance-${row.original.id}`}
           >
@@ -748,7 +748,7 @@ export default function Variations({ embedded }: { embedded?: boolean } = {}) {
           <div className="w-px h-3.5 bg-primary/40" />
           <div className="flex items-center gap-1.5" data-testid="text-total-approved">
             <span className="text-muted-foreground">Approved</span>
-            <span className="font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">{formatCurrency(statusTotals.approved)}</span>
+            <span className="font-semibold tabular-nums text-status-success">{formatCurrency(statusTotals.approved)}</span>
           </div>
         </div>
 
@@ -858,7 +858,7 @@ export default function Variations({ embedded }: { embedded?: boolean } = {}) {
             <Button
               size="sm"
               variant="ghost"
-              className="h-7 px-2 text-xs text-emerald-600 dark:text-emerald-400"
+              className="h-7 px-2 text-xs text-status-success"
               onClick={() => bulkStatusMutation.mutate({ ids: [...selectedIds], status: "approved" })}
               disabled={bulkStatusMutation.isPending}
               data-testid="button-bulk-approve"
@@ -880,7 +880,7 @@ export default function Variations({ embedded }: { embedded?: boolean } = {}) {
             <Button
               size="sm"
               variant="ghost"
-              className="h-7 px-2 text-xs text-amber-600 dark:text-amber-400"
+              className="h-7 px-2 text-xs text-status-warning"
               onClick={() => bulkStatusMutation.mutate({ ids: [...selectedIds], status: "pending" })}
               disabled={bulkStatusMutation.isPending}
               data-testid="button-bulk-pending"

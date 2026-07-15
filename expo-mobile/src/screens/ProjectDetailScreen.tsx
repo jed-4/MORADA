@@ -8,9 +8,11 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   useColorScheme,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { apiFetch, apiRequest } from '../services/api';
+import { formatCents } from '../lib/format';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RouteProp } from '@react-navigation/native';
 
@@ -211,11 +213,6 @@ const colors = {
     }
   };
 
-  const formatCurrency = (amount?: number) => {
-    if (!amount) return null;
-    return new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD', maximumFractionDigits: 0 }).format(amount);
-  };
-
   const getTodayStr = () => {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -352,12 +349,13 @@ const colors = {
     }));
     const delta = newStatus === 'completed' ? 1 : -1;
     setChecklistInstances(prev => prev.map(inst => inst.id === item.instanceId ? { ...inst, completedCount: Math.max(0, inst.completedCount + delta) } : inst));
-    apiRequest(`/api/checklist-instance-items/${item.id}`, 'PATCH', { status: newStatus }).catch(() => {
+    apiRequest(`/api/checklist-instance-items/${item.id}`, 'PATCH', { status: newStatus }).catch((err: any) => {
       setChecklistItems(prev => ({
         ...prev,
         [item.instanceId]: (prev[item.instanceId] || []).map(i => i.id === item.id ? { ...i, status: item.status } : i),
       }));
       setChecklistInstances(prev => prev.map(inst => inst.id === item.instanceId ? { ...inst, completedCount: Math.max(0, inst.completedCount - delta) } : inst));
+      Alert.alert('Error', err?.message || 'Failed to update checklist item.');
     });
   };
 
@@ -501,7 +499,7 @@ const colors = {
                   <Ionicons name="cash-outline" size={16} color={colors.secondary} />
                   <View style={styles.infoText}>
                     <Text style={[styles.infoLabel, { color: colors.secondary }]}>Contract Value</Text>
-                    <Text style={[styles.infoValue, { color: colors.text }]}>{formatCurrency(project.contractCost / 100)}</Text>
+                    <Text style={[styles.infoValue, { color: colors.text }]}>{formatCents(project.contractCost)}</Text>
                   </View>
                 </View>
               )}

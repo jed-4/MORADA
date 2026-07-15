@@ -7,9 +7,11 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { Loader2, FileText, CheckCircle2, AlertCircle, XCircle, Building, Clock } from "lucide-react";
+import { Loader2, FileText, CheckCircle2, XCircle, Building, Clock } from "lucide-react";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
+import { PortalLayout } from "@/components/portal/PortalLayout";
+import { PortalLoading, PortalError } from "@/components/portal/PortalStateBoundary";
 import { SignaturePad, type SignatureResult } from "@/components/SignaturePad";
 import type {
   Proposal,
@@ -332,26 +334,15 @@ export default function ProposalPortal() {
   }
 
   if (isLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <Loader2 className="w-8 h-8 animate-spin text-primary" />
-      </div>
-    );
+    return <PortalLoading message="Loading proposal…" />;
   }
 
   if (error || !data) {
     return (
-      <div className="flex items-center justify-center min-h-screen p-4">
-        <Card className="max-w-md w-full">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <AlertCircle className="w-5 h-5 text-destructive" />
-              Unable to load proposal
-            </CardTitle>
-            <CardDescription>{error || "This proposal could not be loaded."}</CardDescription>
-          </CardHeader>
-        </Card>
-      </div>
+      <PortalError
+        title="Unable to load proposal"
+        description={error || "This proposal could not be loaded."}
+      />
     );
   }
 
@@ -366,8 +357,12 @@ export default function ProposalPortal() {
   const isAlreadyDecided = !!existingDecision || decision !== null;
 
   return (
-    <div className="min-h-screen bg-muted/40 py-8 px-4">
-      <div className="max-w-3xl mx-auto space-y-4">
+    <PortalLayout
+      title="Proposal"
+      subtitle={`#${proposal.proposalNumber}`}
+      maxWidth="max-w-3xl"
+    >
+      <div className="space-y-4">
         <Card>
           <CardHeader>
             <div className="flex items-start justify-between gap-3 flex-wrap">
@@ -428,7 +423,7 @@ export default function ProposalPortal() {
               <div className="flex items-center gap-2 text-sm" data-testid="text-portal-decision">
                 {(decision || existingDecision?.status) === "accepted" ? (
                   <>
-                    <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                    <CheckCircle2 className="w-5 h-5 text-status-success" />
                     <span>Accepted by {existingDecision?.signedByName || signerName}</span>
                   </>
                 ) : (
@@ -518,6 +513,6 @@ export default function ProposalPortal() {
           )}
         </Card>
       </div>
-    </div>
+    </PortalLayout>
   );
 }

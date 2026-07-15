@@ -61,7 +61,7 @@ export function TaskTooltip({ content, children, delay = 800 }: TaskTooltipProps
       {children}
       {isVisible && (
         <div
-          className="fixed z-[9999] px-2 py-1 text-data bg-neutral-800 text-white rounded shadow-sm pointer-events-none whitespace-nowrap"
+          className="fixed z-[9999] px-2 py-1 text-data bg-foreground text-background rounded shadow-sm pointer-events-none whitespace-nowrap"
           style={{
             left: position.x,
             top: position.y,

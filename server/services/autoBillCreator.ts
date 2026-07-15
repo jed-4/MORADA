@@ -196,7 +196,7 @@ export class AutoBillCreatorService {
         });
       }
     } else {
-      const billNumber = await storage.getNextBillNumber();
+      const billNumber = await storage.getNextBillNumber(companyId);
 
       const draftBillData: InsertBill = {
         billNumber,

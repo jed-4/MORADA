@@ -53,13 +53,9 @@ import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import type { CostCategory, CostCode } from "@shared/schema";
-import AddCategoryDialog from "@/components/AddCategoryDialog";
-import AddCostCodeDialog from "@/components/AddCostCodeDialog";
+import EntityFormDialog from "@/components/EntityFormDialog";
 import ImportCostCodesDialog from "@/components/ImportCostCodesDialog";
-import MergeCostCodeDialog from "@/components/MergeCostCodeDialog";
-import EditCategoryDialog from "@/components/EditCategoryDialog";
-import MergeCategoryDialog from "@/components/MergeCategoryDialog";
-import EditCostCodeDialog from "@/components/EditCostCodeDialog";
+import MergeEntityDialog from "@/components/MergeEntityDialog";
 import BulkXeroMappingDialog from "@/components/BulkXeroMappingDialog";
 import { EmptyState } from "@/components/EmptyState";
 
@@ -924,28 +920,44 @@ export default function CostCodes() {
         )}
       </div>
 
-      <AddCategoryDialog open={isAddCategoryOpen} onOpenChange={setIsAddCategoryOpen} />
-      <AddCostCodeDialog open={isAddCostCodeOpen} onOpenChange={setIsAddCostCodeOpen} />
+      <EntityFormDialog
+        kind="category"
+        mode="add"
+        open={isAddCategoryOpen}
+        onOpenChange={setIsAddCategoryOpen}
+      />
+      <EntityFormDialog
+        kind="costCode"
+        mode="add"
+        open={isAddCostCodeOpen}
+        onOpenChange={setIsAddCostCodeOpen}
+      />
       <ImportCostCodesDialog open={isImportOpen} onOpenChange={setIsImportOpen} />
-      <MergeCostCodeDialog
+      <MergeEntityDialog
+        kind="costCode"
         open={isMergeOpen}
         onOpenChange={setIsMergeOpen}
-        costCode={selectedCodeForMerge}
+        entity={selectedCodeForMerge}
       />
-      <EditCategoryDialog
+      <EntityFormDialog
+        kind="category"
+        mode="edit"
         open={isEditCategoryOpen}
         onOpenChange={setIsEditCategoryOpen}
-        category={selectedCategoryForEdit}
+        entity={selectedCategoryForEdit}
       />
-      <MergeCategoryDialog
+      <MergeEntityDialog
+        kind="category"
         open={isMergeCategoryOpen}
         onOpenChange={setIsMergeCategoryOpen}
-        category={selectedCategoryForMerge}
+        entity={selectedCategoryForMerge}
       />
-      <EditCostCodeDialog
+      <EntityFormDialog
+        kind="costCode"
+        mode="edit"
         open={isEditCostCodeOpen}
         onOpenChange={setIsEditCostCodeOpen}
-        costCode={selectedCostCodeForEdit}
+        entity={selectedCostCodeForEdit}
       />
       <BulkXeroMappingDialog
         open={isBulkXeroMappingOpen}

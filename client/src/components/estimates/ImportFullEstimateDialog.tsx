@@ -586,13 +586,13 @@ export function ImportFullEstimateDialog({
             </div>
 
             {autoCreatedGroups.length > 0 && (
-              <div className="flex gap-3 p-3 rounded-md bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800">
-                <Info className="h-4 w-4 text-blue-500 shrink-0 mt-0.5" />
-                <div className="text-sm text-status-info dark:text-blue-300">
+              <div className="flex gap-3 p-3 rounded-md bg-status-info-bg border border-status-info/30">
+                <Info className="h-4 w-4 text-status-info shrink-0 mt-0.5" />
+                <div className="text-sm text-status-info">
                   <p className="font-medium mb-1">
                     {autoCreatedGroups.length} section{autoCreatedGroups.length > 1 ? "s" : ""} auto-created
                   </p>
-                  <p className="text-xs text-status-info dark:text-blue-400">
+                  <p className="text-xs text-status-info">
                     These sections had no GROUP row in your file and were created automatically so their items weren't lost:{" "}
                     <span className="font-medium">{autoCreatedGroups.join(", ")}</span>
                   </p>

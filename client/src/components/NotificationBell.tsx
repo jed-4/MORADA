@@ -252,8 +252,8 @@ export function NotificationBell() {
           <Bell className="h-3.5 w-3.5" />
           {totalCount > 0 && (
             <span className="absolute -top-0.5 -right-0.5 flex h-3.5 w-3.5">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
-              <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-red-500 items-center justify-center text-label font-bold text-white">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-coral opacity-75" />
+              <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-coral items-center justify-center text-label font-bold text-white">
                 {totalCount > 9 ? "9+" : totalCount}
               </span>
             </span>
@@ -412,7 +412,7 @@ export function NotificationBell() {
                       (timeStatus as any).isSnoozed ? "bg-status-warning-bg" : "bg-primary/10"
                     }`}>
                       {(timeStatus as any).isSnoozed ? (
-                        <AlarmClockOff className="h-4 w-4 text-orange-500" />
+                        <AlarmClockOff className="h-4 w-4 text-status-warning" />
                       ) : (
                         <TypeIcon className={`h-4 w-4 ${timeStatus.isOverdue ? "text-destructive" : "text-primary"}`} />
                       )}

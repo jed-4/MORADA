@@ -289,7 +289,7 @@ export default function UserReminders({ user, isOwnPage }: UserRemindersProps) {
     if (reminder.status === "snoozed" && reminder.snoozedUntil) {
       return { 
         label: `Snoozed until ${formatDateTimeInTimezone(new Date(reminder.snoozedUntil), effectiveTimezone)}`, 
-        color: "text-orange-500" 
+        color: "text-status-warning"
       };
     }
     
@@ -416,7 +416,7 @@ export default function UserReminders({ user, isOwnPage }: UserRemindersProps) {
                         isDismissed ? "bg-muted" : isSnoozed ? "bg-status-warning-bg" : "bg-primary/10"
                       }`}>
                         {isSnoozed ? (
-                          <AlarmClockOff className="h-3 w-3 text-orange-500" />
+                          <AlarmClockOff className="h-3 w-3 text-status-warning" />
                         ) : (
                           <TypeIcon className={`h-3 w-3 ${isDismissed ? "text-muted-foreground" : "text-primary"}`} />
                         )}
@@ -507,7 +507,7 @@ export default function UserReminders({ user, isOwnPage }: UserRemindersProps) {
                       </Badge>
                     )}
                     {isSnoozed && (
-                      <Badge variant="outline" className="h-4 px-1.5 text-data text-orange-500 border-orange-500/30">
+                      <Badge variant="outline" className="h-4 px-1.5 text-data text-status-warning border-status-warning/30">
                         <AlarmClockOff className="h-2.5 w-2.5 mr-0.5" />
                         Snoozed
                       </Badge>

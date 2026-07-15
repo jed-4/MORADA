@@ -2,6 +2,7 @@ import { useParams } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { computeMoveCascade } from "@/lib/scheduleCascade";
+import * as workingDaysLib from "@/lib/workingDays";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -1450,65 +1451,29 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
     return '#9ca3af';
   };
 
+  // Working-day math is shared with Schedule.tsx and scheduleCascade.ts —
+  // see client/src/lib/workingDays.ts. This page's calendar includes both the
+  // weekend flags AND the company holiday / non-working day list.
+
   // Check if a date is a non-working day (weekend or company holiday)
-  const isNonWorkingDay = (date: Date): boolean => {
-    const day = getDay(date); // 0 = Sunday, 6 = Saturday
-    if (day === 0 && !schedule?.includeSunday) return true;
-    if (day === 6 && !schedule?.includeSaturday) return true;
-    if (nonWorkingDays.length > 0) {
-      const dateStr = format(date, 'yyyy-MM-dd');
-      if (nonWorkingDays.some(nwd => {
-        const nwdStr = format(new Date(nwd.date), 'yyyy-MM-dd');
-        return nwdStr === dateStr;
-      })) return true;
-    }
-    return false;
-  };
+  const isNonWorkingDay = (date: Date): boolean =>
+    workingDaysLib.isNonWorkingDay(date, {
+      includeSaturday: schedule?.includeSaturday,
+      includeSunday: schedule?.includeSunday,
+      holidays: nonWorkingDays,
+    });
 
   // Snap a date to the nearest working day in the given direction
-  const snapToWorkingDay = (date: Date, direction: 'forward' | 'backward' = 'forward'): Date => {
-    let d = new Date(date);
-    const step = direction === 'forward' ? 1 : -1;
-    let maxIterations = 7;
-    while (isNonWorkingDay(d) && maxIterations > 0) {
-      d = addDays(d, step);
-      maxIterations--;
-    }
-    return d;
-  };
+  const snapToWorkingDay = (date: Date, direction: 'forward' | 'backward' = 'forward'): Date =>
+    workingDaysLib.snapToWorkingDay(date, direction, isNonWorkingDay, 7);
 
   // Count working days between two dates (inclusive of start, exclusive of end)
-  const countWorkingDays = (start: Date, end: Date): number => {
-    let count = 0;
-    const s = new Date(start);
-    const e = new Date(end);
-    const forward = s <= e;
-    let current = new Date(s);
-    if (forward) {
-      while (current < e) {
-        if (!isNonWorkingDay(current)) count++;
-        current = addDays(current, 1);
-      }
-    } else {
-      while (current > e) {
-        current = addDays(current, -1);
-        if (!isNonWorkingDay(current)) count++;
-      }
-    }
-    return count;
-  };
+  const countWorkingDays = (start: Date, end: Date): number =>
+    workingDaysLib.countWorkingDays(start, end, isNonWorkingDay);
 
   // Add N working days from a date (skipping non-working days)
-  const addWorkingDays = (date: Date, days: number): Date => {
-    let d = new Date(date);
-    let remaining = Math.abs(days);
-    const step = days >= 0 ? 1 : -1;
-    while (remaining > 0) {
-      d = addDays(d, step);
-      if (!isNonWorkingDay(d)) remaining--;
-    }
-    return d;
-  };
+  const addWorkingDays = (date: Date, days: number): Date =>
+    workingDaysLib.addWorkingDays(date, days, isNonWorkingDay);
 
   // Bar click handler - open modal (but not if a drag just happened)
   const clickTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -2633,9 +2598,9 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
   return (
     <div className="flex flex-col h-full bg-background">
       {pendingPredecessor !== null && (
-        <div className="flex items-center justify-between px-3 py-1.5 bg-blue-50 dark:bg-blue-950 border-b border-blue-200 dark:border-blue-800 text-sm">
-          <span className="text-status-info dark:text-blue-300">Click a bar to link it as a predecessor (it must finish before this item starts). Press Escape to cancel.</span>
-          <button onClick={() => setPendingPredecessor(null)} className="text-blue-500 hover:text-status-info">
+        <div className="flex items-center justify-between px-3 py-1.5 bg-status-info-bg border-b border-status-info/30 text-sm">
+          <span className="text-status-info">Click a bar to link it as a predecessor (it must finish before this item starts). Press Escape to cancel.</span>
+          <button onClick={() => setPendingPredecessor(null)} className="text-status-info/70 hover:text-status-info">
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -2819,7 +2784,7 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
                 <div
                   key={item.id}
                   ref={(el) => registerRowRef(item.id, el)}
-                  className={`h-8 flex items-center px-2 hover:bg-muted dark:hover:bg-gray-800 cursor-pointer group border-b border-border ${nestHighlightId === item.id ? 'ring-2 ring-inset ring-primary bg-primary/10' : ''} ${rowDragItemId === item.id ? 'opacity-30' : ''}`}
+                  className={`h-8 flex items-center px-2 hover:bg-muted cursor-pointer group border-b border-border ${nestHighlightId === item.id ? 'ring-2 ring-inset ring-primary bg-primary/10' : ''} ${rowDragItemId === item.id ? 'opacity-30' : ''}`}
                   onClick={(e) => handleRowClick(e, item)}
                   data-testid={`row-${isParent ? 'parent' : 'child'}-${item.id}`}
                 >
@@ -3448,7 +3413,7 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
                         className={`absolute inset-0 rounded-sm flex items-center cursor-move transition-shadow z-10 group/bar overflow-hidden
                           ${dragging?.id === item.id ? 'shadow-lg ring-2 ring-primary' : 'hover:shadow-md'}
                           ${(dragging?.type === 'dependency' || pendingPredecessor !== null) && hoveredBar === item.id && item.id !== (dragging?.id ?? pendingPredecessor) ? 'ring-2 ring-primary shadow-lg' : ''}
-                          ${pendingPredecessor === item.id ? 'ring-2 ring-blue-500 shadow-md' : ''}
+                          ${pendingPredecessor === item.id ? 'ring-2 ring-ring shadow-md' : ''}
                         `}
                         style={{
                           backgroundColor: barColor,
@@ -3587,7 +3552,7 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
                       const blWidth = blDuration * pixelsPerDay;
                       return (
                         <div
-                          className="absolute h-2 rounded-sm border border-dashed border-purple-400/60 bg-purple-200/30 dark:bg-purple-800/20 pointer-events-none z-5"
+                          className="absolute h-2 rounded-sm border border-dashed border-primary/60 bg-primary/15 pointer-events-none z-5"
                           style={{
                             left: `${blStart}px`,
                             width: `${blWidth}px`,
@@ -4339,7 +4304,7 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
               
               {contextMenu.item.dependencies && contextMenu.item.dependencies.length > 0 && (
                 <button
-                  className="relative flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground w-full text-left text-status-warning dark:text-orange-400"
+                  className="relative flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground w-full text-left text-status-warning"
                   onClick={() => {
                     const deps = contextMenu.item.dependencies as Array<{ id: string }>;
                     deps.forEach((dep) => {

@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   RefreshControl,
   useColorScheme,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../contexts/AuthContext';
@@ -195,8 +196,10 @@ const colors = {
     setItems(prev => prev.map(i => (i.id === item.id ? { ...i, isCompleted: newVal } : i)));
     try {
       await apiRequest(`/api/scope/${item.id}`, 'PATCH', { isCompleted: newVal });
-    } catch {
+    } catch (err: any) {
+      // Roll back the optimistic update (network failure or server rejection)
       setItems(prev => prev.map(i => (i.id === item.id ? { ...i, isCompleted: item.isCompleted } : i)));
+      Alert.alert('Error', err?.message || 'Failed to update scope item.');
     }
   };
 
@@ -222,8 +225,8 @@ const colors = {
         isCompleted: newVal,
         completedAt: newVal ? new Date().toISOString() : null,
       });
-    } catch {
-      // Rollback both stage and items
+    } catch (err: any) {
+      // Rollback both stage and items (network failure or server rejection)
       setStages(prev => prev.map(s => (s.id === stage.id ? { ...s, isCompleted: stage.isCompleted } : s)));
       setItems(prev =>
         prev.map(item =>
@@ -236,6 +239,7 @@ const colors = {
       } else {
         setCollapsedStages(prev => new Set([...prev, stage.id]));
       }
+      Alert.alert('Error', err?.message || 'Failed to update stage.');
     }
   };
 
@@ -246,6 +250,9 @@ const colors = {
     return {
       stage,
       allItemCount: stageItems.length,
+      // Numerator computed from the SAME filtered list as the denominator so
+      // hidden/child items can't push the count above the total (e.g. "3/2").
+      completedCount: stageItems.filter(i => i.isCompleted).length,
       // Show no items if collapsed (but keep section header visible)
       data: collapsedStages.has(stage.id) ? [] : stageItems,
     };
@@ -279,7 +286,6 @@ const colors = {
         contentContainerStyle={styles.listContent}
         renderSectionHeader={({ section }) => {
           const isCollapsed = collapsedStages.has(section.stage.id);
-          const completedCount = items.filter(i => i.stage === section.stage.name && i.isCompleted).length;
           return (
             <TouchableOpacity
               activeOpacity={0.8}
@@ -321,7 +327,7 @@ const colors = {
                   {section.stage.name}
                 </Text>
                 <Text style={[styles.stageCount, { color: colors.secondary }]}>
-                  {completedCount}/{section.allItemCount}
+                  {section.completedCount}/{section.allItemCount}
                 </Text>
                 <Ionicons
                   name={isCollapsed ? "chevron-forward" : "chevron-down"}

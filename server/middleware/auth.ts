@@ -153,12 +153,19 @@ export function requirePermission(permissionKey: string, action: 'view' | 'add' 
         return;
       }
 
-      // Get role permissions
-      const rolePermissions = await storage.getRolePermissions(req.user.roleId);
-      
+      // Get role permissions + the permission catalogue in one round trip each.
+      // Looking each permission up individually inside the loop below was an N+1:
+      // one DB round trip per permission on the role (59 for an admin), on every
+      // permission-gated request.
+      const [rolePermissions, allPermissions] = await Promise.all([
+        storage.getRolePermissions(req.user.roleId),
+        storage.getPermissions(),
+      ]);
+      const permById = new Map(allPermissions.map((p) => [p.id, p]));
+
       // Find the specific permission
       for (const rp of rolePermissions) {
-        const permission = await storage.getPermission(rp.permissionId);
+        const permission = permById.get(rp.permissionId);
         if (permission && permission.key === permissionKey) {
           // Type-safe check for allowed actions
           const allowedActions = Array.isArray(rp.allowedActions) ? rp.allowedActions as string[] : [];

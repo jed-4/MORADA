@@ -170,10 +170,10 @@ export default function ChecklistTemplates() {
 
   const getTypeColor = (type: string) => {
     switch (type) {
-      case "Task": return "bg-status-info-bg text-status-info dark:text-blue-400";
-      case "Job": return "bg-status-success-bg text-status-success dark:text-green-400";
-      case "Estimation": return "bg-purple-500/10 text-purple-700 dark:text-purple-400";
-      case "Lead": return "bg-status-warning-bg text-status-warning dark:text-orange-400";
+      case "Task": return "bg-status-info-bg text-status-info";
+      case "Job": return "bg-status-success-bg text-status-success";
+      case "Estimation": return "bg-primary/10 text-primary";
+      case "Lead": return "bg-status-warning-bg text-status-warning";
       default: return "bg-muted text-secondary dark:text-muted";
     }
   };

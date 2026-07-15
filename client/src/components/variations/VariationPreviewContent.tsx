@@ -126,7 +126,7 @@ function SignatureCard({
         {signedName && signedDate ? (
           <div className="space-y-1">
             <div className="flex items-center gap-1.5">
-              <CheckCircle className="w-4 h-4 text-green-500" />
+              <CheckCircle className="w-4 h-4 text-status-success" />
               <span className="text-sm font-medium text-foreground">{signedName}</span>
             </div>
             <p className="text-xs text-muted ml-5.5">
@@ -197,7 +197,7 @@ function SignatureCard({
           <div className="flex gap-2">
             <Button
               size="sm"
-              className="flex-1 bg-green-600 hover:bg-green-700 text-white"
+              className="flex-1 bg-sage hover:bg-sage/90 text-white"
               disabled={!name.trim() || loading}
               onClick={() => onSign?.(name.trim())}
             >

@@ -3,6 +3,7 @@ import { Link, useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { useProject } from "@/contexts/ProjectContext";
 import { useAuth } from "@/hooks/use-auth";
+import { useClientPortal } from "@/hooks/use-client-portal";
 import { Project, User } from "@shared/schema";
 import { cn } from "@/lib/utils";
 import {
@@ -442,6 +443,12 @@ function useIsMobile() {
 export function SidebarNav() {
   const [location, navigate] = useLocation();
   const isMobile = useIsMobile();
+  const { isClient, canSeeSidebarItem } = useClientPortal();
+  // Clients get no company-wide "Resources" library — only their project.
+  const visibleSectionOrder = useMemo(
+    () => (isClient ? sectionOrder.filter((s) => s === "projects") : sectionOrder),
+    [isClient],
+  );
   const [activeSection, setActiveSection] = useState<SectionId | null>(() => {
     // If loading on a business route, default to business mode regardless of pinned state.
     if (typeof window !== "undefined" && window.location.pathname.startsWith('/business')) {
@@ -778,7 +785,7 @@ export function SidebarNav() {
                   "hover-elevate active-elevate-2",
                   isFavoritesOpen
                     ? "bg-primary text-primary-foreground"
-                    : "text-yellow-500 hover:text-yellow-400"
+                    : "text-amber hover:text-amber/80"
                 )}
                 data-testid="rail-favorites"
               >
@@ -815,7 +822,9 @@ export function SidebarNav() {
 
         {/* Business Mode — sits between User Sidebar and the Project section
             icons, with dividers above (from the user-block's border-b) and
-            below (this block's own border-b). */}
+            below (this block's own border-b). Builder-only: clients have no
+            business-level access. */}
+        {!isClient && (
         <div className="flex flex-col items-center py-2 gap-0.5 border-b border-border/50 mx-1">
           <Tooltip delayDuration={0}>
             <TooltipTrigger asChild>
@@ -848,10 +857,11 @@ export function SidebarNav() {
             </TooltipContent>
           </Tooltip>
         </div>
+        )}
 
         {/* Section Icons */}
         <div className="flex-1 flex flex-col py-1 gap-0.5">
-          {sectionOrder.map((sectionId) => {
+          {visibleSectionOrder.map((sectionId) => {
             const isActive = activeSection === sectionId;
             const isProjects = sectionId === "projects";
             const section = isProjects ? null : dynamicSections[sectionId as Exclude<SectionId, "projects" | "business">];
@@ -882,7 +892,8 @@ export function SidebarNav() {
             );
           })}
           
-          {/* Operations - right below Resources */}
+          {/* Operations - right below Resources. Builder-only. */}
+          {!isClient && (
           <Tooltip delayDuration={0}>
             <TooltipTrigger asChild>
               <Link href="/systems">
@@ -904,9 +915,11 @@ export function SidebarNav() {
               Operations
             </TooltipContent>
           </Tooltip>
+          )}
         </div>
-        
-        {/* Contacts */}
+
+        {/* Contacts — builder-only (the company's whole contact book). */}
+        {!isClient && (
         <div className="pb-0.5">
           <Tooltip delayDuration={0}>
             <TooltipTrigger asChild>
@@ -930,7 +943,9 @@ export function SidebarNav() {
             </TooltipContent>
           </Tooltip>
         </div>
-        {/* Settings at bottom */}
+        )}
+        {/* Settings at bottom — company settings, builder-only. */}
+        {!isClient && (
         <div className="pb-1">
           <Tooltip delayDuration={0}>
             <TooltipTrigger asChild>
@@ -954,6 +969,7 @@ export function SidebarNav() {
             </TooltipContent>
           </Tooltip>
         </div>
+        )}
       </div>
 
       {/* Drawer - Side panel on desktop, bottom sheet on mobile */}
@@ -1104,6 +1120,9 @@ export function SidebarNav() {
                     {projectFlatOrder.map(({ section: sectionId, title }) => {
                       const item = dynamicSections[sectionId].items.find(i => i.title === title);
                       if (!item) return null;
+                      // Clients only see sections their role has view permission
+                      // for — nothing renders for the rest, not even disabled.
+                      if (!canSeeSidebarItem(title)) return null;
                       const url = getItemUrl(sectionId, item);
                       // Overview (empty baseUrl) must match exactly so it doesn't
                       // light up on every project subpage. Other items match nested
@@ -1137,8 +1156,8 @@ export function SidebarNav() {
                             className={cn(
                               "p-1 rounded transition-opacity",
                               itemIsFavorite
-                                ? "text-yellow-500 opacity-100"
-                                : "text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-yellow-500"
+                                ? "text-amber opacity-100"
+                                : "text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-amber"
                             )}
                           >
                             <Star className={cn("h-3 w-3", itemIsFavorite && "fill-current")} />
@@ -1212,8 +1231,8 @@ export function SidebarNav() {
                             className={cn(
                               "p-1 rounded transition-opacity",
                               itemIsFavorite 
-                                ? "text-yellow-500 opacity-100" 
-                                : "text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-yellow-500"
+                                ? "text-amber opacity-100" 
+                                : "text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-amber"
                             )}
                             data-testid={`favorite-${item.title.toLowerCase().replace(/\s+/g, '-')}`}
                           >
@@ -1314,7 +1333,7 @@ export function SidebarNav() {
                                 </button>
                                 <button
                                   onClick={() => toggleFavorite("user", { title: fav.title, url: fav.url, icon: IconComponent }, fav.iconName, fav.fullUrl, fav.projectId)}
-                                  className="p-1 rounded text-yellow-500 opacity-0 group-hover:opacity-100 hover:text-red-500 transition-opacity"
+                                  className="p-1 rounded text-amber opacity-0 group-hover:opacity-100 hover:text-destructive transition-opacity"
                                 >
                                   <Star className="h-3 w-3 fill-current" />
                                 </button>
@@ -1432,7 +1451,7 @@ export function SidebarNav() {
                                 </button>
                                 <button
                                   onClick={() => toggleFavorite(sectionId, { title: fav.title, url: fav.url, icon: IconComponent }, fav.iconName, fav.fullUrl, fav.projectId)}
-                                  className="p-1 rounded text-yellow-500 opacity-0 group-hover:opacity-100 hover:text-red-500 transition-opacity"
+                                  className="p-1 rounded text-amber opacity-0 group-hover:opacity-100 hover:text-destructive transition-opacity"
                                 >
                                   <Star className="h-3 w-3 fill-current" />
                                 </button>

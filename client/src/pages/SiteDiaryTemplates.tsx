@@ -544,14 +544,14 @@ export default function SiteDiaryTemplates() {
                 isDragging
                   ? "border-primary bg-primary/5"
                   : selectedFile
-                  ? "border-green-500 bg-green-500/5"
+                  ? "border-sage bg-sage/5"
                   : "border-muted-foreground/25 hover:border-muted-foreground/50"
               }`}
               data-testid="dropzone-file-upload"
             >
               {selectedFile ? (
                 <div className="flex flex-col items-center gap-2">
-                  <FileSpreadsheet className="h-10 w-10 text-green-500" />
+                  <FileSpreadsheet className="h-10 w-10 text-status-success" />
                   <p className="font-medium">{selectedFile.name}</p>
                   <p className="text-sm text-muted-foreground">
                     {(selectedFile.size / 1024).toFixed(1)} KB

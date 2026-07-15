@@ -156,9 +156,9 @@ const fmt = (n: number) =>
 
 const allowanceChipClass = (a?: string) =>
   a === "Prime Cost"
-    ? "bg-blue-100 text-status-info dark:bg-blue-900/30 dark:text-blue-400 border-blue-200 dark:border-blue-800"
+    ? "bg-status-info-bg text-status-info border-status-info/30"
     : a === "Provisional Sum"
-    ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 border-amber-200 dark:border-amber-800"
+    ? "bg-status-warning-bg text-status-warning border-status-warning/30"
     : "text-muted-foreground";
 
 // ─── Empty-item factory ───────────────────────────────────────────────────────

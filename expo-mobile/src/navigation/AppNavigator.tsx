@@ -1,10 +1,12 @@
 import { useState, useRef, useEffect } from 'react';
-import { NavigationContainer } from '@react-navigation/native';
+import { NavigationContainer, StackActions } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
-import { useColorScheme } from 'react-native';
+import { ActivityIndicator, StyleSheet, View, useColorScheme } from 'react-native';
 import * as Notifications from 'expo-notifications';
+import { usePolling } from '../lib/usePolling';
+import { haptic } from '../lib/haptics';
 import MorePanel from '../components/MorePanel';
 import { apiFetch } from '../services/api';
 import { navigationRef, navigateFromPush } from './navigationRef';
@@ -29,7 +31,6 @@ import ScheduleScreen from '../screens/ScheduleScreen';
 import CalendarScreen from '../screens/CalendarScreen';
 import ChecklistsScreen from '../screens/ChecklistsScreen';
 import ScopeScreen from '../screens/ScopeScreen';
-import MoreScreen from '../screens/MoreScreen';
 import NotesListScreen from '../screens/NotesListScreen';
 import NoteEditorScreen from '../screens/NoteEditorScreen';
 import SettingsScreen from '../screens/SettingsScreen';
@@ -40,6 +41,17 @@ import ReceiptCaptureScreen from '../screens/ReceiptCaptureScreen';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
+
+// Re-pressing the focused tab pops its nested stack back to the root with the
+// native back (slide-right) animation, instead of re-navigating forward.
+const popToTopOnRepress = ({ navigation, route }: any) => ({
+  tabPress: () => {
+    const nestedState = route.state as { key?: string; index?: number } | undefined;
+    if (navigation.isFocused() && nestedState?.key && (nestedState.index ?? 0) > 0) {
+      navigation.dispatch({ ...StackActions.popToTop(), target: nestedState.key });
+    }
+  },
+});
 
 function WorkspaceStack() {
   const theme = useTheme();
@@ -137,6 +149,9 @@ function MoreStack() {
 
   return (
     <Stack.Navigator
+      // The More tab press is intercepted to toggle MorePanel, so this stack is
+      // only entered via navigate('More', { screen }); Settings is a safety net.
+      initialRouteName="Settings"
       screenOptions={{
         headerShown: false,
         headerStyle: { backgroundColor: theme.card },
@@ -146,7 +161,6 @@ function MoreStack() {
         headerBackButtonDisplayMode: 'minimal',
       }}
     >
-      <Stack.Screen name="MoreHome" component={MoreScreen} />
       <Stack.Screen name="SiteDiaryList" component={SiteDiaryListScreen} />
       <Stack.Screen name="Schedule" component={ScheduleScreen} options={{ headerShown: true, title: 'Schedule' }} />
       <Stack.Screen name="Checklists" component={ChecklistsScreen} options={{ headerShown: true, title: 'Checklists' }} />
@@ -163,46 +177,34 @@ function MoreStack() {
 function MainTabs() {
   const theme = useTheme();
   const [moreVisible, setMoreVisible] = useState(false);
+  const [moreNonce, setMoreNonce] = useState(0);
   const tabNavRef = useRef<any>(null);
   const [messagesUnread, setMessagesUnread] = useState(0);
 
-  useEffect(() => {
-    const fetchUnread = async () => {
-      try {
-        const counts = await apiFetch<Record<string, number>>('/api/channels/unread/counts');
-        const total = Object.values(counts || {}).reduce((s, n) => s + n, 0);
-        setMessagesUnread(total);
-      } catch {
-        // silently fail
-      }
-    };
-    fetchUnread();
-    const interval = setInterval(fetchUnread, 10000);
-    return () => clearInterval(interval);
-  }, []);
+  usePolling(async () => {
+    const counts = await apiFetch<Record<string, number>>('/api/channels/unread/counts');
+    const total = Object.values(counts || {}).reduce((s, n) => s + n, 0);
+    setMessagesUnread(total);
+  }, 15000);
 
-  // Push notification handling: keep the app icon badge synced with the unread
-  // count, and route notification taps to the right screen.
+  // Keep the app icon badge synced with the unread count (paused while
+  // backgrounded — pushes update the badge natively when the app is closed).
+  const syncBadge = async () => {
+    const { count } = await apiFetch<{ count: number }>('/api/notifications/unread-count');
+    await setAppBadgeCount(count || 0);
+  };
+  usePolling(syncBadge, 60000);
+
+  // Route notification taps to the right screen.
   useEffect(() => {
     let cancelled = false;
 
-    const syncBadge = async () => {
-      try {
-        const { count } = await apiFetch<{ count: number }>('/api/notifications/unread-count');
-        if (!cancelled) await setAppBadgeCount(count || 0);
-      } catch {
-        // silently fail
-      }
-    };
-    syncBadge();
-    const badgeInterval = setInterval(syncBadge, 30000);
-
     const receivedSub = Notifications.addNotificationReceivedListener(() => {
-      syncBadge();
+      syncBadge().catch(() => {});
     });
     const responseSub = Notifications.addNotificationResponseReceivedListener((response) => {
       navigateFromPush(response?.notification?.request?.content?.data as any);
-      syncBadge();
+      syncBadge().catch(() => {});
     });
 
     // Cold start: app launched by tapping a notification banner.
@@ -217,7 +219,6 @@ function MainTabs() {
 
     return () => {
       cancelled = true;
-      clearInterval(badgeInterval);
       receivedSub.remove();
       responseSub.remove();
     };
@@ -234,6 +235,9 @@ function MainTabs() {
   return (
     <>
       <Tab.Navigator
+        screenListeners={{
+          tabPress: () => haptic.select(),
+        }}
         screenOptions={({ route }) => ({
           tabBarIcon: ({ focused, color, size }) => {
             let iconName: keyof typeof Ionicons.glyphMap = 'home';
@@ -242,28 +246,51 @@ function MainTabs() {
             else if (route.name === 'Messages') iconName = focused ? 'chatbubbles' : 'chatbubbles-outline';
             else if (route.name === 'Calendar') iconName = focused ? 'calendar' : 'calendar-outline';
             else if (route.name === 'More') iconName = moreVisible ? 'grid' : 'grid-outline';
-            return <Ionicons name={iconName} size={size} color={color} />;
+            // Soft plum pill behind the active tab's icon.
+            return (
+              <View
+                style={{
+                  width: 52,
+                  height: 28,
+                  borderRadius: 999,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  backgroundColor: focused ? theme.primaryLight : 'transparent',
+                }}
+              >
+                <Ionicons name={iconName} size={22} color={color} />
+              </View>
+            );
           },
           tabBarActiveTintColor: colors.active,
           tabBarInactiveTintColor: colors.inactive,
           tabBarStyle: {
-            backgroundColor: colors.card,
+            backgroundColor: theme.card,
             borderTopColor: colors.border,
-            borderTopWidth: 1,
-            height: 72,
+            borderTopWidth: StyleSheet.hairlineWidth,
+            height: 74,
             paddingTop: 8,
             paddingBottom: 14,
           },
-          tabBarLabelStyle: { fontSize: 11, fontWeight: '600', marginTop: 2 },
+          tabBarLabelStyle: { fontSize: 11, fontWeight: '600', marginTop: 3 },
           headerShown: false,
         })}
       >
-        <Tab.Screen name="Workspace" component={WorkspaceStack} />
-        <Tab.Screen name="Projects" component={ProjectsStack} />
+        <Tab.Screen
+          name="Workspace"
+          component={WorkspaceStack}
+          listeners={popToTopOnRepress}
+        />
+        <Tab.Screen
+          name="Projects"
+          component={ProjectsStack}
+          listeners={popToTopOnRepress}
+        />
         <Tab.Screen
           name="Messages"
           component={MessagesStack}
           options={{ tabBarBadge: messagesUnread > 0 ? messagesUnread : undefined }}
+          listeners={popToTopOnRepress}
         />
         <Tab.Screen name="Calendar" component={CalendarScreen} />
         <Tab.Screen
@@ -272,9 +299,13 @@ function MainTabs() {
           listeners={({ navigation }) => {
             tabNavRef.current = navigation;
             return {
+              // Always open: the sheet's backdrop covers the tab bar, so the
+              // More tab is only reachable while the panel is closed. Toggling
+              // a boolean here could desync from the sheet and eat taps.
               tabPress: (e) => {
                 e.preventDefault();
-                setMoreVisible((v) => !v);
+                setMoreVisible(true);
+                setMoreNonce((n) => n + 1);
               },
             };
           }}
@@ -285,6 +316,8 @@ function MainTabs() {
         visible={moreVisible}
         onClose={() => setMoreVisible(false)}
         navigationRef={tabNavRef}
+        presentNonce={moreNonce}
+        messagesUnread={messagesUnread}
       />
     </>
   );
@@ -297,7 +330,13 @@ export default function AppNavigator() {
   const theme = useTheme();
 
   if (isLoading) {
-    return null;
+    // Match the app background while the stored session is validated,
+    // instead of flashing a blank white frame.
+    return (
+      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: theme.background }}>
+        <ActivityIndicator size="large" color={theme.primary} />
+      </View>
+    );
   }
 
   return (

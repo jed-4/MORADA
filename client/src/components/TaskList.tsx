@@ -133,7 +133,7 @@ function DraggableGridRow({
       className={cn(
         "grid items-center gap-4 px-4 h-10 border-b border-border hover:bg-muted transition-colors cursor-pointer",
         isDragging && "relative z-50 shadow-lg",
-        isSelected && "bg-blue-50"
+        isSelected && "bg-primary/10"
       )}
       style={{
         gridTemplateColumns: "28px 32px 120px 1fr 140px 120px 100px 32px",
@@ -565,11 +565,11 @@ export default function TaskList({ tasks: propTasks, groupedTasks, groupBy, isLo
   const getPriorityIcon = (priority: string) => {
     switch (priority) {
       case "high":
-        return <Flag className="h-4 w-4 text-red-500" />;
+        return <Flag className="h-4 w-4 text-status-danger" />;
       case "medium":
-        return <Flag className="h-4 w-4 text-yellow-500" />;
+        return <Flag className="h-4 w-4 text-status-warning" />;
       case "low":
-        return <Flag className="h-4 w-4 text-green-500" />;
+        return <Flag className="h-4 w-4 text-status-success" />;
       default:
         return <Flag className="h-4 w-4 text-muted-foreground" />;
     }

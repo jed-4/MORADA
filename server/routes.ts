@@ -194,8 +194,9 @@ import { isPlanKey, getPlan, PLANS, PLAN_KEYS, type PlanKey, type BillingCycle }
 import { ensureCompanyReferralCode, getCompanyIdByReferralCode, getReferralStats } from "./referrals";
 import multer from "multer";
 import * as XLSX from "xlsx";
-import { initializeSocketManager, emitTaskCreated, emitTaskUpdated, emitTaskDeleted, emitNotification, emitReactionUpdated, getIO, getConnectedUserIdsForCompany } from "./socketManager";
+import { initializeSocketManager, emitTaskCreated, emitTaskUpdated, emitTaskDeleted, emitNotification, emitReactionUpdated, emitMessagesRead, getIO, getConnectedUserIdsForCompany } from "./socketManager";
 import { dispatchChatMessageNotifications } from "./utils/chatNotifications";
+import { getWeatherForProject } from "./services/weather";
 import {
   notifyTaskCompleted,
   notifyTaskCommentMentions,
@@ -8277,9 +8278,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 roleName.includes('owner') ||
                 roleName.includes('general manage'));
           }
-          const rps = await storage.getRolePermissions(user.roleId);
+          // Fetch the permission catalogue ONCE and map by id. This used to be a
+          // per-role-permission getPermission() call inside the loop — an N+1 that
+          // cost one DB round trip per permission (59 for an admin). Against a
+          // remote database that alone made this endpoint take ~20s, and it runs
+          // on every page load, so the whole app sat on "Loading Morada…".
+          const [rps, allPerms] = await Promise.all([
+            storage.getRolePermissions(user.roleId),
+            storage.getPermissions(),
+          ]);
+          const permById = new Map(allPerms.map((p) => [p.id, p]));
           for (const rp of rps) {
-            const perm = await storage.getPermission(rp.permissionId);
+            const perm = permById.get(rp.permissionId);
             if (!perm) continue;
             const actions = Array.isArray(rp.allowedActions)
               ? (rp.allowedActions as string[])
@@ -12964,6 +12974,60 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // When a selection linked to a PC allowance (selection.estimateItemId) has an
+  // option approved, mirror that option's costing into the allowance as a costed
+  // line. Upserts on sourceSelectionId so re-approvals update rather than
+  // duplicate. Never throws — a sync failure must not fail the approval.
+  async function syncSelectionCostingToAllowance(selectionId: string) {
+    try {
+      const selection = await storage.getSelection(selectionId);
+      if (!selection?.estimateItemId) return;
+      const estimateItem = await storage.getEstimateItem(selection.estimateItemId);
+      if (!estimateItem || estimateItem.allowance === "None") return;
+
+      const options = await storage.getSelectionOptions(selectionId);
+      const chosen = options.find((o: any) => o.isSelectedByClient) ?? (options.length === 1 ? options[0] : null);
+      if (!chosen) return;
+
+      // Derive amounts from the option's unit cost — NEVER from totalCost, whose
+      // GST-ness is unreliable (it's variously unitCost×qty×markup or
+      // unitCost+unitTax depending on the write path). gstInclusive describes
+      // unitCost; normalise to the stored conventions: unitCostExTaxCents ex GST,
+      // totalPrice inc GST.
+      const qty = Number(chosen.quantity) || 1;
+      const markup = Number(chosen.markupPercent) || 0;
+      const rawUnit = chosen.unitCost ?? 0;
+      const unitCostExTaxCents = chosen.gstInclusive ? Math.round(rawUnit / 1.1) : rawUnit;
+      const totalExGst = Math.round(unitCostExTaxCents * qty * (1 + markup / 100));
+      const totalIncGst = Math.round(totalExGst * 1.1);
+      const unitPriceIncGst = qty > 0 ? Math.round(totalIncGst / qty) : totalIncGst;
+
+      const payload = {
+        estimateItemId: selection.estimateItemId,
+        itemName: chosen.name || selection.name,
+        description: `Selection: ${selection.name}${chosen.name ? ` — ${chosen.name}` : ""}`,
+        quantity: qty,
+        unitType: chosen.unitType || "each",
+        unitCostExTaxCents,
+        markupPercent: chosen.markupPercent ?? null,
+        unitPrice: unitPriceIncGst,
+        totalPrice: totalIncGst,
+        sourceSelectionId: selectionId,
+        sortOrder: 0,
+      };
+
+      const existingItems = await storage.getAllowanceItems(selection.estimateItemId);
+      const existing = existingItems.find((i: any) => i.sourceSelectionId === selectionId);
+      if (existing) {
+        await storage.updateAllowanceItem(existing.id, payload);
+      } else {
+        await storage.createAllowanceItem(payload as any);
+      }
+    } catch (err: any) {
+      console.warn("[selection→allowance sync] failed:", err?.message);
+    }
+  }
+
   // Helper: verify the authenticated user's company owns the given selection option.
   // Returns the option on success or sends a 403/404 response and returns null.
   async function assertOptionAccess(req: any, res: any, optionId: string) {
@@ -15434,9 +15498,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/bills/next-number", async (req, res) => {
+  app.get("/api/bills/next-number", requireAuth, async (req, res) => {
     try {
-      const billNumber = await storage.getNextBillNumber();
+      const companyId = (req as any).user?.companyId;
+      if (!companyId) {
+        return res.status(400).json({ error: "No company associated with current user" });
+      }
+      const billNumber = await storage.getNextBillNumber(companyId);
       res.json({ billNumber });
     } catch (error) {
       res.status(500).json({ error: "Failed to get next bill number" });
@@ -15456,14 +15524,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/bills", requireAuth, async (req, res) => {
     try {
       const billData = { ...req.body };
-      if (!billData.billNumber || billData.billNumber.startsWith("BILL-") && /BILL-\d{13,}/.test(billData.billNumber)) {
-        billData.billNumber = await storage.getNextBillNumber();
-      }
-
       const currentUser = (req as any).user;
       billData.createdById = currentUser.id;
       if (!billData.companyId && currentUser.companyId) {
         billData.companyId = currentUser.companyId;
+      }
+
+      if (!billData.billNumber || billData.billNumber.startsWith("BILL-") && /BILL-\d{13,}/.test(billData.billNumber)) {
+        if (!billData.companyId) {
+          return res.status(400).json({ error: "No company associated with current user" });
+        }
+        billData.billNumber = await storage.getNextBillNumber(billData.companyId);
       }
 
       const validationResult = insertBillSchema.safeParse(billData);
@@ -15656,9 +15727,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const originalBill = await getOwnedBill(req, res, req.params.id);
       if (!originalBill) return;
 
-      const newBillNumber = await storage.getNextBillNumber();
+      // getOwnedBill guarantees req.user.companyId; older bills may predate companyId.
+      const duplicateCompanyId = (originalBill as any).companyId ?? (req as any).user?.companyId;
+      const newBillNumber = await storage.getNextBillNumber(duplicateCompanyId);
       const newBill = await storage.createBill({
         billNumber: newBillNumber,
+        companyId: duplicateCompanyId,
         projectId: originalBill.projectId,
         supplierId: originalBill.supplierId,
         billType: originalBill.billType as "bill" | "credit",
@@ -19743,10 +19817,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Next sequential proposal number (PROP-YYYY-NNNN)
-  app.get("/api/proposal-numbers/next", async (_req, res) => {
+  // Next sequential proposal number (PROP-YYYY-NNNN) — scoped to the caller's company
+  app.get("/api/proposal-numbers/next", async (req, res) => {
     try {
-      const next = await storage.getNextProposalNumber();
+      const companyId = (req as any).user?.companyId;
+      if (!companyId) {
+        return res.status(400).json({ error: "No company associated with current user" });
+      }
+      const next = await storage.getNextProposalNumber(companyId);
       res.json({ proposalNumber: next });
     } catch (error) {
       console.error("Error generating next proposal number:", error);
@@ -23920,6 +23998,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Project-scoped bills + line items. The allowance pages query these; they
+  // previously didn't exist, so the "Select from Bills" modals fell through to
+  // the Vite HTML catch-all and always looked empty.
+  app.get("/api/projects/:projectId/bills", async (req, res) => {
+    try {
+      const user = (req as any).user;
+      const bills = await storage.getBills(req.params.projectId, undefined, user?.companyId);
+      res.json(bills);
+    } catch (error: any) {
+      res.status(500).json({ error: "Failed to fetch project bills", details: error.message });
+    }
+  });
+
+  app.get("/api/projects/:projectId/bill-line-items", async (req, res) => {
+    try {
+      const user = (req as any).user;
+      const bills = await storage.getBills(req.params.projectId, undefined, user?.companyId);
+      const all: any[] = [];
+      for (const bill of bills) {
+        const lineItems = await storage.getBillLineItems(bill.id);
+        // Line items store ex-GST unitPrice/total; the allowance UI treats bill
+        // amounts as inc GST (matching bill.total), so expose an inc total too.
+        for (const li of lineItems) {
+          all.push({ ...li, totalIncGst: Math.round((li.total || 0) * 1.1) });
+        }
+      }
+      res.json(all);
+    } catch (error: any) {
+      res.status(500).json({ error: "Failed to fetch project bill line items", details: error.message });
+    }
+  });
+
   // Allowances routes
   app.get("/api/projects/:projectId/allowances", async (req, res) => {
     try {
@@ -23952,6 +24062,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         timesheetAllowances: tsaTable,
         timesheets: tsTable,
         allowanceItems: aiTable,
+        timesheetCostCodes: tsccTable,
+        costCodes: ccTable,
       } = await import("@shared/schema");
 
       // 1. Allocated bills: bill_line_item_allowances → bill_line_items → bills → contacts
@@ -24017,13 +24129,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
           .select({
             id: tsaTable.id,
             timesheetId: tsaTable.timesheetId,
+            timesheetCostCodeId: tsaTable.timesheetCostCodeId,
             amount: tsaTable.amount,
+            allocatedHours: tsaTable.hours,
             tsDate: tsTable.date,
             tsDuration: tsTable.duration,
             tsUserId: tsTable.userId,
+            tsDescription: tsTable.description,
+            splitCostCodeId: tsccTable.costCodeId,
+            splitDuration: tsccTable.duration,
           })
           .from(tsaTable)
           .innerJoin(tsTable, eq(tsTable.id, tsaTable.timesheetId))
+          .leftJoin(tsccTable, eq(tsccTable.id, tsaTable.timesheetCostCodeId))
           .where(eq(tsaTable.estimateItemId, allowanceId));
 
         if (tsa.length > 0) {
@@ -24034,19 +24152,40 @@ export async function registerRoutes(app: Express): Promise<Server> {
             .where(inArray(usersTable.id, userIds));
           const userMap = new Map(userRows.map((u) => [u.id, u]));
 
+          const splitCostCodeIds = Array.from(new Set(tsa.map((r) => r.splitCostCodeId).filter(Boolean))) as string[];
+          const costCodeRows = splitCostCodeIds.length
+            ? await db
+                .select({ id: ccTable.id, code: ccTable.code, title: ccTable.title })
+                .from(ccTable)
+                .where(inArray(ccTable.id, splitCostCodeIds))
+            : [];
+          const costCodeMap = new Map(costCodeRows.map((c) => [c.id, c]));
+
           allocatedTimesheets = tsa.map((row) => {
             const user = userMap.get(row.tsUserId);
             const staffName = [user?.firstName, user?.lastName].filter(Boolean).join(" ") || "Team member";
-            const amountIncGst = row.amount;
-            const amountExGst = Math.round(amountIncGst / 1.1);
-            const durationHours = parseFloat(String(row.tsDuration)) || 0;
-            const hourlyRateCents = durationHours > 0 ? Math.round(amountIncGst / durationHours) : 0;
+            // Timesheet allocation amounts are EX GST (labour = hours × rate,
+            // wages carry no GST). Gross up ×1.1 for the inc-GST comparison basis.
+            const amountExGst = row.amount;
+            const amountIncGst = Math.round(amountExGst * 1.1);
+            // For a split allocation, hours come from the allocation/split row,
+            // not the whole timesheet.
+            const allocatedHours = parseFloat(String(row.allocatedHours)) || 0;
+            const splitHours = parseFloat(String(row.splitDuration)) || 0;
+            const durationHours =
+              allocatedHours || (row.timesheetCostCodeId ? splitHours : parseFloat(String(row.tsDuration)) || 0);
+            const hourlyRateCents = durationHours > 0 ? Math.round(amountExGst / durationHours) : 0;
+            const costCode = row.splitCostCodeId ? costCodeMap.get(row.splitCostCodeId) : null;
             return {
               id: row.id,
               timesheetId: row.timesheetId,
+              timesheetCostCodeId: row.timesheetCostCodeId,
               date: row.tsDate ? new Date(row.tsDate).toISOString() : "",
               userId: row.tsUserId,
               staffName,
+              description: row.tsDescription || "",
+              costCodeId: row.splitCostCodeId || null,
+              costCodeLabel: costCode ? [costCode.code, costCode.title].filter(Boolean).join(" · ") : null,
               durationHours,
               hourlyRateCents,
               amountIncGst,
@@ -24068,19 +24207,91 @@ export async function registerRoutes(app: Express): Promise<Server> {
           .orderBy(asc(aiTable.sortOrder));
         allocatedItems = items.map((i) => ({
           id: i.id,
+          itemName: (i as any).itemName ?? null,
           description: i.description,
+          costCode: (i as any).costCode ?? null,
           quantity: i.quantity,
+          unitType: (i as any).unitType ?? "each",
+          unitCostExTaxCents: (i as any).unitCostExTaxCents ?? null,
+          markupPercent: (i as any).markupPercent ?? null,
           unitPrice: i.unitPrice,
           total: i.totalPrice,
+          sortOrder: i.sortOrder,
         }));
       } catch (e: any) {
         console.warn("[allowance-detail] allocatedItems query failed:", e?.message);
       }
 
-      res.json({ allocatedBills, allocatedTimesheets, allocatedItems });
+      // 4. Linked selection (PC allowances): a selection whose estimateItemId
+      // points at this allowance, with its client-selected option's costing.
+      let linkedSelection: any = null;
+      try {
+        const selection = await storage.getSelectionByEstimateItemId(allowanceId);
+        if (selection) {
+          const options = await storage.getSelectionOptions(selection.id);
+          const chosen =
+            options.find((o: any) => o.isSelectedByClient) ??
+            (options.length === 1 ? options[0] : null);
+          linkedSelection = {
+            id: selection.id,
+            name: selection.name,
+            status: selection.status,
+            category: selection.category ?? null,
+            room: selection.room ?? null,
+            selectedOption: chosen
+              ? (() => {
+                  // Same derivation as syncSelectionCostingToAllowance — from the
+                  // unit cost, never the unreliable stored totalCost.
+                  const qty = Number(chosen.quantity) || 1;
+                  const markup = Number(chosen.markupPercent) || 0;
+                  const rawUnit = chosen.unitCost ?? 0;
+                  const unitCostExCents = chosen.gstInclusive ? Math.round(rawUnit / 1.1) : rawUnit;
+                  const totalExCents = Math.round(unitCostExCents * qty * (1 + markup / 100));
+                  return {
+                    id: chosen.id,
+                    name: chosen.name,
+                    quantity: qty,
+                    unitType: chosen.unitType ?? "ea",
+                    unitCostCents: rawUnit,
+                    unitCostExCents,
+                    gstInclusive: !!chosen.gstInclusive,
+                    markupPercent: chosen.markupPercent ?? null,
+                    totalExCents,
+                    totalIncCents: Math.round(totalExCents * 1.1),
+                  };
+                })()
+              : null,
+            optionCount: options.length,
+          };
+        }
+      } catch (e: any) {
+        console.warn("[allowance-detail] linkedSelection query failed:", e?.message);
+      }
+
+      res.json({ allocatedBills, allocatedTimesheets, allocatedItems, linkedSelection });
     } catch (error: any) {
       console.error("[allowance-detail] error:", error?.message);
       res.status(500).json({ error: "Failed to fetch allowance detail", details: error?.message });
+    }
+  });
+
+  // POST /api/projects/:projectId/allowances/:allowanceId/sync-selection
+  // Manual "Use selection costing": copies the linked selection's chosen option
+  // costing into the allowance as a costed line (same upsert the approval hook uses).
+  app.post("/api/projects/:projectId/allowances/:allowanceId/sync-selection", async (req, res) => {
+    try {
+      const { projectId, allowanceId } = req.params;
+      const project = await storage.getProject(projectId);
+      if (!project) return res.status(404).json({ error: "Project not found" });
+      if (req.user && (project as any).companyId !== (req.user as any).companyId) {
+        return res.status(403).json({ error: "Forbidden" });
+      }
+      const selection = await storage.getSelectionByEstimateItemId(allowanceId);
+      if (!selection) return res.status(404).json({ error: "No selection linked to this allowance" });
+      await syncSelectionCostingToAllowance(selection.id);
+      res.json({ ok: true });
+    } catch (error: any) {
+      res.status(500).json({ error: "Failed to sync selection costing", details: error?.message });
     }
   });
 
@@ -24107,6 +24318,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
 
     return timesheets.filter(ts => ts.userId === userId);
+  }
+
+  // Allowance management gate: admins pass outright; otherwise the role needs
+  // financial.budget_labour view (the closest financial permission to labour
+  // cost allocation). Mirrors requirePermission's dev bypass and admin check.
+  async function userCanManageAllowances(user: any): Promise<boolean> {
+    if (process.env.NODE_ENV === "development") return true;
+    if (!user?.roleId) return false;
+    try {
+      const role = await storage.getUserRole(user.roleId);
+      if (role && isAdminRole(role)) return true;
+      // Batch, don't look each permission up in the loop (N+1 — see the
+      // effectivePermissions comment in /api/auth/user).
+      const [rolePermissions, allPermissions] = await Promise.all([
+        storage.getRolePermissions(user.roleId),
+        storage.getPermissions(),
+      ]);
+      const permById = new Map(allPermissions.map((p) => [p.id, p]));
+      for (const rp of rolePermissions) {
+        const permission = permById.get(rp.permissionId);
+        if (permission?.key === "financial.budget_labour") {
+          const allowedActions = Array.isArray(rp.allowedActions) ? (rp.allowedActions as string[]) : [];
+          if (allowedActions.includes("view")) return true;
+        }
+      }
+    } catch {
+      // fall through to false — a permission-check failure must not widen access
+    }
+    return false;
   }
 
   async function enrichTimesheetsWithCostCodes(timesheets: any[]) {
@@ -24143,8 +24383,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/projects/:projectId/timesheets", async (req, res) => {
     try {
       const timesheets = await storage.getTimesheets(req.params.projectId);
-      const filtered = await filterTimesheetsByViewScope(timesheets, req.user);
-      const enriched = await enrichTimesheetsWithCostCodes(filtered);
+      // Allowance allocation is a financial workflow, not a timesheet-viewing one:
+      // the actual-cost totals include EVERY project timesheet (see the actual-costs
+      // route), so the allocation modal must show them all too — otherwise costs
+      // exist that can never be allocated. Bypass the per-user view scope for
+      // users allowed to manage financials; rate stripping below still applies.
+      const isAllowanceContext = req.query.context === "allowance";
+      let filtered: any[];
+      if (isAllowanceContext && (await userCanManageAllowances(req.user))) {
+        filtered = timesheets;
+      } else {
+        filtered = await filterTimesheetsByViewScope(timesheets, req.user);
+      }
+      let enriched: any[] = await enrichTimesheetsWithCostCodes(filtered);
+      // Strip confidential pay-rate fields exactly like /api/timesheets does
+      if (req.user) {
+        const canViewRates = await storage.canUserViewTimesheetRates(req.user.id);
+        if (!canViewRates) {
+          enriched = enriched.map(({ hourlyRate, totalCost, costPerHour, ...rest }: any) => rest);
+        }
+      }
       res.json(enriched);
     } catch (error: any) {
       res.status(500).json({
@@ -29882,9 +30140,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const userId = req.user!.id;
       await storage.updateChannelMemberLastRead(req.params.channelId, userId);
+      // Additive: let other channel members render read receipts in real time.
+      // Never fails the request — the last-read write is what actually matters.
+      try {
+        emitMessagesRead(req.params.channelId, userId, new Date().toISOString());
+      } catch {
+        // Non-critical
+      }
       res.status(204).send();
     } catch (error) {
       res.status(500).json({ error: "Failed to update last read" });
+    }
+  });
+
+  // Presence — user IDs in the caller's company with at least one live socket.
+  // Gives clients an initial presence snapshot; `presence_changed` socket events
+  // keep it current from there.
+  app.get("/api/presence", requireAuth, async (req, res) => {
+    try {
+      const companyId = req.user!.companyId!;
+      const userIds = getConnectedUserIdsForCompany(companyId);
+      res.json({ userIds });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch presence" });
     }
   });
 
@@ -31639,6 +31917,46 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
     } catch (error: any) {
       console.error("Error fetching mobile dashboard:", error);
       res.status(500).json({ error: "Failed to fetch dashboard data" });
+    }
+  });
+
+  // Site weather for a project (mobile dashboard). Uses the project's address,
+  // falling back to the company address. Cached per project for 30 minutes.
+  app.get("/api/weather", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.id || !user?.companyId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+      const projectId = String(req.query.projectId || "");
+      if (!projectId) {
+        return res.status(400).json({ error: "projectId is required" });
+      }
+
+      const project = await storage.getProject(projectId);
+      if (!project || project.companyId !== user.companyId) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+
+      let address = project.location?.trim();
+      if (!address) {
+        const company = await storage.getCompany(user.companyId).catch(() => undefined);
+        address = company?.address?.trim() || undefined;
+      }
+      if (!address) {
+        return res.status(404).json({ error: "No address" });
+      }
+
+      try {
+        const weather = await getWeatherForProject(projectId, address);
+        res.json(weather);
+      } catch (err: any) {
+        console.error("Error fetching weather:", err);
+        res.status(502).json({ error: "Failed to fetch weather" });
+      }
+    } catch (error: any) {
+      console.error("Error in weather route:", error);
+      res.status(500).json({ error: "Failed to fetch weather" });
     }
   });
 
@@ -33616,7 +33934,7 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
             continue;
           }
 
-          const billNumber = await storage.getNextBillNumber();
+          const billNumber = await storage.getNextBillNumber(companyId);
           const newBill = await storage.createBill({
             billNumber,
             projectId: billProjectId,

@@ -1,5 +1,11 @@
 import { differenceInDays, addDays, format } from "date-fns";
 import type { ScheduleItem } from "@shared/schema";
+import {
+  addWorkingDays,
+  countWorkingDays,
+  snapToWorkingDay,
+  type IsNonWorkingDay,
+} from "./workingDays";
 
 export type CascadeUpdate = { id: number | string; startDate: string; endDate: string };
 
@@ -14,49 +20,26 @@ function isValidDate(d: Date): boolean {
   return d instanceof Date && !isNaN(d.getTime());
 }
 
-function countWD(start: Date, end: Date, isNonWorking: (d: Date) => boolean): number {
-  let count = 0;
-  const s = new Date(start);
-  s.setHours(0, 0, 0, 0);
-  const e = new Date(end);
-  e.setHours(0, 0, 0, 0);
-  const forward = s <= e;
-  const current = new Date(s);
-  if (forward) {
-    while (current < e) {
-      if (!isNonWorking(current)) count++;
-      current.setDate(current.getDate() + 1);
-    }
-  } else {
-    while (current > e) {
-      current.setDate(current.getDate() - 1);
-      if (!isNonWorking(current)) count++;
-    }
-  }
-  return count;
+// Cascade math always operates on local-midnight dates. These thin wrappers
+// normalise inputs before delegating to the shared working-day helpers so the
+// historical behaviour (inputs coerced to midnight) is preserved even if a
+// caller passes a date with a time component.
+function atMidnight(d: Date): Date {
+  const r = new Date(d);
+  r.setHours(0, 0, 0, 0);
+  return r;
 }
 
-function addWD(date: Date, days: number, isNonWorking: (d: Date) => boolean): Date {
-  const d = new Date(date);
-  d.setHours(0, 0, 0, 0);
-  let remaining = Math.abs(days);
-  const step = days >= 0 ? 1 : -1;
-  while (remaining > 0) {
-    d.setDate(d.getDate() + step);
-    if (!isNonWorking(d)) remaining--;
-  }
-  return d;
+function countWD(start: Date, end: Date, isNonWorking: IsNonWorkingDay): number {
+  return countWorkingDays(atMidnight(start), atMidnight(end), isNonWorking);
 }
 
-function snapWD(date: Date, direction: "forward" | "backward", isNonWorking: (d: Date) => boolean): Date {
-  const d = new Date(date);
-  d.setHours(0, 0, 0, 0);
-  const step = direction === "forward" ? 1 : -1;
-  let guard = 14;
-  while (isNonWorking(d) && guard-- > 0) {
-    d.setDate(d.getDate() + step);
-  }
-  return d;
+function addWD(date: Date, days: number, isNonWorking: IsNonWorkingDay): Date {
+  return addWorkingDays(atMidnight(date), days, isNonWorking);
+}
+
+function snapWD(date: Date, direction: "forward" | "backward", isNonWorking: IsNonWorkingDay): Date {
+  return snapToWorkingDay(atMidnight(date), direction, isNonWorking, 14);
 }
 
 type NormDep = { id: number | string; type: string; lag: number };

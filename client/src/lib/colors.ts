@@ -1,3 +1,23 @@
+// Curated project-colour palette — the ONLY colours offered when picking a
+// project colour (create dialog + project settings). Kept to 10 hues that
+// harmonise with the Morada plum brand across web and mobile; other pickers
+// (schedule, takeoff, focus blocks) still use the full BUILDPRO_PALETTE.
+// Existing projects with legacy colours are untouched — renderers tint softly.
+export const MORADA_PROJECT_PALETTE = [
+  { name: 'Teal',       hex: '#70CAD0' },
+  { name: 'Sage',       hex: '#82C8A2' },
+  { name: 'Amber',      hex: '#D4B670' },
+  { name: 'Coral',      hex: '#DA988A' },
+  { name: 'Rose',       hex: '#D08AAF' },
+  { name: 'Lavender',   hex: '#A68AC7' },
+  { name: 'Plum',       hex: '#87749A' },
+  { name: 'Slate blue', hex: '#597BC0' },
+  { name: 'Terracotta', hex: '#C86840' },
+  { name: 'Sand',       hex: '#C8B090' },
+] as const;
+
+export const MORADA_PROJECT_PALETTE_HEXES = MORADA_PROJECT_PALETTE.map(c => c.hex);
+
 export const BUILDPRO_PALETTE = [
   // Purples
   { name: 'Mauve',       hex: '#d4b8ec' },

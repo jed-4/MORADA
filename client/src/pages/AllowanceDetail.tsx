@@ -3,17 +3,33 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Plus, ChevronDown, ChevronRight, CheckCircle, RotateCcw, Loader2 } from "lucide-react";
+import { ArrowLeft, Plus, ChevronDown, ChevronRight, CheckCircle, RotateCcw, Loader2, Link2, RefreshCw } from "lucide-react";
 import { EmptyState } from "@/components/EmptyState";
-import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { useState } from "react";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useMemo, useState } from "react";
 import { useAllowanceStatusOptions } from "@/hooks/useAllowanceStatusOptions";
-import { LayoutList, Users, CalendarDays } from "lucide-react";
+import { Users, CalendarDays, Hash } from "lucide-react";
+import {
+  LineItemsTable,
+  LineItemColumnsButton,
+  useLineItemColumns,
+  type LineItemRow,
+  type NewLineItem,
+} from "@/components/LineItemsTable";
+import {
+  formatCents,
+  exGstFromInc,
+  incGstFromEx,
+  dollarsToCents,
+  toNumber,
+  timesheetHours,
+  timesheetTotalExGstCents,
+} from "@shared/money";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -26,14 +42,17 @@ type EstimateItem = {
   pcMarkupPercent: number | null;
   unitCostExTax: number;
   quantity: number;
-  priceIncTax: number;
+  priceIncTax: number; // cents inc GST (recomputed server-side, never the raw cache)
+  priceExTax?: number; // cents ex GST
   estimateName: string;
   estimateVersion: number;
 };
 
 type AllowanceWithCosts = {
   item: EstimateItem;
-  actualCost: number;
+  actualCost: number; // cents inc GST (back-compat alias of actualCostIncGst)
+  actualCostIncGst?: number;
+  actualCostExGst?: number;
   variance: number;
 };
 
@@ -42,17 +61,40 @@ type Bill = {
   billNumber: string;
   billDate: string;
   supplierId: string;
+  supplierName?: string | null;
   billReference?: string;
-  total: number;
+  status: string; // draft | needs_review | awaiting_approval | awaiting_payment | paid
+  total: number; // cents inc GST
 };
 
+/** Bill line items store EX-GST amounts; totalIncGst is server-computed. */
 type BillLineItem = {
   id: string;
   billId: string;
   description: string;
   quantity: number;
-  unitPrice: number;
-  total: number;
+  unitPrice: number; // cents ex GST
+  total: number; // cents ex GST
+  totalIncGst: number; // cents inc GST
+};
+
+/** Bills approved for payment (or paid) are allocatable; earlier statuses show but can't be selected. */
+const isBillApproved = (bill: Bill | undefined) =>
+  !!bill && (bill.status === "awaiting_payment" || bill.status === "paid");
+
+const billStatusLabel: Record<string, string> = {
+  draft: "Draft",
+  needs_review: "Needs review",
+  awaiting_approval: "Awaiting approval",
+  awaiting_payment: "Approved",
+  paid: "Paid",
+};
+
+type TimesheetCostCodeSplit = {
+  id: string;
+  costCodeId: string;
+  duration: string | number;
+  total: string | number;
 };
 
 type Timesheet = {
@@ -62,10 +104,12 @@ type Timesheet = {
   date: string;
   startTime: string;
   endTime: string;
-  duration: number;
+  duration: string | number; // numeric(10,2) → string over the wire
   description: string;
   status: string;
-  total: number;
+  total: string | number; // dollars EX GST (hours × rate), numeric string
+  costCodeId?: string | null;
+  costCodeSplits?: TimesheetCostCodeSplit[];
 };
 
 type User = {
@@ -74,12 +118,10 @@ type User = {
   lastName: string;
 };
 
-type CustomLine = {
+type CostCode = {
   id: string;
-  description: string;
-  quantity: number;
-  unitPrice: number;
-  total: number;
+  code: string;
+  title: string;
 };
 
 type AllocatedBill = {
@@ -97,9 +139,13 @@ type AllocatedBill = {
 type AllocatedTimesheet = {
   id: string;
   timesheetId: string;
+  timesheetCostCodeId?: string | null;
   date: string;
   userId: string;
   staffName: string;
+  description?: string;
+  costCodeId?: string | null;
+  costCodeLabel?: string | null;
   durationHours: number;
   hourlyRateCents: number;
   amountIncGst: number;
@@ -108,32 +154,75 @@ type AllocatedTimesheet = {
 
 type AllocatedItem = {
   id: string;
+  itemName?: string | null;
   description: string;
+  costCode?: string | null;
   quantity: number;
+  unitType?: string | null;
+  unitCostExTaxCents?: number | null;
+  markupPercent?: number | null;
   unitPrice: number;
   total: number;
+  sortOrder?: number;
+};
+
+type LinkedSelection = {
+  id: string;
+  name: string;
+  status: string;
+  category?: string | null;
+  room?: string | null;
+  optionCount: number;
+  selectedOption: {
+    id: string;
+    name: string;
+    quantity: number;
+    unitType: string;
+    unitCostCents: number;
+    unitCostExCents: number;
+    gstInclusive: boolean;
+    markupPercent: number | null;
+    totalExCents: number;
+    totalIncCents: number;
+  } | null;
 };
 
 type AllowanceDetailData = {
   allocatedBills: AllocatedBill[];
   allocatedTimesheets: AllocatedTimesheet[];
   allocatedItems: AllocatedItem[];
+  linkedSelection?: LinkedSelection | null;
 };
+
+type SelectionLite = {
+  id: string;
+  name: string;
+  status: string;
+  estimateItemId?: string | null;
+};
+
+/** One selectable row in the Add Timesheets modal — a whole timesheet, or one cost-code split of it. */
+type TimesheetDisplayRow = {
+  key: string;
+  timesheetId: string;
+  splitId: string | null;
+  date: string;
+  userId: string;
+  startTime?: string;
+  endTime?: string;
+  status: string;
+  description: string;
+  hours: number;
+  amountExCents: number; // labour is EX GST
+  costCodeId: string | null;
+  isSplit: boolean;
+};
+
+type PendingLine = NewLineItem & { id: string };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-const formatCurrency = (cents: number) => {
-  const dollars = cents / 100;
-  const isWholeNumber = dollars % 1 === 0;
-  return new Intl.NumberFormat("en-AU", {
-    style: "currency",
-    currency: "AUD",
-    minimumFractionDigits: isWholeNumber ? 0 : 2,
-    maximumFractionDigits: 2,
-  }).format(dollars);
-};
-
-const exGst = (incGstCents: number) => Math.round(incGstCents / 1.1);
+const formatCurrency = formatCents;
 
 const initials = (name: string) =>
   name.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2);
@@ -145,9 +234,25 @@ const avatarColors = [
   { bg: "hsl(var(--coral-light))", text: "hsl(var(--coral))" },
   { bg: "hsl(var(--primary) / 0.12)", text: "hsl(var(--primary))" },
 ];
-const avatarColor = (index: number) => avatarColors[index % avatarColors.length];
+const avatarColor = (index: number) => avatarColors[Math.abs(index) % avatarColors.length];
+
+const formatDayMonth = (date: string) =>
+  new Date(date).toLocaleDateString("en-AU", { day: "2-digit", month: "short" });
+
+const formatFullDate = (date: string) =>
+  new Date(date).toLocaleDateString("en-AU", { day: "2-digit", month: "short", year: "numeric" });
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
+
+/** Shown while a modal's data is in flight, so an empty list never reads as "none exist". */
+function ModalLoading({ label }: { label: string }) {
+  return (
+    <div className="flex flex-col items-center justify-center py-12 gap-3" data-testid="modal-loading">
+      <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+      <p className="text-xs text-muted-foreground">{label}</p>
+    </div>
+  );
+}
 
 function SectionCard({
   accentColor,
@@ -157,6 +262,7 @@ function SectionCard({
   subtitle,
   actionLabel,
   onAction,
+  headerExtra,
   children,
 }: {
   accentColor: string;
@@ -164,8 +270,10 @@ function SectionCard({
   iconText: string;
   title: string;
   subtitle: string;
-  actionLabel: string;
-  onAction: () => void;
+  actionLabel?: string;
+  onAction?: () => void;
+  /** Rendered in the header row, above the divider (e.g. a column picker). */
+  headerExtra?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
@@ -185,9 +293,14 @@ function SectionCard({
               <p className="text-xs text-muted-foreground">{subtitle}</p>
             </div>
           </div>
-          <Button size="sm" onClick={onAction} className="text-xs h-7 px-3">
-            {actionLabel}
-          </Button>
+          <div className="flex items-center gap-1">
+            {headerExtra}
+            {actionLabel && onAction && (
+              <Button size="sm" onClick={onAction} className="text-xs h-7 px-3">
+                {actionLabel}
+              </Button>
+            )}
+          </div>
         </div>
         <div className="mt-3 border-t border-border" />
         {children}
@@ -206,26 +319,40 @@ export default function AllowanceDetail() {
   const [isBillModalOpen, setIsBillModalOpen] = useState(false);
   const [isPsBillModalOpen, setIsPsBillModalOpen] = useState(false);
   const [isTimesheetModalOpen, setIsTimesheetModalOpen] = useState(false);
-  const [timesheetDisplayMode, setTimesheetDisplayMode] = useState<"date" | "person" | "description">("person");
+  // How the modal LIST is grouped while picking (browsing aid only)
+  const [timesheetGroupMode, setTimesheetGroupMode] = useState<"date" | "person" | "costcode">("person");
+  const [showTsDescriptions, setShowTsDescriptions] = useState(true);
+  // How allocated timesheets are displayed in the allowance — persisted per allowance.
+  // "person-summary" collapses each person to a single row (name + total hours + total).
+  type TsDisplayPref = "person" | "person-summary" | "date";
+  const displayPrefKey = `morada-allowance-ts-display-${allowanceId}`;
+  const [timesheetDisplayPref, setTimesheetDisplayPrefState] = useState<TsDisplayPref>(() => {
+    try {
+      const saved = localStorage.getItem(displayPrefKey);
+      return saved === "date" || saved === "person-summary" ? saved : "person";
+    } catch {
+      return "person";
+    }
+  });
+  const setTimesheetDisplayPref = (v: TsDisplayPref) => {
+    setTimesheetDisplayPrefState(v);
+    try { localStorage.setItem(displayPrefKey, v); } catch { /* ignore */ }
+  };
+
   const [expandedBills, setExpandedBills] = useState<Set<string>>(new Set());
   const [expandedPsBills, setExpandedPsBills] = useState<Set<string>>(new Set());
   const [selectedLineItems, setSelectedLineItems] = useState<Set<string>>(new Set());
   const [selectedPsLineItems, setSelectedPsLineItems] = useState<Set<string>>(new Set());
-  const [selectedTimesheets, setSelectedTimesheets] = useState<Set<string>>(new Set());
-  const [customLines, setCustomLines] = useState<CustomLine[]>([]);
-  const [isCustomLineDialogOpen, setIsCustomLineDialogOpen] = useState(false);
-  const [customLineDescription, setCustomLineDescription] = useState("");
-  const [customLineQuantity, setCustomLineQuantity] = useState("1");
-  const [customLineUnitPrice, setCustomLineUnitPrice] = useState("");
-  const [enteredActualCost, setEnteredActualCost] = useState("");
+  const [selectedTimesheetKeys, setSelectedTimesheetKeys] = useState<Set<string>>(new Set());
+  const [pendingLines, setPendingLines] = useState<PendingLine[]>([]);
+  const [pcPendingLines, setPcPendingLines] = useState<PendingLine[]>([]);
   const [isSavingPc, setIsSavingPc] = useState(false);
   const [isSavingPs, setIsSavingPs] = useState(false);
+  const [selectionToLink, setSelectionToLink] = useState<string>("");
 
-  const [pcQuantity, setPcQuantity] = useState("1");
-  const [pcUnitCostExTax, setPcUnitCostExTax] = useState("");
-  const [pcUnitCostIncTax, setPcUnitCostIncTax] = useState("");
-  const [pcMarkupPercent, setPcMarkupPercent] = useState("");
-  const [useSimpleEntry, setUseSimpleEntry] = useState(false);
+  // Column visibility lives here so the picker can sit in the section header.
+  const customLineColumns = useLineItemColumns("allowance-custom-lines");
+  const pcEntryColumns = useLineItemColumns("pc-cost-entries");
 
   // ── Queries ──
   const { data: allowances = [], isLoading } = useQuery<AllowanceWithCosts[]>({
@@ -237,18 +364,41 @@ export default function AllowanceDetail() {
     },
   });
 
-  const { data: bills = [] } = useQuery<Bill[]>({
+  const { data: bills = [], isFetching: isFetchingBills } = useQuery<Bill[]>({
     queryKey: ["/api/projects", projectId, "bills"],
+    queryFn: async () => {
+      const res = await fetch(`/api/projects/${projectId}/bills`);
+      if (!res.ok) throw new Error("Failed to fetch bills");
+      return res.json();
+    },
     enabled: isBillModalOpen || isPsBillModalOpen,
   });
 
-  const { data: billLineItems = [] } = useQuery<BillLineItem[]>({
+  const { data: billLineItems = [], isFetching: isFetchingBillLines } = useQuery<BillLineItem[]>({
     queryKey: ["/api/projects", projectId, "bill-line-items"],
+    queryFn: async () => {
+      const res = await fetch(`/api/projects/${projectId}/bill-line-items`);
+      if (!res.ok) throw new Error("Failed to fetch bill line items");
+      return res.json();
+    },
     enabled: isBillModalOpen || isPsBillModalOpen,
   });
 
-  const { data: timesheets = [] } = useQuery<Timesheet[]>({
-    queryKey: ["/api/projects", projectId, "timesheets"],
+  // These modals fetch on open. Until the response lands the arrays are empty,
+  // and showing the "nothing here" empty state during that window reads as a
+  // bug ("No bills found") rather than as loading — especially against a remote
+  // database where the round trip is seconds, not milliseconds.
+  const isLoadingBills = isFetchingBills || isFetchingBillLines;
+
+  // context=allowance: financial workflow — server returns ALL project
+  // timesheets (not just the requester's view scope) for permitted users.
+  const { data: timesheets = [], isFetching: isLoadingTimesheets } = useQuery<Timesheet[]>({
+    queryKey: ["/api/projects", projectId, "timesheets", "allowance-context"],
+    queryFn: async () => {
+      const res = await fetch(`/api/projects/${projectId}/timesheets?context=allowance`);
+      if (!res.ok) throw new Error("Failed to fetch timesheets");
+      return res.json();
+    },
     enabled: isTimesheetModalOpen,
   });
 
@@ -256,11 +406,15 @@ export default function AllowanceDetail() {
     queryKey: ["/api/users"],
   });
 
+  const { data: costCodes = [] } = useQuery<CostCode[]>({
+    queryKey: ["/api/cost-codes"],
+  });
+
   const { data: allocatedDetail, refetch: refetchDetail } = useQuery<AllowanceDetailData>({
     queryKey: ["/api/projects", projectId, "allowances", allowanceId, "detail"],
     queryFn: async () => {
       const res = await fetch(`/api/projects/${projectId}/allowances/${allowanceId}/detail`);
-      if (!res.ok) return { allocatedBills: [], allocatedTimesheets: [], allocatedItems: [] };
+      if (!res.ok) return { allocatedBills: [], allocatedTimesheets: [], allocatedItems: [], linkedSelection: null };
       return res.json();
     },
     enabled: !!projectId && !!allowanceId,
@@ -269,6 +423,17 @@ export default function AllowanceDetail() {
   const allocatedBills = allocatedDetail?.allocatedBills ?? [];
   const allocatedTimesheets = allocatedDetail?.allocatedTimesheets ?? [];
   const allocatedItems = allocatedDetail?.allocatedItems ?? [];
+  const linkedSelection = allocatedDetail?.linkedSelection ?? null;
+
+  const allowance = allowances.find((a) => a.item.id === allowanceId);
+  const isPrimeCost = allowance?.item.allowance === "Prime Cost";
+
+  // Selections picker (PC only, when nothing linked yet)
+  const { data: projectSelections = [] } = useQuery<SelectionLite[]>({
+    queryKey: ["/api/selections", projectId],
+    queryFn: () => apiRequest(`/api/selections?projectId=${projectId}`, "GET"),
+    enabled: !!projectId && !!isPrimeCost && !linkedSelection,
+  });
 
   const getUserName = (userId: string) => {
     const user = users.find((u) => u.id === userId);
@@ -276,7 +441,75 @@ export default function AllowanceDetail() {
     return `${user.firstName} ${user.lastName}`.trim() || userId.slice(0, 8);
   };
 
+  const costCodeMap = useMemo(() => {
+    const m = new Map<string, CostCode>();
+    for (const cc of costCodes) m.set(cc.id, cc);
+    return m;
+  }, [costCodes]);
+
+  const costCodeLabel = (costCodeId: string | null | undefined): string => {
+    if (!costCodeId) return "—";
+    const cc = costCodeMap.get(costCodeId);
+    return cc ? `${cc.code} · ${cc.title}` : "—";
+  };
+
   const { toast } = useToast();
+
+  // ── Timesheet display rows (one per cost-code split, so each coded portion
+  //    can be allocated to its own allowance) ──
+  const timesheetRows = useMemo<TimesheetDisplayRow[]>(() => {
+    const rows: TimesheetDisplayRow[] = [];
+    for (const ts of timesheets) {
+      const splits = ts.costCodeSplits ?? [];
+      if (splits.length > 1) {
+        for (const split of splits) {
+          rows.push({
+            key: `${ts.id}|${split.id}`,
+            timesheetId: ts.id,
+            splitId: split.id,
+            date: ts.date,
+            userId: ts.userId,
+            startTime: ts.startTime,
+            endTime: ts.endTime,
+            status: ts.status,
+            description: ts.description || "",
+            hours: toNumber(split.duration),
+            amountExCents: dollarsToCents(split.total),
+            costCodeId: split.costCodeId ?? null,
+            isSplit: true,
+          });
+        }
+      } else {
+        rows.push({
+          key: `${ts.id}|full`,
+          timesheetId: ts.id,
+          splitId: null,
+          date: ts.date,
+          userId: ts.userId,
+          startTime: ts.startTime,
+          endTime: ts.endTime,
+          status: ts.status,
+          description: ts.description || "",
+          hours: timesheetHours(ts),
+          amountExCents: timesheetTotalExGstCents(ts),
+          costCodeId: ts.costCodeId ?? splits[0]?.costCodeId ?? null,
+          isSplit: false,
+        });
+      }
+    }
+    return rows;
+  }, [timesheets]);
+
+  // Rows already allocated to THIS allowance can't be double-added
+  const alreadyAllocatedKeys = useMemo(() => {
+    const s = new Set<string>();
+    for (const a of allocatedTimesheets) {
+      s.add(`${a.timesheetId}|${a.timesheetCostCodeId ?? "full"}`);
+    }
+    return s;
+  }, [allocatedTimesheets]);
+
+  const pendingTimesheetRows = timesheetRows.filter((r) => selectedTimesheetKeys.has(r.key));
 
   // ── Mutations ──
   const createBillLineItemAllowanceMutation = useMutation({
@@ -290,22 +523,71 @@ export default function AllowanceDetail() {
   });
 
   const createTimesheetAllowanceMutation = useMutation({
-    mutationFn: async ({ timesheetId, amount }: { timesheetId: string; amount: number }) => {
+    mutationFn: async (payload: { timesheetId: string; timesheetCostCodeId: string | null; amount: number; hours: number }) => {
       return apiRequest("/api/timesheet-allowances", "POST", {
-        timesheetId,
+        timesheetId: payload.timesheetId,
+        timesheetCostCodeId: payload.timesheetCostCodeId,
         estimateItemId: allowanceId,
-        amount,
+        amount: payload.amount, // EX GST cents — labour carries no GST
+        hours: String(payload.hours),
       });
     },
   });
 
   const createAllowanceItemMutation = useMutation({
-    mutationFn: async (item: { description: string; quantity: number; unitPrice: number; totalPrice: number; sortOrder: number }) => {
+    mutationFn: async (item: Partial<NewLineItem> & { description: string; quantity: number; unitPrice: number; totalPrice: number; sortOrder: number }) => {
       return apiRequest("/api/allowance-items", "POST", {
         estimateItemId: allowanceId,
         ...item,
       });
     },
+  });
+
+  const updateAllowanceItemMutation = useMutation({
+    mutationFn: async ({ id, line }: { id: string; line: NewLineItem }) =>
+      apiRequest(`/api/allowance-items/${id}`, "PATCH", {
+        itemName: line.itemName || null,
+        description: line.description,
+        costCode: line.costCode,
+        quantity: line.quantity,
+        unitType: line.unitType,
+        unitCostExTaxCents: line.unitCostExTaxCents,
+        markupPercent: line.markupPercent,
+        unitPrice: line.unitPrice,
+        totalPrice: line.totalPrice,
+      }),
+    onSuccess: async () => {
+      await refetchDetail();
+      await queryClient.refetchQueries({ queryKey: ["/api/projects", projectId, "allowances"] });
+    },
+    onError: () => toast({ title: "Error", description: "Failed to update line", variant: "destructive" }),
+  });
+
+  const deleteAllowanceItemMutation = useMutation({
+    mutationFn: async (id: string) => apiRequest(`/api/allowance-items/${id}`, "DELETE"),
+    onSuccess: async () => {
+      await refetchDetail();
+      await queryClient.refetchQueries({ queryKey: ["/api/projects", projectId, "allowances"] });
+    },
+    onError: () => toast({ title: "Error", description: "Failed to remove line", variant: "destructive" }),
+  });
+
+  const deleteBillAllocationMutation = useMutation({
+    mutationFn: async (id: string) => apiRequest(`/api/bill-line-item-allowances/${id}`, "DELETE"),
+    onSuccess: async () => {
+      await refetchDetail();
+      await queryClient.refetchQueries({ queryKey: ["/api/projects", projectId, "allowances"] });
+    },
+    onError: () => toast({ title: "Error", description: "Failed to remove bill allocation", variant: "destructive" }),
+  });
+
+  const deleteTimesheetAllocationMutation = useMutation({
+    mutationFn: async (id: string) => apiRequest(`/api/timesheet-allowances/${id}`, "DELETE"),
+    onSuccess: async () => {
+      await refetchDetail();
+      await queryClient.refetchQueries({ queryKey: ["/api/projects", projectId, "allowances"] });
+    },
+    onError: () => toast({ title: "Error", description: "Failed to remove timesheet allocation", variant: "destructive" }),
   });
 
   const updateAllowanceStatusMutation = useMutation({
@@ -321,52 +603,63 @@ export default function AllowanceDetail() {
     },
   });
 
+  const linkSelectionMutation = useMutation({
+    mutationFn: async (selectionId: string) =>
+      apiRequest(`/api/selections/${selectionId}`, "PATCH", { estimateItemId: allowanceId }),
+    onSuccess: async () => {
+      setSelectionToLink("");
+      await refetchDetail();
+      toast({ title: "Selection linked" });
+    },
+    onError: () => toast({ title: "Error", description: "Failed to link selection", variant: "destructive" }),
+  });
+
+  const syncSelectionMutation = useMutation({
+    mutationFn: async () =>
+      apiRequest(`/api/projects/${projectId}/allowances/${allowanceId}/sync-selection`, "POST", {}),
+    onSuccess: async () => {
+      await refetchDetail();
+      await queryClient.refetchQueries({ queryKey: ["/api/projects", projectId, "allowances"] });
+      toast({ title: "Selection costing applied" });
+    },
+    onError: () => toast({ title: "Error", description: "Failed to apply selection costing", variant: "destructive" }),
+  });
+
   // ── Handlers ──
+  const saveLine = async (line: PendingLine, sortOrder: number) => {
+    await createAllowanceItemMutation.mutateAsync({
+      itemName: line.itemName || (null as any),
+      description: line.description,
+      costCode: line.costCode,
+      quantity: line.quantity,
+      unitType: line.unitType,
+      unitCostExTaxCents: line.unitCostExTaxCents,
+      markupPercent: line.markupPercent,
+      unitPrice: line.unitPrice,
+      totalPrice: line.totalPrice,
+      sortOrder,
+    });
+  };
+
   const handleSavePcItem = async () => {
     if (isSavingPc) return;
+    if (selectedLineItems.size === 0 && pcPendingLines.length === 0) return;
     setIsSavingPc(true);
     try {
-      if (useSimpleEntry && enteredActualCost) {
-        const totalPrice = Math.round(parseFloat(parseFloat(enteredActualCost).toFixed(2)) * 100);
-        await createAllowanceItemMutation.mutateAsync({
-          description: "Actual cost entry",
-          quantity: 1,
-          unitPrice: totalPrice,
-          totalPrice,
-          sortOrder: 0,
-        });
-        await queryClient.refetchQueries({ queryKey: ["/api/projects", projectId, "allowances"] });
-        setEnteredActualCost("");
-      } else if (!useSimpleEntry && (pcQuantity || pcUnitCostExTax)) {
-        const qty = parseFloat(pcQuantity) || 0;
-        const unitCost = parseFloat(parseFloat(pcUnitCostExTax || "0").toFixed(2)) || 0;
-        const markup = parseFloat(pcMarkupPercent) || 0;
-        const builderCostExTax = Math.round(qty * unitCost * 100);
-        const markupAmount = Math.round((builderCostExTax * markup) / 100);
-        const amountExTax = builderCostExTax + markupAmount;
-        const taxRate = 10;
-        const amountTax = Math.round((amountExTax * taxRate) / 100);
-        const totalPrice = amountExTax + amountTax;
-        await createAllowanceItemMutation.mutateAsync({
-          description: `${qty} × $${unitCost.toFixed(2)}${markup ? ` + ${markup}% markup` : ""}`,
-          quantity: qty,
-          unitPrice: Math.round(unitCost * 100),
-          totalPrice,
-          sortOrder: 0,
-        });
-        await queryClient.refetchQueries({ queryKey: ["/api/projects", projectId, "allowances"] });
-        setPcQuantity("1");
-        setPcUnitCostExTax("");
-        setPcUnitCostIncTax("");
-        setPcMarkupPercent("");
-      } else if (selectedLineItems.size > 0) {
-        const selectedItems = billLineItems.filter((item) => selectedLineItems.has(item.id));
-        for (const item of selectedItems) {
-          await createBillLineItemAllowanceMutation.mutateAsync({ billLineItemId: item.id, amount: item.total });
-        }
-        await queryClient.refetchQueries({ queryKey: ["/api/projects", projectId, "allowances"] });
-        setSelectedLineItems(new Set());
+      const billItems = billLineItems.filter((item) => selectedLineItems.has(item.id));
+      const lines = [...pcPendingLines];
+      for (const item of billItems) {
+        // Bill line items are stored EX GST; allocations are inc-GST cents
+        await createBillLineItemAllowanceMutation.mutateAsync({ billLineItemId: item.id, amount: item.totalIncGst });
       }
+      for (let i = 0; i < lines.length; i++) await saveLine(lines[i], i);
+      // Clear pending state BEFORE refetching — clearing after lets the saved
+      // copy and the pending copy render together for a moment (or persist if
+      // a refetch throws), which read as duplicated rows.
+      setSelectedLineItems(new Set());
+      setPcPendingLines([]);
+      await refetchDetail();
+      await queryClient.refetchQueries({ queryKey: ["/api/projects", projectId, "allowances"] });
     } catch {
       toast({ title: "Error", description: "Failed to save PC allowance. Please try again.", variant: "destructive" });
     } finally {
@@ -375,39 +668,31 @@ export default function AllowanceDetail() {
   };
 
   const handleSavePsItem = async () => {
-    if (selectedPsLineItems.size === 0 && selectedTimesheets.size === 0 && customLines.length === 0) return;
+    if (selectedPsLineItems.size === 0 && pendingTimesheetRows.length === 0 && pendingLines.length === 0) return;
     if (isSavingPs) return;
     setIsSavingPs(true);
     try {
-      if (selectedPsLineItems.size > 0) {
-        const selectedItems = billLineItems.filter((item) => selectedPsLineItems.has(item.id));
-        for (const item of selectedItems) {
-          await createBillLineItemAllowanceMutation.mutateAsync({ billLineItemId: item.id, amount: item.total });
-        }
+      const billItems = billLineItems.filter((item) => selectedPsLineItems.has(item.id));
+      const tsRows = [...pendingTimesheetRows];
+      const lines = [...pendingLines];
+      for (const item of billItems) {
+        await createBillLineItemAllowanceMutation.mutateAsync({ billLineItemId: item.id, amount: item.totalIncGst });
       }
-      if (selectedTimesheets.size > 0) {
-        const selectedItems = timesheets.filter((ts) => selectedTimesheets.has(ts.id));
-        for (const timesheet of selectedItems) {
-          const amountCents = Math.round(timesheet.total * 100);
-          await createTimesheetAllowanceMutation.mutateAsync({ timesheetId: timesheet.id, amount: amountCents });
-        }
+      for (const row of tsRows) {
+        await createTimesheetAllowanceMutation.mutateAsync({
+          timesheetId: row.timesheetId,
+          timesheetCostCodeId: row.splitId,
+          amount: row.amountExCents,
+          hours: row.hours,
+        });
       }
-      if (customLines.length > 0) {
-        for (let i = 0; i < customLines.length; i++) {
-          const line = customLines[i];
-          await createAllowanceItemMutation.mutateAsync({
-            description: line.description,
-            quantity: line.quantity,
-            unitPrice: line.unitPrice,
-            totalPrice: line.total,
-            sortOrder: i,
-          });
-        }
-      }
-      await queryClient.refetchQueries({ queryKey: ["/api/projects", projectId, "allowances"] });
+      for (let i = 0; i < lines.length; i++) await saveLine(lines[i], i);
+      // Clear pending BEFORE refetch (see handleSavePcItem)
       setSelectedPsLineItems(new Set());
-      setSelectedTimesheets(new Set());
-      setCustomLines([]);
+      setSelectedTimesheetKeys(new Set());
+      setPendingLines([]);
+      await refetchDetail();
+      await queryClient.refetchQueries({ queryKey: ["/api/projects", projectId, "allowances"] });
     } catch {
       toast({ title: "Error", description: "Failed to save PS allowance. Please try again.", variant: "destructive" });
     } finally {
@@ -435,23 +720,11 @@ export default function AllowanceDetail() {
     s.has(id) ? s.delete(id) : s.add(id);
     setSelectedPsLineItems(s);
   };
-  const toggleTimesheetSelection = (id: string) => {
-    const s = new Set(selectedTimesheets);
-    s.has(id) ? s.delete(id) : s.add(id);
-    setSelectedTimesheets(s);
+  const toggleTimesheetSelection = (key: string) => {
+    const s = new Set(selectedTimesheetKeys);
+    s.has(key) ? s.delete(key) : s.add(key);
+    setSelectedTimesheetKeys(s);
   };
-  const handleAddCustomLine = () => {
-    if (!customLineDescription || !customLineUnitPrice) return;
-    const quantity = parseInt(customLineQuantity) || 1;
-    const unitPrice = Math.round(parseFloat(customLineUnitPrice) * 100);
-    const total = quantity * unitPrice;
-    setCustomLines([...customLines, { id: `custom-${Date.now()}`, description: customLineDescription, quantity, unitPrice, total }]);
-    setCustomLineDescription("");
-    setCustomLineQuantity("1");
-    setCustomLineUnitPrice("");
-    setIsCustomLineDialogOpen(false);
-  };
-  const handleRemoveCustomLine = (id: string) => setCustomLines(customLines.filter((l) => l.id !== id));
 
   // ── Loading ──
   if (isLoading) {
@@ -465,8 +738,6 @@ export default function AllowanceDetail() {
       </div>
     );
   }
-
-  const allowance = allowances.find((a) => a.item.id === allowanceId);
 
   if (!allowance) {
     return (
@@ -483,16 +754,17 @@ export default function AllowanceDetail() {
     );
   }
 
-  const { item, actualCost, variance } = allowance;
+  const { item, variance } = allowance;
   const statusInfo = getStatusInfo(item.allowanceStatus);
-  const isPrimeCost = item.allowance === "Prime Cost";
 
   const estimateIncGst = item.priceIncTax;
-  const estimateExGst = exGst(estimateIncGst);
-  const actualIncGst = actualCost;
-  const actualExGst = exGst(actualIncGst);
+  // Prefer the server's exact ex-GST figure (priceIncTax − taxAmount) over
+  // re-deriving by division, which can land a cent off.
+  const estimateExGst = item.priceExTax ?? exGstFromInc(estimateIncGst);
+  const actualIncGst = allowance.actualCostIncGst ?? allowance.actualCost;
+  const actualExGst = allowance.actualCostExGst ?? exGstFromInc(actualIncGst);
   const varianceIncGst = Math.abs(variance);
-  const varianceExGst = exGst(varianceIncGst);
+  const varianceExGst = exGstFromInc(varianceIncGst);
   const isOverBudget = variance > 0;
   const percentUsed = estimateIncGst > 0 ? Math.min(Math.round((actualIncGst / estimateIncGst) * 100), 100) : 0;
 
@@ -500,8 +772,127 @@ export default function AllowanceDetail() {
   const statusTextColor = statusInfo.color || "hsl(var(--muted-foreground))";
 
   const pendingPsBillItems = billLineItems.filter((li) => selectedPsLineItems.has(li.id));
-  const pendingTimesheets = timesheets.filter((ts) => selectedTimesheets.has(ts.id));
-  const hasPendingItems = pendingPsBillItems.length > 0 || pendingTimesheets.length > 0 || customLines.length > 0;
+  const pendingPcBillItems = billLineItems.filter((li) => selectedLineItems.has(li.id));
+  const hasPendingItems = pendingPsBillItems.length > 0 || pendingTimesheetRows.length > 0 || pendingLines.length > 0;
+  const hasPcPendingItems = pendingPcBillItems.length > 0 || pcPendingLines.length > 0;
+
+  // Live (unsaved) additions, for the running totals in the summary bar
+  const psPendingExCents =
+    pendingPsBillItems.reduce((s, li) => s + li.total, 0) +
+    pendingTimesheetRows.reduce((s, r) => s + r.amountExCents, 0) +
+    pendingLines.reduce((s, l) => s + exGstFromInc(l.totalPrice), 0);
+  const psPendingIncCents =
+    pendingPsBillItems.reduce((s, li) => s + li.totalIncGst, 0) +
+    pendingTimesheetRows.reduce((s, r) => s + incGstFromEx(r.amountExCents), 0) +
+    pendingLines.reduce((s, l) => s + l.totalPrice, 0);
+  const pcPendingExCents =
+    pendingPcBillItems.reduce((s, li) => s + li.total, 0) +
+    pcPendingLines.reduce((s, l) => s + exGstFromInc(l.totalPrice), 0);
+  const pcPendingIncCents =
+    pendingPcBillItems.reduce((s, li) => s + li.totalIncGst, 0) +
+    pcPendingLines.reduce((s, l) => s + l.totalPrice, 0);
+  const pendingExCents = isPrimeCost ? pcPendingExCents : psPendingExCents;
+  const pendingIncCents = isPrimeCost ? pcPendingIncCents : psPendingIncCents;
+
+  // Custom lines table rows: saved + pending
+  const customLineRows: LineItemRow[] = [
+    ...allocatedItems.map((i) => ({
+      id: i.id,
+      itemName: i.itemName,
+      description: i.description,
+      costCode: i.costCode,
+      quantity: i.quantity,
+      unitType: i.unitType,
+      unitCostExTaxCents: i.unitCostExTaxCents,
+      markupPercent: i.markupPercent,
+      unitPrice: i.unitPrice,
+      total: i.total,
+    })),
+    ...pendingLines.map((l) => ({
+      id: l.id,
+      itemName: l.itemName,
+      description: l.description,
+      costCode: l.costCode,
+      quantity: l.quantity,
+      unitType: l.unitType,
+      unitCostExTaxCents: l.unitCostExTaxCents,
+      markupPercent: l.markupPercent,
+      unitPrice: l.unitPrice,
+      total: l.totalPrice,
+      pending: true,
+    })),
+  ];
+
+  const handleDeleteCustomLine = (id: string) => {
+    if (pendingLines.some((l) => l.id === id)) {
+      setPendingLines(pendingLines.filter((l) => l.id !== id));
+    } else {
+      deleteAllowanceItemMutation.mutate(id);
+    }
+  };
+
+  // Allowance-section timesheet groups (saved + pending), grouped per the
+  // per-allowance display preference (By Person / By Date)
+  type SectionTimesheetRow = {
+    id: string;
+    saved: boolean;
+    staffName: string;
+    date: string;
+    hours: number;
+    rateCents: number;
+    costCode: string;
+    exCents: number;
+    incCents: number;
+  };
+  const sectionTimesheetRows: SectionTimesheetRow[] = [
+    ...allocatedTimesheets.map((ts) => ({
+      id: ts.id,
+      saved: true,
+      staffName: ts.staffName || "Team member",
+      date: ts.date,
+      hours: ts.durationHours,
+      rateCents: ts.hourlyRateCents,
+      costCode: ts.costCodeLabel || costCodeLabel(ts.costCodeId),
+      exCents: ts.amountExGst,
+      incCents: ts.amountIncGst,
+    })),
+    ...pendingTimesheetRows.map((row) => ({
+      id: row.key,
+      saved: false,
+      staffName: getUserName(row.userId),
+      date: row.date,
+      hours: row.hours,
+      rateCents: row.hours > 0 ? Math.round(row.amountExCents / row.hours) : 0,
+      costCode: costCodeLabel(row.costCodeId),
+      exCents: row.amountExCents,
+      incCents: incGstFromEx(row.amountExCents),
+    })),
+  ];
+  const sectionTimesheetGroups = (() => {
+    const groups = new Map<string, SectionTimesheetRow[]>();
+    for (const row of sectionTimesheetRows) {
+      const key = timesheetDisplayPref === "date" ? formatFullDate(row.date) : row.staffName;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key)!.push(row);
+    }
+    return Array.from(groups.entries());
+  })();
+
+  // "By Person (totals)": one collapsed row per person — name, summed hours, summed amounts
+  const personSummaryRows = sectionTimesheetGroups.map(([staffName, rows]) => {
+    const hours = rows.reduce((s, r) => s + r.hours, 0);
+    const exCents = rows.reduce((s, r) => s + r.exCents, 0);
+    const codes = Array.from(new Set(rows.map((r) => r.costCode.split(" · ")[0]).filter((c) => c !== "—")));
+    return {
+      staffName,
+      hours: Math.round(hours * 100) / 100,
+      rateCents: hours > 0 ? Math.round(exCents / hours) : 0,
+      costCode: codes.length ? codes.join(", ") : "—",
+      exCents,
+      incCents: rows.reduce((s, r) => s + r.incCents, 0),
+      allSaved: rows.every((r) => r.saved),
+    };
+  });
 
   return (
     <div className="flex-1 overflow-auto">
@@ -670,7 +1061,7 @@ export default function AllowanceDetail() {
                 <div className="pt-2">
                   <div
                     className="grid text-[9px] font-semibold text-muted-foreground uppercase tracking-wide py-2 border-b border-border gap-2"
-                    style={{ gridTemplateColumns: "2fr 1.2fr 1fr 1fr 1fr 80px" }}
+                    style={{ gridTemplateColumns: "2fr 1.2fr 1fr 1fr 1fr 80px 28px" }}
                   >
                     <span>Supplier</span>
                     <span>Invoice #</span>
@@ -678,12 +1069,13 @@ export default function AllowanceDetail() {
                     <span className="text-right">Ex GST</span>
                     <span className="text-right">Inc GST</span>
                     <span>Status</span>
+                    <span />
                   </div>
                   {allocatedBills.map((bill, idx) => (
                     <div
                       key={bill.id}
                       className="grid items-center py-2.5 border-b border-border gap-2"
-                      style={{ gridTemplateColumns: "2fr 1.2fr 1fr 1fr 1fr 80px" }}
+                      style={{ gridTemplateColumns: "2fr 1.2fr 1fr 1fr 1fr 80px 28px" }}
                     >
                       <div className="flex items-center gap-2 min-w-0">
                         <div
@@ -698,9 +1090,7 @@ export default function AllowanceDetail() {
                         </div>
                       </div>
                       <p className="text-[11px] text-muted-foreground">{bill.billNumber}</p>
-                      <p className="text-[11px] text-muted-foreground">
-                        {new Date(bill.billDate).toLocaleDateString("en-AU", { day: "2-digit", month: "short", year: "numeric" })}
-                      </p>
+                      <p className="text-[11px] text-muted-foreground">{formatFullDate(bill.billDate)}</p>
                       <p className="text-xs font-semibold text-foreground text-right">{formatCurrency(bill.amountExGst)}</p>
                       <p className="text-xs font-semibold text-foreground text-right">{formatCurrency(bill.amountIncGst)}</p>
                       <span
@@ -709,16 +1099,25 @@ export default function AllowanceDetail() {
                       >
                         Saved
                       </span>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6"
+                        onClick={() => deleteBillAllocationMutation.mutate(bill.id)}
+                        data-testid={`button-remove-bill-${bill.id}`}
+                      >
+                        <Plus className="h-3 w-3 rotate-45" />
+                      </Button>
                     </div>
                   ))}
-                  {pendingPsBillItems.map((li, idx) => {
+                  {pendingPsBillItems.map((li) => {
                     const parentBill = bills.find((b) => b.id === li.billId);
-                    const liExGst = exGst(li.total);
+                    const liExGst = li.total; // line items are stored ex GST
                     return (
                       <div
                         key={li.id}
                         className="grid items-center py-2.5 border-b border-border gap-2"
-                        style={{ gridTemplateColumns: "2fr 1.2fr 1fr 1fr 1fr 80px", background: "hsl(var(--amber-light) / 0.4)" }}
+                        style={{ gridTemplateColumns: "2fr 1.2fr 1fr 1fr 1fr 80px 28px", background: "hsl(var(--amber-light) / 0.4)" }}
                       >
                         <div className="flex items-center gap-2 min-w-0">
                           <div
@@ -736,16 +1135,24 @@ export default function AllowanceDetail() {
                         </div>
                         <p className="text-[11px] text-muted-foreground">{parentBill?.billNumber || "—"}</p>
                         <p className="text-[11px] text-muted-foreground">
-                          {parentBill ? new Date(parentBill.billDate).toLocaleDateString("en-AU", { day: "2-digit", month: "short", year: "numeric" }) : "—"}
+                          {parentBill ? formatFullDate(parentBill.billDate) : "—"}
                         </p>
                         <p className="text-xs font-semibold text-foreground text-right">{formatCurrency(liExGst)}</p>
-                        <p className="text-xs font-semibold text-foreground text-right">{formatCurrency(li.total)}</p>
+                        <p className="text-xs font-semibold text-foreground text-right">{formatCurrency(li.totalIncGst)}</p>
                         <span
                           className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold w-fit"
                           style={{ background: "hsl(var(--amber-light))", color: "hsl(var(--amber))" }}
                         >
                           Pending
                         </span>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6"
+                          onClick={() => togglePsLineItemSelection(li.id)}
+                        >
+                          <Plus className="h-3 w-3 rotate-45" />
+                        </Button>
                       </div>
                     );
                   })}
@@ -762,7 +1169,7 @@ export default function AllowanceDetail() {
                         Subtotal:{" "}
                         {formatCurrency(
                           allocatedBills.reduce((s, b) => s + b.amountExGst, 0) +
-                            pendingPsBillItems.reduce((s, li) => s + exGst(li.total), 0)
+                            pendingPsBillItems.reduce((s, li) => s + li.total, 0)
                         )}{" "}
                         ex
                       </p>
@@ -778,94 +1185,121 @@ export default function AllowanceDetail() {
               iconBg="hsl(var(--teal-light))"
               iconText="T"
               title="Timesheets"
-              subtitle="Labour entries for this allowance"
+              subtitle={`Labour entries · ${timesheetDisplayPref === "date" ? "grouped by date" : timesheetDisplayPref === "person-summary" ? "one line per person" : "grouped by person"}`}
               actionLabel="+ Add Timesheets"
               onAction={() => setIsTimesheetModalOpen(true)}
             >
-              {allocatedTimesheets.length === 0 && pendingTimesheets.length === 0 ? (
+              {sectionTimesheetRows.length === 0 ? (
                 <EmptyState variant="inline" title="No timesheets added yet." className="py-6" />
               ) : (
                 <div className="pt-2">
                   <div
                     className="grid text-[9px] font-semibold text-muted-foreground uppercase tracking-wide py-2 border-b border-border gap-2"
-                    style={{ gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr" }}
+                    style={{ gridTemplateColumns: "1.8fr 0.7fr 0.9fr 1fr 1fr 1fr 28px" }}
                   >
-                    <span>Team member</span>
-                    <span>Hours</span>
-                    <span>Rate</span>
+                    <span>{timesheetDisplayPref === "person" ? "Date" : "Team member"}</span>
+                    <span className="text-right">Hours</span>
+                    <span className="text-right">Rate</span>
+                    <span>Cost Code</span>
                     <span className="text-right">Ex GST</span>
                     <span className="text-right">Inc GST</span>
+                    <span />
                   </div>
-                  {allocatedTimesheets.map((ts, idx) => (
+                  {timesheetDisplayPref === "person-summary" && personSummaryRows.map((row, idx) => (
                     <div
-                      key={ts.id}
+                      key={row.staffName}
                       className="grid items-center py-2.5 border-b border-border gap-2"
-                      style={{ gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr" }}
+                      style={{ gridTemplateColumns: "1.8fr 0.7fr 0.9fr 1fr 1fr 1fr 28px" }}
                     >
                       <div className="flex items-center gap-2">
                         <div
-                          className="w-7 h-7 rounded-full flex items-center justify-center text-[9px] font-bold flex-shrink-0"
+                          className="w-6 h-6 rounded-full flex items-center justify-center text-[8px] font-bold flex-shrink-0"
                           style={{ background: avatarColor(idx).bg, color: avatarColor(idx).text }}
                         >
-                          {initials(ts.staffName || "TM")}
+                          {initials(row.staffName)}
                         </div>
-                        <div>
-                          <p className="text-xs font-semibold text-foreground">{ts.staffName || "Team member"}</p>
-                          <p className="text-[10px] text-muted-foreground">
-                            {new Date(ts.date).toLocaleDateString("en-AU", { day: "2-digit", month: "short" })}
-                          </p>
-                        </div>
+                        <p className="text-xs font-semibold text-foreground">
+                          {row.staffName}
+                          {!row.allSaved && (
+                            <span
+                              className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-semibold"
+                              style={{ background: "hsl(var(--teal-light))", color: "hsl(var(--teal))" }}
+                            >
+                              Pending
+                            </span>
+                          )}
+                        </p>
                       </div>
-                      <p className="text-[11px] text-foreground">{ts.durationHours} hrs</p>
-                      <p className="text-[11px] text-foreground">{formatCurrency(ts.hourlyRateCents)}/hr</p>
-                      <p className="text-xs font-semibold text-foreground text-right">{formatCurrency(ts.amountExGst)}</p>
-                      <p className="text-xs font-semibold text-foreground text-right">{formatCurrency(ts.amountIncGst)}</p>
+                      <p className="text-[11px] text-foreground text-right">{row.hours} hrs</p>
+                      <p className="text-[11px] text-foreground text-right">{formatCurrency(row.rateCents)}/hr</p>
+                      <p className="text-[11px] text-muted-foreground truncate">{row.costCode}</p>
+                      <p className="text-xs font-semibold text-foreground text-right">{formatCurrency(row.exCents)}</p>
+                      <p className="text-xs font-semibold text-foreground text-right">{formatCurrency(row.incCents)}</p>
+                      <span />
                     </div>
                   ))}
-                  {pendingTimesheets.map((ts, idx) => {
-                    const totalCents = Math.round(ts.total * 100);
-                    const tsExGst = exGst(totalCents);
-                    const hourlyRate = ts.duration > 0 ? Math.round(totalCents / ts.duration) : 0;
-                    const staffName = getUserName(ts.userId);
-                    return (
-                      <div
-                        key={ts.id}
-                        className="grid items-center py-2.5 border-b border-border gap-2"
-                        style={{ gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr", background: "hsl(var(--teal-light) / 0.3)" }}
-                      >
-                        <div className="flex items-center gap-2">
-                          <div
-                            className="w-7 h-7 rounded-full flex items-center justify-center text-[9px] font-bold flex-shrink-0"
-                            style={{ background: "hsl(var(--teal-light))", color: "hsl(var(--teal))" }}
-                          >
-                            {initials(staffName)}
-                          </div>
-                          <div>
-                            <p className="text-xs font-semibold text-foreground">{staffName}</p>
-                            <p className="text-[10px] text-muted-foreground">
-                              {new Date(ts.date).toLocaleDateString("en-AU", { day: "2-digit", month: "short" })}
-                            </p>
-                          </div>
+                  {timesheetDisplayPref !== "person-summary" && sectionTimesheetGroups.map(([groupLabel, rows], groupIdx) => (
+                    <div key={groupLabel}>
+                      <div className="flex items-center gap-2 pt-2.5 pb-1">
+                        <div
+                          className="w-6 h-6 rounded-full flex items-center justify-center text-[8px] font-bold flex-shrink-0"
+                          style={{ background: avatarColor(groupIdx).bg, color: avatarColor(groupIdx).text }}
+                        >
+                          {timesheetDisplayPref === "person" ? initials(groupLabel) : groupLabel.slice(0, 2)}
                         </div>
-                        <p className="text-[11px] text-foreground">{ts.duration} hrs</p>
-                        <p className="text-[11px] text-foreground">{formatCurrency(hourlyRate)}/hr</p>
-                        <p className="text-xs font-semibold text-foreground text-right">{formatCurrency(tsExGst)}</p>
-                        <p className="text-xs font-semibold text-foreground text-right">{formatCurrency(totalCents)}</p>
+                        <p className="text-xs font-semibold text-foreground">{groupLabel}</p>
+                        <p className="text-[10px] text-muted-foreground ml-auto">
+                          {formatCurrency(rows.reduce((s, r) => s + r.exCents, 0))} ex
+                        </p>
                       </div>
-                    );
-                  })}
-                  {(allocatedTimesheets.length > 0 || pendingTimesheets.length > 0) && (
-                    <div className="flex justify-end pt-2">
-                      <p className="text-xs font-semibold text-foreground">
-                        Subtotal:{" "}
-                        {formatCurrency(
-                          allocatedTimesheets.reduce((s, ts) => s + ts.amountExGst, 0) +
-                            pendingTimesheets.reduce((s, ts) => s + exGst(Math.round(ts.total * 100)), 0)
-                        )}{" "}
-                        ex
-                      </p>
+                      {rows.map((row) => (
+                        <div
+                          key={row.id}
+                          className="grid items-center py-2 border-b border-border gap-2"
+                          style={{
+                            gridTemplateColumns: "1.8fr 0.7fr 0.9fr 1fr 1fr 1fr 28px",
+                            background: row.saved ? undefined : "hsl(var(--teal-light) / 0.3)",
+                          }}
+                        >
+                          <p className="text-[11px] text-foreground pl-8">
+                            {timesheetDisplayPref === "person" ? formatDayMonth(row.date) : row.staffName}
+                            {!row.saved && (
+                              <span
+                                className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-semibold"
+                                style={{ background: "hsl(var(--teal-light))", color: "hsl(var(--teal))" }}
+                              >
+                                Pending
+                              </span>
+                            )}
+                          </p>
+                          <p className="text-[11px] text-foreground text-right">{row.hours} hrs</p>
+                          <p className="text-[11px] text-foreground text-right">{formatCurrency(row.rateCents)}/hr</p>
+                          <p className="text-[11px] text-muted-foreground truncate">{row.costCode}</p>
+                          <p className="text-xs font-semibold text-foreground text-right">{formatCurrency(row.exCents)}</p>
+                          <p className="text-xs font-semibold text-foreground text-right">{formatCurrency(row.incCents)}</p>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6"
+                            onClick={() =>
+                              row.saved
+                                ? deleteTimesheetAllocationMutation.mutate(row.id)
+                                : toggleTimesheetSelection(row.id)
+                            }
+                            data-testid={`button-remove-timesheet-${row.id}`}
+                          >
+                            <Plus className="h-3 w-3 rotate-45" />
+                          </Button>
+                        </div>
+                      ))}
                     </div>
-                  )}
+                  ))}
+                  <div className="flex justify-end pt-2">
+                    <p className="text-xs font-semibold text-foreground">
+                      Subtotal: {formatCurrency(sectionTimesheetRows.reduce((s, r) => s + r.exCents, 0))} ex
+                      {" · "}labour is ex GST
+                    </p>
+                  </div>
                 </div>
               )}
             </SectionCard>
@@ -877,79 +1311,26 @@ export default function AllowanceDetail() {
               iconText="+"
               title="Custom Lines"
               subtitle="Manual line items not covered above"
-              actionLabel="+ Add Line"
-              onAction={() => setIsCustomLineDialogOpen(true)}
+              headerExtra={<LineItemColumnsButton columns={customLineColumns} />}
             >
-              {customLines.length === 0 && allocatedItems.length === 0 ? (
-                <EmptyState
-                  variant="inline"
-                  title="No custom lines yet"
-                  description="Add a line for any cost not covered by bills or timesheets."
-                  className="py-6"
-                />
-              ) : (
-                <div className="pt-2 space-y-2">
-                  {[...allocatedItems, ...customLines].map((line) => {
-                    const isCustom = customLines.some((c) => c.id === line.id);
-                    return (
-                      <div key={line.id} className="flex items-center justify-between py-2 border-b border-border">
-                        <div>
-                          <p className="text-xs font-semibold text-foreground">{line.description}</p>
-                          <p className="text-[10px] text-muted-foreground">
-                            {line.quantity} × {formatCurrency(line.unitPrice)}
-                          </p>
-                        </div>
-                        <div className="flex items-center gap-3">
-                          <div className="text-right">
-                            <p className="text-xs font-semibold">{formatCurrency(exGst(line.total))} ex</p>
-                            <p className="text-[10px] text-muted-foreground">{formatCurrency(line.total)} inc</p>
-                          </div>
-                          {isCustom && (
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-6 w-6"
-                              onClick={() => handleRemoveCustomLine(line.id)}
-                            >
-                              <Plus className="h-3 w-3 rotate-45" />
-                            </Button>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </SectionCard>
-
-            {/* Total bar */}
-            <div
-              className="rounded-xl px-5 py-4 flex items-center gap-4 flex-wrap"
-              style={{ background: "hsl(var(--foreground))" }}
-            >
-              <div>
-                <p className="text-[9px] font-semibold uppercase tracking-widest mb-1" style={{ color: "rgba(255,255,255,0.4)" }}>
-                  TOTAL ACTUAL
-                </p>
-                <p className="text-sm font-semibold text-white">
-                  {formatCurrency(actualExGst)} ex &nbsp;/&nbsp; {formatCurrency(actualIncGst)} inc GST
-                </p>
-              </div>
-              <p className="text-[11px] ml-2" style={{ color: "rgba(255,255,255,0.35)" }}>
-                vs Estimate {formatCurrency(estimateExGst)} ex / {formatCurrency(estimateIncGst)} inc
-              </p>
-              <div className="ml-auto">
-                <span
-                  className="inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-semibold"
-                  style={{
-                    background: isOverBudget ? "hsl(var(--coral-light))" : "hsl(var(--sage-light))",
-                    color: isOverBudget ? "hsl(var(--coral))" : "hsl(var(--sage))",
+              <div className="pt-2">
+                <LineItemsTable
+                  columns={customLineColumns}
+                  rows={customLineRows}
+                  costCodes={costCodes}
+                  onAdd={(line) => setPendingLines([...pendingLines, { ...line, id: `custom-${Date.now()}-${pendingLines.length}` }])}
+                  onUpdate={(id, line) => {
+                    if (pendingLines.some((l) => l.id === id)) {
+                      setPendingLines(pendingLines.map((l) => (l.id === id ? { ...line, id } : l)));
+                    } else {
+                      updateAllowanceItemMutation.mutate({ id, line });
+                    }
                   }}
-                >
-                  {isOverBudget ? "↑ Over budget" : "↓ Under budget"}
-                </span>
+                  onDelete={handleDeleteCustomLine}
+                  addLabel="Add line"
+                />
               </div>
-            </div>
+            </SectionCard>
 
             {/* Save / Discard pending */}
             {hasPendingItems && (
@@ -958,8 +1339,8 @@ export default function AllowanceDetail() {
                   variant="outline"
                   onClick={() => {
                     setSelectedPsLineItems(new Set());
-                    setSelectedTimesheets(new Set());
-                    setCustomLines([]);
+                    setSelectedTimesheetKeys(new Set());
+                    setPendingLines([]);
                   }}
                 >
                   Discard
@@ -972,245 +1353,436 @@ export default function AllowanceDetail() {
           </>
         )}
 
-        {/* ── PC SECTION ──────────────────────────────────────────────────── */}
+        {/* ── PC SECTIONS ─────────────────────────────────────────────────── */}
         {isPrimeCost && (
-          <div className="relative bg-card rounded-xl border border-border overflow-hidden">
-            <div className="absolute left-0 top-0 bottom-0 w-[3px] bg-primary" />
-            <div className="px-5 py-4 pl-6">
-              <p className="text-sm font-semibold text-foreground mb-1">Actual Cost</p>
-              <p className="text-xs text-muted-foreground mb-4">Enter the actual cost or select from bill line items</p>
-
-              {useSimpleEntry ? (
-                <div className="space-y-3">
-                  <div className="space-y-1.5">
-                    <Label htmlFor="actualCost" className="text-xs">Actual Cost (excl. markup)</Label>
-                    <Input
-                      id="actualCost"
-                      type="number"
-                      step="0.01"
-                      placeholder="Enter cost"
-                      value={enteredActualCost}
-                      onChange={(e) => setEnteredActualCost(e.target.value)}
-                      data-testid="input-actual-cost"
-                      className="h-8 text-sm"
-                    />
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <Button variant="ghost" size="sm" onClick={() => setUseSimpleEntry(false)} className="text-xs" data-testid="button-show-breakdown">
-                      Show pricing breakdown
-                    </Button>
-                    <Button
-                      size="sm"
-                      onClick={handleSavePcItem}
-                      disabled={(!enteredActualCost && selectedLineItems.size === 0) || isSavingPc}
-                      data-testid="button-save-pc-item"
-                    >
-                      {isSavingPc ? "Saving…" : "Save"}
-                    </Button>
-                  </div>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  <div className="flex justify-between items-center">
-                    <p className="text-sm font-semibold">Pricing Breakdown</p>
-                    <Button variant="ghost" size="sm" onClick={() => setUseSimpleEntry(true)} className="text-xs" data-testid="button-hide-breakdown">
-                      Use simple entry
-                    </Button>
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="pcQuantity" className="text-xs">Quantity</Label>
-                    <Input
-                      id="pcQuantity"
-                      type="number"
-                      step="0.01"
-                      min="0.01"
-                      placeholder="1"
-                      value={pcQuantity}
-                      onChange={(e) => setPcQuantity(e.target.value)}
-                      data-testid="input-pc-quantity"
-                      className="h-8 text-sm"
-                    />
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-1.5">
-                      <Label htmlFor="pcUnitCostExTax" className="text-xs">Unit Cost (Ex Tax)</Label>
-                      <Input
-                        id="pcUnitCostExTax"
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        placeholder="0.00"
-                        value={pcUnitCostExTax}
-                        onChange={(e) => {
-                          const v = e.target.value;
-                          setPcUnitCostExTax(v);
-                          if (v) {
-                            const ex = Math.round(parseFloat(v) * 100);
-                            setPcUnitCostIncTax((Math.round((ex * 11) / 10) / 100).toFixed(2));
-                          } else setPcUnitCostIncTax("");
+          <>
+            {/* Linked selection */}
+            <SectionCard
+              accentColor="hsl(var(--primary))"
+              iconBg="hsl(var(--primary) / 0.12)"
+              iconText="S"
+              title="Linked Selection"
+              subtitle="Client selection driving this Prime Cost item"
+            >
+              <div className="pt-3">
+                {linkedSelection ? (
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between flex-wrap gap-2">
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold text-foreground truncate" data-testid="text-linked-selection-name">
+                          {linkedSelection.name}
+                        </p>
+                        <p className="text-[11px] text-muted-foreground">
+                          {[linkedSelection.category, linkedSelection.room].filter(Boolean).join(" · ") || "Selection"}
+                          {" · "}{linkedSelection.optionCount} option{linkedSelection.optionCount === 1 ? "" : "s"}
+                        </p>
+                      </div>
+                      <span
+                        className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-semibold capitalize"
+                        style={{
+                          background: linkedSelection.status === "approved" ? "hsl(var(--sage-light))" : "hsl(var(--amber-light))",
+                          color: linkedSelection.status === "approved" ? "hsl(var(--sage))" : "hsl(var(--amber))",
                         }}
-                        data-testid="input-pc-unit-cost-ex-tax"
-                        className="h-8 text-sm"
-                      />
+                      >
+                        {linkedSelection.status}
+                      </span>
                     </div>
-                    <div className="space-y-1.5">
-                      <Label htmlFor="pcUnitCostIncTax" className="text-xs">Unit Cost (Inc Tax)</Label>
-                      <Input
-                        id="pcUnitCostIncTax"
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        placeholder="0.00"
-                        value={pcUnitCostIncTax}
-                        onChange={(e) => {
-                          const v = e.target.value;
-                          setPcUnitCostIncTax(v);
-                          if (v) {
-                            const inc = Math.round(parseFloat(v) * 100);
-                            setPcUnitCostExTax((Math.round((inc * 10) / 11) / 100).toFixed(2));
-                          } else setPcUnitCostExTax("");
-                        }}
-                        data-testid="input-pc-unit-cost-inc-tax"
-                        className="h-8 text-sm"
-                      />
-                    </div>
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="pcMarkupPercent" className="text-xs">Markup % (Optional)</Label>
-                    <Input
-                      id="pcMarkupPercent"
-                      type="number"
-                      step="0.1"
-                      min="0"
-                      placeholder="0"
-                      value={pcMarkupPercent}
-                      onChange={(e) => setPcMarkupPercent(e.target.value)}
-                      data-testid="input-pc-markup"
-                      className="h-8 text-sm"
-                    />
-                  </div>
-                  {(() => {
-                    const qty = parseFloat(pcQuantity) || 0;
-                    const unitCost = parseFloat(pcUnitCostExTax) || 0;
-                    const markup = parseFloat(pcMarkupPercent) || 0;
-                    const builderExCents = Math.round(qty * unitCost * 100);
-                    const builderIncCents = builderExCents + Math.round((builderExCents * 10) / 100);
-                    const markupCents = Math.round((builderExCents * markup) / 100);
-                    const amountEx = builderExCents + markupCents;
-                    const amountInc = amountEx + Math.round((amountEx * 10) / 100);
-                    return (
-                      <div className="grid grid-cols-2 gap-3 p-3 rounded-lg border border-border bg-muted/30 text-sm">
+                    {linkedSelection.selectedOption ? (
+                      <div className="flex items-center justify-between p-3 rounded-lg border border-border bg-muted/30 flex-wrap gap-2">
                         <div>
-                          <p className="text-xs text-muted-foreground">Builder cost ex tax</p>
-                          <p className="font-semibold" data-testid="text-builder-cost-ex-tax">{formatCurrency(builderExCents)}</p>
+                          <p className="text-xs font-semibold text-foreground">{linkedSelection.selectedOption.name}</p>
+                          <p className="text-[10px] text-muted-foreground">
+                            {linkedSelection.selectedOption.quantity} {linkedSelection.selectedOption.unitType} ×{" "}
+                            {formatCurrency(linkedSelection.selectedOption.unitCostCents)}
+                            {linkedSelection.selectedOption.gstInclusive ? " inc" : " ex"} GST
+                            {linkedSelection.selectedOption.markupPercent ? ` + ${linkedSelection.selectedOption.markupPercent}% markup` : ""}
+                          </p>
                         </div>
-                        <div>
-                          <p className="text-xs text-muted-foreground">Builder cost inc tax</p>
-                          <p className="font-semibold" data-testid="text-builder-cost-inc-tax">{formatCurrency(builderIncCents)}</p>
-                        </div>
-                        <div>
-                          <p className="text-xs text-muted-foreground">Amount ex tax</p>
-                          <p className="font-semibold" data-testid="text-amount-ex-tax">{formatCurrency(amountEx)}</p>
-                        </div>
-                        <div>
-                          <p className="text-xs text-muted-foreground">Amount inc tax</p>
-                          <p className="font-semibold text-primary" data-testid="text-amount-inc-tax">{formatCurrency(amountInc)}</p>
+                        <div className="flex items-center gap-3">
+                          <p className="text-sm font-bold text-foreground">
+                            {formatCurrency(linkedSelection.selectedOption.totalExCents)}
+                            <span className="text-[10px] font-normal text-muted-foreground ml-1">ex</span>
+                            <span className="text-xs font-semibold text-muted-foreground ml-2">
+                              {formatCurrency(linkedSelection.selectedOption.totalIncCents)}
+                            </span>
+                            <span className="text-[10px] font-normal text-muted-foreground ml-1">inc GST</span>
+                          </p>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-7 text-xs"
+                            disabled={syncSelectionMutation.isPending}
+                            onClick={() => syncSelectionMutation.mutate()}
+                            data-testid="button-use-selection-costing"
+                          >
+                            {syncSelectionMutation.isPending ? (
+                              <Loader2 className="h-3 w-3 mr-1.5 animate-spin" />
+                            ) : (
+                              <RefreshCw className="h-3 w-3 mr-1.5" />
+                            )}
+                            Use selection costing
+                          </Button>
                         </div>
                       </div>
-                    );
-                  })()}
-                  <div className="flex justify-end">
+                    ) : (
+                      <p className="text-xs text-muted-foreground">
+                        No option chosen yet — costing will sync automatically when an option is approved.
+                      </p>
+                    )}
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <Select value={selectionToLink} onValueChange={setSelectionToLink}>
+                      <SelectTrigger className="h-8 text-xs w-64" data-testid="select-link-selection">
+                        <SelectValue placeholder="Choose a selection to link…" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {projectSelections.filter((s) => !s.estimateItemId).map((s) => (
+                          <SelectItem key={s.id} value={s.id} className="text-xs">
+                            {s.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                     <Button
                       size="sm"
-                      onClick={handleSavePcItem}
-                      disabled={(!pcUnitCostExTax && selectedLineItems.size === 0) || isSavingPc}
-                      data-testid="button-save-pc-item"
+                      className="h-8 text-xs"
+                      disabled={!selectionToLink || linkSelectionMutation.isPending}
+                      onClick={() => linkSelectionMutation.mutate(selectionToLink)}
+                      data-testid="button-link-selection"
                     >
-                      {isSavingPc ? "Saving…" : "Save"}
+                      <Link2 className="h-3.5 w-3.5 mr-1.5" /> Link
                     </Button>
+                    <p className="text-[11px] text-muted-foreground w-full">
+                      Linking a selection lets its approved option's costing flow into this allowance automatically.
+                    </p>
                   </div>
+                )}
+              </div>
+            </SectionCard>
+
+            {/* Cost entries */}
+            <SectionCard
+              accentColor="hsl(var(--sage))"
+              iconBg="hsl(var(--sage-light))"
+              iconText="$"
+              title="Cost Entries"
+              subtitle="Actual costs recorded against this Prime Cost item"
+              headerExtra={<LineItemColumnsButton columns={pcEntryColumns} />}
+            >
+              <div className="pt-2">
+                <LineItemsTable
+                  columns={pcEntryColumns}
+                  rows={[
+                    ...allocatedItems.map((i) => ({
+                      id: i.id,
+                      itemName: i.itemName,
+                      description: i.description,
+                      costCode: i.costCode,
+                      quantity: i.quantity,
+                      unitType: i.unitType,
+                      unitCostExTaxCents: i.unitCostExTaxCents,
+                      markupPercent: i.markupPercent,
+                      unitPrice: i.unitPrice,
+                      total: i.total,
+                    })),
+                    ...pcPendingLines.map((l) => ({
+                      id: l.id,
+                      itemName: l.itemName,
+                      description: l.description,
+                      costCode: l.costCode,
+                      quantity: l.quantity,
+                      unitType: l.unitType,
+                      unitCostExTaxCents: l.unitCostExTaxCents,
+                      markupPercent: l.markupPercent,
+                      unitPrice: l.unitPrice,
+                      total: l.totalPrice,
+                      pending: true,
+                    })),
+                  ]}
+                  costCodes={costCodes}
+                  onAdd={(line) => setPcPendingLines([...pcPendingLines, { ...line, id: `pc-${Date.now()}-${pcPendingLines.length}` }])}
+                  onUpdate={(id, line) => {
+                    if (pcPendingLines.some((l) => l.id === id)) {
+                      setPcPendingLines(pcPendingLines.map((l) => (l.id === id ? { ...line, id } : l)));
+                    } else {
+                      updateAllowanceItemMutation.mutate({ id, line });
+                    }
+                  }}
+                  onDelete={(id) => {
+                    if (pcPendingLines.some((l) => l.id === id)) {
+                      setPcPendingLines(pcPendingLines.filter((l) => l.id !== id));
+                    } else {
+                      deleteAllowanceItemMutation.mutate(id);
+                    }
+                  }}
+                  addLabel="Add cost entry"
+                />
+              </div>
+            </SectionCard>
+
+            {/* Bills */}
+            <SectionCard
+              accentColor="hsl(var(--amber))"
+              iconBg="hsl(var(--amber-light))"
+              iconText="$"
+              title="Bills"
+              subtitle="Supplier invoices allocated to this Prime Cost item"
+              actionLabel="+ Select from Bills"
+              onAction={() => setIsBillModalOpen(true)}
+            >
+              {allocatedBills.length === 0 && pendingPcBillItems.length === 0 ? (
+                <EmptyState
+                  variant="inline"
+                  title="No bills allocated yet"
+                  description={"Click “+ Select from Bills” to allocate supplier invoice lines."}
+                  className="py-6"
+                />
+              ) : (
+                <div className="pt-2">
+                  <div
+                    className="grid text-[9px] font-semibold text-muted-foreground uppercase tracking-wide py-2 border-b border-border gap-2"
+                    style={{ gridTemplateColumns: "2fr 1.2fr 1fr 1fr 1fr 80px 28px" }}
+                  >
+                    <span>Supplier</span>
+                    <span>Invoice #</span>
+                    <span>Date</span>
+                    <span className="text-right">Ex GST</span>
+                    <span className="text-right">Inc GST</span>
+                    <span>Status</span>
+                    <span />
+                  </div>
+                  {allocatedBills.map((bill, idx) => (
+                    <div
+                      key={bill.id}
+                      className="grid items-center py-2.5 border-b border-border gap-2"
+                      style={{ gridTemplateColumns: "2fr 1.2fr 1fr 1fr 1fr 80px 28px" }}
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <div
+                          className="w-7 h-7 rounded-full flex items-center justify-center text-[9px] font-bold flex-shrink-0"
+                          style={{ background: avatarColor(idx).bg, color: avatarColor(idx).text }}
+                        >
+                          {initials(bill.supplierName || bill.billNumber)}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-xs font-semibold text-foreground truncate">{bill.supplierName || "—"}</p>
+                          <p className="text-[10px] text-muted-foreground truncate">{bill.lineItemDescription}</p>
+                        </div>
+                      </div>
+                      <p className="text-[11px] text-muted-foreground">{bill.billNumber}</p>
+                      <p className="text-[11px] text-muted-foreground">{formatFullDate(bill.billDate)}</p>
+                      <p className="text-xs font-semibold text-foreground text-right">{formatCurrency(bill.amountExGst)}</p>
+                      <p className="text-xs font-semibold text-foreground text-right">{formatCurrency(bill.amountIncGst)}</p>
+                      <span
+                        className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold w-fit"
+                        style={{ background: "hsl(var(--sage-light))", color: "hsl(var(--sage))" }}
+                      >
+                        Saved
+                      </span>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6"
+                        onClick={() => deleteBillAllocationMutation.mutate(bill.id)}
+                        data-testid={`button-remove-pc-bill-${bill.id}`}
+                      >
+                        <Plus className="h-3 w-3 rotate-45" />
+                      </Button>
+                    </div>
+                  ))}
+                  {pendingPcBillItems.map((li) => {
+                    const parentBill = bills.find((b) => b.id === li.billId);
+                    return (
+                      <div
+                        key={li.id}
+                        className="grid items-center py-2.5 border-b border-border gap-2"
+                        style={{ gridTemplateColumns: "2fr 1.2fr 1fr 1fr 1fr 80px 28px", background: "hsl(var(--amber-light) / 0.4)" }}
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          <div
+                            className="w-7 h-7 rounded-full flex items-center justify-center text-[9px] font-bold flex-shrink-0"
+                            style={{ background: "hsl(var(--amber-light))", color: "hsl(var(--amber))" }}
+                          >
+                            {initials(parentBill?.billReference || parentBill?.billNumber || "??")}
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-xs font-semibold text-foreground truncate">
+                              {parentBill?.billReference || parentBill?.billNumber || "Bill"}
+                            </p>
+                            <p className="text-[10px] text-muted-foreground truncate">{li.description}</p>
+                          </div>
+                        </div>
+                        <p className="text-[11px] text-muted-foreground">{parentBill?.billNumber || "—"}</p>
+                        <p className="text-[11px] text-muted-foreground">
+                          {parentBill ? formatFullDate(parentBill.billDate) : "—"}
+                        </p>
+                        <p className="text-xs font-semibold text-foreground text-right">{formatCurrency(li.total)}</p>
+                        <p className="text-xs font-semibold text-foreground text-right">{formatCurrency(li.totalIncGst)}</p>
+                        <span
+                          className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold w-fit"
+                          style={{ background: "hsl(var(--amber-light))", color: "hsl(var(--amber))" }}
+                        >
+                          Pending
+                        </span>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6"
+                          onClick={() => toggleLineItemSelection(li.id)}
+                        >
+                          <Plus className="h-3 w-3 rotate-45" />
+                        </Button>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
+            </SectionCard>
 
-              <div className="mt-4 pt-4 border-t border-border">
-                <Dialog open={isBillModalOpen} onOpenChange={setIsBillModalOpen}>
-                  <DialogTrigger asChild>
-                    <Button variant="outline" size="sm" data-testid="button-select-from-bills">
-                      <Plus className="h-4 w-4 mr-2" /> Select from Bills
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent className="max-w-4xl max-h-[80vh] overflow-hidden flex flex-col">
-                    <DialogHeader>
-                      <DialogTitle>Select Bill Line Items</DialogTitle>
-                      <DialogDescription>Choose bill line items to allocate to this allowance</DialogDescription>
-                    </DialogHeader>
-                    <div className="flex-1 overflow-auto">
-                      {bills.length === 0 ? (
-                        <EmptyState variant="inline" title="No bills found for this project" className="py-8" />
-                      ) : (
-                        <div className="space-y-2">
-                          {bills.map((bill) => {
-                            const lineItems = billLineItems.filter((li) => li.billId === bill.id);
-                            const isExpanded = expandedBills.has(bill.id);
-                            return (
-                              <Card key={bill.id}>
-                                <CardHeader className="cursor-pointer py-3" onClick={() => toggleBillExpanded(bill.id)}>
-                                  <div className="flex items-center justify-between">
-                                    <div className="flex items-center gap-2">
-                                      {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                                      <div>
-                                        <p className="font-semibold text-sm">{bill.billNumber}</p>
-                                        <p className="text-xs text-muted-foreground">
-                                          {new Date(bill.billDate).toLocaleDateString("en-AU")}
-                                          {bill.billReference && ` · ${bill.billReference}`}
-                                        </p>
-                                      </div>
-                                    </div>
-                                    <p className="font-semibold text-sm">{formatCurrency(bill.total)}</p>
-                                  </div>
-                                </CardHeader>
-                                {isExpanded && lineItems.length > 0 && (
-                                  <CardContent className="pt-0">
-                                    <div className="space-y-1">
-                                      {lineItems.map((li) => (
-                                        <div key={li.id} className="flex items-center justify-between p-2 rounded border">
-                                          <div className="flex items-center gap-2 flex-1">
-                                            <Checkbox
-                                              checked={selectedLineItems.has(li.id)}
-                                              onCheckedChange={() => toggleLineItemSelection(li.id)}
-                                              data-testid={`checkbox-line-item-${li.id}`}
-                                            />
-                                            <div>
-                                              <p className="text-sm font-medium">{li.description}</p>
-                                              <p className="text-xs text-muted-foreground">{li.quantity} × {formatCurrency(li.unitPrice)}</p>
-                                            </div>
-                                          </div>
-                                          <p className="text-sm font-semibold">{formatCurrency(li.total)}</p>
-                                        </div>
-                                      ))}
-                                    </div>
-                                  </CardContent>
-                                )}
-                              </Card>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
-                    <div className="flex justify-end gap-2 pt-4 border-t">
-                      <Button variant="outline" onClick={() => setIsBillModalOpen(false)}>Cancel</Button>
-                      <Button onClick={() => setIsBillModalOpen(false)} data-testid="button-save-selections">Add Selected</Button>
-                    </div>
-                  </DialogContent>
-                </Dialog>
+            {/* Save / Discard pending (PC) */}
+            {hasPcPendingItems && (
+              <div className="flex justify-end gap-3 pt-1">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setSelectedLineItems(new Set());
+                    setPcPendingLines([]);
+                  }}
+                >
+                  Discard
+                </Button>
+                <Button onClick={handleSavePcItem} disabled={isSavingPc} data-testid="button-save-pc-item">
+                  {isSavingPc ? "Saving…" : "Save Changes"}
+                </Button>
               </div>
-            </div>
-          </div>
+            )}
+          </>
         )}
+
+        {/* ── TOTAL BAR (live, includes unsaved pending) ───────────────────── */}
+        <div
+          className="rounded-xl px-5 py-4 flex items-center gap-4 flex-wrap"
+          style={{ background: "hsl(var(--foreground))" }}
+        >
+          <div>
+            <p className="text-[9px] font-semibold uppercase tracking-widest mb-1" style={{ color: "rgba(255,255,255,0.4)" }}>
+              TOTAL ACTUAL
+            </p>
+            <p className="text-sm font-semibold text-white" data-testid="text-live-total">
+              {formatCurrency(actualExGst + pendingExCents)} ex &nbsp;/&nbsp; {formatCurrency(actualIncGst + pendingIncCents)} inc GST
+            </p>
+            {pendingIncCents > 0 && (
+              <p className="text-[10px]" style={{ color: "hsl(var(--amber))" }}>
+                includes {formatCurrency(pendingIncCents)} inc pending — save to commit
+              </p>
+            )}
+          </div>
+          <p className="text-[11px] ml-2" style={{ color: "rgba(255,255,255,0.35)" }}>
+            vs Estimate {formatCurrency(estimateExGst)} ex / {formatCurrency(estimateIncGst)} inc
+          </p>
+          <div className="ml-auto">
+            <span
+              className="inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-semibold"
+              style={{
+                background: actualIncGst + pendingIncCents > estimateIncGst ? "hsl(var(--coral-light))" : "hsl(var(--sage-light))",
+                color: actualIncGst + pendingIncCents > estimateIncGst ? "hsl(var(--coral))" : "hsl(var(--sage))",
+              }}
+            >
+              {actualIncGst + pendingIncCents > estimateIncGst ? "↑ Over budget" : "↓ Under budget"}
+            </span>
+          </div>
+        </div>
 
       </div>
 
       {/* ── MODALS ─────────────────────────────────────────────────────────── */}
+
+      {/* PC Bills modal */}
+      <Dialog open={isBillModalOpen} onOpenChange={setIsBillModalOpen}>
+        <DialogContent className="max-w-4xl max-h-[80vh] overflow-hidden flex flex-col">
+          <DialogHeader>
+            <DialogTitle>Select Bill Line Items</DialogTitle>
+            <DialogDescription>Choose bill line items to allocate to this allowance</DialogDescription>
+          </DialogHeader>
+          <div className="flex-1 overflow-auto">
+            {isLoadingBills && bills.length === 0 ? (
+              <ModalLoading label="Loading bills…" />
+            ) : bills.length === 0 ? (
+              <EmptyState variant="inline" title="No bills found for this project" className="py-8" />
+            ) : (
+              <div className="space-y-2">
+                {bills.map((bill) => {
+                  const lineItems = billLineItems.filter((li) => li.billId === bill.id);
+                  const isExpanded = expandedBills.has(bill.id);
+                  return (
+                    <Card key={bill.id}>
+                      <CardHeader className="cursor-pointer py-3" onClick={() => toggleBillExpanded(bill.id)}>
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                            <div>
+                              <p className="font-semibold text-sm">
+                                {bill.billNumber}
+                                {bill.supplierName && <span className="font-normal text-muted-foreground"> · {bill.supplierName}</span>}
+                              </p>
+                              <p className="text-xs text-muted-foreground">
+                                {new Date(bill.billDate).toLocaleDateString("en-AU")}
+                                {bill.billReference && ` · ${bill.billReference}`}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <span
+                              className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold"
+                              style={{
+                                background: isBillApproved(bill) ? "hsl(var(--sage-light))" : "hsl(var(--amber-light))",
+                                color: isBillApproved(bill) ? "hsl(var(--sage))" : "hsl(var(--amber))",
+                              }}
+                            >
+                              {billStatusLabel[bill.status] ?? bill.status}
+                            </span>
+                            <p className="font-semibold text-sm">{formatCurrency(bill.total)}</p>
+                          </div>
+                        </div>
+                      </CardHeader>
+                      {isExpanded && lineItems.length > 0 && (
+                        <CardContent className="pt-0">
+                          <div className="space-y-1">
+                            {lineItems.map((li) => (
+                              <div key={li.id} className={`flex items-center justify-between p-2 rounded border ${!isBillApproved(bill) ? "opacity-60" : ""}`}>
+                                <div className="flex items-center gap-2 flex-1">
+                                  <Checkbox
+                                    checked={selectedLineItems.has(li.id)}
+                                    onCheckedChange={() => isBillApproved(bill) && toggleLineItemSelection(li.id)}
+                                    disabled={!isBillApproved(bill)}
+                                    data-testid={`checkbox-line-item-${li.id}`}
+                                  />
+                                  <div>
+                                    <p className="text-sm font-medium">{li.description}</p>
+                                    <p className="text-xs text-muted-foreground">{li.quantity} × {formatCurrency(li.unitPrice)} ex</p>
+                                  </div>
+                                </div>
+                                <p className="text-sm font-semibold">{formatCurrency(li.total)} <span className="text-xs font-normal text-muted-foreground">ex</span></p>
+                              </div>
+                            ))}
+                          </div>
+                        </CardContent>
+                      )}
+                    </Card>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+          <div className="flex justify-end gap-2 pt-4 border-t">
+            <Button variant="outline" onClick={() => { setSelectedLineItems(new Set()); setIsBillModalOpen(false); }}>Cancel</Button>
+            <Button onClick={() => setIsBillModalOpen(false)} data-testid="button-save-selections">
+              Add {selectedLineItems.size > 0 ? `(${selectedLineItems.size})` : ""} Selected
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* PS Bills modal */}
       <Dialog open={isPsBillModalOpen} onOpenChange={setIsPsBillModalOpen}>
@@ -1220,7 +1792,9 @@ export default function AllowanceDetail() {
             <DialogDescription>Select bill line items to add to this PS allowance</DialogDescription>
           </DialogHeader>
           <div className="flex-1 overflow-auto">
-            {bills.length === 0 ? (
+            {isLoadingBills && bills.length === 0 ? (
+              <ModalLoading label="Loading bills…" />
+            ) : bills.length === 0 ? (
               <EmptyState variant="inline" title="No bills found for this project" className="py-8" />
             ) : (
               <div className="space-y-2">
@@ -1234,33 +1808,48 @@ export default function AllowanceDetail() {
                           <div className="flex items-center gap-2">
                             {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                             <div>
-                              <p className="font-semibold text-sm">{bill.billNumber}</p>
+                              <p className="font-semibold text-sm">
+                                {bill.billNumber}
+                                {bill.supplierName && <span className="font-normal text-muted-foreground"> · {bill.supplierName}</span>}
+                              </p>
                               <p className="text-xs text-muted-foreground">
                                 {new Date(bill.billDate).toLocaleDateString("en-AU")}
                                 {bill.billReference && ` · ${bill.billReference}`}
                               </p>
                             </div>
                           </div>
-                          <p className="font-semibold text-sm">{formatCurrency(bill.total)}</p>
+                          <div className="flex items-center gap-3">
+                            <span
+                              className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold"
+                              style={{
+                                background: isBillApproved(bill) ? "hsl(var(--sage-light))" : "hsl(var(--amber-light))",
+                                color: isBillApproved(bill) ? "hsl(var(--sage))" : "hsl(var(--amber))",
+                              }}
+                            >
+                              {billStatusLabel[bill.status] ?? bill.status}
+                            </span>
+                            <p className="font-semibold text-sm">{formatCurrency(bill.total)}</p>
+                          </div>
                         </div>
                       </CardHeader>
                       {isExpanded && lineItems.length > 0 && (
                         <CardContent className="pt-0">
                           <div className="space-y-1">
                             {lineItems.map((li) => (
-                              <div key={li.id} className="flex items-center justify-between p-2 rounded border">
+                              <div key={li.id} className={`flex items-center justify-between p-2 rounded border ${!isBillApproved(bill) ? "opacity-60" : ""}`}>
                                 <div className="flex items-center gap-2 flex-1">
                                   <Checkbox
                                     checked={selectedPsLineItems.has(li.id)}
-                                    onCheckedChange={() => togglePsLineItemSelection(li.id)}
+                                    onCheckedChange={() => isBillApproved(bill) && togglePsLineItemSelection(li.id)}
+                                    disabled={!isBillApproved(bill)}
                                     data-testid={`checkbox-ps-line-item-${li.id}`}
                                   />
                                   <div>
                                     <p className="text-sm font-medium">{li.description}</p>
-                                    <p className="text-xs text-muted-foreground">{li.quantity} × {formatCurrency(li.unitPrice)}</p>
+                                    <p className="text-xs text-muted-foreground">{li.quantity} × {formatCurrency(li.unitPrice)} ex</p>
                                   </div>
                                 </div>
-                                <p className="text-sm font-semibold">{formatCurrency(li.total)}</p>
+                                <p className="text-sm font-semibold">{formatCurrency(li.total)} <span className="text-xs font-normal text-muted-foreground">ex</span></p>
                               </div>
                             ))}
                           </div>
@@ -1281,72 +1870,84 @@ export default function AllowanceDetail() {
 
       {/* Timesheets modal */}
       <Dialog open={isTimesheetModalOpen} onOpenChange={setIsTimesheetModalOpen}>
-        <DialogContent className="max-w-4xl max-h-[80vh] overflow-hidden flex flex-col">
+        <DialogContent className="max-w-5xl max-h-[80vh] overflow-hidden flex flex-col">
           <DialogHeader>
             <DialogTitle>Add Timesheets</DialogTitle>
             <DialogDescription>
-              All timesheets shown — only approved entries can be selected.
+              All project timesheets shown — only approved entries can be selected. Split timesheets show one row per cost code.
             </DialogDescription>
           </DialogHeader>
 
-          {/* Display mode toggle */}
+          {/* Group-by toggle (browsing aid for THIS list) */}
           <div className="flex items-center gap-1 px-1 py-1 bg-muted rounded-lg self-start">
             <button
               type="button"
-              onClick={() => setTimesheetDisplayMode("date")}
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${timesheetDisplayMode === "date" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground"}`}
+              onClick={() => setTimesheetGroupMode("date")}
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${timesheetGroupMode === "date" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground"}`}
+              data-testid="button-group-by-date"
             >
               <CalendarDays className="h-3 w-3" /> By Date
             </button>
             <button
               type="button"
-              onClick={() => setTimesheetDisplayMode("person")}
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${timesheetDisplayMode === "person" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground"}`}
+              onClick={() => setTimesheetGroupMode("person")}
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${timesheetGroupMode === "person" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground"}`}
+              data-testid="button-group-by-person"
             >
               <Users className="h-3 w-3" /> By Person
             </button>
             <button
               type="button"
-              onClick={() => setTimesheetDisplayMode("description")}
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${timesheetDisplayMode === "description" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground"}`}
+              onClick={() => setTimesheetGroupMode("costcode")}
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${timesheetGroupMode === "costcode" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground"}`}
+              data-testid="button-group-by-cost-code"
             >
-              <LayoutList className="h-3 w-3" /> By Description
+              <Hash className="h-3 w-3" /> By Cost Code
+            </button>
+            <div className="w-px h-4 bg-border mx-1" />
+            <button
+              type="button"
+              onClick={() => setShowTsDescriptions(!showTsDescriptions)}
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${showTsDescriptions ? "bg-background text-foreground shadow-sm" : "text-muted-foreground"}`}
+              data-testid="button-toggle-descriptions"
+            >
+              Descriptions
             </button>
           </div>
 
           <div className="flex-1 overflow-auto">
-            {timesheets.length === 0 ? (
+            {isLoadingTimesheets && timesheetRows.length === 0 ? (
+              <ModalLoading label="Loading timesheets…" />
+            ) : timesheetRows.length === 0 ? (
               <EmptyState variant="inline" title="No timesheets found for this project" className="py-8" />
             ) : (() => {
-              const sortedTimesheets = [...timesheets].sort((a, b) => {
-                if (timesheetDisplayMode === "date") return new Date(b.date).getTime() - new Date(a.date).getTime();
-                if (timesheetDisplayMode === "person") {
-                  const nameA = getUserName(a.userId);
-                  const nameB = getUserName(b.userId);
-                  return nameA.localeCompare(nameB) || new Date(b.date).getTime() - new Date(a.date).getTime();
+              const groupKeyOf = (row: TimesheetDisplayRow): string => {
+                if (timesheetGroupMode === "person") return getUserName(row.userId);
+                if (timesheetGroupMode === "costcode") {
+                  const cc = row.costCodeId ? costCodeMap.get(row.costCodeId) : null;
+                  return cc ? `${cc.code} — ${cc.title}` : "(no cost code)";
                 }
-                return (a.description || "").localeCompare(b.description || "") || new Date(b.date).getTime() - new Date(a.date).getTime();
+                return formatFullDate(row.date);
+              };
+
+              const sorted = [...timesheetRows].sort((a, b) => {
+                const ga = groupKeyOf(a);
+                const gb = groupKeyOf(b);
+                if (ga !== gb) {
+                  if (timesheetGroupMode === "date") {
+                    return new Date(b.date).getTime() - new Date(a.date).getTime();
+                  }
+                  return ga.localeCompare(gb);
+                }
+                return new Date(b.date).getTime() - new Date(a.date).getTime();
               });
 
-              const groups: { key: string; label: string; entries: Timesheet[] }[] = [];
-              if (timesheetDisplayMode === "person") {
-                const seen = new Map<string, Timesheet[]>();
-                for (const ts of sortedTimesheets) {
-                  const name = getUserName(ts.userId);
-                  if (!seen.has(name)) seen.set(name, []);
-                  seen.get(name)!.push(ts);
-                }
-                seen.forEach((entries, name) => groups.push({ key: name, label: name, entries }));
-              } else if (timesheetDisplayMode === "description") {
-                const seen = new Map<string, Timesheet[]>();
-                for (const ts of sortedTimesheets) {
-                  const key = ts.description?.trim() || "(no description)";
-                  if (!seen.has(key)) seen.set(key, []);
-                  seen.get(key)!.push(ts);
-                }
-                seen.forEach((entries, key) => groups.push({ key, label: key, entries }));
-              } else {
-                groups.push({ key: "all", label: "", entries: sortedTimesheets });
+              const groups: { label: string; rows: TimesheetDisplayRow[] }[] = [];
+              for (const row of sorted) {
+                const label = groupKeyOf(row);
+                const last = groups[groups.length - 1];
+                if (last && last.label === label) last.rows.push(row);
+                else groups.push({ label, rows: [row] });
               }
 
               const statusColors: Record<string, { bg: string; text: string }> = {
@@ -1356,77 +1957,94 @@ export default function AllowanceDetail() {
                 submitted: { bg: "hsl(var(--primary) / 0.1)", text: "hsl(var(--primary))" },
               };
 
+              const gridColumns = "24px 1.6fr 1fr 0.6fr 1fr 0.9fr 80px 90px";
+
               return (
                 <div className="space-y-4">
+                  {/* Column header */}
+                  <div
+                    className="grid items-center text-[9px] font-semibold text-muted-foreground uppercase tracking-wide pb-1 border-b border-border gap-2 px-1"
+                    style={{ gridTemplateColumns: gridColumns }}
+                  >
+                    <span />
+                    <span>Team member</span>
+                    <span>Date</span>
+                    <span className="text-right">Hours</span>
+                    <span>Time</span>
+                    <span>Cost Code</span>
+                    <span>Status</span>
+                    <span className="text-right">Amount ex</span>
+                  </div>
+
                   {groups.map((group) => (
-                    <div key={group.key}>
-                      {group.label && (
-                        <div className="sticky top-0 bg-background/95 backdrop-blur-sm z-10 pb-1 pt-1">
-                          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide px-1">{group.label}</p>
-                        </div>
-                      )}
+                    <div key={group.label}>
+                      <div className="sticky top-0 bg-background/95 backdrop-blur-sm z-10 pb-1 pt-1">
+                        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide px-1">
+                          {group.label}
+                          <span className="ml-2 normal-case font-normal">
+                            {group.rows.length} entr{group.rows.length === 1 ? "y" : "ies"} ·{" "}
+                            {formatCurrency(group.rows.reduce((s, r) => s + r.amountExCents, 0))} ex
+                          </span>
+                        </p>
+                      </div>
                       <div className="space-y-1">
-                        {group.entries.map((ts) => {
-                          const isApproved = ts.status === "approved";
-                          const staffName = getUserName(ts.userId);
-                          const statusColor = statusColors[ts.status] ?? { bg: "hsl(var(--muted))", text: "hsl(var(--muted-foreground))" };
-                          const dateStr = new Date(ts.date).toLocaleDateString("en-AU", { weekday: "short", day: "2-digit", month: "short", year: "numeric" });
-                          const timeStr = ts.startTime && ts.endTime ? `${ts.startTime}–${ts.endTime} · ${ts.duration}h` : ts.duration ? `${ts.duration}h` : "";
-                          const groupedByPerson = timesheetDisplayMode === "person";
+                        {group.rows.map((row) => {
+                          const isApproved = row.status === "approved";
+                          const alreadyAllocated = alreadyAllocatedKeys.has(row.key);
+                          const selectable = isApproved && !alreadyAllocated;
+                          const staffName = getUserName(row.userId);
+                          const statusColor = statusColors[row.status] ?? { bg: "hsl(var(--muted))", text: "hsl(var(--muted-foreground))" };
+                          const timeStr = row.startTime && row.endTime ? `${row.startTime}–${row.endTime}` : "—";
+                          const userIdx = users.findIndex((u) => u.id === row.userId);
                           return (
                             <div
-                              key={ts.id}
-                              className={`flex items-center justify-between p-3 rounded-md border gap-3 ${!isApproved ? "opacity-60" : ""}`}
+                              key={row.key}
+                              className={`grid items-center px-1 py-2 rounded-md border gap-2 ${!selectable ? "opacity-60" : ""}`}
+                              style={{ gridTemplateColumns: gridColumns }}
+                              data-testid={`timesheet-row-${row.key}`}
                             >
-                              <div className="flex items-center gap-3 flex-1 min-w-0">
-                                <Checkbox
-                                  checked={selectedTimesheets.has(ts.id)}
-                                  onCheckedChange={() => isApproved && toggleTimesheetSelection(ts.id)}
-                                  disabled={!isApproved}
-                                  data-testid={`checkbox-timesheet-${ts.id}`}
-                                />
-                                {!groupedByPerson && (
-                                  <div
-                                    className="w-7 h-7 rounded-full flex items-center justify-center text-[9px] font-bold flex-shrink-0"
-                                    style={{ background: avatarColor(users.findIndex((u) => u.id === ts.userId)).bg, color: avatarColor(users.findIndex((u) => u.id === ts.userId)).text }}
-                                  >
-                                    {initials(staffName)}
-                                  </div>
-                                )}
-                                <div className="min-w-0 flex-1">
-                                  {groupedByPerson ? (
-                                    <>
-                                      <div className="flex items-center gap-2 flex-wrap">
-                                        <p className="text-sm font-medium">{dateStr}</p>
-                                        {timeStr && <p className="text-xs text-muted-foreground">{timeStr}</p>}
-                                      </div>
-                                      {ts.description && (
-                                        <p className="text-xs text-muted-foreground truncate mt-0.5">{ts.description}</p>
-                                      )}
-                                    </>
-                                  ) : (
-                                    <>
-                                      <div className="flex items-center gap-2 flex-wrap">
-                                        <p className="text-sm font-medium">{staffName}</p>
-                                        <p className="text-xs text-muted-foreground">{dateStr}</p>
-                                        {timeStr && <p className="text-xs text-muted-foreground">{timeStr}</p>}
-                                      </div>
-                                      {ts.description && (
-                                        <p className="text-xs text-muted-foreground truncate mt-0.5">{ts.description}</p>
-                                      )}
-                                    </>
+                              <Checkbox
+                                checked={selectedTimesheetKeys.has(row.key)}
+                                onCheckedChange={() => selectable && toggleTimesheetSelection(row.key)}
+                                disabled={!selectable}
+                                data-testid={`checkbox-timesheet-${row.key}`}
+                              />
+                              <div className="flex items-center gap-2 min-w-0">
+                                <div
+                                  className="w-6 h-6 rounded-full flex items-center justify-center text-[9px] font-bold flex-shrink-0"
+                                  style={{ background: avatarColor(userIdx).bg, color: avatarColor(userIdx).text }}
+                                >
+                                  {initials(staffName)}
+                                </div>
+                                <div className="min-w-0">
+                                  <p className="text-xs font-medium truncate">{staffName}</p>
+                                  {showTsDescriptions && row.description && (
+                                    <p className="text-[10px] text-muted-foreground truncate">{row.description}</p>
                                   )}
                                 </div>
                               </div>
-                              <div className="flex items-center gap-3 flex-shrink-0">
+                              <p className="text-[11px] text-foreground">{formatDayMonth(row.date)}</p>
+                              <p className="text-[11px] text-foreground text-right">{row.hours}h</p>
+                              <p className="text-[11px] text-muted-foreground">{timeStr}{row.isSplit ? " (split)" : ""}</p>
+                              <p className="text-[11px] text-muted-foreground truncate" title={row.costCodeId ? `${costCodeMap.get(row.costCodeId)?.code ?? ""} ${costCodeMap.get(row.costCodeId)?.title ?? ""}` : undefined}>
+                                {costCodeLabel(row.costCodeId)}
+                              </p>
+                              {alreadyAllocated ? (
                                 <span
-                                  className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold capitalize"
+                                  className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold w-fit"
+                                  style={{ background: "hsl(var(--muted))", color: "hsl(var(--muted-foreground))" }}
+                                >
+                                  Allocated
+                                </span>
+                              ) : (
+                                <span
+                                  className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold capitalize w-fit"
                                   style={{ background: statusColor.bg, color: statusColor.text }}
                                 >
-                                  {ts.status}
+                                  {row.status}
                                 </span>
-                                <p className="text-sm font-semibold w-20 text-right">{formatCurrency(Math.round(ts.total * 100))}</p>
-                              </div>
+                              )}
+                              <p className="text-sm font-semibold text-right">{formatCurrency(row.amountExCents)}</p>
                             </div>
                           );
                         })}
@@ -1437,73 +2055,38 @@ export default function AllowanceDetail() {
               );
             })()}
           </div>
-          <div className="flex items-center justify-between pt-4 border-t">
-            <p className="text-xs text-muted-foreground">
-              {selectedTimesheets.size > 0 ? `${selectedTimesheets.size} selected · ${formatCurrency(timesheets.filter((ts) => selectedTimesheets.has(ts.id)).reduce((s, ts) => s + Math.round(ts.total * 100), 0))} inc GST` : "No entries selected"}
-            </p>
+
+          <div className="flex items-center justify-between pt-4 border-t flex-wrap gap-3">
+            <div className="flex items-center gap-3 flex-wrap">
+              <div className="flex items-center gap-2">
+                <Label className="text-xs text-muted-foreground whitespace-nowrap">Display in allowance:</Label>
+                <Select value={timesheetDisplayPref} onValueChange={(v) => setTimesheetDisplayPref(v as TsDisplayPref)}>
+                  <SelectTrigger className="h-7 text-xs w-40" data-testid="select-timesheet-display">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="person" className="text-xs">By Person</SelectItem>
+                    <SelectItem value="person-summary" className="text-xs">By Person (totals)</SelectItem>
+                    <SelectItem value="date" className="text-xs">By Date</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {selectedTimesheetKeys.size > 0
+                  ? `${selectedTimesheetKeys.size} selected · ${formatCurrency(pendingTimesheetRows.reduce((s, r) => s + r.amountExCents, 0))} ex GST`
+                  : "No entries selected"}
+              </p>
+            </div>
             <div className="flex gap-2">
               <Button variant="outline" onClick={() => setIsTimesheetModalOpen(false)}>Cancel</Button>
-              <Button onClick={() => setIsTimesheetModalOpen(false)} disabled={selectedTimesheets.size === 0} data-testid="button-save-timesheets">
-                Add {selectedTimesheets.size > 0 ? `(${selectedTimesheets.size})` : ""} Selected
+              <Button
+                onClick={() => setIsTimesheetModalOpen(false)}
+                disabled={selectedTimesheetKeys.size === 0}
+                data-testid="button-save-timesheets"
+              >
+                Add {selectedTimesheetKeys.size > 0 ? `(${selectedTimesheetKeys.size})` : ""} Selected
               </Button>
             </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Custom Line dialog */}
-      <Dialog open={isCustomLineDialogOpen} onOpenChange={setIsCustomLineDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Add Custom Line</DialogTitle>
-            <DialogDescription>Add a custom line item to this allowance</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3">
-            <div className="space-y-1.5">
-              <Label htmlFor="description" className="text-xs">Description</Label>
-              <Input
-                id="description"
-                value={customLineDescription}
-                onChange={(e) => setCustomLineDescription(e.target.value)}
-                placeholder="Enter description"
-                data-testid="input-custom-description"
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label htmlFor="quantity" className="text-xs">Quantity</Label>
-                <Input
-                  id="quantity"
-                  type="number"
-                  value={customLineQuantity}
-                  onChange={(e) => setCustomLineQuantity(e.target.value)}
-                  placeholder="1"
-                  data-testid="input-custom-quantity"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="unitPrice" className="text-xs">Unit Price</Label>
-                <Input
-                  id="unitPrice"
-                  type="number"
-                  step="0.01"
-                  value={customLineUnitPrice}
-                  onChange={(e) => setCustomLineUnitPrice(e.target.value)}
-                  placeholder="0.00"
-                  data-testid="input-custom-unit-price"
-                />
-              </div>
-            </div>
-          </div>
-          <div className="flex justify-end gap-2 pt-2">
-            <Button variant="outline" onClick={() => setIsCustomLineDialogOpen(false)}>Cancel</Button>
-            <Button
-              onClick={handleAddCustomLine}
-              disabled={!customLineDescription || !customLineUnitPrice}
-              data-testid="button-save-custom-line"
-            >
-              Add Line
-            </Button>
           </div>
         </DialogContent>
       </Dialog>

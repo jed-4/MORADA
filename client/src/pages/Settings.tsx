@@ -970,8 +970,8 @@ export default function Settings() {
       <Card>
         <CardHeader>
           <div className="flex items-center gap-3">
-            <div className="p-2 bg-sky-100 dark:bg-sky-900 rounded-lg">
-              <FileText className="h-6 w-6 text-sky-600 dark:text-sky-400" />
+            <div className="p-2 bg-status-info-bg rounded-lg">
+              <FileText className="h-6 w-6 text-status-info" />
             </div>
             <div className="flex-1">
               <CardTitle className="flex items-center gap-2">

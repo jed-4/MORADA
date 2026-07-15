@@ -10,6 +10,8 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { apiFetch, apiRequest } from '../services/api';
+import { timeAgo, getInitials } from '../lib/format';
+import { useTheme } from '../theme';
 
 interface TaskComment {
   id: string;
@@ -65,28 +67,36 @@ function displayName(u: MentionUser): string {
   return name || u.email || 'Unknown';
 }
 
-function initials(name: string): string {
-  return (
-    name
-      ?.split(' ')
-      .map((n) => n[0])
-      .join('')
-      .toUpperCase()
-      .slice(0, 2) || '?'
-  );
+// Mentions extracted from a comment's markup, used to round-trip an edit:
+// the input shows "@Name" and unchanged mentions are converted back to
+// @[Name](userId:x) markup on save.
+interface EditMention {
+  display: string;
+  markup: string;
 }
 
-function relativeTime(iso: string): string {
-  const then = new Date(iso).getTime();
-  const diff = Date.now() - then;
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return 'just now';
-  if (mins < 60) return `${mins}m ago`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  if (days < 7) return `${days}d ago`;
-  return new Date(iso).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' });
+function markupToDisplay(content: string): string {
+  return content.replace(MENTION_MARKUP, '@$1');
+}
+
+function extractMentions(content: string): EditMention[] {
+  const mentions: EditMention[] = [];
+  MENTION_MARKUP.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = MENTION_MARKUP.exec(content)) !== null) {
+    mentions.push({ display: `@${match[1]}`, markup: match[0] });
+  }
+  return mentions;
+}
+
+function displayToMarkup(text: string, mentions: EditMention[]): string {
+  // Longest display names first so "@Jo Smith" isn't clobbered by "@Jo".
+  const sorted = [...mentions].sort((a, b) => b.display.length - a.display.length);
+  let result = text;
+  for (const m of sorted) {
+    result = result.split(m.display).join(m.markup);
+  }
+  return result;
 }
 
 // Render @[Name](userId:x) markup as readable, highlighted text.
@@ -121,12 +131,15 @@ export default function TaskComments({ taskId, currentUserId, colors, isDark }: 
   const [posting, setPosting] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState('');
+  const [editMentions, setEditMentions] = useState<EditMention[]>([]);
 
   const [mentionActive, setMentionActive] = useState(false);
   const [mentionQuery, setMentionQuery] = useState('');
   const [mentionStart, setMentionStart] = useState(-1);
 
-  const inputBg = isDark ? '#0f172a' : '#f1f5f9';
+  const theme = useTheme();
+  const inputBg = theme.background;
+  const danger = theme.statusDanger;
 
   const loadComments = useCallback(async () => {
     try {
@@ -198,28 +211,28 @@ export default function TaskComments({ taskId, currentUserId, colors, isDark }: 
     if (!content) return;
     setPosting(true);
     try {
-      const res = await apiRequest('/api/task-comments', 'POST', { taskId, content });
-      if (!res.ok) throw new Error('failed');
+      await apiRequest('/api/task-comments', 'POST', { taskId, content });
       setInput('');
       await loadComments();
-    } catch {
-      Alert.alert('Error', "Couldn't post comment. Please try again.");
+    } catch (err) {
+      Alert.alert('Error', err instanceof Error ? err.message : "Couldn't post comment. Please try again.");
     } finally {
       setPosting(false);
     }
   };
 
   const saveEdit = async (id: string) => {
-    const content = editValue.trim();
+    // Reconstruct @[Name](userId:x) markup for mentions the user left intact.
+    const content = displayToMarkup(editValue.trim(), editMentions);
     if (!content) return;
     try {
-      const res = await apiRequest(`/api/task-comments/${id}`, 'PATCH', { content });
-      if (!res.ok) throw new Error('failed');
+      await apiRequest(`/api/task-comments/${id}`, 'PATCH', { content });
       setEditingId(null);
       setEditValue('');
+      setEditMentions([]);
       await loadComments();
-    } catch {
-      Alert.alert('Error', "Couldn't save changes. Please try again.");
+    } catch (err) {
+      Alert.alert('Error', err instanceof Error ? err.message : "Couldn't save changes. Please try again.");
     }
   };
 
@@ -231,11 +244,10 @@ export default function TaskComments({ taskId, currentUserId, colors, isDark }: 
         style: 'destructive',
         onPress: async () => {
           try {
-            const res = await apiRequest(`/api/task-comments/${id}`, 'DELETE');
-            if (!res.ok) throw new Error('failed');
+            await apiRequest(`/api/task-comments/${id}`, 'DELETE');
             await loadComments();
-          } catch {
-            Alert.alert('Error', "Couldn't delete comment. Please try again.");
+          } catch (err) {
+            Alert.alert('Error', err instanceof Error ? err.message : "Couldn't delete comment. Please try again.");
           }
         },
       },
@@ -277,7 +289,7 @@ export default function TaskComments({ taskId, currentUserId, colors, isDark }: 
                 <Text style={[styles.activityText, { color: colors.muted }]}>
                   <Text style={{ fontWeight: '600', color: colors.secondary }}>{a.actorName}</Text>
                   {' '}{a.summary}
-                  <Text style={{ color: colors.muted }}>{'  ·  '}{relativeTime(a.createdAt)}</Text>
+                  <Text style={{ color: colors.muted }}>{'  ·  '}{timeAgo(a.createdAt)}</Text>
                 </Text>
               </View>
             );
@@ -288,13 +300,13 @@ export default function TaskComments({ taskId, currentUserId, colors, isDark }: 
           return (
             <View key={c.id} style={styles.commentRow}>
               <View style={[styles.avatar, { backgroundColor: colors.accent }]}>
-                <Text style={styles.avatarText}>{initials(c.createdByName)}</Text>
+                <Text style={styles.avatarText}>{getInitials(c.createdByName)}</Text>
               </View>
               <View style={{ flex: 1 }}>
                 <View style={styles.commentHeader}>
                   <Text style={[styles.commentAuthor, { color: colors.text }]}>{c.createdByName}</Text>
                   <Text style={[styles.commentTime, { color: colors.muted }]}>
-                    {relativeTime(c.createdAt)}
+                    {timeAgo(c.createdAt)}
                     {c.editedAt ? ' (edited)' : ''}
                   </Text>
                 </View>
@@ -319,6 +331,7 @@ export default function TaskComments({ taskId, currentUserId, colors, isDark }: 
                         onPress={() => {
                           setEditingId(null);
                           setEditValue('');
+                          setEditMentions([]);
                         }}
                         style={styles.btnGhost}
                       >
@@ -334,8 +347,12 @@ export default function TaskComments({ taskId, currentUserId, colors, isDark }: 
                   <View style={styles.ownActions}>
                     <TouchableOpacity
                       onPress={() => {
+                        // Seed the input with readable "@Name" text instead of
+                        // raw @[Name](userId:x) markup; unchanged mentions are
+                        // converted back to markup on save.
                         setEditingId(c.id);
-                        setEditValue(c.content);
+                        setEditValue(markupToDisplay(c.content));
+                        setEditMentions(extractMentions(c.content));
                       }}
                       style={styles.iconAction}
                     >
@@ -343,8 +360,8 @@ export default function TaskComments({ taskId, currentUserId, colors, isDark }: 
                       <Text style={[styles.iconActionText, { color: colors.secondary }]}>Edit</Text>
                     </TouchableOpacity>
                     <TouchableOpacity onPress={() => remove(c.id)} style={styles.iconAction}>
-                      <Ionicons name="trash-outline" size={14} color="#ef4444" />
-                      <Text style={[styles.iconActionText, { color: '#ef4444' }]}>Delete</Text>
+                      <Ionicons name="trash-outline" size={14} color={danger} />
+                      <Text style={[styles.iconActionText, { color: danger }]}>Delete</Text>
                     </TouchableOpacity>
                   </View>
                 )}
@@ -361,7 +378,7 @@ export default function TaskComments({ taskId, currentUserId, colors, isDark }: 
             {filteredMentions.map((u) => (
               <TouchableOpacity key={u.id} style={styles.mentionItem} onPress={() => pickMention(u)}>
                 <View style={[styles.mentionAvatar, { backgroundColor: colors.accent }]}>
-                  <Text style={styles.avatarText}>{initials(displayName(u))}</Text>
+                  <Text style={styles.avatarText}>{getInitials(displayName(u))}</Text>
                 </View>
                 <Text style={{ color: colors.text, fontSize: 14 }}>{displayName(u)}</Text>
               </TouchableOpacity>

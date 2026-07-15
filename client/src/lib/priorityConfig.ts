@@ -22,10 +22,10 @@ export interface PriorityStyle {
 }
 
 export const priorityConfig: Record<Priority, PriorityStyle> = {
-  urgent: { label: "Urgent", color: "#DA988A", bgColor: "#F7E5E2" }, // coral / coral-light
-  high: { label: "High", color: "#D4B670", bgColor: "#F7EDDA" }, // amber / amber-light
-  medium: { label: "Medium", color: "#A890D4", bgColor: "#F2EEF9" }, // primary / primary-light
-  low: { label: "Low", color: "#82C8A2", bgColor: "#E0F5E9" }, // sage / sage-light
+  urgent: { label: "Urgent", color: "#DA988A", bgColor: "#F9EFEC" }, // coral / coral-light
+  high: { label: "High", color: "#D4B670", bgColor: "#F8F3E8" }, // amber / amber-light
+  medium: { label: "Medium", color: "#A68AC7", bgColor: "#F1ECF6" }, // lavender / lavender-light
+  low: { label: "Low", color: "#82C8A2", bgColor: "#EBF6F0" }, // sage / sage-light
   none: { label: "None", color: "#6B6560", bgColor: "#EAEAE8" }, // muted-foreground / border
 };
 

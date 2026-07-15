@@ -1,7 +1,9 @@
 import { useState } from "react";
 import { useParams } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Loader2, AlertCircle, CheckCircle2, Package, MessageSquare, Send, ChevronDown, ChevronUp } from "lucide-react";
+import { Loader2, CheckCircle2, Package, MessageSquare, Send, ChevronDown, ChevronUp } from "lucide-react";
+import { PortalLayout } from "@/components/portal/PortalLayout";
+import { PortalLoading, PortalError } from "@/components/portal/PortalStateBoundary";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
@@ -71,27 +73,15 @@ export default function SelectionPortal() {
   });
 
   if (isLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-muted">
-        <div className="flex flex-col items-center gap-3">
-          <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
-          <p className="text-sm text-muted-foreground">Loading selection...</p>
-        </div>
-      </div>
-    );
+    return <PortalLoading message="Loading selection…" />;
   }
 
   if (error || !data) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-muted">
-        <div className="flex flex-col items-center gap-3 text-center max-w-sm px-4">
-          <AlertCircle className="w-10 h-10 text-destructive" />
-          <h1 className="text-lg font-semibold">Link not found</h1>
-          <p className="text-sm text-muted-foreground">
-            This selection link is invalid or has expired. Please contact your builder for a new link.
-          </p>
-        </div>
-      </div>
+      <PortalError
+        title="Link not found"
+        description="This selection link is invalid or has expired. Please contact your builder for a new link."
+      />
     );
   }
 
@@ -104,16 +94,15 @@ export default function SelectionPortal() {
   const selectedOption = selection.options.find(o => o.id === selectedOptionId);
 
   return (
-    <div className="min-h-screen bg-muted py-8 px-4">
-      <div className="max-w-2xl mx-auto space-y-4">
+    <PortalLayout title="Selection Request" maxWidth="max-w-2xl">
+      <div className="space-y-4">
 
         {/* Header card */}
         <div className="bg-card rounded-xl shadow-sm overflow-hidden">
           <div className="p-6 border-b">
             <div className="flex items-start justify-between gap-4 flex-wrap">
               <div>
-                <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Selection Request</p>
-                <h1 className="text-xl font-semibold">{selection.name}</h1>
+                <h2 className="text-xl font-semibold">{selection.name}</h2>
                 {selection.description && (
                   <p className="mt-2 text-sm text-muted-foreground">{selection.description}</p>
                 )}
@@ -121,7 +110,7 @@ export default function SelectionPortal() {
               {isLocked ? (
                 <Badge variant="outline" className="text-xs shrink-0">Locked</Badge>
               ) : selectedOptionId ? (
-                <Badge variant="outline" className="text-xs shrink-0 text-green-700 border-green-300 bg-green-50">
+                <Badge variant="outline" className="text-xs shrink-0 text-status-success border-status-success/30 bg-status-success-bg">
                   Choice submitted
                 </Badge>
               ) : (
@@ -174,7 +163,7 @@ export default function SelectionPortal() {
                 className={cn(
                   "w-full text-left bg-card rounded-xl overflow-hidden border-2 transition-colors",
                   isSelected
-                    ? "border-green-400 bg-green-50/50 dark:bg-green-950/20"
+                    ? "border-sage bg-status-success-bg/50"
                     : "border-transparent hover:border-muted-foreground/20",
                   (isLocked || isApproved) && "cursor-default opacity-80"
                 )}
@@ -184,7 +173,7 @@ export default function SelectionPortal() {
                     {/* Selection indicator */}
                     <div className={cn(
                       "mt-0.5 w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0",
-                      isSelected ? "border-green-500 bg-green-500" : "border-muted-foreground/30"
+                      isSelected ? "border-sage bg-sage" : "border-muted-foreground/30"
                     )}>
                       {isSelected && <CheckCircle2 className="w-3.5 h-3.5 text-white" />}
                     </div>
@@ -193,7 +182,7 @@ export default function SelectionPortal() {
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-medium text-sm">{option.name}</span>
                         {isApproved && (
-                          <Badge variant="outline" className="text-xs text-green-700 border-green-300 bg-green-50">
+                          <Badge variant="outline" className="text-xs text-status-success border-status-success/30 bg-status-success-bg">
                             Approved
                           </Badge>
                         )}
@@ -210,7 +199,7 @@ export default function SelectionPortal() {
                         {option.supplierName && <span>Supplier: {option.supplierName}</span>}
                         {option.sku && <span>SKU: {option.sku}</span>}
                         {clientCanSeePrice && price && (
-                          <span className={cn("font-medium", overAllowance ? "text-amber-600" : "")}>
+                          <span className={cn("font-medium", overAllowance ? "text-status-warning" : "")}>
                             ${Number(price).toLocaleString("en-AU", { minimumFractionDigits: 2 })}
                             {overAllowance && " (over allowance)"}
                           </span>
@@ -266,7 +255,7 @@ export default function SelectionPortal() {
                     className={cn(
                       "rounded-lg p-3 text-sm",
                       comment.isClientComment
-                        ? "bg-blue-50 dark:bg-blue-950/20 ml-6"
+                        ? "bg-primary/10 ml-6"
                         : "bg-muted mr-6"
                     )}
                   >
@@ -313,10 +302,7 @@ export default function SelectionPortal() {
           )}
         </div>
 
-        <p className="text-center text-xs text-muted-foreground pb-4">
-          Powered by Morada
-        </p>
       </div>
-    </div>
+    </PortalLayout>
   );
 }

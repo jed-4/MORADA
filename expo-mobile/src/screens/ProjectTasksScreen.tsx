@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -10,6 +10,7 @@ import {
   useColorScheme,
   Modal,
   FlatList,
+  SectionList,
   TextInput,
   KeyboardAvoidingView,
   Platform,
@@ -20,6 +21,8 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { apiFetch, apiRequest } from '../services/api';
+import { dateStrOf, toLocalDateStr, fromLocalDateStr } from '../lib/dates';
+import { doneStatusKey, defaultStatusKey, isDoneStatus, type TaskStatusOption } from '../lib/taskStatus';
 import { useAuth } from '../contexts/AuthContext';
 import TaskComments from '../components/TaskComments';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -40,12 +43,7 @@ interface Task {
   tags?: string[];
 }
 
-interface StatusOption {
-  key: string;
-  name: string;
-  color: string | null;
-  sortOrder: number;
-}
+type StatusOption = TaskStatusOption;
 
 type ViewMode = 'list' | 'board';
 
@@ -198,20 +196,14 @@ const colors = {
     return opt ? opt.name : (status?.replace(/_/g, ' ') || 'To Do');
   }, [statusOptions]);
 
-  const defaultStatus = useMemo(
-    () => (statusOptions.length > 0 ? statusOptions[0].key : 'todo'),
+  const defaultStatus = useMemo(() => defaultStatusKey(statusOptions), [statusOptions]);
+
+  const doneStatus = useMemo(() => doneStatusKey(statusOptions), [statusOptions]);
+
+  const isTaskDone = useCallback(
+    (status?: string): boolean => isDoneStatus(status, statusOptions),
     [statusOptions],
   );
-
-  const doneStatus = useMemo(
-    () => (statusOptions.length > 0 ? statusOptions[statusOptions.length - 1].key : 'done'),
-    [statusOptions],
-  );
-
-  const isTaskDone = useCallback((status?: string): boolean => {
-    if (statusOptions.length > 0) return status === doneStatus;
-    return status === 'done' || status === 'completed';
-  }, [statusOptions, doneStatus]);
 
   // ─── Data loading ────────────────────────────────────────────────────────────
 
@@ -260,12 +252,11 @@ const colors = {
       tasks: tasks.filter(t => (t.status || defaultStatus) === opt.key),
     }));
 
-    // Catch tasks with unknown statuses
-    if (!hideDone) {
-      const others = tasks.filter(t => !knownKeys.has(t.status || defaultStatus));
-      if (others.length > 0) {
-        groups.push({ key: 'other', label: 'Other', color: '#94a3b8', tasks: others });
-      }
+    // Catch tasks with unknown statuses — always shown, otherwise tasks with a
+    // status outside the company's options vanish while "hide done" is on.
+    const others = tasks.filter(t => !knownKeys.has(t.status || defaultStatus));
+    if (others.length > 0) {
+      groups.push({ key: 'other', label: 'Other', color: '#94a3b8', tasks: others });
     }
 
     return groups;
@@ -283,9 +274,9 @@ const colors = {
     setTasks(prev => prev.map(t => t.id === task.id ? { ...t, status: newStatus } : t));
     try {
       await apiRequest(`/api/tasks/${task.id}`, 'PATCH', { status: newStatus });
-    } catch {
+    } catch (e: any) {
       setTasks(prev => prev.map(t => t.id === task.id ? { ...t, status: task.status } : t));
-      Alert.alert('Error', 'Failed to update task.');
+      Alert.alert('Error', e?.message || 'Failed to update task.');
     }
   };
 
@@ -295,13 +286,19 @@ const colors = {
     setShowViewModal(true);
   };
 
+  // Plain text seeded into the description field — only PATCH `content` when
+  // the user actually edited it, so rich text authored on web isn't destroyed.
+  const seededDescriptionRef = useRef('');
+
   const openEditTask = () => {
     if (!selectedTask) return;
     setEditTitle(selectedTask.title || '');
     setEditStatus(selectedTask.status || defaultStatus);
     setEditPriority(selectedTask.priority || 'medium');
-    setEditDueDate(selectedTask.dueDate ? selectedTask.dueDate.slice(0, 10) : '');
-    setEditDescription(stripHtml(selectedTask.contentText || selectedTask.content || ''));
+    setEditDueDate(selectedTask.dueDate ? dateStrOf(selectedTask.dueDate) : '');
+    const seeded = stripHtml(selectedTask.contentText || selectedTask.content || '');
+    seededDescriptionRef.current = seeded;
+    setEditDescription(seeded);
     setEditChecklist(selectedTask.checklist ? [...selectedTask.checklist] : []);
     setEditChecklistInput('');
     setShowStatusPicker(false);
@@ -314,20 +311,23 @@ const colors = {
     if (!selectedTask || !editTitle.trim()) return;
     setSaving(true);
     try {
-      await apiRequest(`/api/tasks/${selectedTask.id}`, 'PATCH', {
+      const body: any = {
         title: editTitle.trim(),
         status: editStatus,
         priority: editPriority,
-        content: editDescription,
         dueDate: editDueDate ? new Date(editDueDate).toISOString() : null,
         checklist: editChecklist,
-      });
+      };
+      if (editDescription !== seededDescriptionRef.current) {
+        body.content = editDescription;
+      }
+      await apiRequest(`/api/tasks/${selectedTask.id}`, 'PATCH', body);
       setShowViewModal(false);
       setIsEditing(false);
       setSelectedTask(null);
       await fetchData();
-    } catch {
-      Alert.alert('Error', 'Failed to save task.');
+    } catch (e: any) {
+      Alert.alert('Error', e?.message || 'Failed to save task.');
     } finally {
       setSaving(false);
     }
@@ -347,8 +347,8 @@ const colors = {
             setShowViewModal(false);
             setSelectedTask(null);
             await fetchData();
-          } catch {
-            Alert.alert('Error', 'Failed to delete task.');
+          } catch (e: any) {
+            Alert.alert('Error', e?.message || 'Failed to delete task.');
           } finally {
             setDeleting(false);
           }
@@ -382,8 +382,8 @@ const colors = {
       setNewChecklist([]);
       setNewChecklistInput('');
       await fetchData();
-    } catch {
-      Alert.alert('Error', 'Failed to create task.');
+    } catch (e: any) {
+      Alert.alert('Error', e?.message || 'Failed to create task.');
     } finally {
       setCreating(false);
     }
@@ -399,9 +399,9 @@ const colors = {
     try {
       await apiRequest(`/api/tasks/${selectedTask.id}`, 'PATCH', { checklist: updated });
       setTasks(prev => prev.map(t => t.id === selectedTask.id ? { ...t, checklist: updated } : t));
-    } catch {
+    } catch (e: any) {
       setSelectedTask(selectedTask);
-      Alert.alert('Error', 'Failed to update checklist item.');
+      Alert.alert('Error', e?.message || 'Failed to update checklist item.');
     }
   };
 
@@ -575,43 +575,46 @@ const colors = {
 
       {/* List view */}
       {viewMode === 'list' ? (
-        <ScrollView
+        <SectionList
           style={styles.scroll}
-          contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 24 }]}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
-        >
-          {tasks.length === 0 ? (
+          contentContainerStyle={[styles.scrollContent, { gap: undefined, paddingBottom: insets.bottom + 24 }]}
+          sections={tasks.length === 0 ? [] : groupedTasks.map(group => ({
+            ...group,
+            data: collapsedSections[group.key] ? [] : group.tasks,
+          }))}
+          keyExtractor={t => t.id}
+          renderItem={({ item }) => <View style={styles.sectionRowGap}>{renderTaskRow(item)}</View>}
+          renderSectionHeader={({ section }) => (
+            <TouchableOpacity
+              style={styles.sectionHeader}
+              onPress={() => toggleSection(section.key)}
+              activeOpacity={0.7}
+            >
+              <View style={styles.sectionHeaderLeft}>
+                <View style={[styles.sectionDot, { backgroundColor: section.color }]} />
+                <Text style={[styles.sectionTitle, { color: colors.text }]}>{section.label}</Text>
+                <View style={[styles.sectionCount, { backgroundColor: section.color + '20' }]}>
+                  <Text style={[styles.sectionCountText, { color: section.color }]}>{section.tasks.length}</Text>
+                </View>
+              </View>
+              <Ionicons
+                name={collapsedSections[section.key] ? 'chevron-forward' : 'chevron-down'}
+                size={18}
+                color={colors.secondary}
+              />
+            </TouchableOpacity>
+          )}
+          renderSectionFooter={() => <View style={styles.sectionFooterGap} />}
+          stickySectionHeadersEnabled={false}
+          ListEmptyComponent={
             <View style={[styles.emptyState, { backgroundColor: colors.card, borderColor: colors.border }]}>
               <Ionicons name="checkbox-outline" size={44} color={colors.muted} />
               <Text style={[styles.emptyTitle, { color: colors.text }]}>No tasks yet</Text>
               <Text style={[styles.emptySubtitle, { color: colors.secondary }]}>Tap + to add the first task</Text>
             </View>
-          ) : (
-            groupedTasks.map(group => (
-              <View key={group.key} style={styles.section}>
-                <TouchableOpacity
-                  style={styles.sectionHeader}
-                  onPress={() => toggleSection(group.key)}
-                  activeOpacity={0.7}
-                >
-                  <View style={styles.sectionHeaderLeft}>
-                    <View style={[styles.sectionDot, { backgroundColor: group.color }]} />
-                    <Text style={[styles.sectionTitle, { color: colors.text }]}>{group.label}</Text>
-                    <View style={[styles.sectionCount, { backgroundColor: group.color + '20' }]}>
-                      <Text style={[styles.sectionCountText, { color: group.color }]}>{group.tasks.length}</Text>
-                    </View>
-                  </View>
-                  <Ionicons
-                    name={collapsedSections[group.key] ? 'chevron-forward' : 'chevron-down'}
-                    size={18}
-                    color={colors.secondary}
-                  />
-                </TouchableOpacity>
-                {!collapsedSections[group.key] && group.tasks.map(t => renderTaskRow(t))}
-              </View>
-            ))
-          )}
-        </ScrollView>
+          }
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
+        />
       ) : (
         /* Board view */
         <ScrollView
@@ -857,7 +860,7 @@ const colors = {
                       >
                         <Ionicons name="calendar-outline" size={16} color={colors.secondary} />
                         <Text style={[styles.editSelectText, { color: editDueDate ? colors.text : colors.muted }]}>
-                          {editDueDate ? new Date(editDueDate).toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }) : 'No due date'}
+                          {editDueDate ? fromLocalDateStr(editDueDate).toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }) : 'No due date'}
                         </Text>
                         {editDueDate ? (
                           <TouchableOpacity onPress={(e) => { e.stopPropagation?.(); setEditDueDate(''); setShowEditDatePicker(false); }} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
@@ -869,13 +872,13 @@ const colors = {
                       </TouchableOpacity>
                       {showEditDatePicker && (
                         <DateTimePicker
-                          value={editDueDate ? new Date(editDueDate) : new Date()}
+                          value={editDueDate ? fromLocalDateStr(editDueDate) : new Date()}
                           mode="date"
                           display={Platform.OS === 'ios' ? 'inline' : 'default'}
                           themeVariant={isDark ? 'dark' : 'light'}
                           onChange={(_event, date) => {
                             if (Platform.OS === 'android') setShowEditDatePicker(false);
-                            if (date) setEditDueDate(date.toISOString().slice(0, 10));
+                            if (date) setEditDueDate(toLocalDateStr(date));
                           }}
                           style={{ marginTop: 4 }}
                         />
@@ -1058,7 +1061,7 @@ const colors = {
                   >
                     <Ionicons name="calendar-outline" size={16} color={colors.secondary} />
                     <Text style={[styles.editSelectText, { color: newDueDate ? colors.text : colors.muted }]}>
-                      {newDueDate ? new Date(newDueDate).toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }) : 'No due date'}
+                      {newDueDate ? fromLocalDateStr(newDueDate).toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }) : 'No due date'}
                     </Text>
                     {newDueDate ? (
                       <TouchableOpacity onPress={(e) => { e.stopPropagation?.(); setNewDueDate(''); setShowNewDatePicker(false); }} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
@@ -1070,13 +1073,13 @@ const colors = {
                   </TouchableOpacity>
                   {showNewDatePicker && (
                     <DateTimePicker
-                      value={newDueDate ? new Date(newDueDate) : new Date()}
+                      value={newDueDate ? fromLocalDateStr(newDueDate) : new Date()}
                       mode="date"
                       display={Platform.OS === 'ios' ? 'inline' : 'default'}
                       themeVariant={isDark ? 'dark' : 'light'}
                       onChange={(_event, date) => {
                         if (Platform.OS === 'android') setShowNewDatePicker(false);
-                        if (date) setNewDueDate(date.toISOString().slice(0, 10));
+                        if (date) setNewDueDate(toLocalDateStr(date));
                       }}
                       style={{ marginTop: 4 }}
                     />
@@ -1201,6 +1204,8 @@ const styles = StyleSheet.create({
   emptySubtitle: { fontSize: 14 },
 
   section: { gap: 6 },
+  sectionRowGap: { marginBottom: 6 },
+  sectionFooterGap: { height: 12 },
   sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',

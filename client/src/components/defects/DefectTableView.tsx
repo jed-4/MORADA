@@ -1,15 +1,13 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import type { Defect } from "@shared/schema";
+import { type ColumnDef } from "@tanstack/react-table";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+  DataTable,
+  type DataTableColumnMeta,
+} from "@/components/data-table/DataTable";
+import { EmptyState } from "@/components/EmptyState";
 import { Badge } from "@/components/ui/badge";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
@@ -89,7 +87,7 @@ export function DefectTableView({ defects }: DefectTableViewProps) {
   const getPriorityBadge = (priority: string) => {
     const option = priorityOptions.find((o) => o.key === priority);
     if (!option) return <Badge variant="outline">{priority}</Badge>;
-    
+
     return (
       <Badge
         variant="outline"
@@ -115,84 +113,143 @@ export function DefectTableView({ defects }: DefectTableViewProps) {
     return option?.label || trade;
   };
 
+  const columns = useMemo<ColumnDef<Defect, unknown>[]>(
+    () => [
+      {
+        id: "id",
+        header: "ID",
+        accessorFn: (d) => d.id,
+        cell: ({ row }) => (
+          <span className="text-xs font-medium" data-testid={`text-id-${row.original.id}`}>
+            {row.original.id}
+          </span>
+        ),
+        size: 80,
+        meta: { defaultWidth: 80, headerLabel: "ID" } satisfies DataTableColumnMeta,
+      },
+      {
+        id: "title",
+        header: "Title",
+        accessorFn: (d) => d.title || "",
+        cell: ({ row }) => (
+          <span className="text-xs" data-testid={`text-title-${row.original.id}`}>
+            {row.original.title}
+          </span>
+        ),
+        size: 260,
+        meta: { defaultWidth: 260, headerLabel: "Title" } satisfies DataTableColumnMeta,
+      },
+      {
+        id: "status",
+        header: "Status",
+        accessorFn: (d) => {
+          const option = statusOptions.find((o) => o.key === d.status);
+          return option?.name || d.status;
+        },
+        cell: ({ row }) => getStatusBadge(row.original.status),
+        size: 120,
+        meta: { defaultWidth: 120, headerLabel: "Status" } satisfies DataTableColumnMeta,
+      },
+      {
+        id: "priority",
+        header: "Priority",
+        accessorFn: (d) => {
+          const option = priorityOptions.find((o) => o.key === d.priority);
+          return option?.name || d.priority;
+        },
+        cell: ({ row }) => getPriorityBadge(row.original.priority),
+        size: 110,
+        meta: { defaultWidth: 110, headerLabel: "Priority" } satisfies DataTableColumnMeta,
+      },
+      {
+        id: "type",
+        header: "Type",
+        accessorFn: (d) => getTypeLabel(d.type),
+        cell: ({ row }) => (
+          <span className="text-xs" data-testid={`text-type-${row.original.id}`}>
+            {getTypeLabel(row.original.type)}
+          </span>
+        ),
+        size: 120,
+        meta: { defaultWidth: 120, headerLabel: "Type" } satisfies DataTableColumnMeta,
+      },
+      {
+        id: "trade",
+        header: "Trade",
+        accessorFn: (d) => getTradeLabel(d.trade),
+        cell: ({ row }) => (
+          <span className="text-xs" data-testid={`text-trade-${row.original.id}`}>
+            {getTradeLabel(row.original.trade)}
+          </span>
+        ),
+        size: 120,
+        meta: { defaultWidth: 120, headerLabel: "Trade" } satisfies DataTableColumnMeta,
+      },
+      {
+        id: "location",
+        header: "Location",
+        accessorFn: (d) => d.location || "",
+        cell: ({ row }) => (
+          <span className="text-xs" data-testid={`text-location-${row.original.id}`}>
+            {row.original.location || "-"}
+          </span>
+        ),
+        size: 150,
+        meta: { defaultWidth: 150, headerLabel: "Location" } satisfies DataTableColumnMeta,
+      },
+      {
+        id: "actions",
+        header: "",
+        enableSorting: false,
+        cell: ({ row }) => (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={(e) => e.stopPropagation()}
+                data-testid={`button-menu-${row.original.id}`}
+              >
+                <MoreVertical className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem
+                onClick={() => setEditingDefect(row.original)}
+                data-testid={`menu-item-edit-${row.original.id}`}
+              >
+                <Pencil className="h-4 w-4 mr-2" />
+                Edit
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => setDeletingDefect(row.original)}
+                className="text-destructive"
+                data-testid={`menu-item-delete-${row.original.id}`}
+              >
+                <Trash2 className="h-4 w-4 mr-2" />
+                Delete
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ),
+        size: 50,
+        meta: { defaultWidth: 50, align: "center", headerLabel: "Actions" } satisfies DataTableColumnMeta,
+      },
+    ],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [statusOptions, priorityOptions, typeOptions, tradeOptions],
+  );
+
   return (
     <>
-      <div className="border rounded-md">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="w-[50px]">ID</TableHead>
-              <TableHead className="min-w-[200px]">Title</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Priority</TableHead>
-              <TableHead>Type</TableHead>
-              <TableHead>Trade</TableHead>
-              <TableHead>Location</TableHead>
-              <TableHead className="w-[50px]"></TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {defects.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={8} className="text-center text-muted-foreground">
-                  No defects found
-                </TableCell>
-              </TableRow>
-            ) : (
-              defects.map((defect) => (
-                <TableRow key={defect.id} data-testid={`row-defect-${defect.id}`}>
-                  <TableCell className="font-medium" data-testid={`text-id-${defect.id}`}>
-                    {defect.id}
-                  </TableCell>
-                  <TableCell data-testid={`text-title-${defect.id}`}>
-                    {defect.title}
-                  </TableCell>
-                  <TableCell>{getStatusBadge(defect.status)}</TableCell>
-                  <TableCell>{getPriorityBadge(defect.priority)}</TableCell>
-                  <TableCell data-testid={`text-type-${defect.id}`}>
-                    {getTypeLabel(defect.type)}
-                  </TableCell>
-                  <TableCell data-testid={`text-trade-${defect.id}`}>
-                    {getTradeLabel(defect.trade)}
-                  </TableCell>
-                  <TableCell data-testid={`text-location-${defect.id}`}>
-                    {defect.location || "-"}
-                  </TableCell>
-                  <TableCell>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          data-testid={`button-menu-${defect.id}`}
-                        >
-                          <MoreVertical className="h-4 w-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem
-                          onClick={() => setEditingDefect(defect)}
-                          data-testid={`menu-item-edit-${defect.id}`}
-                        >
-                          <Pencil className="h-4 w-4 mr-2" />
-                          Edit
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={() => setDeletingDefect(defect)}
-                          className="text-destructive"
-                          data-testid={`menu-item-delete-${defect.id}`}
-                        >
-                          <Trash2 className="h-4 w-4 mr-2" />
-                          Delete
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </TableCell>
-                </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
+      <div className="border rounded-md overflow-hidden">
+        <DataTable
+          data={defects}
+          columns={columns}
+          storageKey="defects"
+          rowKey={(d) => `defect-${d.id}`}
+          emptyState={<EmptyState variant="inline" title="No defects found" />}
+        />
       </div>
 
       <DefectFormDialog

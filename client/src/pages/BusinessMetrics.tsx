@@ -89,8 +89,8 @@ function ExpiryBadge({ dateStr }: { dateStr: string | null | undefined }) {
   const days = daysUntil(dateStr);
   if (days === null) return <Badge variant="secondary" className="text-data">Not set</Badge>;
   if (days < 0) return <Badge variant="destructive" className="text-data">Expired</Badge>;
-  if (days <= 30) return <Badge className="text-data bg-orange-500/15 text-status-warning dark:text-orange-400 hover:bg-orange-500/20">{days}d left</Badge>;
-  if (days <= 90) return <Badge className="text-data bg-yellow-500/15 text-status-warning dark:text-yellow-400 hover:bg-yellow-500/20">{days}d left</Badge>;
+  if (days <= 30) return <Badge className="text-data bg-status-warning-bg text-status-warning hover:bg-status-warning-bg">{days}d left</Badge>;
+  if (days <= 90) return <Badge className="text-data bg-amber-light text-status-warning hover:bg-amber-light">{days}d left</Badge>;
   const d = new Date(dateStr!);
   return <Badge variant="secondary" className="text-data">{d.toLocaleDateString("en-AU")}</Badge>;
 }
@@ -142,7 +142,7 @@ function EditableField({
             className="h-7 text-xs"
             placeholder={placeholder}
           />
-          <Button size="icon" variant="ghost" onClick={commit}><Check className="w-3 h-3 text-green-500" /></Button>
+          <Button size="icon" variant="ghost" onClick={commit}><Check className="w-3 h-3 text-status-success" /></Button>
           <Button size="icon" variant="ghost" onClick={cancel}><X className="w-3 h-3 text-muted-foreground" /></Button>
         </div>
       </div>
@@ -196,7 +196,7 @@ function HWITracker({ limit, committed, onSave }: { limit: number | null; commit
         <div>
           <div className="h-4 bg-muted rounded-full overflow-hidden">
             <div
-              className={`h-full rounded-full transition-all ${isOver ? 'bg-destructive' : pct > 80 ? 'bg-orange-500' : 'bg-primary'}`}
+              className={`h-full rounded-full transition-all ${isOver ? 'bg-destructive' : pct > 80 ? 'bg-amber' : 'bg-primary'}`}
               style={{ width: `${pct}%` }}
             />
           </div>
@@ -230,7 +230,7 @@ function InsuranceCard({
 }) {
   const expiryField = fields.find(f => f.field.toLowerCase().includes("expiry"));
   const days = daysUntil(expiryField?.value);
-  const statusColor = days === null ? "text-muted-foreground" : days < 0 ? "text-destructive" : days <= 30 ? "text-orange-500" : days <= 90 ? "text-yellow-500" : "text-green-500";
+  const statusColor = days === null ? "text-muted-foreground" : days < 0 ? "text-destructive" : days <= 30 ? "text-status-warning" : days <= 90 ? "text-amber" : "text-status-success";
   const StatusIcon = days === null ? Clock : days < 0 ? AlertTriangle : days !== null && days <= 90 ? AlertTriangle : CheckCircle2;
 
   return (
@@ -274,10 +274,10 @@ function OverviewTab({ projects }: { projects: Project[] }) {
     .reduce((s, p) => s + (p.lockedContractPrice ?? 0), 0);
 
   const stages = [
-    { label: "Lead", count: leads.length, color: "bg-blue-400" },
-    { label: "Pre-Construction", count: preCon.length, color: "bg-yellow-400" },
+    { label: "Lead", count: leads.length, color: "bg-teal" },
+    { label: "Pre-Construction", count: preCon.length, color: "bg-amber" },
     { label: "Construction", count: construction.length, color: "bg-primary" },
-    { label: "Post-Construction", count: postCon.length, color: "bg-green-400" },
+    { label: "Post-Construction", count: postCon.length, color: "bg-sage" },
   ];
   const total = clientProjects.length || 1;
 
@@ -578,10 +578,10 @@ function PipelineTab({ projects }: { projects: Project[] }) {
   const conversionRate = totalPipeline > 0 ? ((active.length + completed.length) / (totalPipeline + active.length + completed.length) * 100) : 0;
 
   const pipelineStages = [
-    { label: "Leads", count: leads.length, color: "bg-blue-400", desc: "New enquiries & site inspections" },
-    { label: "Quoting", count: quotes.length, color: "bg-yellow-400", desc: "Estimates being prepared" },
+    { label: "Leads", count: leads.length, color: "bg-teal", desc: "New enquiries & site inspections" },
+    { label: "Quoting", count: quotes.length, color: "bg-amber", desc: "Estimates being prepared" },
     { label: "Won (Active)", count: active.length, color: "bg-primary", desc: "Currently under construction" },
-    { label: "Completed", count: completed.length, color: "bg-green-400", desc: "Post-construction & handover" },
+    { label: "Completed", count: completed.length, color: "bg-sage", desc: "Post-construction & handover" },
   ];
 
   return (

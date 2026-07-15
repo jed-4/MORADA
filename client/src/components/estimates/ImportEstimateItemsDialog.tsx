@@ -600,16 +600,16 @@ export function ImportEstimateItemsDialog({
                             key={`${groupName}-${index}`}
                             className={cn(
                               hasError && !hasOnlyFixableErrors && !typeNowFixed && "bg-destructive/10",
-                              hasOnlyFixableErrors && !typeNowFixed && "bg-amber-50 dark:bg-amber-900/20",
-                              typeNowFixed && "bg-green-50 dark:bg-green-900/20",
-                              hasTypeWarning && "bg-amber-50/60 dark:bg-amber-900/10",
+                              hasOnlyFixableErrors && !typeNowFixed && "bg-status-warning-bg",
+                              typeNowFixed && "bg-status-success-bg",
+                              hasTypeWarning && "bg-status-warning-bg/60",
                               isGroupSelected && !hasError && "bg-primary/10"
                             )}
                           >
                             <TableCell>
                               {hasError && !hasOnlyFixableErrors && !typeNowFixed && <AlertCircle className="h-4 w-4 text-destructive" />}
-                              {hasOnlyFixableErrors && !typeNowFixed && <AlertCircle className="h-4 w-4 text-amber-500" />}
-                              {hasTypeWarning && <AlertCircle className="h-4 w-4 text-amber-400" />}
+                              {hasOnlyFixableErrors && !typeNowFixed && <AlertCircle className="h-4 w-4 text-status-warning" />}
+                              {hasTypeWarning && <AlertCircle className="h-4 w-4 text-status-warning/80" />}
                               {typeNowFixed && <CheckCircle className="h-4 w-4 text-status-success" />}
                               {!hasError && !typeNowFixed && !hasTypeWarning && (
                                 <CheckCircle className="h-4 w-4 text-status-success" />
@@ -626,7 +626,7 @@ export function ImportEstimateItemsDialog({
                                   {typeCorrectionApplied ? (
                                     <Badge 
                                       variant="default"
-                                      className="text-xs bg-green-600 hover:bg-green-700"
+                                      className="text-xs bg-sage hover:bg-sage/90"
                                     >
                                       {typeCorrections[rawTypeValue]}
                                       <span className="opacity-70 ml-1">({rawTypeValue})</span>
@@ -642,7 +642,7 @@ export function ImportEstimateItemsDialog({
                                           }));
                                         }}
                                       >
-                                        <SelectTrigger className="h-7 w-[140px] text-xs border-amber-400 bg-amber-50 dark:bg-amber-900/20">
+                                        <SelectTrigger className="h-7 w-[140px] text-xs border-status-warning bg-status-warning-bg">
                                           <SelectValue placeholder="Select type..." />
                                         </SelectTrigger>
                                         <SelectContent>
@@ -660,7 +660,7 @@ export function ImportEstimateItemsDialog({
                                   ) : typeIsMatched ? (
                                     <Badge 
                                       variant="default"
-                                      className="text-xs bg-green-600 hover:bg-green-700"
+                                      className="text-xs bg-sage hover:bg-sage/90"
                                     >
                                       {parsed.typeMatch!.matchedValue}
                                       {parsed.typeMatch!.rawValue !== parsed.typeMatch!.matchedValue && (
@@ -675,7 +675,7 @@ export function ImportEstimateItemsDialog({
                                   {costCodeMatch ? (
                                     <div className="flex items-center gap-1.5">
                                       {costCodeMatch.matchedCode ? (
-                                        <Badge variant="default" className="bg-green-600 hover:bg-green-700 text-xs">
+                                        <Badge variant="default" className="bg-sage hover:bg-sage/90 text-xs">
                                           {costCodeMatch.matchedCode.code} - {costCodeMatch.matchedCode.title}
                                         </Badge>
                                       ) : (
@@ -730,7 +730,7 @@ export function ImportEstimateItemsDialog({
                   </span>
                 )}
                 {unmatchedCostCodes > 0 && (
-                  <span className="text-sm font-medium text-amber-600">
+                  <span className="text-sm font-medium text-status-warning">
                     {unmatchedCostCodes} cost code{unmatchedCostCodes !== 1 ? 's' : ''} unmatched
                   </span>
                 )}
@@ -740,7 +740,7 @@ export function ImportEstimateItemsDialog({
                   </span>
                 )}
                 {unmatchedTypeValues.size > 0 && (
-                  <span className="text-sm font-medium text-amber-600">
+                  <span className="text-sm font-medium text-status-warning">
                     {unmatchedTypeValues.size} type{unmatchedTypeValues.size !== 1 ? 's' : ''} need fixing
                   </span>
                 )}

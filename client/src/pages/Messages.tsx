@@ -200,8 +200,8 @@ function TaskLinkPreview({ taskId }: { taskId: string }) {
   const assigneeName: string = task.assigneeName || (task.assigneeIds?.length ? "Assigned" : "Unassigned");
   const dueDate: string | null = task.dueDate ? new Date(task.dueDate).toLocaleDateString("en-AU", { day: "numeric", month: "short" }) : null;
   const statusColor: string =
-    status === "done" ? "text-status-success dark:text-green-400" :
-    status === "in-progress" ? "text-status-info dark:text-blue-400" :
+    status === "done" ? "text-status-success" :
+    status === "in-progress" ? "text-status-info" :
     "text-muted-foreground";
 
   // Route to the correct tasks page based on task context
@@ -1927,7 +1927,7 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                 </div>
                 <div className="flex items-center gap-2">
                   <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                    <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : isReconnecting ? 'bg-amber-500 animate-pulse' : 'bg-muted-foreground/40'}`} />
+                    <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-sage' : isReconnecting ? 'bg-amber animate-pulse' : 'bg-muted-foreground/40'}`} />
                     <span>{isConnected ? 'Connected' : isReconnecting ? 'Reconnecting…' : 'Disconnected'}</span>
                   </div>
                   <Button

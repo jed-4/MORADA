@@ -12,11 +12,13 @@ import {
   useColorScheme,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { apiFetch } from '../services/api';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
 import { useTheme, lightTheme } from '../theme';
 import { useAuth } from '../contexts/AuthContext';
+import { compareProjects } from '../lib/projects';
 
 const toTitleCase = (str: string) =>
   str.replace(/_/g, ' ').replace(/\w\S*/g, w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
@@ -82,6 +84,8 @@ export default function ProjectsScreen({ navigation }: Props) {
   const [activePhase, setActivePhase] = useState('all');
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+  const insets = useSafeAreaInsets();
 
   const theme = useTheme();
 const colors = {
@@ -102,8 +106,10 @@ const colors = {
       // and business projects regardless of what the server version returns.
       const active = (data || []).filter((p: any) => !p.isArchived && !p.isBusiness);
       setProjects(active);
+      setError(false);
     } catch (e) {
       console.error('Failed to fetch projects:', e);
+      setError(true);
     } finally {
       setLoading(false);
     }
@@ -156,29 +162,20 @@ const colors = {
           p.address?.toLowerCase().includes(q)
       );
     }
-    return [...filtered].sort((a, b) => {
-      const jnA = a.projectNumber || a.jobNumber || '';
-      const jnB = b.projectNumber || b.jobNumber || '';
-      if (jnA && jnB) {
-        const cmp = jnA.localeCompare(jnB, undefined, { numeric: true });
-        if (cmp !== 0) return cmp;
-      } else if (jnA) return -1;
-      else if (jnB) return 1;
-      return (a.name || '').localeCompare(b.name || '');
-    });
+    return [...filtered].sort(compareProjects);
   };
 
   const renderProjectCard = ({ item }: { item: Project }) => {
     const projectColor = getProjectColor(item);
 
-    // Status chip colour mapping
+    // Status chip colour mapping — theme tokens so dark mode gets dark washes
     const chipColors: Record<string, { bg: string; dot: string; text: string }> = {
-      construction:      { bg: '#E8F5F0', dot: '#68B088', text: '#3A7A5A' },
-      pre_construction:  { bg: '#FEF3E2', dot: '#F0B964', text: '#8A6020' },
-      lead:              { bg: '#F0EAFA', dot: '#A890D4', text: '#6A4A9A' },
-      post_construction: { bg: '#E8F5F0', dot: '#70CAD0', text: '#3A7A80' },
+      construction:      { bg: theme.sageLight, dot: theme.sage, text: theme.sage },
+      pre_construction:  { bg: theme.amberLight, dot: theme.amber, text: theme.amber },
+      lead:              { bg: theme.primaryLight, dot: theme.primary, text: theme.primary },
+      post_construction: { bg: theme.tealLight, dot: theme.teal, text: theme.teal },
     };
-    const chip = chipColors[item.currentSystemPhase ?? ''] ?? { bg: '#F0EAFA', dot: '#A890D4', text: '#6A4A9A' };
+    const chip = chipColors[item.currentSystemPhase ?? ''] ?? { bg: theme.primaryLight, dot: theme.primary, text: theme.primary };
     const chipLabel = item.projectSubStatus
       ? getSubStatusLabel(item.projectSubStatus)
       : item.currentSystemPhase
@@ -212,7 +209,7 @@ const colors = {
       <TouchableOpacity
         activeOpacity={0.7}
         onPress={() => navigation.navigate('ProjectDetail', { projectId: item.id, projectName: item.name })}
-        style={[styles.card, { backgroundColor: colors.card }]}
+        style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}
       >
         {/* Top colour band */}
         <View style={[styles.cardTopBand, { backgroundColor: projectColor }]} />
@@ -254,7 +251,7 @@ const colors = {
           {/* Row 3: Progress bar in the project's own colour + % label. */}
           {hasProgress && (
             <View style={{ marginTop: 10 }}>
-              <View style={[styles.progressBg, { backgroundColor: isDark ? '#2e2c29' : '#EAEAE8' }]}>
+              <View style={[styles.progressBg, { backgroundColor: theme.border }]}>
                 {pct > 0 && (
                   <View style={[styles.progressFill, {
                     backgroundColor: projectColor,
@@ -283,6 +280,24 @@ const colors = {
     );
   }
 
+  if (error) {
+    return (
+      <View style={[styles.container, styles.center, { backgroundColor: colors.bg }]}>
+        <Ionicons name="cloud-offline-outline" size={48} color={colors.muted} />
+        <Text style={[styles.emptyText, { color: colors.secondary }]}>
+          Couldn't load your projects.
+        </Text>
+        <TouchableOpacity
+          style={[styles.retryBtn, { borderColor: colors.border, backgroundColor: colors.card }]}
+          onPress={() => { setLoading(true); fetchProjects(); }}
+          activeOpacity={0.7}
+        >
+          <Text style={[styles.retryBtnText, { color: colors.accent }]}>Retry</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
   const filteredProjects = getFilteredProjects();
 
   const screenBg = isDark ? theme.background : '#F0EBE3';
@@ -290,7 +305,7 @@ const colors = {
   return (
     <View style={[styles.container, { backgroundColor: screenBg }]}>
       {/* Header — matches Dashboard header exactly */}
-      <View style={[styles.header, { backgroundColor: screenBg }]}>
+      <View style={[styles.header, { backgroundColor: screenBg, paddingTop: insets.top + 12 }]}>
         <Text style={[styles.headerTitle, { color: colors.text }]}>Projects</Text>
         <TouchableOpacity
           style={styles.searchIconBtn}
@@ -300,7 +315,7 @@ const colors = {
           <Ionicons name={searchVisible ? 'close' : 'search'} size={22} color={colors.secondary} />
         </TouchableOpacity>
         {/* Hairline divider beneath the header */}
-        <View style={[styles.headerDivider, { backgroundColor: '#EAEAE8' }]} />
+        <View style={[styles.headerDivider, { backgroundColor: colors.border }]} />
       </View>
 
       {/* Expandable search */}
@@ -400,7 +415,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingTop: 56,
     paddingBottom: 14,
     borderBottomWidth: 0,
     position: 'relative',
@@ -450,7 +464,6 @@ const styles = StyleSheet.create({
     alignItems: 'stretch',
     borderRadius: 12,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#EAEAE8',
     overflow: 'hidden',
     minHeight: 84,
   },
@@ -548,4 +561,12 @@ const styles = StyleSheet.create({
   },
   emptyContainer: { alignItems: 'center', paddingVertical: 60 },
   emptyText: { fontSize: 14, textAlign: 'center', marginTop: 12 },
+  retryBtn: {
+    marginTop: 16,
+    paddingHorizontal: 24,
+    paddingVertical: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  retryBtnText: { fontSize: 15, fontWeight: '600' },
 });

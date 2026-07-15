@@ -1,6 +1,7 @@
 import { Server as SocketIOServer, Socket } from "socket.io";
 import { Server as HttpServer } from "http";
 import { storage } from "./storage";
+import { mobileSessionMiddleware } from "./auth";
 import type { Task } from "@shared/schema";
 
 let io: SocketIOServer | null = null;
@@ -10,20 +11,29 @@ let io: SocketIOServer | null = null;
 // correctly — a user is only considered "offline" when ALL their sockets disconnect.
 const connectedByCompany = new Map<string, Map<string, Set<string>>>();
 
-function addConnectedUser(companyId: string, userId: string, socketId: string): void {
+// Returns true when this socket is the user's FIRST — i.e. they just came online.
+function addConnectedUser(companyId: string, userId: string, socketId: string): boolean {
   if (!connectedByCompany.has(companyId)) connectedByCompany.set(companyId, new Map());
   const users = connectedByCompany.get(companyId)!;
   if (!users.has(userId)) users.set(userId, new Set());
-  users.get(userId)!.add(socketId);
+  const sockets = users.get(userId)!;
+  const wasOffline = sockets.size === 0;
+  sockets.add(socketId);
+  return wasOffline;
 }
 
-function removeConnectedUser(companyId: string, userId: string, socketId: string): void {
+// Returns true when this socket was the user's LAST — i.e. they just went offline.
+function removeConnectedUser(companyId: string, userId: string, socketId: string): boolean {
   const users = connectedByCompany.get(companyId);
-  if (!users) return;
+  if (!users) return false;
   const sockets = users.get(userId);
-  if (!sockets) return;
+  if (!sockets) return false;
   sockets.delete(socketId);
-  if (sockets.size === 0) users.delete(userId);
+  if (sockets.size === 0) {
+    users.delete(userId);
+    return true;
+  }
+  return false;
 }
 
 export function initializeSocketManager(httpServer: HttpServer, sessionMiddleware: any): SocketIOServer {
@@ -37,6 +47,13 @@ export function initializeSocketManager(httpServer: HttpServer, sessionMiddlewar
     path: "/socket.io/"
   });
 
+  // Mobile clients authenticate the handshake with X-Session-ID + X-Client
+  // headers instead of a cookie. Reuse the exact REST mapping (server/auth.ts
+  // mobileSessionMiddleware): a valid header pair is rewritten onto the
+  // connect.sid cookie before the shared session middleware runs, so the
+  // socket resolves the same session as REST requests. Web clients send
+  // neither header, making this a no-op for the existing cookie path.
+  io.engine.use(mobileSessionMiddleware as any);
   io.engine.use(sessionMiddleware);
 
   io.use(async (socket: Socket, next) => {
@@ -69,7 +86,15 @@ export function initializeSocketManager(httpServer: HttpServer, sessionMiddlewar
     socket.join(`company:${socket.data.companyId}`);
     socket.join(`user:${socket.data.userId}`);
     console.log(`User ${socket.data.userId} joined company room: company:${socket.data.companyId}`);
-    addConnectedUser(socket.data.companyId, socket.data.userId, socket.id);
+    const cameOnline = addConnectedUser(socket.data.companyId, socket.data.userId, socket.id);
+    // Presence: only announce real online/offline transitions, not every extra
+    // tab or device. Additive — existing clients that don't listen are unaffected.
+    if (cameOnline) {
+      io!.to(`company:${socket.data.companyId}`).emit("presence_changed", {
+        userId: socket.data.userId,
+        online: true,
+      });
+    }
 
     // Auto-join all channel rooms this user is a member of on connect so that
     // new_message events arrive even when the client is not on the Messages page.
@@ -139,6 +164,7 @@ export function initializeSocketManager(httpServer: HttpServer, sessionMiddlewar
     socket.on("mark_read", async (channelId: string) => {
       try {
         await storage.updateChannelMemberLastRead(channelId, socket.data.userId);
+        emitMessagesRead(channelId, socket.data.userId, new Date().toISOString());
       } catch {
         // Non-critical — silently ignore
       }
@@ -178,7 +204,13 @@ export function initializeSocketManager(httpServer: HttpServer, sessionMiddlewar
 
     socket.on("disconnect", () => {
       console.log(`User disconnected: ${socket.data.userId}`);
-      removeConnectedUser(socket.data.companyId, socket.data.userId, socket.id);
+      const wentOffline = removeConnectedUser(socket.data.companyId, socket.data.userId, socket.id);
+      if (wentOffline) {
+        io!.to(`company:${socket.data.companyId}`).emit("presence_changed", {
+          userId: socket.data.userId,
+          online: false,
+        });
+      }
     });
   });
 
@@ -224,6 +256,14 @@ export function emitNotification(userId: string, notification: any) {
 export function emitReactionUpdated(channelId: string, messageId: string, reactions: any[]) {
   if (!io) return;
   io.to(`channel:${channelId}`).emit("reaction_updated", { messageId, reactions });
+}
+
+// Read receipts: tell the channel room that `userId` has now read everything up
+// to `lastReadAt`. Mirrors emitReactionUpdated. Purely additive — the web client
+// does not subscribe to `messages_read`, so this changes no existing behaviour.
+export function emitMessagesRead(channelId: string, userId: string, lastReadAt: string) {
+  if (!io) return;
+  io.to(`channel:${channelId}`).emit("messages_read", { channelId, userId, lastReadAt });
 }
 
 // Returns the user IDs of all currently connected users within a company.

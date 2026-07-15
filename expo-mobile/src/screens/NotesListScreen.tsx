@@ -19,6 +19,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { useAuth } from '../contexts/AuthContext';
 import { apiRequest } from '../services/api';
+import { timeAgo } from '../lib/format';
 
 import { useTheme } from '../theme';
 type Props = {
@@ -38,21 +39,6 @@ interface NoteItem {
   createdAt: string;
   updatedAt: string;
   archivedAt?: string | null;
-}
-
-function timeAgo(dateStr: string): string {
-  const now = new Date();
-  const date = new Date(dateStr);
-  const diffMs = now.getTime() - date.getTime();
-  const diffSec = Math.floor(diffMs / 1000);
-  if (diffSec < 60) return 'Just now';
-  const diffMin = Math.floor(diffSec / 60);
-  if (diffMin < 60) return `${diffMin}m ago`;
-  const diffHr = Math.floor(diffMin / 60);
-  if (diffHr < 24) return `${diffHr}h ago`;
-  const diffDay = Math.floor(diffHr / 24);
-  if (diffDay < 7) return `${diffDay}d ago`;
-  return date.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' });
 }
 
 function getPreviewText(note: NoteItem): string {
@@ -178,6 +164,7 @@ export default function NotesListScreen({ navigation }: Props) {
 
   const [notes, setNotes] = useState<NoteItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [search, setSearch] = useState('');
   const [creating, setCreating] = useState(false);
@@ -204,18 +191,18 @@ const colors = {
     else setLoading(true);
     try {
       const response = await apiRequest('/api/notes?scope=personal');
-      if (response.ok) {
-        const data: NoteItem[] = await response.json();
-        const personalNotes = data.filter((n) => !n.archivedAt);
-        personalNotes.sort((a, b) => {
-          if (a.pinned && !b.pinned) return -1;
-          if (!a.pinned && b.pinned) return 1;
-          return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
-        });
-        setNotes(personalNotes);
-      }
+      const data: NoteItem[] = await response.json();
+      const personalNotes = data.filter((n) => !n.archivedAt);
+      personalNotes.sort((a, b) => {
+        if (a.pinned && !b.pinned) return -1;
+        if (!a.pinned && b.pinned) return 1;
+        return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+      });
+      setNotes(personalNotes);
+      setFetchError(false);
     } catch (error) {
       console.error('Failed to fetch notes:', error);
+      setFetchError(true);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -231,16 +218,14 @@ const colors = {
   const handlePlusTap = async () => {
     try {
       const response = await apiRequest('/api/note-templates?activeOnly=true');
-      if (response.ok) {
-        const data = await response.json();
-        if (data.length > 0) {
-          Alert.alert('New Note', 'How would you like to create a note?', [
-            { text: 'Cancel', style: 'cancel' },
-            { text: 'From Template', onPress: () => { setTemplates(data); setTemplateModalVisible(true); } },
-            { text: 'New Note', onPress: () => handleCreateNote() },
-          ]);
-          return;
-        }
+      const data = await response.json();
+      if (data.length > 0) {
+        Alert.alert('New Note', 'How would you like to create a note?', [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'From Template', onPress: () => { setTemplates(data); setTemplateModalVisible(true); } },
+          { text: 'New Note', onPress: () => handleCreateNote() },
+        ]);
+        return;
       }
     } catch {
     }
@@ -253,13 +238,8 @@ const colors = {
     setTemplateModalVisible(true);
     try {
       const response = await apiRequest('/api/note-templates?activeOnly=true');
-      if (response.ok) {
-        const data = await response.json();
-        setTemplates(data);
-      } else {
-        setTemplates([]);
-        setTemplateFetchError(true);
-      }
+      const data = await response.json();
+      setTemplates(data);
     } catch {
       setTemplates([]);
       setTemplateFetchError(true);
@@ -291,14 +271,10 @@ const colors = {
         category: 'General',
         priority: 'low',
       });
-      if (response.ok) {
-        const newNote = await response.json();
-        navigation.navigate('NoteEditor', { noteId: newNote.id });
-      } else {
-        Alert.alert('Error', 'Failed to create note from template.');
-      }
-    } catch {
-      Alert.alert('Error', 'Failed to create note from template.');
+      const newNote = await response.json();
+      navigation.navigate('NoteEditor', { noteId: newNote.id });
+    } catch (err) {
+      Alert.alert('Error', err instanceof Error ? err.message : 'Failed to create note from template.');
     } finally {
       setCreating(false);
     }
@@ -346,14 +322,10 @@ const colors = {
         category: 'General',
         priority: 'low',
       });
-      if (response.ok) {
-        const newNote = await response.json();
-        navigation.navigate('NoteEditor', { noteId: newNote.id });
-      } else {
-        Alert.alert('Error', 'Failed to create note.');
-      }
-    } catch {
-      Alert.alert('Error', 'Failed to create note.');
+      const newNote = await response.json();
+      navigation.navigate('NoteEditor', { noteId: newNote.id });
+    } catch (err) {
+      Alert.alert('Error', err instanceof Error ? err.message : 'Failed to create note.');
     } finally {
       setCreating(false);
     }
@@ -370,14 +342,10 @@ const colors = {
           style: 'destructive',
           onPress: async () => {
             try {
-              const response = await apiRequest(`/api/notes/${noteId}`, 'DELETE');
-              if (response.ok || response.status === 204) {
-                setNotes((prev) => prev.filter((n) => n.id !== noteId));
-              } else {
-                Alert.alert('Error', 'Failed to delete note.');
-              }
-            } catch {
-              Alert.alert('Error', 'Failed to delete note.');
+              await apiRequest(`/api/notes/${noteId}`, 'DELETE');
+              setNotes((prev) => prev.filter((n) => n.id !== noteId));
+            } catch (err) {
+              Alert.alert('Error', err instanceof Error ? err.message : 'Failed to delete note.');
             }
           },
         },
@@ -387,30 +355,21 @@ const colors = {
 
   const handleArchiveNote = async (noteId: string) => {
     try {
-      const response = await apiRequest(`/api/notes/${noteId}/archive`, 'POST');
-      if (response.ok) {
-        setNotes((prev) => prev.filter((n) => n.id !== noteId));
-      } else {
-        Alert.alert('Error', 'Failed to archive note.');
-      }
-    } catch {
-      Alert.alert('Error', 'Failed to archive note.');
+      await apiRequest(`/api/notes/${noteId}/archive`, 'POST');
+      setNotes((prev) => prev.filter((n) => n.id !== noteId));
+    } catch (err) {
+      Alert.alert('Error', err instanceof Error ? err.message : 'Failed to archive note.');
     }
   };
 
   const handleTogglePin = async (note: NoteItem) => {
     try {
-      const response = await apiRequest(`/api/notes/${note.id}`, 'PATCH', {
+      await apiRequest(`/api/notes/${note.id}`, 'PATCH', {
         pinned: !note.pinned,
       });
-      if (response.ok) {
-        fetchNotes();
-      } else {
-        const err = await response.json().catch(() => ({}));
-        Alert.alert('Error', err.message || 'Failed to update note.');
-      }
-    } catch {
-      Alert.alert('Error', 'Failed to update note.');
+      fetchNotes();
+    } catch (err) {
+      Alert.alert('Error', err instanceof Error ? err.message : 'Failed to update note.');
     }
   };
 
@@ -490,6 +449,17 @@ const colors = {
       {loading ? (
         <View style={styles.centerContainer}>
           <ActivityIndicator size="large" color={colors.accent} />
+        </View>
+      ) : fetchError && notes.length === 0 ? (
+        <View style={styles.centerContainer}>
+          <Ionicons name="cloud-offline-outline" size={56} color={colors.placeholder} />
+          <Text style={[styles.emptyTitle, { color: colors.text }]}>Couldn't load notes</Text>
+          <Text style={[styles.emptySubtitle, { color: colors.secondary }]}>
+            Check your connection and try again.
+          </Text>
+          <TouchableOpacity onPress={() => fetchNotes()} style={{ marginTop: 12 }}>
+            <Text style={{ color: colors.accent, fontSize: 15, fontWeight: '600' }}>Retry</Text>
+          </TouchableOpacity>
         </View>
       ) : allItems.length === 0 ? (
         <View style={styles.centerContainer}>

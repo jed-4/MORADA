@@ -110,7 +110,7 @@ function InlineName({ value, onSave }: { value: string; onSave: (v: string) => v
         }}
         className="h-5 text-xs px-1 w-full"
       />
-      <button onClick={() => { onSave(draft); setEditing(false); }}><Check className="w-3 h-3 text-green-500" /></button>
+      <button onClick={() => { onSave(draft); setEditing(false); }}><Check className="w-3 h-3 text-status-success" /></button>
       <button onClick={() => { setDraft(value); setEditing(false); }}><X className="w-3 h-3 text-muted-foreground" /></button>
     </div>
   );
@@ -481,7 +481,7 @@ export default function HBCFTracker() {
               </div>
               <div className="w-28 h-1.5 bg-muted rounded-full overflow-hidden">
                 <div
-                  className={`h-full rounded-full ${peakTotal > limit ? "bg-destructive" : peakTotal / limit >= 0.8 ? "bg-orange-500" : "bg-primary"}`}
+                  className={`h-full rounded-full ${peakTotal > limit ? "bg-destructive" : peakTotal / limit >= 0.8 ? "bg-amber" : "bg-primary"}`}
                   style={{ width: `${Math.min((peakTotal / limit) * 100, 100)}%` }}
                 />
               </div>

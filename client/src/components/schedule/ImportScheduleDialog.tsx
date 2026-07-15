@@ -452,7 +452,7 @@ export function ImportScheduleDialog({
           >
             {selectedFile ? (
               <div className="flex flex-col items-center gap-2">
-                <FileSpreadsheet className="h-8 w-8 text-green-500" />
+                <FileSpreadsheet className="h-8 w-8 text-status-success" />
                 <p className="font-medium text-sm">{selectedFile.name}</p>
                 <p className="text-xs text-muted-foreground">
                   {(selectedFile.size / 1024).toFixed(1)} KB

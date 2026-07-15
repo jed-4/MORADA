@@ -1250,7 +1250,7 @@ export default function SystemConfigurationPage() {
             </CardHeader>
             <CardContent>
               {demoStatus?.seeded ? (
-                <div className="flex items-center gap-2 text-sm text-emerald-600 dark:text-emerald-400">
+                <div className="flex items-center gap-2 text-sm text-status-success">
                   <CheckCircle2 className="h-4 w-4" />
                   <span>Demo data is loaded — check your Projects and Contacts lists.</span>
                 </div>
