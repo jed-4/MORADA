@@ -137,6 +137,7 @@ function Router() {
       {/* Public routes */}
       <Route path="/auth" component={AuthPage} />
       <Route path="/reset-password" component={ResetPassword} />
+      <Route path="/accept-invite/:token" component={AcceptInvitation} />
       <Route path="/privacy" component={PrivacyPolicy} />
       <Route path="/terms" component={TermsOfService} />
       <Route path="/portal/rfq/:token" component={RFQPortal} />

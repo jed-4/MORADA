@@ -188,12 +188,14 @@ export interface IStorage {
   getUserByUsername(username: string): Promise<User | undefined>;
   getUserByEmail(email: string): Promise<User | undefined>;
   getUserByGoogleId(googleId: string): Promise<User | undefined>;
+  getUserByContactId(contactId: string): Promise<User | undefined>;
   validateUserCredentials(username: string, plainPassword: string): Promise<User | undefined>;
   getUserWithRole(id: string): Promise<UserWithRole | undefined>;
   createUser(user: InsertUser): Promise<User>;
   upsertUser(user: import("@shared/schema").UpsertUser): Promise<User>;
   updateUser(id: string, user: Partial<InsertUser>): Promise<User | undefined>;
   changeUserPassword(id: string, newPassword: string): Promise<User | undefined>;
+  deleteSessionsForUser(userId: string): Promise<void>;
   linkGoogleAccount(userId: string, googleId: string): Promise<User | undefined>;
   updateUserLastLogin(userId: string): Promise<void>;
   getUsers(category?: UserCategory): Promise<UserWithRole[]>;
@@ -247,10 +249,12 @@ export interface IStorage {
   getUserInvitationsByCompany(companyId: string, status?: string): Promise<UserInvitation[]>;
   getUserInvitation(id: string): Promise<UserInvitation | undefined>;
   getUserInvitationByToken(token: string): Promise<UserInvitation | undefined>;
+  getLatestUserInvitationByContactId(contactId: string): Promise<UserInvitation | undefined>;
+  getPortalProjectsForContact(contactId: string, companyId: string): Promise<Project[]>;
   createUserInvitation(invitation: InsertUserInvitation): Promise<UserInvitation>;
   updateUserInvitation(id: string, invitation: Partial<InsertUserInvitation>): Promise<UserInvitation | undefined>;
   deleteUserInvitation(id: string): Promise<boolean>;
-  acceptInvitation(token: string, userData: Partial<InsertUser>): Promise<{ user: User, invitation: UserInvitation } | undefined>;
+  acceptInvitation(token: string, userData: { password: string; firstName?: string | null; lastName?: string | null }): Promise<{ user: User, invitation: UserInvitation } | undefined>;
   
   // Password Reset Token operations
   createPasswordResetToken(data: { userId: string; token: string; expiresAt: Date; requestedBy?: string }): Promise<void>;
@@ -2497,6 +2501,12 @@ export class MemStorage implements IStorage {
     );
   }
 
+  async getUserByContactId(contactId: string): Promise<User | undefined> {
+    return Array.from(this.users.values()).find(
+      (user) => user.contactId === contactId,
+    );
+  }
+
   async getUserWithRole(id: string): Promise<UserWithRole | undefined> {
     const user = this.users.get(id);
     if (!user) return undefined;
@@ -2538,7 +2548,12 @@ export class MemStorage implements IStorage {
       throw new Error(`Password validation failed: ${passwordValidation.errors.join(', ')}`);
     }
     
-    return await this.updateUser(id, { password: newPassword });
+    return await this.updateUser(id, { passwordHash: await PasswordUtils.hashPassword(newPassword) });
+  }
+
+  async deleteSessionsForUser(_userId: string): Promise<void> {
+    // MemStorage has no session store — sessions live in Postgres via
+    // connect-pg-simple only when DbStorage is active.
   }
 
   async getUsers(category?: UserCategory): Promise<UserWithRole[]> {
@@ -3090,6 +3105,20 @@ export class MemStorage implements IStorage {
       .find(invitation => invitation.inviteToken === token);
   }
 
+  async getLatestUserInvitationByContactId(contactId: string): Promise<UserInvitation | undefined> {
+    return Array.from(this.userInvitations.values())
+      .filter(invitation => invitation.contactId === contactId)
+      .sort((a, b) => (b.createdAt?.getTime() ?? 0) - (a.createdAt?.getTime() ?? 0))[0];
+  }
+
+  async getPortalProjectsForContact(contactId: string, companyId: string): Promise<Project[]> {
+    // MemStorage has no contacts store, so only the projects.clientId link is
+    // resolvable here; DbStorage also unions contact.projectIds.
+    return Array.from(this.projects.values()).filter(
+      (project) => project.companyId === companyId && project.isActive && project.clientId === contactId,
+    );
+  }
+
   async createUserInvitation(insertInvitation: InsertUserInvitation): Promise<UserInvitation> {
     const id = randomUUID();
     const now = new Date();
@@ -3102,6 +3131,7 @@ export class MemStorage implements IStorage {
       company: insertInvitation.company || null,
       phone: insertInvitation.phone || null,
       projectIds: insertInvitation.projectIds || [],
+      contactId: insertInvitation.contactId || null,
       inviteToken: insertInvitation.inviteToken || PasswordUtils.generateSecureToken(), // SECURITY: Generate cryptographically secure token
       expiresAt: insertInvitation.expiresAt || PasswordUtils.generateInviteExpiry(), // Set proper expiry
       acceptedAt: insertInvitation.acceptedAt || null,
@@ -3131,7 +3161,7 @@ export class MemStorage implements IStorage {
     return this.userInvitations.delete(id);
   }
 
-  async acceptInvitation(token: string, userData: Partial<InsertUser>): Promise<{ user: User, invitation: UserInvitation } | undefined> {
+  async acceptInvitation(token: string, userData: { password: string; firstName?: string | null; lastName?: string | null }): Promise<{ user: User, invitation: UserInvitation } | undefined> {
     const invitation = await this.getUserInvitationByToken(token);
     
     // SECURITY: Validate token, status, and expiry
@@ -3152,16 +3182,15 @@ export class MemStorage implements IStorage {
 
     // Create the user account with secure password handling
     const newUser = await this.createUser({
-      username: userData.username || invitation.email,
-      password: userData.password, // Will be hashed in createUser method
+      passwordHash: await PasswordUtils.hashPassword(userData.password),
       email: invitation.email,
       firstName: normalizedFirstName,
       lastName: normalizedLastName,
       phone: invitation.phone,
-      company: invitation.company,
       userCategory: invitation.userCategory as UserCategory,
       roleId: invitation.roleId,
       companyId: invitation.companyId, // CRITICAL: Assign user to the inviter's company
+      contactId: invitation.contactId,
       isInvitePending: false,
       invitedBy: invitation.invitedBy,
       invitedAt: invitation.createdAt,
@@ -3181,7 +3210,7 @@ export class MemStorage implements IStorage {
         if (existingProjectIds.has(projectId)) continue;
         const project = await this.getProject(projectId);
         if (!project || project.companyId !== invitation.companyId) continue;
-        await this.grantProjectAccess(newUser.id, projectId, "edit", invitation.invitedBy);
+        await this.grantProjectAccess(newUser.id, projectId, invitation.userCategory === "client" ? "view" : "edit", invitation.invitedBy);
       }
     }
 
@@ -7605,6 +7634,11 @@ export class DbStorage implements IStorage {
     return user;
   }
 
+  async getUserByContactId(contactId: string): Promise<User | undefined> {
+    const [user] = await db.select().from(schema.users).where(eq(schema.users.contactId, contactId)).limit(1);
+    return user;
+  }
+
   async linkGoogleAccount(userId: string, googleId: string): Promise<User | undefined> {
     const [user] = await db.update(schema.users)
       .set({ googleId, updatedAt: new Date() })
@@ -7753,10 +7787,16 @@ export class DbStorage implements IStorage {
   async changeUserPassword(id: string, newPassword: string): Promise<User | undefined> {
     const hashedPassword = await PasswordUtils.hashPassword(newPassword);
     const [user] = await db.update(schema.users).set({
-      password: hashedPassword,
+      passwordHash: hashedPassword,
       updatedAt: new Date()
     }).where(eq(schema.users.id, id)).returning();
     return user;
+  }
+
+  async deleteSessionsForUser(userId: string): Promise<void> {
+    // connect-pg-simple keeps userId inside the sess jsonb blob, so plain
+    // drizzle column filters can't target it.
+    await db.execute(sql`DELETE FROM sessions WHERE sess->>'userId' = ${userId}`);
   }
 
   async getUsers(category?: UserCategory): Promise<UserWithRole[]> {
@@ -9001,7 +9041,16 @@ export class DbStorage implements IStorage {
       throw error;
     }
   }
-  
+
+  async getLatestUserInvitationByContactId(contactId: string): Promise<UserInvitation | undefined> {
+    const [invitation] = await db.select()
+      .from(schema.userInvitations)
+      .where(eq(schema.userInvitations.contactId, contactId))
+      .orderBy(desc(schema.userInvitations.createdAt))
+      .limit(1);
+    return invitation;
+  }
+
   async createUserInvitation(invitation: InsertUserInvitation): Promise<UserInvitation> {
     try {
       const inviteToken = PasswordUtils.generateSecureToken();
@@ -9038,7 +9087,7 @@ export class DbStorage implements IStorage {
   
   async deleteUserInvitation(id: string): Promise<boolean> { return false; }
   
-  async acceptInvitation(token: string, userData: Partial<InsertUser>): Promise<{ user: User, invitation: UserInvitation } | undefined> {
+  async acceptInvitation(token: string, userData: { password: string; firstName?: string | null; lastName?: string | null }): Promise<{ user: User, invitation: UserInvitation } | undefined> {
     try {
       console.log(`[DbStorage.acceptInvitation] Looking up invitation token: ${token?.substring(0, 8)}...`);
       const invitation = await this.getUserInvitationByToken(token);
@@ -9078,17 +9127,17 @@ export class DbStorage implements IStorage {
         // User exists - update them with invitation data and activate
         console.log(`[DbStorage.acceptInvitation] Found existing user ${existingUser.id}, updating with invitation data`);
         const hashedPassword = await PasswordUtils.hashPassword(userData.password);
-        
+
         const [updated] = await db.update(schema.users)
           .set({
-            password: hashedPassword,
+            passwordHash: hashedPassword,
             firstName: normalizedFirstName,
             lastName: normalizedLastName,
             phone: invitation.phone || existingUser.phone,
-            company: invitation.company || existingUser.company,
             userCategory: (invitation.userCategory as UserCategory) || existingUser.userCategory,
             roleId: invitation.roleId,
             companyId: invitation.companyId,
+            contactId: invitation.contactId || existingUser.contactId,
             isActive: true,
             isInvitePending: false,
             invitedBy: invitation.invitedBy,
@@ -9103,16 +9152,15 @@ export class DbStorage implements IStorage {
       } else {
         // Create new user account with secure password handling
         newUser = await this.createUser({
-          username: userData.username || invitation.email,
-          password: userData.password,
+          passwordHash: await PasswordUtils.hashPassword(userData.password),
           email: invitation.email,
           firstName: normalizedFirstName,
           lastName: normalizedLastName,
           phone: invitation.phone,
-          company: invitation.company,
           userCategory: invitation.userCategory as UserCategory,
           roleId: invitation.roleId,
           companyId: invitation.companyId,
+          contactId: invitation.contactId,
           isActive: true,
           isInvitePending: false,
           invitedBy: invitation.invitedBy,
@@ -9172,7 +9220,7 @@ export class DbStorage implements IStorage {
               await this.createUserProjectAccess({
                 userId: newUser.id,
                 projectId,
-                accessLevel: "edit",
+                accessLevel: invitation.userCategory === "client" ? "view" : "edit",
                 grantedBy: invitation.invitedBy,
               });
             } catch (grantErr) {
@@ -9731,6 +9779,27 @@ export class DbStorage implements IStorage {
     }
   }
   
+  async getPortalProjectsForContact(contactId: string, companyId: string): Promise<Project[]> {
+    const contact = await this.getContact(contactId, companyId);
+    if (!contact) return [];
+    const linkedIds = Array.isArray(contact.projectIds)
+      ? (contact.projectIds as unknown[]).filter((p): p is string => typeof p === "string" && p.length > 0)
+      : [];
+    const matchers = [eq(schema.projects.clientId, contactId)];
+    if (linkedIds.length > 0) {
+      matchers.push(inArray(schema.projects.id, linkedIds));
+    }
+    return await db.select().from(schema.projects)
+      .where(
+        and(
+          eq(schema.projects.companyId, companyId),
+          eq(schema.projects.isActive, true),
+          or(...matchers)
+        )
+      )
+      .orderBy(schema.projects.createdAt);
+  }
+
   async getProjects(ownerId?: string): Promise<Project[]> {
     if (ownerId) {
       // Filter by owner

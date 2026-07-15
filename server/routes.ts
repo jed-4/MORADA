@@ -7,7 +7,7 @@ import { randomBytes, randomUUID } from "crypto";
 import QRCode from "qrcode";
 import { format, startOfISOWeek, startOfMonth, addDays, addMonths, subDays, subMonths, getISOWeek } from "date-fns";
 import { setupAuth, isAuthenticated, sessionMiddleware, ensureLegacySessionFields } from "./auth";
-import { sendInvitationEmail, initializeEmailServices, sendGenericEmail } from "./utils/email";
+import { sendInvitationEmail, sendClientPortalInviteEmail, initializeEmailServices, sendGenericEmail } from "./utils/email";
 import { GoogleOAuthService } from "./services/googleOAuthService";
 import { ObjectStorageService } from "./replit_integrations/object_storage";
 import { xeroService, XeroValidationError, type XeroValidationIssue } from "./services/xeroService";
@@ -12289,7 +12289,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Check if invitation is still valid
       if (invitation.status !== "pending" || invitation.expiresAt < new Date()) {
-        return res.status(400).json({ error: "Invitation has expired or already been used" });
+        return res.status(400).json({ error: "This invite link has expired or already been used. Please ask for a new invite." });
       }
 
       res.json(invitation);
@@ -12301,7 +12301,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/invitations/:token/accept", async (req, res) => {
     try {
       console.log(`[AcceptInvitation] Processing token: ${req.params.token?.substring(0, 8)}...`);
-      const { username, password, firstName, lastName } = req.body;
+      const { password, firstName, lastName } = req.body;
       
       if (!password) {
         console.log('[AcceptInvitation] Failed: Password not provided');
@@ -12318,9 +12318,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      console.log(`[AcceptInvitation] Creating user account for: ${username || 'email-based username'}`);
+      console.log('[AcceptInvitation] Creating user account');
       const result = await storage.acceptInvitation(req.params.token, {
-        username,
         password,
         firstName,
         lastName
@@ -12339,7 +12338,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (err) {
           console.error("Session save error after invitation acceptance:", err);
           // Still return success - user can log in manually
-          const { password: _, ...safeUser } = result.user;
+          const { passwordHash: _, ...safeUser } = result.user;
           return res.status(201).json({
             user: safeUser,
             invitation: result.invitation,
@@ -12348,7 +12347,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
         
         // Never return password in API response
-        const { password: _, ...safeUser } = result.user;
+        const { passwordHash: _, ...safeUser } = result.user;
         res.status(201).json({
           user: safeUser,
           invitation: result.invitation,
@@ -13975,6 +13974,239 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Avatar upload error:", error);
       res.status(500).json({ error: "Failed to upload avatar" });
+    }
+  });
+
+  // ===== Client portal access (contact-scoped) =====
+  // Bridges a CRM client contact to a portal user account (users.contactId /
+  // userInvitations.contactId). Status is always derived, never stored:
+  // linked user → active/revoked; else pending invitation → invited; else none.
+
+  app.get("/api/contacts/:id/portal-access", requireAuth, requirePermission("admin.users", "view"), async (req, res) => {
+    try {
+      const companyId = (req.user as any).companyId as string;
+      const contact = await storage.getContact(req.params.id, companyId);
+      if (!contact) {
+        return res.status(404).json({ error: "Contact not found" });
+      }
+
+      const projects = await storage.getPortalProjectsForContact(contact.id, companyId);
+      const projectSummaries = projects.map(p => ({ id: p.id, name: p.name }));
+
+      const portalUser = await storage.getUserByContactId(contact.id);
+      if (portalUser && portalUser.companyId === companyId) {
+        return res.json({
+          status: portalUser.isActive ? "active" : "revoked",
+          email: portalUser.email,
+          lastLoginAt: portalUser.lastLoginAt,
+          projects: projectSummaries,
+        });
+      }
+
+      const invitation = await storage.getLatestUserInvitationByContactId(contact.id);
+      if (invitation && invitation.companyId === companyId && invitation.status === "pending") {
+        return res.json({
+          status: "invited",
+          email: invitation.email,
+          invitedAt: invitation.createdAt,
+          expiresAt: invitation.expiresAt,
+          expired: invitation.expiresAt < new Date(),
+          projects: projectSummaries,
+        });
+      }
+
+      res.json({ status: "none", email: contact.email, projects: projectSummaries });
+    } catch (error) {
+      console.error("Error fetching portal access:", error);
+      res.status(500).json({ error: "Failed to fetch portal access" });
+    }
+  });
+
+  app.post("/api/contacts/:id/portal-access/invite", requireAuth, requirePermission("admin.users", "add"), async (req, res) => {
+    try {
+      const currentUser = req.user as any;
+      const companyId = currentUser.companyId;
+      const contact = await storage.getContact(req.params.id, companyId);
+      if (!contact) {
+        return res.status(404).json({ error: "Contact not found" });
+      }
+      if (contact.contactType !== "client") {
+        return res.status(400).json({ error: "Portal access is only available for client contacts" });
+      }
+      if (!contact.email) {
+        return res.status(400).json({ error: "Add an email address to this contact before sending a portal invite" });
+      }
+
+      const existingPortalUser = await storage.getUserByContactId(contact.id);
+      if (existingPortalUser) {
+        return res.status(400).json({
+          error: existingPortalUser.isActive
+            ? "This contact already has portal access"
+            : "This contact's access was revoked — use Restore access instead",
+        });
+      }
+      const userWithEmail = await storage.getUserByEmail(contact.email);
+      if (userWithEmail) {
+        return res.status(400).json({ error: "A user account with this email already exists" });
+      }
+
+      const clientRoles = await storage.getUserRoles("client", companyId);
+      const clientRole = clientRoles.find(r => r.isBuiltIn) || clientRoles[0];
+      if (!clientRole) {
+        return res.status(500).json({ error: "No client role is configured for this company" });
+      }
+
+      const projects = await storage.getPortalProjectsForContact(contact.id, companyId);
+
+      // Single active invite per contact: cancel any prior pending one
+      const priorInvitation = await storage.getLatestUserInvitationByContactId(contact.id);
+      if (priorInvitation && priorInvitation.status === "pending") {
+        await storage.updateUserInvitation(priorInvitation.id, { status: "cancelled" });
+      }
+
+      const company = await storage.getCompany(companyId);
+      const companyDisplayName = company?.nickname || company?.name || null;
+
+      // Token + 7-day expiry are generated by the storage layer
+      const invitation = await storage.createUserInvitation({
+        companyId,
+        email: contact.email,
+        firstName: contact.firstName || null,
+        lastName: contact.lastName || null,
+        company: companyDisplayName,
+        userCategory: "client",
+        roleId: clientRole.id,
+        projectIds: projects.map(p => p.id),
+        contactId: contact.id,
+        invitedBy: currentUser.id,
+      } as any);
+
+      const protocol = req.get('x-forwarded-proto') || (req.secure ? 'https' : 'http');
+      const host = req.get('host');
+      const inviteUrl = `${protocol}://${host}/accept-invite/${invitation.inviteToken}`;
+
+      try {
+        await sendClientPortalInviteEmail({
+          to: contact.email,
+          recipientName: contact.firstName || contact.name || undefined,
+          companyName: companyDisplayName || 'your builder',
+          projectNames: projects.map(p => p.name),
+          inviteUrl,
+        });
+      } catch (emailError) {
+        console.error('Failed to send client portal invite email:', emailError);
+        // Don't fail the request — inviteUrl is returned for manual sharing
+      }
+
+      res.status(201).json({
+        status: "invited",
+        email: contact.email,
+        expiresAt: invitation.expiresAt,
+        inviteUrl,
+      });
+    } catch (error) {
+      console.error("Error sending portal invite:", error);
+      res.status(500).json({ error: "Failed to send portal invite" });
+    }
+  });
+
+  app.post("/api/contacts/:id/portal-access/resend", requireAuth, requirePermission("admin.users", "edit"), async (req, res) => {
+    try {
+      const companyId = (req.user as any).companyId as string;
+      const contact = await storage.getContact(req.params.id, companyId);
+      if (!contact) {
+        return res.status(404).json({ error: "Contact not found" });
+      }
+
+      const invitation = await storage.getLatestUserInvitationByContactId(contact.id);
+      if (!invitation || invitation.companyId !== companyId || invitation.status !== "pending") {
+        return res.status(400).json({ error: "No pending invite to resend" });
+      }
+
+      // Rotate token and restart the 7-day expiry; the old link stops working
+      const newToken = PasswordUtils.generateSecureToken();
+      const newExpiry = PasswordUtils.generateInviteExpiry();
+      await storage.updateUserInvitation(invitation.id, {
+        inviteToken: newToken,
+        expiresAt: newExpiry,
+      } as any);
+
+      const projects = await storage.getPortalProjectsForContact(contact.id, companyId);
+      const company = await storage.getCompany(companyId);
+
+      const protocol = req.get('x-forwarded-proto') || (req.secure ? 'https' : 'http');
+      const host = req.get('host');
+      const inviteUrl = `${protocol}://${host}/accept-invite/${newToken}`;
+
+      try {
+        await sendClientPortalInviteEmail({
+          to: invitation.email,
+          recipientName: invitation.firstName || contact.name || undefined,
+          companyName: company?.nickname || company?.name || 'your builder',
+          projectNames: projects.map(p => p.name),
+          inviteUrl,
+        });
+      } catch (emailError) {
+        console.error('Failed to resend client portal invite email:', emailError);
+      }
+
+      res.json({ status: "invited", email: invitation.email, expiresAt: newExpiry, inviteUrl });
+    } catch (error) {
+      console.error("Error resending portal invite:", error);
+      res.status(500).json({ error: "Failed to resend portal invite" });
+    }
+  });
+
+  app.post("/api/contacts/:id/portal-access/revoke", requireAuth, requirePermission("admin.users", "edit"), async (req, res) => {
+    try {
+      const companyId = (req.user as any).companyId as string;
+      const contact = await storage.getContact(req.params.id, companyId);
+      if (!contact) {
+        return res.status(404).json({ error: "Contact not found" });
+      }
+
+      const portalUser = await storage.getUserByContactId(contact.id);
+      if (portalUser && portalUser.companyId === companyId && portalUser.userCategory === "client") {
+        await storage.updateUser(portalUser.id, { isActive: false });
+        // Kill any live sessions so the revoke takes effect immediately
+        await storage.deleteSessionsForUser(portalUser.id);
+        return res.json({ status: "revoked" });
+      }
+
+      const invitation = await storage.getLatestUserInvitationByContactId(contact.id);
+      if (invitation && invitation.companyId === companyId && invitation.status === "pending") {
+        await storage.updateUserInvitation(invitation.id, { status: "cancelled" });
+        return res.json({ status: "none" });
+      }
+
+      res.status(400).json({ error: "This contact has no portal access to revoke" });
+    } catch (error) {
+      console.error("Error revoking portal access:", error);
+      res.status(500).json({ error: "Failed to revoke portal access" });
+    }
+  });
+
+  app.post("/api/contacts/:id/portal-access/restore", requireAuth, requirePermission("admin.users", "edit"), async (req, res) => {
+    try {
+      const companyId = (req.user as any).companyId as string;
+      const contact = await storage.getContact(req.params.id, companyId);
+      if (!contact) {
+        return res.status(404).json({ error: "Contact not found" });
+      }
+
+      const portalUser = await storage.getUserByContactId(contact.id);
+      if (!portalUser || portalUser.companyId !== companyId || portalUser.userCategory !== "client") {
+        return res.status(400).json({ error: "This contact has no portal account to restore" });
+      }
+      if (portalUser.isActive) {
+        return res.status(400).json({ error: "This contact's portal access is already active" });
+      }
+
+      await storage.updateUser(portalUser.id, { isActive: true });
+      res.json({ status: "active" });
+    } catch (error) {
+      console.error("Error restoring portal access:", error);
+      res.status(500).json({ error: "Failed to restore portal access" });
     }
   });
 

@@ -7,7 +7,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
-import { Switch } from "@/components/ui/switch";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { Upload, X } from "lucide-react";
 import {
@@ -30,6 +29,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { insertContactSchema, type InsertContact, type Contact } from "@shared/schema";
 import { z } from "zod";
 import { ContactInsuranceSection } from "@/components/contacts/ContactInsuranceSection";
+import { PortalAccessSection } from "@/components/contacts/PortalAccessSection";
 import { CostCodeSelect } from "@/components/CostCodeSelect";
 import { SearchableSelect, type SearchableSelectOption } from "@/components/ui/searchable-select";
 
@@ -959,27 +959,7 @@ export default function EditContactDialog({
                   />
                 </div>
 
-                <FormField
-                  control={form.control}
-                  name="portalEnabled"
-                  render={({ field }) => (
-                    <FormItem className="flex items-center justify-between rounded-md border-2 border-input p-4">
-                      <div className="space-y-0.5">
-                        <FormLabel className="text-base">Portal Access</FormLabel>
-                        <div className="text-sm text-muted-foreground">
-                          Allow this client to access the project portal
-                        </div>
-                      </div>
-                      <FormControl>
-                        <Switch
-                          checked={field.value}
-                          onCheckedChange={field.onChange}
-                          data-testid="switch-portal-enabled"
-                        />
-                      </FormControl>
-                    </FormItem>
-                  )}
-                />
+                <PortalAccessSection contact={contact} />
               </div>
             )}
 

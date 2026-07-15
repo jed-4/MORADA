@@ -205,6 +205,126 @@ export async function sendInvitationEmail({
   }
 }
 
+interface SendClientPortalInviteEmailParams {
+  to: string;
+  recipientName?: string;
+  companyName: string;
+  projectNames: string[];
+  inviteUrl: string;
+}
+
+// Client portal invites always send via Resend from the Morada address (no
+// userId → no Gmail fallback), per the client-access requirements.
+export async function sendClientPortalInviteEmail({
+  to,
+  recipientName,
+  companyName,
+  projectNames,
+  inviteUrl,
+}: SendClientPortalInviteEmailParams) {
+  console.log(`📧 Attempting to send client portal invite email to ${to}`);
+
+  const greeting = recipientName ? `Hi ${recipientName}` : 'Hi there';
+  const projectLine = projectNames.length === 1
+    ? `<strong>${projectNames[0]}</strong>`
+    : projectNames.length > 1
+      ? `your projects (<strong>${projectNames.join('</strong>, <strong>')}</strong>)`
+      : 'your project';
+
+  const html = `
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Your Morada project access</title>
+      </head>
+      <body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #f5f5f5;">
+        <table role="presentation" style="width: 100%; border-collapse: collapse;">
+          <tr>
+            <td align="center" style="padding: 40px 0;">
+              <table role="presentation" style="width: 600px; max-width: 100%; background-color: #ffffff; border-radius: 8px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);">
+                <!-- Header -->
+                <tr>
+                  <td style="padding: 40px 40px 20px; text-align: center; background: linear-gradient(135deg, #A890D4 0%, #9b87c4 100%); border-radius: 8px 8px 0 0;">
+                    <h1 style="margin: 0; color: #ffffff; font-size: 28px; font-weight: 600;">Morada</h1>
+                  </td>
+                </tr>
+
+                <!-- Body -->
+                <tr>
+                  <td style="padding: 40px;">
+                    <h2 style="margin: 0 0 16px; color: #1a1a1a; font-size: 24px; font-weight: 600;">
+                      ${greeting},
+                    </h2>
+
+                    <p style="margin: 0 0 24px; color: #4a5568; font-size: 16px; line-height: 1.6;">
+                      <strong>${companyName}</strong> has invited you to view ${projectLine} on Morada.
+                    </p>
+
+                    <p style="margin: 0 0 32px; color: #4a5568; font-size: 16px; line-height: 1.6;">
+                      Set a password to activate your access — after that you can log in any time with this email address.
+                    </p>
+
+                    <!-- Button -->
+                    <table role="presentation" style="width: 100%;">
+                      <tr>
+                        <td align="center">
+                          <a href="${inviteUrl}"
+                             style="display: inline-block; padding: 14px 32px; background: linear-gradient(135deg, #A890D4 0%, #9b87c4 100%); color: #ffffff; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 16px;">
+                            Set your password
+                          </a>
+                        </td>
+                      </tr>
+                    </table>
+
+                    <p style="margin: 32px 0 0; color: #718096; font-size: 14px; line-height: 1.6;">
+                      Or copy and paste this link into your browser:<br>
+                      <a href="${inviteUrl}" style="color: #A890D4; word-break: break-all;">${inviteUrl}</a>
+                    </p>
+
+                    <hr style="margin: 32px 0; border: none; border-top: 1px solid #e2e8f0;">
+
+                    <p style="margin: 0; color: #a0aec0; font-size: 13px; line-height: 1.5;">
+                      This link expires in 7 days and can only be used once. If you didn't expect this invitation, you can safely ignore this email.
+                    </p>
+                  </td>
+                </tr>
+
+                <!-- Footer -->
+                <tr>
+                  <td style="padding: 24px 40px; text-align: center; background-color: #f8fafc; border-radius: 0 0 8px 8px;">
+                    <p style="margin: 0; color: #a0aec0; font-size: 12px;">
+                      © ${new Date().getFullYear()} Morada. All rights reserved.
+                    </p>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+        </table>
+      </body>
+    </html>
+  `;
+
+  try {
+    const result = await sendEmailWithFallback({
+      to,
+      subject: `${companyName} has invited you to view your project on Morada`,
+      html,
+    });
+
+    console.log(`✅ Client portal invite email sent via ${result.sentVia}!`);
+    console.log(`   Message ID: ${result.messageId}`);
+    console.log(`   Sent to: ${to}`);
+    return { id: result.messageId };
+  } catch (error: any) {
+    console.error('❌ Error sending client portal invite email:');
+    console.error(`   Error message: ${error.message}`);
+    throw error;
+  }
+}
+
 interface SendReminderEmailParams {
   to: string;
   recipientName: string;

@@ -8,8 +8,9 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, CheckCircle2, Building2, User, Mail } from "lucide-react";
+import { Loader2, Building2, User, Mail } from "lucide-react";
 import { passwordSchema, PASSWORD_REQUIREMENTS_HINT } from "@shared/schema";
+import moradaLogo from "@assets/icon_1783074833445.png";
 
 const acceptInvitationSchema = z.object({
   password: passwordSchema,
@@ -34,6 +35,7 @@ interface InvitationDetails {
   status: string;
   expiresAt: string;
   projectIds: string[] | null;
+  userCategory: string;
 }
 
 export default function AcceptInvitation() {
@@ -196,9 +198,14 @@ export default function AcceptInvitation() {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center p-4">
         <Card className="w-full max-w-md">
-          <CardHeader>
-            <CardTitle className="text-destructive">Invalid Invitation</CardTitle>
-            <CardDescription>{error}</CardDescription>
+          <CardHeader className="space-y-4">
+            <div className="flex items-center justify-center">
+              <img src={moradaLogo} alt="Morada" className="h-16 w-16 rounded-xl" />
+            </div>
+            <div className="text-center space-y-2">
+              <CardTitle>This invite link isn't valid</CardTitle>
+              <CardDescription data-testid="text-invite-error">{error}</CardDescription>
+            </div>
           </CardHeader>
           <CardContent>
             <Button onClick={() => navigate("/")} className="w-full" data-testid="button-back-home">
@@ -214,19 +221,24 @@ export default function AcceptInvitation() {
     return null;
   }
 
+  const isClientInvite = invitation.userCategory === "client";
+  const hasInvitedName = Boolean(invitation.firstName && invitation.lastName);
+
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
       <Card className="w-full max-w-xl">
         <CardHeader className="space-y-4">
           <div className="flex items-center justify-center">
-            <div className="h-16 w-16 rounded-full bg-primary/10 flex items-center justify-center">
-              <CheckCircle2 className="h-8 w-8 text-primary" />
-            </div>
+            <img src={moradaLogo} alt="Morada" className="h-16 w-16 rounded-xl" />
           </div>
           <div className="text-center space-y-2">
-            <CardTitle className="text-2xl">You're Invited!</CardTitle>
+            <CardTitle className="text-2xl">{isClientInvite ? "Set your password" : "You're Invited!"}</CardTitle>
             <CardDescription className="text-base">
-              Join <span className="font-semibold text-foreground">{invitation.company || "the team"}</span> on Morada
+              {isClientInvite ? (
+                <>View your project with <span className="font-semibold text-foreground">{invitation.company || "your builder"}</span> on Morada</>
+              ) : (
+                <>Join <span className="font-semibold text-foreground">{invitation.company || "the team"}</span> on Morada</>
+              )}
             </CardDescription>
           </div>
         </CardHeader>
@@ -264,7 +276,7 @@ export default function AcceptInvitation() {
           {/* Account Setup Form */}
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+              <div className={isClientInvite && hasInvitedName ? "hidden" : "grid grid-cols-2 gap-4"}>
                 <FormField
                   control={form.control}
                   name="firstName"
@@ -345,6 +357,8 @@ export default function AcceptInvitation() {
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                     Creating Account...
                   </>
+                ) : isClientInvite ? (
+                  "Set password & log in"
                 ) : (
                   "Accept Invitation & Create Account"
                 )}
@@ -353,7 +367,9 @@ export default function AcceptInvitation() {
           </Form>
 
           <p className="text-xs text-center text-muted-foreground">
-            By accepting this invitation, you agree to join {invitation.company || "the team"} on Morada.
+            {isClientInvite
+              ? `You can log in any time at this site with ${invitation.email} and your new password.`
+              : `By accepting this invitation, you agree to join ${invitation.company || "the team"} on Morada.`}
           </p>
         </CardContent>
       </Card>

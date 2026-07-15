@@ -153,6 +153,13 @@ export async function setupAuth(app: Express) {
         return res.status(401).json({ message: 'Invalid email or password' });
       }
 
+      // Deactivated (revoked) accounts must not be able to start a session.
+      // Checked after the password so this response doesn't leak whether the
+      // password was correct.
+      if (!user.isActive) {
+        return res.status(401).json({ message: 'This account has been disabled. Please contact your builder or administrator.' });
+      }
+
       // Update last login
       await storage.updateUserLastLogin(user.id);
 
@@ -470,6 +477,13 @@ export const isAuthenticated: RequestHandler = async (req, res, next) => {
   try {
     const user = await storage.getUser(userId);
     if (!user) {
+      return res.status(401).json({ message: 'Unauthorized' });
+    }
+
+    // Deactivated (revoked) accounts must not keep an authenticated session
+    // alive — mirrors the isActive check in middleware/auth.ts requireAuth.
+    if (!user.isActive) {
+      req.session.destroy(() => {});
       return res.status(401).json({ message: 'Unauthorized' });
     }
 

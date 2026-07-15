@@ -103,6 +103,7 @@ export const users = pgTable("users", {
   userCategory: text("user_category").notNull().default("team"), // "team" | "supplier" | "client"
   roleId: varchar("role_id").references(() => userRoles.id),
   roleName: text("role_name"), // Cached for performance
+  contactId: varchar("contact_id").references(() => contacts.id), // CRM contact this portal user represents (client portal access)
   isActive: boolean("is_active").notNull().default(true),
   isInvitePending: boolean("is_invite_pending").notNull().default(false),
   invitedBy: varchar("invited_by"),
@@ -187,6 +188,7 @@ export const userInvitations = pgTable("user_invitations", {
   userCategory: text("user_category").notNull(), // "team" | "supplier" | "client"
   roleId: varchar("role_id").notNull().references(() => userRoles.id),
   projectIds: json("project_ids").default([]), // Array of project IDs they'll have access to
+  contactId: varchar("contact_id").references(() => contacts.id), // CRM contact this invitation grants portal access for (client invites)
   invitedBy: varchar("invited_by").notNull().references(() => users.id),
   inviteToken: text("invite_token").notNull().unique(),
   expiresAt: timestamp("expires_at").notNull(),
