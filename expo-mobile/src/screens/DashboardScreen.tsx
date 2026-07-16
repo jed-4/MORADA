@@ -264,8 +264,9 @@ function TaskCheckbox({ done, onToggle, theme }: { done: boolean; onToggle: () =
         style={[
           styles.taskCheckbox,
           {
-            borderColor: done ? theme.statusSuccess : theme.borderStrong,
-            backgroundColor: done ? theme.statusSuccess : 'transparent',
+            // Solid fill carries a white checkmark — must stay dark in both modes.
+            borderColor: done ? theme.statusSuccessSolid : theme.borderStrong,
+            backgroundColor: done ? theme.statusSuccessSolid : 'transparent',
           },
           animatedStyle,
         ]}
@@ -744,7 +745,7 @@ export default function DashboardScreen({ navigation }: Props) {
           >
             <Ionicons name="notifications-outline" size={22} color={theme.textPrimary} />
             {unreadCount > 0 && (
-              <View style={[styles.bellBadge, { backgroundColor: theme.statusDanger }]}>
+              <View style={[styles.bellBadge, { backgroundColor: theme.statusDangerSolid }]}>
                 <Text style={styles.bellBadgeText}>
                   {unreadCount > 99 ? '99+' : unreadCount}
                 </Text>
@@ -1141,7 +1142,7 @@ export default function DashboardScreen({ navigation }: Props) {
             })}
           </View>
           <TouchableOpacity
-            style={[styles.destructiveBtn, { backgroundColor: theme.statusDanger }]}
+            style={[styles.destructiveBtn, { backgroundColor: theme.statusDangerSolid }]}
             onPress={confirmClockOut}
             disabled={clockingOut}
             activeOpacity={0.8}
