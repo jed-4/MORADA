@@ -4,8 +4,10 @@ import { Underline } from '@tiptap/extension-underline';
 import { TextStyle } from '@tiptap/extension-text-style';
 import { TaskList } from '@tiptap/extension-task-list';
 import { TaskItem } from '@tiptap/extension-task-item';
+import { Image } from '@tiptap/extension-image';
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { cn } from '@/lib/utils';
+import { useUpload } from '@/hooks/use-upload';
 import {
   Bold,
   Italic,
@@ -22,6 +24,7 @@ import {
   Quote,
   Minus,
   RemoveFormatting,
+  Image as ImageIcon,
 } from 'lucide-react';
 
 interface NotionEditorProps {
@@ -31,6 +34,13 @@ interface NotionEditorProps {
   className?: string;
   editable?: boolean;
 }
+
+type SlashItem = {
+  id: string;
+  label: string;
+  icon: typeof Bold;
+  action?: (e: any) => void;
+};
 
 const BLOCK_TYPES = [
   { id: 'h1', label: 'Heading 1', icon: Heading1, action: (e: any) => e.chain().focus().toggleHeading({ level: 1 }).run() },
@@ -67,6 +77,12 @@ export default function NotionEditor({
     visible: false, x: 0, y: 0,
   });
 
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const { uploadFile } = useUpload();
+  // Held in a ref so the paste/drop handlers (bound once at editor init) can call
+  // the latest insert function that closes over the current editor instance.
+  const insertImageRef = useRef<(file: File) => void>(() => {});
+
   const editor = useEditor({
     extensions: [
       StarterKit.configure({ underline: false }),
@@ -74,12 +90,41 @@ export default function NotionEditor({
       TextStyle,
       TaskList,
       TaskItem.configure({ nested: true }),
+      Image.configure({ inline: false, allowBase64: false }),
     ],
     content,
     editable,
     editorProps: {
       attributes: {
         class: 'outline-none',
+      },
+      handlePaste: (_view, event) => {
+        const items = event.clipboardData?.items;
+        if (!items) return false;
+        for (let i = 0; i < items.length; i++) {
+          if (items[i].type.startsWith('image/')) {
+            const file = items[i].getAsFile();
+            if (file) {
+              insertImageRef.current(file);
+              event.preventDefault();
+              return true;
+            }
+          }
+        }
+        return false;
+      },
+      handleDrop: (_view, event) => {
+        const files = (event as DragEvent).dataTransfer?.files;
+        if (!files || files.length === 0) return false;
+        let handled = false;
+        for (let i = 0; i < files.length; i++) {
+          if (files[i].type.startsWith('image/')) {
+            insertImageRef.current(files[i]);
+            handled = true;
+          }
+        }
+        if (handled) event.preventDefault();
+        return handled;
       },
     },
     onUpdate: ({ editor: e }) => {
@@ -174,25 +219,75 @@ export default function NotionEditor({
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
-  const applySlashCommand = useCallback((blockType: typeof BLOCK_TYPES[0]) => {
+  // Upload an image via the existing presigned-URL flow (useUpload → /api/uploads)
+  // and insert it at the cursor. We store the returned relative object path in the
+  // <img src> exactly as the mobile note editor does, so the same /objects route
+  // serves it and the src round-trips through getHTML() unchanged.
+  const insertImage = useCallback(
+    async (file: File) => {
+      if (!editor || !file.type.startsWith('image/')) return;
+      const result = await uploadFile(file);
+      if (result?.objectPath) {
+        editor.chain().focus().setImage({ src: result.objectPath }).run();
+      }
+    },
+    [editor, uploadFile]
+  );
+
+  useEffect(() => {
+    insertImageRef.current = insertImage;
+  }, [insertImage]);
+
+  const openImagePicker = useCallback(() => {
+    fileInputRef.current?.click();
+  }, []);
+
+  const handleFilePicked = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (file) insertImage(file);
+      e.target.value = '';
+    },
+    [insertImage]
+  );
+
+  const applySlashCommand = useCallback((blockType: SlashItem) => {
     if (!editor) return;
     const { $head } = editor.state.selection;
     const lineStart = $head.start();
     const lineEnd = $head.end();
     editor.chain().focus().deleteRange({ from: lineStart, to: lineEnd }).run();
-    blockType.action(editor);
+    if (blockType.id === 'image') {
+      openImagePicker();
+    } else if (blockType.action) {
+      blockType.action(editor);
+    }
     setSlashMenu(prev => ({ ...prev, open: false }));
     slashMenuOpen.current = false;
-  }, [editor]);
+  }, [editor, openImagePicker]);
+
+  const SLASH_ITEMS: SlashItem[] = [
+    ...BLOCK_TYPES,
+    { id: 'image', label: 'Image', icon: ImageIcon },
+  ];
 
   const filteredBlocks = slashMenu.query
-    ? BLOCK_TYPES.filter(b => b.label.toLowerCase().includes(slashMenu.query))
-    : BLOCK_TYPES;
+    ? SLASH_ITEMS.filter(b => b.label.toLowerCase().includes(slashMenu.query))
+    : SLASH_ITEMS;
 
   if (!editor) return null;
 
   return (
     <div className={cn('relative', className)}>
+      {/* Hidden file input for image uploads (slash command / floating menu) */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={handleFilePicked}
+      />
+
       {/* Bubble Menu — text selection toolbar */}
       {bubbleMenu.visible && (
         <div
@@ -247,6 +342,15 @@ export default function NotionEditor({
               <bt.icon className="h-3.5 w-3.5" />
             </button>
           ))}
+          <button
+            type="button"
+            title="Image"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={openImagePicker}
+            className="h-6 w-6 flex items-center justify-center rounded text-muted-foreground hover-elevate active-elevate-2"
+          >
+            <ImageIcon className="h-3.5 w-3.5" />
+          </button>
         </div>
       )}
 
@@ -299,6 +403,7 @@ export default function NotionEditor({
             '[&_.ProseMirror_pre_code]:bg-transparent [&_.ProseMirror_pre_code]:p-0',
             '[&_.ProseMirror_blockquote]:border-l-4 [&_.ProseMirror_blockquote]:border-border [&_.ProseMirror_blockquote]:pl-4 [&_.ProseMirror_blockquote]:my-2 [&_.ProseMirror_blockquote]:text-muted-foreground [&_.ProseMirror_blockquote]:italic',
             '[&_.ProseMirror_hr]:border-border [&_.ProseMirror_hr]:my-4',
+            '[&_.ProseMirror_img]:max-w-full [&_.ProseMirror_img]:h-auto [&_.ProseMirror_img]:rounded-md [&_.ProseMirror_img]:my-2',
             '[&_.ProseMirror_li[data-type="taskItem"][data-checked="true"]>div]:line-through [&_.ProseMirror_li[data-type="taskItem"][data-checked="true"]>div]:text-muted-foreground',
           )}
         />

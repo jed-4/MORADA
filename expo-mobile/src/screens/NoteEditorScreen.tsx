@@ -269,6 +269,37 @@ function stripTags(html: string): string {
     .trim();
 }
 
+// Detects HTML the flat block model can't losslessly represent. When this is
+// true for a loaded note and the user hasn't made an edit, doSave preserves the
+// original contentHtml (never rebuilds it from the lossy blocks) so web-authored
+// formatting — inline marks, links, code/blockquote, H3+, tables, nested lists —
+// survives a load -> autosave round-trip untouched.
+//
+// Constructs the mobile editor itself emits (task-list checkbox scaffolding and
+// image-caption <em> wrappers) are stripped first so a mobile-authored note is
+// never falsely flagged as "rich".
+function htmlHasUnmodellableContent(html: string): boolean {
+  if (!html) return false;
+
+  const h = html
+    .replace(/<p[^>]*data-image-caption="true"[^>]*>[\s\S]*?<\/p>/gi, '')
+    .replace(/<input[^>]*>/gi, '')
+    .replace(/<\/?(label|span)\b[^>]*>/gi, '');
+
+  // Inline formatting marks (bold/italic/underline/strike/link/code/etc.) — the
+  // \b anchor keeps <b> from matching <blockquote>/<br>, <u> from <ul>, and so on.
+  if (/<(strong|em|mark|code|small|del|ins|sub|sup|b|i|u|s|a)\b/i.test(h)) return true;
+  // Block-level constructs the parser can't model losslessly (pre/code blocks,
+  // tables, H3-H6, figures).
+  if (/<(pre|table|thead|tbody|tr|td|th|h[3-6]|figure|figcaption)\b/i.test(h)) return true;
+  // Nested lists (a list item that itself contains another list).
+  if (/<li\b[^>]*>[\s\S]*?<(ul|ol)\b/i.test(h)) return true;
+  // Blockquotes (the parser flattens these into plain text blocks).
+  if (/<blockquote\b/i.test(h)) return true;
+
+  return false;
+}
+
 function blocksToPlainText(blocks: Block[]): string {
   return blocks
     .filter((b) => b.type !== 'divider')
@@ -318,6 +349,12 @@ export default function NoteEditorScreen({ navigation, route }: Props) {
   const savedNoteIdRef = useRef(savedNoteId);
   const visibilityRef = useRef(visibility);
   const isCreatingRef = useRef(false);
+  // Data-loss guard: when a loaded note contains HTML the block model can't
+  // faithfully represent, we must not clobber contentHtml with lossy block output
+  // until the user actually edits. hasUnmodellableHtmlRef records that state at
+  // load; userEditedRef flips true the moment any edit schedules a save.
+  const hasUnmodellableHtmlRef = useRef(false);
+  const userEditedRef = useRef(false);
 
   blocksRef.current = blocks;
   titleRef.current = title;
@@ -369,6 +406,10 @@ const colors = {
 
   const loadNote = async (id: string) => {
     setLoadingNote(true);
+    // Fresh load: assume modellable until we inspect the HTML, and clear any
+    // prior "user edited" state so a pristine open never rewrites contentHtml.
+    hasUnmodellableHtmlRef.current = false;
+    userEditedRef.current = false;
     try {
       const response = await apiRequest(`/api/notes/${id}`);
       const note = await response.json();
@@ -377,6 +418,7 @@ const colors = {
         setVisibility(note.visibility);
       }
       if (note.contentHtml) {
+        hasUnmodellableHtmlRef.current = htmlHasUnmodellableContent(note.contentHtml);
         setBlocks(htmlToBlocks(note.contentHtml));
       } else if (note.content) {
         const lines = note.content.split('\n');
@@ -397,6 +439,9 @@ const colors = {
   };
 
   const scheduleSave = useCallback(() => {
+    // Every user edit funnels through here — record it so doSave knows the blocks
+    // now reflect an intentional change and may safely be serialised back to HTML.
+    userEditedRef.current = true;
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     setSaveStatus('idle');
     saveTimerRef.current = setTimeout(() => {
@@ -423,16 +468,25 @@ const colors = {
     const content = [currentTitle, plainBody].filter(Boolean).join('\n');
     const contentText = plainBody;
 
+    // The block model can't faithfully round-trip this note's HTML (it has rich
+    // content authored elsewhere) AND the user hasn't edited it here — so writing
+    // block-generated HTML would permanently destroy that formatting. Persist the
+    // title and plain-text mirrors (keeps search current) but leave the server's
+    // original contentHtml untouched. Once the user edits, userEditedRef flips and
+    // we resume serialising blocks normally.
+    const preserveOriginalHtml = hasUnmodellableHtmlRef.current && !userEditedRef.current;
+
     setSaveStatus('saving');
 
     try {
       if (currentSavedId) {
-        await apiRequest(`/api/notes/${currentSavedId}`, 'PATCH', {
+        const patchBody: Record<string, unknown> = {
           title: currentTitle || 'Untitled',
           content,
-          contentHtml,
           contentText,
-        });
+        };
+        if (!preserveOriginalHtml) patchBody.contentHtml = contentHtml;
+        await apiRequest(`/api/notes/${currentSavedId}`, 'PATCH', patchBody);
         setSaveStatus('saved');
       } else {
         isCreatingRef.current = true;
