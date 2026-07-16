@@ -56,6 +56,19 @@ type Props = {
 /** Below this scroll offset the inverted list counts as "at the newest". */
 const AT_BOTTOM_PX = 120;
 
+/**
+ * The slice of GET /api/channels/:id this screen reads. isClientFacing is
+ * deliberately sourced from this fetch rather than a route param: the thread is
+ * also opened by deep links from notifications and mentions, which carry no such
+ * param, and a missing param would silently render an internal-looking header on
+ * a channel the client can read. The fetch is authoritative and already happens.
+ */
+type ChannelMeta = {
+  type?: string;
+  dmParticipants?: string[] | null;
+  isClientFacing?: boolean;
+};
+
 function getSenderName(msg: Message): string {
   if (msg.userFirstName || msg.userLastName) {
     return [msg.userFirstName, msg.userLastName].filter(Boolean).join(' ');
@@ -106,7 +119,7 @@ export default function MessageThreadScreen({ navigation, route }: Props) {
   const [viewerAttachment, setViewerAttachment] = useState<MessageAttachment | null>(null);
   const [members, setMembers] = useState<ChannelMember[]>([]);
   const [readState, setReadState] = useState<Record<string, string>>({});
-  const [channelMeta, setChannelMeta] = useState<{ type?: string; dmParticipants?: string[] | null } | null>(null);
+  const [channelMeta, setChannelMeta] = useState<ChannelMeta | null>(null);
   const [pinnedMessages, setPinnedMessages] = useState<Message[]>([]);
   const [pinnedPreview, setPinnedPreview] = useState<Message | null>(null);
   const [atBottom, setAtBottom] = useState(true);
@@ -188,9 +201,9 @@ export default function MessageThreadScreen({ navigation, route }: Props) {
 
   const fetchChannelMeta = useCallback(async () => {
     try {
-      setChannelMeta(await apiFetch<{ type?: string; dmParticipants?: string[] | null }>(`/api/channels/${channelId}`));
+      setChannelMeta(await apiFetch<ChannelMeta>(`/api/channels/${channelId}`));
     } catch {
-      // non-critical: presence dot just won't render
+      // non-critical: presence dot and the CLIENT badge just won't render
     }
   }, [channelId]);
 
@@ -583,6 +596,8 @@ export default function MessageThreadScreen({ navigation, route }: Props) {
     (!menuMessage.isPinned || menuMessage.pinnedByUserId === user?.id || isChannelAdmin);
 
   const typingVisible = typingNames.length > 0;
+  // A DM is never client-facing, whatever the row happens to carry.
+  const clientFacingChannel = channelMeta?.type !== 'dm' && !!channelMeta?.isClientFacing;
 
   return (
     <KeyboardAvoidingView
@@ -594,6 +609,7 @@ export default function MessageThreadScreen({ navigation, route }: Props) {
         channelName={channelName}
         isDm={channelMeta?.type === 'dm'}
         showPresence={dmOtherOnline}
+        isClientFacing={!!channelMeta?.isClientFacing}
         theme={theme}
         paddingTop={insets.top + 8}
         onBack={() => navigation.goBack()}
@@ -673,6 +689,18 @@ export default function MessageThreadScreen({ navigation, route }: Props) {
         </View>
       )}
 
+      {/* Client-facing hint, at the point of consequence: right above the input.
+          Safe next to the typing overlay — that overlay is absolutely positioned
+          within listWrap, so this sibling row stacks under it, never over it. */}
+      {clientFacingChannel && !loading && (
+        <View style={[styles.clientHint, { backgroundColor: theme.statusWarningBg }]}>
+          <Ionicons name="eye" size={12} color={theme.statusWarning} />
+          <Text style={[styles.clientHintText, { color: theme.statusWarning }]} numberOfLines={1}>
+            The client can see this channel
+          </Text>
+        </View>
+      )}
+
       {/* Composer: mention autocomplete + edit bar + staged images + input bar */}
       <MessageComposer
         theme={theme}
@@ -741,5 +769,14 @@ const styles = StyleSheet.create({
   emptyThread: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 60 },
   emptyThreadText: { fontSize: 14 },
   pinnedSheetBody: { paddingHorizontal: 20, paddingTop: 4, paddingBottom: 12, gap: 6 },
+  clientHint: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    paddingHorizontal: 16,
+    paddingVertical: 4,
+  },
+  clientHintText: { fontSize: 11, fontWeight: '600' },
   pinnedSheetSender: { fontSize: 12, fontWeight: '600' },
 });

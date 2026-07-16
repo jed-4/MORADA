@@ -2,17 +2,23 @@ import { View, Text, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { PressableScale } from '../ui/PressableScale';
 import { PresenceDot } from './PresenceDot';
+import { ClientBadge } from './ClientBadge';
 import { getInitials } from '../../lib/format';
 import type { Theme } from '../../theme';
 
 // Thread header: back button + channel/DM title, with a presence dot on the
 // counterpart's avatar for DMs. Channels get no dot — presence is per-person.
+// Client-facing channels also carry a persistent amber CLIENT badge: this is
+// the one signal that stays on screen while you compose, so a supervisor can
+// always tell whether the client is reading along.
 
 interface ThreadHeaderProps {
   channelName: string;
   isDm: boolean;
   /** Only ever true for the *other* participant; never for yourself. */
   showPresence: boolean;
+  /** Resolved from the fetched channel, never from route params — see screen. */
+  isClientFacing?: boolean;
   theme: Theme;
   paddingTop: number;
   onBack: () => void;
@@ -29,12 +35,13 @@ export function ThreadHeader({
   channelName,
   isDm,
   showPresence,
+  isClientFacing,
   theme,
   paddingTop,
   onBack,
 }: ThreadHeaderProps) {
   return (
-    <View style={[styles.header, { paddingTop, backgroundColor: theme.card, borderBottomColor: theme.border }]}>
+    <View style={[styles.header, { paddingTop }]}>
       <PressableScale haptics onPress={onBack} style={styles.backBtn}>
         <Ionicons name="chevron-back" size={24} color={theme.primary} />
       </PressableScale>
@@ -52,6 +59,7 @@ export function ThreadHeader({
         <Text style={[styles.headerTitle, { color: theme.textPrimary }]} numberOfLines={1}>
           {formatThreadTitle(channelName, isDm)}
         </Text>
+        {isClientFacing && !isDm && <ClientBadge theme={theme} showIcon />}
       </View>
       <View style={{ width: 40 }} />
     </View>
@@ -64,7 +72,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingBottom: 12,
     paddingHorizontal: 8,
-    borderBottomWidth: 1,
   },
   backBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
   headerCenter: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },

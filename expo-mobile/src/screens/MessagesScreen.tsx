@@ -6,6 +6,7 @@ import {
   SectionList,
   ActivityIndicator,
   RefreshControl,
+  Switch,
 } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
@@ -20,6 +21,7 @@ import { timeAgo, getInitials } from '../lib/format';
 import { haptic } from '../lib/haptics';
 import { PressableScale } from '../components/ui/PressableScale';
 import { PresenceDot } from '../components/messages/PresenceDot';
+import { ClientBadge } from '../components/messages/ClientBadge';
 import { markupToDisplay } from '../components/messages/mentions';
 import { Sheet, SheetTextInput, type SheetRef } from '../components/ui/Sheet';
 import { Skeleton, SkeletonRow } from '../components/ui/Skeleton';
@@ -34,6 +36,8 @@ interface Channel {
   projectId?: string | null;
   description?: string | null;
   isPinned?: boolean;
+  /** Clients can read this channel — drives the amber eye/CLIENT signals. */
+  isClientFacing?: boolean;
   lastMessageAt?: string | null;
   lastMessageContent?: string | null;
   lastMessageSender?: string | null;
@@ -78,6 +82,7 @@ export default function MessagesScreen({ navigation, route }: Props) {
 
   const newChannelSheetRef = useRef<SheetRef>(null);
   const [newChannelName, setNewChannelName] = useState('');
+  const [newChannelClientFacing, setNewChannelClientFacing] = useState(false);
   const [creatingChannel, setCreatingChannel] = useState(false);
 
   const newDmSheetRef = useRef<SheetRef>(null);
@@ -162,7 +167,11 @@ export default function MessagesScreen({ navigation, route }: Props) {
     if (!name) return;
     setCreatingChannel(true);
     try {
-      const body: Record<string, unknown> = { name, type: 'channel' };
+      const body: Record<string, unknown> = {
+        name,
+        type: 'channel',
+        isClientFacing: newChannelClientFacing,
+      };
       if (projectId) body.projectId = projectId;
       await apiRequest('/api/channels', 'POST', body);
       newChannelSheetRef.current?.dismiss();
@@ -178,7 +187,7 @@ export default function MessagesScreen({ navigation, route }: Props) {
     } finally {
       setCreatingChannel(false);
     }
-  }, [newChannelName, fetchChannels, projectId, toast]);
+  }, [newChannelName, newChannelClientFacing, fetchChannels, projectId, toast]);
 
   const handleOpenDm = useCallback(async (otherUserId: string) => {
     setCreatingDm(true);
@@ -249,6 +258,8 @@ export default function MessagesScreen({ navigation, route }: Props) {
         ? (item.dmParticipants || []).find(id => id !== user?.id) || null
         : null;
     const dmOnline = !!dmOtherId && dmOtherId !== user?.id && onlineUserIds.has(dmOtherId);
+    // Only channels can be client-facing; a DM is never one, whatever the row says.
+    const clientFacing = item.type === 'channel' && !!item.isClientFacing;
     return (
       <Animated.View entering={FadeInDown.duration(300).delay(Math.min(index * 40, 240))}>
         <PressableScale
@@ -257,10 +268,19 @@ export default function MessagesScreen({ navigation, route }: Props) {
           onPress={() => navigation.navigate('MessageThread', { channelId: item.id, channelName: displayName })}
         >
           <View style={styles.channelAvatarWrap}>
-            <View style={[styles.channelAvatar, { backgroundColor: colors.accent + '30' }]}>
-              <Text style={[styles.channelAvatarIcon, { color: colors.accent }]}>
-                {item.type === 'channel' ? '#' : getInitials(displayName)}
-              </Text>
+            <View
+              style={[
+                styles.channelAvatar,
+                { backgroundColor: clientFacing ? theme.statusWarningBg : colors.accent + '30' },
+              ]}
+            >
+              {clientFacing ? (
+                <Ionicons name="eye" size={18} color={theme.statusWarning} />
+              ) : (
+                <Text style={[styles.channelAvatarIcon, { color: colors.accent }]}>
+                  {item.type === 'channel' ? '#' : getInitials(displayName)}
+                </Text>
+              )}
             </View>
             {dmOnline && <PresenceDot theme={theme} ringColor={colors.bg} />}
           </View>
@@ -272,6 +292,7 @@ export default function MessagesScreen({ navigation, route }: Props) {
               <Text style={[styles.channelName, { color: colors.text }, unread > 0 && styles.channelNameBold]} numberOfLines={1}>
                 {displayName}
               </Text>
+              {clientFacing && <ClientBadge theme={theme} />}
               {item.lastMessageAt && (
                 <Text style={[styles.channelTime, { color: colors.secondary }]}>
                   {timeAgo(item.lastMessageAt)}
@@ -305,7 +326,7 @@ export default function MessagesScreen({ navigation, route }: Props) {
   };
 
   const header = (
-    <View style={[styles.header, { paddingTop: insets.top + 8, borderBottomColor: colors.border, backgroundColor: colors.card }]}>
+    <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
       <Text style={[styles.headerTitle, { color: colors.text }]}>Messages</Text>
       <View style={styles.headerActions}>
         <PressableScale
@@ -392,7 +413,16 @@ export default function MessagesScreen({ navigation, route }: Props) {
       />
 
       {/* New Channel Sheet */}
-      <Sheet ref={newChannelSheetRef} title="New Channel">
+      <Sheet
+        ref={newChannelSheetRef}
+        title="New Channel"
+        // Client-facing is a consequential default — never let it carry over
+        // from a previous open. Covers both cancel and post-create dismiss.
+        onDismiss={() => {
+          setNewChannelName('');
+          setNewChannelClientFacing(false);
+        }}
+      >
         <View style={styles.sheetBody}>
           <Text style={[styles.sheetLabel, { color: colors.secondary }]}>Channel name</Text>
           <SheetTextInput
@@ -404,6 +434,52 @@ export default function MessagesScreen({ navigation, route }: Props) {
             autoCapitalize="none"
             autoCorrect={false}
           />
+
+          {/* Client-facing toggle. Amber accent only when ON, so the row reads
+              as a consequence rather than a permanent warning. */}
+          <View
+            style={[
+              styles.clientToggleRow,
+              {
+                borderColor: newChannelClientFacing ? theme.statusWarning : colors.border,
+                backgroundColor: newChannelClientFacing ? theme.statusWarningBg : 'transparent',
+              },
+            ]}
+          >
+            <View style={styles.clientToggleTextWrap}>
+              <View style={styles.clientToggleTitleRow}>
+                <Ionicons
+                  name={newChannelClientFacing ? 'eye' : 'lock-closed'}
+                  size={14}
+                  color={newChannelClientFacing ? theme.statusWarning : colors.muted}
+                />
+                <Text style={[styles.clientToggleTitle, { color: colors.text }]}>
+                  Client-facing channel
+                </Text>
+              </View>
+              <Text
+                style={[
+                  styles.clientToggleHint,
+                  { color: newChannelClientFacing ? theme.statusWarning : colors.secondary },
+                ]}
+              >
+                {newChannelClientFacing
+                  ? 'The client can see this channel'
+                  : 'Only your team can see this channel'}
+              </Text>
+            </View>
+            <Switch
+              value={newChannelClientFacing}
+              onValueChange={v => {
+                haptic.select();
+                setNewChannelClientFacing(v);
+              }}
+              trackColor={{ false: colors.border, true: theme.statusWarning }}
+              thumbColor="#ffffff"
+              ios_backgroundColor={colors.border}
+            />
+          </View>
+
           <PressableScale
             style={[styles.sheetBtn, { backgroundColor: colors.accent, opacity: creatingChannel || !newChannelName.trim() ? 0.6 : 1 }]}
             onPress={handleCreateChannel}
@@ -458,7 +534,6 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingBottom: 12,
-    borderBottomWidth: 1,
   },
   headerTitle: { fontSize: 22, fontWeight: '700' },
   headerActions: { flexDirection: 'row', gap: 8 },
@@ -491,9 +566,11 @@ const styles = StyleSheet.create({
   pinIcon: { marginRight: -2 },
   channelInfo: { flex: 1, minWidth: 0 },
   channelNameRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  // flex:1 (basis 0) lets a long name absorb the slack and ellipsise, so the
+  // CLIENT pill and the timestamp keep their natural width beside it.
   channelName: { fontSize: 15, fontWeight: '500', flex: 1 },
   channelNameBold: { fontWeight: '700' },
-  channelTime: { fontSize: 12 },
+  channelTime: { fontSize: 12, flexShrink: 0 },
   channelDesc: { fontSize: 13, marginTop: 1 },
   channelDescBold: { fontWeight: '600' },
   unreadBadge: { borderRadius: 10, paddingHorizontal: 7, paddingVertical: 2, minWidth: 20, alignItems: 'center' },
@@ -506,6 +583,21 @@ const styles = StyleSheet.create({
   sheetBody: { paddingHorizontal: 20, paddingTop: 4 },
   sheetLabel: { fontSize: 13, marginBottom: 6 },
   sheetInput: { borderWidth: 1, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, fontSize: 15, marginBottom: 16 },
+  clientToggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 16,
+  },
+  clientToggleTextWrap: { flex: 1, gap: 2 },
+  clientToggleTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  clientToggleTitle: { fontSize: 14, fontWeight: '600' },
+  clientToggleHint: { fontSize: 12 },
   sheetBtn: { paddingVertical: 13, borderRadius: 8, alignItems: 'center' },
   sheetBtnText: { color: '#ffffff', fontSize: 15, fontWeight: '600' },
   noUsersText: { textAlign: 'center', paddingVertical: 20, fontSize: 14 },
