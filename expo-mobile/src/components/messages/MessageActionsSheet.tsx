@@ -115,7 +115,7 @@ export const MessageActionsSheet = forwardRef<SheetRef, MessageActionsSheetProps
                 </Text>
                 <View style={styles.deleteConfirmActions}>
                   <PressableScale
-                    style={[styles.deleteConfirmBtn, { backgroundColor: theme.statusDanger }]}
+                    style={[styles.deleteConfirmBtn, { backgroundColor: theme.statusDangerSolid }]}
                     onPress={onConfirmDelete}
                   >
                     <Text style={styles.deleteConfirmBtnText}>Delete</Text>

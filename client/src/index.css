@@ -352,17 +352,24 @@
   --tab-inactive: 290 5% 63%;
   --tab-active: 270 16% 53%;
 
-  /* Status pill tokens (Figma palette, dark mode = translucent on tint) */
-  --status-success-fg: 151 37% 37%;
-  --status-success-bg: 151 37% 37% / 0.22;
-  --status-warning-fg: 38 56% 41%;
-  --status-warning-bg: 38 56% 41% / 0.22;
-  --status-info-fg:    220 45% 55%;
-  --status-info-bg:    220 45% 55% / 0.22;
-  --status-danger-fg:  0 52% 45%;
-  --status-danger-bg:  0 52% 45% / 0.22;
-  --status-action-fg:  270 16% 53%;
-  --status-action-bg:  270 16% 53% / 0.22;
+  /* Status pill tokens — dark mode.
+   * Dark-mode pills: the light-mode inks (#3C8160, #B03838 …) only reach
+   * 1.7–2.4:1 on a dark card — far under the 4.5:1 minimum — and a 22% tint of
+   * the ink lightens its own ground, capping contrast no matter how dark the
+   * text. So the text lightens to the same hue's pastel and the wash drops to
+   * 10%. Measured against --card (#3B3934): 4.5–5.1:1. The solid --success /
+   * --warning / --destructive tokens above are unchanged — they carry white
+   * text and are correct as-is. */
+  --status-success-fg: 147 39% 65%;          /* #82C8A2 — 4.87:1 */
+  --status-success-bg: 147 39% 65% / 0.10;
+  --status-warning-fg: 42 54% 64%;           /* #D4B670 — 4.81:1 */
+  --status-warning-bg: 42 54% 64% / 0.10;
+  --status-info-fg:    219 64% 79%;          /* #A8C0EC — 5.07:1 */
+  --status-info-bg:    219 64% 79% / 0.10;
+  --status-danger-fg:  5 72% 77%;            /* #EFA39C — 4.70:1 */
+  --status-danger-bg:  5 72% 77% / 0.10;
+  --status-action-fg:  264 47% 77%;          /* #BEA8E0 — 4.51:1 */
+  --status-action-bg:  264 47% 77% / 0.10;
 
   /* ====================================================
    * BUILDPRO DESIGN TOKENS — Foundation (dark)

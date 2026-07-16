@@ -7,11 +7,11 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View, useColorScheme } from 'react-native';
 import Animated, { FadeOutDown, SlideInDown, LinearTransition } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useTheme, fontSize, fontWeight, radius } from '../../theme';
+import { useTheme, lightTheme, darkTheme, fontSize, fontWeight, radius } from '../../theme';
 import { haptic } from '../../lib/haptics';
 
 // Toast system — replaces Alert.alert for non-blocking feedback.
@@ -62,6 +62,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const timers = useRef<Record<number, ReturnType<typeof setTimeout>>>({});
   const theme = useTheme();
+  const scheme = useColorScheme();
   const insets = useSafeAreaInsets();
 
   const dismiss = useCallback((id: number) => {
@@ -98,10 +99,14 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     [show],
   );
 
+  // The toast surface is inverted (bg = textPrimary: near-black in light mode,
+  // near-white in dark), so its status icons need the OPPOSITE theme's tokens
+  // to stay legible — the current theme's would sit on a same-value ground.
+  const inverse = scheme === 'dark' ? lightTheme : darkTheme;
   const variantColor: Record<ToastVariant, string> = {
-    success: theme.statusSuccess,
-    error: theme.statusDanger,
-    info: theme.textSecondary,
+    success: inverse.statusSuccess,
+    error: inverse.statusDanger,
+    info: theme.background,
   };
 
   return (

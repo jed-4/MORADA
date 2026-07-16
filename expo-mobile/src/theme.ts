@@ -34,15 +34,19 @@ const light = {
   roseLight:    '#F8ECF2',
   lavender:     '#A68AC7',
   lavenderLight:'#F1ECF6',
-  // Status
-  statusSuccess:    '#3C8160',
-  statusSuccessBg:  '#E9F3EE',
-  statusWarning:    '#A57A2E',
-  statusWarningBg:  '#F8F2E7',
-  statusDanger:     '#B03838',
-  statusDangerBg:   '#F8EAEA',
-  statusInfo:       '#597BC0',
-  statusInfoBg:     '#F1F4FB',
+  // Status — `statusX` is the TEXT/icon colour (on card/background/its own
+  // wash); `statusXSolid` is for solid fills that carry white text. In light
+  // mode they're the same; in dark mode the text role lightens (see below).
+  statusSuccess:      '#3C8160',
+  statusSuccessBg:    '#E9F3EE',
+  statusSuccessSolid: '#3C8160',
+  statusWarning:      '#A57A2E',
+  statusWarningBg:    '#F8F2E7',
+  statusDanger:       '#B03838',
+  statusDangerBg:     '#F8EAEA',
+  statusDangerSolid:  '#B03838',
+  statusInfo:         '#597BC0',
+  statusInfoBg:       '#F1F4FB',
 };
 
 const dark = {
@@ -70,15 +74,21 @@ const dark = {
   roseLight:    '#5C4B4F',
   lavender:     '#A68AC7',
   lavenderLight:'#534B54',
-  // Status pills in dark mode: same fg as light, bg = fg at 22% alpha
-  statusSuccess:    '#3C8160',
-  statusSuccessBg:  '#3C816038',
-  statusWarning:    '#A57A2E',
-  statusWarningBg:  '#A57A2E38',
-  statusDanger:     '#B03838',
-  statusDangerBg:   '#B0383838',
-  statusInfo:       '#597BC0',
-  statusInfoBg:     '#597BC038',
+  // Status in dark mode: the TEXT role lightens to the same hue's pastel and
+  // the wash drops to 10% alpha — the light-mode inks (#3C8160 etc.) sit at
+  // only 1.7–2.4:1 on a dark card, well under the 4.5:1 minimum. These clear
+  // it (4.7–5.1:1). `statusXSolid` stays dark so white text on a filled
+  // button/badge still reads.
+  statusSuccess:      '#82C8A2',
+  statusSuccessBg:    '#82C8A21A',
+  statusSuccessSolid: '#3C8160',
+  statusWarning:      '#D4B670',
+  statusWarningBg:    '#D4B6701A',
+  statusDanger:       '#EFA39C',
+  statusDangerBg:     '#EFA39C1A',
+  statusDangerSolid:  '#B03838',
+  statusInfo:         '#A8C0EC',
+  statusInfoBg:       '#A8C0EC1A',
 };
 
 // ── Typography scale ──────────────────────────────────────────────────────
