@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { forwardRef, useImperativeHandle, useRef, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
@@ -23,17 +23,14 @@ import {
 // Suggest an Idea live in the Dashboard avatar menu (kept away from the
 // thumb-friendly bottom of this sheet).
 
+export interface MorePanelHandle {
+  present: () => void;
+}
+
 interface MorePanelProps {
-  visible: boolean;
-  onClose: () => void;
   navigationRef: React.RefObject<any>;
-  /**
-   * Monotonic counter bumped by MainTabs on every More-tab press. Presenting
-   * is keyed off this rather than the `visible` boolean so a state desync
-   * (e.g. a dismissal whose onDismiss raced the toggle) can never leave the
-   * tab dead — every press re-presents.
-   */
-  presentNonce?: number;
+  /** Mirrors open/closed state up to MainTabs purely so the tab icon can fill. */
+  onVisibilityChange?: (visible: boolean) => void;
   /** Unread Messages count from MainTabs — shown as a pill on the Messages tile. */
   messagesUnread?: number;
 }
@@ -77,13 +74,11 @@ function Tile({
   );
 }
 
-export default function MorePanel({
-  visible,
-  onClose,
+const MorePanel = forwardRef<MorePanelHandle, MorePanelProps>(function MorePanel({
   navigationRef,
-  presentNonce = 0,
+  onVisibilityChange,
   messagesUnread = 0,
-}: MorePanelProps) {
+}, ref) {
   const theme = useTheme();
   const toast = useToast();
   const { user } = useAuth();
@@ -95,14 +90,16 @@ export default function MorePanel({
   const [taskDescription, setTaskDescription] = useState('');
   const [saving, setSaving] = useState(false);
 
-  // Every tab press re-presents (present on an already-open sheet is a no-op).
-  useEffect(() => {
-    if (presentNonce > 0) sheetRef.current?.present();
-  }, [presentNonce]);
-
-  useEffect(() => {
-    if (!visible) sheetRef.current?.dismiss();
-  }, [visible]);
+  // The tab press calls this directly. Presenting imperatively (rather than
+  // setting state and reacting to it in an effect) means there is no state to
+  // fall out of sync with the sheet — the previous prop/effect round-trip could
+  // leave the tab dead for a tap or two after a swipe-dismiss.
+  useImperativeHandle(ref, () => ({
+    present: () => {
+      onVisibilityChange?.(true);
+      sheetRef.current?.present();
+    },
+  }), [onVisibilityChange]);
 
   const goToMoreScreen = (screen: string, params?: Record<string, unknown>) => {
     sheetRef.current?.dismiss();
@@ -166,7 +163,7 @@ export default function MorePanel({
 
   return (
     <>
-      <Sheet ref={sheetRef} scrollable onDismiss={onClose}>
+      <Sheet ref={sheetRef} scrollable onDismiss={() => onVisibilityChange?.(false)}>
         {user && (
           <Animated.View entering={FadeInDown.duration(300)}>
             <PressableScale
@@ -255,7 +252,9 @@ export default function MorePanel({
 
     </>
   );
-}
+});
+
+export default MorePanel;
 
 const styles = StyleSheet.create({
   profileRow: {

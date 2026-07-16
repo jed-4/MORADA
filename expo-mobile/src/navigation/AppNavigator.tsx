@@ -7,7 +7,7 @@ import { ActivityIndicator, StyleSheet, View, useColorScheme } from 'react-nativ
 import * as Notifications from 'expo-notifications';
 import { usePolling } from '../lib/usePolling';
 import { haptic } from '../lib/haptics';
-import MorePanel from '../components/MorePanel';
+import MorePanel, { type MorePanelHandle } from '../components/MorePanel';
 import { apiFetch } from '../services/api';
 import { navigationRef, navigateFromPush } from './navigationRef';
 import { setAppBadgeCount } from '../services/pushNotifications';
@@ -177,7 +177,7 @@ function MoreStack() {
 function MainTabs() {
   const theme = useTheme();
   const [moreVisible, setMoreVisible] = useState(false);
-  const [moreNonce, setMoreNonce] = useState(0);
+  const morePanelRef = useRef<MorePanelHandle>(null);
   const tabNavRef = useRef<any>(null);
   const [messagesUnread, setMessagesUnread] = useState(0);
 
@@ -299,13 +299,12 @@ function MainTabs() {
           listeners={({ navigation }) => {
             tabNavRef.current = navigation;
             return {
-              // Always open: the sheet's backdrop covers the tab bar, so the
-              // More tab is only reachable while the panel is closed. Toggling
-              // a boolean here could desync from the sheet and eat taps.
+              // Present the sheet directly. The sheet's own backdrop covers the
+              // tab bar, so More is only reachable while the panel is closed —
+              // there is nothing to toggle, and no state to fall out of sync.
               tabPress: (e) => {
                 e.preventDefault();
-                setMoreVisible(true);
-                setMoreNonce((n) => n + 1);
+                morePanelRef.current?.present();
               },
             };
           }}
@@ -313,10 +312,9 @@ function MainTabs() {
       </Tab.Navigator>
 
       <MorePanel
-        visible={moreVisible}
-        onClose={() => setMoreVisible(false)}
+        ref={morePanelRef}
         navigationRef={tabNavRef}
-        presentNonce={moreNonce}
+        onVisibilityChange={setMoreVisible}
         messagesUnread={messagesUnread}
       />
     </>
