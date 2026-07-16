@@ -174,6 +174,3 @@ export const uploadPhoto = (localUri: string) =>
 
 export const uploadFileFromUri = (localUri: string, fileName: string, contentType: string) =>
   uploadViaPresignedUrl(localUri, fileName, contentType);
-
-export const uploadAudio = (localUri: string) =>
-  uploadViaPresignedUrl(localUri, `voice-note-${Date.now()}.m4a`, 'audio/mp4');

@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import NetInfo from '@react-native-community/netinfo';
-import { apiRequest, uploadPhoto, uploadAudio, isPermanentError } from './api';
+import { apiRequest, uploadPhoto, isPermanentError } from './api';
 import { removeOfflineDiaryEntry } from './diaryOffline';
 
 const QUEUE_KEY = 'buildpro_offline_queue';
@@ -66,19 +66,19 @@ const isLocalUri = (val: unknown): val is string =>
   typeof val === 'string' && (val.startsWith('file://') || val.startsWith('content://'));
 
 /**
- * Upload any device-local photo/audio URIs in a diary payload, replacing them
+ * Upload any device-local photo URIs in a diary payload, replacing them
  * with server object paths. THROWS on upload failure — a local URI must never
  * be persisted to the server (it can't render on any other device).
  */
 const uploadDiaryAssets = async (entryData: any): Promise<any> => {
   const fieldValues = { ...(entryData.fieldValues || {}) };
   for (const [key, val] of Object.entries(fieldValues)) {
+    if (key.startsWith('_')) continue; // internal keys are not photo arrays
     if (Array.isArray(val)) {
-      const isVoice = key === '_voiceNotes';
       fieldValues[key] = await Promise.all(
         val.map(async (uri: any) => {
           if (!isLocalUri(uri)) return uri;
-          const { objectPath } = isVoice ? await uploadAudio(uri) : await uploadPhoto(uri);
+          const { objectPath } = await uploadPhoto(uri);
           return objectPath;
         }),
       );

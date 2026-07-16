@@ -20,11 +20,10 @@ import {
   Switch,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { Audio } from 'expo-av';
 import * as ImagePicker from 'expo-image-picker';
 import NetInfo from '@react-native-community/netinfo';
 import { useAuth } from '../contexts/AuthContext';
-import { apiFetch, apiRequest, uploadPhoto, uploadAudio, API_BASE_URL } from '../services/api';
+import { apiFetch, apiRequest, uploadPhoto, API_BASE_URL } from '../services/api';
 import { isOnline, addToQueue, getQueue, saveQueue, syncQueue, addSyncListener } from '../services/offlineQueue';
 import {
   getOfflineDiaryEntries,
@@ -176,7 +175,7 @@ function countPhotos(entry: SiteDiaryEntry): number {
   if (entry.overallPhotos) count += entry.overallPhotos.length;
   if (entry.fieldValues) {
     Object.entries(entry.fieldValues).forEach(([key, val]) => {
-      if (key.startsWith('_')) return; // internal keys (e.g. _voiceNotes) are not photos
+      if (key.startsWith('_')) return; // internal keys are not photos
       if (Array.isArray(val) && val.length > 0 && typeof val[0] === 'string' && (val[0].startsWith('http') || val[0].startsWith('file') || val[0].startsWith('/'))) {
         count += val.length;
       }
@@ -233,18 +232,7 @@ export default function SiteDiaryListScreen({ navigation }: Props) {
   const [formDateTime, setFormDateTime] = useState(localDayISOString());
   const [formFieldValues, setFormFieldValues] = useState<Record<string, any>>({});
   const [formOverallPhotos, setFormOverallPhotos] = useState<string[]>([]);
-  const [formVoiceNotes, setFormVoiceNotes] = useState<string[]>([]);
   const [showProjectPicker, setShowProjectPicker] = useState(false);
-
-  const [isRecording, setIsRecording] = useState(false);
-  const [recordingDuration, setRecordingDuration] = useState(0);
-  const recordingRef = useRef<Audio.Recording | null>(null);
-  const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const pulseAnim2 = useRef(new Animated.Value(1)).current;
-  const [playingVoiceNote, setPlayingVoiceNote] = useState<string | null>(null);
-  const soundRef = useRef<Audio.Sound | null>(null);
-  const [playbackPosition, setPlaybackPosition] = useState(0);
-  const [playbackDuration, setPlaybackDuration] = useState(0);
 
   const translateX = useRef(new Animated.Value(0)).current;
 
@@ -628,7 +616,6 @@ const colors = {
     setFormDateTime(localDayISOString());
     setFormFieldValues({});
     setFormOverallPhotos([]);
-    setFormVoiceNotes([]);
     setIsEditMode(false);
     setSelectedEntry(null);
   };
@@ -683,7 +670,6 @@ const colors = {
     setFormDateTime(entry.entryDateTime);
     setFormFieldValues(entry.fieldValues || {});
     setFormOverallPhotos(entry.overallPhotos || []);
-    setFormVoiceNotes(entry.fieldValues?._voiceNotes || []);
     const entryTemplate = allTemplates.find(t => t.id === entry.templateId) || template;
     setActiveTemplate(entryTemplate);
     setShowDetailModal(false);
@@ -789,166 +775,14 @@ const colors = {
     return uploaded;
   };
 
-  const formatRecordingTime = (seconds: number): string => {
-    const m = Math.floor(seconds / 60);
-    const s = seconds % 60;
-    return `${m}:${s.toString().padStart(2, '0')}`;
-  };
-
-  const startPulseAnimation = () => {
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulseAnim2, { toValue: 1.3, duration: 600, useNativeDriver: true }),
-        Animated.timing(pulseAnim2, { toValue: 1, duration: 600, useNativeDriver: true }),
-      ])
-    ).start();
-  };
-
-  const stopPulseAnimation = () => {
-    pulseAnim2.stopAnimation();
-    pulseAnim2.setValue(1);
-  };
-
-  const startRecording = async () => {
-    try {
-      const { status } = await Audio.requestPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Permission Required', 'Microphone access is needed to record voice notes.');
-        return;
-      }
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: true,
-        playsInSilentModeIOS: true,
-      });
-      const { recording } = await Audio.Recording.createAsync(
-        Audio.RecordingOptionsPresets.HIGH_QUALITY
-      );
-      recordingRef.current = recording;
-      setIsRecording(true);
-      setRecordingDuration(0);
-      startPulseAnimation();
-      recordingTimerRef.current = setInterval(() => {
-        setRecordingDuration(prev => prev + 1);
-      }, 1000);
-    } catch (err) {
-      console.error('Failed to start recording:', err);
-      Alert.alert('Error', 'Could not start recording. Please try again.');
-    }
-  };
-
-  const stopRecording = async () => {
-    try {
-      if (recordingTimerRef.current) {
-        clearInterval(recordingTimerRef.current);
-        recordingTimerRef.current = null;
-      }
-      stopPulseAnimation();
-      setIsRecording(false);
-      if (recordingRef.current) {
-        await recordingRef.current.stopAndUnloadAsync();
-        await Audio.setAudioModeAsync({ allowsRecordingIOS: false });
-        const uri = recordingRef.current.getURI();
-        recordingRef.current = null;
-        if (uri) {
-          setFormVoiceNotes(prev => [...prev, uri]);
-        }
-      }
-    } catch (err) {
-      console.error('Failed to stop recording:', err);
-      setIsRecording(false);
-    }
-  };
-
-  const cleanupRecording = async () => {
-    if (recordingTimerRef.current) {
-      clearInterval(recordingTimerRef.current);
-      recordingTimerRef.current = null;
-    }
-    stopPulseAnimation();
-    if (recordingRef.current) {
-      try {
-        await recordingRef.current.stopAndUnloadAsync();
-      } catch {}
-      recordingRef.current = null;
-    }
-    setIsRecording(false);
-    setRecordingDuration(0);
-    if (soundRef.current) {
-      try {
-        await soundRef.current.unloadAsync();
-      } catch {}
-      soundRef.current = null;
-    }
-    setPlayingVoiceNote(null);
-    setPlaybackPosition(0);
-    setPlaybackDuration(0);
-  };
-
-  // Stop any in-progress recording/playback and clear the timer on unmount —
-  // navigating away mid-recording used to leak the audio session.
-  useEffect(() => {
-    return () => {
-      cleanupRecording();
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const removeVoiceNote = (index: number) => {
-    setFormVoiceNotes(prev => {
-      const copy = [...prev];
-      copy.splice(index, 1);
-      return copy;
-    });
-  };
-
   const getPhotoUrl = (path: string): string => {
     if (path.startsWith('http') || path.startsWith('file://') || path.startsWith('content://')) return path;
     return `${API_BASE_URL}/api/uploads/serve/${encodeURIComponent(path)}`;
   };
 
-  const playVoiceNote = async (uri: string) => {
-    try {
-      if (soundRef.current) {
-        await soundRef.current.unloadAsync();
-        soundRef.current = null;
-      }
-      if (playingVoiceNote === uri) {
-        setPlayingVoiceNote(null);
-        setPlaybackPosition(0);
-        setPlaybackDuration(0);
-        return;
-      }
-      await Audio.setAudioModeAsync({ allowsRecordingIOS: false, playsInSilentModeIOS: true });
-      const audioUri = uri.startsWith('file://') || uri.startsWith('content://') ? uri : getPhotoUrl(uri);
-      const { sound } = await Audio.Sound.createAsync({ uri: audioUri });
-      soundRef.current = sound;
-      setPlayingVoiceNote(uri);
-      sound.setOnPlaybackStatusUpdate((status) => {
-        if (status.isLoaded) {
-          setPlaybackPosition(status.positionMillis || 0);
-          setPlaybackDuration(status.durationMillis || 0);
-          if (status.didJustFinish) {
-            setPlayingVoiceNote(null);
-            setPlaybackPosition(0);
-          }
-        }
-      });
-      await sound.playAsync();
-    } catch (err) {
-      console.error('Failed to play voice note:', err);
-      Alert.alert('Error', 'Could not play voice note.');
-    }
-  };
-
-  // Build the entry payload from the current form state. Voice notes are set
-  // or removed explicitly so deleting the last one persists.
+  // Build the entry payload from the current form state.
   const buildEntryPayload = () => {
     const fieldValues = { ...formFieldValues };
-    if (formVoiceNotes.length > 0) {
-      fieldValues._voiceNotes = formVoiceNotes;
-    } else {
-      delete fieldValues._voiceNotes;
-    }
     return {
       templateId: activeTemplate?.id || template?.id || null,
       projectId: formProjectId,
@@ -1009,7 +843,7 @@ const colors = {
       if (!online) {
         if (isEditMode && selectedEntry && !selectedEntry.id.startsWith('_offline_')) {
           // Offline edit of a server entry — queue a PATCH. The queue uploads
-          // any local photo/voice assets before sending.
+          // any local photo assets before sending.
           await addToQueue({
             type: 'edit-diary-entry',
             payload: { id: selectedEntry.id, ...payload },
@@ -1086,28 +920,13 @@ const colors = {
 
       const uploadedFieldValues = { ...payload.fieldValues };
       for (const [key, val] of Object.entries(uploadedFieldValues)) {
-        if (key === '_voiceNotes') continue;
+        if (key.startsWith('_')) continue; // internal keys are not photo arrays
         if (Array.isArray(val) && val.length > 0 && typeof val[0] === 'string') {
           uploadedFieldValues[key] = await uploadAllPhotos(val as string[]);
         }
       }
 
       const uploadedOverallPhotos = await uploadAllPhotos(formOverallPhotos);
-
-      const uploadedVoiceNotes: string[] = [];
-      for (const uri of formVoiceNotes) {
-        if (uri.startsWith('file://') || uri.startsWith('content://')) {
-          const { objectPath } = await uploadAudio(uri);
-          uploadedVoiceNotes.push(objectPath);
-        } else {
-          uploadedVoiceNotes.push(uri);
-        }
-      }
-      if (uploadedVoiceNotes.length > 0) {
-        uploadedFieldValues._voiceNotes = uploadedVoiceNotes;
-      } else {
-        delete uploadedFieldValues._voiceNotes;
-      }
 
       const body: any = {
         ...payload,
@@ -1761,7 +1580,7 @@ const colors = {
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
           <View style={[styles.modalHeader, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
-            <TouchableOpacity onPress={() => { cleanupRecording(); setShowEntryModal(false); resetForm(); }}>
+            <TouchableOpacity onPress={() => { setShowEntryModal(false); resetForm(); }}>
               <Text style={[styles.modalHeaderBtn, { color: colors.secondary }]}>Cancel</Text>
             </TouchableOpacity>
             <Text style={[styles.modalHeaderTitle, { color: colors.text }]}>
@@ -1833,63 +1652,6 @@ const colors = {
                   .map(field => renderFieldInput(field))}
               </>
             )}
-
-            <View style={[styles.sectionDivider, { borderBottomColor: colors.border }]}>
-              <Text style={[styles.sectionTitle, { color: colors.text }]}>Voice Notes</Text>
-            </View>
-
-            <View style={styles.voiceNotesSection}>
-              {!isRecording ? (
-                <TouchableOpacity
-                  style={[styles.recordBtn, { backgroundColor: colors.inputBg, borderColor: colors.border }]}
-                  onPress={startRecording}
-                  activeOpacity={0.7}
-                >
-                  <Ionicons name="mic-outline" size={24} color={colors.accent} />
-                  <Text style={[styles.recordBtnText, { color: colors.text }]}>Record Voice Note</Text>
-                </TouchableOpacity>
-              ) : (
-                <View style={[styles.recordingRow, { backgroundColor: theme.statusDangerBg, borderColor: colors.danger }]}>
-                  <Animated.View style={[styles.recordingIndicator, { transform: [{ scale: pulseAnim2 }] }]}>
-                    <View style={[styles.recordingDot, { backgroundColor: colors.danger }]} />
-                  </Animated.View>
-                  <Text style={[styles.recordingTime, { color: colors.danger }]}>
-                    {formatRecordingTime(recordingDuration)}
-                  </Text>
-                  <Text style={[styles.recordingLabel, { color: colors.danger }]}>Recording...</Text>
-                  <TouchableOpacity
-                    style={[styles.stopBtn, { backgroundColor: colors.danger }]}
-                    onPress={stopRecording}
-                    activeOpacity={0.7}
-                  >
-                    <Ionicons name="stop" size={18} color="#ffffff" />
-                  </TouchableOpacity>
-                </View>
-              )}
-
-              {formVoiceNotes.map((uri, idx) => (
-                <View key={idx} style={[styles.voiceNoteItem, { backgroundColor: colors.inputBg, borderColor: colors.border }]}>
-                  <TouchableOpacity
-                    style={[styles.vnPlayBtn, { backgroundColor: colors.accent }]}
-                    onPress={() => playVoiceNote(uri)}
-                    activeOpacity={0.7}
-                  >
-                    <Ionicons name={playingVoiceNote === uri ? 'pause' : 'play'} size={16} color="#ffffff" />
-                  </TouchableOpacity>
-                  <View style={styles.vnInfo}>
-                    <Text style={[styles.vnTitle, { color: colors.text }]}>Voice Note {idx + 1}</Text>
-                    {playingVoiceNote === uri && playbackDuration > 0 && (
-                      <Text style={[styles.vnDuration, { color: colors.secondary }]}>
-                        {formatRecordingTime(Math.floor(playbackPosition / 1000))} / {formatRecordingTime(Math.floor(playbackDuration / 1000))}
-                      </Text>
-                    )}
-                  </View>
-                  <TouchableOpacity onPress={() => removeVoiceNote(idx)}>
-                    <Ionicons name="close-circle" size={22} color={colors.danger} />
-                  </TouchableOpacity>
-                </View>
-              ))}
-            </View>
 
             <View style={[styles.sectionDivider, { borderBottomColor: colors.border }]}>
               <Text style={[styles.sectionTitle, { color: colors.text }]}>Overall Photos</Text>
@@ -2009,7 +1771,7 @@ const colors = {
       <Modal visible={showDetailModal} animationType="slide" presentationStyle="fullScreen">
         <View style={[styles.modalContainer, { backgroundColor: colors.bg }]}>
           <View style={[styles.modalHeader, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
-            <TouchableOpacity onPress={() => { cleanupRecording(); setShowDetailModal(false); setSelectedEntry(null); }}>
+            <TouchableOpacity onPress={() => { setShowDetailModal(false); setSelectedEntry(null); }}>
               <Ionicons name="arrow-back" size={24} color={colors.text} />
             </TouchableOpacity>
             <Text style={[styles.modalHeaderTitle, { color: colors.text }]} numberOfLines={1}>Entry Details</Text>
@@ -2069,31 +1831,6 @@ const colors = {
                   {[...detailTemplate.fields]
                     .sort((a, b) => a.order - b.order)
                     .map(field => renderDetailFieldValue(field, selectedEntry.fieldValues?.[field.id]))}
-                </View>
-              )}
-
-              {selectedEntry.fieldValues?._voiceNotes && selectedEntry.fieldValues._voiceNotes.length > 0 && (
-                <View style={[styles.detailSection, { borderTopColor: colors.border }]}>
-                  <Text style={[styles.detailSectionTitle, { color: colors.text }]}>Voice Notes</Text>
-                  {selectedEntry.fieldValues._voiceNotes.map((uri: string, idx: number) => (
-                    <View key={idx} style={[styles.voiceNoteItem, { backgroundColor: colors.inputBg, borderColor: colors.border }]}>
-                      <TouchableOpacity
-                        style={[styles.vnPlayBtn, { backgroundColor: colors.accent }]}
-                        onPress={() => playVoiceNote(uri)}
-                        activeOpacity={0.7}
-                      >
-                        <Ionicons name={playingVoiceNote === uri ? 'pause' : 'play'} size={16} color="#ffffff" />
-                      </TouchableOpacity>
-                      <View style={styles.vnInfo}>
-                        <Text style={[styles.vnTitle, { color: colors.text }]}>Voice Note {idx + 1}</Text>
-                        {playingVoiceNote === uri && playbackDuration > 0 && (
-                          <Text style={[styles.vnDuration, { color: colors.secondary }]}>
-                            {formatRecordingTime(Math.floor(playbackPosition / 1000))} / {formatRecordingTime(Math.floor(playbackDuration / 1000))}
-                          </Text>
-                        )}
-                      </View>
-                    </View>
-                  ))}
                 </View>
               )}
 
@@ -2608,89 +2345,6 @@ const styles = StyleSheet.create({
   addPhotoText: {
     fontSize: 11,
     marginTop: 2,
-  },
-  voiceNotesSection: {
-    marginBottom: 16,
-  },
-  recordBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderRadius: 10,
-    borderWidth: 1,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    gap: 10,
-  },
-  recordBtnText: {
-    fontSize: 15,
-    fontWeight: '500',
-  },
-  recordingRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderRadius: 10,
-    borderWidth: 1,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    gap: 10,
-  },
-  recordingIndicator: {
-    width: 14,
-    height: 14,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  recordingDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: '#ef4444',
-  },
-  recordingTime: {
-    fontSize: 16,
-    fontWeight: '700',
-    fontVariant: ['tabular-nums'],
-  },
-  recordingLabel: {
-    fontSize: 14,
-    fontWeight: '500',
-    flex: 1,
-  },
-  stopBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  voiceNoteItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderRadius: 10,
-    borderWidth: 1,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    marginTop: 10,
-    gap: 10,
-  },
-  vnPlayBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  vnInfo: {
-    flex: 1,
-  },
-  vnTitle: {
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  vnDuration: {
-    fontSize: 12,
-    marginTop: 2,
-    fontVariant: ['tabular-nums'],
   },
   detailActions: {
     flexDirection: 'row',
