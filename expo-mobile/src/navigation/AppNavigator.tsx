@@ -110,6 +110,8 @@ function ProjectsStack() {
       <Stack.Screen name="Checklists" component={ChecklistsScreen} options={{ title: 'Checklists' }} />
       <Stack.Screen name="Schedule" component={ScheduleScreen} options={{ title: 'Schedule' }} />
       <Stack.Screen name="Scope" component={ScopeScreen} options={{ title: 'Scope' }} />
+      <Stack.Screen name="Notes" component={NotesListScreen} options={{ headerShown: true, title: 'Notes' }} />
+      <Stack.Screen name="NoteEditor" component={NoteEditorScreen} options={{ headerShown: false }} />
       <Stack.Screen
         name="ProjectTasks"
         component={ProjectTasksScreen}
