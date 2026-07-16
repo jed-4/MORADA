@@ -4858,8 +4858,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Estimates API Routes
   app.get("/api/estimates", async (req, res) => {
     try {
+      const companyId = req.user?.companyId;
+      if (!companyId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
       const { projectId } = req.query;
-      const estimates = await storage.getEstimates(projectId as string | undefined);
+      if (projectId) {
+        // Verify the caller owns the project before returning its estimates.
+        if (!(await enforceProjectCompany(req, res, projectId as string))) return;
+        const estimates = await storage.getEstimates(projectId as string);
+        return res.json(estimates);
+      }
+      // No projectId: return only estimates belonging to the caller's company
+      // (workspace widgets rely on this company-wide list).
+      const estimates = await storage.getEstimatesByCompany(companyId);
       res.json(estimates);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch estimates" });
@@ -5290,6 +5302,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
+      // Verify the caller owns the target project before creating an estimate on it.
+      if (!(await enforceProjectCompany(req, res, validationResult.data.projectId))) return;
+
       const estimate = await storage.createEstimate(validationResult.data);
       res.status(201).json(estimate);
     } catch (error: any) {
@@ -5373,6 +5388,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get estimate items by project ID (for RFQ import)
   app.get("/api/projects/:projectId/estimate-items", async (req, res) => {
     try {
+      if (!(await enforceProjectCompany(req, res, req.params.projectId))) return;
       const estimates = await storage.getEstimates(req.params.projectId);
       if (estimates.length === 0) {
         return res.json([]);
@@ -5693,6 +5709,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { name, groups, items } = req.body;
       const projectId = req.params.projectId;
 
+      if (!(await enforceProjectCompany(req, res, projectId))) return;
+
       if (!name || typeof name !== "string") {
         return res.status(400).json({ error: "Estimate name is required" });
       }
@@ -5976,6 +5994,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/estimates/:estimateId/items/bulk-markup", requireAuth, requireTeamMember, async (req, res) => {
     try {
+      const companyId = req.user!.companyId!;
       const { estimateId } = req.params;
       const { itemIds, markupPercent } = req.body;
 
@@ -5986,8 +6005,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "markupPercent must be a non-negative number" });
       }
 
-      const items = await storage.getEstimateItems(estimateId);
+      // Security: estimate must belong to this company, must not be locked, and
+      // every item must belong to estimates in this company. (Mirrors the
+      // bulk-update guard.)
       const estimate = await storage.getEstimate(estimateId);
+      if (!estimate) {
+        return res.status(404).json({ error: "Estimate not found" });
+      }
+      const project = await storage.getProject(estimate.projectId);
+      if (!project || project.companyId !== companyId) {
+        return res.status(404).json({ error: "Estimate not found" });
+      }
+      if (estimate.isLocked) {
+        return res.status(409).json({ error: "Cannot modify items in a locked estimate" });
+      }
+      const ownership = await storage.verifyEstimateItemsOwnership(itemIds, companyId);
+      if (!ownership.authorized) {
+        return res.status(404).json({ error: `Estimate item not found: ${ownership.invalidItemId}` });
+      }
+
+      const items = await storage.getEstimateItems(estimateId);
       let updated = 0;
 
       for (const itemId of itemIds) {
@@ -6540,6 +6577,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Versioning and Locking API Routes
   app.post("/api/estimates/:id/version", async (req, res) => {
     try {
+      if (!(await getOwnedEstimate(req, res, req.params.id))) return;
       const newVersion = await storage.createEstimateVersion(req.params.id, req.body);
       res.status(201).json(newVersion);
     } catch (error: any) {
@@ -6552,6 +6590,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/estimates/:id/versions", async (req, res) => {
     try {
+      if (!(await getOwnedEstimate(req, res, req.params.id))) return;
       const versions = await storage.getEstimateVersions(req.params.id);
       res.json(versions);
     } catch (error) {
@@ -6736,6 +6775,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Summary Calculations API Route
   app.get("/api/estimates/:id/summary", async (req, res) => {
     try {
+      if (!(await getOwnedEstimate(req, res, req.params.id))) return;
       res.set('Cache-Control', 'no-store');
       const summary = await storage.getEstimateSummary(req.params.id);
       res.json(summary);
@@ -6747,11 +6787,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get full estimate data (estimate + groups + items) for proposals
   app.get("/api/estimates/:id/full", async (req, res) => {
     try {
-      const estimate = await storage.getEstimate(req.params.id);
+      const estimate = await getOwnedEstimate(req, res, req.params.id);
       if (!estimate) {
-        return res.status(404).json({ error: "Estimate not found" });
+        return;
       }
-      
+
       const groups = await storage.getEstimateGroups(req.params.id);
       const items = await storage.getEstimateItems(req.params.id);
       
@@ -6772,6 +6812,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get all notes for an estimate
   app.get("/api/estimates/:id/notes", requireAuth, async (req, res) => {
     try {
+      if (!(await getOwnedEstimate(req, res, req.params.id))) return;
       const notes = await storage.getEstimateNotes(req.params.id);
       res.json(notes);
     } catch (error) {
@@ -16562,11 +16603,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Get unlinked bill line items (no priceListItemId) for AI review
-  app.get("/api/bill-line-items/unlinked", async (req, res) => {
+  app.get("/api/bill-line-items/unlinked", requireAuth, async (req, res) => {
     try {
-      const companyId = req.query.companyId as string;
+      // Derive the company from the authenticated session — never trust a
+      // client-supplied companyId (that was a cross-tenant read hole).
+      const companyId = req.user?.companyId;
       if (!companyId) {
-        return res.status(400).json({ error: "Company ID is required" });
+        return res.status(401).json({ error: "Unauthorized" });
       }
       const items = await storage.getUnlinkedBillLineItems(companyId);
       res.json(items);
@@ -18477,6 +18520,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get estimate items for import
   app.get("/api/purchase-orders/import/estimate-items/:estimateId", async (req, res) => {
     try {
+      if (!(await getOwnedEstimate(req, res, req.params.estimateId))) return;
       const estimateItems = await storage.getEstimateItems(req.params.estimateId);
       res.json(estimateItems);
     } catch (error) {
@@ -18931,6 +18975,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Invoice-Estimate Junction Routes
   app.get("/api/client-invoices/:id/estimates", async (req, res) => {
     try {
+      if (!(await getOwnedClientInvoice(req, res, req.params.id))) return;
       const estimates = await storage.getInvoiceEstimates(req.params.id);
       res.json(estimates);
     } catch (error) {
@@ -18940,16 +18985,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/client-invoices/:id/estimates", async (req, res) => {
     try {
+      if (!(await getOwnedClientInvoice(req, res, req.params.id))) return;
       const validationResult = insertInvoiceEstimateSchema.safeParse({
         ...req.body,
         invoiceId: req.params.id
       });
       if (!validationResult.success) {
-        return res.status(400).json({ 
-          error: "Validation failed", 
-          details: fromZodError(validationResult.error).toString() 
+        return res.status(400).json({
+          error: "Validation failed",
+          details: fromZodError(validationResult.error).toString()
         });
       }
+      // The estimate being linked must also belong to the caller's company.
+      if (!(await getOwnedEstimate(req, res, validationResult.data.estimateId))) return;
 
       const invoiceEstimate = await storage.createInvoiceEstimate(validationResult.data);
       res.status(201).json(invoiceEstimate);
@@ -18960,6 +19008,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/invoice-estimates/:id", async (req, res) => {
     try {
+      // Scope by the owning client invoice before deleting the junction row.
+      const link = await storage.getInvoiceEstimateById(req.params.id);
+      if (!link) {
+        return res.status(404).json({ error: "Invoice estimate not found" });
+      }
+      if (!(await getOwnedClientInvoice(req, res, link.invoiceId, "Invoice estimate not found"))) return;
       const deleted = await storage.deleteInvoiceEstimate(req.params.id);
       if (!deleted) {
         return res.status(404).json({ error: "Invoice estimate not found" });
@@ -24239,6 +24293,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           unitPrice: i.unitPrice,
           total: i.totalPrice,
           sortOrder: i.sortOrder,
+          sourceSelectionId: (i as any).sourceSelectionId ?? null,
         }));
       } catch (e: any) {
         console.warn("[allowance-detail] allocatedItems query failed:", e?.message);
@@ -24248,7 +24303,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // points at this allowance, with its client-selected option's costing.
       let linkedSelection: any = null;
       try {
-        const selection = await storage.getSelectionByEstimateItemId(allowanceId);
+        let selection = await storage.getSelectionByEstimateItemId(allowanceId);
+        // Self-heal a desync: if nothing is linked by estimateItemId but a cost
+        // entry was synced from a selection (sourceSelectionId), that selection
+        // IS the intended link — recover it and re-attach so it persists. This
+        // stops a linked selection from silently disappearing while its synced
+        // costing lingers in Cost Entries.
+        if (!selection) {
+          const srcId = (allocatedItems.find((i: any) => i.sourceSelectionId)?.sourceSelectionId) as string | undefined;
+          if (srcId) {
+            const recovered = await storage.getSelection(srcId);
+            if (recovered && !recovered.estimateItemId) {
+              await storage.updateSelection(srcId, { estimateItemId: allowanceId });
+              selection = { ...recovered, estimateItemId: allowanceId };
+            } else if (recovered) {
+              selection = recovered;
+            }
+          }
+        }
         if (selection) {
           const options = await storage.getSelectionOptions(selection.id);
           const chosen =

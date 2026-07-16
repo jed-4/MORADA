@@ -246,6 +246,9 @@ const avatarColors = [
 ];
 const avatarColor = (index: number) => avatarColors[Math.abs(index) % avatarColors.length];
 
+/** "07:00:00" → "07:00". Timesheet times carry seconds we never need to show. */
+const hm = (t: string | undefined | null) => (t ? t.slice(0, 5) : "");
+
 const formatDayMonth = (date: string) =>
   new Date(date).toLocaleDateString("en-AU", { day: "2-digit", month: "short" });
 
@@ -588,11 +591,17 @@ export default function AllowanceDetail() {
   // How the modal LIST is grouped while picking (browsing aid only)
   const [timesheetGroupMode, setTimesheetGroupMode] = useState<"date" | "person" | "costcode">("person");
   const [showTsDescriptions, setShowTsDescriptions] = useState(true);
-  // Groups the user has collapsed in the modal. Keyed by group label; cleared
-  // when the grouping mode changes so labels can't leak between modes.
-  const [collapsedTsGroups, setCollapsedTsGroups] = useState<Set<string>>(new Set());
+  // Groups the user has TOGGLED away from their default open/closed state.
+  // Cleared on mode change so a label can't carry meaning between modes.
+  // Default per mode: cost-code groups start COLLAPSED (there can be many);
+  // date/person start expanded.
+  const [toggledTsGroups, setToggledTsGroups] = useState<Set<string>>(new Set());
+  const isTsGroupCollapsed = (label: string) =>
+    timesheetGroupMode === "costcode"
+      ? !toggledTsGroups.has(label) // default collapsed
+      : toggledTsGroups.has(label); // default expanded
   const toggleTsGroup = (label: string) => {
-    setCollapsedTsGroups((prev) => {
+    setToggledTsGroups((prev) => {
       const next = new Set(prev);
       next.has(label) ? next.delete(label) : next.add(label);
       return next;
@@ -600,7 +609,7 @@ export default function AllowanceDetail() {
   };
   const setGroupMode = (mode: "date" | "person" | "costcode") => {
     setTimesheetGroupMode(mode);
-    setCollapsedTsGroups(new Set());
+    setToggledTsGroups(new Set());
   };
   // How allocated timesheets are displayed in the allowance — persisted per allowance.
   // "person-summary" collapses each person to a single row (name + total hours + total).
@@ -1621,25 +1630,6 @@ export default function AllowanceDetail() {
                 />
               </div>
             </SectionCard>
-
-            {/* Save / Discard pending */}
-            {hasPendingItems && (
-              <div className="flex justify-end gap-3 pt-1">
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    setSelectedPsLineItems(new Set());
-                    setSelectedTimesheetKeys(new Set());
-                    setPendingLines([]);
-                  }}
-                >
-                  Discard
-                </Button>
-                <Button onClick={handleSavePsItem} disabled={isSavingPs} data-testid="button-save-ps-item">
-                  {isSavingPs ? "Saving…" : "Save Changes"}
-                </Button>
-              </div>
-            )}
           </>
         )}
 
@@ -1930,30 +1920,16 @@ export default function AllowanceDetail() {
               )}
             </SectionCard>
 
-            {/* Save / Discard pending (PC) */}
-            {hasPcPendingItems && (
-              <div className="flex justify-end gap-3 pt-1">
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    setSelectedLineItems(new Set());
-                    setPcPendingLines([]);
-                  }}
-                >
-                  Discard
-                </Button>
-                <Button onClick={handleSavePcItem} disabled={isSavingPc} data-testid="button-save-pc-item">
-                  {isSavingPc ? "Saving…" : "Save Changes"}
-                </Button>
-              </div>
-            )}
           </>
         )}
 
         {/* ── TOTAL BAR (live, includes unsaved pending) ───────────────────── */}
+        {/* Plum background, not hsl(var(--foreground)) — foreground is near-white
+            in dark mode, which made this bar white-on-white. --primary reads as
+            a deliberate accent and carries white text in both themes. */}
         <div
           className="rounded-xl px-5 py-4 flex items-center gap-4 flex-wrap"
-          style={{ background: "hsl(var(--foreground))" }}
+          style={{ background: "hsl(var(--primary))" }}
         >
           <div>
             <p className="text-[9px] font-semibold uppercase tracking-widest mb-1" style={{ color: "rgba(255,255,255,0.4)" }}>
@@ -1983,6 +1959,44 @@ export default function AllowanceDetail() {
             </span>
           </div>
         </div>
+
+        {/* ── STICKY SAVE BAR ──────────────────────────────────────────────
+            One bar for both allowance types. Sticks to the bottom of the
+            viewport whenever there are unsaved changes, so the Save action is
+            reachable without scrolling past the Bills/Cost-entry sections. */}
+        {(isPrimeCost ? hasPcPendingItems : hasPendingItems) && (
+          <div className="sticky bottom-4 z-30 flex justify-end">
+            <div className="flex items-center gap-3 bg-card border border-border rounded-xl shadow-lg px-4 py-2.5">
+              <p className="text-xs text-muted-foreground">
+                Unsaved · <span className="font-semibold text-foreground">{formatCurrency(pendingIncCents)} inc</span> pending
+              </p>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  if (isPrimeCost) {
+                    setSelectedLineItems(new Set());
+                    setPcPendingLines([]);
+                  } else {
+                    setSelectedPsLineItems(new Set());
+                    setSelectedTimesheetKeys(new Set());
+                    setPendingLines([]);
+                  }
+                }}
+              >
+                Discard
+              </Button>
+              <Button
+                size="sm"
+                onClick={isPrimeCost ? handleSavePcItem : handleSavePsItem}
+                disabled={isPrimeCost ? isSavingPc : isSavingPs}
+                data-testid={isPrimeCost ? "button-save-pc-item" : "button-save-ps-item"}
+              >
+                {(isPrimeCost ? isSavingPc : isSavingPs) ? "Saving…" : "Save Changes"}
+              </Button>
+            </div>
+          </div>
+        )}
 
       </div>
 
@@ -2128,7 +2142,7 @@ export default function AllowanceDetail() {
                   </div>
 
                   {groups.map((group) => {
-                    const isCollapsed = collapsedTsGroups.has(group.label);
+                    const isCollapsed = isTsGroupCollapsed(group.label);
                     // A group's own selectable rows — lets the header act as
                     // "select all in this cost code" without hunting row by row.
                     const groupSelectable = group.rows.filter(
@@ -2185,7 +2199,7 @@ export default function AllowanceDetail() {
                           const selectable = isApproved && !alreadyAllocated;
                           const staffName = getUserName(row.userId);
                           const statusColor = statusColors[row.status] ?? { bg: "hsl(var(--muted))", text: "hsl(var(--muted-foreground))" };
-                          const timeStr = row.startTime && row.endTime ? `${row.startTime}–${row.endTime}` : "—";
+                          const timeStr = row.startTime && row.endTime ? `${hm(row.startTime)}–${hm(row.endTime)}` : "—";
                           const userIdx = users.findIndex((u) => u.id === row.userId);
                           return (
                             <div
