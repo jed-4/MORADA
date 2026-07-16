@@ -8,6 +8,7 @@ import QRCode from "qrcode";
 import { format, startOfISOWeek, startOfMonth, addDays, addMonths, subDays, subMonths, getISOWeek } from "date-fns";
 import { setupAuth, isAuthenticated, sessionMiddleware, ensureLegacySessionFields } from "./auth";
 import { sendInvitationEmail, sendClientPortalInviteEmail, initializeEmailServices, sendGenericEmail } from "./utils/email";
+import { sanitizeNoteHtml } from "./utils/sanitizeNoteHtml";
 import { GoogleOAuthService } from "./services/googleOAuthService";
 import { ObjectStorageService } from "./replit_integrations/object_storage";
 import { xeroService, XeroValidationError, type XeroValidationIssue } from "./services/xeroService";
@@ -1641,6 +1642,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const noteData = {
         ...validationResult.data,
+        // Sanitise stored HTML — notes are rendered into other users' browsers,
+        // so untrusted markup (script/on*/javascript:) is a stored-XSS vector.
+        ...(validationResult.data.contentHtml !== undefined
+          ? { contentHtml: sanitizeNoteHtml(validationResult.data.contentHtml) }
+          : {}),
         companyId,
         ownerId: user?.id,
         ownerName: user?.firstName && user?.lastName 
@@ -1681,10 +1687,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const updateSchema = insertNoteSchema.partial();
       const validationResult = updateSchema.safeParse(req.body);
       if (!validationResult.success) {
-        return res.status(400).json({ 
-          error: "Validation failed", 
-          details: fromZodError(validationResult.error).toString() 
+        return res.status(400).json({
+          error: "Validation failed",
+          details: fromZodError(validationResult.error).toString()
         });
+      }
+
+      // Sanitise stored HTML before persisting (stored-XSS defence — see POST route).
+      if (validationResult.data.contentHtml !== undefined) {
+        validationResult.data.contentHtml = sanitizeNoteHtml(validationResult.data.contentHtml);
       }
 
       // Verify the note belongs to the user's company before updating
@@ -30199,7 +30210,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Channel Members
   app.get("/api/channels/:channelId/members", requireAuth, async (req, res) => {
     try {
+      const userId = req.user!.id;
+      const companyId = req.user!.companyId!;
+      const channel = await storage.getChannel(req.params.channelId, companyId);
+      if (!channel) return res.status(404).json({ error: "Channel not found" });
       const members = await storage.getChannelMembers(req.params.channelId);
+      if (!members.some(m => m.userId === userId)) {
+        return res.status(403).json({ error: "Not a member of this channel" });
+      }
       res.json(members);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch channel members" });

@@ -21,6 +21,7 @@ import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import NotionEditor from "@/components/NotionEditor";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { sanitizeNoteHtml } from "@/lib/sanitize";
 import type { User, Note } from "@shared/schema";
 import { formatDateTimeInTimezone, useTimezone } from "@/hooks/useTimezone";
 
@@ -267,7 +268,7 @@ export default function UserNotes({ user, isOwnPage }: UserNotesProps) {
 
       <div
         className="text-sm text-muted-foreground line-clamp-3"
-        dangerouslySetInnerHTML={{ __html: note.contentHtml || note.content }}
+        dangerouslySetInnerHTML={{ __html: sanitizeNoteHtml(note.contentHtml || note.content) }}
       />
 
       <div className="flex items-center gap-1 mt-2 flex-wrap">

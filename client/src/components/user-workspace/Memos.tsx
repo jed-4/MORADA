@@ -22,6 +22,7 @@ import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { RichTextEditor } from "@/components/RichTextEditor";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { sanitizeNoteHtml } from "@/lib/sanitize";
 import type { User, Note } from "@shared/schema";
 import { format } from "date-fns";
 import { useTimezone, formatInTimezone, formatDateTimeInTimezone } from "@/hooks/useTimezone";
@@ -435,9 +436,9 @@ export default function Memos({ user, isOwnPage }: UserNotesProps) {
                 </div>
 
                 {/* Note Content Preview */}
-                <div 
+                <div
                   className="text-sm text-muted-foreground line-clamp-3"
-                  dangerouslySetInnerHTML={{ __html: note.contentHtml || note.content }}
+                  dangerouslySetInnerHTML={{ __html: sanitizeNoteHtml(note.contentHtml || note.content) }}
                 />
 
                 {/* Tags & Pin Badge */}
