@@ -119,6 +119,34 @@ The backend is already a full chat platform (reactions, threads, edits, deletes,
 - **Phase 3 (in progress)** — inverted list + scroll-up history pagination via the `before` param, typing indicators, and investigation-gated read receipts / presence dots / pinned-channel sorting (the live `socketManager.ts` may not emit `messages_read` or presence events — only the dead `server/messaging/socket.ts` does; skip rather than force).
 - **Client-facing channels (queued)** — `channels.isClientFacing` exists and web uses it (eye icon, Client badge, create toggle); mobile ignores it, so a supervisor on site cannot tell whether the client can read the channel they're typing in. Wire it up: amber-tinted eye avatar + CLIENT pill in the list, a persistent header badge while composing, and the create toggle. Amber over red — red means error/over-budget in this palette; amber means caution.
 
+## Notes: project notes on mobile (PLANNED — assessed 16 Jul 2026, not yet built)
+
+**No server work needed.** `GET /api/notes?projectId=X` (`server/routes.ts:1569`) already returns exactly that project's notes and is what the web project-notes tab calls. `POST /api/notes` with `{projectId, scope:'project'}` is what web creation sends. This is pure client work.
+
+**Data model** (`shared/schema.ts:478`): one `notes` table backs both notes AND tasks, split by `type`. Reads are cleanly separated — `storage.getNotes` hardcodes `type='note'` (`storage.ts:9311`), so tasks never leak into notes lists. Fields of note: `scope` ('personal'|'project'|'system'|'business'), nullable `projectId`, `pinned` (NOT `isPinned`), `ownerId` (no `createdById`), `visibility`. No note-shares or note-attachments tables (images embed in `contentHtml`).
+
+**The scope trap — the thing to get right:**
+- Web **never sends `scope`** (`Notes.tsx:575-587`), so every web note defaults to `scope='project'` — even personal ones (projectId=null).
+- Mobile lists with `?scope=personal` (`NotesListScreen.tsx:193`) and creates with `scope:'personal'`.
+- ⇒ **Personal notes made on web are invisible in the mobile Notes list.** Suspected live bug; confirm against real data.
+- ⇒ **Fix direction: filter project notes by `projectId` only, never by `scope`** (exactly as web does). Nothing enforces the scope↔projectId invariant — `insertNoteSchema` has no refinement (`schema.ts:556`).
+
+**Structural blocker:** `Notes`/`NoteEditor` are registered only in `MoreStack` (`AppNavigator.tsx:170-171`), so a tile on `ProjectDetail` (in `ProjectsStack`) can't reach them. `Checklists`/`Schedule` are already dual-registered in both stacks — copy that precedent.
+
+**The silent-failure risk:** `NoteEditorScreen` reads only `route.params?.noteId` (`:297`) and its auto-create-on-first-save hardcodes `scope:'personal'` with no projectId (`:440-450`). Without threading `projectId`/`scope` through, a note created from a project list becomes a personal note and **vanishes from the project** — not lost, just invisible where it's expected.
+
+**Plan:**
+1. Dual-register `Notes` + `NoteEditor` in `ProjectsStack`.
+2. Add a `notes` tile to `categoryTiles` (`ProjectDetailScreen.tsx:265`, horizontal ScrollView — no layout cost) + a `case 'notes'` in `handleTileTap` (`:274`) → `navigate('Notes', { projectId, projectName })`, matching the established param convention. Tiles support a count badge.
+3. Make `NotesListScreen` param-aware: `projectId ? '/api/notes?projectId=X' : '/api/notes?scope=personal'`; thread `projectId` into both create paths (`:263`, `:314`) and the `NoteEditor` navigations (`:275`, `:326`).
+4. `NoteEditorScreen`: accept `projectId`/`scope` params; include them in the auto-create POST.
+5. Notes menu: "My notes" vs "Project notes" — see open question below.
+6. Keep the client-side archived filter (`:195`); handle the per-project **3-pin limit** 400 (`routes.ts:1687`) — mobile currently ignores it and fails silently.
+
+**Open questions for Jed:**
+- *Combined view:* there's no "all my project notes" query. Bare `/api/notes` (no params) returns notes where `ownerId = me OR assigneeId = me` across projects — group by project client-side. Best fit, no server change, but only shows notes you own/are assigned. Alternative: pick a project first.
+- *Access:* `GET /api/notes?projectId=X` has **no project-membership check** and ignores `visibility`/`isPrivate` (`storage.ts:9308-9337`) — any company user can read any project's notes. Mobile would inherit web's existing exposure (not a regression), but if project notes are meant to be more private, that's a deliberate server conversation.
+
 ## Suggested definition of "top-tier" (acceptance checklist)
 
 - [ ] Zero system alerts outside destructive confirms
