@@ -326,6 +326,10 @@ export default function NoteEditorScreen({ navigation, route }: Props) {
   const { user } = useAuth();
 
   const noteId = route.params?.noteId || null;
+  // When the editor is opened from a project's notes list, the auto-create POST
+  // must tag the new note with that project (and 'project' scope) — otherwise a
+  // note born here silently becomes personal and vanishes from the project.
+  const noteProjectId: string | null = route.params?.projectId || null;
 
   const [title, setTitle] = useState('');
   const [blocks, setBlocks] = useState<Block[]>([defaultBlock()]);
@@ -497,7 +501,7 @@ const colors = {
             contentHtml,
             contentText,
             type: 'note',
-            scope: 'personal',
+            ...(noteProjectId ? { scope: 'project', projectId: noteProjectId } : { scope: 'personal' }),
             visibility: visibilityRef.current,
             category: 'General',
             priority: 'low',

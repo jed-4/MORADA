@@ -268,6 +268,7 @@ const colors = {
     { key: 'scope', icon: 'layers-outline', label: 'Scope', showCount: false },
     { key: 'siteDiary', icon: 'book-outline', label: 'Site Diary', showCount: false },
     { key: 'checklists', icon: 'checkmark-done-outline', label: 'Checklists', showCount: false },
+    { key: 'notes', icon: 'document-text-outline', label: 'Notes', showCount: false },
     { key: 'receiptCapture', icon: 'receipt-outline', label: 'Capture Receipt', showCount: false },
   ];
 
@@ -285,6 +286,9 @@ const colors = {
         break;
       case 'scope':
         navigation.navigate('Scope', { projectId, projectName: project.name });
+        break;
+      case 'notes':
+        navigation.navigate('Notes', { projectId, projectName: project.name });
         break;
       case 'tasks':
         navigation.navigate('ProjectTasks', { projectId, projectName: project.name });
