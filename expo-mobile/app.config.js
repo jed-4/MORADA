@@ -26,7 +26,7 @@ module.exports = {
     ios: {
       supportsTablet: true,
       bundleIdentifier: "com.buildpro.mobile",
-      buildNumber: "12",
+      buildNumber: "13",
       infoPlist: {
         ITSAppUsesNonExemptEncryption: false,
       },
@@ -37,7 +37,7 @@ module.exports = {
         backgroundColor: "#7C6B86",
       },
       package: "com.buildpro.mobile",
-      versionCode: 12,
+      versionCode: 13,
     },
     extra: {
       apiUrl: process.env.EXPO_PUBLIC_API_URL || "https://buildpro4.replit.app",
