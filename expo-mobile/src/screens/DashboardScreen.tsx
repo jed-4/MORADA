@@ -53,6 +53,8 @@ interface Project {
   address?: string;
   color?: string;
   isFavourite?: boolean;
+  isArchived?: boolean;
+  isBusiness?: boolean;
 }
 
 interface CompanySettings {
@@ -304,7 +306,12 @@ export default function DashboardScreen({ navigation }: Props) {
   const [activityCollapsed, setActivityCollapsed] = useState(false);
   // Project row: same order as the Projects list, windowed 8 at a time.
   const [projectRowLimit, setProjectRowLimit] = useState(8);
-  const sortedProjects = useMemo(() => [...projects].sort(compareProjects), [projects]);
+  // Mirror the Projects list: never show archived or business projects in the
+  // Workspace project row (the dashboard endpoint returns them unfiltered).
+  const sortedProjects = useMemo(
+    () => projects.filter(p => !p.isArchived && !p.isBusiness).sort(compareProjects),
+    [projects],
+  );
   const projectRowData = useMemo(
     () => [...sortedProjects.slice(0, projectRowLimit), { id: '__all__' } as any],
     [sortedProjects, projectRowLimit],
