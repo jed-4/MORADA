@@ -25371,8 +25371,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const allowance = await storage.createTimesheetAllowance(validationResult.data);
       res.status(201).json(allowance);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to create timesheet allowance" });
+    } catch (error: any) {
+      // Surface the underlying message. A bare "Failed to create..." hides the
+      // one thing that identifies the fault — e.g. a missing column when a
+      // migration hasn't been applied to this database.
+      console.error("[timesheet-allowances] create failed:", error?.message);
+      res.status(500).json({ error: "Failed to create timesheet allowance", details: error?.message });
     }
   });
 
@@ -25427,8 +25431,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const item = await storage.createAllowanceItem(validationResult.data);
       res.status(201).json(item);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to create allowance item" });
+    } catch (error: any) {
+      console.error("[allowance-items] create failed:", error?.message);
+      res.status(500).json({ error: "Failed to create allowance item", details: error?.message });
     }
   });
 

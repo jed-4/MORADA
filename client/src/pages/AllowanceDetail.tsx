@@ -224,6 +224,15 @@ type PendingLine = NewLineItem & { id: string };
 
 const formatCurrency = formatCents;
 
+/**
+ * Pull the most specific message out of an apiRequest failure.
+ * throwIfResNotOk (shared/api.ts) attaches the parsed response body as
+ * `.payload`, so the server's `details` survives the round trip — swallowing it
+ * behind "Please try again" leaves nobody able to diagnose a failed save.
+ */
+const errorMessage = (err: any): string =>
+  err?.payload?.details ?? err?.payload?.error ?? err?.message ?? "Unknown error";
+
 const initials = (name: string) =>
   name.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2);
 
@@ -660,8 +669,13 @@ export default function AllowanceDetail() {
       setPcPendingLines([]);
       await refetchDetail();
       await queryClient.refetchQueries({ queryKey: ["/api/projects", projectId, "allowances"] });
-    } catch {
-      toast({ title: "Error", description: "Failed to save PC allowance. Please try again.", variant: "destructive" });
+    } catch (err: any) {
+      console.error("[allowance] PC save failed:", err);
+      toast({
+        title: "Couldn't save PC allowance",
+        description: errorMessage(err),
+        variant: "destructive",
+      });
     } finally {
       setIsSavingPc(false);
     }
@@ -693,8 +707,13 @@ export default function AllowanceDetail() {
       setPendingLines([]);
       await refetchDetail();
       await queryClient.refetchQueries({ queryKey: ["/api/projects", projectId, "allowances"] });
-    } catch {
-      toast({ title: "Error", description: "Failed to save PS allowance. Please try again.", variant: "destructive" });
+    } catch (err: any) {
+      console.error("[allowance] PS save failed:", err);
+      toast({
+        title: "Couldn't save PS allowance",
+        description: errorMessage(err),
+        variant: "destructive",
+      });
     } finally {
       setIsSavingPs(false);
     }
