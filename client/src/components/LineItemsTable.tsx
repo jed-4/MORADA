@@ -9,7 +9,7 @@
 // Editing model: rows edit INLINE — click a row (or the + Add line row) and its
 // cells become inputs aligned to the same grid columns; ✓ commits, Esc cancels.
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -62,21 +62,57 @@ type ColumnKey =
   | "unitCostEx" | "unitCostInc" | "builderEx" | "builderInc"
   | "markupPct" | "markupAmt" | "amountEx" | "amountInc";
 
-const ALL_COLUMNS: { key: ColumnKey; label: string; width: string; align?: "right"; input?: boolean }[] = [
-  { key: "item", label: "Item", width: "minmax(90px, 1.1fr)", input: true },
-  { key: "description", label: "Description", width: "minmax(120px, 1.5fr)", input: true },
-  { key: "costCode", label: "Cost Code", width: "minmax(110px, 1fr)", input: true },
-  { key: "qty", label: "Qty", width: "64px", align: "right", input: true },
-  { key: "unit", label: "Unit", width: "64px", input: true },
-  { key: "unitCostEx", label: "Unit Cost Ex", width: "minmax(88px, 0.9fr)", align: "right", input: true },
-  { key: "unitCostInc", label: "Unit Cost Inc", width: "minmax(88px, 0.9fr)", align: "right" },
-  { key: "builderEx", label: "Builder's Ex", width: "minmax(84px, 0.8fr)", align: "right" },
-  { key: "builderInc", label: "Builder's Inc", width: "minmax(84px, 0.8fr)", align: "right" },
-  { key: "markupPct", label: "Markup %", width: "72px", align: "right", input: true },
-  { key: "markupAmt", label: "Markup $", width: "minmax(72px, 0.7fr)", align: "right" },
-  { key: "amountEx", label: "Amount Ex", width: "minmax(88px, 0.9fr)", align: "right" },
-  { key: "amountInc", label: "Amount Inc", width: "minmax(88px, 0.9fr)", align: "right" },
+// Columns are fixed-PIXEL width so they can be dragged to resize. The table
+// scrolls horizontally (overflow-x-auto) when the total exceeds the container,
+// which is the standard spreadsheet behaviour.
+const ALL_COLUMNS: { key: ColumnKey; label: string; defaultWidth: number; align?: "right"; input?: boolean }[] = [
+  { key: "item", label: "Item", defaultWidth: 130, input: true },
+  { key: "description", label: "Description", defaultWidth: 190, input: true },
+  { key: "costCode", label: "Cost Code", defaultWidth: 140, input: true },
+  { key: "qty", label: "Qty", defaultWidth: 64, align: "right", input: true },
+  { key: "unit", label: "Unit", defaultWidth: 64, input: true },
+  { key: "unitCostEx", label: "Unit Cost Ex", defaultWidth: 110, align: "right", input: true },
+  { key: "unitCostInc", label: "Unit Cost Inc", defaultWidth: 110, align: "right" },
+  { key: "builderEx", label: "Builder's Ex", defaultWidth: 100, align: "right" },
+  { key: "builderInc", label: "Builder's Inc", defaultWidth: 100, align: "right" },
+  { key: "markupPct", label: "Markup %", defaultWidth: 76, align: "right", input: true },
+  { key: "markupAmt", label: "Markup $", defaultWidth: 96, align: "right" },
+  { key: "amountEx", label: "Amount Ex", defaultWidth: 110, align: "right" },
+  { key: "amountInc", label: "Amount Inc", defaultWidth: 110, align: "right" },
 ];
+
+const MIN_COL_WIDTH = 48;
+
+// ─── Global column-width store ────────────────────────────────────────────────
+// Widths are shared across EVERY LineItemsTable in the app (custom lines, PC cost
+// entries, and any future table using this component) and persisted to one
+// localStorage key. useSyncExternalStore keeps all mounted instances in sync so a
+// drag in one place updates the others live.
+const WIDTHS_KEY = "line-items-col-widths-v1";
+type WidthMap = Partial<Record<ColumnKey, number>>;
+
+let widthStore: WidthMap = (() => {
+  try {
+    return JSON.parse(localStorage.getItem(WIDTHS_KEY) || "{}") as WidthMap;
+  } catch {
+    return {};
+  }
+})();
+const widthListeners = new Set<() => void>();
+
+function setColumnWidth(key: ColumnKey, width: number) {
+  widthStore = { ...widthStore, [key]: Math.max(MIN_COL_WIDTH, Math.round(width)) };
+  try { localStorage.setItem(WIDTHS_KEY, JSON.stringify(widthStore)); } catch { /* ignore */ }
+  widthListeners.forEach((l) => l());
+}
+
+function useColumnWidths(): WidthMap {
+  return useSyncExternalStore(
+    (l) => { widthListeners.add(l); return () => { widthListeners.delete(l); }; },
+    () => widthStore,
+    () => widthStore,
+  );
+}
 
 const DEFAULT_VISIBLE: ColumnKey[] = [
   "item", "description", "costCode", "qty", "unit", "unitCostEx", "markupPct", "amountEx", "amountInc",
@@ -219,13 +255,31 @@ export function LineItemsTable({
   addLabel?: string;
 }) {
   const { visible } = columnState;
+  const widths = useColumnWidths();
 
   // editingId: "new" for the add row, or an existing row id
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
 
   const columns = ALL_COLUMNS.filter((c) => visible.has(c.key));
-  const gridTemplate = [...columns.map((c) => c.width), "56px"].join(" ");
+  const gridTemplate = [...columns.map((c) => `${widths[c.key] ?? c.defaultWidth}px`), "56px"].join(" ");
+  const totalWidth = columns.reduce((sum, c) => sum + (widths[c.key] ?? c.defaultWidth), 0) + 56;
+
+  // Drag-to-resize a column header. Live-updates the shared store so every
+  // instance and both the header + rows track the width during the drag.
+  const startResize = useCallback((key: ColumnKey, startX: number, startWidth: number) => {
+    const onMove = (e: MouseEvent) => setColumnWidth(key, startWidth + (e.clientX - startX));
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  }, []);
 
   const draftDerived = useMemo(() => {
     const qty = parseFloat(draft.quantity) || 0;
@@ -304,14 +358,17 @@ export function LineItemsTable({
     }
   };
 
-  // Input cell for the edit/add row, aligned to its column.
-  // Styled to read as an editable CELL, not a form field: no border or shadow,
-  // transparent until focused. Boxed inputs in a dense table look like stray
-  // bubbles floating over the row.
+  // Input cell for the edit/add row.
+  //
+  // The input must be visually INDISTINGUISHABLE from the rendered cell — same
+  // type size, same weight, same alignment, no box of its own. Editing should
+  // feel like typing directly onto the row, with only the caret to show for it.
+  // Any border/ring/background makes a dense table look like it has form
+  // controls floating on top of it.
   const compact =
-    "h-7 text-[11px] px-1.5 border-0 bg-transparent shadow-none rounded-sm " +
-    "focus-visible:ring-1 focus-visible:ring-primary/40 focus-visible:bg-card " +
-    "placeholder:text-muted-foreground/50";
+    "h-6 text-[11px] px-0 py-0 border-0 bg-transparent shadow-none rounded-none " +
+    "focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:outline-none " +
+    "placeholder:text-muted-foreground/40";
 
   const inputCell = (key: ColumnKey) => {
     switch (key) {
@@ -322,7 +379,11 @@ export function LineItemsTable({
       case "costCode":
         return (
           <Select value={draft.costCode || "__none__"} onValueChange={(v) => setDraft({ ...draft, costCode: v === "__none__" ? "" : v })}>
-            <SelectTrigger className={`${compact} [&>svg]:opacity-40`} data-testid="select-line-cost-code">
+            {/* Chevron hidden until hover so the closed state reads as plain text */}
+            <SelectTrigger
+              className={`${compact} justify-start gap-1 [&>svg]:h-3 [&>svg]:w-3 [&>svg]:opacity-0 hover:[&>svg]:opacity-40 focus:[&>svg]:opacity-40`}
+              data-testid="select-line-cost-code"
+            >
               <SelectValue placeholder="—" />
             </SelectTrigger>
             <SelectContent>
@@ -354,9 +415,11 @@ export function LineItemsTable({
   };
 
   const editRow = (
+    // No background tint: the row being edited should sit flush with the rest of
+    // the table, same as when it is rendered read-only.
     <div
-      className="grid items-center py-1.5 border-b border-border gap-2"
-      style={{ gridTemplateColumns: gridTemplate, background: "hsl(var(--muted) / 0.5)" }}
+      className="grid items-center py-2 border-b border-border gap-2"
+      style={{ gridTemplateColumns: gridTemplate }}
       data-testid="line-item-edit-row"
     >
       {columns.map((c) => (
@@ -386,14 +449,28 @@ export function LineItemsTable({
   return (
     <div>
       <div className="overflow-x-auto">
-        <div style={{ minWidth: `${columns.length * 92 + 56}px` }}>
-          {/* Header */}
+        <div style={{ minWidth: `${totalWidth}px` }}>
+          {/* Header — each cell carries a drag handle on its right edge to resize */}
           <div
             className="grid text-[9px] font-semibold text-muted-foreground uppercase tracking-wide py-2 border-b border-border gap-2"
             style={{ gridTemplateColumns: gridTemplate }}
           >
             {columns.map((c) => (
-              <span key={c.key} className={c.align === "right" ? "text-right" : ""}>{c.label}</span>
+              <span key={c.key} className={`relative ${c.align === "right" ? "text-right" : ""}`}>
+                {c.label}
+                <span
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    startResize(c.key, e.clientX, widths[c.key] ?? c.defaultWidth);
+                  }}
+                  onClick={(e) => e.stopPropagation()}
+                  className="absolute top-1/2 -translate-y-1/2 -right-[5px] h-4 w-[9px] cursor-col-resize flex items-center justify-center group/resize z-10"
+                  title="Drag to resize"
+                  data-testid={`resize-${c.key}`}
+                >
+                  <span className="h-3.5 w-px bg-border group-hover/resize:bg-primary transition-colors" />
+                </span>
+              </span>
             ))}
             <span />
           </div>

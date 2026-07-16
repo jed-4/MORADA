@@ -91,6 +91,29 @@ app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: false, limit: '50mb' }));
 
+// Never let a browser cache an API response.
+//
+// Express attaches an ETag to every JSON response but sets NO Cache-Control.
+// A response with no Cache-Control and no Expires is "heuristically cacheable"
+// (RFC 9111 §4.2.2): the browser is free to reuse it WITHOUT revalidating, for
+// a duration it invents. That produces the worst kind of bug — approve a
+// timesheet, reload the page, and still see the old status, with no error and
+// no way to tell the data is stale. It resolves itself minutes later, so it
+// looks like "the server was slow" rather than a cache.
+//
+// This is also why useAuth (shared/useAuth.ts) hand-rolls `cache: 'no-store'`
+// and a 304 branch — a per-endpoint workaround for a problem every endpoint
+// has. Fixing it here covers all of them and lets those workarounds retire.
+//
+// no-store (not no-cache) because these responses are per-user and carry
+// financial data: don't write them to disk at all. We lose 304 revalidation,
+// which is a fine trade — correctness beats a few KB on a page that already
+// waits on a cross-Pacific database round trip.
+app.use('/api', (_req, res, next) => {
+  res.setHeader('Cache-Control', 'no-store');
+  next();
+});
+
 // Serve uploaded files (avatars, gear photos, etc.)
 app.use('/uploads', express.static(path.resolve(import.meta.dirname, '..', 'uploads')));
 
