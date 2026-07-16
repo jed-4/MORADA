@@ -76,6 +76,7 @@ type BillLineItem = {
   unitPrice: number; // cents ex GST
   total: number; // cents ex GST
   totalIncGst: number; // cents inc GST
+  costCodeId?: string | null;
 };
 
 /** Bills approved for payment (or paid) are allocatable; earlier statuses show but can't be selected. */
@@ -253,6 +254,262 @@ const formatFullDate = (date: string) =>
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
+/**
+ * Bill picker. Two ways to select, because both are natural:
+ *   - tick the BILL row to take every line on it in one go
+ *   - expand a bill and tick individual lines when only part of it belongs here
+ * Selection is always stored as line-item ids — a bill tick just selects all of
+ * its lines — because the allocation itself is line-item level.
+ */
+function BillsPickerModal({
+  open,
+  onOpenChange,
+  title,
+  description,
+  bills,
+  billLineItems,
+  costCodeLabel,
+  isLoading,
+  selected,
+  setSelected,
+  expanded,
+  setExpanded,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  title: string;
+  description: string;
+  bills: Bill[];
+  billLineItems: BillLineItem[];
+  costCodeLabel: (id: string | null | undefined) => string;
+  isLoading: boolean;
+  selected: Set<string>;
+  setSelected: (s: Set<string>) => void;
+  expanded: Set<string>;
+  setExpanded: (s: Set<string>) => void;
+}) {
+  type SortKey = "date" | "supplier" | "costcode";
+  const [sortBy, setSortBy] = useState<SortKey>("date");
+
+  const linesFor = (billId: string) => billLineItems.filter((li) => li.billId === billId);
+
+  // A bill's cost code, for sorting/among columns: the first line's code.
+  // Bills spanning several codes show the first and a count.
+  const billCostCodes = (billId: string) => {
+    const codes = Array.from(new Set(linesFor(billId).map((li) => li.costCodeId).filter(Boolean))) as string[];
+    return codes;
+  };
+
+  const sortedBills = useMemo(() => {
+    const copy = [...bills];
+    copy.sort((a, b) => {
+      if (sortBy === "supplier") {
+        return (a.supplierName || "").localeCompare(b.supplierName || "") ||
+          new Date(b.billDate).getTime() - new Date(a.billDate).getTime();
+      }
+      if (sortBy === "costcode") {
+        const ca = costCodeLabel(billCostCodes(a.id)[0]);
+        const cb = costCodeLabel(billCostCodes(b.id)[0]);
+        return ca.localeCompare(cb) || new Date(b.billDate).getTime() - new Date(a.billDate).getTime();
+      }
+      return new Date(b.billDate).getTime() - new Date(a.billDate).getTime();
+    });
+    return copy;
+  }, [bills, sortBy, billLineItems]);
+
+  const toggleExpanded = (billId: string) => {
+    const s = new Set(expanded);
+    s.has(billId) ? s.delete(billId) : s.add(billId);
+    setExpanded(s);
+  };
+
+  const toggleLine = (id: string) => {
+    const s = new Set(selected);
+    s.has(id) ? s.delete(id) : s.add(id);
+    setSelected(s);
+  };
+
+  const toggleBill = (billId: string) => {
+    const lines = linesFor(billId);
+    const all = lines.length > 0 && lines.every((li) => selected.has(li.id));
+    const s = new Set(selected);
+    if (all) lines.forEach((li) => s.delete(li.id));
+    else lines.forEach((li) => s.add(li.id));
+    setSelected(s);
+  };
+
+  const selectedLines = billLineItems.filter((li) => selected.has(li.id));
+  const grid = "24px 20px 1.6fr 1fr 1fr 1.1fr 90px 1fr 1fr";
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-5xl max-h-[80vh] overflow-hidden flex flex-col">
+        <DialogHeader>
+          <DialogTitle>{title}</DialogTitle>
+          <DialogDescription>{description}</DialogDescription>
+        </DialogHeader>
+
+        {/* Sort toggle */}
+        <div className="flex items-center gap-1 px-1 py-1 bg-muted rounded-lg self-start">
+          {([
+            ["date", "By Date", CalendarDays],
+            ["supplier", "By Supplier", Users],
+            ["costcode", "By Cost Code", Hash],
+          ] as [SortKey, string, typeof Hash][]).map(([key, label, Icon]) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setSortBy(key)}
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${sortBy === key ? "bg-background text-foreground shadow-sm" : "text-muted-foreground"}`}
+              data-testid={`button-sort-bills-${key}`}
+            >
+              <Icon className="h-3 w-3" /> {label}
+            </button>
+          ))}
+        </div>
+
+        <div className="flex-1 overflow-auto">
+          {isLoading && bills.length === 0 ? (
+            <ModalLoading label="Loading bills…" />
+          ) : bills.length === 0 ? (
+            <EmptyState variant="inline" title="No bills found for this project" className="py-8" />
+          ) : (
+            <div>
+              {/* Column header */}
+              <div
+                className="grid items-center text-[9px] font-semibold text-muted-foreground uppercase tracking-wide pb-1 border-b border-border gap-2 px-1"
+                style={{ gridTemplateColumns: grid }}
+              >
+                <span />
+                <span />
+                <span>Supplier</span>
+                <span>Invoice #</span>
+                <span>Date</span>
+                <span>Cost Code</span>
+                <span>Status</span>
+                <span className="text-right">Ex GST</span>
+                <span className="text-right">Inc GST</span>
+              </div>
+
+              {sortedBills.map((bill, idx) => {
+                const lines = linesFor(bill.id);
+                const isExpanded = expanded.has(bill.id);
+                const approved = isBillApproved(bill);
+                const allSelected = lines.length > 0 && lines.every((li) => selected.has(li.id));
+                const someSelected = lines.some((li) => selected.has(li.id));
+                const codes = billCostCodes(bill.id);
+                const exTotal = lines.reduce((s, li) => s + li.total, 0);
+                return (
+                  <div key={bill.id}>
+                    {/* Bill row */}
+                    <div
+                      className={`grid items-center px-1 py-2 border-b border-border gap-2 ${!approved ? "opacity-60" : ""}`}
+                      style={{ gridTemplateColumns: grid }}
+                      data-testid={`bill-row-${bill.id}`}
+                    >
+                      <Checkbox
+                        checked={allSelected ? true : someSelected ? "indeterminate" : false}
+                        disabled={!approved || lines.length === 0}
+                        onCheckedChange={() => approved && toggleBill(bill.id)}
+                        data-testid={`checkbox-bill-${bill.id}`}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => toggleExpanded(bill.id)}
+                        className="flex items-center justify-center"
+                        data-testid={`expand-bill-${bill.id}`}
+                      >
+                        {isExpanded ? (
+                          <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+                        ) : (
+                          <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
+                        )}
+                      </button>
+                      <div className="flex items-center gap-2 min-w-0">
+                        <div
+                          className="w-6 h-6 rounded-full flex items-center justify-center text-[9px] font-bold flex-shrink-0"
+                          style={{ background: avatarColor(idx).bg, color: avatarColor(idx).text }}
+                        >
+                          {initials(bill.supplierName || bill.billNumber)}
+                        </div>
+                        <p className="text-xs font-semibold text-foreground truncate">{bill.supplierName || "—"}</p>
+                      </div>
+                      <p className="text-[11px] text-muted-foreground truncate">{bill.billNumber}</p>
+                      <p className="text-[11px] text-muted-foreground">{formatDayMonth(bill.billDate)}</p>
+                      <p className="text-[11px] text-muted-foreground truncate">
+                        {codes.length === 0
+                          ? "—"
+                          : codes.length === 1
+                            ? costCodeLabel(codes[0])
+                            : `${costCodeLabel(codes[0])} +${codes.length - 1}`}
+                      </p>
+                      <span
+                        className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold w-fit"
+                        style={{
+                          background: approved ? "hsl(var(--sage-light))" : "hsl(var(--amber-light))",
+                          color: approved ? "hsl(var(--sage))" : "hsl(var(--amber))",
+                        }}
+                      >
+                        {billStatusLabel[bill.status] ?? bill.status}
+                      </span>
+                      <p className="text-xs font-semibold text-foreground text-right">{formatCurrency(exTotal)}</p>
+                      <p className="text-xs font-semibold text-foreground text-right">{formatCurrency(bill.total)}</p>
+                    </div>
+
+                    {/* Line items */}
+                    {isExpanded &&
+                      lines.map((li) => (
+                        <div
+                          key={li.id}
+                          className={`grid items-center px-1 py-1.5 border-b border-border gap-2 ${!approved ? "opacity-60" : ""}`}
+                          style={{ gridTemplateColumns: grid, background: "hsl(var(--muted) / 0.35)" }}
+                          data-testid={`bill-line-${li.id}`}
+                        >
+                          <span />
+                          <Checkbox
+                            checked={selected.has(li.id)}
+                            disabled={!approved}
+                            onCheckedChange={() => approved && toggleLine(li.id)}
+                            data-testid={`checkbox-ps-line-item-${li.id}`}
+                          />
+                          <p className="text-[11px] text-foreground truncate pl-1">{li.description}</p>
+                          <p className="text-[10px] text-muted-foreground truncate">
+                            {li.quantity} × {formatCurrency(li.unitPrice)}
+                          </p>
+                          <span />
+                          <p className="text-[10px] text-muted-foreground truncate">{costCodeLabel(li.costCodeId)}</p>
+                          <span />
+                          <p className="text-[11px] text-foreground text-right">{formatCurrency(li.total)}</p>
+                          <p className="text-[11px] text-foreground text-right">{formatCurrency(li.totalIncGst)}</p>
+                        </div>
+                      ))}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        <div className="flex items-center justify-between pt-4 border-t gap-3 flex-wrap">
+          <p className="text-xs text-muted-foreground">
+            {selectedLines.length > 0
+              ? `${selectedLines.length} line${selectedLines.length === 1 ? "" : "s"} selected · ${formatCurrency(selectedLines.reduce((s, li) => s + li.totalIncGst, 0))} inc GST`
+              : "No lines selected"}
+          </p>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => { setSelected(new Set()); onOpenChange(false); }}>
+              Cancel
+            </Button>
+            <Button onClick={() => onOpenChange(false)} disabled={selectedLines.length === 0} data-testid="button-save-ps-bills">
+              Add {selectedLines.length > 0 ? `(${selectedLines.length})` : ""} Selected
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 /** Shown while a modal's data is in flight, so an empty list never reads as "none exist". */
 function ModalLoading({ label }: { label: string }) {
   return (
@@ -331,6 +588,20 @@ export default function AllowanceDetail() {
   // How the modal LIST is grouped while picking (browsing aid only)
   const [timesheetGroupMode, setTimesheetGroupMode] = useState<"date" | "person" | "costcode">("person");
   const [showTsDescriptions, setShowTsDescriptions] = useState(true);
+  // Groups the user has collapsed in the modal. Keyed by group label; cleared
+  // when the grouping mode changes so labels can't leak between modes.
+  const [collapsedTsGroups, setCollapsedTsGroups] = useState<Set<string>>(new Set());
+  const toggleTsGroup = (label: string) => {
+    setCollapsedTsGroups((prev) => {
+      const next = new Set(prev);
+      next.has(label) ? next.delete(label) : next.add(label);
+      return next;
+    });
+  };
+  const setGroupMode = (mode: "date" | "person" | "costcode") => {
+    setTimesheetGroupMode(mode);
+    setCollapsedTsGroups(new Set());
+  };
   // How allocated timesheets are displayed in the allowance — persisted per allowance.
   // "person-summary" collapses each person to a single row (name + total hours + total).
   type TsDisplayPref = "person" | "person-summary" | "date";
@@ -1717,175 +1988,36 @@ export default function AllowanceDetail() {
 
       {/* ── MODALS ─────────────────────────────────────────────────────────── */}
 
-      {/* PC Bills modal */}
-      <Dialog open={isBillModalOpen} onOpenChange={setIsBillModalOpen}>
-        <DialogContent className="max-w-4xl max-h-[80vh] overflow-hidden flex flex-col">
-          <DialogHeader>
-            <DialogTitle>Select Bill Line Items</DialogTitle>
-            <DialogDescription>Choose bill line items to allocate to this allowance</DialogDescription>
-          </DialogHeader>
-          <div className="flex-1 overflow-auto">
-            {isLoadingBills && bills.length === 0 ? (
-              <ModalLoading label="Loading bills…" />
-            ) : bills.length === 0 ? (
-              <EmptyState variant="inline" title="No bills found for this project" className="py-8" />
-            ) : (
-              <div className="space-y-2">
-                {bills.map((bill) => {
-                  const lineItems = billLineItems.filter((li) => li.billId === bill.id);
-                  const isExpanded = expandedBills.has(bill.id);
-                  return (
-                    <Card key={bill.id}>
-                      <CardHeader className="cursor-pointer py-3" onClick={() => toggleBillExpanded(bill.id)}>
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                            <div>
-                              <p className="font-semibold text-sm">
-                                {bill.billNumber}
-                                {bill.supplierName && <span className="font-normal text-muted-foreground"> · {bill.supplierName}</span>}
-                              </p>
-                              <p className="text-xs text-muted-foreground">
-                                {new Date(bill.billDate).toLocaleDateString("en-AU")}
-                                {bill.billReference && ` · ${bill.billReference}`}
-                              </p>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-3">
-                            <span
-                              className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold"
-                              style={{
-                                background: isBillApproved(bill) ? "hsl(var(--sage-light))" : "hsl(var(--amber-light))",
-                                color: isBillApproved(bill) ? "hsl(var(--sage))" : "hsl(var(--amber))",
-                              }}
-                            >
-                              {billStatusLabel[bill.status] ?? bill.status}
-                            </span>
-                            <p className="font-semibold text-sm">{formatCurrency(bill.total)}</p>
-                          </div>
-                        </div>
-                      </CardHeader>
-                      {isExpanded && lineItems.length > 0 && (
-                        <CardContent className="pt-0">
-                          <div className="space-y-1">
-                            {lineItems.map((li) => (
-                              <div key={li.id} className={`flex items-center justify-between p-2 rounded border ${!isBillApproved(bill) ? "opacity-60" : ""}`}>
-                                <div className="flex items-center gap-2 flex-1">
-                                  <Checkbox
-                                    checked={selectedLineItems.has(li.id)}
-                                    onCheckedChange={() => isBillApproved(bill) && toggleLineItemSelection(li.id)}
-                                    disabled={!isBillApproved(bill)}
-                                    data-testid={`checkbox-line-item-${li.id}`}
-                                  />
-                                  <div>
-                                    <p className="text-sm font-medium">{li.description}</p>
-                                    <p className="text-xs text-muted-foreground">{li.quantity} × {formatCurrency(li.unitPrice)} ex</p>
-                                  </div>
-                                </div>
-                                <p className="text-sm font-semibold">{formatCurrency(li.total)} <span className="text-xs font-normal text-muted-foreground">ex</span></p>
-                              </div>
-                            ))}
-                          </div>
-                        </CardContent>
-                      )}
-                    </Card>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-          <div className="flex justify-end gap-2 pt-4 border-t">
-            <Button variant="outline" onClick={() => { setSelectedLineItems(new Set()); setIsBillModalOpen(false); }}>Cancel</Button>
-            <Button onClick={() => setIsBillModalOpen(false)} data-testid="button-save-selections">
-              Add {selectedLineItems.size > 0 ? `(${selectedLineItems.size})` : ""} Selected
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
+      {/* Bills pickers — one component, both allowance types */}
+      <BillsPickerModal
+        open={isBillModalOpen}
+        onOpenChange={setIsBillModalOpen}
+        title="Select Bills"
+        description="Pick whole bills, or expand one to allocate individual line items."
+        bills={bills}
+        billLineItems={billLineItems}
+        costCodeLabel={costCodeLabel}
+        isLoading={isLoadingBills}
+        selected={selectedLineItems}
+        setSelected={setSelectedLineItems}
+        expanded={expandedBills}
+        setExpanded={setExpandedBills}
+      />
 
-      {/* PS Bills modal */}
-      <Dialog open={isPsBillModalOpen} onOpenChange={setIsPsBillModalOpen}>
-        <DialogContent className="max-w-4xl max-h-[80vh] overflow-hidden flex flex-col">
-          <DialogHeader>
-            <DialogTitle>Add Bill Line Items</DialogTitle>
-            <DialogDescription>Select bill line items to add to this PS allowance</DialogDescription>
-          </DialogHeader>
-          <div className="flex-1 overflow-auto">
-            {isLoadingBills && bills.length === 0 ? (
-              <ModalLoading label="Loading bills…" />
-            ) : bills.length === 0 ? (
-              <EmptyState variant="inline" title="No bills found for this project" className="py-8" />
-            ) : (
-              <div className="space-y-2">
-                {bills.map((bill) => {
-                  const lineItems = billLineItems.filter((li) => li.billId === bill.id);
-                  const isExpanded = expandedPsBills.has(bill.id);
-                  return (
-                    <Card key={bill.id}>
-                      <CardHeader className="cursor-pointer py-3" onClick={() => togglePsBillExpanded(bill.id)}>
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                            <div>
-                              <p className="font-semibold text-sm">
-                                {bill.billNumber}
-                                {bill.supplierName && <span className="font-normal text-muted-foreground"> · {bill.supplierName}</span>}
-                              </p>
-                              <p className="text-xs text-muted-foreground">
-                                {new Date(bill.billDate).toLocaleDateString("en-AU")}
-                                {bill.billReference && ` · ${bill.billReference}`}
-                              </p>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-3">
-                            <span
-                              className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold"
-                              style={{
-                                background: isBillApproved(bill) ? "hsl(var(--sage-light))" : "hsl(var(--amber-light))",
-                                color: isBillApproved(bill) ? "hsl(var(--sage))" : "hsl(var(--amber))",
-                              }}
-                            >
-                              {billStatusLabel[bill.status] ?? bill.status}
-                            </span>
-                            <p className="font-semibold text-sm">{formatCurrency(bill.total)}</p>
-                          </div>
-                        </div>
-                      </CardHeader>
-                      {isExpanded && lineItems.length > 0 && (
-                        <CardContent className="pt-0">
-                          <div className="space-y-1">
-                            {lineItems.map((li) => (
-                              <div key={li.id} className={`flex items-center justify-between p-2 rounded border ${!isBillApproved(bill) ? "opacity-60" : ""}`}>
-                                <div className="flex items-center gap-2 flex-1">
-                                  <Checkbox
-                                    checked={selectedPsLineItems.has(li.id)}
-                                    onCheckedChange={() => isBillApproved(bill) && togglePsLineItemSelection(li.id)}
-                                    disabled={!isBillApproved(bill)}
-                                    data-testid={`checkbox-ps-line-item-${li.id}`}
-                                  />
-                                  <div>
-                                    <p className="text-sm font-medium">{li.description}</p>
-                                    <p className="text-xs text-muted-foreground">{li.quantity} × {formatCurrency(li.unitPrice)} ex</p>
-                                  </div>
-                                </div>
-                                <p className="text-sm font-semibold">{formatCurrency(li.total)} <span className="text-xs font-normal text-muted-foreground">ex</span></p>
-                              </div>
-                            ))}
-                          </div>
-                        </CardContent>
-                      )}
-                    </Card>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-          <div className="flex justify-end gap-2 pt-4 border-t">
-            <Button variant="outline" onClick={() => setIsPsBillModalOpen(false)}>Cancel</Button>
-            <Button onClick={() => setIsPsBillModalOpen(false)} data-testid="button-save-ps-bills">Add Selected</Button>
-          </div>
-        </DialogContent>
-      </Dialog>
+      <BillsPickerModal
+        open={isPsBillModalOpen}
+        onOpenChange={setIsPsBillModalOpen}
+        title="Add Bills"
+        description="Pick whole bills, or expand one to allocate individual line items."
+        bills={bills}
+        billLineItems={billLineItems}
+        costCodeLabel={costCodeLabel}
+        isLoading={isLoadingBills}
+        selected={selectedPsLineItems}
+        setSelected={setSelectedPsLineItems}
+        expanded={expandedPsBills}
+        setExpanded={setExpandedPsBills}
+      />
 
       {/* Timesheets modal */}
       <Dialog open={isTimesheetModalOpen} onOpenChange={setIsTimesheetModalOpen}>
@@ -1901,7 +2033,7 @@ export default function AllowanceDetail() {
           <div className="flex items-center gap-1 px-1 py-1 bg-muted rounded-lg self-start">
             <button
               type="button"
-              onClick={() => setTimesheetGroupMode("date")}
+              onClick={() => setGroupMode("date")}
               className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${timesheetGroupMode === "date" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground"}`}
               data-testid="button-group-by-date"
             >
@@ -1909,7 +2041,7 @@ export default function AllowanceDetail() {
             </button>
             <button
               type="button"
-              onClick={() => setTimesheetGroupMode("person")}
+              onClick={() => setGroupMode("person")}
               className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${timesheetGroupMode === "person" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground"}`}
               data-testid="button-group-by-person"
             >
@@ -1917,7 +2049,7 @@ export default function AllowanceDetail() {
             </button>
             <button
               type="button"
-              onClick={() => setTimesheetGroupMode("costcode")}
+              onClick={() => setGroupMode("costcode")}
               className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${timesheetGroupMode === "costcode" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground"}`}
               data-testid="button-group-by-cost-code"
             >
@@ -1995,18 +2127,58 @@ export default function AllowanceDetail() {
                     <span className="text-right">Amount ex</span>
                   </div>
 
-                  {groups.map((group) => (
+                  {groups.map((group) => {
+                    const isCollapsed = collapsedTsGroups.has(group.label);
+                    // A group's own selectable rows — lets the header act as
+                    // "select all in this cost code" without hunting row by row.
+                    const groupSelectable = group.rows.filter(
+                      (r) => r.status === "approved" && !alreadyAllocatedKeys.has(r.key)
+                    );
+                    const allSelected =
+                      groupSelectable.length > 0 && groupSelectable.every((r) => selectedTimesheetKeys.has(r.key));
+                    const someSelected = groupSelectable.some((r) => selectedTimesheetKeys.has(r.key));
+                    const toggleGroupSelection = () => {
+                      setSelectedTimesheetKeys((prev) => {
+                        const next = new Set(prev);
+                        if (allSelected) groupSelectable.forEach((r) => next.delete(r.key));
+                        else groupSelectable.forEach((r) => next.add(r.key));
+                        return next;
+                      });
+                    };
+                    return (
                     <div key={group.label}>
                       <div className="sticky top-0 bg-background/95 backdrop-blur-sm z-10 pb-1 pt-1">
-                        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide px-1">
-                          {group.label}
-                          <span className="ml-2 normal-case font-normal">
-                            {group.rows.length} entr{group.rows.length === 1 ? "y" : "ies"} ·{" "}
-                            {formatCurrency(group.rows.reduce((s, r) => s + r.amountExCents, 0))} ex
-                          </span>
-                        </p>
+                        <div className="flex items-center gap-2 px-1 py-1 rounded-md hover:bg-muted/50">
+                          <Checkbox
+                            // "indeterminate" renders the dash for some-but-not-all
+                            checked={allSelected ? true : someSelected ? "indeterminate" : false}
+                            disabled={groupSelectable.length === 0}
+                            onCheckedChange={toggleGroupSelection}
+                            onClick={(e) => e.stopPropagation()}
+                            data-testid={`checkbox-group-${group.label}`}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => toggleTsGroup(group.label)}
+                            className="flex items-center gap-1.5 flex-1 min-w-0 text-left"
+                            data-testid={`toggle-group-${group.label}`}
+                          >
+                            {isCollapsed ? (
+                              <ChevronRight className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+                            ) : (
+                              <ChevronDown className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+                            )}
+                            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide truncate">
+                              {group.label}
+                              <span className="ml-2 normal-case font-normal">
+                                {group.rows.length} entr{group.rows.length === 1 ? "y" : "ies"} ·{" "}
+                                {formatCurrency(group.rows.reduce((s, r) => s + r.amountExCents, 0))} ex
+                              </span>
+                            </p>
+                          </button>
+                        </div>
                       </div>
-                      <div className="space-y-1">
+                      <div className={`space-y-1 ${isCollapsed ? "hidden" : ""}`}>
                         {group.rows.map((row) => {
                           const isApproved = row.status === "approved";
                           const alreadyAllocated = alreadyAllocatedKeys.has(row.key);
@@ -2069,7 +2241,8 @@ export default function AllowanceDetail() {
                         })}
                       </div>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               );
             })()}

@@ -304,14 +304,17 @@ export function LineItemsTable({
     }
   };
 
-  // Input cell for the edit/add row, aligned to its column.
-  // Styled to read as an editable CELL, not a form field: no border or shadow,
-  // transparent until focused. Boxed inputs in a dense table look like stray
-  // bubbles floating over the row.
+  // Input cell for the edit/add row.
+  //
+  // The input must be visually INDISTINGUISHABLE from the rendered cell — same
+  // type size, same weight, same alignment, no box of its own. Editing should
+  // feel like typing directly onto the row, with only the caret to show for it.
+  // Any border/ring/background makes a dense table look like it has form
+  // controls floating on top of it.
   const compact =
-    "h-7 text-[11px] px-1.5 border-0 bg-transparent shadow-none rounded-sm " +
-    "focus-visible:ring-1 focus-visible:ring-primary/40 focus-visible:bg-card " +
-    "placeholder:text-muted-foreground/50";
+    "h-6 text-[11px] px-0 py-0 border-0 bg-transparent shadow-none rounded-none " +
+    "focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:outline-none " +
+    "placeholder:text-muted-foreground/40";
 
   const inputCell = (key: ColumnKey) => {
     switch (key) {
@@ -322,7 +325,11 @@ export function LineItemsTable({
       case "costCode":
         return (
           <Select value={draft.costCode || "__none__"} onValueChange={(v) => setDraft({ ...draft, costCode: v === "__none__" ? "" : v })}>
-            <SelectTrigger className={`${compact} [&>svg]:opacity-40`} data-testid="select-line-cost-code">
+            {/* Chevron hidden until hover so the closed state reads as plain text */}
+            <SelectTrigger
+              className={`${compact} justify-start gap-1 [&>svg]:h-3 [&>svg]:w-3 [&>svg]:opacity-0 hover:[&>svg]:opacity-40 focus:[&>svg]:opacity-40`}
+              data-testid="select-line-cost-code"
+            >
               <SelectValue placeholder="—" />
             </SelectTrigger>
             <SelectContent>
@@ -354,9 +361,11 @@ export function LineItemsTable({
   };
 
   const editRow = (
+    // No background tint: the row being edited should sit flush with the rest of
+    // the table, same as when it is rendered read-only.
     <div
-      className="grid items-center py-1.5 border-b border-border gap-2"
-      style={{ gridTemplateColumns: gridTemplate, background: "hsl(var(--muted) / 0.5)" }}
+      className="grid items-center py-2 border-b border-border gap-2"
+      style={{ gridTemplateColumns: gridTemplate }}
       data-testid="line-item-edit-row"
     >
       {columns.map((c) => (

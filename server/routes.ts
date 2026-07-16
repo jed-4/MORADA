@@ -24004,8 +24004,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/projects/:projectId/bills", async (req, res) => {
     try {
       const user = (req as any).user;
-      const bills = await storage.getBills(req.params.projectId, undefined, user?.companyId);
-      res.json(bills);
+      const companyId = user?.companyId;
+      const bills = await storage.getBills(req.params.projectId, undefined, companyId);
+
+      // Enrich with the supplier's display name. bills only carries supplierId;
+      // without this the UI has nothing to show but a dash. Batched — one lookup
+      // per distinct supplier, not per bill.
+      const supplierIds = Array.from(new Set(bills.map((b: any) => b.supplierId).filter(Boolean)));
+      const nameById: Record<string, string> = {};
+      if (supplierIds.length > 0 && companyId) {
+        await Promise.all(
+          supplierIds.map(async (id) => {
+            const contact = await storage.getContact(id as string, companyId);
+            const name = contact?.company || contact?.name;
+            if (name) nameById[id as string] = name;
+          })
+        );
+      }
+
+      res.json(
+        bills.map((bill: any) => ({
+          ...bill,
+          supplierName: bill.supplierId ? (nameById[bill.supplierId] ?? null) : null,
+        }))
+      );
     } catch (error: any) {
       res.status(500).json({ error: "Failed to fetch project bills", details: error.message });
     }
