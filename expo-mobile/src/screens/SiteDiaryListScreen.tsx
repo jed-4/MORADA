@@ -1064,7 +1064,10 @@ const colors = {
         if (updatedInQueue) {
           const updated = offlineEntries.map(e =>
             e.id === selectedEntry.id
-              ? { ...e, ...payload, updatedAt: new Date().toISOString() }
+              // payload.templateId is string | null; SiteDiaryEntry.templateId is
+              // string, so keep the existing id when payload has none (mirrors the
+              // `payload.templateId || ''` coercion used when creating the entry).
+              ? { ...e, ...payload, templateId: payload.templateId || e.templateId, updatedAt: new Date().toISOString() }
               : e,
           );
           await saveOfflineEntries(updated);

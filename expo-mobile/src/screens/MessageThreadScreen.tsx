@@ -46,11 +46,16 @@ import type {
 } from '../components/messages/types';
 import { useTheme } from '../theme';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import type { RouteProp } from '@react-navigation/native';
 
+// route.params is typed loosely (matching the sibling screens) so the component
+// is assignable to the untyped navigator's ScreenComponentType (a strict
+// RouteProp<{ MessageThread: {...} }> demands more than ParamListBase provides,
+// which is why registering it in AppNavigator failed to typecheck). The screen
+// is only ever reached with both params present, so they are narrowed to
+// required strings at the destructure below.
 type Props = {
   navigation: NativeStackNavigationProp<any>;
-  route: RouteProp<{ MessageThread: { channelId: string; channelName: string } }, 'MessageThread'>;
+  route: { params?: { channelId?: string; channelName?: string } };
 };
 
 /** Below this scroll offset the inverted list counts as "at the newest". */
@@ -97,7 +102,8 @@ type ListItem =
   | { kind: 'seen'; id: string; label: string };
 
 export default function MessageThreadScreen({ navigation, route }: Props) {
-  const { channelId, channelName } = route.params;
+  // Both params are always supplied when this screen is opened (nav + deep links).
+  const { channelId, channelName } = route.params as { channelId: string; channelName: string };
   const { user } = useAuth();
   const theme = useTheme();
   const toast = useToast();
