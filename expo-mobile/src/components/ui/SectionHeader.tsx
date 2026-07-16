@@ -1,4 +1,5 @@
-import { Pressable, StyleSheet, Text, View, type ReactNode } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+import type { ReactNode } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme, fontSize, fontWeight, radius } from '../../theme';
 

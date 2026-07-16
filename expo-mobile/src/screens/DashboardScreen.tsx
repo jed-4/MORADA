@@ -515,7 +515,9 @@ export default function DashboardScreen({ navigation }: Props) {
   const openMentions = useCallback(() => {
     const first = mentions[0];
     const channelId = first?.link?.match(/[?&]channel=([^&]+)/)?.[1];
-    const tabNav = navigation.getParent() ?? navigation;
+    // Type the parent (the tab navigator) explicitly so the union's .navigate
+    // stays callable — a bare getParent() ?? navigation yields a mixed nav type.
+    const tabNav = navigation.getParent<NativeStackNavigationProp<any>>() ?? navigation;
     if (channelId) {
       const channelName = first.title.match(/ in #(.+)$/)?.[1] || 'Messages';
       tabNav.navigate('Messages', {
@@ -989,7 +991,7 @@ export default function DashboardScreen({ navigation }: Props) {
             <SectionHeader
               title="Schedule"
               count={upcomingSchedule.length}
-              onPress={() => (navigation.getParent() ?? navigation).navigate('More', { screen: 'Schedule' })}
+              onPress={() => (navigation.getParent<NativeStackNavigationProp<any>>() ?? navigation).navigate('More', { screen: 'Schedule' })}
             />
             {upcomingSchedule.length === 0 ? (
               <View style={[styles.emptyCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
@@ -1359,7 +1361,7 @@ export default function DashboardScreen({ navigation }: Props) {
                 style={[styles.sheetPrimaryBtn, styles.sheetActionBtn, { backgroundColor: theme.primary }]}
                 onPress={() => {
                   taskSheetRef.current?.dismiss();
-                  const tabNav = navigation.getParent();
+                  const tabNav = navigation.getParent<NativeStackNavigationProp<any>>();
                   (tabNav ?? navigation).navigate('More', { screen: 'Tasks', params: { openTaskId: taskDetail?.id } });
                 }}
                 activeOpacity={0.8}
@@ -1449,7 +1451,7 @@ export default function DashboardScreen({ navigation }: Props) {
               style={[styles.sheetPrimaryBtn, { backgroundColor: theme.primary }]}
               onPress={() => {
                 scheduleSheetRef.current?.dismiss();
-                const tabNav = navigation.getParent();
+                const tabNav = navigation.getParent<NativeStackNavigationProp<any>>();
                 (tabNav ?? navigation).navigate('More', {
                   screen: 'Schedule',
                   params: { projectId: scheduleDetail.projectId },

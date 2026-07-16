@@ -54,8 +54,6 @@ interface WeekViewProps {
   weekScrollRef: RefObject<ScrollView | null>;
   timeGridScrollRef: RefObject<ScrollView | null>;
   timeLabelScrollRef: RefObject<ScrollView | null>;
-  dayHeaderScrollRef: RefObject<ScrollView | null>;
-  allDayScrollRef: RefObject<ScrollView | null>;
   onWeekScroll: (e: NativeSyntheticEvent<NativeScrollEvent>) => void;
   onEventPress: (event: CalendarEvent) => void;
   /** Long-press on an empty time slot → create a task at that day + hour. */
@@ -75,8 +73,6 @@ function WeekViewInner({
   weekScrollRef,
   timeGridScrollRef,
   timeLabelScrollRef,
-  dayHeaderScrollRef,
-  allDayScrollRef,
   onWeekScroll,
   onEventPress,
   onSlotLongPress,
