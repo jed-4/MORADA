@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
+import { format } from "date-fns";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useParams, useLocation } from "wouter";
 import { useProject } from "@/contexts/ProjectContext";
@@ -1375,8 +1376,6 @@ export default function Schedule() {
     setTaskLinkOffsetsLocal([]);
     setDurationInput("1");
     setNewItemDependencies([]);
-    setDescriptionExpanded(false);
-    setNotesExpanded(false);
   };
 
   // Handle submit
@@ -1511,8 +1510,6 @@ export default function Schedule() {
       } else {
         setDurationInput("");
       }
-      setDescriptionExpanded(!!(editingItem.description));
-      setNotesExpanded(!!(editingItem.notes));
     } else {
       resetForm();
     }
