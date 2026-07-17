@@ -7,6 +7,7 @@ import {
   ActivityIndicator,
   RefreshControl,
   Switch,
+  Pressable,
 } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
@@ -79,6 +80,12 @@ export default function MessagesScreen({ navigation, route }: Props) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [seeding, setSeeding] = useState(false);
+  const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
+
+  const toggleSection = useCallback((key: string) => {
+    haptic.select();
+    setCollapsedSections(prev => ({ ...prev, [key]: !prev[key] }));
+  }, []);
 
   const newChannelSheetRef = useRef<SheetRef>(null);
   const [newChannelName, setNewChannelName] = useState('');
@@ -243,9 +250,16 @@ export default function MessagesScreen({ navigation, route }: Props) {
   const channelList = pinnedFirst(channels.filter(c => c.type === 'channel'));
   const dmList = pinnedFirst(channels.filter(c => c.type === 'dm'));
 
-  const sections: { title: string; data: Channel[] }[] = [
-    ...(channelList.length > 0 ? [{ title: 'CHANNELS', data: channelList }] : []),
-    ...(dmList.length > 0 ? [{ title: 'DIRECT MESSAGES', data: dmList }] : []),
+  // Direct messages first, then channels (which will grow large). Both headers
+  // collapse — collapsed sections keep their header (with count) but drop their
+  // rows. State is by section key, in-memory.
+  const sections: { key: string; title: string; count: number; data: Channel[] }[] = [
+    ...(dmList.length > 0
+      ? [{ key: 'dm', title: 'DIRECT MESSAGES', count: dmList.length, data: collapsedSections.dm ? [] : dmList }]
+      : []),
+    ...(channelList.length > 0
+      ? [{ key: 'channels', title: 'CHANNELS', count: channelList.length, data: collapsedSections.channels ? [] : channelList }]
+      : []),
   ];
 
   const renderChannelRow = ({ item, index }: { item: Channel; index: number }) => {
@@ -396,14 +410,23 @@ export default function MessagesScreen({ navigation, route }: Props) {
         sections={sections}
         keyExtractor={item => item.id}
         renderItem={renderChannelRow}
-        renderSectionHeader={({ section }) => (
-          <Animated.View
-            entering={FadeInDown.duration(300)}
-            style={[styles.sectionHeader, { backgroundColor: colors.bg, borderBottomColor: colors.border }]}
-          >
-            <Text style={[styles.sectionTitle, { color: colors.secondary }]}>{section.title}</Text>
-          </Animated.View>
-        )}
+        renderSectionHeader={({ section }) => {
+          const isCollapsed = !!collapsedSections[(section as any).key];
+          return (
+            <Pressable
+              onPress={() => toggleSection((section as any).key)}
+              style={[styles.sectionHeader, { backgroundColor: colors.bg, borderBottomColor: colors.border }]}
+            >
+              <Ionicons
+                name={isCollapsed ? 'chevron-forward' : 'chevron-down'}
+                size={13}
+                color={colors.secondary}
+              />
+              <Text style={[styles.sectionTitle, { color: colors.secondary }]}>{section.title}</Text>
+              <Text style={[styles.sectionCount, { color: colors.muted }]}>{(section as any).count}</Text>
+            </Pressable>
+          );
+        }}
         stickySectionHeadersEnabled={false}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />
@@ -540,11 +563,15 @@ const styles = StyleSheet.create({
   headerBtn: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
   skeletonList: { padding: 16, gap: 16 },
   sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
     paddingHorizontal: 16,
-    paddingVertical: 8,
+    paddingVertical: 10,
     borderBottomWidth: 1,
   },
   sectionTitle: { fontSize: 11, fontWeight: '700', letterSpacing: 0.8 },
+  sectionCount: { fontSize: 11, fontWeight: '600' },
   channelRow: {
     flexDirection: 'row',
     alignItems: 'center',
