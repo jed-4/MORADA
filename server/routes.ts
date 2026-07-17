@@ -24218,6 +24218,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
             timesheetId: tsaTable.timesheetId,
             timesheetCostCodeId: tsaTable.timesheetCostCodeId,
             amount: tsaTable.amount,
+            chargeRateCents: tsaTable.chargeRateCents,
+            costRateCents: tsaTable.costRateCents,
             allocatedHours: tsaTable.hours,
             tsDate: tsTable.date,
             tsDuration: tsTable.duration,
@@ -24261,7 +24263,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
             const splitHours = parseFloat(String(row.splitDuration)) || 0;
             const durationHours =
               allocatedHours || (row.timesheetCostCodeId ? splitHours : parseFloat(String(row.tsDuration)) || 0);
-            const hourlyRateCents = durationHours > 0 ? Math.round(amountExGst / durationHours) : 0;
+            // Prefer the stored charge rate; older allocations (pre-0020) have
+            // null, so fall back to deriving it from amount ÷ hours.
+            const chargeRateCents =
+              row.chargeRateCents ?? (durationHours > 0 ? Math.round(amountExGst / durationHours) : 0);
+            const costRateCents = row.costRateCents ?? 0;
             const costCode = row.splitCostCodeId ? costCodeMap.get(row.splitCostCodeId) : null;
             return {
               id: row.id,
@@ -24274,7 +24280,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
               costCodeId: row.splitCostCodeId || null,
               costCodeLabel: costCode ? [costCode.code, costCode.title].filter(Boolean).join(" · ") : null,
               durationHours,
-              hourlyRateCents,
+              hourlyRateCents: chargeRateCents, // back-compat: the displayed rate is now the charge rate
+              chargeRateCents,
+              costRateCents,
               amountIncGst,
               amountExGst,
             };

@@ -2115,7 +2115,12 @@ export const timesheetAllowances = pgTable("timesheet_allowances", {
   // points at the specific split; null = the whole timesheet was allocated.
   timesheetCostCodeId: varchar("timesheet_cost_code_id").references((): any => timesheetCostCodes.id, { onDelete: "cascade" }),
   hours: numeric("hours", { precision: 10, scale: 2 }).notNull().default("0"), // Hours allocated to this PS allowance
-  amount: integer("amount").notNull().default(0), // Amount allocated (hours * rate) in cents, EX GST — labour carries no GST
+  // PS timesheets bill the client, so amount = hours × chargeRateCents (EX GST).
+  // chargeRateCents auto-fills from users.chargeRate but is editable per row;
+  // costRateCents snapshots the labour cost rate so margin is recoverable.
+  chargeRateCents: integer("charge_rate_cents"), // Charge rate per hour, ex GST cents (editable)
+  costRateCents: integer("cost_rate_cents"),     // Cost rate per hour, ex GST cents (snapshot, for margin)
+  amount: integer("amount").notNull().default(0), // Allocation total in cents, EX GST — labour carries no GST
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
@@ -2124,6 +2129,8 @@ export const insertTimesheetAllowanceSchema = createInsertSchema(timesheetAllowa
   createdAt: true,
 }).extend({
   hours: z.string().default("0"),
+  chargeRateCents: z.number().optional().nullable(),
+  costRateCents: z.number().optional().nullable(),
   amount: z.number().default(0),
 });
 
