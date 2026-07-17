@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Checkbox } from "@/components/ui/checkbox";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useAllowanceStatusOptions } from "@/hooks/useAllowanceStatusOptions";
 import { Users, CalendarDays, Hash } from "lucide-react";
 import {
@@ -117,6 +117,7 @@ type User = {
   id: string;
   firstName: string;
   lastName: string;
+  chargeRate?: string | number | null; // numeric(10,2) → string over the wire; $/hr ex GST
 };
 
 type CostCode = {
@@ -149,6 +150,8 @@ type AllocatedTimesheet = {
   costCodeLabel?: string | null;
   durationHours: number;
   hourlyRateCents: number;
+  chargeRateCents?: number;
+  costRateCents?: number;
   amountIncGst: number;
   amountExGst: number;
 };
@@ -214,7 +217,9 @@ type TimesheetDisplayRow = {
   status: string;
   description: string;
   hours: number;
-  amountExCents: number; // labour is EX GST
+  amountExCents: number; // labour is EX GST — here = hours × default charge rate
+  chargeRateCents: number; // auto-filled from the user's charge rate; editable before save
+  costRateCents: number;   // the timesheet's own cost rate, ex GST cents
   costCodeId: string | null;
   isSplit: boolean;
 };
@@ -513,6 +518,43 @@ function BillsPickerModal({
   );
 }
 
+/**
+ * Editable charge-rate cell for a timesheet allocation. Reads as plain "$X/hr"
+ * text but is a number input — click and type to change the rate. Commits on
+ * blur or Enter (Esc reverts). Value is dollars/hr ex GST.
+ */
+function RateCell({ rateCents, onCommit }: { rateCents: number; onCommit: (dollars: string) => void }) {
+  const [val, setVal] = useState((rateCents / 100).toFixed(2));
+  // Keep in sync when the underlying rate changes (e.g. after a save/refetch).
+  const lastRef = useRef(rateCents);
+  if (lastRef.current !== rateCents) {
+    lastRef.current = rateCents;
+    setVal((rateCents / 100).toFixed(2));
+  }
+  return (
+    <div className="flex items-center justify-end gap-0.5 text-[11px] text-foreground">
+      <span className="text-muted-foreground">$</span>
+      <input
+        type="number"
+        step="0.01"
+        min="0"
+        value={val}
+        onChange={(e) => setVal(e.target.value)}
+        onFocus={(e) => e.target.select()}
+        onBlur={() => onCommit(val)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+          if (e.key === "Escape") { setVal((rateCents / 100).toFixed(2)); (e.target as HTMLInputElement).blur(); }
+        }}
+        className="w-12 bg-transparent border-0 p-0 text-right text-[11px] tabular-nums focus:outline-none focus:ring-1 focus:ring-primary/40 rounded-sm [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+        title="Charge rate — click to edit"
+        data-testid="input-charge-rate"
+      />
+      <span className="text-muted-foreground">/hr</span>
+    </div>
+  );
+}
+
 /** Shown while a modal's data is in flight, so an empty list never reads as "none exist". */
 function ModalLoading({ label }: { label: string }) {
   return (
@@ -730,6 +772,16 @@ export default function AllowanceDetail() {
     return `${user.firstName} ${user.lastName}`.trim() || userId.slice(0, 8);
   };
 
+  // The user's charge rate (what we bill the client), ex GST cents. 0 when unset.
+  const userChargeRateCents = (userId: string): number => {
+    const user = users.find((u) => u.id === userId);
+    return user ? dollarsToCents(user.chargeRate) : 0;
+  };
+
+  // Per-row charge-rate edits for PENDING (unsaved) timesheet allocations,
+  // keyed by row key. Empty = use the auto-filled default.
+  const [pendingRateOverrides, setPendingRateOverrides] = useState<Record<string, number>>({});
+
   const costCodeMap = useMemo(() => {
     const m = new Map<string, CostCode>();
     for (const cc of costCodes) m.set(cc.id, cc);
@@ -747,47 +799,43 @@ export default function AllowanceDetail() {
   // ── Timesheet display rows (one per cost-code split, so each coded portion
   //    can be allocated to its own allowance) ──
   const timesheetRows = useMemo<TimesheetDisplayRow[]>(() => {
+    // Charge rate auto-fills from the user's charge rate; if they have none,
+    // fall back to the timesheet's own (cost) rate as a starting number rather
+    // than $0. Either way it's editable per row before saving. amountExCents is
+    // the CHARGE (what we bill) = hours × charge rate.
+    const build = (
+      key: string, timesheetId: string, splitId: string | null, ts: Timesheet,
+      hours: number, costTotalCents: number, costCodeId: string | null, isSplit: boolean,
+    ): TimesheetDisplayRow => {
+      const costRateCents = hours > 0 ? Math.round(costTotalCents / hours) : 0;
+      const chargeRateCents = userChargeRateCents(ts.userId) || costRateCents;
+      return {
+        key, timesheetId, splitId,
+        date: ts.date, userId: ts.userId, startTime: ts.startTime, endTime: ts.endTime,
+        status: ts.status, description: ts.description || "",
+        hours,
+        chargeRateCents,
+        costRateCents,
+        amountExCents: Math.round(hours * chargeRateCents),
+        costCodeId, isSplit,
+      };
+    };
+
     const rows: TimesheetDisplayRow[] = [];
     for (const ts of timesheets) {
       const splits = ts.costCodeSplits ?? [];
       if (splits.length > 1) {
         for (const split of splits) {
-          rows.push({
-            key: `${ts.id}|${split.id}`,
-            timesheetId: ts.id,
-            splitId: split.id,
-            date: ts.date,
-            userId: ts.userId,
-            startTime: ts.startTime,
-            endTime: ts.endTime,
-            status: ts.status,
-            description: ts.description || "",
-            hours: toNumber(split.duration),
-            amountExCents: dollarsToCents(split.total),
-            costCodeId: split.costCodeId ?? null,
-            isSplit: true,
-          });
+          rows.push(build(`${ts.id}|${split.id}`, ts.id, split.id, ts,
+            toNumber(split.duration), dollarsToCents(split.total), split.costCodeId ?? null, true));
         }
       } else {
-        rows.push({
-          key: `${ts.id}|full`,
-          timesheetId: ts.id,
-          splitId: null,
-          date: ts.date,
-          userId: ts.userId,
-          startTime: ts.startTime,
-          endTime: ts.endTime,
-          status: ts.status,
-          description: ts.description || "",
-          hours: timesheetHours(ts),
-          amountExCents: timesheetTotalExGstCents(ts),
-          costCodeId: ts.costCodeId ?? splits[0]?.costCodeId ?? null,
-          isSplit: false,
-        });
+        rows.push(build(`${ts.id}|full`, ts.id, null, ts,
+          timesheetHours(ts), timesheetTotalExGstCents(ts), ts.costCodeId ?? splits[0]?.costCodeId ?? null, false));
       }
     }
     return rows;
-  }, [timesheets]);
+  }, [timesheets, users]);
 
   // Rows already allocated to THIS allowance can't be double-added
   const alreadyAllocatedKeys = useMemo(() => {
@@ -798,7 +846,13 @@ export default function AllowanceDetail() {
     return s;
   }, [allocatedTimesheets]);
 
-  const pendingTimesheetRows = timesheetRows.filter((r) => selectedTimesheetKeys.has(r.key));
+  const pendingTimesheetRows = timesheetRows
+    .filter((r) => selectedTimesheetKeys.has(r.key))
+    .map((r) => {
+      const override = pendingRateOverrides[r.key];
+      if (override === undefined) return r;
+      return { ...r, chargeRateCents: override, amountExCents: Math.round(r.hours * override) };
+    });
 
   // ── Mutations ──
   const createBillLineItemAllowanceMutation = useMutation({
@@ -812,15 +866,31 @@ export default function AllowanceDetail() {
   });
 
   const createTimesheetAllowanceMutation = useMutation({
-    mutationFn: async (payload: { timesheetId: string; timesheetCostCodeId: string | null; amount: number; hours: number }) => {
+    mutationFn: async (payload: { timesheetId: string; timesheetCostCodeId: string | null; amount: number; hours: number; chargeRateCents: number; costRateCents: number }) => {
       return apiRequest("/api/timesheet-allowances", "POST", {
         timesheetId: payload.timesheetId,
         timesheetCostCodeId: payload.timesheetCostCodeId,
         estimateItemId: allowanceId,
-        amount: payload.amount, // EX GST cents — labour carries no GST
+        amount: payload.amount, // EX GST cents — labour carries no GST; = hours × chargeRate (the charge)
         hours: String(payload.hours),
+        chargeRateCents: payload.chargeRateCents,
+        costRateCents: payload.costRateCents,
       });
     },
+  });
+
+  // Edit the charge rate on an already-SAVED allocation. amount = hours × rate.
+  const updateTimesheetRateMutation = useMutation({
+    mutationFn: async (payload: { id: string; chargeRateCents: number; hours: number }) =>
+      apiRequest(`/api/timesheet-allowances/${payload.id}`, "PATCH", {
+        chargeRateCents: payload.chargeRateCents,
+        amount: Math.round(payload.hours * payload.chargeRateCents),
+      }),
+    onSuccess: async () => {
+      await refetchDetail();
+      await queryClient.refetchQueries({ queryKey: ["/api/projects", projectId, "allowances"] });
+    },
+    onError: (err: any) => toast({ title: "Couldn't update rate", description: errorMessage(err), variant: "destructive" }),
   });
 
   const createAllowanceItemMutation = useMutation({
@@ -976,14 +1046,17 @@ export default function AllowanceDetail() {
         await createTimesheetAllowanceMutation.mutateAsync({
           timesheetId: row.timesheetId,
           timesheetCostCodeId: row.splitId,
-          amount: row.amountExCents,
+          amount: row.amountExCents, // = hours × charge rate
           hours: row.hours,
+          chargeRateCents: row.chargeRateCents,
+          costRateCents: row.costRateCents,
         });
       }
       for (let i = 0; i < lines.length; i++) await saveLine(lines[i], i);
       // Clear pending BEFORE refetch (see handleSavePcItem)
       setSelectedPsLineItems(new Set());
       setSelectedTimesheetKeys(new Set());
+      setPendingRateOverrides({});
       setPendingLines([]);
       await refetchDetail();
       await queryClient.refetchQueries({ queryKey: ["/api/projects", projectId, "allowances"] });
@@ -1133,12 +1206,14 @@ export default function AllowanceDetail() {
   // Allowance-section timesheet groups (saved + pending), grouped per the
   // per-allowance display preference (By Person / By Date)
   type SectionTimesheetRow = {
-    id: string;
+    id: string;        // allocation id (saved) or row key (pending)
     saved: boolean;
+    pendingKey?: string; // pending-row key, for editing the override
     staffName: string;
     date: string;
     hours: number;
-    rateCents: number;
+    rateCents: number;   // the CHARGE rate — editable
+    costRateCents: number;
     costCode: string;
     exCents: number;
     incCents: number;
@@ -1150,7 +1225,8 @@ export default function AllowanceDetail() {
       staffName: ts.staffName || "Team member",
       date: ts.date,
       hours: ts.durationHours,
-      rateCents: ts.hourlyRateCents,
+      rateCents: ts.chargeRateCents ?? ts.hourlyRateCents,
+      costRateCents: ts.costRateCents ?? 0,
       costCode: ts.costCodeLabel || costCodeLabel(ts.costCodeId),
       exCents: ts.amountExGst,
       incCents: ts.amountIncGst,
@@ -1158,15 +1234,28 @@ export default function AllowanceDetail() {
     ...pendingTimesheetRows.map((row) => ({
       id: row.key,
       saved: false,
+      pendingKey: row.key,
       staffName: getUserName(row.userId),
       date: row.date,
       hours: row.hours,
-      rateCents: row.hours > 0 ? Math.round(row.amountExCents / row.hours) : 0,
+      rateCents: row.chargeRateCents,
+      costRateCents: row.costRateCents,
       costCode: costCodeLabel(row.costCodeId),
       exCents: row.amountExCents,
       incCents: incGstFromEx(row.amountExCents),
     })),
   ];
+
+  // Commit a charge-rate edit for a section row. Pending → local override;
+  // saved → PATCH the allocation. Value is dollars/hr (ex GST).
+  const commitRateEdit = (row: SectionTimesheetRow, dollarsPerHour: string) => {
+    const cents = dollarsToCents(dollarsPerHour);
+    if (row.saved) {
+      if (cents !== row.rateCents) updateTimesheetRateMutation.mutate({ id: row.id, chargeRateCents: cents, hours: row.hours });
+    } else if (row.pendingKey) {
+      setPendingRateOverrides((prev) => ({ ...prev, [row.pendingKey!]: cents }));
+    }
+  };
   const sectionTimesheetGroups = (() => {
     const groups = new Map<string, SectionTimesheetRow[]>();
     for (const row of sectionTimesheetRows) {
@@ -1498,7 +1587,7 @@ export default function AllowanceDetail() {
                   >
                     <span>{timesheetDisplayPref === "person" ? "Date" : "Team member"}</span>
                     <span className="text-right">Hours</span>
-                    <span className="text-right">Rate</span>
+                    <span className="text-right">Charge Rate</span>
                     <span>Cost Code</span>
                     <span className="text-right">Ex GST</span>
                     <span className="text-right">Inc GST</span>
@@ -1572,7 +1661,10 @@ export default function AllowanceDetail() {
                             )}
                           </p>
                           <p className="text-[11px] text-foreground text-right">{row.hours} hrs</p>
-                          <p className="text-[11px] text-foreground text-right">{formatCurrency(row.rateCents)}/hr</p>
+                          <RateCell
+                            rateCents={row.rateCents}
+                            onCommit={(v) => commitRateEdit(row, v)}
+                          />
                           <p className="text-[11px] text-muted-foreground truncate">{row.costCode}</p>
                           <p className="text-xs font-semibold text-foreground text-right">{formatCurrency(row.exCents)}</p>
                           <p className="text-xs font-semibold text-foreground text-right">{formatCurrency(row.incCents)}</p>
