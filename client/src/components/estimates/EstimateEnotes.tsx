@@ -1,4 +1,5 @@
 import { useState, useCallback, useMemo, useRef } from "react";
+import { useGridNavigation, type GridCoord } from "@/components/spreadsheet/useGridNavigation";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -767,7 +768,7 @@ export default function EstimateEnotes({ estimateId }: Props) {
       apiRequest(`/api/estimates/${estimateId}/save-as-enote-template`, "POST", { name }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/enote-template-sets"] });
-      toast({ title: "Template saved", description: `"${saveTemplateName}" saved as E-Notes template` });
+      toast({ title: "Template saved", description: `"${saveTemplateName}" saved as Details template` });
       setSaveTemplateOpen(false);
       setSaveTemplateName("");
     },
@@ -807,6 +808,23 @@ export default function EstimateEnotes({ estimateId }: Props) {
     const all = enotes.filter(r => r.groupName === effectiveCategory);
     return hideNotRequired ? all.filter(r => r.required !== false) : all;
   }, [enotes, effectiveCategory, hideNotRequired]);
+
+  // ── Spreadsheet keyboard navigation ─────────────────────────────────────────
+  // Rows = visible category items, cols = visible data columns. Arrow/Tab/Enter
+  // move a highlighted active cell; Enter/Space/typing activates the cell's own
+  // widget (checkbox, note, status, date). Reusable across Details + Labour.
+  const gridBodyRef = useRef<HTMLDivElement>(null);
+  const focusGridCell = useCallback((coord: GridCoord) => {
+    gridBodyRef.current
+      ?.querySelector<HTMLElement>(`[data-cell-row="${coord.row}"][data-cell-col="${coord.col}"]`)
+      ?.focus();
+  }, []);
+  // Slice 1: navigation + highlight only (no keyboard-driven editing yet), so
+  // beginEdit is intentionally omitted — Enter moves down, click still edits.
+  const nav = useGridNavigation({
+    getDimensions: () => ({ rows: categoryItems.length, cols: visibleCols.length }),
+    focusCell: focusGridCell,
+  });
 
   const addCategory = () => {
     const trimmed = newCategoryName.trim();
@@ -932,7 +950,7 @@ export default function EstimateEnotes({ estimateId }: Props) {
   if (isLoading) {
     return (
       <div className="flex-1 flex items-center justify-center p-8 text-muted-foreground text-sm">
-        Loading E-Notes…
+        Loading Details…
       </div>
     );
   }
@@ -1051,7 +1069,7 @@ export default function EstimateEnotes({ estimateId }: Props) {
                     setSaveTemplateOpen(true);
                   }}
                   className="flex items-center gap-1.5 text-table px-2 py-1 rounded border border-border/50 text-muted-foreground hover:text-foreground hover-elevate"
-                  title="Save this estimate's E-Notes layout as a template"
+                  title="Save this estimate's Details layout as a template"
                 >
                   <Save className="w-3 h-3" />
                   Save as Template
@@ -1093,12 +1111,23 @@ export default function EstimateEnotes({ estimateId }: Props) {
               </div>
 
               {/* Scrollable rows */}
-              <div className="flex-1 overflow-auto min-h-0">
+              <div
+                className="flex-1 overflow-auto min-h-0"
+                ref={gridBodyRef}
+                onKeyDown={(e) => {
+                  // Only drive grid navigation when focus is on a cell wrapper.
+                  // If an editor inside a cell (input / select / popover) is
+                  // focused, let it own the keys.
+                  if ((e.target as HTMLElement).hasAttribute("data-cell-row")) {
+                    nav.onKeyDown(e);
+                  }
+                }}
+              >
                 {categoryItems.length === 0 ? (
                   <div className="flex items-center justify-center h-24 text-xs text-muted-foreground italic">
                     {hideNotRequired ? "All rows are hidden by the filter" : "No items in this category yet"}
                   </div>
-                ) : categoryItems.map(row => {
+                ) : categoryItems.map((row, rowIdx) => {
                   const attCount = effectiveCounts[row.id] ?? 0;
                   return (
                     <div
@@ -1134,12 +1163,28 @@ export default function EstimateEnotes({ estimateId }: Props) {
                         )}
                       </div>
 
-                      {/* Dynamic visible columns */}
-                      {visibleCols.map(col => (
-                        <div key={col.id} className="overflow-hidden">
-                          {renderCell(col.id, row)}
-                        </div>
-                      ))}
+                      {/* Dynamic visible columns — each a keyboard-navigable cell.
+                          Checkbox-type cells don't show the active-cell ring (it
+                          looked odd around a checkbox); the focus outline on the
+                          box itself is enough. */}
+                      {visibleCols.map((col, colIdx) => {
+                        const isCheckboxCol = col.id === "rfi" || col.id === "rfq" || col.id === "labour" || col.id === "completed" || col.id === "required";
+                        const active = nav.isActive(rowIdx, colIdx);
+                        return (
+                          <div
+                            key={col.id}
+                            data-cell-row={rowIdx}
+                            data-cell-col={colIdx}
+                            tabIndex={active ? 0 : -1}
+                            onMouseDown={() => nav.setActive({ row: rowIdx, col: colIdx })}
+                            className={`overflow-hidden outline-none rounded-sm ${
+                              active && !isCheckboxCol ? "ring-2 ring-primary ring-inset bg-primary/5" : ""
+                            }`}
+                          >
+                            {renderCell(col.id, row)}
+                          </div>
+                        );
+                      })}
 
                       {/* Fixed: Actions column — 3-dot menu (hover-only) */}
                       <div className="flex justify-center items-center">
@@ -1240,11 +1285,11 @@ export default function EstimateEnotes({ estimateId }: Props) {
       <Dialog open={saveTemplateOpen} onOpenChange={setSaveTemplateOpen}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle>Save as E-Notes Template</DialogTitle>
+            <DialogTitle>Save as Details Template</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
             <p className="text-sm text-muted-foreground">
-              Save this estimate's E-Notes categories as a named template that can be reused across other estimates.
+              Save this estimate's Details categories as a named template that can be reused across other estimates.
             </p>
             <div className="space-y-1.5">
               <Label className="text-xs">Template name</Label>
@@ -1285,7 +1330,7 @@ export default function EstimateEnotes({ estimateId }: Props) {
       <Dialog open={applyTemplateOpen} onOpenChange={setApplyTemplateOpen}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle>Apply E-Notes Template</DialogTitle>
+            <DialogTitle>Apply Details Template</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div className="space-y-1.5">
@@ -1312,7 +1357,7 @@ export default function EstimateEnotes({ estimateId }: Props) {
                   <RadioGroupItem value="replace" id="apply-replace" className="mt-0.5" />
                   <div>
                     <Label htmlFor="apply-replace" className="text-sm cursor-pointer font-medium">Replace existing</Label>
-                    <p className="text-table text-muted-foreground">Remove all current E-Notes rows first, then apply template</p>
+                    <p className="text-table text-muted-foreground">Remove all current Details rows first, then apply template</p>
                   </div>
                 </div>
                 <div className="flex items-start gap-2">

@@ -12,9 +12,9 @@ Built by Jed Smith — jed@lighthouseprojects.com.au
 **Mobile:** Expo React Native
 **Auth:** Express sessions + Google OAuth
 **Email:** Resend
-**File storage:** Cloudflare R2
+**File storage:** Replit Object Storage (GCS-backed sidecar at 127.0.0.1:1106; see server/replit_integrations/object_storage). NOTE: no Cloudflare R2 in the codebase today.
 **Error monitoring:** Sentry (3 DSNs — frontend, backend, mobile)
-**AI:** Anthropic Claude (bill reading, summaries) + OpenAI (vision OCR, kept separately)
+**AI:** Anthropic Claude only — bill reading (server/services/aiBillReader.ts), summaries, and vision OCR. NOTE: no OpenAI/Mindee OCR path exists in the codebase.
 **Accounting:** Xero integration
 
 ---
@@ -39,9 +39,9 @@ Two types with different behaviour:
 - **Prime Cost (PC)** — client picks the item, builder charges cost + markup
 - **Provisional Sum (PS)** — builder estimates, actual cost tracked via bills + timesheets + custom lines
 - `item.allowance === "Prime Cost"` determines which UI branch renders
-- `item.priceIncTax` = estimate price in cents inc GST
-- `actualCost` = actual spend in cents inc GST
-- `variance` = `actualCost - priceIncTax` (positive = over budget)
+- `estimate_items.priceIncTax` = the line's **pre-margin** amount in **dollars** inc GST (NOT cents; estimate_items price fields are `doublePrecision` dollars). The builder's margin (project markup) is applied ONCE globally at the estimate subtotal — it is never baked into the per-line cache, so editing the project margin never staleifies a cached row. Recompute priced lines via `computeEstimateItemPrice` on read; only fixed-price (unitCost 0) allowance lines trust the cache.
+- Allowance `actualCost` = actual spend in cents inc GST (allowance tables are cents)
+- `variance` = `actualCost - priceIncTax` (mind the unit boundary: convert dollars→cents)
 
 ### API / Data fetching
 - TanStack Query with pattern: `useQuery({ queryKey: ["/api/route"] })`

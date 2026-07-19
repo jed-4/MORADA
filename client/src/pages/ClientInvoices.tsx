@@ -212,10 +212,10 @@ export default function ClientInvoices({ embedded }: { embedded?: boolean } = {}
 
     const finalizedAllowances = projectAllowances
       .filter((a) => a.item?.allowanceStatus === "finalized")
-      .reduce((s, a) => s + Math.round((a.item?.priceIncTax ?? 0) * (a.item?.quantity ?? 0) * 100), 0);
+      .reduce((s, a) => s + Math.round((a.item?.priceIncTax ?? 0) * 100), 0);
     const pendingAllowances = projectAllowances
       .filter((a) => a.item?.allowanceStatus !== "finalized")
-      .reduce((s, a) => s + Math.round((a.item?.priceIncTax ?? 0) * (a.item?.quantity ?? 0) * 100), 0);
+      .reduce((s, a) => s + Math.round((a.item?.priceIncTax ?? 0) * 100), 0);
     const allowancesTotal    = finalizedAllowances + pendingAllowances;
     const allowancesVariation = finalizedAllowances - pendingAllowances;
 

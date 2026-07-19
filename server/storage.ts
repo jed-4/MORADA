@@ -350,6 +350,7 @@ export interface IStorage {
 
   // Estimates CRUD
   getEstimates(projectId?: string): Promise<Estimate[]>;
+  getEstimatesByCompany(companyId: string): Promise<Estimate[]>;
   getEstimate(id: string): Promise<Estimate | undefined>;
   createEstimate(estimate: InsertEstimate): Promise<Estimate>;
   updateEstimate(id: string, estimate: Partial<InsertEstimate>): Promise<Estimate | undefined>;
@@ -856,6 +857,7 @@ export interface IStorage {
 
   // Invoice-Estimate Junction Table
   getInvoiceEstimates(invoiceId: string): Promise<InvoiceEstimate[]>;
+  getInvoiceEstimateById(id: string): Promise<InvoiceEstimate | undefined>;
   createInvoiceEstimate(data: InsertInvoiceEstimate): Promise<InvoiceEstimate>;
   deleteInvoiceEstimate(id: string): Promise<boolean>;
 
@@ -4148,6 +4150,21 @@ export class MemStorage implements IStorage {
         estimates = estimates.filter(estimate => estimate.projectId === projectId);
       }
       return estimates.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+    }
+  }
+
+  async getEstimatesByCompany(companyId: string): Promise<Estimate[]> {
+    try {
+      const rows = await db
+        .select()
+        .from(schema.estimates)
+        .innerJoin(schema.projects, eq(schema.estimates.projectId, schema.projects.id))
+        .where(eq(schema.projects.companyId, companyId))
+        .orderBy(schema.estimates.updatedAt);
+      return rows.map((r) => r.estimates);
+    } catch (error) {
+      console.error("Database error in getEstimatesByCompany:", error);
+      return [];
     }
   }
 
@@ -10035,7 +10052,22 @@ export class DbStorage implements IStorage {
       return [];
     }
   }
-  
+
+  async getEstimatesByCompany(companyId: string): Promise<Estimate[]> {
+    try {
+      const rows = await db
+        .select()
+        .from(schema.estimates)
+        .innerJoin(schema.projects, eq(schema.estimates.projectId, schema.projects.id))
+        .where(eq(schema.projects.companyId, companyId))
+        .orderBy(schema.estimates.updatedAt);
+      return rows.map((r) => r.estimates);
+    } catch (error) {
+      console.error("Database error in getEstimatesByCompany:", error);
+      return [];
+    }
+  }
+
   async getEstimate(id: string): Promise<Estimate | undefined> {
     try {
       const result = await db.select().from(schema.estimates).where(eq(schema.estimates.id, id)).limit(1);
@@ -10145,11 +10177,27 @@ export class DbStorage implements IStorage {
         markupPercent: insertItem.markupPercent,
         projectMarkupPercent: estimate?.projectMarkupPercent,
         taxRate: estimate?.taxRate,
+        wastagePercent: insertItem.wastagePercent,
         existingPriceIncTax: insertItem.priceIncTax,
       });
 
+      // Inherit the group's default cost code / category when the new item
+      // doesn't specify its own, so a group's cost-code badge always matches the
+      // items inside it.
+      let costCode = insertItem.costCode ?? null;
+      let costCategoryId = insertItem.costCategoryId ?? null;
+      if (insertItem.groupId && !costCode && !costCategoryId) {
+        const group = await this.getEstimateGroup(insertItem.groupId);
+        if (group) {
+          costCode = group.defaultCostCode ?? null;
+          costCategoryId = group.defaultCostCategoryId ?? null;
+        }
+      }
+
       const estimateItem = {
         ...insertItem,
+        costCode,
+        costCategoryId,
         taxAmount,
         priceIncTax,
         type: insertItem.type || "Material",
@@ -10184,6 +10232,7 @@ export class DbStorage implements IStorage {
           markupPercent: insertItem.markupPercent,
           projectMarkupPercent: estimate?.projectMarkupPercent,
           taxRate: estimate?.taxRate,
+          wastagePercent: insertItem.wastagePercent,
           existingPriceIncTax: insertItem.priceIncTax,
         });
 
@@ -10393,6 +10442,7 @@ export class DbStorage implements IStorage {
             markupPercent: item.markupPercent,
             projectMarkupPercent: estimate?.projectMarkupPercent,
             taxRate: estimate?.taxRate,
+            wastagePercent: (item as any).wastagePercent,
             existingPriceIncTax: item.priceIncTax,
           });
           const priceInCents = Math.round(Number(resolved.priceIncTax.toFixed(2)) * 100);
@@ -10589,21 +10639,26 @@ export class DbStorage implements IStorage {
         .values(newGroupData)
         .returning();
 
-      // Duplicate all items in this group
+      // Duplicate all items in this group. Build an old→new id map first so
+      // sub-items (parentItemId) point at the DUPLICATED parents, not the
+      // originals (which would cross-link the copy back to the source rows).
       const items = await db
         .select()
         .from(schema.estimateItems)
         .where(eq(schema.estimateItems.groupId, id));
-      
+
+      const itemIdMap = new Map<string, string>();
+      for (const item of items) itemIdMap.set(item.id, randomUUID());
       for (const item of items) {
         const newItemData = {
           ...item,
-          id: undefined,
+          id: itemIdMap.get(item.id)!,
           groupId: newGroup.id,
+          parentItemId: item.parentItemId ? (itemIdMap.get(item.parentItemId) ?? null) : null,
           createdAt: undefined,
           updatedAt: undefined,
         };
-        
+
         await db
           .insert(schema.estimateItems)
           .values(newItemData);
@@ -10637,11 +10692,15 @@ export class DbStorage implements IStorage {
         throw new Error("Cannot copy to locked estimate. Unlock the estimate first.");
       }
 
-      // Create copy in target estimate
+      // Create copy in target estimate. Force parentGroupId to null: the source
+      // group's parent is NOT copied across, so keeping it would create a
+      // cross-estimate dangling reference (a group in the target parented to a
+      // group in the source). The copy lands at the top level of the target.
       const newGroupData = {
         ...group[0],
         id: undefined,
         estimateId: targetEstimateId,
+        parentGroupId: null,
         createdAt: undefined,
         updatedAt: undefined,
       };
@@ -10651,12 +10710,16 @@ export class DbStorage implements IStorage {
         .values(newGroupData)
         .returning();
 
-      // Copy all items in this group to target estimate
+      // Copy all items in this group to target estimate. Build an old→new id
+      // map first so sub-items (parentItemId) point at the copied parents in
+      // the target, not the source estimate's rows.
       const items = await db
         .select()
         .from(schema.estimateItems)
         .where(eq(schema.estimateItems.groupId, groupId));
-      
+
+      const itemIdMap = new Map<string, string>();
+      for (const item of items) itemIdMap.set(item.id, randomUUID());
       for (const item of items) {
         // Recompute price against the TARGET estimate's project markup + tax
         // rate so cloned items don't carry stale cached cache values.
@@ -10666,14 +10729,16 @@ export class DbStorage implements IStorage {
           markupPercent: item.markupPercent,
           projectMarkupPercent: targetEstimate.projectMarkupPercent,
           taxRate: targetEstimate.taxRate,
+          wastagePercent: (item as any).wastagePercent,
           existingPriceIncTax: item.priceIncTax,
         });
 
         const newItemData = {
           ...item,
-          id: undefined,
+          id: itemIdMap.get(item.id)!,
           estimateId: targetEstimateId,
           groupId: newGroup.id,
+          parentItemId: item.parentItemId ? (itemIdMap.get(item.parentItemId) ?? null) : null,
           taxAmount,
           priceIncTax,
           createdAt: undefined,
@@ -11452,6 +11517,7 @@ export class DbStorage implements IStorage {
         markupPercent: item[0].markupPercent,
         projectMarkupPercent: targetEstimate.projectMarkupPercent,
         taxRate: targetEstimate.taxRate,
+        wastagePercent: (item[0] as any).wastagePercent,
         existingPriceIncTax: item[0].priceIncTax,
       });
 
@@ -12084,29 +12150,36 @@ export class DbStorage implements IStorage {
       updatedAt: now,
     }).returning();
 
-    // Clone groups and build a mapping old→new group id
+    // Clone groups. Build the FULL old→new id map first so parentGroupId can be
+    // remapped regardless of insertion order (a subgroup may be listed before
+    // its parent). Without remapping, a cloned subgroup's parentGroupId points
+    // at the PREVIOUS revision's group — a cross-revision dangling reference.
     const groups = await db.select().from(schema.estimateGroups).where(eq(schema.estimateGroups.estimateId, estimateId));
     const groupMapping = new Map<string, string>();
+    for (const group of groups) groupMapping.set(group.id, randomUUID());
     for (const group of groups) {
-      const newGroupId = randomUUID();
-      groupMapping.set(group.id, newGroupId);
       await db.insert(schema.estimateGroups).values({
         ...group,
-        id: newGroupId,
+        id: groupMapping.get(group.id)!,
         estimateId: newId,
+        parentGroupId: group.parentGroupId ? (groupMapping.get(group.parentGroupId) ?? null) : null,
         createdAt: now,
         updatedAt: now,
       });
     }
 
-    // Clone items with updated groupId references
+    // Clone items. Build the FULL old→new id map first so parentItemId
+    // (sub-items) remaps to the NEW revision's rows, not the old estimate's.
     const items = await db.select().from(schema.estimateItems).where(eq(schema.estimateItems.estimateId, estimateId));
+    const itemMapping = new Map<string, string>();
+    for (const item of items) itemMapping.set(item.id, randomUUID());
     for (const item of items) {
       await db.insert(schema.estimateItems).values({
         ...item,
-        id: randomUUID(),
+        id: itemMapping.get(item.id)!,
         estimateId: newId,
         groupId: item.groupId ? (groupMapping.get(item.groupId) ?? null) : null,
+        parentItemId: item.parentItemId ? (itemMapping.get(item.parentItemId) ?? null) : null,
         createdAt: now,
         updatedAt: now,
       });
@@ -15705,6 +15778,7 @@ export class DbStorage implements IStorage {
         lines.map((l: BillLineItem) => ({ total: l.total ?? 0, tax: l.tax })),
         taxMode,
         taxRate,
+        bill.roundingCents ?? 0,
       );
 
       if (subtotal === (bill.subtotal ?? 0) && tax === (bill.tax ?? 0) && total === (bill.total ?? 0)) {
@@ -16746,6 +16820,19 @@ export class DbStorage implements IStorage {
     } catch (error) {
       console.error("Database error in getInvoiceEstimates:", error);
       throw error;
+    }
+  }
+
+  async getInvoiceEstimateById(id: string): Promise<InvoiceEstimate | undefined> {
+    try {
+      const result = await db.select()
+        .from(schema.invoiceEstimates)
+        .where(eq(schema.invoiceEstimates.id, id))
+        .limit(1);
+      return result[0];
+    } catch (error) {
+      console.error("Database error in getInvoiceEstimateById:", error);
+      return undefined;
     }
   }
 

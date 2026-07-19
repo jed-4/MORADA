@@ -44,12 +44,22 @@ export const round2 = (n: number): number => Math.round(n * 100) / 100;
 export interface EstimateItemPriceInput {
   unitCostExTax: number;
   quantity: number;
-  /** Per-item markup percent. If null/undefined, falls back to projectMarkupPercent. */
+  /** Per-item markup percent. If null/undefined, the line carries ZERO markup. */
   markupPercent: number | null | undefined;
-  /** Estimate-level project markup, used as fallback when item has no own markup. */
+  /**
+   * IGNORED for the line amount. The builder's margin (project markup) is
+   * applied once at the estimate subtotal (computeEstimateSummary), never as a
+   * per-line fallback. Retained only for call-site compatibility.
+   */
   projectMarkupPercent: number | null | undefined;
   /** Tax rate (GST) as a percentage. Default 10. */
   taxRate: number | null | undefined;
+  /**
+   * Wastage percent (10 = 10%). Inflates the quantity you must buy, so it
+   * raises the builder cost: builderCost = unitCost × qty × (1 + wastage/100).
+   * Defaults to 0. Fixed-price (unitCost 0) lines ignore it.
+   */
+  wastagePercent?: number | null | undefined;
 }
 
 export interface EstimateItemPrice {
@@ -74,17 +84,26 @@ export interface EstimateItemPrice {
 export function computeEstimateItemPrice(input: EstimateItemPriceInput): EstimateItemPrice {
   const unitCost = Number(input.unitCostExTax) || 0;
   const qty = Number(input.quantity) || 0;
+  const wastagePercent = Number(input.wastagePercent ?? 0) || 0;
   const itemMarkup = input.markupPercent;
-  const projectMarkup = input.projectMarkupPercent;
   const taxRate = Number(input.taxRate ?? 10);
 
-  // Fall back to project-level markup when item has none. `?? 0` handles
-  // the case where neither is set.
-  const effectiveMarkupPercent = Number(
-    itemMarkup ?? projectMarkup ?? 0,
-  );
+  // Wastage inflates the quantity actually purchased, so it raises the builder
+  // cost. Applied to the quantity BEFORE markup and GST. A zero-quantity line
+  // stays $0 regardless of wastage.
+  const effectiveQty = qty * (1 + wastagePercent / 100);
 
-  const builderCost = round2(unitCost * qty);
+  // Per-line markup is the line's OWN markup ONLY. A blank (null/undefined)
+  // line markup means ZERO line markup — the builder's margin (project
+  // markup) is applied exactly ONCE at the estimate subtotal in
+  // computeEstimateSummary, never as a per-line fallback. Inheriting it here
+  // would double-count it against the global margin and make the on-screen
+  // rows disagree with the estimate total. `input.projectMarkupPercent` is
+  // therefore IGNORED for the line amount; it is kept on the input only for
+  // call-site compatibility.
+  const effectiveMarkupPercent = Number(itemMarkup ?? 0);
+
+  const builderCost = round2(unitCost * effectiveQty);
   const lineMarkupAmount = round2(builderCost * (effectiveMarkupPercent / 100));
   const lineExTax = round2(builderCost + lineMarkupAmount);
   const taxAmount = round2(lineExTax * (taxRate / 100));
@@ -132,6 +151,8 @@ export interface StoredPriceResolveInput {
   markupPercent: number | null | undefined;
   projectMarkupPercent: number | null | undefined;
   taxRate: number | null | undefined;
+  /** Wastage percent (raises builder cost on priced lines). Defaults to 0. */
+  wastagePercent?: number | null | undefined;
   /**
    * The line's existing/typed priceIncTax. Authoritative for fixed-price
    * (unitCost === 0) lines — this is what must NOT be wiped to 0.
@@ -144,8 +165,11 @@ export interface StoredPriceResolveInput {
  * reorder / bulk edit, in routes.ts AND storage.ts) should use to decide the
  * stored { priceIncTax, taxAmount } for an estimate line.
  *
- *  - Priced line (unitCost > 0): fully re-derived from qty × unitCost × markup
- *    via computeEstimateItemPrice (with project-markup fallback). This keeps
+ *  - Priced line (unitCost > 0): fully re-derived from qty × unitCost × its OWN
+ *    line markup via computeEstimateItemPrice. The builder's margin (project
+ *    markup) is NOT baked into the stored cache — it is applied once globally at
+ *    the estimate subtotal, so the cache holds the pre-margin line amount and an
+ *    edit to the project margin never staleifies any cached row. This keeps
  *    normal lines recalculating correctly, INCLUDING dropping to $0 when the
  *    quantity is set to 0.
  *  - Fixed-price line (unitCost === 0, a flat PC/PS allowance): the typed
@@ -166,6 +190,7 @@ export function resolveEstimateStoredPrice(
       markupPercent: input.markupPercent,
       projectMarkupPercent: input.projectMarkupPercent,
       taxRate,
+      wastagePercent: input.wastagePercent,
     });
     return { priceIncTax: lineIncTax, taxAmount };
   }
@@ -188,6 +213,8 @@ export interface EstimateItemSummaryInput {
   unitCostExTax?: number | null;
   quantity?: number | null;
   markupPercent?: number | null;
+  /** Wastage percent — raises builder cost on priced lines. Defaults to 0. */
+  wastagePercent?: number | null;
   /** Used only as a fallback for fixed-price (unitCost=0) lines. */
   priceIncTax?: number | null;
   /** Used only as a fallback for fixed-price (unitCost=0) lines. */
@@ -230,8 +257,9 @@ export function estimateItemBuilderCostExTax(item: EstimateItemSummaryInput): nu
   const unitCost = Number(item.unitCostExTax ?? 0);
   const qty = Number(item.quantity ?? 0);
   if (!isFixedPriceLine(unitCost)) {
-    // Priced line: cost is qty × unitCost (0 when the quantity is 0).
-    return round2(unitCost * qty);
+    // Priced line: cost is qty × unitCost, inflated by wastage (0 when qty is 0).
+    const wastagePercent = Number(item.wastagePercent ?? 0) || 0;
+    return round2(unitCost * qty * (1 + wastagePercent / 100));
   }
   return round2(Number(item.priceIncTax ?? 0) - Number(item.taxAmount ?? 0));
 }
@@ -296,6 +324,7 @@ export function computeEstimateSummary(
       // here — project markup is applied once at the estimate subtotal below.
       projectMarkupPercent: 0,
       taxRate,
+      wastagePercent: item.wastagePercent ?? 0,
     });
 
     if (!isFixedPriceLine(unitCost)) {

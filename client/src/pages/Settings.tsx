@@ -223,6 +223,7 @@ const companyInfoSchema = z.object({
   website: z.string().url("Invalid website URL").optional().or(z.literal("")),
   address: z.string().optional(),
   taxRate: z.coerce.number().min(0).max(100).default(10),
+  defaultBuilderMarginPercent: z.coerce.number().min(0).max(100).default(0),
   weekStartDay: z.coerce.number().min(0).max(1).default(1),
   standardWorkStart: z.string().optional(),
   standardWorkEnd: z.string().optional(),
@@ -259,6 +260,7 @@ export default function Settings() {
       website: "",
       address: "",
       taxRate: 10,
+      defaultBuilderMarginPercent: 0,
       weekStartDay: 1,
       standardWorkStart: "07:00",
       standardWorkEnd: "15:30",
@@ -306,6 +308,7 @@ export default function Settings() {
         website: companySettings.website || "",
         address: companySettings.address || "",
         taxRate: companySettings.taxRate ? parseFloat(companySettings.taxRate as string) : 10,
+        defaultBuilderMarginPercent: (companySettings as any).defaultBuilderMarginPercent ?? 0,
         weekStartDay: companySettings.weekStartDay ?? 1,
         standardWorkStart: companySettings.standardWorkStart || "07:00",
         standardWorkEnd: companySettings.standardWorkEnd || "15:30",
@@ -1299,7 +1302,35 @@ export default function Settings() {
                   </FormItem>
                 )}
               />
-              
+
+              <FormField
+                control={companyForm.control}
+                name="defaultBuilderMarginPercent"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Default Builder Margin</FormLabel>
+                    <FormControl>
+                      <div className="relative">
+                        <Input
+                          type="number"
+                          min="0"
+                          max="100"
+                          step="0.1"
+                          value={field.value ?? 0}
+                          onChange={(e) => field.onChange(parseFloat(e.target.value))}
+                          disabled={!isEditing}
+                          className="pr-7"
+                          data-testid="default-builder-margin-input"
+                        />
+                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground pointer-events-none">%</span>
+                      </div>
+                    </FormControl>
+                    <FormDescription>Seeded onto new estimates as the project markup (builder's margin).</FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
               <FormField
                 control={companyForm.control}
                 name="weekStartDay"
