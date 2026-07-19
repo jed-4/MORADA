@@ -1080,7 +1080,8 @@ export const companySettings = pgTable("company_settings", {
   
   // System settings
   taxRate: numeric("tax_rate", { precision: 5, scale: 2 }).notNull().default("10.00"), // Tax rate as percentage (e.g., 10.00 for 10%)
-  
+  defaultBuilderMarginPercent: doublePrecision("default_builder_margin_percent").notNull().default(0), // Company default builder's margin (project markup %) seeded onto new estimates
+
   // Calendar & week settings
   weekStartDay: integer("week_start_day").notNull().default(1), // 0 = Sunday, 1 = Monday (default)
   
@@ -1938,6 +1939,7 @@ export const bills = pgTable("bills", {
   subtotal: integer("subtotal").notNull().default(0), // Amount in cents
   tax: integer("tax").notNull().default(0), // Tax amount in cents
   total: integer("total").notNull().default(0), // Total amount in cents
+  roundingCents: integer("rounding_cents").notNull().default(0), // Manual rounding adjustment (cents), applied to total to match supplier invoice
   paidAmount: integer("paid_amount").notNull().default(0), // Paid amount in cents
   taxMode: text("tax_mode").notNull().default("exclusive"), // "inclusive" or "exclusive" — line totals interpretation
   sendToXero: boolean("send_to_xero").notNull().default(false), // Checkbox for Xero sync
@@ -1968,6 +1970,12 @@ export const bills = pgTable("bills", {
 }, (table) => ({
   // Composite unique constraint: bill numbers must be unique per company
   uniqueBillNumberPerCompany: uniqueIndex("bills_company_bill_number_unique").on(table.companyId, table.billNumber),
+  // A Xero invoice can only map to one bill per company — prevents duplicate
+  // imports of the same invoice (partial so the many null-xeroInvoiceId bills
+  // don't collide).
+  uniqueXeroInvoicePerCompany: uniqueIndex("bills_company_xero_invoice_unique")
+    .on(table.companyId, table.xeroInvoiceId)
+    .where(sql`${table.xeroInvoiceId} IS NOT NULL`),
 }));
 
 export const billAttachmentSchema = z.object({

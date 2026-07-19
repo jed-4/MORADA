@@ -428,6 +428,42 @@ async function main() {
     await crossTenant("PATCH /api/estimates/:id", "PATCH", `/api/estimates/${estimateA.id}`, `/api/estimates/${NONE}`, { notes: "hacked" });
     await crossTenant("DELETE /api/estimates/:id", "DELETE", `/api/estimates/${estimateA.id}`, `/api/estimates/${NONE}`);
 
+    // ---- Estimates: company-wide list must not leak across tenants ----
+    await test("GET /api/estimates (no projectId): company A sees its own estimate", async () => {
+      const r = await api("GET", "/api/estimates", { cookie: A.cookie });
+      assert.strictEqual(r.status, 200, `expected 200, got ${r.status}: ${JSON.stringify(r.body)}`);
+      assert.ok(Array.isArray(r.body) && r.body.some((e: any) => e.id === estimateA.id), "company A's list is missing its own estimate");
+    });
+    await test("GET /api/estimates (no projectId): company B does NOT see company A's estimate", async () => {
+      const r = await api("GET", "/api/estimates", { cookie: B.cookie });
+      assert.strictEqual(r.status, 200, `expected 200, got ${r.status}: ${JSON.stringify(r.body)}`);
+      assert.ok(Array.isArray(r.body) && !r.body.some((e: any) => e.id === estimateA.id), "company A's estimate leaked into company B's list");
+    });
+    await crossTenant("GET /api/estimates?projectId (list by project)", "GET", `/api/estimates?projectId=${projectA.id}`, `/api/estimates?projectId=${NONE}`);
+
+    // ---- Estimates: by-id and by-project sub-resources that were unscoped ----
+    await crossTenant("GET /api/estimates/:id/summary", "GET", `/api/estimates/${estimateA.id}/summary`, `/api/estimates/${NONE}/summary`);
+    await crossTenant("GET /api/estimates/:id/full", "GET", `/api/estimates/${estimateA.id}/full`, `/api/estimates/${NONE}/full`);
+    await crossTenant("GET /api/estimates/:id/versions", "GET", `/api/estimates/${estimateA.id}/versions`, `/api/estimates/${NONE}/versions`);
+    await crossTenant("POST /api/estimates/:id/version", "POST", `/api/estimates/${estimateA.id}/version`, `/api/estimates/${NONE}/version`, {});
+    await crossTenant("GET /api/estimates/:id/notes", "GET", `/api/estimates/${estimateA.id}/notes`, `/api/estimates/${NONE}/notes`);
+    await crossTenant("PATCH bulk-markup", "PATCH", `/api/estimates/${estimateA.id}/items/bulk-markup`, `/api/estimates/${NONE}/items/bulk-markup`, { itemIds: [estimateItemA.id], markupPercent: 5 });
+    await crossTenant("GET /api/projects/:projectId/estimate-items", "GET", `/api/projects/${projectA.id}/estimate-items`, `/api/projects/${NONE}/estimate-items`);
+    await crossTenant("POST /api/projects/:projectId/estimates/import", "POST", `/api/projects/${projectA.id}/estimates/import`, `/api/projects/${NONE}/estimates/import`, { name: "x", groups: [{ name: "g" }], items: [{ name: "i" }] });
+    await crossTenant("POST /api/estimates (create on A's project)", "POST", `/api/estimates`, `/api/estimates`, { name: "x", projectId: projectA.id });
+    await crossTenant("GET PO import estimate-items", "GET", `/api/purchase-orders/import/estimate-items/${estimateA.id}`, `/api/purchase-orders/import/estimate-items/${NONE}`);
+    await crossTenant("GET /api/client-invoices/:id/estimates", "GET", `/api/client-invoices/${clientInvoiceA.id}/estimates`, `/api/client-invoices/${NONE}/estimates`);
+    await crossTenant("POST /api/client-invoices/:id/estimates", "POST", `/api/client-invoices/${clientInvoiceA.id}/estimates`, `/api/client-invoices/${NONE}/estimates`, { estimateId: estimateA.id });
+
+    // Positive controls: company A still reaches its own newly-guarded reads.
+    await controlOk("GET /api/estimates/:id/summary", "GET", `/api/estimates/${estimateA.id}/summary`);
+    await controlOk("GET /api/estimates/:id/full", "GET", `/api/estimates/${estimateA.id}/full`);
+    await controlOk("GET /api/estimates/:id/versions", "GET", `/api/estimates/${estimateA.id}/versions`);
+    await controlOk("GET /api/estimates/:id/notes", "GET", `/api/estimates/${estimateA.id}/notes`);
+    await controlOk("GET /api/projects/:projectId/estimate-items", "GET", `/api/projects/${projectA.id}/estimate-items`);
+    await controlOk("GET PO import estimate-items", "GET", `/api/purchase-orders/import/estimate-items/${estimateA.id}`);
+    await controlOk("GET /api/client-invoices/:id/estimates", "GET", `/api/client-invoices/${clientInvoiceA.id}/estimates`);
+
     // ---- Selections (enforceProjectCompany) ----
     await crossTenant("GET /api/selections/:id", "GET", `/api/selections/${selectionA.id}`, `/api/selections/${NONE}`);
     await crossTenant("PATCH /api/selections/:id", "PATCH", `/api/selections/${selectionA.id}`, `/api/selections/${NONE}`, { notes: "hacked" });

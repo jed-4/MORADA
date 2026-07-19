@@ -439,7 +439,9 @@ export default function Estimates() {
   );
 
   const handleRowClick = (estimate: Estimate) => {
-    setLocation(`/estimates/project/${estimate.projectId}`);
+    // Open the estimate directly (matches the kanban card) — no redundant hop
+    // through the per-project estimate list.
+    setLocation(`/projects/${estimate.projectId}/estimates/${estimate.id}`);
   };
 
 
@@ -620,11 +622,12 @@ export default function Estimates() {
           <Popover>
             <PopoverTrigger asChild>
               <button
-                className="h-6 w-auto px-2 py-0 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
+                className="h-6 w-6 py-0 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
                 data-testid="button-columns"
+                title="Columns"
+                aria-label="Columns"
               >
                 <Columns3 className="w-3 h-3" />
-                <span>Columns</span>
               </button>
             </PopoverTrigger>
             <PopoverContent align="end" className="p-0">

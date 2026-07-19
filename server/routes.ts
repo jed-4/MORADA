@@ -10,7 +10,7 @@ import { setupAuth, isAuthenticated, sessionMiddleware, ensureLegacySessionField
 import { sendInvitationEmail, sendClientPortalInviteEmail, initializeEmailServices, sendGenericEmail } from "./utils/email";
 import { GoogleOAuthService } from "./services/googleOAuthService";
 import { ObjectStorageService } from "./replit_integrations/object_storage";
-import { xeroService, XeroValidationError, type XeroValidationIssue } from "./services/xeroService";
+import { xeroService, XeroValidationError, type XeroValidationIssue, encryptXeroToken } from "./services/xeroService";
 import { recomputePOStatusFromBills, recomputePOStatusForLinks } from "./services/poStatusFromBills";
 import { applyPOSuggestionsToBill } from "./services/poSuggestions";
 import { dedupXeroBills } from "./services/xeroBillDedup";
@@ -174,7 +174,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { AI_TOOLS } from "./ai/tools";
 import { AI_MODEL, buildSystemPrompt, buildCircuitStartMessage } from "./ai/prompts";
 import { executeTool } from "./ai/executor";
-import { computeBillTotalsCents, billLineExGstCents } from "@shared/billTotals";
+import { computeBillTotalsCents, billLineExGstCents, clampRoundingCents } from "@shared/billTotals";
 import { matchSupplier } from "@shared/supplierMatcher";
 import {
   fuzzyMatchTimesheetCostCode,
@@ -643,6 +643,31 @@ async function pushBillToXeroInternal(
     let xeroStatus: "SUBMITTED" | "AUTHORISED" = "AUTHORISED";
     if (bill.status === "awaiting_approval") {
       xeroStatus = "SUBMITTED";
+    }
+
+    // Rounding adjustment → its own Xero line (like Xero's "Rounding" line), so
+    // the pushed invoice total matches our stored total to the cent. Added AFTER
+    // the account/tax pre-flights and given an explicit account so it can't trip
+    // them. Skipped if we have no account to code it to (the sub-cent difference
+    // is left for Xero to compute from the lines).
+    const roundingCents = (bill as any).roundingCents ?? 0;
+    if (roundingCents !== 0) {
+      const roundingAccount =
+        companyDefaultAccountCode ||
+        supplierDefaultAccountCode ||
+        xeroLineItems.find((li) => li.accountCode)?.accountCode;
+      if (roundingAccount) {
+        xeroLineItems.push({
+          description: "Rounding",
+          quantity: 1,
+          unitAmount: roundingCents / 100,
+          taxType: "NONE",
+          accountCode: roundingAccount,
+          tracking: undefined,
+        });
+      } else {
+        console.warn("[pushBillToXeroInternal] rounding adjustment skipped — no account code available");
+      }
     }
 
     const billPayload = {
@@ -5305,6 +5330,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Verify the caller owns the target project before creating an estimate on it.
       if (!(await enforceProjectCompany(req, res, validationResult.data.projectId))) return;
 
+      // Seed the builder's margin from the company default when the client
+      // didn't specify one (checked on the raw body, since the insert schema
+      // defaults an omitted value to 0 and we couldn't otherwise tell them apart).
+      if (req.body.projectMarkupPercent === undefined || req.body.projectMarkupPercent === null) {
+        const settings = await storage.getCompanySettings();
+        const def = (settings as any)?.defaultBuilderMarginPercent;
+        if (typeof def === "number" && def > 0) {
+          validationResult.data.projectMarkupPercent = def;
+        }
+      }
+
       const estimate = await storage.createEstimate(validationResult.data);
       res.status(201).json(estimate);
     } catch (error: any) {
@@ -5467,6 +5503,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         markupPercent,
         projectMarkupPercent: estimate.projectMarkupPercent,
         taxRate: estimate.taxRate,
+        wastagePercent: req.body.wastagePercent,
         existingPriceIncTax: req.body.priceIncTax,
       });
 
@@ -5622,6 +5659,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           markupPercent,
           projectMarkupPercent: estimate.projectMarkupPercent,
           taxRate: estimate.taxRate,
+          wastagePercent: item.wastagePercent,
           existingPriceIncTax: item.priceIncTax,
         });
 
@@ -5825,6 +5863,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             markupPercent,
             projectMarkupPercent: estimate.projectMarkupPercent,
             taxRate: estimate.taxRate,
+            wastagePercent: item.wastagePercent,
             existingPriceIncTax: item.priceIncTax,
           });
 
@@ -5964,12 +6003,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const unitCostExTax = next.unitCostExTax !== undefined ? Number(next.unitCostExTax) : Number(item.unitCostExTax);
         const quantity = next.quantity !== undefined ? Number(next.quantity) : Number(item.quantity);
         const markupPercent = next.markupPercent !== undefined ? next.markupPercent : item.markupPercent;
+        const wastagePercent = next.wastagePercent !== undefined ? next.wastagePercent : (item as any).wastagePercent;
         const { taxAmount, priceIncTax } = resolveEstimateStoredPrice({
           unitCostExTax,
           quantity,
           markupPercent,
           projectMarkupPercent: estimate?.projectMarkupPercent,
           taxRate: estimate?.taxRate,
+          wastagePercent,
           existingPriceIncTax: item.priceIncTax,
         });
         next.taxAmount = taxAmount;
@@ -6037,6 +6078,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           markupPercent,
           projectMarkupPercent: estimate?.projectMarkupPercent,
           taxRate: estimate?.taxRate,
+          wastagePercent: (item as any).wastagePercent,
           existingPriceIncTax: item.priceIncTax,
         });
 
@@ -6144,6 +6186,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const markupPercent = updateData.markupPercent !== undefined
         ? updateData.markupPercent
         : existingItem.markupPercent;
+      const wastagePercent = updateData.wastagePercent !== undefined
+        ? updateData.wastagePercent
+        : existingItem.wastagePercent;
 
       // Single source of truth: shared/pricing.ts. resolveEstimateStoredPrice
       // handles the project-markup fallback for priced lines AND preserves the
@@ -6156,6 +6201,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         markupPercent,
         projectMarkupPercent: estimate.projectMarkupPercent,
         taxRate: estimate.taxRate,
+        wastagePercent,
         existingPriceIncTax: updateData.priceIncTax !== undefined
           ? updateData.priceIncTax
           : existingItem.priceIncTax,
@@ -6433,6 +6479,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const owned = await getOwnedEstimateGroup(req, res, req.params.id, "Estimate group not found");
       if (!owned) return;
+
+      // Guard re-parenting: the new parent must belong to the SAME estimate, and
+      // must not make this group its own ancestor (a cycle would infinite-loop
+      // the totals recursion). The client already prevents this, but a direct
+      // API call could otherwise corrupt the tree.
+      if ('parentGroupId' in validationResult.data && validationResult.data.parentGroupId) {
+        const newParentId = validationResult.data.parentGroupId as string;
+        if (newParentId === req.params.id) {
+          return res.status(400).json({ error: "A group cannot be its own parent" });
+        }
+        const parent = await storage.getEstimateGroup(newParentId);
+        if (!parent || parent.estimateId !== (owned as any).estimateId) {
+          return res.status(400).json({ error: "Parent group must belong to the same estimate" });
+        }
+        const seen = new Set<string>();
+        let cursor: string | null = newParentId;
+        while (cursor) {
+          if (cursor === req.params.id) {
+            return res.status(400).json({ error: "That move would create a circular group nesting" });
+          }
+          if (seen.has(cursor)) break; // pre-existing corrupt chain — stop walking
+          seen.add(cursor);
+          const ancestor = await storage.getEstimateGroup(cursor);
+          cursor = ancestor?.parentGroupId ?? null;
+        }
+      }
+
       const group = await storage.updateEstimateGroup(req.params.id, validationResult.data);
       if (!group) {
         return res.status(404).json({ error: "Estimate group not found" });
@@ -15580,10 +15653,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const validationResult = insertBillSchema.safeParse(billData);
       if (!validationResult.success) {
-        return res.status(400).json({ 
-          error: "Validation failed", 
-          details: fromZodError(validationResult.error).toString() 
+        return res.status(400).json({
+          error: "Validation failed",
+          details: fromZodError(validationResult.error).toString()
         });
+      }
+
+      if (validationResult.data.roundingCents != null) {
+        validationResult.data.roundingCents = clampRoundingCents(validationResult.data.roundingCents);
       }
 
       const bill = await storage.createBill(validationResult.data);
@@ -15642,6 +15719,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const previous = await getOwnedBill(req, res, req.params.id);
       if (!previous) return;
+
+      // Rounding is a cent-level reconciliation, never a way to fudge amounts.
+      if (validationResult.data.roundingCents != null) {
+        validationResult.data.roundingCents = clampRoundingCents(validationResult.data.roundingCents);
+      }
 
       // New payment flow: a bill becomes "paid" only by recording payments that
       // cover the total (POST /api/bills/:id/payments), never by flipping the
@@ -16483,6 +16565,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           lines.map((l) => ({ total: l.total ?? 0, tax: l.tax })),
           taxMode,
           taxRate,
+          bill.roundingCents ?? 0,
         );
         const before = { subtotal: bill.subtotal ?? 0, tax: bill.tax ?? 0, total: bill.total ?? 0 };
         if (after.subtotal === before.subtotal && after.tax === before.tax && after.total === before.total) {
@@ -20459,24 +20542,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "billIds must be a non-empty array" });
       }
 
-      let processed = 0;
-      let skipped = 0;
+      // Per-bill outcome so failures are visible and diagnosable, not silently
+      // folded into a "skipped" count.
+      const results: Array<{
+        billId: string;
+        billNumber: string;
+        status: "processed" | "skipped" | "failed";
+        reason?: string;
+      }> = [];
 
       const { ObjectStorageService } = await import("./replit_integrations/object_storage/objectStorage");
       const { processInvoiceWithAI } = await import("./services/aiBillReader");
+      const { resolveSupplierId } = await import("./services/supplierResolver");
       const objectStorage = new ObjectStorageService();
+      // Load the company's suppliers once for supplier auto-matching.
+      const companySuppliers = await storage.getSuppliers(companyId);
 
       for (const billId of billIds as string[]) {
         // Verify ownership — must have a non-null companyId that exactly matches
         // the caller's company. No null-bypass: a bill with no companyId is not
         // owned by the caller and must be skipped.
         const bill = await storage.getBillById(billId);
-        if (!bill) { skipped++; continue; }
+        if (!bill) { results.push({ billId, billNumber: billId, status: "skipped", reason: "Bill not found" }); continue; }
+        const billNumber = bill.billNumber || billId;
         const billCompany = (bill as any).companyId;
-        if (!billCompany || billCompany !== companyId) { skipped++; continue; }
+        if (!billCompany || billCompany !== companyId) { results.push({ billId, billNumber, status: "skipped", reason: "Not in your company" }); continue; }
 
-        // Already processed — skip silently
-        if (bill.ocrProcessed) { skipped++; continue; }
+        // Already read — skip
+        if (bill.ocrProcessed) { results.push({ billId, billNumber, status: "skipped", reason: "Already read" }); continue; }
 
         // Find first processable attachment
         type Att = string | { objectPath?: string; filename?: string; mimeType?: string };
@@ -20502,7 +20595,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
         }
 
-        if (!objectPath) { skipped++; continue; }
+        if (!objectPath) { results.push({ billId, billNumber, status: "skipped", reason: "No PDF or image attachment" }); continue; }
 
         // Strip /objects/company/<cid> prefix for getObjectEntityFile
         let storagePath = objectPath;
@@ -20514,8 +20607,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const objectFile = await objectStorage.getObjectEntityFile(storagePath);
           const [downloaded] = await objectFile.download();
           fileBuffer = downloaded as Buffer;
-        } catch {
-          skipped++;
+        } catch (dlErr: any) {
+          results.push({ billId, billNumber, status: "failed", reason: `Couldn't download the attachment${dlErr?.message ? `: ${dlErr.message}` : ""}` });
           continue;
         }
 
@@ -20524,11 +20617,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const dataUrl = `data:${mimeType};base64,${base64}`;
           const invoiceData = await processInvoiceWithAI(dataUrl, filename);
 
-          // Always move to needs_review after bulk AI extraction — consistent with
-          // the individual "Read & Apply" button which always sets needs_review.
-          // The user then reviews the extracted data and approves manually.
+          // Auto-match the supplier (ABN → email → name) when the bill has none.
+          let resolvedSupplierId = bill.supplierId ?? undefined;
+          if (!resolvedSupplierId) {
+            const { supplierId } = resolveSupplierId(
+              {
+                supplierName: invoiceData.supplierName,
+                supplierAbn: invoiceData.supplierAbn,
+                supplierEmail: invoiceData.supplierEmail,
+              },
+              companySuppliers as any,
+            );
+            if (supplierId) resolvedSupplierId = supplierId;
+          }
+
+          // Move straight to awaiting_approval after AI extraction — the PM
+          // approves from the Awaiting Approval queue. Consistent with the
+          // individual "Read & Apply" button.
           await storage.updateBill(billId, {
-            status: "needs_review",
+            status: "awaiting_approval",
+            supplierId: resolvedSupplierId,
             billDate: invoiceData.invoiceDate ? new Date(invoiceData.invoiceDate) : (bill.billDate ?? new Date()),
             dueDate: invoiceData.dueDate ? new Date(invoiceData.dueDate) : undefined,
             billReference: invoiceData.invoiceNumber || bill.billReference,
@@ -20542,15 +20650,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
           // Create line items if present and bill had none
           const existingItems = await storage.getBillLineItems(billId);
           if (existingItems.length === 0 && invoiceData.lineItems && invoiceData.lineItems.length > 0) {
-            const costCodes = await storage.getCostCodes(bill.projectId || undefined);
-            const defaultCostCode = costCodes.find((cc: any) => cc.isActive);
+            // Use the matched supplier's default cost code (what the user has
+            // taught us for this supplier) rather than an arbitrary "first
+            // active" code. If there's no learned default, leave the line
+            // uncoded for the PM to set during review — better than a wrong guess.
+            const matchedSupplier = resolvedSupplierId
+              ? companySuppliers.find((s: any) => s.id === resolvedSupplierId)
+              : undefined;
+            const learnedCostCodeId = (matchedSupplier as any)?.defaultCostCodeId || undefined;
             for (let i = 0; i < invoiceData.lineItems.length; i++) {
               const item = invoiceData.lineItems[i];
               await storage.createBillLineItem({
                 billId,
                 lineType: "custom",
                 description: item.description || `Line Item ${i + 1}`,
-                costCodeId: defaultCostCode?.id,
+                costCodeId: learnedCostCodeId,
                 quantity: item.quantity || 1,
                 unitPrice: item.unitPrice || 0,
                 tax: item.taxAmount ? "GST on expenses" : "No GST",
@@ -20564,13 +20678,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
           // Recalc budget
           await recalcProjectBudget(bill.projectId);
 
-          processed++;
-        } catch {
-          skipped++;
+          results.push({ billId, billNumber, status: "processed" });
+        } catch (aiErr: any) {
+          console.error(`[bulk-ai-read] bill ${billNumber} failed:`, aiErr?.message || aiErr);
+          results.push({ billId, billNumber, status: "failed", reason: aiErr?.message || "AI read failed" });
         }
       }
 
-      return res.json({ processed, skipped });
+      const processed = results.filter((r) => r.status === "processed").length;
+      const skipped = results.filter((r) => r.status === "skipped").length;
+      const failed = results.filter((r) => r.status === "failed").length;
+      return res.json({ processed, skipped, failed, results });
     } catch (error: any) {
       console.error("[bulk-ai-read] Error:", error?.message || error);
       return res.status(500).json({ error: error?.message || "Bulk AI read failed" });
@@ -32458,8 +32576,8 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
         await storage.updateXeroConnection(existing.id, {
           tenantId: tenant.tenantId,
           tenantName: tenant.tenantName,
-          accessToken: tokenData.access_token,
-          refreshToken: tokenData.refresh_token,
+          accessToken: encryptXeroToken(tokenData.access_token),
+          refreshToken: encryptXeroToken(tokenData.refresh_token),
           tokenExpiresAt: expiresAt,
           isActive: true,
         });
@@ -32471,8 +32589,8 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
           companyId,
           tenantId: tenant.tenantId,
           tenantName: tenant.tenantName,
-          accessToken: tokenData.access_token,
-          refreshToken: tokenData.refresh_token,
+          accessToken: encryptXeroToken(tokenData.access_token),
+          refreshToken: encryptXeroToken(tokenData.refresh_token),
           tokenExpiresAt: expiresAt,
           isActive: true,
         });
@@ -32496,6 +32614,16 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
       const connection = await storage.getXeroConnectionByCompanyId(companyId);
       if (!connection) {
         return res.json({ connected: false });
+      }
+
+      // A connection whose refresh token was revoked is marked inactive during
+      // refresh — report it as needing reconnection rather than "connected".
+      if (!connection.isActive) {
+        return res.json({
+          connected: false,
+          needsReconnect: true,
+          tenantName: connection.tenantName,
+        });
       }
 
       res.json({
@@ -34132,6 +34260,13 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
           affectedProjectIds.add(billProjectId);
           results.push({ xeroInvoiceId, ok: true, billId: newBill.id, attachmentsImported, attachmentWarning });
         } catch (e: any) {
+          // Race backstop: the unique index caught a concurrent import of the
+          // same invoice. Treat it as already-imported, not a failure.
+          if (e?.code === "23505" && String(e?.constraint || e?.message || "").includes("bills_company_xero_invoice_unique")) {
+            const existing = await storage.getBillByXeroId(xeroInvoiceId, companyId).catch(() => null);
+            results.push({ xeroInvoiceId, ok: true, billId: existing?.id, skipped: true });
+            continue;
+          }
           console.error(`[bills/import] failed for ${xeroInvoiceId}:`, e);
           results.push({ xeroInvoiceId, ok: false, error: e?.message || "Import failed" });
         }

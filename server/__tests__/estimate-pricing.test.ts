@@ -245,4 +245,81 @@ check("integrity reporter fires on a genuine stale-price divergence", () => {
   }
 });
 
+// ---------------------------------------------------------------------------
+// 10. Global-once markup model: the builder's margin is NEVER baked into the
+//     per-line cache. A blank line markup means ZERO line markup (no project
+//     fallback), so editing the project margin can never staleify a cached row.
+// ---------------------------------------------------------------------------
+check("null-markup priced line stores its PRE-margin amount (project margin not baked)", () => {
+  const resolved = resolveEstimateStoredPrice({
+    unitCostExTax: 1000,
+    quantity: 1,
+    markupPercent: null,        // blank line markup
+    projectMarkupPercent: 10,   // builder's margin — must NOT enter the line cache
+    taxRate: 10,
+    existingPriceIncTax: 1210,  // stale margin-baked value must be recomputed away
+  });
+  // 1000 ex, no line markup, +GST = 1100. NOT 1210 (which would bake the 10% margin).
+  assert.strictEqual(resolved.priceIncTax, 1100);
+  assert.strictEqual(resolved.taxAmount, 100);
+});
+
+check("blank line markup applies zero line markup (no project fallback)", () => {
+  const p = computeEstimateItemPrice({
+    unitCostExTax: 1000, quantity: 1, markupPercent: null,
+    projectMarkupPercent: 25, taxRate: 10,
+  });
+  assert.strictEqual(p.lineExTax, 1000);  // no markup at the line level
+  assert.strictEqual(p.lineIncTax, 1100);
+});
+
+// ---------------------------------------------------------------------------
+// 11. Rows sum to subtotalExTax; the builder's margin applies ONCE on top and
+//     covers PC/PS allowance lines too (per the confirmed business rule).
+// ---------------------------------------------------------------------------
+check("line ex-tax amounts sum to subtotalExTax; margin applies once, PC/PS included", () => {
+  const items: EstimateItemSummaryInput[] = [
+    { unitCostExTax: 1000, quantity: 1, markupPercent: null },            // 1000 ex
+    { unitCostExTax: 1000, quantity: 1, markupPercent: 5 },               // 1050 ex
+    { unitCostExTax: 0, quantity: 1, priceIncTax: 2200, taxAmount: 200 }, // PC: 2000 ex
+  ];
+  const s = computeEstimateSummary(items, { projectMarkupPercent: 10, taxRate: 10 });
+  assert.strictEqual(s.subtotalExTax, 4050);      // 1000 + 1050 + 2000
+  assert.strictEqual(s.globalMarkupAmount, 405);  // 10% of 4050 — PC's 2000 is in the base
+  assert.strictEqual(s.totalExTax, 4455);
+  assert.strictEqual(s.total, round2(4455 * 1.1)); // 4900.5
+});
+
+// ---------------------------------------------------------------------------
+// 12. Wastage raises the builder cost on priced lines (confirmed: wastage means
+//     you buy more material). Fixed-price allowances ignore it.
+// ---------------------------------------------------------------------------
+check("wastage inflates builder cost on a priced line", () => {
+  const p = computeEstimateItemPrice({
+    unitCostExTax: 100, quantity: 10, markupPercent: 0,
+    projectMarkupPercent: 0, taxRate: 10, wastagePercent: 10,
+  });
+  assert.strictEqual(p.builderCost, 1100);  // 100 × 10 × 1.10
+  assert.strictEqual(p.lineExTax, 1100);    // no line markup
+  assert.strictEqual(p.lineIncTax, 1210);   // + GST
+});
+
+check("wastage does NOT affect a fixed-price allowance", () => {
+  const resolved = resolveEstimateStoredPrice({
+    unitCostExTax: 0, quantity: 1, markupPercent: null,
+    projectMarkupPercent: 0, taxRate: 10, wastagePercent: 20,
+    existingPriceIncTax: 5500,
+  });
+  assert.strictEqual(resolved.priceIncTax, 5500);
+});
+
+check("wastage flows into the summary and the builder-cost helper", () => {
+  const items: EstimateItemSummaryInput[] = [
+    { unitCostExTax: 100, quantity: 10, markupPercent: 0, wastagePercent: 10 },
+  ];
+  const s = computeEstimateSummary(items, { projectMarkupPercent: 0, taxRate: 10 });
+  assert.strictEqual(s.builderCostTotal, 1100);
+  assert.strictEqual(estimateItemBuilderCostExTax(items[0]), 1100);
+});
+
 console.log(`\nestimate-pricing: ${passed} checks passed\n`);

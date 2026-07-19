@@ -61,6 +61,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { CostCodeSelect } from "@/components/CostCodeSelect";
 import {
   Popover,
   PopoverContent,
@@ -799,7 +800,10 @@ export default function ClientInvoiceDetail() {
   // Allowance claim cents for THIS invoice, trued up when this invoice closes
   // out the allowance (cumulative claim across invoices reaches 100%).
   const getAllowanceClaimCents = (item: any): number => {
-    const target = Math.round(item.priceIncTax * item.quantity * 100);
+    // priceIncTax is already the whole line total (qty-inclusive for priced
+    // lines, the typed amount for fixed-price allowances) — do NOT multiply by
+    // quantity again (that was a qty² over-claim).
+    const target = Math.round(item.priceIncTax * 100);
     const thisPct = allowanceClaims[item.id] ?? 100;
     const others = projectInvoiceAllowances.filter(
       r => r.estimateItemId === item.id && r.invoiceId !== effectiveInvoiceId
@@ -3169,20 +3173,13 @@ export default function ClientInvoiceDetail() {
                                 )}
                                 {/* Cost Code */}
                                 <TableCell className="py-1 w-36">
-                                  <Select
-                                    value={line.costCodeId || "__none__"}
-                                    onValueChange={(v) => updateCustomLine(index, "costCodeId", v === "__none__" ? null : v)}
-                                  >
-                                    <SelectTrigger className="h-7 text-xs border-0 bg-transparent shadow-none focus:ring-1 focus:ring-ring px-1 rounded-sm w-full">
-                                      <SelectValue placeholder="— Cost code —" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      <SelectItem value="__none__"><span className="text-muted-foreground">— None —</span></SelectItem>
-                                      {(costCodes as any[]).map((cc: any) => (
-                                        <SelectItem key={cc.id} value={cc.id}>{cc.title || cc.code}</SelectItem>
-                                      ))}
-                                    </SelectContent>
-                                  </Select>
+                                  <CostCodeSelect
+                                    value={line.costCodeId || ""}
+                                    onValueChange={(v) => updateCustomLine(index, "costCodeId", v || null)}
+                                    placeholder="— Cost code —"
+                                    allowNone
+                                    triggerClassName="h-7 text-xs border-0 bg-transparent shadow-none focus:ring-1 focus:ring-ring px-1 rounded-sm w-full"
+                                  />
                                 </TableCell>
                                 {/* Unit */}
                                 <TableCell className="py-1 w-20">
@@ -3808,7 +3805,7 @@ export default function ClientInvoiceDetail() {
               getAllowanceItems().map((item) => {
                 const isFinalized = item.allowanceStatus === "finalized";
                 const isSelected = selectedAllowanceIds.includes(item.id);
-                const totalAmt = item.priceIncTax * item.quantity;
+                const totalAmt = item.priceIncTax; // already the full line total; no ×qty
                 return (
                   <div
                     key={item.id}

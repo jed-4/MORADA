@@ -179,7 +179,7 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
   const groupItems = groupedItems[group.id] || [];
   
   const visibleCols = parentVisibleCols || columns.filter(col => col.visible);
-  const gridTemplate = parentGridTemplate || `24px ${visibleCols.map(c => `${c.widthPx}px`).join(' ')} 80px`;
+  const gridTemplate = parentGridTemplate || `40px ${visibleCols.map(c => `${c.widthPx}px`).join(' ')} 80px`;
   const cellBase = "h-9 px-2 flex items-center text-sm overflow-hidden";
 
   const currentStatus = ((group as any).status as GroupStatus) || "not_started";
@@ -198,36 +198,38 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
       {effectiveDropIndicator === 'below' && (
         <div className="absolute -bottom-[2px] left-0 right-0 h-1 bg-primary z-50 rounded-full shadow-[0_0_8px_rgba(168,144,212,0.6)]" />
       )}
-      {!isLocked && (
-        <div
-          {...attributes}
-          {...listeners}
-          className="absolute left-0 top-0 h-9 w-5 flex items-center justify-center opacity-20 group-hover/grp:opacity-80 cursor-grab active:cursor-grabbing transition-opacity z-20"
-          data-testid={`drag-handle-group-${group.id}`}
-        >
-          <GripVertical className="h-3.5 w-3.5 text-muted-foreground" />
-        </div>
-      )}
-    <Card 
+    <Card
       className={`rounded-xl border border-border bg-card shadow-sm mb-2 overflow-hidden ${isGroupSelected ? 'ring-2 ring-primary' : ''}`}
       data-testid={`card-group-${group.id}`}
     >
       {/* Group Header - CSS Grid */}
       <div
         role="row"
-        style={{ 
-          display: 'grid', 
+        style={{
+          display: 'grid',
           gridTemplateColumns: gridTemplate,
           width: `${tableWidth}px`,
           minWidth: `${tableWidth}px`
         }}
-        className="relative h-9 bg-primary/5 dark:bg-primary/10 hover:bg-primary/10 transition-colors border-b border-border"
+        className="relative h-9 group/ghead bg-primary/5 dark:bg-primary/10 hover:bg-primary/10 transition-colors border-b border-border"
         data-testid={`row-group-${group.id}`}
       >
+        {/* Drag handle — only on GROUP-ROW hover (not when hovering the group's items) */}
+        {!isLocked && (
+          <div
+            {...attributes}
+            {...listeners}
+            className="absolute left-0 top-0 h-9 w-5 flex items-center justify-center opacity-0 group-hover/ghead:opacity-100 text-muted-foreground hover:text-foreground cursor-grab active:cursor-grabbing transition-all z-20"
+            data-testid={`drag-handle-group-${group.id}`}
+            title="Drag to reorder group"
+          >
+            <GripVertical className="h-4 w-4" />
+          </div>
+        )}
         {/* Purple left stripe */}
         <div className="absolute left-0 top-0 bottom-0 w-1 bg-primary z-10 pointer-events-none" />
-        {/* Checkbox */}
-        <div className="h-9 px-2 flex items-center" role="gridcell">
+        {/* Checkbox — pl-5 clears the drag-handle lane at the left */}
+        <div className="h-9 pl-5 pr-1 flex items-center" role="gridcell">
           <Checkbox
             checked={isGroupSelected}
             onCheckedChange={() => onToggleGroupSelection(group.id)}
@@ -259,14 +261,6 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
                   {group.description && (
                     <span className="text-xs text-muted-foreground truncate">- {group.description}</span>
                   )}
-                  {(group as any).defaultCostCategoryId && costCategories.length > 0 && (() => {
-                    const cat = costCategories.find(c => c.id === (group as any).defaultCostCategoryId);
-                    return cat ? (
-                      <Badge variant="secondary" className="text-xs px-1.5 py-0 h-5 flex-shrink-0">
-                        {cat.code}
-                      </Badge>
-                    ) : null;
-                  })()}
                   {(group as any).defaultCostCode && costCodes.length > 0 && (() => {
                     const code = costCodes.find(c => c.id === (group as any).defaultCostCode);
                     return code ? (
@@ -275,55 +269,63 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
                       </Badge>
                     ) : null;
                   })()}
-                  {/* Status badge — clickable dropdown when not locked */}
-                  {onUpdateStatus && !isLocked ? (
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Badge
-                          variant="outline"
-                          className={`text-xs px-1.5 py-0 h-5 flex-shrink-0 cursor-pointer no-default-hover-elevate no-default-active-elevate border ${statusCfg.className}`}
-                          data-testid={`badge-group-status-${group.id}`}
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          {statusCfg.label}
-                        </Badge>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="start" onClick={(e) => e.stopPropagation()}>
-                        {(Object.keys(STATUS_CONFIG) as GroupStatus[]).map((s) => (
-                          <DropdownMenuItem
-                            key={s}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onUpdateStatus(group.id, s);
-                            }}
-                            className={currentStatus === s ? "font-medium" : ""}
-                            data-testid={`menu-item-status-${s}-${group.id}`}
-                          >
-                            <span className={`inline-block w-2 h-2 rounded-full mr-2 flex-shrink-0 ${
-                              s === 'not_started' ? 'bg-muted-foreground/50' :
-                              s === 'in_progress' ? 'bg-amber' :
-                              'bg-sage'
-                            }`} />
-                            {STATUS_CONFIG[s].label}
-                          </DropdownMenuItem>
-                        ))}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  ) : (
-                    <Badge
-                      variant="outline"
-                      className={`text-xs px-1.5 py-0 h-5 flex-shrink-0 border ${statusCfg.className}`}
-                      data-testid={`badge-group-status-${group.id}`}
-                    >
-                      {statusCfg.label}
-                    </Badge>
-                  )}
                   {effectiveGroupTotals && effectiveGroupTotals.builderCostExTax > 0 && (
                     <span className="text-xs font-semibold text-primary ml-auto flex-shrink-0" data-testid={`group-total-badge-${group.id}`}>
                       {formatCurrency(effectiveGroupTotals.builderCostExTax)}
                     </span>
                   )}
                 </div>
+              </div>
+            );
+          }
+
+          // Group status badge lives in the Status column, aligned with the
+          // line-item status cells below it.
+          if (column.id === 'status') {
+            return (
+              <div key={column.id} className={cellBase} role="gridcell">
+                {onUpdateStatus && !isLocked ? (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Badge
+                        variant="outline"
+                        className={`text-xs px-1.5 py-0 h-5 min-w-[84px] justify-center flex-shrink-0 cursor-pointer no-default-hover-elevate no-default-active-elevate border ${statusCfg.className}`}
+                        data-testid={`badge-group-status-${group.id}`}
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {statusCfg.label}
+                      </Badge>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start" onClick={(e) => e.stopPropagation()}>
+                      {(Object.keys(STATUS_CONFIG) as GroupStatus[]).map((s) => (
+                        <DropdownMenuItem
+                          key={s}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onUpdateStatus(group.id, s);
+                          }}
+                          className={currentStatus === s ? "font-medium" : ""}
+                          data-testid={`menu-item-status-${s}-${group.id}`}
+                        >
+                          <span className={`inline-block w-2 h-2 rounded-full mr-2 flex-shrink-0 ${
+                            s === 'not_started' ? 'bg-muted-foreground/50' :
+                            s === 'in_progress' ? 'bg-amber' :
+                            'bg-sage'
+                          }`} />
+                          {STATUS_CONFIG[s].label}
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                ) : (
+                  <Badge
+                    variant="outline"
+                    className={`text-xs px-1.5 py-0 h-5 min-w-[84px] justify-center flex-shrink-0 border ${statusCfg.className}`}
+                    data-testid={`badge-group-status-${group.id}`}
+                  >
+                    {statusCfg.label}
+                  </Badge>
+                )}
               </div>
             );
           }
@@ -354,8 +356,8 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
             </div>
           );
         })}
-        {/* Actions menu cell */}
-        <div className={`${cellBase} justify-end`} role="gridcell">
+        {/* Actions menu cell — centered + left divider to match line-item rows */}
+        <div className={`${cellBase} justify-center border-l border-border/50`} role="gridcell">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
