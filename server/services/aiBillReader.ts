@@ -32,6 +32,58 @@ import * as os from "os";
 
 const execAsync = promisify(exec);
 
+// ─── Anthropic client + parsing helpers ─────────────────────────────────────
+
+// A slow/overloaded vision call must not hang past the platform's request
+// ceiling. Cap it and let the SDK retry transient failures.
+const ANTHROPIC_TIMEOUT_MS = 90_000;
+const ANTHROPIC_MAX_RETRIES = 2;
+
+// Media types Anthropic vision accepts. Anything else (e.g. tiff) 400s, so we
+// reject it up-front with a clear message instead of an opaque API error.
+const VISION_SUPPORTED_MIME = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/gif",
+  "image/webp",
+]);
+
+async function getAnthropic() {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) {
+    throw new Error(
+      "AI bill reading is not configured on the server (ANTHROPIC_API_KEY is missing).",
+    );
+  }
+  const Anthropic = (await import("@anthropic-ai/sdk")).default;
+  return new Anthropic({
+    apiKey,
+    timeout: ANTHROPIC_TIMEOUT_MS,
+    maxRetries: ANTHROPIC_MAX_RETRIES,
+  });
+}
+
+// Extract and parse the JSON object from a model response. Both failure modes
+// (no JSON, or a truncated/malformed object from hitting max_tokens) get a
+// clear, actionable message rather than a raw SyntaxError.
+function parseAiJson(content: string, context: string): any {
+  const jsonMatch = content.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) {
+    console.error(`[AI Bill Reader] No JSON in ${context} response:`, content.substring(0, 300));
+    throw new Error(
+      `The AI response (${context}) didn't contain readable invoice data — it may have been cut off. Try again.`,
+    );
+  }
+  try {
+    return JSON.parse(jsonMatch[0]);
+  } catch {
+    console.error(`[AI Bill Reader] Malformed JSON in ${context} response:`, content.substring(0, 300));
+    throw new Error(
+      `The AI returned malformed data (${context}), likely truncated on a large invoice. Try again.`,
+    );
+  }
+}
+
 // ─── Stage 1: PDF text extraction ───────────────────────────────────────────
 
 async function extractTextFromPdf(pdfBuffer: Buffer): Promise<string> {
@@ -161,8 +213,7 @@ async function extractSemanticFields(
   rawText: string,
   alreadyExtracted: RegexExtractedFields,
 ): Promise<AIInvoiceResponse> {
-  const Anthropic = (await import("@anthropic-ai/sdk")).default;
-  const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+  const anthropic = await getAnthropic();
 
   const knownLines: string[] = [];
   if (alreadyExtracted.abn) knownLines.push(`ABN already found: ${alreadyExtracted.abn} — do not re-extract.`);
@@ -206,12 +257,7 @@ Return ONLY valid JSON. No markdown fences.`;
   });
 
   const content = (response.content[0] as any).text ?? "";
-  const jsonMatch = content.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) {
-    console.error("[AI Bill Reader] No JSON in semantic AI response:", content.substring(0, 300));
-    throw new Error("No JSON found in semantic AI response");
-  }
-  return JSON.parse(jsonMatch[0]);
+  return parseAiJson(content, "text extraction");
 }
 
 // ─── Vision fallback (existing behaviour for scanned/image PDFs) ─────────────
@@ -297,8 +343,7 @@ async function convertPdfToImages(pdfBuffer: Buffer): Promise<string[]> {
 }
 
 async function extractWithVision(pdfBuffer: Buffer): Promise<AIInvoiceResponse> {
-  const Anthropic = (await import("@anthropic-ai/sdk")).default;
-  const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+  const anthropic = await getAnthropic();
 
   const pageImages = await convertPdfToImages(pdfBuffer);
   if (pageImages.length === 0) {
@@ -329,12 +374,7 @@ async function extractWithVision(pdfBuffer: Buffer): Promise<AIInvoiceResponse> 
   });
 
   const content = (response.content[0] as any).text ?? "";
-  const jsonMatch = content.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) {
-    console.error("[AI Bill Reader] No JSON in vision response:", content.substring(0, 300));
-    throw new Error("No JSON found in vision AI response");
-  }
-  return JSON.parse(jsonMatch[0]);
+  return parseAiJson(content, "scanned-PDF vision");
 }
 
 // ─── Non-PDF image extraction (single image, no text to extract) ─────────────
@@ -343,8 +383,12 @@ async function extractFromImage(
   base64Clean: string,
   mimeType: string,
 ): Promise<AIInvoiceResponse> {
-  const Anthropic = (await import("@anthropic-ai/sdk")).default;
-  const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+  if (!VISION_SUPPORTED_MIME.has(mimeType)) {
+    throw new Error(
+      `Unsupported image type "${mimeType}". Convert the invoice to PDF, PNG, or JPG and try again.`,
+    );
+  }
+  const anthropic = await getAnthropic();
 
   const response = await anthropic.messages.create({
     model: "claude-sonnet-4-5",
@@ -368,9 +412,7 @@ async function extractFromImage(
   });
 
   const content = (response.content[0] as any).text ?? "";
-  const jsonMatch = content.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) throw new Error("No JSON found in image AI response");
-  return JSON.parse(jsonMatch[0]);
+  return parseAiJson(content, "image vision");
 }
 
 // ─── Main entry point ─────────────────────────────────────────────────────────
@@ -458,9 +500,25 @@ export async function processInvoiceWithAI(
       taxAmount: toCents(item.taxAmount),
     })),
     currency: aiResponse.currency || "AUD",
-    confidence: 0.95,
     rawText: extractedRawText || undefined,
   };
 
+  // Confidence reflects how many of the fields that matter for a usable bill
+  // actually came back — not a fixed number. Downstream can use this to flag
+  // low-quality reads for closer review.
+  result.confidence = computeConfidence(result);
+
   return result;
+}
+
+function computeConfidence(r: InvoiceData): number {
+  const signals = [
+    !!r.supplierName,
+    !!r.invoiceNumber,
+    !!r.invoiceDate,
+    r.totalAmount != null && r.totalAmount > 0,
+    (r.lineItems?.length ?? 0) > 0,
+  ];
+  const hits = signals.filter(Boolean).length;
+  return Math.round((hits / signals.length) * 100) / 100;
 }

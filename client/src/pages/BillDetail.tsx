@@ -96,6 +96,9 @@ import {
   CommandList,
 } from "@/components/ui/command";
 import { matchSupplier, type SupplierMatch } from "@shared/supplierMatcher";
+import { clampRoundingCents } from "@shared/billTotals";
+import { computeDueDate, describePaymentTerms } from "@shared/paymentTerms";
+import { DatePicker } from "@/components/DatePicker";
 import {
   Collapsible,
   CollapsibleContent,
@@ -200,6 +203,11 @@ export default function BillDetail() {
 
   const [lineItems, setLineItems] = useState<LineItem[]>([]);
   const [taxMode, setTaxMode] = useState<"inclusive" | "exclusive">("exclusive");
+  // Manual rounding adjustment in cents (±MAX_ROUNDING_CENTS), applied to the
+  // total so it can be nudged to match the supplier invoice — like Xero.
+  const [roundingCents, setRoundingCents] = useState(0);
+  const [editingInvoiceTotal, setEditingInvoiceTotal] = useState(false);
+  const [invoiceTotalInput, setInvoiceTotalInput] = useState("");
   const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
   const [rejectComments, setRejectComments] = useState("");
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
@@ -243,6 +251,10 @@ export default function BillDetail() {
   const [supplierDefaultsOpen, setSupplierDefaultsOpen] = useState(false);
   const [supplierDefaultsCostCode, setSupplierDefaultsCostCode] = useState<string>("");
   const [supplierDefaultsAccount, setSupplierDefaultsAccount] = useState<string>("");
+  // Track which of the two defaults the user actually edited this session, so
+  // saving one (e.g. cost code) never overwrites/clears the other.
+  const [supplierDefaultsCostCodeDirty, setSupplierDefaultsCostCodeDirty] = useState(false);
+  const [supplierDefaultsAccountDirty, setSupplierDefaultsAccountDirty] = useState(false);
   const [defaultsAccountPickerOpen, setDefaultsAccountPickerOpen] = useState(false);
   const [defaultsAccountSearch, setDefaultsAccountSearch] = useState("");
   const [defaultsPromptDismissed, setDefaultsPromptDismissed] = useState(false);
@@ -480,6 +492,7 @@ export default function BillDetail() {
       if (persistedTaxMode === "inclusive" || persistedTaxMode === "exclusive") {
         setTaxMode(persistedTaxMode);
       }
+      setRoundingCents((bill as any).roundingCents ?? 0);
       // attachmentUrls may now contain either legacy string entries or rich
       // attachment record objects ({objectPath, filename, mimeType, ...}).
       // Normalize down to a string[] of object paths for the existing UI;
@@ -625,27 +638,41 @@ export default function BillDetail() {
     
     if (isNaN(billDate.getTime())) return;
     
-    let dueDate: Date;
-    const termsLower = terms.toLowerCase().replace(/\s+/g, "_");
-    
-    if (termsLower === "on_receipt" || termsLower === "cod") {
-      dueDate = billDate;
-    } else if (termsLower === "net_7" || termsLower === "net 7") {
-      dueDate = addDays(billDate, 7);
-    } else if (termsLower === "net_14" || termsLower === "net 14") {
-      dueDate = addDays(billDate, 14);
-    } else if (termsLower === "net_30" || termsLower === "net 30") {
-      dueDate = addDays(billDate, 30);
-    } else if (termsLower === "eom") {
-      dueDate = endOfMonth(billDate);
-    } else if (termsLower === "end_of_next_month") {
-      dueDate = endOfMonth(addMonths(billDate, 1));
-    } else {
-      dueDate = addDays(billDate, 30);
-    }
-    
+    // Unknown/blank terms fall back to Net 30, matching the previous default.
+    const dueDate = computeDueDate(billDate, terms) ?? addDays(billDate, 30);
     form.setValue("dueDate", format(dueDate, "yyyy-MM-dd"));
   }, [watchedSupplierId, watchedBillDate, suppliers, companySettings, isEditMode]);
+
+  // ── Unsaved-changes guard (edit mode) ──────────────────────────────────────
+  // Serialised snapshot of the editable content. Header fields come from RHF;
+  // line items / rounding / tax mode are separate state. Attachments are
+  // excluded — they persist immediately via their own endpoints.
+  const baselineRef = useRef<string | null>(null);
+  const watchedAll = form.watch();
+  const currentSnapshot = JSON.stringify({ f: watchedAll, lineItems, roundingCents, taxMode });
+  useEffect(() => {
+    if (!isEditMode) { baselineRef.current = null; return; }
+    if (!bill || existingLineItemsLoading || existingAllowancesLoading) return;
+    if (baselineRef.current !== null) return; // capture once per load
+    baselineRef.current = currentSnapshot;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isEditMode, bill, existingLineItemsLoading, existingAllowancesLoading, currentSnapshot]);
+
+  const hasUnsavedChanges =
+    isEditMode && baselineRef.current !== null && currentSnapshot !== baselineRef.current;
+
+  // Warn on tab close / refresh when there are unsaved edits.
+  useEffect(() => {
+    const handler = (e: BeforeUnloadEvent) => {
+      if (hasUnsavedChanges) { e.preventDefault(); e.returnValue = ""; }
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [hasUnsavedChanges]);
+
+  // Gate explicit in-app navigation (back / cancel) behind a confirm when dirty.
+  const confirmLeave = () =>
+    !hasUnsavedChanges || window.confirm("You have unsaved changes on this bill. Leave without saving?");
 
   useEffect(() => {
     if (!watchedSupplierId || isEditMode) return;
@@ -813,10 +840,13 @@ export default function BillDetail() {
     return taxableAmount * gstRate;
   };
 
+  // Total before the manual rounding adjustment (dollars).
+  const calculateTotalBeforeRounding = () => {
+    return calculateSubtotal() + calculateTax();
+  };
+
   const calculateTotal = () => {
-    const subtotal = calculateSubtotal();
-    const tax = calculateTax();
-    return subtotal + tax;
+    return calculateTotalBeforeRounding() + roundingCents / 100;
   };
 
   const calculateDue = () => {
@@ -889,6 +919,7 @@ export default function BillDetail() {
         subtotal: Math.round(calculateSubtotal() * 100),
         tax: Math.round(calculateTax() * 100),
         total: Math.round(calculateTotal() * 100),
+        roundingCents: clampRoundingCents(roundingCents),
         // Convert paidAmount (held in the form as dollars) back to integer cents.
         paidAmount: Math.round((data.paidAmount || 0) * 100),
         taxMode,
@@ -1021,6 +1052,7 @@ export default function BillDetail() {
         subtotal: Math.round(calculateSubtotal() * 100),
         tax: Math.round(calculateTax() * 100),
         total: Math.round(calculateTotal() * 100),
+        roundingCents: clampRoundingCents(roundingCents),
         taxMode,
         // attachmentUrls is intentionally omitted — attachments are managed
         // through the dedicated POST /api/bills/:id/attachments endpoint to
@@ -1083,6 +1115,10 @@ export default function BillDetail() {
       return updatedBill;
     },
     onSuccess: async () => {
+      // Content is now persisted — drop the baseline so it re-captures the
+      // saved state (prevents a false "unsaved changes" prompt when the flow
+      // stays on the page, e.g. the Xero-unmapped or update-defaults prompts).
+      baselineRef.current = null;
       queryClient.invalidateQueries({ queryKey: ["/api/bills"] });
       queryClient.invalidateQueries({ queryKey: ["/api/bills", id] });
       queryClient.invalidateQueries({ queryKey: ["/api/bills", id, "line-item-allowances"] });
@@ -1242,6 +1278,23 @@ export default function BillDetail() {
       });
     },
   });
+
+  // Approval queue for the "Approve & next" flow — the awaiting_approval bills
+  // a PM works through in one sitting. Only fetched when it's relevant.
+  const { data: approvalQueue = [] } = useQuery<Bill[]>({
+    queryKey: ["/api/bills", "approval-queue"],
+    queryFn: async () => {
+      const res = await fetch("/api/bills?status=awaiting_approval", { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: isEditMode && bill?.status === "awaiting_approval" && canApprove,
+  });
+  const remainingInQueue = approvalQueue.filter((b) => b.id !== id);
+  const goToNextInQueue = () => {
+    if (remainingInQueue.length === 0) setLocation("/bills?status=awaiting_approval");
+    else setLocation(`/bills/${remainingInQueue[0].id}`);
+  };
 
   const rejectMutation = useMutation({
     mutationFn: async (comments: string) => {
@@ -1463,14 +1516,14 @@ export default function BillDetail() {
         }));
         setLineItems(newLineItems);
       }
-      form.setValue("status", "needs_review");
+      form.setValue("status", "awaiting_approval");
       if (isEditMode && id && bill?.status === "draft") {
-        apiRequest(`/api/bills/${id}`, "PATCH", { status: "needs_review" })
+        apiRequest(`/api/bills/${id}`, "PATCH", { status: "awaiting_approval" })
           .then(() => {
             queryClient.invalidateQueries({ queryKey: ["/api/bills", id] });
             queryClient.invalidateQueries({ queryKey: ["/api/bills"] });
           })
-          .catch((err) => console.error("Failed to set bill status to needs_review:", err));
+          .catch((err) => console.error("Failed to set bill status to awaiting_approval:", err));
       }
       toast({
         title: "Bill updated",
@@ -1681,10 +1734,9 @@ export default function BillDetail() {
       setLineItems(newLineItems);
     }
 
-    // AI-extracted data must be reviewed by a human before reaching the
-    // approver's queue. Set the bill status to `needs_review` for both
-    // unsaved bills (form value picked up by the create payload) and
-    // existing bills (PATCH so refresh keeps it).
+    // After AI extraction the bill goes straight to the approver's queue
+    // (awaiting_approval) — for both unsaved bills (form value picked up by the
+    // create payload) and existing bills (PATCH so a refresh keeps it).
     form.setValue("status", "needs_review");
     if (isEditMode && id && bill?.status === "draft") {
       apiRequest(`/api/bills/${id}`, "PATCH", { status: "needs_review" })
@@ -1829,7 +1881,7 @@ export default function BillDetail() {
             <Button
               variant="ghost"
               size="icon"
-              onClick={() => setLocation(projectId ? `/projects/${projectId}/bills` : "/bills")}
+              onClick={() => { if (confirmLeave()) setLocation(projectId ? `/projects/${projectId}/bills` : "/bills"); }}
               data-testid="button-back"
             >
               <ArrowLeft className="h-4 w-4" />
@@ -1873,6 +1925,21 @@ export default function BillDetail() {
                   {approveMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
                   {approveMutation.isPending ? "Approving..." : "Approve"}
                 </Button>
+                {remainingInQueue.length > 0 && (
+                  <Button
+                    variant="default"
+                    size="sm"
+                    onClick={() => approveMutation.mutate(undefined, { onSuccess: () => goToNextInQueue() })}
+                    disabled={approveMutation.isPending}
+                    data-testid="button-approve-next"
+                    className="gap-1"
+                    title={`${remainingInQueue.length} more awaiting approval`}
+                  >
+                    <Check className="h-3.5 w-3.5" />
+                    Approve &amp; next
+                    <span className="opacity-70">({remainingInQueue.length})</span>
+                  </Button>
+                )}
                 <Button
                   variant="outline"
                   size="sm"
@@ -2138,6 +2205,8 @@ export default function BillDetail() {
                             onClick={() => {
                               setSupplierDefaultsCostCode(selected.defaultCostCodeId || "");
                               setSupplierDefaultsAccount(selected.xeroDefaultAccountCode || selected.xeroDefaultAccount || "");
+                              setSupplierDefaultsCostCodeDirty(false);
+                              setSupplierDefaultsAccountDirty(false);
                               setSupplierDefaultsOpen(true);
                             }}
                             data-testid="button-open-supplier-defaults"
@@ -2237,10 +2306,11 @@ export default function BillDetail() {
                       <FormItem className="space-y-1">
                         <FormLabel className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">Date *</FormLabel>
                         <FormControl>
-                          <Input
-                            type="date"
-                            {...field}
-                            className="bg-muted/30 border border-border text-sm"
+                          <DatePicker
+                            value={field.value}
+                            onChange={field.onChange}
+                            placeholder="Select date"
+                            triggerClassName="bg-muted/30 border border-border text-sm h-9"
                             data-testid="input-bill-date"
                           />
                         </FormControl>
@@ -2256,17 +2326,29 @@ export default function BillDetail() {
                       <FormItem className="space-y-1">
                         <FormLabel className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">Due date</FormLabel>
                         <FormControl>
-                          <Input
-                            type="date"
-                            {...field}
-                            onChange={(e) => {
+                          <DatePicker
+                            value={field.value}
+                            onChange={(v) => {
                               dueDateManuallySet.current = true;
-                              field.onChange(e);
+                              field.onChange(v);
                             }}
-                            className="bg-muted/30 border border-border text-sm"
+                            placeholder="Select date"
+                            allowClear
+                            triggerClassName="bg-muted/30 border border-border text-sm h-9"
                             data-testid="input-due-date"
                           />
                         </FormControl>
+                        {field.value && (() => {
+                          const supplier = suppliers.find((s: any) => s.id === form.watch("supplierId"));
+                          const supplierTerms = supplier?.paymentTerms;
+                          const label = describePaymentTerms(supplierTerms || companySettings?.defaultPaymentTerms);
+                          if (!label) return null;
+                          return (
+                            <p className="text-[10px] text-muted-foreground" data-testid="text-due-terms">
+                              {label} · {supplierTerms ? "from supplier" : "company default"}
+                            </p>
+                          );
+                        })()}
                         <FormMessage />
                       </FormItem>
                     )}
@@ -2456,6 +2538,7 @@ export default function BillDetail() {
                                 </button>
                                 <div className="flex items-center gap-0.5 shrink-0">
                                   <Button
+                                    type="button"
                                     variant="ghost"
                                     size="icon"
                                     onClick={async () => {
@@ -2509,6 +2592,7 @@ export default function BillDetail() {
                           });
                           return (
                             <Button
+                              type="button"
                               className="w-full"
                               size="sm"
                               disabled={!firstProcessable || ocrFromAttachmentMutation.isPending || !!(bill as any)?.ocrProcessed}
@@ -2609,6 +2693,7 @@ export default function BillDetail() {
                                 )}
                               </div>
                               <Button
+                                type="button"
                                 onClick={handleApplyOCR}
                                 className="w-full"
                                 size="sm"
@@ -2622,27 +2707,6 @@ export default function BillDetail() {
                       </div>
                     </div>
 
-                    <div className="border-t pt-2">
-                      <div className="flex items-center gap-1.5 mb-1.5">
-                        <MessageSquare className="h-3.5 w-3.5 text-muted-foreground" />
-                        <span className="text-xs font-medium">Comments</span>
-                      </div>
-                      {isEditMode ? (
-                        <Textarea
-                          placeholder="Add a comment..."
-                          rows={2}
-                          className="text-xs resize-none"
-                          data-testid="textarea-comments"
-                        />
-                      ) : (
-                        <div
-                          className="text-data text-muted-foreground"
-                          data-testid="text-comments-unavailable"
-                        >
-                          Available after create
-                        </div>
-                      )}
-                    </div>
                   </div>
                 </Card>
               </div>
@@ -3142,11 +3206,62 @@ export default function BillDetail() {
                         {formatCurrency(calculateTax())}
                       </span>
                     </div>
-                    <div className="flex justify-between gap-4 border-t pt-1">
+                    {roundingCents !== 0 && (
+                      <div className="flex justify-between gap-4 text-xs">
+                        <span className="text-muted-foreground flex items-center gap-1">
+                          Rounding
+                          <button
+                            type="button"
+                            onClick={() => setRoundingCents(0)}
+                            className="text-muted-foreground/60 hover:text-foreground"
+                            title="Clear rounding"
+                            data-testid="button-clear-rounding"
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        </span>
+                        <span className="font-medium" data-testid="text-rounding">
+                          {roundingCents > 0 ? "+" : ""}{formatCurrency(roundingCents / 100)}
+                        </span>
+                      </div>
+                    )}
+                    <div className="flex justify-between items-center gap-4 border-t pt-1">
                       <span className="text-sm font-bold">Total</span>
-                      <span className="text-sm font-bold" data-testid="text-total">
-                        {formatCurrency(total)}
-                      </span>
+                      {editingInvoiceTotal ? (
+                        <Input
+                          type="number"
+                          step="0.01"
+                          autoFocus
+                          value={invoiceTotalInput}
+                          onChange={(e) => setInvoiceTotalInput(e.target.value)}
+                          onFocus={(e) => { if (!invoiceTotalInput) setInvoiceTotalInput(total.toFixed(2)); e.currentTarget.select(); }}
+                          onBlur={() => {
+                            const typed = parseFloat(invoiceTotalInput);
+                            if (!isNaN(typed)) {
+                              const diffCents = Math.round((typed - calculateTotalBeforeRounding()) * 100);
+                              setRoundingCents(clampRoundingCents(diffCents));
+                            }
+                            setEditingInvoiceTotal(false);
+                            setInvoiceTotalInput("");
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") { e.preventDefault(); (e.target as HTMLInputElement).blur(); }
+                            if (e.key === "Escape") { setEditingInvoiceTotal(false); setInvoiceTotalInput(""); }
+                          }}
+                          className="h-6 w-24 text-right text-sm font-bold"
+                          data-testid="input-invoice-total"
+                        />
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => { setInvoiceTotalInput(total.toFixed(2)); setEditingInvoiceTotal(true); }}
+                          className="text-sm font-bold hover:underline decoration-dotted underline-offset-2"
+                          title="Click to match the supplier invoice total"
+                          data-testid="text-total"
+                        >
+                          {formatCurrency(total)}
+                        </button>
+                      )}
                     </div>
                     <div className="flex justify-between gap-4 text-xs">
                       <span className="text-muted-foreground">Paid</span>
@@ -3339,7 +3454,7 @@ export default function BillDetail() {
                       type="button"
                       variant="outline"
                       size="sm"
-                      onClick={() => setLocation(projectId ? `/projects/${projectId}/bills` : "/bills")}
+                      onClick={() => { if (confirmLeave()) setLocation(projectId ? `/projects/${projectId}/bills` : "/bills"); }}
                       data-testid="button-cancel"
                     >
                       Cancel
@@ -3789,7 +3904,7 @@ export default function BillDetail() {
               <label className="text-xs font-medium">Default Cost Code</label>
               <CostCodeSelect
                 value={supplierDefaultsCostCode}
-                onValueChange={(v) => setSupplierDefaultsCostCode(v || "")}
+                onValueChange={(v) => { setSupplierDefaultsCostCode(v || ""); setSupplierDefaultsCostCodeDirty(true); }}
                 placeholder="Select cost code..."
                 allowNone={true}
                 data-testid="select-supplier-defaults-cost-code"
@@ -3816,11 +3931,11 @@ export default function BillDetail() {
                       <CommandList className="max-h-[260px]">
                         <CommandEmpty>No accounts found.</CommandEmpty>
                         <CommandGroup>
-                          <CommandItem value="__none__ none clear" onSelect={() => { setSupplierDefaultsAccount(""); setDefaultsAccountPickerOpen(false); setDefaultsAccountSearch(""); }}>
+                          <CommandItem value="__none__ none clear" onSelect={() => { setSupplierDefaultsAccount(""); setSupplierDefaultsAccountDirty(true); setDefaultsAccountPickerOpen(false); setDefaultsAccountSearch(""); }}>
                             <span className="text-muted-foreground">None</span>
                           </CommandItem>
                           {xeroAccounts.map((acc) => (
-                            <CommandItem key={acc.code} value={`${acc.code} ${acc.name}`} onSelect={() => { setSupplierDefaultsAccount(acc.code); setDefaultsAccountPickerOpen(false); setDefaultsAccountSearch(""); }}>
+                            <CommandItem key={acc.code} value={`${acc.code} ${acc.name}`} onSelect={() => { setSupplierDefaultsAccount(acc.code); setSupplierDefaultsAccountDirty(true); setDefaultsAccountPickerOpen(false); setDefaultsAccountSearch(""); }}>
                               <span className="truncate">{acc.code} - {acc.name}</span>
                             </CommandItem>
                           ))}
@@ -3832,7 +3947,7 @@ export default function BillDetail() {
               ) : (
                 <Input
                   value={supplierDefaultsAccount}
-                  onChange={(e) => setSupplierDefaultsAccount(e.target.value)}
+                  onChange={(e) => { setSupplierDefaultsAccount(e.target.value); setSupplierDefaultsAccountDirty(true); }}
                   placeholder="Account code"
                   className="text-xs"
                 />
@@ -3842,14 +3957,19 @@ export default function BillDetail() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setSupplierDefaultsOpen(false)}>Cancel</Button>
             <Button
-              disabled={!currentSupplier || updateSupplierDefaultsMutation.isPending}
+              disabled={!currentSupplier || updateSupplierDefaultsMutation.isPending || (!supplierDefaultsCostCodeDirty && !supplierDefaultsAccountDirty)}
               onClick={() => {
                 if (!currentSupplier) return;
-                updateSupplierDefaultsMutation.mutate({
-                  supplierId: currentSupplier.id,
-                  defaultCostCodeId: supplierDefaultsCostCode || null,
-                  xeroDefaultAccountCode: supplierDefaultsAccount || null,
-                }, {
+                // Only send the field(s) the user actually changed — sending both
+                // would clear whichever one they left untouched.
+                const payload: {
+                  supplierId: string;
+                  defaultCostCodeId?: string | null;
+                  xeroDefaultAccountCode?: string | null;
+                } = { supplierId: currentSupplier.id };
+                if (supplierDefaultsCostCodeDirty) payload.defaultCostCodeId = supplierDefaultsCostCode || null;
+                if (supplierDefaultsAccountDirty) payload.xeroDefaultAccountCode = supplierDefaultsAccount || null;
+                updateSupplierDefaultsMutation.mutate(payload, {
                   onSuccess: () => {
                     toast({ title: "Defaults saved" });
                     setSupplierDefaultsOpen(false);

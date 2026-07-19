@@ -27,6 +27,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { CostCodeSelect } from "@/components/CostCodeSelect";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { 
@@ -421,22 +422,13 @@ export default function POTemplateDetail() {
             </div>
             <div className="space-y-2">
               <Label>Cost Code</Label>
-              <Select
-                value={newItem.costCodeId || "none"}
-                onValueChange={(value) => setNewItem({ ...newItem, costCodeId: value === "none" ? undefined : value })}
-              >
-                <SelectTrigger data-testid="select-cost-code">
-                  <SelectValue placeholder="Select cost code" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">No cost code</SelectItem>
-                  {costCodes.map((code) => (
-                    <SelectItem key={code.id} value={code.id}>
-                      {code.code} - {code.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <CostCodeSelect
+                value={newItem.costCodeId || ""}
+                onValueChange={(v) => setNewItem({ ...newItem, costCodeId: v || undefined })}
+                placeholder="Select cost code"
+                allowNone
+                data-testid="select-cost-code"
+              />
             </div>
             <div className="grid grid-cols-3 gap-4">
               <div className="space-y-2">
@@ -517,22 +509,13 @@ export default function POTemplateDetail() {
               </div>
               <div className="space-y-2">
                 <Label>Cost Code</Label>
-                <Select
-                  value={editingItem.costCodeId || "none"}
-                  onValueChange={(value) => setEditingItem({ ...editingItem, costCodeId: value === "none" ? undefined : value })}
-                >
-                  <SelectTrigger data-testid="select-edit-cost-code">
-                    <SelectValue placeholder="Select cost code" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">No cost code</SelectItem>
-                    {costCodes.map((code) => (
-                      <SelectItem key={code.id} value={code.id}>
-                        {code.code} - {code.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <CostCodeSelect
+                  value={editingItem.costCodeId || ""}
+                  onValueChange={(v) => setEditingItem({ ...editingItem, costCodeId: v || undefined })}
+                  placeholder="Select cost code"
+                  allowNone
+                  data-testid="select-edit-cost-code"
+                />
               </div>
               <div className="grid grid-cols-3 gap-4">
                 <div className="space-y-2">

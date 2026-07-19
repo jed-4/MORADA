@@ -12,6 +12,7 @@ import { sanitizeNoteHtml } from "./utils/sanitizeNoteHtml";
 import { GoogleOAuthService } from "./services/googleOAuthService";
 import { ObjectStorageService } from "./replit_integrations/object_storage";
 import { xeroService, XeroValidationError, type XeroValidationIssue, encryptXeroToken } from "./services/xeroService";
+import { enqueueXeroPush } from "./services/xeroPushQueue";
 import { recomputePOStatusFromBills, recomputePOStatusForLinks } from "./services/poStatusFromBills";
 import { applyPOSuggestionsToBill } from "./services/poSuggestions";
 import { dedupXeroBills } from "./services/xeroBillDedup";
@@ -356,7 +357,7 @@ async function pushBillAttachmentsToXero(
   }
 }
 
-async function pushBillToXeroInternal(
+export async function pushBillToXeroInternal(
   billId: string,
   companyId: string,
   overrideXeroContactId?: string,
@@ -933,6 +934,156 @@ async function syncBillFromXeroInternal(
     return { ok: false, error: error?.message || "Sync failed" };
   }
 }
+
+// ── Xero reconciliation sweep (Phase 2) ──────────────────────────────────────
+// Xero is the source of truth. This pulls the company's ACCPAY bills from Xero
+// in bulk (one call per page, not one getInvoice per bill), compares each linked
+// local bill against Xero, and — unless dryRun — corrects local drift via
+// syncBillFromXeroInternal (the authoritative Xero→local overwrite). Returns a
+// divergence report so the drift is visible, not silent.
+
+const fmtCents = (c: number | null | undefined) =>
+  c == null ? "—" : `$${(c / 100).toFixed(2)}`;
+
+// The fields Xero owns. paidAmount/total/xeroPaidStatus are the meaningful drift
+// signal (see the payment-modeling note: AmountPaid vs local paidAmount).
+function diffBillVsXero(
+  local: { total: number | null; paidAmount: number | null; xeroPaidStatus: string | null },
+  xInv: any,
+): string[] {
+  const changes: string[] = [];
+  const xTotal = Math.round((xInv.Total || 0) * 100);
+  const xPaid = Math.round((xInv.AmountPaid || 0) * 100);
+  const xStatus = xInv.Status || "";
+  if ((local.total ?? 0) !== xTotal) changes.push(`total ${fmtCents(local.total)} → ${fmtCents(xTotal)}`);
+  if ((local.paidAmount ?? 0) !== xPaid) changes.push(`paid ${fmtCents(local.paidAmount)} → ${fmtCents(xPaid)}`);
+  if ((local.xeroPaidStatus || "") !== xStatus) changes.push(`xero status ${local.xeroPaidStatus || "—"} → ${xStatus || "—"}`);
+  return changes;
+}
+
+type ReconcileSurprise = { billId: string; billNumber: string; xeroInvoiceId: string; reason: string; changes: string[] };
+
+interface ReconcileReport {
+  connected: boolean;
+  total: number; // local bills linked to Xero
+  checked: number; // matched against a Xero invoice in this sweep
+  diverged: number;
+  corrected: number;
+  results: Array<{ billId: string; billNumber: string; xeroInvoiceId: string; changes: string[]; applied: boolean; error?: string }>;
+  notInXero: Array<{ billId: string; billNumber: string; xeroInvoiceId: string }>;
+  // Diverged bills the nightly (safe-only) sweep deliberately did NOT auto-apply
+  // — total changed or voided/gone in Xero — surfaced for human review.
+  surprises: ReconcileSurprise[];
+  error?: string;
+}
+
+// A "surprising" change shouldn't be auto-applied on the nightly sweep: the
+// invoice total changed, or it was voided/deleted in Xero. Payment/status drift
+// toward paid is expected and safe to apply automatically.
+function isSurprisingXeroChange(local: { total: number | null }, xInv: any): boolean {
+  const xTotal = Math.round((xInv.Total || 0) * 100);
+  const status = String(xInv.Status || "").toUpperCase();
+  if ((local.total ?? 0) !== xTotal) return true;
+  if (status === "VOIDED" || status === "DELETED") return true;
+  return false;
+}
+
+async function reconcileBillsWithXero(
+  companyId: string,
+  opts: { dryRun?: boolean; modifiedSince?: Date; safeOnly?: boolean } = {},
+): Promise<ReconcileReport> {
+  const empty: ReconcileReport = {
+    connected: false, total: 0, checked: 0, diverged: 0, corrected: 0, results: [], notInXero: [], surprises: [],
+  };
+
+  const connection = await storage.getXeroConnectionByCompanyId(companyId);
+  if (!connection || !connection.isActive) {
+    return { ...empty, error: "Xero is not connected" };
+  }
+
+  const { bills: billsTbl, projects: projectsTbl } = await import("@shared/schema");
+  const linkedBills = await db
+    .select({
+      id: billsTbl.id,
+      billNumber: billsTbl.billNumber,
+      total: billsTbl.total,
+      paidAmount: billsTbl.paidAmount,
+      xeroInvoiceId: billsTbl.xeroInvoiceId,
+      xeroPaidStatus: billsTbl.xeroPaidStatus,
+    })
+    .from(billsTbl)
+    .innerJoin(projectsTbl, eq(billsTbl.projectId, projectsTbl.id))
+    .where(and(eq(projectsTbl.companyId, companyId), isNotNull(billsTbl.xeroInvoiceId)));
+
+  const localByXeroId = new Map(linkedBills.map((b) => [b.xeroInvoiceId as string, b]));
+
+  // Bulk pull — include VOIDED/DRAFT so voids and reversions are caught too.
+  const xeroBills = await xeroService.listAllBills(connection.id, {
+    modifiedSince: opts.modifiedSince,
+    statuses: ["AUTHORISED", "PAID", "SUBMITTED", "VOIDED", "DRAFT"],
+  });
+
+  const seenXeroIds = new Set<string>();
+  const results: ReconcileReport["results"] = [];
+  const surprises: ReconcileSurprise[] = [];
+  let corrected = 0;
+
+  for (const xInv of xeroBills) {
+    const xeroId = xInv.InvoiceID;
+    if (!xeroId) continue;
+    const local = localByXeroId.get(xeroId);
+    if (!local) continue; // in Xero but not linked locally — out of scope for reconcile
+    seenXeroIds.add(xeroId);
+
+    const changes = diffBillVsXero(local, xInv);
+    if (changes.length === 0) continue;
+
+    const surprising = isSurprisingXeroChange(local, xInv);
+    if (surprising) {
+      surprises.push({ billId: local.id, billNumber: local.billNumber, xeroInvoiceId: xeroId, reason: "changed unexpectedly in Xero", changes });
+    }
+
+    let applied = false;
+    let error: string | undefined;
+    // Safe-only (nightly) never auto-applies a surprising change — it's left for
+    // a human, and the caller raises a notification.
+    if (!opts.dryRun && !(opts.safeOnly && surprising)) {
+      const r = await syncBillFromXeroInternal(local.id, companyId, xInv);
+      applied = r.ok;
+      if (r.ok) corrected++;
+      else error = r.error;
+    }
+    results.push({ billId: local.id, billNumber: local.billNumber, xeroInvoiceId: xeroId, changes, applied, error });
+  }
+
+  // Bills linked locally but not returned by the Xero list (deleted in Xero, or
+  // outside the status filter). Only meaningful on a full sweep.
+  const notInXero = opts.modifiedSince
+    ? []
+    : linkedBills
+        .filter((b) => !seenXeroIds.has(b.xeroInvoiceId as string))
+        .map((b) => ({ billId: b.id, billNumber: b.billNumber, xeroInvoiceId: b.xeroInvoiceId as string }));
+
+  // A bill that vanished from Xero is always a surprise (deleted/voided there).
+  for (const b of notInXero) {
+    surprises.push({ billId: b.billId, billNumber: b.billNumber, xeroInvoiceId: b.xeroInvoiceId, reason: "no longer in Xero", changes: [] });
+  }
+
+  return {
+    connected: true,
+    total: linkedBills.length,
+    checked: seenXeroIds.size,
+    diverged: results.length,
+    corrected,
+    results,
+    notInXero,
+    surprises,
+  };
+}
+
+// Export for the nightly scheduler.
+export { reconcileBillsWithXero };
+export type { ReconcileReport };
 
 // ── PDF helper — generates a Selections Schedule PDF via puppeteer ────────────
 async function generateSelectionPdf(selections: any[], projectName?: string): Promise<Buffer> {
@@ -32742,6 +32893,13 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
         if (result.validationErrors) {
           body.validationErrors = result.validationErrors;
         }
+        // Transient failures (429 / 5xx / no status) get queued so the outbox
+        // worker retries in the background. 4xx validation errors won't self-heal.
+        const retryable = !result.status || result.status === 429 || result.status >= 500;
+        if (retryable) {
+          await enqueueXeroPush(companyId, billId).catch(() => {});
+          body.queuedForRetry = true;
+        }
         return res.status(result.status).json(body);
       }
       return res.json({
@@ -32752,7 +32910,11 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
       });
     } catch (error: any) {
       console.error("Error pushing bill to Xero:", error);
-      res.status(500).json({ error: error.message || "Failed to push bill to Xero" });
+      // Unexpected/network failure — queue for the outbox worker to retry.
+      const { billId } = req.body || {};
+      const companyId = (req.user as any)?.companyId;
+      if (billId && companyId) await enqueueXeroPush(companyId, billId).catch(() => {});
+      res.status(500).json({ error: error.message || "Failed to push bill to Xero", queuedForRetry: true });
     }
   });
 
@@ -33941,6 +34103,32 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
     } catch (error: any) {
       console.error("Error syncing Xero bill statuses:", error);
       res.status(500).json({ error: error.message || "Failed to sync bill statuses from Xero" });
+    }
+  });
+
+  // Reconciliation sweep: pull Xero ACCPAY state in bulk, report divergences,
+  // and (unless dryRun) correct local drift. Xero is the source of truth.
+  //   ?dryRun=true  → report only, nothing written (preview the drift)
+  //   body/query modifiedSince (ISO) → incremental sweep of recently-changed bills
+  app.post("/api/xero/bills/reconcile", requireAuth, async (req, res) => {
+    try {
+      const companyId = (req as any).user?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+
+      const dryRun = req.query.dryRun === "true" || req.body?.dryRun === true;
+      const sinceRaw = req.body?.modifiedSince || req.query.modifiedSince;
+      let modifiedSince: Date | undefined;
+      if (sinceRaw) {
+        const d = new Date(sinceRaw as string);
+        if (!isNaN(d.getTime())) modifiedSince = d;
+      }
+
+      const report = await reconcileBillsWithXero(companyId, { dryRun, modifiedSince });
+      if (!report.connected) return res.status(400).json(report);
+      res.json({ ...report, dryRun });
+    } catch (error: any) {
+      console.error("[xero/reconcile] error:", error);
+      res.status(500).json({ error: error.message || "Reconciliation failed" });
     }
   });
 

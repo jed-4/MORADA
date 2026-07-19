@@ -147,17 +147,20 @@
   --tab-inactive: 290 5% 63%;                /* #A29AA5 */
   --tab-active: 270 16% 53%;                 /* #87749A */
 
-  /* Status pill tokens (soft pastel pills) — Figma palette */
-  --status-success-fg: 151 37% 37%;          /* #3C8160 */
-  --status-success-bg: 150 29% 93%;          /* #E9F3EE */
-  --status-warning-fg: 38 56% 41%;           /* #A57A2E */
-  --status-warning-bg: 39 55% 94%;           /* #F8F2E7 */
-  --status-info-fg:    220 45% 55%;          /* #597BC0 */
-  --status-info-bg:    222 56% 96%;          /* #F1F4FB */
-  --status-danger-fg:  0 52% 45%;            /* #B03838 */
-  --status-danger-bg:  0 50% 95%;            /* #F8EAEA */
-  --status-action-fg:  270 16% 53%;          /* #87749A plum */
-  --status-action-bg:  270 36% 95%;          /* #F1ECF6 */
+  /* Status pill tokens — LIGHT mode.
+   * Heavier fills so pills read clearly against the near-white page: same
+   * Figma hues as before, deeper background + bolder foreground. Dark mode
+   * (further down) keeps the softer translucent tint. */
+  --status-success-fg: 151 44% 30%;          /* #2B6E4C */
+  --status-success-bg: 149 42% 84%;          /* #C4E7D3 */
+  --status-warning-fg: 36 62% 34%;           /* #8C6320 */
+  --status-warning-bg: 39 72% 84%;           /* #F5E0BC */
+  --status-info-fg:    220 52% 46%;          /* #3B62B2 */
+  --status-info-bg:    221 62% 88%;          /* #C6D6F1 */
+  --status-danger-fg:  0 58% 41%;            /* #A63030 */
+  --status-danger-bg:  0 64% 89%;            /* #F5CFCF */
+  --status-action-fg:  270 24% 44%;          /* #6E578C plum */
+  --status-action-bg:  270 42% 89%;          /* #DDD0EE */
 
   /* ====================================================
    * BUILDPRO DESIGN TOKENS — Foundation (light)

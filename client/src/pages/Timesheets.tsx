@@ -8,7 +8,7 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
-import { Plus, Clock, Search, Calendar as CalendarIcon, X, CalendarRange, Download, Upload, ChevronDown, Settings2, Table2, Users2, CalendarDays, ChevronLeft, ChevronRight, Zap, Play, Square, CircleCheck, Trash2, HardHat, MoreHorizontal, Pencil, Copy, Filter } from "lucide-react";
+import { Plus, Clock, Search, Calendar as CalendarIcon, X, CalendarRange, Download, Upload, ChevronDown, Settings2, Table2, Users2, CalendarDays, ChevronLeft, ChevronRight, Zap, Play, Square, CircleCheck, Trash2, HardHat, MoreHorizontal, Pencil, Copy, Filter, Columns3 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { BulkActionBar } from "@/components/BulkActionBar";
 import * as XLSX from "xlsx";
@@ -1514,7 +1514,7 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
                       data-testid="button-columns"
                       aria-label="Columns"
                     >
-                      <Settings2 className="w-3 h-3" />
+                      <Columns3 className="w-3 h-3" />
                     </button>
                   </PopoverTrigger>
                 </TooltipTrigger>

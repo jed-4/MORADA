@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect } from "react";
 import { type ColumnDef } from "@tanstack/react-table";
 import { DataTable, DataTableColumnPicker, type DataTableColumnMeta } from "@/components/data-table/DataTable";
+import { DataTableFilterBar } from "@/components/data-table/DataTableFilterBar";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation, useSearch, useParams } from "wouter";
 import { usePageTitle } from "@/hooks/usePageTitle";
@@ -54,6 +55,7 @@ import {
   Building2,
   Trash2,
   Settings2,
+  Columns3,
   GripVertical,
   Lock,
   CheckCircle2,
@@ -79,6 +81,7 @@ import { ReimbursementsQueue } from "@/components/bills/ReimbursementsQueue";
 import { FilePreviewModal, type PreviewFile } from "@/components/FilePreviewModal";
 import { ProjectIcon } from "@/components/ProjectIcon";
 import { StatusBadge } from "@/components/StatusBadge";
+import { SupplierSelect } from "@/components/SupplierSelect";
 import { formatCurrency, formatDate } from "@/lib/formatters";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -114,10 +117,11 @@ const BILL_COLUMN_LABELS: { id: string; label: string; pinned?: boolean }[] = [
   { id: "project", label: "Project" },
   { id: "reference", label: "Reference" },
   { id: "date", label: "Date" },
+  { id: "due", label: "Due" },
   { id: "total", label: "Total" },
   { id: "xero", label: "Xero" },
-  { id: "due", label: "Due" },
   { id: "attachments", label: "Files" },
+  { id: "actions", label: "Actions" },
 ];
 
 type XeroBillPreview = {
@@ -556,11 +560,19 @@ function ImportFromXeroDialog({
                               <SelectItem value="__create__" className="text-xs">
                                 + Create "{b.contactName || "supplier"}"
                               </SelectItem>
-                              {suppliers.map((s) => (
-                                <SelectItem key={s.id} value={s.id} className="text-xs">
-                                  {(s as any).company || s.name}
-                                </SelectItem>
-                              ))}
+                              {[...suppliers]
+                                .sort((a, b) =>
+                                  ((a as any).company || a.name || "").localeCompare(
+                                    (b as any).company || b.name || "",
+                                    undefined,
+                                    { sensitivity: "base" },
+                                  ),
+                                )
+                                .map((s) => (
+                                  <SelectItem key={s.id} value={s.id} className="text-xs">
+                                    {(s as any).company || s.name}
+                                  </SelectItem>
+                                ))}
                             </SelectContent>
                           </Select>
                         </div>
@@ -666,6 +678,11 @@ export default function Bills({ embedded }: { embedded?: boolean } = {}) {
   const [selectedBills, setSelectedBills] = useState<Set<string>>(new Set());
   const [setupInstructionsOpen, setSetupInstructionsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
+  // Faceted filters (see DataTableFilterBar).
+  const [filterSuppliers, setFilterSuppliers] = useState<string[]>([]);
+  const [filterProjects, setFilterProjects] = useState<string[]>([]);
+  const [filterDateRange, setFilterDateRange] = useState<string>("all");
+  const [filterOverdue, setFilterOverdue] = useState<string[]>([]);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [changeProjectDialogOpen, setChangeProjectDialogOpen] = useState(false);
   const [changeSupplierDialogOpen, setChangeSupplierDialogOpen] = useState(false);
@@ -742,14 +759,28 @@ export default function Bills({ embedded }: { embedded?: boolean } = {}) {
 
   const bulkAiReadMutation = useMutation({
     mutationFn: async (billIds: string[]) =>
-      apiRequest<{ processed: number; skipped: number }>("/api/bills/bulk-ai-read", "POST", { billIds }),
+      apiRequest("/api/bills/bulk-ai-read", "POST", { billIds }) as Promise<{
+        processed: number;
+        skipped: number;
+        failed?: number;
+        results?: Array<{ billId: string; billNumber: string; status: string; reason?: string }>;
+      }>,
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/bills"] });
-      const { processed, skipped } = data as { processed: number; skipped: number };
+      const { processed, skipped, failed = 0, results = [] } = data;
       const parts: string[] = [];
       if (processed > 0) parts.push(`${processed} read`);
-      if (skipped > 0) parts.push(`${skipped} skipped (already processed or no attachment)`);
-      toast({ title: "AI Read complete", description: parts.join(", ") || "No bills were processed." });
+      if (skipped > 0) parts.push(`${skipped} skipped`);
+      if (failed > 0) parts.push(`${failed} failed`);
+      // Surface the actual failure reasons (deduped) so problems are diagnosable.
+      const failReasons = Array.from(
+        new Set(results.filter((r) => r.status === "failed" && r.reason).map((r) => r.reason as string)),
+      );
+      toast({
+        title: failed > 0 ? "AI Read finished with errors" : "AI Read complete",
+        description: [parts.join(", ") || "No bills were processed.", ...failReasons.map((r) => `• ${r}`)].join("\n"),
+        variant: failed > 0 ? "destructive" : undefined,
+      });
     },
     onError: (error: Error) => {
       toast({ title: "AI Read failed", description: error.message, variant: "destructive" });
@@ -757,20 +788,34 @@ export default function Bills({ embedded }: { embedded?: boolean } = {}) {
   });
 
   const bulkApproveMutation = useMutation({
+    // Route through the real /approve endpoint so each approval gets a
+    // bill_approvals audit record and enforces the approve permission — not a
+    // raw status PATCH.
     mutationFn: async (billIds: string[]) => {
-      const results = await Promise.allSettled(billIds.map((id) => apiRequest(`/api/bills/${id}`, "PATCH", { status: "awaiting_payment" })));
-      const failed = results.filter(r => r.status === "rejected").length;
-      if (failed > 0) throw new Error(`${failed} of ${billIds.length} bills failed to approve`);
+      const settled = await Promise.allSettled(
+        billIds.map((id) => apiRequest(`/api/bills/${id}/approve`, "POST", { comments: null })),
+      );
+      const approved = settled.filter((r) => r.status === "fulfilled").length;
+      const failures = settled
+        .map((r, i) => (r.status === "rejected" ? (r.reason as Error)?.message || "Failed" : null))
+        .filter((x): x is string => !!x);
+      return { approved, failures };
     },
-    onSuccess: () => {
+    onSuccess: ({ approved, failures }) => {
       queryClient.invalidateQueries({ queryKey: ["/api/bills"] });
-      const count = selectedBills.size;
       setSelectedBills(new Set());
-      toast({ title: "Bills approved", description: `Successfully approved ${count} bill(s).` });
+      const reasons = Array.from(new Set(failures));
+      const parts = [`${approved} approved`];
+      if (failures.length) parts.push(`${failures.length} failed`);
+      toast({
+        title: failures.length ? "Approved with errors" : "Bills approved",
+        description: [parts.join(", "), ...reasons.map((r) => `• ${r}`)].join("\n"),
+        variant: failures.length ? "destructive" : undefined,
+      });
     },
     onError: (error: Error) => {
       queryClient.invalidateQueries({ queryKey: ["/api/bills"] });
-      toast({ title: "Partial failure", description: error.message, variant: "destructive" });
+      toast({ title: "Approve failed", description: error.message, variant: "destructive" });
     },
   });
 
@@ -817,32 +862,62 @@ export default function Bills({ embedded }: { embedded?: boolean } = {}) {
   const billInboxError = companySettings?.billInboxStatus === 'error';
 
   const currentProject = projectIdFromUrl ? projects.find((p) => p.id === projectIdFromUrl) : null;
+
+  // Lookup maps so per-row filtering/search is O(1) rather than a linear find
+  // per bill per keystroke.
+  const supplierNameById = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const s of suppliers) m.set(s.id, s.name || "");
+    return m;
+  }, [suppliers]);
+  const projectNameById = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const p of projects) m.set(p.id, p.name || "");
+    return m;
+  }, [projects]);
+
   const getProject = (projectId: string) => projects.find((p) => p.id === projectId);
   const getSupplierName = (supplierId: string, bill?: any) => {
     if (bill?.supplierName) return bill.supplierName;
-    const supplier = suppliers.find((s) => s.id === supplierId);
-    return supplier?.name || "—";
+    return supplierNameById.get(supplierId) || "—";
   };
 
   const filteredBills = useMemo(() => {
+    const searchLower = searchTerm.trim().toLowerCase();
+    const now = Date.now();
     return bills.filter((bill) => {
       const effectiveStatus = bill.status === "needs_review" ? "draft" : bill.status;
       if (selectedStatus !== "all" && effectiveStatus !== selectedStatus) return false;
-      if (searchTerm) {
-        const supplier = suppliers.find(s => s.id === bill.supplierId);
-        const project = projects.find(p => p.id === bill.projectId);
-        const searchLower = searchTerm.toLowerCase();
-        const supplierName = (bill as any).supplierName || supplier?.name || "";
+
+      // Faceted filters
+      if (filterSuppliers.length > 0 && !(bill.supplierId && filterSuppliers.includes(bill.supplierId))) return false;
+      if (filterProjects.length > 0 && !(bill.projectId && filterProjects.includes(bill.projectId))) return false;
+
+      if (filterDateRange !== "all" && bill.billDate) {
+        const d = new Date(bill.billDate as any).getTime();
+        const days = filterDateRange === "30" ? 30 : filterDateRange === "90" ? 90 : filterDateRange === "365" ? 365 : 0;
+        if (days > 0 && d < now - days * 24 * 60 * 60 * 1000) return false;
+      }
+
+      if (filterOverdue.includes("overdue")) {
+        const isPaid = bill.status === "paid";
+        const overdue = !isPaid && bill.dueDate && new Date(bill.dueDate as any).getTime() < now;
+        if (!overdue) return false;
+      }
+
+      if (searchLower) {
+        const supplierName = (bill as any).supplierName || supplierNameById.get(bill.supplierId || "") || "";
+        const projectName = projectNameById.get(bill.projectId || "") || "";
         const matchesSearch =
           bill.billNumber?.toLowerCase().includes(searchLower) ||
           bill.billReference?.toLowerCase().includes(searchLower) ||
           supplierName.toLowerCase().includes(searchLower) ||
-          project?.name?.toLowerCase().includes(searchLower);
+          projectName.toLowerCase().includes(searchLower);
         if (!matchesSearch) return false;
       }
       return true;
     });
-  }, [bills, selectedStatus, searchTerm, suppliers, projects]);
+  }, [bills, selectedStatus, searchTerm, filterSuppliers, filterProjects, filterDateRange, filterOverdue, supplierNameById, projectNameById]);
 
   const statusCounts = useMemo(() => ({
     all: bills.length,
@@ -930,18 +1005,36 @@ export default function Bills({ embedded }: { embedded?: boolean } = {}) {
     },
   });
 
-  const syncXeroStatusMutation = useMutation({
-    mutationFn: () => apiRequest("/api/xero/bills/sync-status", "POST"),
-    onSuccess: (data: any) => {
+  // Reconcile-with-Xero: preview the drift (dry run), then apply. Xero wins.
+  type ReconcileResult = { billId: string; billNumber: string; xeroInvoiceId: string; changes: string[]; applied: boolean; error?: string };
+  type ReconcileReport = {
+    connected: boolean; total: number; checked: number; diverged: number; corrected: number;
+    results: ReconcileResult[]; notInXero: Array<{ billNumber: string }>;
+  };
+  const [reconcileOpen, setReconcileOpen] = useState(false);
+  const [reconcileReport, setReconcileReport] = useState<ReconcileReport | null>(null);
+
+  const reconcilePreview = useMutation({
+    mutationFn: async () => apiRequest("/api/xero/bills/reconcile?dryRun=true", "POST", {}) as Promise<ReconcileReport>,
+    onSuccess: (data) => {
+      setReconcileReport(data);
+      if (data.diverged === 0 && data.notInXero.length === 0) {
+        toast({ title: "In sync with Xero", description: `${data.checked} of ${data.total} bills checked — all up to date.` });
+      } else {
+        setReconcileOpen(true);
+      }
+    },
+    onError: (e: Error) => toast({ title: "Reconcile failed", description: e.message, variant: "destructive" }),
+  });
+
+  const reconcileApply = useMutation({
+    mutationFn: async () => apiRequest("/api/xero/bills/reconcile", "POST", {}) as Promise<ReconcileReport>,
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/bills"] });
-      toast({
-        title: "Xero status synced",
-        description: `${data.synced} bill${data.synced === 1 ? "" : "s"} updated${data.failed > 0 ? `, ${data.failed} failed` : ""}.`,
-      });
+      setReconcileOpen(false);
+      toast({ title: "Reconciled with Xero", description: `${data.corrected} bill${data.corrected === 1 ? "" : "s"} corrected from Xero.` });
     },
-    onError: (e: Error) => {
-      toast({ title: "Sync failed", description: e.message, variant: "destructive" });
-    },
+    onError: (e: Error) => toast({ title: "Reconcile failed", description: e.message, variant: "destructive" }),
   });
 
   // ── DataTable column defs ───────────────────────────────────────────────
@@ -1338,14 +1431,14 @@ export default function Bills({ embedded }: { embedded?: boolean } = {}) {
               Import from Xero
             </DropdownMenuItem>
             <DropdownMenuItem
-              onSelect={() => syncXeroStatusMutation.mutate()}
-              disabled={syncXeroStatusMutation.isPending}
-              data-testid="menu-item-sync-xero-status"
+              onSelect={() => reconcilePreview.mutate()}
+              disabled={reconcilePreview.isPending}
+              data-testid="menu-item-reconcile-xero"
             >
-              {syncXeroStatusMutation.isPending
+              {reconcilePreview.isPending
                 ? <Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" />
                 : <RefreshCw className="w-3.5 h-3.5 mr-2" />}
-              Sync status from Xero
+              Reconcile with Xero
             </DropdownMenuItem>
             <DropdownMenuItem
               onSelect={() => setLocation("/settings?tab=integrations")}
@@ -1489,10 +1582,12 @@ export default function Bills({ embedded }: { embedded?: boolean } = {}) {
       <Dialog open={changeSupplierDialogOpen} onOpenChange={(open) => { setChangeSupplierDialogOpen(open); if (!open) setSelectedSupplierId(""); }}>
         <DialogContent>
           <DialogHeader><DialogTitle>Change supplier for {selectedBills.size} bill(s)</DialogTitle></DialogHeader>
-          <Select value={selectedSupplierId} onValueChange={setSelectedSupplierId}>
-            <SelectTrigger><SelectValue placeholder="Select a supplier" /></SelectTrigger>
-            <SelectContent>{suppliers.map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}</SelectContent>
-          </Select>
+          <SupplierSelect
+            value={selectedSupplierId}
+            onValueChange={setSelectedSupplierId}
+            placeholder="Select a supplier"
+            data-testid="select-bulk-supplier"
+          />
           <DialogFooter>
             <Button variant="outline" onClick={() => { setChangeSupplierDialogOpen(false); setSelectedSupplierId(""); }}>Cancel</Button>
             <Button disabled={!selectedSupplierId || bulkChangeSupplierMutation.isPending} style={{ backgroundColor: "hsl(var(--primary))", color: "white" }} onClick={() => bulkChangeSupplierMutation.mutate({ billIds: Array.from(selectedBills), supplierId: selectedSupplierId })}>
@@ -1509,6 +1604,49 @@ export default function Bills({ embedded }: { embedded?: boolean } = {}) {
         suppliers={suppliers}
         defaultProjectId={importProjectId}
       />
+
+      {/* Reconcile-with-Xero divergence report */}
+      <Dialog open={reconcileOpen} onOpenChange={setReconcileOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><SiXero className="w-4 h-4" /> Out of sync with Xero</DialogTitle>
+          </DialogHeader>
+          {reconcileReport && (
+            <div className="space-y-3">
+              <p className="text-sm text-muted-foreground">
+                {reconcileReport.diverged} of {reconcileReport.checked} linked bill{reconcileReport.checked === 1 ? "" : "s"} differ from Xero.
+                Xero is the source of truth — applying will update these bills to match.
+              </p>
+              <div className="max-h-64 overflow-y-auto rounded-md border divide-y">
+                {reconcileReport.results.map((r) => (
+                  <div key={r.billId} className="p-2 text-xs">
+                    <div className="font-medium">{r.billNumber}</div>
+                    <ul className="mt-0.5 text-muted-foreground list-disc list-inside">
+                      {r.changes.map((c, i) => <li key={i}>{c}</li>)}
+                    </ul>
+                  </div>
+                ))}
+                {reconcileReport.notInXero.length > 0 && (
+                  <div className="p-2 text-xs text-muted-foreground">
+                    {reconcileReport.notInXero.length} bill(s) linked locally are no longer in Xero: {reconcileReport.notInXero.map((b) => b.billNumber).join(", ")}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setReconcileOpen(false)}>Close</Button>
+            <Button
+              disabled={reconcileApply.isPending || (reconcileReport?.diverged ?? 0) === 0}
+              style={{ backgroundColor: "hsl(var(--primary))", color: "white" }}
+              onClick={() => reconcileApply.mutate()}
+              data-testid="button-reconcile-apply"
+            >
+              {reconcileApply.isPending ? (<><Loader2 className="w-4 h-4 mr-2 animate-spin" />Applying...</>) : `Apply ${reconcileReport?.diverged ?? 0} correction${(reconcileReport?.diverged ?? 0) === 1 ? "" : "s"}`}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* ── Reimbursements queue (admin) ── */}
       {billsView === "reimbursements" && (
@@ -1550,14 +1688,65 @@ export default function Bills({ embedded }: { embedded?: boolean } = {}) {
                 />
               </div>
 
+              {/* Faceted filters */}
+              <DataTableFilterBar
+                facets={[
+                  {
+                    key: "supplier",
+                    label: "Supplier",
+                    allLabel: "All suppliers",
+                    searchable: true,
+                    selected: filterSuppliers,
+                    onChange: setFilterSuppliers,
+                    options: [...suppliers]
+                      .sort((a, b) => (a.name || "").localeCompare(b.name || "", undefined, { sensitivity: "base" }))
+                      .map((s) => ({ value: s.id, label: s.name || "Unnamed" })),
+                  },
+                  {
+                    key: "project",
+                    label: "Project",
+                    allLabel: "All projects",
+                    searchable: true,
+                    hidden: !!projectIdFromUrl,
+                    selected: filterProjects,
+                    onChange: setFilterProjects,
+                    options: [...projects]
+                      .sort((a, b) => (a.name || "").localeCompare(b.name || "", undefined, { sensitivity: "base" }))
+                      .map((p) => ({ value: p.id, label: p.name || "Unnamed" })),
+                  },
+                  {
+                    key: "overdue",
+                    label: "Due",
+                    allLabel: "Any",
+                    selected: filterOverdue,
+                    onChange: setFilterOverdue,
+                    options: [{ value: "overdue", label: "Overdue only" }],
+                  },
+                ]}
+                selects={[
+                  {
+                    key: "date",
+                    label: "Bill date",
+                    value: filterDateRange,
+                    onChange: setFilterDateRange,
+                    options: [
+                      { value: "all", label: "All time" },
+                      { value: "30", label: "Last 30 days" },
+                      { value: "90", label: "Last 90 days" },
+                      { value: "365", label: "Last 12 months" },
+                    ],
+                  },
+                ]}
+              />
+
               {/* Column picker — far right */}
               <Popover open={columnPickerOpen} onOpenChange={setColumnPickerOpen}>
                 <PopoverTrigger asChild>
-                  <button className="h-6 w-6 flex items-center justify-center rounded-md hover-elevate active-elevate-2 border border-transparent ml-auto flex-shrink-0" data-testid="button-column-picker">
-                    <Settings2 className="h-3.5 w-3.5 text-muted-foreground" />
+                  <button className="h-6 w-6 flex items-center justify-center rounded-md hover-elevate active-elevate-2 border border-transparent ml-auto flex-shrink-0 text-muted-foreground" data-testid="button-column-picker" title="Columns" aria-label="Columns">
+                    <Columns3 className="h-3.5 w-3.5" />
                   </button>
                 </PopoverTrigger>
-                <PopoverContent className="w-52 p-1" align="end">
+                <PopoverContent className="w-64 p-0" align="end">
                   <DataTableColumnPicker storageKey="bills" columns={billPickerColumns} />
                 </PopoverContent>
               </Popover>
@@ -1589,6 +1778,7 @@ export default function Bills({ embedded }: { embedded?: boolean } = {}) {
                   columns={billColumns}
                   rowKey={(b) => b.id}
                   onRowClick={(b) => handleRowClick(b.id)}
+                  isRowSelected={(b) => selectedBills.has(b.id)}
                   className="max-h-[calc(100vh-260px)]"
                 />
               )}
