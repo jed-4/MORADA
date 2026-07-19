@@ -10,6 +10,9 @@ import { startScheduledMessageProcessor } from "./utils/scheduledMessageProcesso
 import { startGmailBillPoller } from "./services/gmailBillPoller";
 import { healContactNames } from "./utils/healContactNames";
 import { ensureReferralTables, processReferralCredits } from "./referrals";
+import { ensureSubbieTierColumns } from "./subbieTier";
+import { registerSubbieInvoiceRoutes } from "./subbieInvoiceRoutes";
+import { processSubbieRewards } from "./subbieRewards";
 import { storage } from "./storage";
 import { setEstimateTotalIntegrityReporter } from "@shared/pricing";
 import path from "path";
@@ -175,6 +178,7 @@ app.use((req, res, next) => {
 
 (async () => {
   const server = await registerRoutes(app);
+  registerSubbieInvoiceRoutes(app);
 
   app.use((err: any, req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
@@ -395,6 +399,14 @@ app.use((req, res, next) => {
       console.error('Failed to ensure referral tables:', error);
     }
 
+    // Subbie tier: users.day_rate + client_invoice_items.quantity_decimal
+    // (additive, idempotent — same rationale as the referral tables above).
+    try {
+      await ensureSubbieTierColumns();
+    } catch (error) {
+      console.error('Failed to ensure subbie tier columns:', error);
+    }
+
     // Ensure thumbnail_x/thumbnail_y columns exist on all attachment tables
     // (additive, idempotent). Powers the focal point picker feature.
     try {
@@ -447,6 +459,22 @@ app.use((req, res, next) => {
     };
     referralCreditSweep();
     setInterval(referralCreditSweep, 60 * 60 * 1000);
+
+    // Subbie reward sweep: EARNS the free month (a job added AND an invoice sent
+    // within 3 days of signup) and GRANTS the one-month Stripe credit once the
+    // subbie has added a card. Hourly; no-op while Stripe is unconfigured.
+    const subbieRewardSweep = async () => {
+      try {
+        const r = await processSubbieRewards();
+        if (r.earned > 0 || r.granted > 0) {
+          log(`[subbie-reward] earned ${r.earned}, granted ${r.granted}`);
+        }
+      } catch (err) {
+        console.error('[subbie-reward] reward sweep failed (non-fatal):', err);
+      }
+    };
+    subbieRewardSweep();
+    setInterval(subbieRewardSweep, 60 * 60 * 1000);
 
     // One-time data heal for trade/supplier contacts whose `name` was
     // overwritten by the old key-person fallback. Idempotent — safe to

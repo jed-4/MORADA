@@ -7,7 +7,7 @@ import { ActivityIndicator, StyleSheet, View, useColorScheme } from 'react-nativ
 import * as Notifications from 'expo-notifications';
 import { usePolling } from '../lib/usePolling';
 import { haptic } from '../lib/haptics';
-import MorePanel from '../components/MorePanel';
+import MorePanel, { type MorePanelHandle } from '../components/MorePanel';
 import { apiFetch } from '../services/api';
 import { navigationRef, navigateFromPush } from './navigationRef';
 import { setAppBadgeCount } from '../services/pushNotifications';
@@ -17,6 +17,8 @@ import { navigationIntegration } from '../lib/sentry';
 import { useAuth } from '../contexts/AuthContext';
 import LoginScreen from '../screens/LoginScreen';
 import ForgotPasswordScreen from '../screens/ForgotPasswordScreen';
+import SubbieOnboardingScreen from '../screens/SubbieOnboardingScreen';
+import SubbieCreateInvoiceScreen from '../screens/SubbieCreateInvoiceScreen';
 import DashboardScreen from '../screens/DashboardScreen';
 import BusinessDashboardScreen from '../screens/BusinessDashboardScreen';
 import ProjectsScreen from '../screens/ProjectsScreen';
@@ -166,6 +168,7 @@ function MoreStack() {
       <Stack.Screen name="Checklists" component={ChecklistsScreen} options={{ headerShown: true, title: 'Checklists' }} />
       <Stack.Screen name="Tasks" component={TasksScreen} options={{ headerShown: false }} />
       <Stack.Screen name="Timesheets" component={TimesheetsScreen} options={{ headerShown: false }} />
+      <Stack.Screen name="SubbieInvoice" component={SubbieCreateInvoiceScreen} options={{ headerShown: true, title: 'Create Invoice' }} />
       <Stack.Screen name="MyCalendar" component={CalendarScreen} options={{ headerShown: false }} />
       <Stack.Screen name="Notes" component={NotesListScreen} options={{ headerShown: true, title: 'Notes' }} />
       <Stack.Screen name="NoteEditor" component={NoteEditorScreen} options={{ headerShown: false }} />
@@ -177,7 +180,7 @@ function MoreStack() {
 function MainTabs() {
   const theme = useTheme();
   const [moreVisible, setMoreVisible] = useState(false);
-  const [moreNonce, setMoreNonce] = useState(0);
+  const morePanelRef = useRef<MorePanelHandle>(null);
   const tabNavRef = useRef<any>(null);
   const [messagesUnread, setMessagesUnread] = useState(0);
 
@@ -299,13 +302,12 @@ function MainTabs() {
           listeners={({ navigation }) => {
             tabNavRef.current = navigation;
             return {
-              // Always open: the sheet's backdrop covers the tab bar, so the
-              // More tab is only reachable while the panel is closed. Toggling
-              // a boolean here could desync from the sheet and eat taps.
+              // Present the sheet directly. The sheet's own backdrop covers the
+              // tab bar, so More is only reachable while the panel is closed —
+              // there is nothing to toggle, and no state to fall out of sync.
               tabPress: (e) => {
                 e.preventDefault();
-                setMoreVisible(true);
-                setMoreNonce((n) => n + 1);
+                morePanelRef.current?.present();
               },
             };
           }}
@@ -313,10 +315,9 @@ function MainTabs() {
       </Tab.Navigator>
 
       <MorePanel
-        visible={moreVisible}
-        onClose={() => setMoreVisible(false)}
+        ref={morePanelRef}
         navigationRef={tabNavRef}
-        presentNonce={moreNonce}
+        onVisibilityChange={setMoreVisible}
         messagesUnread={messagesUnread}
       />
     </>
@@ -370,6 +371,7 @@ export default function AppNavigator() {
           <>
             <Stack.Screen name="Login" component={LoginScreen} />
             <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
+            <Stack.Screen name="SubbieOnboarding" component={SubbieOnboardingScreen} />
           </>
         )}
       </Stack.Navigator>
