@@ -23,6 +23,7 @@ import {
   sortableKeyboardCoordinates,
   useSortable,
   verticalListSortingStrategy,
+  arrayMove,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { Button } from "@/components/ui/button";
@@ -55,6 +56,7 @@ import {
   Upload,
   Copy,
   Columns,
+  Columns3,
   Layers,
   Flag,
   Check,
@@ -63,7 +65,7 @@ import {
   Archive
 } from "lucide-react";
 import { type Estimate, type EstimateItem, type EstimateSummary, type Project, type InsertEstimateItem, insertEstimateItemSchema, type EstimateGroup, type InsertEstimateGroup, insertEstimateGroupSchema, type FieldCategoryWithOptions, type FieldOption, type CompanySettings, type CostCode, type CostCategory, type EstimateTemplate, type Selection } from "@shared/schema";
-import { computeEstimateItemPrice } from "@shared/pricing";
+import { computeEstimateItemPrice, isFixedPriceLine, round2, computeEstimateSummary } from "@shared/pricing";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -155,7 +157,6 @@ type ColumnConfig = { id: string; label: string; visible: boolean; widthPx: numb
 // Compact widths to fit more data on screen
 const DEFAULT_COLUMNS: ColumnConfig[] = [
   { id: 'costCode', label: 'Cost Code', visible: true, widthPx: 90 },
-  { id: 'costCategoryId', label: 'Category', visible: false, widthPx: 100 },
   { id: 'type', label: 'Type', visible: true, widthPx: 80 },
   { id: 'item', label: 'Item', visible: true, widthPx: 140 },
   { id: 'description', label: 'Description', visible: true, widthPx: 160 },
@@ -177,6 +178,40 @@ const DEFAULT_COLUMNS: ColumnConfig[] = [
   { id: 'clientPriceIncTax', label: 'Amount Inc', visible: true, widthPx: 95 },
   { id: 'notes', label: 'Notes', visible: true, widthPx: 60 },
 ];
+
+// Draggable row in the column visibility/order picker popover.
+function ColumnReorderItem({ column, onToggle }: { column: ColumnConfig; onToggle: (id: string) => void }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: column.id });
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className="flex items-center gap-2 px-1.5 py-1 rounded-md hover:bg-muted"
+      data-testid={`column-reorder-${column.id}`}
+    >
+      <button
+        {...attributes}
+        {...listeners}
+        className="flex-shrink-0 text-muted-foreground hover:text-foreground cursor-grab active:cursor-grabbing"
+        title="Drag to reorder"
+        aria-label={`Reorder ${column.label} column`}
+      >
+        <GripVertical className="h-4 w-4" />
+      </button>
+      <Checkbox
+        checked={column.visible}
+        onCheckedChange={() => onToggle(column.id)}
+        className="flex-shrink-0"
+      />
+      <span className="truncate text-sm flex-1">{column.label}</span>
+    </div>
+  );
+}
 
 // Sortable Row Component for drag & drop - CSS Grid based
 // Uses a wrapper to maintain height during drag and prevent layout collapse
@@ -304,6 +339,7 @@ const SortableRow = React.memo(({ id, children, className, isDraggable = true, g
         }}
         className="relative bg-muted/50 border-b border-border"
         data-testid={`row-placeholder-${id}`}
+        data-sortable-id={id}
       >
         {/* Dashed placeholder visual overlay */}
         <div 
@@ -346,14 +382,17 @@ const SortableRow = React.memo(({ id, children, className, isDraggable = true, g
       {dropIndicator === 'below' && (
         <div className="absolute -bottom-[2px] left-0 right-0 h-1 bg-primary z-50 rounded-full shadow-[0_0_8px_rgba(168,144,212,0.6)]" />
       )}
-      {/* Drag handle — inside row boundary so overflow-auto scroll container doesn't clip it */}
+      {/* Drag handle — its own 20px lane at the left (checkbox is shifted right),
+          so it no longer overlaps the checkbox and is actually grabbable. */}
       {isDraggable && (
         <div
           {...attributes}
           {...listeners}
-          className="absolute left-0 top-0 h-full w-5 flex items-center justify-center opacity-20 group-hover:opacity-80 cursor-grab active:cursor-grabbing transition-opacity z-10"
+          className="absolute left-0 top-0 h-full w-5 flex items-center justify-center opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-foreground cursor-grab active:cursor-grabbing transition-all z-20"
+          title="Drag to reorder"
+          data-testid={`drag-handle-${id}`}
         >
-          <GripVertical className="h-3.5 w-3.5 text-muted-foreground" />
+          <GripVertical className="h-4 w-4" />
         </div>
       )}
       {children}
@@ -593,11 +632,14 @@ export default function EstimateDetail() {
       lastAppliedPreferencesRef.current = JSON.stringify(prefs);
       
       if (prefs.columns) {
-        const savedColumnIds = new Set((prefs.columns as ColumnConfig[]).map(col => col.id));
+        // Drop any removed columns (e.g. the retired 'costCategoryId') from
+        // saved prefs so they can never reappear from an old preference blob.
+        const savedCols = (prefs.columns as ColumnConfig[]).filter(col => col.id !== 'costCategoryId');
+        const savedColumnIds = new Set(savedCols.map(col => col.id));
         const newColumns = DEFAULT_COLUMNS.filter(col => !savedColumnIds.has(col.id));
         if (newColumns.length > 0) {
           const mergedColumns = DEFAULT_COLUMNS.map(col => ({ ...col }));
-          (prefs.columns as ColumnConfig[]).forEach((savedCol) => {
+          savedCols.forEach((savedCol) => {
             const index = mergedColumns.findIndex(col => col.id === savedCol.id);
             if (index !== -1) {
               mergedColumns[index] = { ...savedCol };
@@ -605,7 +647,7 @@ export default function EstimateDetail() {
           });
           setColumns(mergedColumns);
         } else {
-          setColumns((prefs.columns as ColumnConfig[]).map(col => ({ ...col })));
+          setColumns(savedCols.map(col => ({ ...col })));
         }
       }
       if (prefs.filterType) setFilterType(prefs.filterType);
@@ -1414,67 +1456,68 @@ export default function EstimateDetail() {
       return;
     }
     
-    // Find all sortable item rows in the DOM (excluding the active one)
-    const allRows = document.querySelectorAll('[data-sortable-id]');
-    if (allRows.length === 0) {
-      setDropTargetSync(null);
-      return;
-    }
-    
-    // Build an array of row positions, excluding the active dragged item and group headers
+    // --- Item drag: GROUP-AWARE drop-target detection ---
+    // Determine which group the cursor is currently over using each group
+    // card's full bounds — the [data-sortable-group-id] element wraps the group
+    // header AND all of that group's item rows. Nested subgroups appear after
+    // their parent in the DOM, so the LAST containing match is the innermost
+    // group. When no group contains the cursor it's the ungrouped area
+    // (targetGroupId = null). Only rows in that target group are considered, so
+    // a within-group drag stays in its group and only crosses into another
+    // group when the cursor actually enters that group's area — this is the fix
+    // for the accidental cross-group leak.
+    let targetGroupId: string | null = null;
+    document.querySelectorAll('[data-sortable-group-id]').forEach((el) => {
+      const gid = el.getAttribute('data-sortable-group-id');
+      if (!gid) return;
+      const rect = el.getBoundingClientRect();
+      if (cursorY >= rect.top && cursorY <= rect.bottom) targetGroupId = gid;
+    });
+
     const rowPositions: { id: string; top: number; bottom: number; midpoint: number }[] = [];
-    allRows.forEach((row) => {
+    document.querySelectorAll('[data-sortable-id]').forEach((row) => {
       const id = row.getAttribute('data-sortable-id');
       if (!id || id === activeIdStr || id.startsWith('group-')) return;
-      
+      const rowItem = items.find(i => i.id === id);
+      if (!rowItem) return;
+      if ((rowItem.groupId ?? null) !== targetGroupId) return; // only rows in the target group
       const rect = row.getBoundingClientRect();
-      rowPositions.push({
-        id,
-        top: rect.top,
-        bottom: rect.bottom,
-        midpoint: rect.top + rect.height / 2,
-      });
+      rowPositions.push({ id, top: rect.top, bottom: rect.bottom, midpoint: rect.top + rect.height / 2 });
     });
-    
+
+    // Empty target group → aim at the group header so the item drops into it.
     if (rowPositions.length === 0) {
-      setDropTargetSync(null);
+      setDropTargetSync(targetGroupId ? { id: `group-${targetGroupId}`, position: 'below' } : null);
       return;
     }
-    
+
     // Sort by visual position (top to bottom)
     rowPositions.sort((a, b) => a.top - b.top);
-    
-    // Find where the cursor is relative to all rows
-    // If cursor is above all rows, show indicator above first row
+
+    // Cursor above all rows of the target group → indicator above the first row.
     if (cursorY < rowPositions[0].midpoint) {
       setDropTargetSync({ id: rowPositions[0].id, position: 'above' });
       return;
     }
-    
-    // If cursor is below all rows, show indicator below last row
+    // Cursor below all rows → indicator below the last row.
     const lastRow = rowPositions[rowPositions.length - 1];
     if (cursorY > lastRow.midpoint) {
       setDropTargetSync({ id: lastRow.id, position: 'below' });
       return;
     }
-    
-    // Find the gap between rows where the cursor is
+    // Otherwise find the gap the cursor is in.
     for (let i = 0; i < rowPositions.length; i++) {
       const current = rowPositions[i];
       const next = rowPositions[i + 1];
-      
       if (cursorY <= current.midpoint) {
-        // Cursor is in the top half of this row - show indicator above it
         setDropTargetSync({ id: current.id, position: 'above' });
         return;
       } else if (!next || cursorY <= next.midpoint) {
-        // Cursor is in the bottom half of current row - show indicator below it
         setDropTargetSync({ id: current.id, position: 'below' });
         return;
       }
     }
-    
-    // Fallback
+
     setDropTargetSync(null);
   };
 
@@ -1957,22 +2000,42 @@ export default function EstimateDetail() {
     mutationFn: async (data: { projectMarkupPercent: number }) => {
       return await apiRequest(`/api/estimates/${effectiveEstimateId}`, "PATCH", data);
     },
+    // Optimistically apply the new margin to the estimate AND recompute the
+    // summary locally, so the % chip and the totals update instantly instead of
+    // waiting ~5s for the server round-trip (which caused the flicker/revert).
+    onMutate: async (data) => {
+      await queryClient.cancelQueries({ queryKey: ["/api/estimates", effectiveEstimateId] });
+      await queryClient.cancelQueries({ queryKey: ["/api/estimates", effectiveEstimateId, "summary"] });
+      const prevEstimate = queryClient.getQueryData(["/api/estimates", effectiveEstimateId]);
+      const prevSummary = queryClient.getQueryData(["/api/estimates", effectiveEstimateId, "summary"]);
+      queryClient.setQueryData(["/api/estimates", effectiveEstimateId], (old: any) =>
+        old ? { ...old, projectMarkupPercent: data.projectMarkupPercent } : old,
+      );
+      const currentItems = queryClient.getQueryData<EstimateItem[]>(["/api/estimates", effectiveEstimateId, "items"]);
+      if (currentItems) {
+        const s = computeEstimateSummary(currentItems as any, {
+          projectMarkupPercent: data.projectMarkupPercent,
+          taxRate: estimate?.taxRate ?? 10,
+          estimateId: effectiveEstimateId,
+        });
+        queryClient.setQueryData(["/api/estimates", effectiveEstimateId, "summary"], s);
+      }
+      return { prevEstimate, prevSummary };
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/estimates", effectiveEstimateId] });
       queryClient.invalidateQueries({ queryKey: ["/api/estimates", effectiveEstimateId, "summary"] });
       queryClient.invalidateQueries({ queryKey: ["/api/estimates"] });
-      toast({
-        title: "Success",
-        description: "Markup percentage updated successfully.",
-      });
     },
-    onError: (error: any) => {
+    onError: (error: any, _vars, context: any) => {
+      // Roll back the optimistic estimate + summary.
+      if (context?.prevEstimate) queryClient.setQueryData(["/api/estimates", effectiveEstimateId], context.prevEstimate);
+      if (context?.prevSummary) queryClient.setQueryData(["/api/estimates", effectiveEstimateId, "summary"], context.prevSummary);
       toast({
         title: "Error",
-        description: error.message || "Failed to update markup percentage.",
+        description: error.message || "Failed to update margin.",
         variant: "destructive",
       });
-      // Reset to original markup on error
       setEditingMarkup(estimate?.projectMarkupPercent?.toString() || "0");
     },
   });
@@ -2012,15 +2075,16 @@ export default function EstimateDetail() {
       // Snapshot the previous value
       const previousItems = queryClient.getQueryData(["/api/estimates", effectiveEstimateId, "items"]);
       
-      // Convert dollar values to cents for optimistic update (backend stores in cents)
+      // estimate_items stores DOLLARS (not cents). The optimistic row must use
+      // the SAME units the grid reads, or the new line flashes 100× its real
+      // values until the refetch lands.
       const optimisticItem = {
         ...newItem,
         id: `temp-${Date.now()}`,
         createdAt: new Date(),
         updatedAt: new Date(),
-        // Convert to cents for proper display
-        unitCostExTax: typeof newItem.unitCostExTax === 'number' ? Math.round(newItem.unitCostExTax * 100) : 0,
-        quantity: typeof newItem.quantity === 'number' ? Math.round(newItem.quantity * 100) : 100,
+        unitCostExTax: typeof newItem.unitCostExTax === 'number' ? newItem.unitCostExTax : 0,
+        quantity: typeof newItem.quantity === 'number' ? newItem.quantity : 1,
       };
       
       queryClient.setQueryData(["/api/estimates", effectiveEstimateId, "items"], (old: any) => {
@@ -2337,7 +2401,7 @@ export default function EstimateDetail() {
 
   // Mutation for updating estimate items
   const updateItemMutation = useMutation({
-    mutationFn: async ({ itemId, data }: { itemId: string; data: Partial<InsertEstimateItem> }) => {
+    mutationFn: async ({ itemId, data }: { itemId: string; data: Partial<InsertEstimateItem>; editContext?: { itemId: string; field: string; rawValue: string } }) => {
       return await apiRequest(`/api/estimate-items/${itemId}`, "PATCH", data);
     },
     onMutate: async ({ itemId, data }) => {
@@ -2360,18 +2424,29 @@ export default function EstimateDetail() {
       return { previousItems };
     },
     onSuccess: () => {
+      // Only items + summary change on a cell edit. The old broad
+      // ["/api/estimates"] invalidation was prefix-matched and refetched the
+      // whole estimates list, this estimate, groups, versions, enotes and
+      // po-links on every keystroke commit — pure churn.
       queryClient.invalidateQueries({ queryKey: ["/api/estimates", effectiveEstimateId, "items"] });
       queryClient.invalidateQueries({ queryKey: ["/api/estimates", effectiveEstimateId, "summary"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/estimates"] });
     },
-    onError: (error: any, _variables, context) => {
+    onError: (error: any, variables, context) => {
       // Rollback to previous value on error
       if (context?.previousItems) {
         queryClient.setQueryData(["/api/estimates", effectiveEstimateId, "items"], context.previousItems);
       }
+      // Re-open the cell with the value the user typed so a failed save never
+      // silently discards their edit (it used to close the cell before firing,
+      // so the typed value was lost and had to be retyped from scratch).
+      const ec = (variables as any)?.editContext;
+      if (ec) {
+        setEditingCell({ itemId: ec.itemId, field: ec.field });
+        setEditingValue(String(ec.rawValue ?? ''));
+      }
       toast({
-        title: "Error",
-        description: error.message || "Failed to update item.",
+        title: "Couldn't save — your edit is still here",
+        description: (error?.message || "Failed to update item.") + " Press Enter to try again, or Esc to discard.",
         variant: "destructive",
       });
     },
@@ -2626,10 +2701,13 @@ export default function EstimateDetail() {
     // Validate based on field type
     if (field === 'quantity' || field === 'unitCostExTax' || field === 'unitCostIncTax' || field === 'markupPercent' || field === 'markup') {
       const numValue = parseFloat(editingValue);
-      if (isNaN(numValue) || numValue < 0) {
+      // Quantity and unit costs may be NEGATIVE (deduction / credit lines) — they
+      // net correctly against positive lines. Markup stays non-negative.
+      const allowNegative = field === 'quantity' || field === 'unitCostExTax' || field === 'unitCostIncTax';
+      if (isNaN(numValue) || (!allowNegative && numValue < 0)) {
         toast({
           title: "Invalid Value",
-          description: "Please enter a valid positive number.",
+          description: allowNegative ? "Please enter a valid number." : "Please enter a valid positive number.",
           variant: "destructive",
         });
         // Reset to original value
@@ -2639,7 +2717,7 @@ export default function EstimateDetail() {
           const unitCostIncTax = calculatePricingValues(item).unitCostIncTax;
           setEditingValue(parseFloat(unitCostIncTax.toFixed(2)).toString());
         } else if (field === 'markupPercent' || field === 'markup') {
-          setEditingValue(item.markupPercent ?? estimate?.projectMarkupPercent ?? 0);
+          setEditingValue(String(item.markupPercent ?? 0));
         } else {
           setEditingValue((item as any)[field]);
         }
@@ -2721,12 +2799,18 @@ export default function EstimateDetail() {
     const updateData: Partial<InsertEstimateItem> = {
       [fieldToUpdate]: valueToSave
     };
-    
-    // Clear editing state first (optimistic update)
+
+    // Close the cell optimistically for snappiness, but remember what was typed
+    // (in the ORIGINAL field the user was editing) so onError can re-open the
+    // cell with their value if the save fails — no more silently-lost edits.
+    const rawTyped = editingValue;
     setEditingCell(null);
-    
-    // Update the item
-    updateItemMutation.mutate({ itemId: item.id, data: updateData });
+
+    updateItemMutation.mutate({
+      itemId: item.id,
+      data: updateData,
+      editContext: { itemId: item.id, field, rawValue: rawTyped },
+    });
   };
 
   const handleCellCancel = () => {
@@ -2735,7 +2819,7 @@ export default function EstimateDetail() {
   };
 
   // Define editable fields in order for Tab navigation
-  const editableFields = ['name', 'quantity', 'unitType', 'unitCostExTax', 'markup', 'costCode', 'costCategoryId', 'description'];
+  const editableFields = ['name', 'quantity', 'unitType', 'unitCostExTax', 'markup', 'costCode', 'description'];
   
   const handleCellKeyDown = (e: React.KeyboardEvent, item: EstimateItem, field: string) => {
     if (e.key === "Enter") {
@@ -3062,6 +3146,60 @@ export default function EstimateDetail() {
     });
   };
 
+  // ── Round-trip Excel export ────────────────────────────────────────────────
+  // Only the IMPORTABLE fields, with headers the importer auto-detects, so an
+  // exported estimate re-imports cleanly (unlike the CSV dump above, which
+  // includes computed columns the importer can't take back).
+  const EXPORT_HEADERS = ['Group', 'Item', 'Type', 'Description', 'Quantity', 'Unit', 'Unit Cost', 'Markup %', 'Cost Code', 'Allowance', 'Notes'] as const;
+
+  const buildExportRows = (): Record<string, any>[] => {
+    const rowFor = (it: EstimateItem) => {
+      const grp = groups.find(g => g.id === it.groupId);
+      const code = costCodes.find(c => c.id === it.costCode);
+      return {
+        Group: grp?.name || '',
+        Item: it.name || '',
+        Type: it.type || '',
+        Description: it.description || '',
+        Quantity: Number(it.quantity ?? 0),
+        Unit: it.unitType || '',
+        'Unit Cost': Number(it.unitCostExTax ?? 0),
+        'Markup %': it.markupPercent ?? '',
+        'Cost Code': code ? `${code.code} - ${code.title}` : '',
+        Allowance: it.allowance || 'None',
+        Notes: it.notes || '',
+      };
+    };
+    // Parent items in order, each followed by its sub-items.
+    return items
+      .filter(i => !i.parentItemId)
+      .flatMap(item => [rowFor(item), ...items.filter(s => s.parentItemId === item.id).map(rowFor)]);
+  };
+
+  const handleExportEstimateXLSX = async () => {
+    if (!estimate || !items) return;
+    const XLSX = await import('xlsx');
+    const rows = buildExportRows();
+    const ws = XLSX.utils.json_to_sheet(rows, { header: EXPORT_HEADERS as unknown as string[] });
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Estimate');
+    XLSX.writeFile(wb, `${estimate.name.replace(/[^a-z0-9]/gi, '_')}_${new Date().toISOString().split('T')[0]}.xlsx`);
+    toast({ title: 'Exported to Excel', description: `${rows.length} lines. Re-imports cleanly via Import Items.` });
+  };
+
+  const handleDownloadImportTemplate = async () => {
+    const XLSX = await import('xlsx');
+    const example = [{
+      Group: 'Kitchen', Item: 'Example line item', Type: 'Material', Description: '',
+      Quantity: 1, Unit: 'ea', 'Unit Cost': 100, 'Markup %': 10, 'Cost Code': '', Allowance: 'None', Notes: '',
+    }];
+    const ws = XLSX.utils.json_to_sheet(example, { header: EXPORT_HEADERS as unknown as string[] });
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Estimate Import');
+    XLSX.writeFile(wb, 'Morada_Estimate_Import_Template.xlsx');
+    toast({ title: 'Template downloaded', description: 'Fill it in, then bring it in via Import Items.' });
+  };
+
   // Handler for toggling group collapse
   const handleToggleGroupCollapse = (groupId: string, currentIsCollapsed: boolean) => {
     toggleGroupCollapseMutation.mutate({ 
@@ -3227,12 +3365,34 @@ export default function EstimateDetail() {
   const calculatePricingValues = (item: EstimateItem) => {
     const taxRate = estimate?.taxRate ?? 10;
 
+    // Fixed-price line (PC sum / provisional allowance, unitCost === 0): the
+    // typed priceIncTax is authoritative and there is no qty × unitCost and no
+    // line markup. Deriving via computeEstimateItemPrice would render $0 — the
+    // PC/PS-shows-$0 bug. Preserve the amount and split GST out of it, exactly
+    // like resolveEstimateStoredPrice / the summary's fixed-price branch. Note
+    // the builder's margin is NOT shown per row — it is a single summary line.
+    if (isFixedPriceLine(item.unitCostExTax)) {
+      const clientPriceIncTax = round2(Number(item.priceIncTax ?? 0));
+      const clientPriceExTax = round2(clientPriceIncTax / (1 + taxRate / 100));
+      const clientTax = round2(clientPriceIncTax - clientPriceExTax);
+      return {
+        unitCostIncTax: 0,
+        builderCost: clientPriceExTax,
+        builderCostIncTax: clientPriceIncTax,
+        markupPercent: 0,
+        clientPriceExTax,
+        clientTax,
+        clientPriceIncTax,
+      };
+    }
+
     const priced = computeEstimateItemPrice({
       unitCostExTax: item.unitCostExTax,
       quantity: item.quantity,
       markupPercent: item.markupPercent,
-      projectMarkupPercent: estimate?.projectMarkupPercent,
+      projectMarkupPercent: estimate?.projectMarkupPercent, // ignored; kept for compat
       taxRate,
+      wastagePercent: (item as any).wastagePercent,
     });
 
     return {
@@ -3290,12 +3450,15 @@ export default function EstimateDetail() {
       clientAmountIncTax += subgroupTotals.clientAmountIncTax;
     });
     
+    // Round once at the boundary so float accumulation (e.g. 999.9999999999)
+    // never leaks into the currency formatter and flips a group's display
+    // between "$1,000" and "$1,000.00".
     return {
-      builderCostExTax,
-      builderCostIncTax,
-      clientAmountExTax,
-      clientTax,
-      clientAmountIncTax,
+      builderCostExTax: round2(builderCostExTax),
+      builderCostIncTax: round2(builderCostIncTax),
+      clientAmountExTax: round2(clientAmountExTax),
+      clientTax: round2(clientTax),
+      clientAmountIncTax: round2(clientAmountIncTax),
     };
   };
 
@@ -3834,6 +3997,19 @@ export default function EstimateDetail() {
     });
   };
 
+  // Drag-to-reorder columns in the picker popover.
+  const handleColumnDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    hasUserModifiedRef.current = true;
+    setColumns(prev => {
+      const oldIndex = prev.findIndex(c => c.id === active.id);
+      const newIndex = prev.findIndex(c => c.id === over.id);
+      if (oldIndex < 0 || newIndex < 0) return prev;
+      return arrayMove(prev, oldIndex, newIndex);
+    });
+  };
+
   // Helper function to render an item row with its sub-items - CSS Grid based
   // Accepts optional visibleCols parameter to ensure consistency with header columns
   const renderItemWithSubItems = (
@@ -3853,7 +4029,7 @@ export default function EstimateDetail() {
     const visibleColumns = visibleCols || columns.filter(col => col.visible);
     
     // Generate grid template if not provided (no 32px handle column)
-    const effectiveGridTemplate = gridTemplate || `24px ${visibleColumns.map(c => `${c.widthPx}px`).join(' ')} 80px`;
+    const effectiveGridTemplate = gridTemplate || `40px ${visibleColumns.map(c => `${c.widthPx}px`).join(' ')} 80px`;
     
     // Build className for visual containment - 40px row height
     // Helper: precedence pipeline shared by parent & sub-item rows
@@ -3869,6 +4045,10 @@ export default function EstimateDetail() {
 
     let itemClassName = buildRowBg(item, rowIndex);
     itemClassName += " hover:bg-primary/5 transition-colors";
+    // Selected rows get a clear active state.
+    if (selectedItems.has(item.id)) {
+      itemClassName += " !bg-primary/10 ring-1 ring-inset ring-primary/30";
+    }
     if (isInGroup) {
       itemClassName += " item-in-group";
     }
@@ -3879,8 +4059,8 @@ export default function EstimateDetail() {
     const rows = [
       // Parent item row - CSS Grid
       <SortableRow key={item.id} id={item.id} className={itemClassName} isDraggable={!isLocked} gridTemplate={effectiveGridTemplate} dropIndicator={itemDropIndicator} activeDragId={activeId} onDoubleClick={!isLocked ? () => { setEditingItemId(item.id); setIsEditDialogOpen(true); } : undefined}>
-        {/* Checkbox cell */}
-        <div className="h-9 px-2 flex items-center" role="gridcell">
+        {/* Checkbox cell — pl-5 clears the 20px drag-handle lane at the left */}
+        <div className="h-9 pl-5 pr-1 flex items-center" role="gridcell">
           <Checkbox
             checked={selectedItems.has(item.id)}
             onCheckedChange={() => handleToggleSelection(item.id)}
@@ -3894,17 +4074,17 @@ export default function EstimateDetail() {
           const cell = renderCell(item, column.id);
           return React.cloneElement(cell as React.ReactElement, { key: `${item.id}-${column.id}` });
         })}
-        {/* Actions cell */}
-        <div className="h-9 px-2 flex items-center" role="gridcell">
+        {/* Actions cell — vertical 3-dot, centered, with a left divider (matches groups) */}
+        <div className="h-9 px-2 flex items-center justify-center border-l border-border/50" role="gridcell">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button 
-                variant="ghost" 
-                size="icon" 
+              <Button
+                variant="ghost"
+                size="icon"
                 data-testid={`button-actions-${item.id}`}
                 disabled={estimate?.isLocked}
               >
-                <MoreHorizontal className="w-4 h-4" />
+                <MoreVertical className="w-4 h-4" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
@@ -4028,16 +4208,16 @@ export default function EstimateDetail() {
               const cell = renderCell(subItem, column.id);
               return React.cloneElement(cell as React.ReactElement, { key: `${subItem.id}-${column.id}` });
             })}
-            <div className="h-9 px-2 flex items-center" role="gridcell">
+            <div className="h-9 px-2 flex items-center justify-center border-l border-border/50" role="gridcell">
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button 
-                    variant="ghost" 
-                    size="icon" 
+                  <Button
+                    variant="ghost"
+                    size="icon"
                     data-testid={`button-actions-${subItem.id}`}
                     disabled={estimate?.isLocked}
                   >
-                    <MoreHorizontal className="w-4 h-4" />
+                    <MoreVertical className="w-4 h-4" />
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
@@ -4170,13 +4350,48 @@ export default function EstimateDetail() {
       return a.id.localeCompare(b.id); // Stable sort by ID when order is same
     });
 
-    return { 
-      sortedGroups: parentGroups, 
+    return {
+      sortedGroups: parentGroups,
       subgroupsByParent,
-      groupedItems, 
-      ungroupedItems 
+      groupedItems,
+      ungroupedItems
     };
   };
+
+  // Memoized grouping. Without this, organizeItemsByGroups() (which sorts every
+  // group, buckets every item, and allocates fresh arrays) re-ran on EVERY
+  // keystroke of an inline cell edit — editingValue lives on the root component,
+  // so each character typed re-rendered the whole grid AND re-did this work.
+  // Now it only recomputes when the items, groups, or filters actually change.
+  const organizedView = useMemo(
+    () => organizeItemsByGroups(),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [items, groups, filterType, filterStatus, filterGroup, searchQuery],
+  );
+
+  // Auto-hide scrollbars on the grid scroll container (macOS overlay style):
+  // invisible while idle, shown while scrolling, hidden ~1s after the last
+  // scroll — matching the shared DataTable standard. A callback ref attaches the
+  // listener whenever the container mounts (e.g. after switching to this tab).
+  const scrollAutohideCleanup = React.useRef<(() => void) | null>(null);
+  const gridScrollRef = React.useCallback((el: HTMLDivElement | null) => {
+    if (scrollAutohideCleanup.current) {
+      scrollAutohideCleanup.current();
+      scrollAutohideCleanup.current = null;
+    }
+    if (!el) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const onScroll = () => {
+      el.dataset.scrolling = "true";
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => { delete el.dataset.scrolling; }, 1000);
+    };
+    el.addEventListener("scroll", onScroll, { passive: true });
+    scrollAutohideCleanup.current = () => {
+      el.removeEventListener("scroll", onScroll);
+      if (timer) clearTimeout(timer);
+    };
+  }, []);
 
   // Render cell based on column ID - returns grid-compatible div elements
   const renderCell = (item: EstimateItem, columnId: string) => {
@@ -4345,11 +4560,17 @@ export default function EstimateDetail() {
           );
         }
         return (
-          <div 
+          <div
             className={`${cellBase} ${indentClass} ${cellEditable}`}
             role="gridcell"
             data-testid={`cell-name-${item.id}`}
             onClick={(e) => {
+              e.stopPropagation();
+              if (!isLocked) handleCellEdit(item, 'name');
+            }}
+            onDoubleClick={(e) => {
+              // Double-click the title also inline-edits it (and must NOT bubble
+              // to the row's double-click, which opens the edit dialog).
               e.stopPropagation();
               if (!isLocked) handleCellEdit(item, 'name');
             }}
@@ -4550,7 +4771,7 @@ export default function EstimateDetail() {
           <div className={cellBase} role="gridcell" key={`${item.id}-status`} data-testid={`cell-status-${item.id}`}>
             <Badge
               variant="outline"
-              className={`h-5 min-w-[56px] px-2 text-xs cursor-pointer hover-elevate justify-center ${statusChipStyle.className || ''} ${isLocked ? 'cursor-not-allowed opacity-60' : ''}`}
+              className={`h-5 min-w-[84px] px-2 text-xs cursor-pointer hover-elevate justify-center ${statusChipStyle.className || ''} ${isLocked ? 'cursor-not-allowed opacity-60' : ''}`}
               style={statusChipStyle.className ? undefined : statusChipStyle as React.CSSProperties}
               onClick={() => {
                 if (isLocked) return;
@@ -4627,24 +4848,24 @@ export default function EstimateDetail() {
             </div>
           );
         }
-        // Calculate quantity with wastage
+        // Show the BASE quantity (not wastage-adjusted) so it's unambiguous
+        // which number is the real qty. Wastage's effect is shown as a ring on
+        // the Builder Cost cell instead (see the builderCost case).
         const baseQuantity = item.quantity;
         const wastage = (item as any).wastagePercent || 0;
-        const adjustedQuantity = baseQuantity * (1 + wastage / 100);
-        const displayQuantity = wastage > 0 ? adjustedQuantity : baseQuantity;
-        
+
         return (
-          <div 
+          <div
             className={`${cellBase} ${cellEditable}`}
             role="gridcell"
-            title={isLocked ? '' : `Click to edit (Base: ${baseQuantity.toFixed(2).replace(/\.?0+$/, '')}${wastage > 0 ? `, +${wastage}% waste` : ''})`}
+            title={isLocked ? '' : `Click to edit${wastage > 0 ? ` (builder cost includes +${wastage}% waste)` : ''}`}
             onClick={(e) => {
               e.stopPropagation();
               if (!isLocked) handleCellEdit(item, 'quantity');
             }}
             data-testid={`cell-quantity-${item.id}`}
           >
-            {displayQuantity.toFixed(2).replace(/\.?0+$/, '')}
+            {baseQuantity.toFixed(2).replace(/\.?0+$/, '')}
           </div>
         );
       
@@ -4808,12 +5029,19 @@ export default function EstimateDetail() {
           </div>
         );
       
-      case 'builderCost':
+      case 'builderCost': {
+        const wastagePct = (item as any).wastagePercent || 0;
         return (
-          <div className={cellBase} role="gridcell" data-testid={`cell-builderCost-${item.id}`}>
+          <div
+            className={`${cellBase} ${wastagePct > 0 ? "ring-1 ring-inset ring-amber/60 rounded-sm bg-amber/5" : ""}`}
+            role="gridcell"
+            data-testid={`cell-builderCost-${item.id}`}
+            title={wastagePct > 0 ? `Includes +${wastagePct}% wastage` : undefined}
+          >
             {formatCurrency(pricingValues.builderCost)}
           </div>
         );
+      }
       
       case 'builderCostIncTax':
         return (
@@ -5086,12 +5314,12 @@ export default function EstimateDetail() {
   }
 
   return (
-    <div className="flex flex-col h-full bg-background">
-      {/* Unified header card — breadcrumb row + finance summary */}
-      <div className="mx-3 mt-3 rounded-lg border border-border bg-card flex-shrink-0 overflow-hidden">
+    <div className="flex flex-col h-full">
+      {/* Header — breadcrumb floats on the deep page canvas; summary sits in its own floating card */}
+      <div className="flex-shrink-0">
 
-      {/* Row 1 - Breadcrumb + Actions */}
-      <div className="h-8 flex items-center justify-between px-3 border-b border-border/50">
+      {/* Row 1 - Breadcrumb + Actions (floating, no box) */}
+      <div className="h-8 flex items-center justify-between px-1 pt-1">
         {/* Left: Breadcrumb + Status */}
         <div className="flex items-center gap-2 min-w-0">
           <Button 
@@ -5164,6 +5392,52 @@ export default function EstimateDetail() {
               </button>
             </PopoverTrigger>
             <PopoverContent className="w-64 p-3" align="end">
+              <p className="text-table font-medium text-muted-foreground uppercase tracking-wide mb-2">Builder Margin</p>
+              <div className="relative mb-3">
+                <Input
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="0.1"
+                  defaultValue={estimate?.projectMarkupPercent || 0}
+                  onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+                  onBlur={(e) => {
+                    const v = parseFloat(e.target.value);
+                    if (!Number.isNaN(v) && v !== (estimate?.projectMarkupPercent || 0)) {
+                      updateMarkupMutation.mutate({ projectMarkupPercent: v });
+                    }
+                  }}
+                  disabled={estimate?.isLocked}
+                  className="h-8 text-sm pr-7"
+                  data-testid="input-builder-margin-popover"
+                />
+                <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-muted-foreground pointer-events-none">%</span>
+              </div>
+              <p className="text-table font-medium text-muted-foreground uppercase tracking-wide mb-2">Import / Export</p>
+              <div className="flex flex-col gap-1 mb-3">
+                <button
+                  className="flex items-center gap-2 px-2 h-8 text-sm rounded-md border border-border hover-elevate active-elevate-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                  onClick={() => setIsImportOpen(true)}
+                  disabled={estimate?.isLocked}
+                  data-testid="button-import-from-popover"
+                >
+                  <Upload className="w-3.5 h-3.5" /> Import from Excel
+                </button>
+                <button
+                  className="flex items-center gap-2 px-2 h-8 text-sm rounded-md border border-border hover-elevate active-elevate-2"
+                  onClick={handleExportEstimateXLSX}
+                  data-testid="button-export-xlsx"
+                >
+                  <Download className="w-3.5 h-3.5" /> Export to Excel
+                </button>
+                <button
+                  className="flex items-center gap-2 px-2 h-8 text-sm rounded-md border border-border hover-elevate active-elevate-2"
+                  onClick={handleDownloadImportTemplate}
+                  data-testid="button-download-template"
+                >
+                  <FileText className="w-3.5 h-3.5" /> Download import template
+                </button>
+              </div>
               <p className="text-table font-medium text-muted-foreground uppercase tracking-wide mb-2">Assignees</p>
               <MultiUserSelect
                 value={estimate?.assigneeIds || []}
@@ -5424,7 +5698,7 @@ export default function EstimateDetail() {
 
       {/* Finance summary — collapsible */}
       {summary && !isSummaryExpanded && (
-        <div className="bg-card border-b border-border flex items-center justify-between px-6 py-2">
+        <div className="mx-1 rounded-lg border border-border bg-card flex items-center justify-between px-4 py-2">
           <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Summary</span>
           <div className="flex items-baseline gap-2">
             <span className="text-base font-semibold tabular-nums text-foreground">{formatCurrency(summary.total)}</span>
@@ -5433,7 +5707,7 @@ export default function EstimateDetail() {
         </div>
       )}
       {summary && isSummaryExpanded && (
-        <div className="bg-card border-b border-border flex items-center px-6 py-4 gap-6 flex-wrap">
+        <div className="mx-1 rounded-lg border border-border bg-card flex items-center px-4 py-2.5 gap-6 flex-wrap">
 
           {/* Hard left — breakdown: builder cost, line markup, global markup (ledger-aligned) */}
           <div className="flex flex-col gap-1 min-w-[240px]">
@@ -5452,34 +5726,11 @@ export default function EstimateDetail() {
               </div>
             )}
             <div className="flex items-baseline justify-between gap-4">
-              <span className="text-xs font-medium text-muted-foreground flex items-baseline gap-2">
+              <span className="text-xs font-medium text-muted-foreground flex items-baseline gap-1.5">
                 Builder Margin
-                {isEditingMarkup ? (
-                  <Input
-                    value={editingMarkup}
-                    onChange={(e) => setEditingMarkup(e.target.value)}
-                    onKeyDown={handleMarkupKeyDown}
-                    onBlur={handleMarkupSave}
-                    className="inline-block w-14 h-5 text-xs bg-transparent border-b border-primary p-0 px-1 focus-visible:ring-0 focus-visible:ring-offset-0"
-                    data-testid="input-markup-percentage"
-                    autoFocus
-                    type="number"
-                    min="0"
-                    max="100"
-                    step="0.1"
-                  />
-                ) : (
-                  <button
-                    type="button"
-                    className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded text-xs font-semibold bg-primary/10 text-primary hover:bg-primary/15 transition-colors"
-                    onClick={handleMarkupEdit}
-                    title="Click to edit builder margin %"
-                    data-testid="text-markup-percentage"
-                  >
-                    {estimate?.projectMarkupPercent || 0}%
-                    <Pencil className="w-2.5 h-2.5 opacity-60" />
-                  </button>
-                )}
+                <span className="text-xs font-semibold text-foreground tabular-nums" data-testid="text-markup-percentage">
+                  {estimate?.projectMarkupPercent || 0}%
+                </span>
               </span>
               <span className="text-base font-semibold text-primary tabular-nums text-right" data-testid="text-global-markup">
                 {formatCurrency((summary as any).globalMarkupAmount ?? summary.markupAmount)}
@@ -5522,30 +5773,30 @@ export default function EstimateDetail() {
 
       </div>{/* end header card */}
 
-      {/* Main Content — outer card stays fixed, only table content scrolls horizontally */}
-      <div className="flex-1 min-h-0 mx-3 mt-2 mb-4 border border-border rounded-md overflow-hidden flex flex-col">
+      {/* Main Content — floating card on the deep page canvas; only table content scrolls horizontally */}
+      <div className="flex-1 min-h-0 mx-1 mt-1.5 mb-1 rounded-lg border border-border bg-card overflow-hidden flex flex-col">
 
-        {/* Tab navigation */}
-        <div className="flex items-center border-b border-border bg-card flex-shrink-0 px-2 gap-0">
+        {/* Tab navigation — Bills-style compact pill tabs */}
+        <div className="h-9 flex items-center border-b border-border bg-muted/30 flex-shrink-0 px-2 gap-1">
           {(['estimate', 'enotes', 'labour'] as const).map(tab => (
             <button
               key={tab}
               onClick={() => setEstimateTab(tab)}
               className={
                 estimateTab === tab
-                  ? 'px-4 py-3 text-sm font-semibold border-b-2 border-primary text-primary transition-colors'
-                  : 'px-4 py-3 text-sm font-medium border-b-2 border-transparent text-muted-foreground hover:text-foreground transition-colors'
+                  ? 'h-6 px-3 text-xs font-medium rounded-md bg-primary text-primary-foreground transition-colors'
+                  : 'h-6 px-3 text-xs font-medium rounded-md hover-elevate text-muted-foreground transition-colors'
               }
             >
-              {tab === 'estimate' ? 'Estimate' : tab === 'enotes' ? 'E-Notes' : 'Labour'}
+              {tab === 'estimate' ? 'Estimate' : tab === 'enotes' ? 'Details' : 'Labour'}
             </button>
           ))}
           <button
             onClick={() => setEstimateTab('takeoff')}
             className={
               estimateTab === 'takeoff'
-                ? 'px-4 py-3 text-sm font-semibold border-b-2 border-primary text-primary transition-colors'
-                : 'px-4 py-3 text-sm font-medium border-b-2 border-transparent text-muted-foreground hover:text-foreground transition-colors'
+                ? 'h-6 px-3 text-xs font-medium rounded-md bg-primary text-primary-foreground transition-colors'
+                : 'h-6 px-3 text-xs font-medium rounded-md hover-elevate text-muted-foreground transition-colors'
             }
             data-testid="tab-takeoff"
           >
@@ -5572,7 +5823,7 @@ export default function EstimateDetail() {
           {effectiveEstimateId && !isNewEstimate ? (
             <EstimateEnotes estimateId={effectiveEstimateId} />
           ) : (
-            <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm">Save the estimate first to access E-Notes.</div>
+            <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm">Save the estimate first to access Details.</div>
           )}
         </div>
 
@@ -5595,7 +5846,7 @@ export default function EstimateDetail() {
         <div className={estimateTab !== 'estimate' ? 'hidden' : 'flex-1 flex flex-col min-h-0'}>
 
         {/* Toolbar row — does NOT scroll horizontally */}
-        <div className="flex items-center justify-between gap-2 px-4 py-2 border-b border-border bg-background flex-shrink-0">
+        <div className="flex items-center justify-between gap-2 px-4 py-1.5 border-b border-border bg-background flex-shrink-0">
               {/* Left: Controls + Filter Chips */}
               <div className="flex items-center gap-1.5 flex-1">
                 {/* Group Expand/Collapse - Icon only */}
@@ -5638,12 +5889,12 @@ export default function EstimateDetail() {
 
                 {/* Search Input */}
                 <div className="relative">
-                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
                   <Input
                     placeholder="Search items..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    className="h-8 w-48 pl-8 pr-3 text-sm bg-card border border-border rounded-md placeholder:text-muted-foreground"
+                    className="h-6 w-48 pl-7 pr-3 text-xs bg-card border border-border rounded-md placeholder:text-muted-foreground"
                     data-testid="input-search-items"
                   />
                   {searchQuery && (
@@ -5657,130 +5908,136 @@ export default function EstimateDetail() {
                   )}
                 </div>
                 
-                {/* Filter by Type */}
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <button 
-                      className={`h-8 px-3 text-sm font-medium rounded-md transition-colors ${
-                        filterType !== 'all' 
-                          ? 'bg-primary text-primary-foreground hover:bg-primary/90' 
-                          : 'bg-card border border-border text-foreground hover:bg-muted/50'
-                      }`}
-                      data-testid="filter-type"
-                    >
-                      <span>{filterType === 'all' ? 'All Types' : filterType}</span>
-                    </button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent>
-                    <DropdownMenuItem onClick={() => { hasUserModifiedRef.current = true; setFilterType('all'); }}>All Types</DropdownMenuItem>
-                    {Array.from(new Set(items.map(item => item.type))).map(type => (
-                      <DropdownMenuItem key={type} onClick={() => { hasUserModifiedRef.current = true; setFilterType(type); }}>{type}</DropdownMenuItem>
-                    ))}
-                  </DropdownMenuContent>
-                </DropdownMenu>
-
-                {/* Filter by Status */}
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <button 
-                      className={`h-8 px-3 text-sm font-medium rounded-md transition-colors ${
-                        filterStatus !== 'all' 
-                          ? 'bg-primary text-primary-foreground hover:bg-primary/90' 
-                          : 'bg-card border border-border text-foreground hover:bg-muted/50'
-                      }`}
-                      data-testid="filter-status"
-                    >
-                      <span>{filterStatus === 'all' ? 'All Status' : estimateItemStatusCategory?.options?.find((opt: any) => opt.key === filterStatus)?.name || filterStatus}</span>
-                    </button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent>
-                    <DropdownMenuItem onClick={() => { hasUserModifiedRef.current = true; setFilterStatus('all'); }}>All Status</DropdownMenuItem>
-                    {estimateItemStatusCategory?.options?.filter((opt: any) => opt.isActive).map((option: any) => (
-                      <DropdownMenuItem key={option.key} onClick={() => { hasUserModifiedRef.current = true; setFilterStatus(option.key); }}>{option.name}</DropdownMenuItem>
-                    ))}
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                {/* Filters — one button + popover (Type / Status / Group) */}
+                {(() => {
+                  const activeFilterCount =
+                    (filterType !== 'all' ? 1 : 0) +
+                    (filterStatus !== 'all' ? 1 : 0) +
+                    (filterGroup !== 'all' ? 1 : 0);
+                  const hasActiveFilters = activeFilterCount > 0;
+                  return (
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <button
+                          className={`relative h-6 w-6 text-xs border rounded-md flex items-center justify-center hover-elevate active-elevate-2 transition-colors ${
+                            hasActiveFilters ? 'bg-primary/10 text-primary border-primary/20' : 'border-border text-foreground'
+                          }`}
+                          data-testid="button-filter"
+                          title={hasActiveFilters ? `Filter (${activeFilterCount})` : 'Filter'}
+                          aria-label="Filter"
+                        >
+                          <Filter className="w-3 h-3" />
+                          {hasActiveFilters && (
+                            <span className="absolute -top-1 -right-1 min-w-[14px] h-[14px] px-1 rounded-full bg-primary text-primary-foreground text-[9px] leading-[14px] font-semibold text-center" data-testid="badge-filter-count">
+                              {activeFilterCount}
+                            </span>
+                          )}
+                        </button>
+                      </PopoverTrigger>
+                      <PopoverContent align="start" className="w-64 p-3 space-y-3" data-testid="popover-estimate-filters">
+                        <div className="space-y-1">
+                          <p className="text-xs text-muted-foreground">Type</p>
+                          <Select value={filterType} onValueChange={(v) => { hasUserModifiedRef.current = true; setFilterType(v); }}>
+                            <SelectTrigger className="h-8 text-xs" data-testid="filter-type"><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="all">All Types</SelectItem>
+                              {Array.from(new Set(items.map(item => item.type))).map(type => (
+                                <SelectItem key={type} value={type}>{type}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-1">
+                          <p className="text-xs text-muted-foreground">Status</p>
+                          <Select value={filterStatus} onValueChange={(v) => { hasUserModifiedRef.current = true; setFilterStatus(v); }}>
+                            <SelectTrigger className="h-8 text-xs" data-testid="filter-status"><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="all">All Status</SelectItem>
+                              {estimateItemStatusCategory?.options?.filter((opt: any) => opt.isActive).map((option: any) => (
+                                <SelectItem key={option.key} value={option.key}>{option.name}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-1">
+                          <p className="text-xs text-muted-foreground">Group</p>
+                          <Select value={filterGroup} onValueChange={(v) => { hasUserModifiedRef.current = true; setFilterGroup(v); }}>
+                            <SelectTrigger className="h-8 text-xs" data-testid="filter-group"><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="all">All Groups</SelectItem>
+                              <SelectItem value="ungrouped">Ungrouped</SelectItem>
+                              {groups.filter(g => !g.parentGroupId).map(g => (
+                                <SelectItem key={g.id} value={g.id}>{g.name}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        {hasActiveFilters && (
+                          <button
+                            className="w-full h-7 text-xs rounded-md border border-border hover-elevate active-elevate-2"
+                            onClick={() => { hasUserModifiedRef.current = true; setFilterType('all'); setFilterStatus('all'); setFilterGroup('all'); }}
+                            data-testid="button-clear-filters"
+                          >
+                            Clear filters
+                          </button>
+                        )}
+                      </PopoverContent>
+                    </Popover>
+                  );
+                })()}
               </div>
 
               {/* Right: Controls */}
               <div className="flex items-center gap-1.5">
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
+                <Popover>
+                  <PopoverTrigger asChild>
                     <button
                       className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
                       data-testid="button-column-visibility"
+                      title="Columns"
+                      aria-label="Columns"
                     >
-                      <Columns className="w-3 h-3" />
+                      <Columns3 className="w-3 h-3" />
                     </button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-72">
-                    <div className="px-2 py-1.5 text-sm font-semibold">Columns (visibility & order)</div>
-                    {columns.map((column, index) => (
-                      <DropdownMenuItem 
-                        key={column.id}
-                        onClick={(e) => e.preventDefault()}
-                        className="flex items-center justify-between gap-2"
-                      >
-                        <div className="flex items-center flex-1 min-w-0">
-                          <Checkbox
-                            checked={column.visible}
-                            onCheckedChange={() => toggleColumn(column.id)}
-                            className="mr-2 flex-shrink-0"
-                          />
-                          <span className="truncate">{column.label}</span>
+                  </PopoverTrigger>
+                  <PopoverContent align="end" className="w-64 p-2" data-testid="popover-columns">
+                    <div className="px-1.5 pt-1 text-sm font-semibold">Columns</div>
+                    <p className="px-1.5 pb-2 text-xs text-muted-foreground">Drag to reorder · toggle to show/hide.</p>
+                    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleColumnDragEnd}>
+                      <SortableContext items={columns.map(c => c.id)} strategy={verticalListSortingStrategy}>
+                        <div className="max-h-80 overflow-y-auto space-y-0.5 pr-0.5">
+                          {columns.map((column) => (
+                            <ColumnReorderItem key={column.id} column={column} onToggle={toggleColumn} />
+                          ))}
                         </div>
-                        <div className="flex items-center gap-0.5 flex-shrink-0">
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              moveColumnUp(column.id);
-                            }}
-                            disabled={index === 0}
-                            className={`p-0.5 rounded hover:bg-muted ${index === 0 ? 'opacity-30 cursor-not-allowed' : ''}`}
-                            data-testid={`button-move-column-up-${column.id}`}
-                          >
-                            <ChevronUp className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              moveColumnDown(column.id);
-                            }}
-                            disabled={index === columns.length - 1}
-                            className={`p-0.5 rounded hover:bg-muted ${index === columns.length - 1 ? 'opacity-30 cursor-not-allowed' : ''}`}
-                            data-testid={`button-move-column-down-${column.id}`}
-                          >
-                            <ChevronDown className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      </DropdownMenuItem>
-                    ))}
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                      </SortableContext>
+                    </DndContext>
+                  </PopoverContent>
+                </Popover>
 
-                <button 
-                  className="h-8 px-3 text-sm font-medium bg-card border border-border rounded-lg text-foreground hover:bg-muted/50 transition-colors flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
-                  data-testid="button-add-group" 
+                <button
+                  className="h-6 px-2 text-xs font-medium bg-card border border-border rounded-md text-foreground hover:bg-muted/50 transition-colors flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
+                  data-testid="button-add-group"
                   onClick={handleAddGroup}
                   disabled={estimate?.isLocked}
                 >
-                  <FolderPlus className="w-3.5 h-3.5" />
+                  <FolderPlus className="w-3 h-3" />
                   <span>Group</span>
                 </button>
 
-                <button 
-                  className="h-8 px-4 text-sm font-semibold bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
-                  data-testid="button-add-item" 
+                <button
+                  className="h-6 px-2.5 text-xs font-semibold bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
+                  data-testid="button-add-item"
                   onClick={handleAddItem}
                   disabled={estimate?.isLocked}
                 >
-                  <Plus className="w-3.5 h-3.5" />
+                  <Plus className="w-3 h-3" />
                   <span>New Item</span>
                 </button>
               </div>
         </div>
         {/* Scrollable content area — only this scrolls horizontally */}
-        <div className="flex-1 overflow-auto min-h-0">
+        <div ref={gridScrollRef} className="flex-1 overflow-auto min-h-0 dt-autohide-scrollbar">
           <div className="inline-block min-w-full">
             <div className="bg-background">
               {itemsLoading || groupsLoading ? (
@@ -5860,8 +6117,8 @@ export default function EstimateDetail() {
                   >
                     <div className="space-y-4">
 {(() => {
-                      const { sortedGroups, subgroupsByParent, groupedItems, ungroupedItems } = organizeItemsByGroups();
-                      
+                      const { sortedGroups, subgroupsByParent, groupedItems, ungroupedItems } = organizedView;
+
                       // Create sortable IDs: group IDs prefixed with "group-" and item IDs (including sub-items)
                       const groupIds = sortedGroups.map(g => `group-${g.id}`);
                       // Add subgroup IDs to sortable context
@@ -5889,11 +6146,11 @@ export default function EstimateDetail() {
                       // by skipping transforms based on activeDragId.
                       const allSortableIds = [...groupIds, ...subgroupIds, ...allItemIds];
                       
-                      const tableWidth = columns.filter(col => col.visible).reduce((sum, col) => sum + col.widthPx, 0) + 80 + 24;
+                      const tableWidth = columns.filter(col => col.visible).reduce((sum, col) => sum + col.widthPx, 0) + 80 + 40;
                       
                       // Generate CSS Grid template (no 32px handle column — handle floats in dead zone)
                       const visibleCols = columns.filter(col => col.visible);
-                      const gridTemplate = `24px ${visibleCols.map(c => `${c.widthPx}px`).join(' ')} 80px`;
+                      const gridTemplate = `40px ${visibleCols.map(c => `${c.widthPx}px`).join(' ')} 80px`;
                       
                       // Get all subgroups for passing to EstimateGroupCard
                       const allSubgroups = groups.filter(g => g.parentGroupId);
@@ -5912,8 +6169,8 @@ export default function EstimateDetail() {
                               minWidth: `${tableWidth}px`
                             }}
                           >
-                            {/* Checkbox column */}
-                            <div className="h-9 px-2 flex items-center" role="columnheader">
+                            {/* Checkbox column — pl-5 aligns with the handle-lane-shifted row checkboxes */}
+                            <div className="h-9 pl-5 pr-1 flex items-center" role="columnheader">
                               <Checkbox
                                 checked={selectedItems.size > 0 && selectedItems.size === items.length}
                                 onCheckedChange={handleSelectAll}
@@ -5930,10 +6187,10 @@ export default function EstimateDetail() {
                                 className="h-9 px-2 flex items-center relative group/header"
                               >
                                 <span className="truncate text-xs font-medium text-muted-foreground uppercase tracking-wide">{column.label}</span>
-                                {/* Resize handle - hidden on last column and on mobile */}
+                                {/* Resize handle — hidden only on the last column */}
                                 {index < visibleCols.length - 1 && (
                                   <div
-                                    className={`hidden md:block absolute right-0 top-0 h-full w-1 cursor-col-resize transition-all z-10 ${
+                                    className={`absolute right-0 top-0 h-full w-1 cursor-col-resize transition-all z-10 ${
                                       resizingColumn === column.id 
                                         ? 'opacity-100 bg-primary w-[3px]' 
                                         : 'opacity-0 group-hover/header:opacity-100 hover:bg-primary bg-muted'
@@ -5946,7 +6203,7 @@ export default function EstimateDetail() {
                               </div>
                             ))}
                             {/* Actions column */}
-                            <div className="h-9 px-2 flex items-center" role="columnheader">
+                            <div className="h-9 px-2 flex items-center justify-center border-l border-border/50" role="columnheader">
                               <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Actions</span>
                             </div>
                           </div>
@@ -7245,33 +7502,6 @@ export default function EstimateDetail() {
                         data-testid="select-group-default-cost-code"
                       />
                     </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={groupForm.control}
-                name={"defaultCostCategoryId" as any}
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Default Category (Optional)</FormLabel>
-                    <Select
-                      value={field.value || 'none'}
-                      onValueChange={(v) => field.onChange(v === 'none' ? undefined : v)}
-                    >
-                      <FormControl>
-                        <SelectTrigger data-testid="select-group-default-category">
-                          <SelectValue placeholder="None" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        <SelectItem value="none">None</SelectItem>
-                        {costCategories.map(cat => (
-                          <SelectItem key={cat.id} value={cat.id}>{cat.code} - {cat.title}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
                     <FormMessage />
                   </FormItem>
                 )}

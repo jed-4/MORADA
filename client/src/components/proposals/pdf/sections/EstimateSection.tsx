@@ -1,5 +1,6 @@
 import { Page, Text, View, StyleSheet } from "@react-pdf/renderer";
 import type { ProposalSection, Estimate, EstimateGroup, EstimateItem } from "@shared/schema";
+import { round2, isFixedPriceLine, computeEstimateItemPrice } from "@shared/pricing";
 import { DocProposalInnerHeader } from "@/components/pdf/shared/DocProposalInnerHeader";
 import { DocFooter } from "@/components/pdf/shared/DocFooter";
 
@@ -128,25 +129,86 @@ export function EstimateSection({
     }
   });
 
-  const sortedGroups = [...groups].sort((a, b) => a.order - b.order);
+  // Hierarchy-aware grouping: only ROOT groups render at the top level; each
+  // group's subgroups render nested underneath it, sorted within their sibling
+  // set. (The old flat `[...groups].sort(order)` flattened the tree and
+  // interleaved subgroups arbitrarily.)
+  const rootGroups = [...groups]
+    .filter((g) => !g.parentGroupId)
+    .sort((a, b) => a.order - b.order);
+  const subgroupsByParent: Record<string, EstimateGroup[]> = {};
+  for (const g of groups) {
+    if (g.parentGroupId) (subgroupsByParent[g.parentGroupId] ||= []).push(g);
+  }
+  for (const k of Object.keys(subgroupsByParent)) {
+    subgroupsByParent[k].sort((a, b) => a.order - b.order);
+  }
+
+  // A group's items PLUS all of its descendant subgroups' items — so a container
+  // group's subtotal includes the money nested inside it (the flat version
+  // summed direct children only and printed $0 for pure container groups).
+  const collectGroupItems = (groupId: string, seen = new Set<string>()): EstimateItem[] => {
+    if (seen.has(groupId)) return []; // guard against legacy corrupt parent cycles
+    seen.add(groupId);
+    const own = itemsByGroup[groupId] || [];
+    const kids = subgroupsByParent[groupId] || [];
+    return kids.reduce((acc, k) => acc.concat(collectGroupItems(k.id, seen)), [...own]);
+  };
 
   const formatCurrency = (amount: number) => `$${amount.toFixed(2)}`;
   const formatQuantity = (qty: number) => qty.toFixed(2).replace(/\.?0+$/, "");
 
+  // The stored priceIncTax is the PRE-margin line amount (line markup only).
+  // The builder's margin (project markup) is a single global uplift on the
+  // ex-GST subtotal. Because it is a flat percentage, distributing it
+  // proportionally across every line is exact: per-line and group figures still
+  // sum to the grand total, and the grand total equals the estimate's canonical
+  // contract price. It is also the right client-facing behaviour — the margin
+  // is embedded in the prices, never shown as its own line. (Summing the raw
+  // pre-margin cache here previously under-quoted by the whole margin.)
+  const marginFactor = 1 + (Number(estimate?.projectMarkupPercent ?? 0) / 100);
+  const taxRatePct = Number(estimate?.taxRate ?? 10);
+
+  // Pre-margin line amounts. Priced lines are RECOMPUTED from qty × unitCost ×
+  // line markup (never the stored cache), so a legacy margin-baked cache can't
+  // double-count the margin here. Fixed-price allowances use their authoritative
+  // typed priceIncTax. This mirrors the estimate grid and computeEstimateSummary.
+  const preMarginIncTax = (item: EstimateItem): number => {
+    if (isFixedPriceLine(item.unitCostExTax)) return round2(Number(item.priceIncTax ?? 0));
+    return computeEstimateItemPrice({
+      unitCostExTax: item.unitCostExTax ?? 0,
+      quantity: item.quantity ?? 0,
+      markupPercent: item.markupPercent,
+      projectMarkupPercent: 0,
+      taxRate: taxRatePct,
+      wastagePercent: (item as any).wastagePercent,
+    }).lineIncTax;
+  };
+  const preMarginExTax = (item: EstimateItem): number => {
+    if (isFixedPriceLine(item.unitCostExTax)) {
+      const inc = round2(Number(item.priceIncTax ?? 0));
+      return round2(inc / (1 + taxRatePct / 100));
+    }
+    return computeEstimateItemPrice({
+      unitCostExTax: item.unitCostExTax ?? 0,
+      quantity: item.quantity ?? 0,
+      markupPercent: item.markupPercent,
+      projectMarkupPercent: 0,
+      taxRate: taxRatePct,
+      wastagePercent: (item as any).wastagePercent,
+    }).lineExTax;
+  };
+  const lineIncTaxClient = (item: EstimateItem) => round2(preMarginIncTax(item) * marginFactor);
+  const lineExTaxClient = (item: EstimateItem) => round2(preMarginExTax(item) * marginFactor);
+
   const calculateGroupSubtotals = (groupItems: EstimateItem[]) => {
-    const incTax = groupItems.reduce((sum, item) => sum + (item.priceIncTax ?? 0), 0);
-    const exTax = groupItems.reduce(
-      (sum, item) => sum + ((item.priceIncTax ?? 0) - (item.taxAmount ?? 0)),
-      0,
-    );
+    const incTax = round2(groupItems.reduce((sum, item) => sum + lineIncTaxClient(item), 0));
+    const exTax = round2(groupItems.reduce((sum, item) => sum + lineExTaxClient(item), 0));
     return { incTax, exTax };
   };
 
-  const grandTotalIncTax = items.reduce((sum, item) => sum + (item.priceIncTax ?? 0), 0);
-  const grandTotalExTax = items.reduce(
-    (sum, item) => sum + ((item.priceIncTax ?? 0) - (item.taxAmount ?? 0)),
-    0,
-  );
+  const grandTotalIncTax = round2(items.reduce((sum, item) => sum + lineIncTaxClient(item), 0));
+  const grandTotalExTax = round2(items.reduce((sum, item) => sum + lineExTaxClient(item), 0));
 
   const styles = StyleSheet.create({
     description: {
@@ -247,7 +309,9 @@ export function EstimateSection({
   );
 
   const renderTableRow = (item: EstimateItem) => {
-    if (!toggles.showZeroLines && (item.priceIncTax ?? 0) === 0) {
+    // Use the recomputed amount (not the possibly-stale cache) so a zeroed
+    // priced line is correctly hidden.
+    if (!toggles.showZeroLines && preMarginIncTax(item) === 0) {
       return null;
     }
     const unitCostTax = Math.round(item.unitCostExTax * (estimate.taxRate || 10)) / 100;
@@ -281,34 +345,38 @@ export function EstimateSection({
         )}
         {toggles.markup && (
           <Text style={[styles.col, styles.textRight, { width: colWidths.numeric }]}>
-            {item.markupPercent ?? estimate.projectMarkupPercent ?? 0}%
+            {item.markupPercent ?? 0}%
           </Text>
         )}
         {toggles.amountExTax && (
           <Text style={[styles.col, styles.textRight, { width: colWidths.numeric }]}>
-            {formatCurrency((item.priceIncTax ?? 0) - (item.taxAmount ?? 0))}
+            {formatCurrency(lineExTaxClient(item))}
           </Text>
         )}
         {toggles.amountIncTax && (
           <Text style={[styles.col, styles.textRight, { width: colWidths.numeric }]}>
-            {formatCurrency(item.priceIncTax ?? 0)}
+            {formatCurrency(lineIncTaxClient(item))}
           </Text>
         )}
       </View>
     );
   };
 
-  const renderGroup = (group: EstimateGroup) => {
-    const groupItems = itemsByGroup[group.id] || [];
-    const { incTax, exTax } = calculateGroupSubtotals(groupItems);
+  const renderGroup = (group: EstimateGroup): any => {
+    const directItems = itemsByGroup[group.id] || [];
+    const subgroups = subgroupsByParent[group.id] || [];
+    // Subtotal spans the group AND its descendants so the printed subtotals add
+    // up to the printed grand total even when a group is a pure container.
+    const { incTax, exTax } = calculateGroupSubtotals(collectGroupItems(group.id));
 
     return (
       <View key={group.id}>
         <View style={styles.groupHeader}>
           <Text style={{ color: "#ffffff" }}>{group.name}</Text>
         </View>
-        {!hideLineItems && renderTableHeader()}
-        {!hideLineItems && groupItems.map(renderTableRow)}
+        {!hideLineItems && directItems.length > 0 && renderTableHeader()}
+        {!hideLineItems && directItems.map(renderTableRow)}
+        {subgroups.map((sg) => renderGroup(sg))}
         {toggles.showSubtotals && (
           <>
             {toggles.amountExTax && (
@@ -375,7 +443,7 @@ export function EstimateSection({
           <Text style={styles.description}>{content.estimateDescription}</Text>
         )}
 
-        {sortedGroups.map(renderGroup)}
+        {rootGroups.map((g) => renderGroup(g))}
 
         {ungroupedItems.length > 0 && !hideLineItems && (
           <View>

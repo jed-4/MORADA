@@ -4,7 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { type ColumnDef } from "@tanstack/react-table";
 import { DataTable, DataTableColumnPicker, type DataTableColumnMeta } from "@/components/data-table/DataTable";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, Settings, MoreHorizontal, X, Search, ChevronLeft, ChevronRight, Pencil, ChevronDown, SlidersHorizontal, List, LayoutGrid, Calendar, Loader2 } from "lucide-react";
+import { Plus, Settings, MoreHorizontal, X, Search, ChevronLeft, ChevronRight, Pencil, ChevronDown, SlidersHorizontal, List, LayoutGrid, Calendar, Loader2, Columns3 } from "lucide-react";
 import {
   DndContext,
   closestCenter,
@@ -1296,11 +1296,12 @@ export default function BusinessTasks() {
               <Popover>
                 <PopoverTrigger asChild>
                   <button
-                    className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5"
+                    className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
                     data-testid="button-task-columns"
+                    title="Columns"
+                    aria-label="Columns"
                   >
-                    <SlidersHorizontal className="w-3 h-3" />
-                    <span>Columns</span>
+                    <Columns3 className="w-3 h-3" />
                   </button>
                 </PopoverTrigger>
                 <PopoverContent align="end" className="p-0">

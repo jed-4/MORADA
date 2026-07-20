@@ -418,6 +418,15 @@ app.use((req, res, next) => {
     startScheduledMessageProcessor(1);
     startGmailBillPoller(5);
 
+    // Xero push outbox worker: retries failed bill pushes in the background.
+    const { startXeroPushWorker } = await import("./services/xeroPushWorker");
+    startXeroPushWorker(45);
+
+    // Nightly reconcile: backstop for missed webhooks. Auto-applies safe drift,
+    // notifies on surprises.
+    const { startXeroReconcileScheduler } = await import("./services/xeroReconcileScheduler");
+    startXeroReconcileScheduler();
+
     // Trial-expiry sweep: flip lapsed 'trialing' companies to 'expired'.
     // Runs once on boot and hourly thereafter. Guarded so a failure never
     // takes down startup.

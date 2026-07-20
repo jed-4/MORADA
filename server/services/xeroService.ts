@@ -1,5 +1,23 @@
 import { storage } from "../storage";
 import type { XeroConnection } from "@shared/schema";
+import { encryptToken, decryptToken } from "../utils/encryption";
+
+// Encrypt Xero tokens at rest when a 32-char key is configured; otherwise store
+// as-is so a missing key never breaks the connection. Reads transparently
+// handle both encrypted and legacy plaintext values (gradual migration — rows
+// re-encrypt on the next refresh).
+const XERO_ENCRYPTION_ENABLED = (process.env.GOOGLE_OAUTH_ENCRYPTION_KEY || "").length === 32;
+const XERO_ENCRYPTED_RE = /^[0-9a-f]{32}:[0-9a-f]{32}:[0-9a-f]+$/i;
+
+export function encryptXeroToken(raw: string): string {
+  if (!XERO_ENCRYPTION_ENABLED || !raw) return raw;
+  try { return encryptToken(raw); } catch { return raw; }
+}
+
+export function decryptXeroToken(stored: string): string {
+  if (!stored || !XERO_ENCRYPTED_RE.test(stored)) return stored;
+  try { return decryptToken(stored); } catch { return stored; }
+}
 
 const XERO_CLIENT_ID = process.env.XERO_CLIENT_ID || "";
 const XERO_CLIENT_SECRET = process.env.XERO_CLIENT_SECRET || "";
@@ -177,6 +195,11 @@ async function xeroFetchWithRetry(
   }
 }
 
+// De-duplicate concurrent token refreshes per connection. Xero rotates the
+// refresh token on every use, so two parallel refreshes invalidate each other;
+// sharing one in-flight promise prevents that self-inflicted disconnect.
+const refreshInFlight = new Map<string, Promise<XeroConnection>>();
+
 interface XeroTokenResponse {
   access_token: string;
   refresh_token: string;
@@ -242,6 +265,16 @@ export class XeroService {
   }
 
   async refreshAccessToken(connectionId: string): Promise<XeroConnection> {
+    const existing = refreshInFlight.get(connectionId);
+    if (existing) return existing;
+    const p = this.doRefreshAccessToken(connectionId).finally(() => {
+      refreshInFlight.delete(connectionId);
+    });
+    refreshInFlight.set(connectionId, p);
+    return p;
+  }
+
+  private async doRefreshAccessToken(connectionId: string): Promise<XeroConnection> {
     const connection = await storage.getXeroConnection(connectionId);
     if (!connection) {
       throw new Error(`Xero connection not found: ${connectionId}`);
@@ -249,7 +282,7 @@ export class XeroService {
 
     const body = new URLSearchParams({
       grant_type: "refresh_token",
-      refresh_token: connection.refreshToken,
+      refresh_token: decryptXeroToken(connection.refreshToken),
     });
 
     const response = await fetch(XERO_TOKEN_URL, {
@@ -263,6 +296,12 @@ export class XeroService {
 
     if (!response.ok) {
       const errorText = await response.text();
+      // invalid_grant = the refresh token was revoked/expired. That's terminal,
+      // so mark the connection inactive: /api/xero/status will report it
+      // disconnected and prompt a reconnect instead of retrying a dead token.
+      if (response.status === 400 && errorText.includes("invalid_grant")) {
+        await storage.updateXeroConnection(connectionId, { isActive: false }).catch(() => {});
+      }
       throw new Error(`Failed to refresh token: ${response.status} ${errorText}`);
     }
 
@@ -270,8 +309,8 @@ export class XeroService {
     const expiresAt = new Date(Date.now() + tokenData.expires_in * 1000);
 
     const updated = await storage.updateXeroConnection(connectionId, {
-      accessToken: tokenData.access_token,
-      refreshToken: tokenData.refresh_token,
+      accessToken: encryptXeroToken(tokenData.access_token),
+      refreshToken: encryptXeroToken(tokenData.refresh_token),
       tokenExpiresAt: expiresAt,
     });
 
@@ -309,7 +348,7 @@ export class XeroService {
       }
     }
 
-    return connection.accessToken;
+    return decryptXeroToken(connection.accessToken);
   }
 
   async getTenants(accessToken: string): Promise<XeroTenant[]> {
@@ -754,7 +793,7 @@ export class XeroService {
       invoicePayload.InvoiceNumber = billData.invoiceNumber;
     }
 
-    const response = await fetch(`${XERO_API_BASE}/Invoices`, {
+    const response = await xeroFetchWithRetry(`${XERO_API_BASE}/Invoices`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${accessToken}`,
@@ -763,7 +802,7 @@ export class XeroService {
         Accept: "application/json",
       },
       body: JSON.stringify({ Invoices: [invoicePayload] }),
-    });
+    }, { label: "createBill" });
 
     if (!response.ok) {
       throw await xeroErrorFromResponse(response, "Failed to create Xero bill");
@@ -815,7 +854,7 @@ export class XeroService {
     if (billData.reference) invoicePayload.Reference = billData.reference;
     if (billData.invoiceNumber) invoicePayload.InvoiceNumber = billData.invoiceNumber;
 
-    const response = await fetch(`${XERO_API_BASE}/Invoices/${xeroInvoiceId}`, {
+    const response = await xeroFetchWithRetry(`${XERO_API_BASE}/Invoices/${xeroInvoiceId}`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${accessToken}`,
@@ -824,7 +863,7 @@ export class XeroService {
         Accept: "application/json",
       },
       body: JSON.stringify({ Invoices: [invoicePayload] }),
-    });
+    }, { label: "updateBill" });
 
     if (!response.ok) {
       throw await xeroErrorFromResponse(response, "Failed to update Xero bill");
@@ -1135,7 +1174,7 @@ export class XeroService {
     else throw new Error("createPayment requires accountCode or accountId");
     if (payment.reference) body.Reference = payment.reference;
 
-    const response = await fetch(`${XERO_API_BASE}/Payments`, {
+    const response = await xeroFetchWithRetry(`${XERO_API_BASE}/Payments`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${accessToken}`,
@@ -1144,7 +1183,7 @@ export class XeroService {
         "Content-Type": "application/json",
       },
       body: JSON.stringify(body),
-    });
+    }, { label: "createPayment" });
 
     if (!response.ok) {
       const errorText = await response.text();
