@@ -546,7 +546,7 @@ function RateCell({ rateCents, onCommit }: { rateCents: number; onCommit: (dolla
           if (e.key === "Enter") (e.target as HTMLInputElement).blur();
           if (e.key === "Escape") { setVal((rateCents / 100).toFixed(2)); (e.target as HTMLInputElement).blur(); }
         }}
-        className="w-12 bg-transparent border-0 p-0 text-right text-[11px] tabular-nums focus:outline-none focus:ring-1 focus:ring-primary/40 rounded-sm [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+        className="w-12 bg-transparent p-0 text-right text-[11px] tabular-nums rounded-sm cursor-text border-x-0 border-t-0 border-b border-dashed border-muted-foreground/50 hover:border-solid hover:border-primary/70 focus:border-solid focus:border-primary focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
         title="Charge rate — click to edit"
         data-testid="input-charge-rate"
       />
@@ -672,6 +672,15 @@ export default function AllowanceDetail() {
 
   const [expandedBills, setExpandedBills] = useState<Set<string>>(new Set());
   const [expandedPsBills, setExpandedPsBills] = useState<Set<string>>(new Set());
+  // Which people are expanded in the "By Person (totals)" view to reveal their
+  // individual entries (each with its own editable rate + delete).
+  const [expandedTsPersons, setExpandedTsPersons] = useState<Set<string>>(new Set());
+  const toggleTsPerson = (name: string) =>
+    setExpandedTsPersons((prev) => {
+      const next = new Set(prev);
+      next.has(name) ? next.delete(name) : next.add(name);
+      return next;
+    });
   const [selectedLineItems, setSelectedLineItems] = useState<Set<string>>(new Set());
   const [selectedPsLineItems, setSelectedPsLineItems] = useState<Set<string>>(new Set());
   const [selectedTimesheetKeys, setSelectedTimesheetKeys] = useState<Set<string>>(new Set());
@@ -1279,6 +1288,7 @@ export default function AllowanceDetail() {
       exCents,
       incCents: rows.reduce((s, r) => s + r.incCents, 0),
       allSaved: rows.every((r) => r.saved),
+      rows, // the underlying entries, revealed when the Totals row is expanded
     };
   });
 
@@ -1593,39 +1603,93 @@ export default function AllowanceDetail() {
                     <span className="text-right">Inc GST</span>
                     <span />
                   </div>
-                  {timesheetDisplayPref === "person-summary" && personSummaryRows.map((row, idx) => (
-                    <div
-                      key={row.staffName}
-                      className="grid items-center py-2.5 border-b border-border gap-2"
-                      style={{ gridTemplateColumns: "1.8fr 0.7fr 0.9fr 1fr 1fr 1fr 28px" }}
-                    >
-                      <div className="flex items-center gap-2">
-                        <div
-                          className="w-6 h-6 rounded-full flex items-center justify-center text-[8px] font-bold flex-shrink-0"
-                          style={{ background: avatarColor(idx).bg, color: avatarColor(idx).text }}
-                        >
-                          {initials(row.staffName)}
+                  {timesheetDisplayPref === "person-summary" && personSummaryRows.map((row, idx) => {
+                    const expanded = expandedTsPersons.has(row.staffName);
+                    return (
+                    <div key={row.staffName}>
+                      {/* Summary line — click to expand into this person's entries */}
+                      <div
+                        className="grid items-center py-2.5 border-b border-border gap-2 cursor-pointer hover:bg-muted/30 rounded-sm"
+                        style={{ gridTemplateColumns: "1.8fr 0.7fr 0.9fr 1fr 1fr 1fr 28px" }}
+                        onClick={() => toggleTsPerson(row.staffName)}
+                        data-testid={`ts-person-summary-${row.staffName}`}
+                      >
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          {expanded
+                            ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+                            : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />}
+                          <div
+                            className="w-6 h-6 rounded-full flex items-center justify-center text-[8px] font-bold flex-shrink-0"
+                            style={{ background: avatarColor(idx).bg, color: avatarColor(idx).text }}
+                          >
+                            {initials(row.staffName)}
+                          </div>
+                          <p className="text-xs font-semibold text-foreground truncate">
+                            {row.staffName}
+                            {!row.allSaved && (
+                              <span
+                                className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-semibold"
+                                style={{ background: "hsl(var(--teal-light))", color: "hsl(var(--teal))" }}
+                              >
+                                Pending
+                              </span>
+                            )}
+                          </p>
                         </div>
-                        <p className="text-xs font-semibold text-foreground">
-                          {row.staffName}
-                          {!row.allSaved && (
-                            <span
-                              className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-semibold"
-                              style={{ background: "hsl(var(--teal-light))", color: "hsl(var(--teal))" }}
-                            >
-                              Pending
-                            </span>
-                          )}
-                        </p>
+                        <p className="text-[11px] text-foreground text-right">{row.hours} hrs</p>
+                        <p className="text-[11px] text-muted-foreground text-right" title="Weighted average — expand to edit each entry">{formatCurrency(row.rateCents)}/hr</p>
+                        <p className="text-[11px] text-muted-foreground truncate">{row.costCode}</p>
+                        <p className="text-xs font-semibold text-foreground text-right">{formatCurrency(row.exCents)}</p>
+                        <p className="text-xs font-semibold text-foreground text-right">{formatCurrency(row.incCents)}</p>
+                        <span />
                       </div>
-                      <p className="text-[11px] text-foreground text-right">{row.hours} hrs</p>
-                      <p className="text-[11px] text-foreground text-right">{formatCurrency(row.rateCents)}/hr</p>
-                      <p className="text-[11px] text-muted-foreground truncate">{row.costCode}</p>
-                      <p className="text-xs font-semibold text-foreground text-right">{formatCurrency(row.exCents)}</p>
-                      <p className="text-xs font-semibold text-foreground text-right">{formatCurrency(row.incCents)}</p>
-                      <span />
+                      {/* Expanded: individual entries, each with editable rate + delete */}
+                      {expanded && row.rows.map((entry) => (
+                        <div
+                          key={entry.id}
+                          className="grid items-center py-2 border-b border-border gap-2"
+                          style={{
+                            gridTemplateColumns: "1.8fr 0.7fr 0.9fr 1fr 1fr 1fr 28px",
+                            background: entry.saved ? "hsl(var(--muted) / 0.15)" : "hsl(var(--teal-light) / 0.3)",
+                          }}
+                        >
+                          <p className="text-[11px] text-foreground pl-8">
+                            {formatDayMonth(entry.date)}
+                            {!entry.saved && (
+                              <span
+                                className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-semibold"
+                                style={{ background: "hsl(var(--teal-light))", color: "hsl(var(--teal))" }}
+                              >
+                                Pending
+                              </span>
+                            )}
+                          </p>
+                          <p className="text-[11px] text-foreground text-right">{entry.hours} hrs</p>
+                          <RateCell
+                            rateCents={entry.rateCents}
+                            onCommit={(v) => commitRateEdit(entry, v)}
+                          />
+                          <p className="text-[11px] text-muted-foreground truncate">{entry.costCode}</p>
+                          <p className="text-xs font-semibold text-foreground text-right">{formatCurrency(entry.exCents)}</p>
+                          <p className="text-xs font-semibold text-foreground text-right">{formatCurrency(entry.incCents)}</p>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6"
+                            onClick={() =>
+                              entry.saved
+                                ? deleteTimesheetAllocationMutation.mutate(entry.id)
+                                : toggleTimesheetSelection(entry.id)
+                            }
+                            data-testid={`button-remove-timesheet-${entry.id}`}
+                          >
+                            <Plus className="h-3 w-3 rotate-45" />
+                          </Button>
+                        </div>
+                      ))}
                     </div>
-                  ))}
+                    );
+                  })}
                   {timesheetDisplayPref !== "person-summary" && sectionTimesheetGroups.map(([groupLabel, rows], groupIdx) => (
                     <div key={groupLabel}>
                       <div className="flex items-center gap-2 pt-2.5 pb-1">
