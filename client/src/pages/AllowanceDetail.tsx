@@ -283,6 +283,8 @@ function BillsPickerModal({
   setSelected,
   expanded,
   setExpanded,
+  displayMode,
+  setDisplayMode,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
@@ -296,6 +298,8 @@ function BillsPickerModal({
   setSelected: (s: Set<string>) => void;
   expanded: Set<string>;
   setExpanded: (s: Set<string>) => void;
+  displayMode?: "bill" | "line";
+  setDisplayMode?: (m: "bill" | "line") => void;
 }) {
   type SortKey = "date" | "supplier" | "costcode";
   const [sortBy, setSortBy] = useState<SortKey>("date");
@@ -500,11 +504,27 @@ function BillsPickerModal({
         </div>
 
         <div className="flex items-center justify-between pt-4 border-t gap-3 flex-wrap">
-          <p className="text-xs text-muted-foreground">
-            {selectedLines.length > 0
-              ? `${selectedLines.length} line${selectedLines.length === 1 ? "" : "s"} selected · ${formatCurrency(selectedLines.reduce((s, li) => s + li.totalIncGst, 0))} inc GST`
-              : "No lines selected"}
-          </p>
+          <div className="flex items-center gap-3 flex-wrap">
+            {setDisplayMode && (
+              <div className="flex items-center gap-2">
+                <Label className="text-xs text-muted-foreground whitespace-nowrap">Display in allowance:</Label>
+                <Select value={displayMode} onValueChange={(v) => setDisplayMode(v as "bill" | "line")}>
+                  <SelectTrigger className="h-7 text-xs w-36" data-testid="select-bill-display">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="bill" className="text-xs">By Bill</SelectItem>
+                    <SelectItem value="line" className="text-xs">By Line Item</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            <p className="text-xs text-muted-foreground">
+              {selectedLines.length > 0
+                ? `${selectedLines.length} line${selectedLines.length === 1 ? "" : "s"} selected · ${formatCurrency(selectedLines.reduce((s, li) => s + li.totalIncGst, 0))} inc GST`
+                : "No lines selected"}
+            </p>
+          </div>
           <div className="flex gap-2">
             <Button variant="outline" onClick={() => { setSelected(new Set()); onOpenChange(false); }}>
               Cancel
@@ -827,6 +847,105 @@ export default function AllowanceDetail() {
   // Resizable columns for the timesheet + bills grids (widths persist per table).
   const tsCols = useResizableColumns("allowance-timesheets", TS_COLUMNS, 28);
   const billCols = useResizableColumns("allowance-bills", BILL_COLUMNS, 28);
+
+  // Bills display mode: one row per bill (grouped, expandable) or a flat list of
+  // every line-item allocation. Persisted; set from the bills modal footer.
+  const [billDisplayMode, setBillDisplayModeState] = useState<"bill" | "line">(() => {
+    try { return localStorage.getItem("allowance-bill-display") === "line" ? "line" : "bill"; } catch { return "bill"; }
+  });
+  const setBillDisplayMode = (m: "bill" | "line") => {
+    setBillDisplayModeState(m);
+    try { localStorage.setItem("allowance-bill-display", m); } catch { /* ignore */ }
+  };
+  const [expandedBillGroups, setExpandedBillGroups] = useState<Set<string>>(new Set());
+  const toggleBillGroup = (billId: string) =>
+    setExpandedBillGroups((prev) => {
+      const next = new Set(prev);
+      next.has(billId) ? next.delete(billId) : next.add(billId);
+      return next;
+    });
+
+  // Saved bill allocations grouped by their parent bill (several line-item
+  // allocations can share one bill).
+  const billGroups = (() => {
+    const m = new Map<string, AllocatedBill[]>();
+    for (const b of allocatedBills) {
+      if (!m.has(b.billId)) m.set(b.billId, []);
+      m.get(b.billId)!.push(b);
+    }
+    return Array.from(m.entries());
+  })();
+
+  // "By Bill" render: one summary row per bill (amounts summed), expandable into
+  // its individual line-item allocations, each removable. Used by both the PC and
+  // PS bills sections so their markup stays identical.
+  const renderBillGroups = () =>
+    billGroups.map(([billId, group], idx) => {
+      const first = group[0];
+      const ex = group.reduce((s, b) => s + b.amountExGst, 0);
+      const inc = group.reduce((s, b) => s + b.amountIncGst, 0);
+      const expanded = expandedBillGroups.has(billId);
+      return (
+        <div key={billId}>
+          <div
+            className="grid items-center py-2.5 border-b border-border gap-2 cursor-pointer hover:bg-muted/30 rounded-sm"
+            style={{ gridTemplateColumns: billCols.gridTemplate }}
+            onClick={() => toggleBillGroup(billId)}
+            data-testid={`bill-group-${billId}`}
+          >
+            <div className="flex items-center gap-1.5 min-w-0">
+              {expanded
+                ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+                : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />}
+              <div
+                className="w-7 h-7 rounded-full flex items-center justify-center text-[9px] font-bold flex-shrink-0"
+                style={{ background: avatarColor(idx).bg, color: avatarColor(idx).text }}
+              >
+                {initials(first.supplierName || first.billNumber)}
+              </div>
+              <div className="min-w-0">
+                <p className="text-xs font-semibold text-foreground truncate">{first.supplierName || "—"}</p>
+                <p className="text-[10px] text-muted-foreground truncate">{group.length} line{group.length === 1 ? "" : "s"}</p>
+              </div>
+            </div>
+            <p className="text-[11px] text-muted-foreground">{first.billNumber}</p>
+            <p className="text-[11px] text-muted-foreground">{formatFullDate(first.billDate)}</p>
+            <p className="text-xs font-semibold text-foreground text-right">{formatCurrency(ex)}</p>
+            <p className="text-xs font-semibold text-foreground text-right">{formatCurrency(inc)}</p>
+            <span
+              className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold w-fit"
+              style={{ background: "hsl(var(--sage-light))", color: "hsl(var(--sage))" }}
+            >
+              Saved
+            </span>
+            <span />
+          </div>
+          {expanded && group.map((bill) => (
+            <div
+              key={bill.id}
+              className="grid items-center py-2 border-b border-border gap-2"
+              style={{ gridTemplateColumns: billCols.gridTemplate, background: "hsl(var(--muted) / 0.15)" }}
+            >
+              <p className="text-[11px] text-foreground pl-8 truncate">{bill.lineItemDescription || "—"}</p>
+              <p className="text-[11px] text-muted-foreground">{bill.billNumber}</p>
+              <p className="text-[11px] text-muted-foreground">{formatFullDate(bill.billDate)}</p>
+              <p className="text-[11px] font-semibold text-foreground text-right">{formatCurrency(bill.amountExGst)}</p>
+              <p className="text-[11px] font-semibold text-foreground text-right">{formatCurrency(bill.amountIncGst)}</p>
+              <span />
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6"
+                onClick={() => deleteBillAllocationMutation.mutate(bill.id)}
+                data-testid={`button-remove-bill-${bill.id}`}
+              >
+                <Plus className="h-3 w-3 rotate-45" />
+              </Button>
+            </div>
+          ))}
+        </div>
+      );
+    });
 
   const { toast } = useToast();
 
@@ -1510,7 +1629,8 @@ export default function AllowanceDetail() {
                     </span>
                     <span />
                   </div>
-                  {allocatedBills.map((bill, idx) => (
+                  {billDisplayMode === "bill" && renderBillGroups()}
+                  {billDisplayMode === "line" && allocatedBills.map((bill, idx) => (
                     <div
                       key={bill.id}
                       className="grid items-center py-2.5 border-b border-border gap-2"
@@ -2064,7 +2184,8 @@ export default function AllowanceDetail() {
                     </span>
                     <span />
                   </div>
-                  {allocatedBills.map((bill, idx) => (
+                  {billDisplayMode === "bill" && renderBillGroups()}
+                  {billDisplayMode === "line" && allocatedBills.map((bill, idx) => (
                     <div
                       key={bill.id}
                       className="grid items-center py-2.5 border-b border-border gap-2"
@@ -2250,6 +2371,8 @@ export default function AllowanceDetail() {
         setSelected={setSelectedLineItems}
         expanded={expandedBills}
         setExpanded={setExpandedBills}
+        displayMode={billDisplayMode}
+        setDisplayMode={setBillDisplayMode}
       />
 
       <BillsPickerModal
@@ -2265,6 +2388,8 @@ export default function AllowanceDetail() {
         setSelected={setSelectedPsLineItems}
         expanded={expandedPsBills}
         setExpanded={setExpandedPsBills}
+        displayMode={billDisplayMode}
+        setDisplayMode={setBillDisplayMode}
       />
 
       {/* Timesheets modal */}
