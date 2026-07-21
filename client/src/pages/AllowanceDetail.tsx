@@ -14,6 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useMemo, useRef, useState } from "react";
 import { useAllowanceStatusOptions } from "@/hooks/useAllowanceStatusOptions";
 import { Users, CalendarDays, Hash } from "lucide-react";
+import { useResizableColumns, ColResizeHandle } from "@/components/useResizableColumns";
 import {
   LineItemsTable,
   LineItemColumnsButton,
@@ -620,6 +621,26 @@ function SectionCard({
   );
 }
 
+// Resizable-column configs (pixel default widths) for the bespoke timesheet and
+// bills grids. Widths persist per namespace via useResizableColumns; the trailing
+// 28px action column is fixed (not draggable).
+const TS_COLUMNS = [
+  { key: "name", defaultWidth: 190 },
+  { key: "hours", defaultWidth: 70 },
+  { key: "rate", defaultWidth: 90 },
+  { key: "costCode", defaultWidth: 140 },
+  { key: "ex", defaultWidth: 100 },
+  { key: "inc", defaultWidth: 100 },
+];
+const BILL_COLUMNS = [
+  { key: "supplier", defaultWidth: 200 },
+  { key: "invoice", defaultWidth: 110 },
+  { key: "date", defaultWidth: 100 },
+  { key: "ex", defaultWidth: 100 },
+  { key: "inc", defaultWidth: 100 },
+  { key: "status", defaultWidth: 80 },
+];
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function AllowanceDetail() {
@@ -802,6 +823,10 @@ export default function AllowanceDetail() {
     const cc = costCodeMap.get(costCodeId);
     return cc ? `${cc.code} · ${cc.title}` : "—";
   };
+
+  // Resizable columns for the timesheet + bills grids (widths persist per table).
+  const tsCols = useResizableColumns("allowance-timesheets", TS_COLUMNS, 28);
+  const billCols = useResizableColumns("allowance-bills", BILL_COLUMNS, 28);
 
   const { toast } = useToast();
 
@@ -1279,12 +1304,14 @@ export default function AllowanceDetail() {
   const personSummaryRows = sectionTimesheetGroups.map(([staffName, rows]) => {
     const hours = rows.reduce((s, r) => s + r.hours, 0);
     const exCents = rows.reduce((s, r) => s + r.exCents, 0);
-    const codes = Array.from(new Set(rows.map((r) => r.costCode.split(" · ")[0]).filter((c) => c !== "—")));
+    // Keep the FULL "code · title" labels (not just the number). One code → show
+    // it in full; several → "N cost codes" (the individual codes show on expand).
+    const codeLabels = Array.from(new Set(rows.map((r) => r.costCode).filter((c) => c !== "—")));
     return {
       staffName,
       hours: Math.round(hours * 100) / 100,
       rateCents: hours > 0 ? Math.round(exCents / hours) : 0,
-      costCode: codes.length ? codes.join(", ") : "—",
+      costCode: codeLabels.length === 0 ? "—" : codeLabels.length === 1 ? codeLabels[0] : `${codeLabels.length} cost codes`,
       exCents,
       incCents: rows.reduce((s, r) => s + r.incCents, 0),
       allSaved: rows.every((r) => r.saved),
@@ -1457,23 +1484,37 @@ export default function AllowanceDetail() {
                 />
               ) : (
                 <div className="pt-2">
+                 <div className="overflow-x-auto">
+                  <div style={{ minWidth: `${billCols.minWidth}px` }}>
                   <div
                     className="grid text-[9px] font-semibold text-muted-foreground uppercase tracking-wide py-2 border-b border-border gap-2"
-                    style={{ gridTemplateColumns: "2fr 1.2fr 1fr 1fr 1fr 80px 28px" }}
+                    style={{ gridTemplateColumns: billCols.gridTemplate }}
                   >
-                    <span>Supplier</span>
-                    <span>Invoice #</span>
-                    <span>Date</span>
-                    <span className="text-right">Ex GST</span>
-                    <span className="text-right">Inc GST</span>
-                    <span>Status</span>
+                    <span className="relative">Supplier
+                      <ColResizeHandle testId="resize-bill-supplier" onStart={(e) => billCols.startResize("supplier", e.clientX, billCols.widthFor("supplier", 200))} />
+                    </span>
+                    <span className="relative">Invoice #
+                      <ColResizeHandle testId="resize-bill-invoice" onStart={(e) => billCols.startResize("invoice", e.clientX, billCols.widthFor("invoice", 110))} />
+                    </span>
+                    <span className="relative">Date
+                      <ColResizeHandle testId="resize-bill-date" onStart={(e) => billCols.startResize("date", e.clientX, billCols.widthFor("date", 100))} />
+                    </span>
+                    <span className="relative text-right">Ex GST
+                      <ColResizeHandle testId="resize-bill-ex" onStart={(e) => billCols.startResize("ex", e.clientX, billCols.widthFor("ex", 100))} />
+                    </span>
+                    <span className="relative text-right">Inc GST
+                      <ColResizeHandle testId="resize-bill-inc" onStart={(e) => billCols.startResize("inc", e.clientX, billCols.widthFor("inc", 100))} />
+                    </span>
+                    <span className="relative">Status
+                      <ColResizeHandle testId="resize-bill-status" onStart={(e) => billCols.startResize("status", e.clientX, billCols.widthFor("status", 80))} />
+                    </span>
                     <span />
                   </div>
                   {allocatedBills.map((bill, idx) => (
                     <div
                       key={bill.id}
                       className="grid items-center py-2.5 border-b border-border gap-2"
-                      style={{ gridTemplateColumns: "2fr 1.2fr 1fr 1fr 1fr 80px 28px" }}
+                      style={{ gridTemplateColumns: billCols.gridTemplate }}
                     >
                       <div className="flex items-center gap-2 min-w-0">
                         <div
@@ -1515,7 +1556,7 @@ export default function AllowanceDetail() {
                       <div
                         key={li.id}
                         className="grid items-center py-2.5 border-b border-border gap-2"
-                        style={{ gridTemplateColumns: "2fr 1.2fr 1fr 1fr 1fr 80px 28px", background: "hsl(var(--amber-light) / 0.4)" }}
+                        style={{ gridTemplateColumns: billCols.gridTemplate, background: "hsl(var(--amber-light) / 0.4)" }}
                       >
                         <div className="flex items-center gap-2 min-w-0">
                           <div
@@ -1554,6 +1595,8 @@ export default function AllowanceDetail() {
                       </div>
                     );
                   })}
+                  </div>
+                 </div>
                   {(allocatedBills.length > 0 || pendingPsBillItems.length > 0) && (
                     <div className="flex justify-between items-center pt-2">
                       <span
@@ -1591,16 +1634,30 @@ export default function AllowanceDetail() {
                 <EmptyState variant="inline" title="No timesheets added yet." className="py-6" />
               ) : (
                 <div className="pt-2">
+                 <div className="overflow-x-auto">
+                  <div style={{ minWidth: `${tsCols.minWidth}px` }}>
                   <div
                     className="grid text-[9px] font-semibold text-muted-foreground uppercase tracking-wide py-2 border-b border-border gap-2"
-                    style={{ gridTemplateColumns: "1.8fr 0.7fr 0.9fr 1fr 1fr 1fr 28px" }}
+                    style={{ gridTemplateColumns: tsCols.gridTemplate }}
                   >
-                    <span>{timesheetDisplayPref === "person" ? "Date" : "Team member"}</span>
-                    <span className="text-right">Hours</span>
-                    <span className="text-right">Charge Rate</span>
-                    <span>Cost Code</span>
-                    <span className="text-right">Ex GST</span>
-                    <span className="text-right">Inc GST</span>
+                    <span className="relative">{timesheetDisplayPref === "person" ? "Date" : "Team member"}
+                      <ColResizeHandle testId="resize-ts-name" onStart={(e) => tsCols.startResize("name", e.clientX, tsCols.widthFor("name", 190))} />
+                    </span>
+                    <span className="relative text-right">Hours
+                      <ColResizeHandle testId="resize-ts-hours" onStart={(e) => tsCols.startResize("hours", e.clientX, tsCols.widthFor("hours", 70))} />
+                    </span>
+                    <span className="relative text-right">Charge Rate
+                      <ColResizeHandle testId="resize-ts-rate" onStart={(e) => tsCols.startResize("rate", e.clientX, tsCols.widthFor("rate", 90))} />
+                    </span>
+                    <span className="relative">Cost Code
+                      <ColResizeHandle testId="resize-ts-costCode" onStart={(e) => tsCols.startResize("costCode", e.clientX, tsCols.widthFor("costCode", 140))} />
+                    </span>
+                    <span className="relative text-right">Ex GST
+                      <ColResizeHandle testId="resize-ts-ex" onStart={(e) => tsCols.startResize("ex", e.clientX, tsCols.widthFor("ex", 100))} />
+                    </span>
+                    <span className="relative text-right">Inc GST
+                      <ColResizeHandle testId="resize-ts-inc" onStart={(e) => tsCols.startResize("inc", e.clientX, tsCols.widthFor("inc", 100))} />
+                    </span>
                     <span />
                   </div>
                   {timesheetDisplayPref === "person-summary" && personSummaryRows.map((row, idx) => {
@@ -1610,7 +1667,7 @@ export default function AllowanceDetail() {
                       {/* Summary line — click to expand into this person's entries */}
                       <div
                         className="grid items-center py-2.5 border-b border-border gap-2 cursor-pointer hover:bg-muted/30 rounded-sm"
-                        style={{ gridTemplateColumns: "1.8fr 0.7fr 0.9fr 1fr 1fr 1fr 28px" }}
+                        style={{ gridTemplateColumns: tsCols.gridTemplate }}
                         onClick={() => toggleTsPerson(row.staffName)}
                         data-testid={`ts-person-summary-${row.staffName}`}
                       >
@@ -1649,7 +1706,7 @@ export default function AllowanceDetail() {
                           key={entry.id}
                           className="grid items-center py-2 border-b border-border gap-2"
                           style={{
-                            gridTemplateColumns: "1.8fr 0.7fr 0.9fr 1fr 1fr 1fr 28px",
+                            gridTemplateColumns: tsCols.gridTemplate,
                             background: entry.saved ? "hsl(var(--muted) / 0.15)" : "hsl(var(--teal-light) / 0.3)",
                           }}
                         >
@@ -1709,7 +1766,7 @@ export default function AllowanceDetail() {
                           key={row.id}
                           className="grid items-center py-2 border-b border-border gap-2"
                           style={{
-                            gridTemplateColumns: "1.8fr 0.7fr 0.9fr 1fr 1fr 1fr 28px",
+                            gridTemplateColumns: tsCols.gridTemplate,
                             background: row.saved ? undefined : "hsl(var(--teal-light) / 0.3)",
                           }}
                         >
@@ -1749,6 +1806,8 @@ export default function AllowanceDetail() {
                       ))}
                     </div>
                   ))}
+                  </div>
+                 </div>
                   <div className="flex justify-end pt-2">
                     <p className="text-xs font-semibold text-foreground">
                       Subtotal: {formatCurrency(sectionTimesheetRows.reduce((s, r) => s + r.exCents, 0))} ex
@@ -1976,23 +2035,37 @@ export default function AllowanceDetail() {
                 />
               ) : (
                 <div className="pt-2">
+                 <div className="overflow-x-auto">
+                  <div style={{ minWidth: `${billCols.minWidth}px` }}>
                   <div
                     className="grid text-[9px] font-semibold text-muted-foreground uppercase tracking-wide py-2 border-b border-border gap-2"
-                    style={{ gridTemplateColumns: "2fr 1.2fr 1fr 1fr 1fr 80px 28px" }}
+                    style={{ gridTemplateColumns: billCols.gridTemplate }}
                   >
-                    <span>Supplier</span>
-                    <span>Invoice #</span>
-                    <span>Date</span>
-                    <span className="text-right">Ex GST</span>
-                    <span className="text-right">Inc GST</span>
-                    <span>Status</span>
+                    <span className="relative">Supplier
+                      <ColResizeHandle testId="resize-bill-supplier" onStart={(e) => billCols.startResize("supplier", e.clientX, billCols.widthFor("supplier", 200))} />
+                    </span>
+                    <span className="relative">Invoice #
+                      <ColResizeHandle testId="resize-bill-invoice" onStart={(e) => billCols.startResize("invoice", e.clientX, billCols.widthFor("invoice", 110))} />
+                    </span>
+                    <span className="relative">Date
+                      <ColResizeHandle testId="resize-bill-date" onStart={(e) => billCols.startResize("date", e.clientX, billCols.widthFor("date", 100))} />
+                    </span>
+                    <span className="relative text-right">Ex GST
+                      <ColResizeHandle testId="resize-bill-ex" onStart={(e) => billCols.startResize("ex", e.clientX, billCols.widthFor("ex", 100))} />
+                    </span>
+                    <span className="relative text-right">Inc GST
+                      <ColResizeHandle testId="resize-bill-inc" onStart={(e) => billCols.startResize("inc", e.clientX, billCols.widthFor("inc", 100))} />
+                    </span>
+                    <span className="relative">Status
+                      <ColResizeHandle testId="resize-bill-status" onStart={(e) => billCols.startResize("status", e.clientX, billCols.widthFor("status", 80))} />
+                    </span>
                     <span />
                   </div>
                   {allocatedBills.map((bill, idx) => (
                     <div
                       key={bill.id}
                       className="grid items-center py-2.5 border-b border-border gap-2"
-                      style={{ gridTemplateColumns: "2fr 1.2fr 1fr 1fr 1fr 80px 28px" }}
+                      style={{ gridTemplateColumns: billCols.gridTemplate }}
                     >
                       <div className="flex items-center gap-2 min-w-0">
                         <div
@@ -2033,7 +2106,7 @@ export default function AllowanceDetail() {
                       <div
                         key={li.id}
                         className="grid items-center py-2.5 border-b border-border gap-2"
-                        style={{ gridTemplateColumns: "2fr 1.2fr 1fr 1fr 1fr 80px 28px", background: "hsl(var(--amber-light) / 0.4)" }}
+                        style={{ gridTemplateColumns: billCols.gridTemplate, background: "hsl(var(--amber-light) / 0.4)" }}
                       >
                         <div className="flex items-center gap-2 min-w-0">
                           <div
@@ -2072,6 +2145,8 @@ export default function AllowanceDetail() {
                       </div>
                     );
                   })}
+                  </div>
+                 </div>
                 </div>
               )}
             </SectionCard>
