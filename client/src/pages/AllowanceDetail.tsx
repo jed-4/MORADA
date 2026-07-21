@@ -1749,15 +1749,18 @@ export default function AllowanceDetail() {
                   })}
                   {timesheetDisplayPref !== "person-summary" && sectionTimesheetGroups.map(([groupLabel, rows], groupIdx) => (
                     <div key={groupLabel}>
-                      <div className="flex items-center gap-2 pt-2.5 pb-1">
+                      <div
+                        className="flex items-center gap-2 px-2 py-1.5 mt-3 mb-1 rounded-md"
+                        style={{ background: "hsl(var(--muted))" }}
+                      >
                         <div
-                          className="w-6 h-6 rounded-full flex items-center justify-center text-[8px] font-bold flex-shrink-0"
+                          className="w-5 h-5 rounded-full flex items-center justify-center text-[8px] font-bold flex-shrink-0"
                           style={{ background: avatarColor(groupIdx).bg, color: avatarColor(groupIdx).text }}
                         >
                           {timesheetDisplayPref === "person" ? initials(groupLabel) : groupLabel.slice(0, 2)}
                         </div>
-                        <p className="text-xs font-semibold text-foreground">{groupLabel}</p>
-                        <p className="text-[10px] text-muted-foreground ml-auto">
+                        <p className="text-[11px] font-bold text-foreground uppercase tracking-wide">{groupLabel}</p>
+                        <p className="text-[10px] font-semibold text-muted-foreground ml-auto">
                           {formatCurrency(rows.reduce((s, r) => s + r.exCents, 0))} ex
                         </p>
                       </div>
