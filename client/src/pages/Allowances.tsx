@@ -265,6 +265,14 @@ export default function Allowances() {
     localStorage.setItem(GROUP_STATE_KEY, JSON.stringify(Array.from(collapsedGroups)));
   }, [collapsedGroups]);
 
+  // Whether to group allowances by their estimate group, or show one flat list.
+  const [groupItems, setGroupItems] = useState<boolean>(() => {
+    try { return localStorage.getItem("allowances-group-items") !== "false"; } catch { return true; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem("allowances-group-items", String(groupItems)); } catch { /* ignore */ }
+  }, [groupItems]);
+
   // Fetch estimates
   const { data: estimates = [], isLoading: estimatesLoading } = useQuery<Estimate[]>({
     queryKey: ["/api/estimates", projectId],
@@ -392,6 +400,16 @@ export default function Allowances() {
     });
     return entries;
   }, [filtered]);
+
+  // What the list actually renders: the estimate groups, or a single flat
+  // pseudo-group (sorted like the in-group order) when grouping is turned off.
+  const displayGroups: [string, AllowanceWithCosts[]][] = groupItems
+    ? grouped
+    : [["", [...filtered].sort((x, y) => {
+        const sp = statusPriority(x.item.allowanceStatus) - statusPriority(y.item.allowanceStatus);
+        if (sp !== 0) return sp;
+        return x.item.name.localeCompare(y.item.name);
+      })]];
 
   // Stats for summary strip
   const stats = useMemo(() => {
@@ -638,6 +656,29 @@ export default function Allowances() {
                 )}
               </span>
             </button>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                setGroupItems((v) => !v);
+              }}
+              className="w-full flex items-center gap-2 rounded px-2 py-1.5 text-left text-[12px] hover-elevate active-elevate-2"
+              data-testid="button-toggle-group-items"
+            >
+              <FolderOpen className="h-3.5 w-3.5 text-muted-foreground" />
+              <span className="flex-1">Group items</span>
+              <span
+                className={`inline-flex h-3.5 w-3.5 items-center justify-center rounded border ${
+                  groupItems ? "bg-primary border-primary text-white" : "border-border"
+                }`}
+              >
+                {groupItems && (
+                  <svg viewBox="0 0 12 12" className="h-2.5 w-2.5" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M2 6l3 3 5-6" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                )}
+              </span>
+            </button>
             <Separator className="my-2" />
             <div className="space-y-2">
               <label className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
@@ -690,7 +731,7 @@ export default function Allowances() {
           <div className="px-4 py-12 text-center text-sm text-muted-foreground">
             Loading allowances…
           </div>
-        ) : grouped.length === 0 ? (
+        ) : filtered.length === 0 ? (
           <EmptyState
             icon={DollarSign}
             title={allowances.length === 0 ? "No Allowances Yet" : "No Matching Allowances"}
@@ -705,15 +746,16 @@ export default function Allowances() {
             className="py-16"
           />
         ) : (
-          grouped.map(([groupName, items], groupIdx) => {
-            const collapsed = collapsedGroups.has(groupName);
+          displayGroups.map(([groupName, items], groupIdx) => {
+            const collapsed = groupItems ? collapsedGroups.has(groupName) : false;
             const groupEst = items.reduce((s, a) => s + (a.item.priceIncTax || 0), 0);
             const groupAct = items.reduce((s, a) => s + a.actualCost, 0);
             const groupVar = formatVariance(groupAct - groupEst);
 
             return (
               <div key={groupName}>
-                {/* Group header (40px) */}
+                {/* Group header (40px) — hidden when grouping is turned off */}
+                {groupItems && (
                 <button
                   type="button"
                   onClick={() => toggleGroup(groupName)}
@@ -753,6 +795,7 @@ export default function Allowances() {
                     </span>
                   </div>
                 </button>
+                )}
 
                 {/* Items */}
                 {!collapsed && (
