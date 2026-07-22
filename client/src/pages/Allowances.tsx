@@ -713,7 +713,7 @@ export default function Allowances() {
       <div className="flex-1 overflow-auto">
         {/* Header (sticky, 34px) */}
         <div
-          className={`${colGrid} bg-muted/30 border-b border-border h-[34px] px-4 text-[10px] uppercase tracking-wider font-semibold text-muted-foreground sticky top-0 z-10`}
+          className={`${colGrid} bg-muted border-b border-border h-[34px] px-4 text-[10px] uppercase tracking-wider font-semibold text-muted-foreground sticky top-0 z-10`}
         >
           <div></div>
           <div>Description</div>
