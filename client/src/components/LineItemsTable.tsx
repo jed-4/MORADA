@@ -261,6 +261,10 @@ export function LineItemsTable({
   // editingId: "new" for the add row, or an existing row id
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
+  // The draft as it was when the current row's edit opened — used to detect
+  // whether an auto-commit-on-switch is actually needed (avoids a redundant
+  // PATCH when a row is opened and closed without a real change).
+  const editStartDraft = useRef<Draft>(EMPTY_DRAFT);
 
   const columns = ALL_COLUMNS.filter((c) => visible.has(c.key));
   const gridTemplate = [...columns.map((c) => `${widths[c.key] ?? c.defaultWidth}px`), "56px"].join(" ");
@@ -297,15 +301,33 @@ export function LineItemsTable({
     };
   }, [draft]);
 
+  // Commit the edit currently open on an EXISTING row, if its draft is valid.
+  // Called before opening another row (or the add row) so switching rows never
+  // silently discards an in-progress change — e.g. picking a cost code on one
+  // line then clicking the next used to drop the first line's change.
+  const commitOpenEdit = () => {
+    if (editingId && editingId !== "new") {
+      // Only commit if the draft actually changed since the row opened.
+      const changed = JSON.stringify(draft) !== JSON.stringify(editStartDraft.current);
+      if (changed) {
+        const line = draftToLine(draft);
+        if (line) onUpdate?.(editingId, line);
+      }
+    }
+  };
+
   const startAdd = () => {
+    commitOpenEdit();
     setDraft(EMPTY_DRAFT);
+    editStartDraft.current = EMPTY_DRAFT;
     setEditingId("new");
   };
 
   const startEdit = (row: LineItemRow) => {
     if (!onUpdate || row.editable === false) return;
+    if (editingId !== row.id) commitOpenEdit();
     const d = deriveRow(row);
-    setDraft({
+    const next: Draft = {
       itemName: row.itemName || "",
       description: row.description || "",
       costCode: row.costCode || "",
@@ -313,7 +335,9 @@ export function LineItemsTable({
       unitType: row.unitType || "each",
       unitCostEx: centsToDollars(d.unitCostEx).toFixed(2),
       markupPercent: row.markupPercent != null ? String(row.markupPercent) : "",
-    });
+    };
+    setDraft(next);
+    editStartDraft.current = next;
     setEditingId(row.id);
   };
 
