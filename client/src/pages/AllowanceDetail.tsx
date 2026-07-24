@@ -68,15 +68,20 @@ type Bill = {
   total: number; // cents inc GST
 };
 
-/** Bill line items store EX-GST amounts; totalIncGst is server-computed. */
+/**
+ * A line's raw `total` is ex- OR inc-GST depending on the bill's taxMode, so the
+ * server derives explicit `totalExGst`/`totalIncGst` — always use those, never
+ * `total`, for money in the allowance UI.
+ */
 type BillLineItem = {
   id: string;
   billId: string;
   description: string;
   quantity: number;
-  unitPrice: number; // cents ex GST
-  total: number; // cents ex GST
-  totalIncGst: number; // cents inc GST
+  unitPrice: number; // cents, basis depends on bill taxMode
+  total: number; // cents, basis depends on bill taxMode — do not use directly
+  totalExGst: number; // cents ex GST (server-computed, taxMode-aware)
+  totalIncGst: number; // cents inc GST (server-computed, taxMode-aware)
   costCodeId?: string | null;
 };
 
@@ -411,7 +416,7 @@ function BillsPickerModal({
                 const allSelected = lines.length > 0 && lines.every((li) => selected.has(li.id));
                 const someSelected = lines.some((li) => selected.has(li.id));
                 const codes = billCostCodes(bill.id);
-                const exTotal = lines.reduce((s, li) => s + li.total, 0);
+                const exTotal = lines.reduce((s, li) => s + li.totalExGst, 0);
                 return (
                   <div key={bill.id}>
                     {/* Bill row */}
@@ -492,7 +497,7 @@ function BillsPickerModal({
                           <span />
                           <p className="text-[10px] text-muted-foreground truncate">{costCodeLabel(li.costCodeId)}</p>
                           <span />
-                          <p className="text-[11px] text-foreground text-right">{formatCurrency(li.total)}</p>
+                          <p className="text-[11px] text-foreground text-right">{formatCurrency(li.totalExGst)}</p>
                           <p className="text-[11px] text-foreground text-right">{formatCurrency(li.totalIncGst)}</p>
                         </div>
                       ))}
@@ -1303,7 +1308,7 @@ export default function AllowanceDetail() {
 
   // Live (unsaved) additions, for the running totals in the summary bar
   const psPendingExCents =
-    pendingPsBillItems.reduce((s, li) => s + li.total, 0) +
+    pendingPsBillItems.reduce((s, li) => s + li.totalExGst, 0) +
     pendingTimesheetRows.reduce((s, r) => s + r.amountExCents, 0) +
     pendingLines.reduce((s, l) => s + exGstFromInc(l.totalPrice), 0);
   const psPendingIncCents =
@@ -1311,7 +1316,7 @@ export default function AllowanceDetail() {
     pendingTimesheetRows.reduce((s, r) => s + incGstFromEx(r.amountExCents), 0) +
     pendingLines.reduce((s, l) => s + l.totalPrice, 0);
   const pcPendingExCents =
-    pendingPcBillItems.reduce((s, li) => s + li.total, 0) +
+    pendingPcBillItems.reduce((s, li) => s + li.totalExGst, 0) +
     pcPendingLines.reduce((s, l) => s + exGstFromInc(l.totalPrice), 0);
   const pcPendingIncCents =
     pendingPcBillItems.reduce((s, li) => s + li.totalIncGst, 0) +
@@ -1671,7 +1676,7 @@ export default function AllowanceDetail() {
                   ))}
                   {pendingPsBillItems.map((li) => {
                     const parentBill = bills.find((b) => b.id === li.billId);
-                    const liExGst = li.total; // line items are stored ex GST
+                    const liExGst = li.totalExGst; // taxMode-aware ex-GST from the server
                     return (
                       <div
                         key={li.id}
@@ -1730,7 +1735,7 @@ export default function AllowanceDetail() {
                         Subtotal:{" "}
                         {formatCurrency(
                           allocatedBills.reduce((s, b) => s + b.amountExGst, 0) +
-                            pendingPsBillItems.reduce((s, li) => s + li.total, 0)
+                            pendingPsBillItems.reduce((s, li) => s + li.totalExGst, 0)
                         )}{" "}
                         ex
                       </p>
@@ -2250,7 +2255,7 @@ export default function AllowanceDetail() {
                         <p className="text-[11px] text-muted-foreground">
                           {parentBill ? formatFullDate(parentBill.billDate) : "—"}
                         </p>
-                        <p className="text-xs font-semibold text-foreground text-right">{formatCurrency(li.total)}</p>
+                        <p className="text-xs font-semibold text-foreground text-right">{formatCurrency(li.totalExGst)}</p>
                         <p className="text-xs font-semibold text-foreground text-right">{formatCurrency(li.totalIncGst)}</p>
                         <span
                           className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold w-fit"
