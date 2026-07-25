@@ -21,6 +21,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { CostCodeSelect } from "@/components/CostCodeSelect";
+import { UnitSelect } from "@/components/UnitSelect";
 import { Check, Plus, Settings2, X } from "lucide-react";
 import { formatCents, incGstFromEx, exGstFromInc, dollarsToCents, centsToDollars, type Cents } from "@shared/money";
 
@@ -418,7 +419,14 @@ export function LineItemsTable({
       case "qty":
         return <Input className={`${compact} text-right`} type="number" step="0.01" min="0" value={draft.quantity} onChange={(e) => setDraft({ ...draft, quantity: e.target.value })} onKeyDown={handleKeyDown} data-testid="input-line-qty" />;
       case "unit":
-        return <Input className={compact} placeholder="each" value={draft.unitType} onChange={(e) => setDraft({ ...draft, unitType: e.target.value })} onKeyDown={handleKeyDown} data-testid="input-line-unit" />;
+        return (
+          <UnitSelect
+            value={draft.unitType}
+            onValueChange={(v) => setDraft({ ...draft, unitType: v })}
+            triggerClassName={`${compact} justify-start gap-1 [&>svg]:h-3 [&>svg]:w-3 [&>svg]:opacity-0 hover:[&>svg]:opacity-40 focus:[&>svg]:opacity-40`}
+            data-testid="select-line-unit"
+          />
+        );
       case "unitCostEx":
         return <Input className={`${compact} text-right`} type="number" step="0.01" min="0" placeholder="0.00" value={draft.unitCostEx} onChange={(e) => setDraft({ ...draft, unitCostEx: e.target.value })} onKeyDown={handleKeyDown} data-testid="input-line-unit-cost" />;
       case "markupPct":
