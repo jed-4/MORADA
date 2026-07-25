@@ -55,6 +55,13 @@ export const companies = pgTable("companies", {
   stripeCustomerId: text("stripe_customer_id"),
   stripeSubscriptionId: text("stripe_subscription_id"),
 
+  // Founding member programme: the first FOUNDING_MEMBER_LIMIT companies to
+  // start a paid subscription lock in founding pricing — first month free and
+  // Studio half price for life. Set once by the Stripe webhook when the
+  // qualifying subscription activates; never unset.
+  isFoundingMember: boolean("is_founding_member").notNull().default(false),
+  foundingMemberAt: timestamp("founding_member_at"),
+
   // Referral system: every company gets a unique shareable code, and a company
   // that signed up through someone's link records who referred them.
   referralCode: varchar("referral_code", { length: 20 }).unique(),
@@ -343,6 +350,9 @@ export const insertCompanySchema = createInsertSchema(companies).omit({
   // Referral fields are server-managed — never client-writable.
   referralCode: true,
   referredByCompanyId: true,
+  // Founding member status is server-managed — never client-writable.
+  isFoundingMember: true,
+  foundingMemberAt: true,
 });
 
 // Referral credits: a pending "1 free month" credit for the referrer, created
