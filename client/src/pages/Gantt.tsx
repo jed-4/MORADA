@@ -644,7 +644,11 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
   } | null>(null);
   const draggingRef = useRef(dragging);
   draggingRef.current = dragging;
-  
+  // Pointer id of the active bar drag, so the window pointer listeners ignore a
+  // second concurrent pointer (e.g. a second finger) and only track the one that
+  // started the drag.
+  const activePointerIdRef = useRef<number | null>(null);
+
   const allItemsRef = useRef<ScheduleItem[]>([]);
   const projectIdRef = useRef(projectId);
   projectIdRef.current = projectId;
@@ -1532,19 +1536,34 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
   createDependencyMutationRef.current = createDependencyMutation;
 
   const handleBarMouseDown = (
-    e: React.MouseEvent,
+    e: React.PointerEvent,
     item: ScheduleItem,
     dragType: 'move' | 'resize-left' | 'resize-right' | 'dependency' = 'move',
     anchor?: 'start' | 'end'
   ) => {
-    if (e.button !== 0) return;
+    if (e.button !== 0 || !e.isPrimary) return;
     if (schedule?.status === 'locked') return;
-    
+
     e.preventDefault();
     e.stopPropagation();
-    
+
     dragHappened.current = false;
-    
+    activePointerIdRef.current = e.pointerId;
+
+    // Pointer capture keeps pointermove/pointerup flowing to this element (and
+    // bubbling to the window listeners) even when the pointer leaves the window
+    // — so a release outside the browser can no longer strand the drag — and it
+    // makes touch/pen drags work. We skip it for 'dependency' drags: capture
+    // retargets the compatibility mouse events, which would suppress the target
+    // bars' onMouseEnter and break drop-target detection (which relies on it).
+    if (dragType !== 'dependency') {
+      try {
+        (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+      } catch {
+        /* element not capturable (e.g. detached) — fall back to window listeners */
+      }
+    }
+
     const startX = e.clientX;
     const startY = e.clientY;
     const startScrollLeft = timelineRef.current?.scrollLeft ?? 0;
@@ -1618,9 +1637,30 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
       }
     };
 
-    const handleMouseMove = (e: MouseEvent) => {
+    // Coalesce high-frequency pointermove events into a single state update per
+    // animation frame. Native pointermove can fire faster than the display
+    // refreshes (120Hz pointers, coalesced events); previously each event ran a
+    // full setDragging → re-render of the whole Gantt (which recomputes every
+    // dependency path). The ref writes below stay synchronous — only the render
+    // is throttled — so auto-scroll and the click/drag threshold still see every
+    // event.
+    let moveRafId: number | null = null;
+    let pendingMove: { x: number; y: number } | null = null;
+
+    const flushMove = () => {
+      moveRafId = null;
+      const drag = draggingRef.current;
+      const p = pendingMove;
+      if (!drag || !p) return;
+      const scrollDelta = (timelineRef.current?.scrollLeft ?? 0) - drag.startScrollLeft;
+      const currentDeltaX = (p.x - drag.startX) + scrollDelta;
+      setDragging(prev => prev ? { ...prev, currentX: p.x, currentY: p.y, currentDeltaX } : null);
+    };
+
+    const handlePointerMove = (e: PointerEvent) => {
       const drag = draggingRef.current;
       if (!drag) return;
+      if (activePointerIdRef.current !== null && e.pointerId !== activePointerIdRef.current) return;
 
       const deltaX = Math.abs(e.clientX - drag.startX);
       const deltaY = Math.abs(e.clientY - drag.startY);
@@ -1628,22 +1668,24 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
         dragHappened.current = true;
       }
 
-      let currentX = e.clientX;
-      let currentY = e.clientY;
-      
-      lastCursorPosition.current = { x: currentX, y: currentY };
-
-      const scrollDelta = (timelineRef.current?.scrollLeft ?? 0) - drag.startScrollLeft;
-      const currentDeltaX = (e.clientX - drag.startX) + scrollDelta;
-
-      setDragging(prev => prev ? { ...prev, currentX, currentY, currentDeltaX } : null);
+      lastCursorPosition.current = { x: e.clientX, y: e.clientY };
+      pendingMove = { x: e.clientX, y: e.clientY };
+      if (moveRafId === null) {
+        moveRafId = requestAnimationFrame(flushMove);
+      }
 
       startAutoScroll();
     };
 
-    const handleMouseUp = async (e: MouseEvent) => {
-      stopAutoScroll();
+    const handlePointerUp = async (e: PointerEvent) => {
       const drag = draggingRef.current;
+      if (drag && activePointerIdRef.current !== null && e.pointerId !== activePointerIdRef.current) return;
+      stopAutoScroll();
+      if (moveRafId !== null) {
+        cancelAnimationFrame(moveRafId);
+        moveRafId = null;
+      }
+      activePointerIdRef.current = null;
       if (!drag || !timelineRef.current) {
         setDragging(null);
         return;
@@ -1987,23 +2029,43 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
       }
     };
 
+    // A cancelled gesture (OS/browser takeover, touch-action kicking in) aborts
+    // the drag without committing — mirrors the early-return branch of pointerup.
+    const handlePointerCancel = (e: PointerEvent) => {
+      if (activePointerIdRef.current !== null && e.pointerId !== activePointerIdRef.current) return;
+      stopAutoScroll();
+      if (moveRafId !== null) {
+        cancelAnimationFrame(moveRafId);
+        moveRafId = null;
+      }
+      activePointerIdRef.current = null;
+      setDragging(null);
+      setHoveredAnchor(null);
+    };
+
     const handleScroll = () => {
       if (draggingRef.current?.type === 'dependency') {
         setScrollVersion(v => v + 1);
       }
     };
 
-    window.addEventListener('mousemove', handleMouseMove);
-    window.addEventListener('mouseup', handleMouseUp);
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+    window.addEventListener('pointercancel', handlePointerCancel);
     const timeline = timelineRef.current;
     if (timeline) {
       timeline.addEventListener('scroll', handleScroll);
     }
-    
+
     return () => {
       stopAutoScroll();
-      window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('mouseup', handleMouseUp);
+      if (moveRafId !== null) {
+        cancelAnimationFrame(moveRafId);
+        moveRafId = null;
+      }
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+      window.removeEventListener('pointercancel', handlePointerCancel);
       if (timeline) {
         timeline.removeEventListener('scroll', handleScroll);
       }
@@ -3395,8 +3457,8 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
                     >
                       {schedule?.status !== 'locked' && (
                       <div
-                        className={`absolute top-1/2 -translate-y-1/2 -left-4 w-4 h-4 flex items-center justify-center opacity-0 group-hover/row:opacity-100 cursor-crosshair transition-opacity z-30 ${hoveredBar === item.id && hoveredAnchor === 'start' ? 'scale-150' : ''}`}
-                        onMouseDown={(e) => {
+                        className={`absolute top-1/2 -translate-y-1/2 -left-4 w-4 h-4 flex items-center justify-center opacity-0 group-hover/row:opacity-100 cursor-crosshair transition-opacity z-30 touch-none ${hoveredBar === item.id && hoveredAnchor === 'start' ? 'scale-150' : ''}`}
+                        onPointerDown={(e) => {
                           e.stopPropagation();
                           handleBarMouseDown(e, item, 'dependency', 'start');
                         }}
@@ -3410,7 +3472,7 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
                       )}
                       
                       <div
-                        className={`absolute inset-0 rounded-sm flex items-center cursor-move transition-shadow z-10 group/bar overflow-hidden
+                        className={`absolute inset-0 rounded-sm flex items-center cursor-move transition-shadow z-10 group/bar overflow-hidden touch-none
                           ${dragging?.id === item.id ? 'shadow-lg ring-2 ring-primary' : 'hover:shadow-md'}
                           ${(dragging?.type === 'dependency' || pendingPredecessor !== null) && hoveredBar === item.id && item.id !== (dragging?.id ?? pendingPredecessor) ? 'ring-2 ring-primary shadow-lg' : ''}
                           ${pendingPredecessor === item.id ? 'ring-2 ring-ring shadow-md' : ''}
@@ -3439,7 +3501,7 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
                           e.stopPropagation();
                           setContextMenu({ x: e.clientX, y: e.clientY, item });
                         }}
-                        onMouseDown={(e) => { handleBarMouseDown(e, item, 'move'); }}
+                        onPointerDown={(e) => { handleBarMouseDown(e, item, 'move'); }}
                         onMouseEnter={() => { setHoveredBar(item.id); if (!hoveredAnchor) setHoveredAnchor('start'); }}
                         onMouseLeave={() => { setHoveredBar(null); setHoveredAnchor(null); }}
                         data-testid={`bar-${item.id}`}
@@ -3447,7 +3509,7 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
                         {!hasChildren && (
                           <div
                             className="absolute left-0 top-0 bottom-0 w-2 cursor-ew-resize hover:bg-background/30 opacity-0 group-hover/bar:opacity-100 transition-opacity"
-                            onMouseDown={(e) => {
+                            onPointerDown={(e) => {
                               e.stopPropagation();
                               handleBarMouseDown(e, item, 'resize-left');
                             }}
@@ -3464,7 +3526,7 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
                         {!hasChildren && (
                           <div
                             className="absolute right-0 top-0 bottom-0 w-2 cursor-ew-resize hover:bg-background/30 opacity-0 group-hover/bar:opacity-100 transition-opacity"
-                            onMouseDown={(e) => {
+                            onPointerDown={(e) => {
                               e.stopPropagation();
                               handleBarMouseDown(e, item, 'resize-right');
                             }}
@@ -3529,8 +3591,8 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
                       
                       {schedule?.status !== 'locked' && (
                       <div
-                        className={`absolute top-1/2 -translate-y-1/2 -right-4 w-4 h-4 flex items-center justify-center opacity-0 group-hover/row:opacity-100 cursor-crosshair transition-opacity z-30 ${hoveredBar === item.id && hoveredAnchor === 'end' ? 'scale-150' : ''}`}
-                        onMouseDown={(e) => {
+                        className={`absolute top-1/2 -translate-y-1/2 -right-4 w-4 h-4 flex items-center justify-center opacity-0 group-hover/row:opacity-100 cursor-crosshair transition-opacity z-30 touch-none ${hoveredBar === item.id && hoveredAnchor === 'end' ? 'scale-150' : ''}`}
+                        onPointerDown={(e) => {
                           e.stopPropagation();
                           handleBarMouseDown(e, item, 'dependency', 'end');
                         }}
