@@ -24,13 +24,26 @@ interface PlanCard {
   };
 }
 
+interface FoundingOffer {
+  limit: number;
+  spotsLeft: number;
+  discountPercent: number;
+  freeMonthDays: number;
+  alreadyMember: boolean;
+}
+
 interface PlansResponse {
   plans: PlanCard[];
   stripeConfigured: boolean;
+  foundingOffer?: FoundingOffer | null;
 }
 
 function fmtLimit(n: number): string {
   return n === -1 ? "Unlimited" : String(n);
+}
+
+function fmtPrice(n: number): string {
+  return n % 1 === 0 ? String(n) : n.toFixed(2);
 }
 
 /**
@@ -162,6 +175,23 @@ export function PlanChooser({
         </Card>
       )}
 
+      {data.foundingOffer && (
+        <Card className="p-3" data-testid="note-founding-offer">
+          {data.foundingOffer.alreadyMember ? (
+            <p className="text-sm text-muted-foreground">
+              <span className="font-medium text-foreground">You're a founding member</span>
+              {" — "}Studio is half price for life on your account.
+            </p>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              <span className="font-medium text-foreground">Founding member offer</span>
+              {" — "}your first month is free and Studio is half price for life.{" "}
+              {data.foundingOffer.spotsLeft} of {data.foundingOffer.limit} spots left.
+            </p>
+          )}
+        </Card>
+      )}
+
       <div className="space-y-1.5">
         <div className="flex flex-wrap items-center gap-2">
           <div className="relative w-56">
@@ -217,15 +247,38 @@ export function PlanChooser({
           const isCurrent = currentPlan === plan.key;
           const price = cycle === "annual" ? plan.annualPrice : plan.monthlyPrice;
           const suffix = cycle === "annual" ? "/yr" : "/mo";
+          const founding = plan.key === "studio" ? data.foundingOffer : null;
+          const foundingPrice = founding
+            ? price * (1 - founding.discountPercent / 100)
+            : null;
           return (
             <Card key={plan.key} className="flex flex-col gap-3 p-4" data-testid={`plan-card-${plan.key}`}>
               <div className="flex items-center justify-between gap-2">
                 <h3 className="font-semibold">{plan.name}</h3>
-                {plan.mostPopular && <Badge>Popular</Badge>}
+                {founding ? (
+                  <Badge data-testid="badge-founding-studio">Founding price</Badge>
+                ) : (
+                  plan.mostPopular && <Badge>Popular</Badge>
+                )}
               </div>
               <div>
-                <span className="text-2xl font-semibold">${price}</span>
-                <span className="text-sm text-muted-foreground">{suffix} AUD</span>
+                {foundingPrice !== null ? (
+                  <>
+                    <span className="mr-1.5 text-sm text-muted-foreground line-through">
+                      ${fmtPrice(price)}
+                    </span>
+                    <span className="text-2xl font-semibold">${fmtPrice(foundingPrice)}</span>
+                    <span className="text-sm text-muted-foreground">{suffix} AUD</span>
+                    <p className="text-xs text-muted-foreground">
+                      Half price for life for founding members
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <span className="text-2xl font-semibold">${fmtPrice(price)}</span>
+                    <span className="text-sm text-muted-foreground">{suffix} AUD</span>
+                  </>
+                )}
               </div>
               <ul className="flex-1 space-y-1.5 text-sm text-muted-foreground">
                 <li className="flex items-center gap-2">
