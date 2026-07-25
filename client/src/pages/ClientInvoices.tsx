@@ -1,5 +1,17 @@
 import { useState, useMemo, type ReactNode } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { type ColumnDef } from "@tanstack/react-table";
 import { DataTable, DataTableColumnPicker, type DataTableColumnMeta } from "@/components/data-table/DataTable";
 import { useLocation, useParams } from "wouter";
@@ -33,6 +45,7 @@ import { usePageTitle } from "@/hooks/usePageTitle";
 import { format, isPast } from "date-fns";
 import { cn } from "@/lib/utils";
 import { formatCurrency } from "@/lib/formatters";
+import { effectiveInvoiceStatus } from "@/lib/invoiceStatus";
 import { EmptyState } from "@/components/EmptyState";
 
 // ── Status chip colours ────────────────────────────────────────────────────
@@ -112,9 +125,11 @@ export default function ClientInvoices({ embedded }: { embedded?: boolean } = {}
 
   // ── Queries ───────────────────────────────────────────────────────────────
 
+  // Status filtering happens client-side against the DERIVED status (see
+  // effectiveInvoiceStatus) — "overdue" is never stored, so a server-side
+  // ?status=overdue filter would always return nothing.
   const queryParams: Record<string, string> = {};
   if (projectIdFromUrl) queryParams.projectId = projectIdFromUrl;
-  if (selectedStatus !== "all") queryParams.status = selectedStatus;
 
   const { data: invoices = [], isLoading: invoicesLoading } = useQuery<ClientInvoice[]>({
     queryKey: ["/api/client-invoices", queryParams],
@@ -173,6 +188,9 @@ export default function ClientInvoices({ embedded }: { embedded?: boolean } = {}
 
   const filteredInvoices = useMemo(() => {
     let list = invoices.filter((inv) => {
+      // Filter on the DERIVED status so "Overdue" actually matches invoices
+      // past their due date (the stored status never holds "overdue").
+      if (selectedStatus !== "all" && effectiveInvoiceStatus(inv) !== selectedStatus) return false;
       if (!searchQuery) return true;
       const q = searchQuery.toLowerCase();
       return (
@@ -183,12 +201,12 @@ export default function ClientInvoices({ embedded }: { embedded?: boolean } = {}
     });
 
     return list;
-  }, [invoices, searchQuery, projects]);
+  }, [invoices, searchQuery, selectedStatus, projects]);
 
   const statusCounts = useMemo(() =>
     STATUS_OPTIONS.reduce((acc, s) => ({
       ...acc,
-      [s.value]: s.value === "all" ? invoices.length : invoices.filter((i) => i.status === s.value).length,
+      [s.value]: s.value === "all" ? invoices.length : invoices.filter((i) => effectiveInvoiceStatus(i) === s.value).length,
     }), {} as Record<string, number>),
   [invoices]);
 
@@ -221,12 +239,19 @@ export default function ClientInvoices({ embedded }: { embedded?: boolean } = {}
 
     const projectTotal = contractPriceCents + approvedVariationsTotal;
     const base = projectTotal > 0 ? projectTotal : invoicedTotal;
+    // "To Invoice" = remaining CONTRACT scope. Cost-plus invoices bill actual
+    // costs (labour/bills/selections + margin), not contract scope, so they
+    // must not reduce the contract remainder — only progress-payment invoices
+    // count against the contract + approved variations total.
+    const contractInvoicedTotal = filteredInvoices
+      .filter((i) => (i as any).invoicingMethod !== "cost_plus")
+      .reduce((s, i) => s + i.totalAmount, 0);
     // Defensive net on top of the per-invoice closing-claim true-up: percentage
     // progress claims are rounded per cent, so a few stray cents can remain even
     // after trueing up. When the project is effectively fully invoiced, treat a
     // residual of a cent or two as $0.00 so it never surfaces as "To Invoice".
     const TO_INVOICE_TOLERANCE_CENTS = 5;
-    const rawToInvoice = projectTotal - invoicedTotal;
+    const rawToInvoice = projectTotal - contractInvoicedTotal;
     const toInvoiceTotal =
       projectTotal > 0 && Math.abs(rawToInvoice) <= TO_INVOICE_TOLERANCE_CENTS
         ? 0
@@ -248,6 +273,36 @@ export default function ClientInvoices({ embedded }: { embedded?: boolean } = {}
   // ── Column management ─────────────────────────────────────────────────────
 
   // (moved below renderCell — column defs are built from DEFAULT_COLUMNS + renderCell)
+
+  // ── Row actions ───────────────────────────────────────────────────────────
+
+  const { toast } = useToast();
+  // Invoice pending delete confirmation (drives the AlertDialog).
+  const [deleteTarget, setDeleteTarget] = useState<ClientInvoice | null>(null);
+
+  const duplicateMutation = useMutation({
+    mutationFn: async (id: string) =>
+      (await apiRequest(`/api/client-invoices/${id}/duplicate`, "POST")) as ClientInvoice,
+    onSuccess: (copy) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/client-invoices"] });
+      toast({ title: "Invoice duplicated", description: `Created draft ${copy.invoiceNumber || ""}` });
+    },
+    onError: (err: any) => {
+      toast({ title: "Failed to duplicate invoice", description: err?.payload?.message || err.message, variant: "destructive" });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => apiRequest(`/api/client-invoices/${id}`, "DELETE"),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/client-invoices"] });
+      toast({ title: "Invoice deleted" });
+    },
+    onError: (err: any) => {
+      toast({ title: "Failed to delete invoice", description: err?.payload?.message || err.message, variant: "destructive" });
+    },
+    onSettled: () => setDeleteTarget(null),
+  });
 
   // ── Navigation ────────────────────────────────────────────────────────────
 
@@ -301,7 +356,7 @@ export default function ClientInvoices({ embedded }: { embedded?: boolean } = {}
         );
         break;
       case "status":
-        content = <span data-testid={`cell-status-${invoice.id}`}><StatusChip status={invoice.status} /></span>;
+        content = <span data-testid={`cell-status-${invoice.id}`}><StatusChip status={effectiveInvoiceStatus(invoice)} /></span>;
         break;
       case "invoice_date":
         content = <div data-testid={`cell-invoice-date-${invoice.id}`}>{renderDate(invoice.invoiceDate)}</div>;
@@ -338,7 +393,14 @@ export default function ClientInvoices({ embedded }: { embedded?: boolean } = {}
         );
         break;
       case "xero":
-        content = (
+        content = invoice.xeroInvoiceId ? (
+          <span
+            title={`Synced with Xero${(invoice as any).xeroInvoiceNumber ? ` (${(invoice as any).xeroInvoiceNumber})` : ""}`}
+            data-testid={`cell-xero-${invoice.id}`}
+          >
+            <RefreshCw className="w-3 h-3" style={{ color: "hsl(var(--sage))" }} />
+          </span>
+        ) : (
           <span title="Not synced with Xero" data-testid={`cell-xero-${invoice.id}`}>
             <RefreshCw className="w-3 h-3 text-muted-foreground/30" />
           </span>
@@ -374,7 +436,7 @@ export default function ClientInvoices({ embedded }: { embedded?: boolean } = {}
         switch (col.key) {
           case "invoice_number": return inv.invoiceNumber || "";
           case "name":           return inv.name || "";
-          case "status":         return inv.status || "";
+          case "status":         return effectiveInvoiceStatus(inv) || "";
           case "invoice_date":   return inv.invoiceDate ? new Date(inv.invoiceDate).getTime() : 0;
           case "due_date":       return inv.dueDate ? new Date(inv.dueDate).getTime() : 0;
           case "total":          return inv.totalAmount;
@@ -435,8 +497,20 @@ export default function ClientInvoices({ embedded }: { embedded?: boolean } = {}
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" data-testid={`menu-${row.original.id}`}>
               <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleRowClick(row.original.id); }} data-testid={`menu-edit-${row.original.id}`}>Edit</DropdownMenuItem>
-              <DropdownMenuItem data-testid={`menu-duplicate-${row.original.id}`}>Duplicate</DropdownMenuItem>
-              <DropdownMenuItem className="text-destructive focus:text-destructive" data-testid={`menu-delete-${row.original.id}`}>Delete</DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={(e) => { e.stopPropagation(); duplicateMutation.mutate(row.original.id); }}
+                disabled={duplicateMutation.isPending}
+                data-testid={`menu-duplicate-${row.original.id}`}
+              >
+                Duplicate
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                className="text-destructive focus:text-destructive"
+                onClick={(e) => { e.stopPropagation(); setDeleteTarget(row.original); }}
+                data-testid={`menu-delete-${row.original.id}`}
+              >
+                Delete
+              </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
@@ -712,6 +786,35 @@ export default function ClientInvoices({ embedded }: { embedded?: boolean } = {}
           )}
         </div>{/* end card */}
       </div>{/* end flex-1 scroll */}
+
+      {/* Delete confirmation — deleting an invoice permanently removes its
+          lines, claim links, and payment history. */}
+      <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+        <AlertDialogContent data-testid="dialog-delete-invoice">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete {deleteTarget?.invoiceNumber || "this invoice"}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure? This permanently deletes the invoice and all of its
+              information — line items, claim links, and payment records. This
+              cannot be undone.
+              {deleteTarget?.xeroInvoiceId && (
+                <> The linked Xero invoice will NOT be deleted — void it in Xero separately.</>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="button-cancel-delete">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => deleteTarget && deleteMutation.mutate(deleteTarget.id)}
+              disabled={deleteMutation.isPending}
+              data-testid="button-confirm-delete"
+            >
+              {deleteMutation.isPending ? "Deleting…" : "Delete Invoice"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

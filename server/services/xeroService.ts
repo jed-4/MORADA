@@ -27,6 +27,58 @@ const XERO_CONNECTIONS_URL = "https://api.xero.com/connections";
 const XERO_API_BASE = "https://api.xero.com/api.xro/2.0";
 const XERO_SCOPES = "openid profile email accounting.transactions accounting.attachments accounting.contacts accounting.settings accounting.reports.read offline_access";
 
+// Turn a Xero API error body (raw text or already-parsed JSON) into a short,
+// human-readable summary suitable for a toast. Xero nests validation messages
+// under top-level ValidationErrors and per-Element/LineItem ValidationErrors, and
+// repeats line-level messages once per line — so we collect, map the common ones
+// to plain English, and de-duplicate.
+export function summarizeXeroError(body: string | any): string {
+  let data: any = body;
+  if (typeof body === "string") {
+    try { data = JSON.parse(body); } catch { return body.slice(0, 300); }
+  }
+  if (!data || typeof data !== "object") return String(body).slice(0, 300);
+
+  const raw: string[] = [];
+  const pushErrors = (errs: any) => {
+    if (Array.isArray(errs)) {
+      for (const e of errs) {
+        if (e && typeof e.Message === "string") raw.push(e.Message);
+      }
+    }
+  };
+  pushErrors(data.ValidationErrors);
+  if (Array.isArray(data.Elements)) {
+    for (const el of data.Elements) {
+      pushErrors(el?.ValidationErrors);
+      if (Array.isArray(el?.LineItems)) {
+        for (const li of el.LineItems) pushErrors(li?.ValidationErrors);
+      }
+    }
+  }
+
+  // Map Xero's wording to something short and actionable.
+  const friendly = (msg: string): string => {
+    const m = msg.toLowerCase();
+    if (m.includes("duedate")) return "Due date is required";
+    if (m.includes("account code")) return "Each invoice line needs a Xero account code";
+    if (m.includes("contact")) return "The client isn't linked to a valid Xero contact";
+    if (m.includes("date")) return "The invoice date is invalid";
+    return msg.replace(/\.$/, "");
+  };
+
+  const seen = new Set<string>();
+  const summary: string[] = [];
+  for (const msg of raw) {
+    const f = friendly(msg);
+    if (!seen.has(f)) { seen.add(f); summary.push(f); }
+  }
+
+  if (summary.length > 0) return summary.join("; ");
+  if (typeof data.Message === "string" && data.Message) return data.Message;
+  return "Xero rejected the request";
+}
+
 export interface XeroTracking {
   TrackingCategoryID: string;
   TrackingOptionID: string;
@@ -41,6 +93,10 @@ export interface XeroBillLineItem {
   taxType: string;
   accountCode?: string;
   tracking?: XeroTracking[];
+  // Explicit per-line tax override in dollars. When set, Xero uses this instead
+  // of computing tax from the rate — used by the client-invoice push so the
+  // Xero total matches Morada's stored totals to the cent.
+  taxAmount?: number;
 }
 
 export interface XeroBillData {
@@ -431,12 +487,17 @@ export class XeroService {
     return data.TrackingCategories || [];
   }
 
-  async getAccounts(connectionId: string): Promise<any[]> {
+  async getAccounts(connectionId: string, opts?: { types?: string[] }): Promise<any[]> {
     const accessToken = await this.getValidToken(connectionId);
     const connection = await storage.getXeroConnection(connectionId);
     if (!connection) throw new Error("Connection not found");
 
-    const response = await fetch(`${XERO_API_BASE}/Accounts?where=Type=="EXPENSE"||Type=="DIRECTCOSTS"||Type=="OVERHEADS"||Type=="CURRLIAB"`, {
+    // Default: expense/liability accounts (used for bills). Callers pushing
+    // client invoices pass revenue types so Sales-style accounts are returned.
+    const types = opts?.types ?? ["EXPENSE", "DIRECTCOSTS", "OVERHEADS", "CURRLIAB"];
+    const where = types.map((t) => `Type=="${t}"`).join("||");
+
+    const response = await fetch(`${XERO_API_BASE}/Accounts?where=${where}`, {
       headers: {
         Authorization: `Bearer ${accessToken}`,
         "Xero-Tenant-Id": connection.tenantId,
@@ -1012,6 +1073,9 @@ export class XeroService {
         UnitAmount: item.unitAmount,
         TaxType: item.taxType === "INPUT" ? "OUTPUT" : item.taxType,
       };
+      if (item.taxAmount !== undefined) {
+        lineItem.TaxAmount = item.taxAmount;
+      }
       if (item.accountCode) {
         lineItem.AccountCode = item.accountCode;
       }
@@ -1056,7 +1120,13 @@ export class XeroService {
 
     if (!response.ok) {
       const errorText = await response.text();
-      throw new Error(`Failed to create Xero invoice: ${response.status} ${errorText}`);
+      const err = new Error(summarizeXeroError(errorText)) as Error & {
+        status?: number;
+        xeroBody?: string;
+      };
+      err.status = response.status;
+      err.xeroBody = errorText;
+      throw err;
     }
 
     const data = (await response.json()) as any;
