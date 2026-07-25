@@ -1,6 +1,7 @@
 import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
-import { storage, InvalidProposalStateError } from "./storage";
+import { storage, InvalidProposalStateError, calendarDateMidnightUtcInTz } from "./storage";
+import { timesheetHours, timesheetTotalExGstCents } from "@shared/money";
 import { db, pool } from "./db";
 import { google } from "googleapis";
 import { randomBytes, randomUUID } from "crypto";
@@ -18900,7 +18901,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!req.user?.companyId) {
         return res.status(401).json({ error: "Not authenticated" });
       }
-      const allTimesheets = await storage.getTimesheets(undefined, req.user.companyId);
+      const allTimesheets = await storage.getTimesheets(undefined, { companyId: req.user.companyId });
 
       // Strict: only timesheets explicitly flagged as awaiting_po appear
       // in the Sub PO modal. (Retroactive inclusion of approved-but-
@@ -18932,13 +18933,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "Project ID is required" });
       }
 
-      const timesheets = [];
-      for (const id of timesheetIds) {
-        const ts = await storage.getTimesheet(id);
-        if (ts && ts.poStatus === "awaiting_po") {
-          timesheets.push(ts);
-        }
-      }
+      const fetched = await storage.getTimesheetsByIds(timesheetIds);
+      // Tenancy: timesheets resolve company through their owning user — batch
+      // the owner lookups and drop anything outside the caller's company.
+      const ownerIds = Array.from(new Set(fetched.map((ts) => ts.userId)));
+      const owners = await Promise.all(ownerIds.map((uid) => storage.getUser(uid)));
+      const ownCompanyUserIds = new Set(
+        owners.filter((u) => u?.companyId === (req.user as any).companyId).map((u) => u!.id)
+      );
+      const timesheets = fetched.filter(
+        (ts) => ts.poStatus === "awaiting_po" && ownCompanyUserIds.has(ts.userId)
+      );
       if (timesheets.length === 0) {
         return res.status(400).json({ error: "No valid timesheets found with 'Awaiting PO' status" });
       }
@@ -24871,12 +24876,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
   async function enrichTimesheetsWithCostCodes(timesheets: any[]) {
     if (timesheets.length === 0) return timesheets;
 
-    const allSplits = await Promise.all(
-      timesheets.map(ts => storage.getTimesheetCostCodes(ts.id))
-    );
+    // Single inArray query instead of one query per timesheet.
+    const allSplits = await storage.getTimesheetCostCodesByTimesheetIds(timesheets.map(ts => ts.id));
+    const splitsByTimesheet = new Map<string, any[]>();
+    for (const split of allSplits) {
+      const list = splitsByTimesheet.get(split.timesheetId) || [];
+      list.push(split);
+      splitsByTimesheet.set(split.timesheetId, list);
+    }
 
-    return timesheets.map((ts, idx) => {
-      const splits = allSplits[idx] || [];
+    return timesheets.map((ts) => {
+      const splits = splitsByTimesheet.get(ts.id) || [];
       const enriched = { ...ts, costCodeSplits: splits };
       if (!enriched.costCodeId && splits.length >= 1) {
         enriched.costCodeId = splits[0].costCodeId;
@@ -24901,6 +24911,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/projects/:projectId/timesheets", async (req, res) => {
     try {
+      // Tenancy: the project itself must belong to the caller's company —
+      // without this an admin (view scope "all") could read any project's hours.
+      if (!(await enforceProjectCompany(req, res, req.params.projectId, "Project not found"))) return;
       const timesheets = await storage.getTimesheets(req.params.projectId);
       // Allowance allocation is a financial workflow, not a timesheet-viewing one:
       // the actual-cost totals include EVERY project timesheet (see the actual-costs
@@ -24943,6 +24956,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           status: status as string | undefined,
           costCodeId: costCodeId as string | undefined,
           invoiced: invoiced ? invoiced === 'true' : undefined,
+          // Tenancy: without this, an admin's "all" view scope returned every
+          // company's timesheets from the unscoped table.
+          companyId: (req.user as any)?.companyId ?? undefined,
         }
       );
       // Mobile app always shows only the authenticated user's own timesheets
@@ -25079,7 +25095,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
             // Sub PO modal never sees bulk-approved subbie timesheets.)
             if (status === "approved") {
               const tsOwner = await storage.getUser(timesheet.userId);
-              if (tsOwner?.isSubcontractor && !timesheet.linkedPurchaseOrderId) {
+              // First approval only — never re-queue an entry already on a PO
+              // or paid (see the single-approve route).
+              if (tsOwner?.isSubcontractor && !timesheet.poStatus && !timesheet.linkedPurchaseOrderId) {
                 await storage.updateTimesheet(id, { poStatus: "awaiting_po" });
               }
             }
@@ -25291,11 +25309,46 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Fields only the approval / PO / clock flows may write — never a raw
+  // create/update body. Without this, any request could inject
+  // status:"approved" or reset poStatus and bypass the workflow endpoints.
+  const TIMESHEET_PROTECTED_FIELDS = [
+    "approvedById", "approvedAt", "poStatus", "linkedPurchaseOrderId",
+    "isActive", "clockInTime", "actualStartTime", "actualEndTime",
+  ] as const;
+
+  // Normalise a client-supplied date to UTC midnight of the calendar date in
+  // the company timezone — the same convention clock-in uses. A raw
+  // `new Date("2026-07-20T00:00:00+10:00")` otherwise stores 19 Jul 14:00 UTC
+  // and the entry lands on the previous day.
+  const normaliseTimesheetDate = async (raw: unknown): Promise<Date | undefined> => {
+    if (!raw) return undefined;
+    const parsed = raw instanceof Date ? raw : new Date(String(raw));
+    if (isNaN(parsed.getTime())) return undefined;
+    const cfg = await storage.getSystemConfiguration();
+    const tz = cfg?.timezone || "Australia/Sydney";
+    return calendarDateMidnightUtcInTz(parsed, tz);
+  };
+
   app.post("/api/timesheets", async (req, res) => {
     try {
       const body = { ...req.body };
-      if (body.date && typeof body.date === "string") {
-        body.date = new Date(body.date);
+      for (const field of TIMESHEET_PROTECTED_FIELDS) delete body[field];
+      if (body.date) {
+        const normalised = await normaliseTimesheetDate(body.date);
+        if (!normalised) {
+          return res.status(400).json({ error: "Invalid date" });
+        }
+        body.date = normalised;
+      }
+      // Status on create: draft/submitted only; "approved" needs the approval
+      // permission (mirrors the import route's coercion rule).
+      if (body.status && !["draft", "submitted"].includes(body.status)) {
+        const creatorId = (req.user as any)?.id;
+        const creatorCanApprove = creatorId ? await storage.canUserApproveTimesheets(creatorId) : false;
+        if (body.status !== "approved" || !creatorCanApprove) {
+          body.status = "submitted";
+        }
       }
       // Sanitise numeric fields — mobile app may send empty strings instead of null/0
       if (body.breakDuration === "" || body.breakDuration === null) body.breakDuration = "0";
@@ -25435,6 +25488,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       let imported = 0;
       let skipped = 0;
       const errors: string[] = [];
+      // Rows are validated in the loop but inserted in ONE batch afterwards —
+      // a serial insert per row was hundreds of sequential Neon round trips.
+      const rowsToInsert: any[] = [];
 
       for (let i = 0; i < rows.length; i++) {
         const row = rows[i];
@@ -25536,28 +25592,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
         const description = String(row["Description"] ?? "").trim() || null;
 
+        rowsToInsert.push({
+          projectId,
+          userId: resolvedUserId,
+          // Store UTC midnight of the imported calendar date — the same
+          // convention as clock-in — instead of server-local midnight.
+          date: new Date(Date.UTC(y, m - 1, d)),
+          startTime,
+          endTime,
+          duration,
+          breakDuration,
+          description,
+          status: validStatus,
+          hourlyRate: 0,
+          total: 0,
+          invoiced: false,
+          isActive: false,
+          costCodeId: resolvedCostCodeId,
+        });
+      }
+
+      if (rowsToInsert.length > 0) {
         try {
-          await storage.createTimesheet({
-            projectId,
-            userId: resolvedUserId,
-            date: parsedDate,
-            startTime,
-            endTime,
-            duration,
-            breakDuration,
-            description,
-            status: validStatus,
-            hourlyRate: 0,
-            total: 0,
-            invoiced: false,
-            isActive: false,
-            costCodeId: resolvedCostCodeId,
-          });
-          imported++;
+          const created = await storage.createTimesheetsBulk(rowsToInsert);
+          imported = created.length;
         } catch (err) {
-          console.error("Timesheet import row insert failed:", err);
-          skipped++;
-          errors.push(`${rowLabel} skipped: insert failed — ${err instanceof Error ? err.message : String(err)}`);
+          console.error("Timesheet import bulk insert failed:", err);
+          skipped += rowsToInsert.length;
+          errors.push(`Import failed during insert — no rows were imported: ${err instanceof Error ? err.message : String(err)}`);
         }
       }
 
@@ -25597,8 +25659,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
       const body = { ...req.body };
-      if (body.date && typeof body.date === "string") {
-        body.date = new Date(body.date);
+      // Strip approval/PO/clock fields — those are written only by their
+      // dedicated flows. Exception: poStatus === null is the explicit
+      // "remove from PO queue" action in the row menu, so a null clear passes.
+      const clearingPoStatus = "poStatus" in body && body.poStatus === null;
+      for (const field of TIMESHEET_PROTECTED_FIELDS) delete body[field];
+      if (clearingPoStatus) body.poStatus = null;
+      // Status via PATCH: draft/submitted always allowed (editing an approved
+      // entry re-submits it); approved/rejected require the approval permission
+      // — otherwise an owner could self-approve around the approve endpoint.
+      if (body.status && !["draft", "submitted"].includes(body.status)) {
+        const patcherCanApprove = await storage.canUserApproveTimesheets((req.user as any).id);
+        if (!patcherCanApprove) {
+          delete body.status;
+        }
+      }
+      if (body.date) {
+        const normalised = await normaliseTimesheetDate(body.date);
+        if (!normalised) {
+          return res.status(400).json({ error: "Invalid date" });
+        }
+        body.date = normalised;
       }
       // Sanitise numeric fields — mobile app may send empty strings instead of null/0
       if (body.breakDuration === "" || body.breakDuration === null) body.breakDuration = "0";
@@ -25723,7 +25804,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const timesheetUser = await storage.getUser(timesheet.userId);
-      if (timesheetUser?.isSubcontractor) {
+      // Queue subbie timesheets for PO generation on FIRST approval only.
+      // Re-approving after an edit must not drag an entry already on a PO
+      // (or paid) back into the Sub PO queue.
+      if (timesheetUser?.isSubcontractor && !timesheet.poStatus && !timesheet.linkedPurchaseOrderId) {
         await storage.updateTimesheet(req.params.id, { poStatus: "awaiting_po" });
         timesheet.poStatus = "awaiting_po";
       }
@@ -25810,9 +25894,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Timesheet cost codes routes
+  // Timesheet cost codes routes — every route resolves the parent timesheet
+  // first and runs the same company-ownership check as the timesheet routes.
   app.get("/api/timesheets/:timesheetId/cost-codes", async (req, res) => {
     try {
+      const timesheet = await getOwnedTimesheet(req, res, req.params.timesheetId);
+      if (!timesheet) return;
       const costCodes = await storage.getTimesheetCostCodes(req.params.timesheetId);
       res.json(costCodes);
     } catch (error: any) {
@@ -25825,6 +25912,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/timesheets/:timesheetId/cost-codes", async (req, res) => {
     try {
+      const timesheet = await getOwnedTimesheet(req, res, req.params.timesheetId);
+      if (!timesheet) return;
       const costCode = await storage.createTimesheetCostCode({
         ...req.body,
         timesheetId: req.params.timesheetId
@@ -25838,8 +25927,40 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Replace ALL splits for a timesheet in one atomic call — the dialog
+  // previously issued a serial DELETE per old split + POST per new split
+  // (each a full Neon round trip and non-atomic on partial failure).
+  app.put("/api/timesheets/:timesheetId/cost-codes", async (req, res) => {
+    try {
+      const timesheet = await getOwnedTimesheet(req, res, req.params.timesheetId);
+      if (!timesheet) return;
+      const splits = req.body?.splits;
+      if (!Array.isArray(splits)) {
+        return res.status(400).json({ error: "splits array is required" });
+      }
+      const sanitised = splits.map((s: any) => ({
+        costCodeId: s.costCodeId ?? null,
+        duration: Number(s.duration ?? 0),
+        hourlyRate: Number(s.hourlyRate ?? 0),
+        total: Number(s.total ?? 0),
+      }));
+      const result = await storage.replaceTimesheetCostCodes(req.params.timesheetId, sanitised as any);
+      res.json(result);
+    } catch (error: any) {
+      res.status(500).json({
+        error: "Failed to replace timesheet cost codes",
+        details: error.message
+      });
+    }
+  });
+
   app.patch("/api/timesheets/cost-codes/:id", async (req, res) => {
     try {
+      const existing = await storage.getTimesheetCostCode(req.params.id);
+      if (!existing) {
+        return res.status(404).json({ error: "Timesheet cost code not found" });
+      }
+      if (!(await getOwnedTimesheet(req, res, existing.timesheetId, "Timesheet cost code not found"))) return;
       const costCode = await storage.updateTimesheetCostCode(req.params.id, req.body);
       if (!costCode) {
         return res.status(404).json({ error: "Timesheet cost code not found" });
@@ -25855,6 +25976,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/timesheets/cost-codes/:id", async (req, res) => {
     try {
+      const existing = await storage.getTimesheetCostCode(req.params.id);
+      if (!existing) {
+        return res.status(404).json({ error: "Timesheet cost code not found" });
+      }
+      if (!(await getOwnedTimesheet(req, res, existing.timesheetId, "Timesheet cost code not found"))) return;
       const deleted = await storage.deleteTimesheetCostCode(req.params.id);
       if (!deleted) {
         return res.status(404).json({ error: "Timesheet cost code not found" });
@@ -25868,9 +25994,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Timesheet Allowances routes
+  // Timesheet Allowances routes — ownership resolves through the parent timesheet.
   app.get("/api/timesheets/:timesheetId/allowances", async (req, res) => {
     try {
+      const timesheet = await getOwnedTimesheet(req, res, req.params.timesheetId);
+      if (!timesheet) return;
       const allowances = await storage.getTimesheetAllowances(req.params.timesheetId);
       res.json(allowances);
     } catch (error) {
@@ -25882,12 +26010,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const validationResult = insertTimesheetAllowanceSchema.safeParse(req.body);
       if (!validationResult.success) {
-        return res.status(400).json({ 
-          error: "Validation failed", 
-          details: fromZodError(validationResult.error).toString() 
+        return res.status(400).json({
+          error: "Validation failed",
+          details: fromZodError(validationResult.error).toString()
         });
       }
 
+      if (!(await getOwnedTimesheet(req, res, validationResult.data.timesheetId))) return;
       const allowance = await storage.createTimesheetAllowance(validationResult.data);
       res.status(201).json(allowance);
     } catch (error: any) {
@@ -25909,6 +26038,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
+      const existingAllowance = await storage.getTimesheetAllowance(req.params.id);
+      if (!existingAllowance) {
+        return res.status(404).json({ error: "Timesheet allowance not found" });
+      }
+      if (!(await getOwnedTimesheet(req, res, existingAllowance.timesheetId, "Timesheet allowance not found"))) return;
       const allowance = await storage.updateTimesheetAllowance(req.params.id, validationResult.data);
       if (!allowance) {
         return res.status(404).json({ error: "Timesheet allowance not found" });
@@ -25919,8 +26053,63 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Bulk-allocate whole timesheets to a single allowance (from the Timesheets
+  // page bulk bar). One batch insert; already-allocated and wrong-project
+  // entries are skipped and reported, not errored.
+  app.post("/api/timesheet-allowances/bulk", async (req, res) => {
+    try {
+      const { estimateItemId, projectId, timesheetIds } = req.body || {};
+      if (!estimateItemId || !projectId || !Array.isArray(timesheetIds) || timesheetIds.length === 0) {
+        return res.status(400).json({ error: "estimateItemId, projectId and timesheetIds are required" });
+      }
+      if (!(await enforceProjectCompany(req, res, projectId, "Project not found"))) return;
+
+      // The target must be a PC/PS allowance line on one of this project's estimates
+      const allowanceItem = await storage.getEstimateItem(estimateItemId);
+      if (!allowanceItem || !allowanceItem.allowance) {
+        return res.status(404).json({ error: "Allowance not found" });
+      }
+      const estimate = await storage.getEstimate(allowanceItem.estimateId);
+      if (!estimate || estimate.projectId !== projectId) {
+        return res.status(404).json({ error: "Allowance not found on this project" });
+      }
+
+      const sheets = await storage.getTimesheetsByIds(timesheetIds);
+      // Timesheets must be on the same (company-verified) project as the allowance
+      const validSheets = sheets.filter((ts) => ts.projectId === projectId);
+
+      const existing = await storage.getTimesheetAllowancesByEstimateItem(estimateItemId);
+      const alreadyAllocated = new Set(existing.map((a) => a.timesheetId));
+
+      const rows = validSheets
+        .filter((ts) => !alreadyAllocated.has(ts.id))
+        .map((ts) => ({
+          timesheetId: ts.id,
+          estimateItemId,
+          timesheetCostCodeId: null,
+          hours: String(timesheetHours(ts)),
+          amount: timesheetTotalExGstCents(ts), // EX GST cents — labour carries no GST
+        }));
+
+      const created = await storage.createTimesheetAllowancesBulk(rows);
+      res.json({
+        allocated: created.length,
+        skippedAlreadyAllocated: validSheets.length - rows.length,
+        skippedWrongProject: sheets.length - validSheets.length,
+      });
+    } catch (error: any) {
+      console.error("[timesheet-allowances] bulk create failed:", error?.message);
+      res.status(500).json({ error: "Failed to allocate timesheets to allowance", details: error?.message });
+    }
+  });
+
   app.delete("/api/timesheet-allowances/:id", async (req, res) => {
     try {
+      const existingAllowance = await storage.getTimesheetAllowance(req.params.id);
+      if (!existingAllowance) {
+        return res.status(404).json({ error: "Timesheet allowance not found" });
+      }
+      if (!(await getOwnedTimesheet(req, res, existingAllowance.timesheetId, "Timesheet allowance not found"))) return;
       await storage.deleteTimesheetAllowance(req.params.id);
       res.status(204).send();
     } catch (error) {
