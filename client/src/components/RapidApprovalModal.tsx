@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { CostCodeSelect } from "@/components/CostCodeSelect";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -451,19 +452,13 @@ export function RapidApprovalModal({
 
             <div>
               <Label className="text-data text-muted-foreground">Cost Code</Label>
-              <Select value={editedCostCodeId || "none"} onValueChange={(val) => setEditedCostCodeId(val === "none" ? "" : val)}>
-                <SelectTrigger className={`h-7 text-table ${!editedCostCodeId ? "border-status-warning/50" : ""}`}>
-                  <SelectValue placeholder="Select" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none" className="text-table text-muted-foreground">None</SelectItem>
-                  {costCodes.map((code) => (
-                    <SelectItem key={code.id} value={code.id} className="text-table">
-                      {code.code} - {code.title}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <CostCodeSelect
+                value={editedCostCodeId || ""}
+                onValueChange={(v) => setEditedCostCodeId(v)}
+                placeholder="Select"
+                allowNone
+                triggerClassName={`h-7 text-table ${!editedCostCodeId ? "border-status-warning/50" : ""}`}
+              />
             </div>
           </div>
 

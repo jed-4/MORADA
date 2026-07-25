@@ -27,3 +27,26 @@ export function navigateFromPush(data: Record<string, any> | undefined | null) {
     // Navigation tree may not be fully ready on cold start; safe to ignore.
   }
 }
+
+/**
+ * Land the user on the Timesheets screen (in the More stack). Used right after
+ * subbie onboarding completes: refreshUser() swaps in the Main tree, which isn't
+ * mounted instantly, so poll navigationRef.isReady() briefly before navigating.
+ */
+export function navigateToLogHours(): void {
+  const go = (attempt = 0) => {
+    if (navigationRef.isReady()) {
+      try {
+        (navigationRef.navigate as (name: string, params?: any) => void)('Main', {
+          screen: 'More',
+          params: { screen: 'Timesheets' },
+        });
+      } catch {
+        // ignore — tree not ready in the expected shape
+      }
+    } else if (attempt < 20) {
+      setTimeout(() => go(attempt + 1), 150);
+    }
+  };
+  go();
+}

@@ -8,7 +8,8 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
-import { Plus, Clock, Search, Calendar as CalendarIcon, X, CalendarRange, Download, Upload, ChevronDown, Settings2, Table2, Users2, CalendarDays, ChevronLeft, ChevronRight, Zap, Play, Square, CircleCheck, Trash2, HardHat, MoreHorizontal, Pencil, Copy, Filter } from "lucide-react";
+import { Plus, Clock, Search, Calendar as CalendarIcon, X, CalendarRange, Download, Upload, ChevronDown, Settings2, Table2, Users2, CalendarDays, ChevronLeft, ChevronRight, Zap, Play, Square, CircleCheck, Trash2, HardHat, MoreHorizontal, Pencil, Copy, Filter, Columns3, Wallet } from "lucide-react";
+import { formatCents, timesheetHours, timesheetTotalExGstCents } from "@shared/money";
 import { Button } from "@/components/ui/button";
 import { BulkActionBar } from "@/components/BulkActionBar";
 import * as XLSX from "xlsx";
@@ -64,6 +65,14 @@ import { useWeekStartDay } from "@/hooks/useWeekStartDay";
 
 const TABLE_STORAGE_KEY = "timesheets";
 const LEGACY_STORAGE_KEY = "timesheets-column-config-v1";
+
+// Calendar view geometry — shared by the render code and the scroll-to-hour
+// effect so the two can never drift apart.
+const CAL_START_HOUR = 5;     // 5 am
+const CAL_END_HOUR = 22;      // 10 pm
+const CAL_HOUR_PX = 64;       // px per hour
+const CAL_GUTTER_W = 52;      // px time gutter on the left
+const CAL_SCROLL_TO_HOUR = 7; // hour brought into view when the calendar opens
 
 // A display row in the flat table — either a vanilla timesheet or one split
 // sub-row from a multi-cost-code timesheet. The parent timesheet `id` is
@@ -142,17 +151,56 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
   const [customStartDate, setCustomStartDate] = useState<Date | undefined>();
   const [customEndDate, setCustomEndDate] = useState<Date | undefined>();
   
-  // View state: table, weekly, calendar
-  const [activeView, setActiveView] = useState<"table" | "weekly" | "calendar">("table");
+  // View state: table, weekly, calendar — restored from the URL (?view=&week=)
+  // so a refresh or shared link lands on the same view and week.
+  const [activeView, setActiveView] = useState<"table" | "weekly" | "calendar">(() => {
+    if (!embedded) {
+      const v = new URLSearchParams(window.location.search).get("view");
+      if (v === "weekly" || v === "calendar" || v === "table") return v;
+    }
+    return "table";
+  });
+  const initialWeekFromUrl = (): Date => {
+    if (!embedded) {
+      const w = new URLSearchParams(window.location.search).get("week");
+      if (w && /^\d{4}-\d{2}-\d{2}$/.test(w)) {
+        const d = parseISO(w);
+        if (!isNaN(d.getTime())) return startOfWeek(d, { weekStartsOn: weekStartDay });
+      }
+    }
+    return startOfWeek(new Date(), { weekStartsOn: weekStartDay });
+  };
 
   // Ref to the main content scroll container — used to jump to 7 am when calendar opens
   const contentScrollRef = useRef<HTMLDivElement>(null);
+  // Calendar sticky-header refs: nav row + day-header row. Their combined
+  // height is measured (not hardcoded) for the scroll offset and for pinning
+  // block labels while a block is partially scrolled out of view.
+  const calNavRef = useRef<HTMLDivElement>(null);
+  const calHeadersRef = useRef<HTMLDivElement>(null);
+  const calGridRef = useRef<HTMLDivElement>(null);
+  const [calStickyOffset, setCalStickyOffset] = useState(88);
+  // Re-render each minute while the calendar is open so the now-line moves.
+  const [nowTick, setNowTick] = useState(() => new Date());
   
   // Weekly view state
-  const [weeklyViewDate, setWeeklyViewDate] = useState<Date>(startOfWeek(new Date(), { weekStartsOn: weekStartDay }));
-  
+  const [weeklyViewDate, setWeeklyViewDate] = useState<Date>(initialWeekFromUrl);
+
   // Calendar view state
-  const [calendarWeek, setCalendarWeek] = useState<Date>(startOfWeek(new Date(), { weekStartsOn: weekStartDay }));
+  const [calendarWeek, setCalendarWeek] = useState<Date>(initialWeekFromUrl);
+
+  // Reflect view + week back into the URL (replaceState — no nav churn).
+  useEffect(() => {
+    if (embedded) return;
+    const params = new URLSearchParams(window.location.search);
+    if (activeView === "table") params.delete("view");
+    else params.set("view", activeView);
+    const week = activeView === "weekly" ? weeklyViewDate : activeView === "calendar" ? calendarWeek : null;
+    if (week) params.set("week", format(week, "yyyy-MM-dd"));
+    else params.delete("week");
+    const qs = params.toString();
+    window.history.replaceState(null, "", `${window.location.pathname}${qs ? `?${qs}` : ""}`);
+  }, [embedded, activeView, weeklyViewDate, calendarWeek]);
 
   // Clock-in state
   const [isClockInOpen, setIsClockInOpen] = useState(false);
@@ -162,15 +210,45 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
 
   // (Sort, column visibility, ordering, sizing handled by DataTable.)
 
+  // Server-side fetch window. Weekly/calendar only need the visible week, and
+  // the table only needs its active date filter — fetching the full history on
+  // every visit paid a Neon round trip for years of rows. A ±1 day buffer
+  // covers overnight spillover and legacy rows stored at non-UTC midnights;
+  // the precise per-view filtering below stays client-side.
+  const fetchRange = ((): { start: Date; end: Date } | null => {
+    if (activeView === "weekly") return { start: weeklyViewDate, end: addDays(weeklyViewDate, 6) };
+    if (activeView === "calendar") return { start: calendarWeek, end: addDays(calendarWeek, 6) };
+    const now = new Date();
+    if (dateRangeType === "this-week") {
+      return { start: startOfWeek(now, { weekStartsOn: weekStartDay }), end: endOfWeek(now, { weekStartsOn: weekStartDay }) };
+    }
+    if (dateRangeType === "last-week") {
+      const lastWeek = addWeeks(now, -1);
+      return { start: startOfWeek(lastWeek, { weekStartsOn: weekStartDay }), end: endOfWeek(lastWeek, { weekStartsOn: weekStartDay }) };
+    }
+    if (dateRangeType === "custom" && customStartDate && customEndDate) {
+      return { start: customStartDate, end: customEndDate };
+    }
+    return null; // table view, "All Time"
+  })();
+  const rangeQueryString = fetchRange
+    ? `?startDate=${format(addDays(fetchRange.start, -1), "yyyy-MM-dd")}&endDate=${format(addDays(fetchRange.end, 1), "yyyy-MM-dd")}`
+    : "";
+
   // Fetch timesheets - project-specific or all
   const { data: timesheets = [], isLoading: loadingTimesheets } = useQuery<Timesheet[]>({
-    queryKey: projectId ? ["/api/projects", projectId, "timesheets"] : ["/api/timesheets"],
+    queryKey: projectId ? ["/api/projects", projectId, "timesheets"] : ["/api/timesheets", rangeQueryString],
     queryFn: async () => {
-      const url = projectId ? `/api/projects/${projectId}/timesheets` : "/api/timesheets";
+      const url = projectId
+        ? `/api/projects/${projectId}/timesheets`
+        : `/api/timesheets${rangeQueryString}`;
       const res = await fetch(url);
       if (!res.ok) throw new Error("Failed to fetch timesheets");
       return res.json();
     },
+    // Keep the previous week's rows on screen while the next range loads —
+    // never flash an empty state during the round trip.
+    placeholderData: (prev) => prev,
   });
 
   // Fetch projects for filter
@@ -206,6 +284,53 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
     queryKey: ["/api/timesheets/active"],
   });
 
+  // ── Bulk "allocate to allowance" ─────────────────────────────────────────
+  // Allowances belong to a project, so the action needs the selection to sit
+  // on exactly one project; the button is disabled otherwise.
+  const [isAllocateAllowanceOpen, setIsAllocateAllowanceOpen] = useState(false);
+  const [allocateAllowanceId, setAllocateAllowanceId] = useState<string>("");
+  const selectedTsObjects = timesheets.filter((ts) => selectedTimesheets.includes(ts.id));
+  const selectedTsProjectIds = Array.from(
+    new Set(selectedTsObjects.map((ts) => ts.projectId).filter(Boolean))
+  ) as string[];
+  const allocateProjectId = selectedTsProjectIds.length === 1 ? selectedTsProjectIds[0] : null;
+
+  const { data: allocateAllowances = [], isLoading: loadingAllowances } = useQuery<any[]>({
+    queryKey: ["/api/projects", allocateProjectId, "allowances"],
+    enabled: isAllocateAllowanceOpen && !!allocateProjectId,
+  });
+
+  const allocateAllowanceMutation = useMutation({
+    mutationFn: (data: { estimateItemId: string; projectId: string; timesheetIds: string[] }) =>
+      apiRequest("/api/timesheet-allowances/bulk", "POST", data) as Promise<{
+        allocated: number;
+        skippedAlreadyAllocated: number;
+        skippedWrongProject: number;
+      }>,
+    onSuccess: (result) => {
+      const skipped: string[] = [];
+      if (result.skippedAlreadyAllocated > 0) skipped.push(`${result.skippedAlreadyAllocated} already allocated`);
+      if (result.skippedWrongProject > 0) skipped.push(`${result.skippedWrongProject} on another project`);
+      toast({
+        title: `${result.allocated} timesheet${result.allocated === 1 ? "" : "s"} allocated to allowance`,
+        description: skipped.length > 0 ? `Skipped: ${skipped.join(", ")}` : undefined,
+      });
+      setIsAllocateAllowanceOpen(false);
+      setAllocateAllowanceId("");
+      setSelectedTimesheets([]);
+      if (allocateProjectId) {
+        queryClient.invalidateQueries({ queryKey: ["/api/projects", allocateProjectId, "allowances"] });
+      }
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Failed to allocate to allowance",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
   // Calculate elapsed time for active timesheet
   useEffect(() => {
     if (activeTimesheet?.clockInTime) {
@@ -231,12 +356,36 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
     }
   }, [activeTimesheet?.clockInTime]);
 
-  // Scroll the content area to 7 am whenever the calendar view is activated
+  // Keep the measured sticky-header height current (the day-header row grows
+  // when per-user lane labels render, so it can change with the visible week).
   useEffect(() => {
-    if (activeView === "calendar" && contentScrollRef.current) {
-      // CAL_START_HOUR = 5, HOUR_PX = 64  →  7 am offset = (7-5)*64 = 128 px
-      contentScrollRef.current.scrollTop = (7 - 5) * 64;
+    if (activeView !== "calendar") return;
+    const sticky =
+      (calNavRef.current?.offsetHeight || 44) + (calHeadersRef.current?.offsetHeight || 44);
+    setCalStickyOffset(sticky);
+  });
+
+  // When the calendar opens, scroll so CAL_SCROLL_TO_HOUR sits at the top of
+  // the visible grid area (below the sticky headers).
+  useEffect(() => {
+    if (activeView !== "calendar") return;
+    const sc = contentScrollRef.current;
+    const grid = calGridRef.current;
+    const sticky =
+      (calNavRef.current?.offsetHeight || 44) + (calHeadersRef.current?.offsetHeight || 44);
+    if (sc && grid) {
+      const gridTop =
+        grid.getBoundingClientRect().top - sc.getBoundingClientRect().top + sc.scrollTop;
+      sc.scrollTop = gridTop - sticky + (CAL_SCROLL_TO_HOUR - CAL_START_HOUR) * CAL_HOUR_PX;
     }
+  }, [activeView]);
+
+  // Minute tick for the calendar's current-time line
+  useEffect(() => {
+    if (activeView !== "calendar") return;
+    setNowTick(new Date());
+    const t = setInterval(() => setNowTick(new Date()), 60_000);
+    return () => clearInterval(t);
   }, [activeView]);
 
   // Clock-in mutation
@@ -300,8 +449,9 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
     },
   });
 
-  // Status workflow mutations
-  const tsQueryKey = projectId ? ["/api/projects", projectId, "timesheets"] : ["/api/timesheets"];
+  // Status workflow mutations — must match the fetch query's key exactly
+  // (including the range segment) or the optimistic update misses the cache.
+  const tsQueryKey = projectId ? ["/api/projects", projectId, "timesheets"] : ["/api/timesheets", rangeQueryString];
 
   const bulkActionMutation = useMutation({
     mutationFn: (data: { ids: string[]; action: string; status?: string }) =>
@@ -363,11 +513,14 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
   // so the user can adjust before saving.
   const duplicateMutation = useMutation({
     mutationFn: async (source: Timesheet) => {
+      const sourceSplits = ((source as any).costCodeSplits as any[] | undefined) || [];
+      const isSplit = sourceSplits.length > 0;
       const payload = {
         projectId: source.projectId,
         userId: source.userId,
-        costCodeId: source.costCodeId,
-        date: new Date().toISOString(),
+        costCodeId: isSplit ? null : source.costCodeId,
+        // Date-only string — the server normalises to midnight in the company TZ
+        date: format(new Date(), "yyyy-MM-dd"),
         startTime: source.startTime || "",
         endTime: source.endTime || "",
         duration: source.duration || "0",
@@ -381,7 +534,24 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
         labels: Array.isArray(source.labels) ? (source.labels as string[]) : [],
         status: "submitted",
       };
-      return apiRequest("/api/timesheets", "POST", payload) as Promise<Timesheet>;
+      const created = (await apiRequest("/api/timesheets", "POST", payload)) as Timesheet;
+      // Mirror the dialog's convention: every timesheet carries cost-code rows —
+      // split entries get all their splits, plain entries get a single row.
+      const splits = isSplit
+        ? sourceSplits.map((s) => ({
+            costCodeId: s.costCodeId,
+            duration: s.duration?.toString() ?? "0",
+            hourlyRate: s.hourlyRate?.toString() ?? "0",
+            total: s.total?.toString() ?? "0",
+          }))
+        : [{
+            costCodeId: source.costCodeId,
+            duration: source.duration || "0",
+            hourlyRate: source.hourlyRate || "0",
+            total: source.total || "0",
+          }];
+      await apiRequest(`/api/timesheets/${created.id}/cost-codes`, "PUT", { splits });
+      return created;
     },
     onSuccess: (newTs) => {
       queryClient.invalidateQueries({ queryKey: ["/api/timesheets"] });
@@ -589,9 +759,10 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
       const userId = ts.userId;
       const userName = getUserName(userId);
       const tsDate = format(new Date(ts.date), "yyyy-MM-dd");
-      const duration = parseFloat(ts.duration) || 0;
-      const breakDuration = parseFloat(ts.breakDuration || "0") || 0;
-      const netHours = Math.max(0, duration - breakDuration);
+      // `duration` is already net of break (the dialog stores (end−start)−break),
+      // so don't subtract breakDuration again — that made Weekly disagree with
+      // the table for any entry with a logged break.
+      const netHours = getNetHours(ts);
 
       if (!userMap.has(userId)) {
         userMap.set(userId, {
@@ -634,42 +805,49 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
 
   // Export timesheets to Excel
   const handleExport = () => {
-    const exportData = filteredTimesheets.map((timesheet) => ({
-      Date: format(new Date(timesheet.date), "dd/MM/yyyy"),
-      User: getUserName(timesheet.userId),
-      Project: getProjectName(timesheet.projectId),
-      "Start Time": timesheet.startTime || "-",
-      "End Time": timesheet.endTime || "-",
-      "Break (hrs)": timesheet.breakDuration ? parseFloat(timesheet.breakDuration).toFixed(2) : "0.00",
-      "Duration (hrs)": parseFloat(timesheet.duration).toFixed(2),
-      "Net Hours": getNetHours(timesheet).toFixed(2),
-      "Hourly Rate": `$${parseFloat(timesheet.hourlyRate || "0").toFixed(2)}`,
-      Total: `$${parseFloat(timesheet.total || "0").toFixed(2)}`,
-      Status: timesheet.status.charAt(0).toUpperCase() + timesheet.status.slice(1),
-      Invoiced: timesheet.invoiced ? "Yes" : "No",
-      Description: timesheet.description || "-",
-    }));
+    // Column set mirrors the table: cost code + labels included, one net-hours
+    // column ("duration" is already net of break), and rate/total only for
+    // users with the rates permission.
+    const exportData = filteredTimesheets.map((timesheet) => {
+      const splits = ((timesheet as any).costCodeSplits as any[] | undefined) || [];
+      const costCodeNames = splits.length > 1
+        ? splits.map((s) => getCostCodeName(s.costCodeId)).filter((n) => n !== "-").join(", ")
+        : getCostCodeName(timesheet.costCodeId);
+      const row: Record<string, string> = {
+        Date: format(new Date(timesheet.date), "dd/MM/yyyy"),
+        User: getUserName(timesheet.userId),
+        Project: getProjectName(timesheet.projectId),
+        "Cost Code": costCodeNames || "-",
+        "Start Time": timesheet.startTime || "-",
+        "End Time": timesheet.endTime || "-",
+        "Break (hrs)": timesheet.breakDuration ? parseFloat(timesheet.breakDuration).toFixed(2) : "0.00",
+        "Hours (net)": getNetHours(timesheet).toFixed(2),
+      };
+      if (canViewTimesheetRates) {
+        row["Hourly Rate"] = `$${parseFloat(timesheet.hourlyRate || "0").toFixed(2)}`;
+        row["Total"] = `$${parseFloat(timesheet.total || "0").toFixed(2)}`;
+      }
+      row["Labels"] = Array.isArray(timesheet.labels) && (timesheet.labels as string[]).length > 0
+        ? (timesheet.labels as string[]).join(", ")
+        : "-";
+      row["Status"] = timesheet.status.charAt(0).toUpperCase() + timesheet.status.slice(1);
+      row["Invoiced"] = timesheet.invoiced ? "Yes" : "No";
+      row["Description"] = timesheet.description || "-";
+      return row;
+    });
 
     const worksheet = XLSX.utils.json_to_sheet(exportData);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "Timesheets");
 
-    // Auto-size columns
-    const colWidths = [
-      { wch: 12 }, // Date
-      { wch: 20 }, // User
-      { wch: 25 }, // Project
-      { wch: 12 }, // Start Time
-      { wch: 12 }, // End Time
-      { wch: 12 }, // Break
-      { wch: 14 }, // Duration
-      { wch: 14 }, // Hourly Rate
-      { wch: 12 }, // Total
-      { wch: 12 }, // Status
-      { wch: 10 }, // Invoiced
-      { wch: 40 }, // Description
-    ];
-    worksheet["!cols"] = colWidths;
+    // Column widths keyed by header so they can never drift from the columns
+    const widthByHeader: Record<string, number> = {
+      Date: 12, User: 20, Project: 25, "Cost Code": 22,
+      "Start Time": 12, "End Time": 12, "Break (hrs)": 12, "Hours (net)": 12,
+      "Hourly Rate": 14, Total: 12, Labels: 20, Status: 12, Invoiced: 10, Description: 40,
+    };
+    const headers = exportData.length > 0 ? Object.keys(exportData[0]) : [];
+    worksheet["!cols"] = headers.map((h) => ({ wch: widthByHeader[h] ?? 14 }));
 
     const fileName = currentProject
       ? `${currentProject.name}_Timesheets_${format(new Date(), "yyyy-MM-dd")}.xlsx`
@@ -1514,7 +1692,7 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
                       data-testid="button-columns"
                       aria-label="Columns"
                     >
-                      <Settings2 className="w-3 h-3" />
+                      <Columns3 className="w-3 h-3" />
                     </button>
                   </PopoverTrigger>
                 </TooltipTrigger>
@@ -1762,26 +1940,31 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
         ) : activeView === "calendar" ? (
           /* Calendar Week View - Time Scale */
           (() => {
-            const CAL_START_HOUR = 5;   // 5 am
-            const CAL_END_HOUR = 22;    // 10 pm
-            const HOUR_PX = 64;         // px per hour
-            const GUTTER_W = 52;        // px for time gutter on left
             const totalHours = CAL_END_HOUR - CAL_START_HOUR;
 
             const parseHHmm = (t: string | null | undefined): number | null => {
               if (!t) return null;
               const [h, m] = t.split(":").map(Number);
-              return h + m / 60;
+              if (isNaN(h)) return null;
+              return h + (m || 0) / 60;
             };
 
-            // Within a set of same-lane entries, compute sub-lane (column) assignments
+            // One visual block. Overnight entries produce two segments —
+            // start→midnight on the entry's day, midnight→end on the next day.
+            type CalSegment = {
+              ts: Timesheet;
+              segKey: string;
+              start: number;
+              end: number;
+              contFromPrev: boolean;
+              contToNext: boolean;
+            };
+
+            // Within a set of same-lane segments, compute sub-lane (column) assignments
             // so overlapping entries render side-by-side instead of stacked.
-            const computeBlockLanes = (entries: Timesheet[]): Map<string, { subLane: number; totalSubLanes: number }> => {
-              const intervals = entries.map(ts => {
-                const start = parseHHmm(ts.startTime) ?? CAL_START_HOUR;
-                let end = parseHHmm(ts.endTime);
-                if (end === null) end = start + getNetHours(ts);
-                return { id: ts.id as string, start, end: Math.max(end, start + 0.25) };
+            const computeBlockLanes = (segs: CalSegment[]): Map<string, { subLane: number; totalSubLanes: number }> => {
+              const intervals = segs.map(sg => {
+                return { id: sg.segKey, start: sg.start, end: Math.max(sg.end, sg.start + 0.25) };
               });
               intervals.sort((a, b) => a.start - b.start);
               const result = new Map<string, { subLane: number; totalSubLanes: number }>();
@@ -1828,6 +2011,30 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
             const timedSheets = calendarTimesheets.filter(ts => ts.startTime);
             const untimedSheets = calendarTimesheets.filter(ts => !ts.startTime);
 
+            // Build per-day render segments, splitting entries that cross
+            // midnight (the old renderer silently dropped them: end < start
+            // clamped to nothing).
+            const segmentsByDay = new Map<string, CalSegment[]>();
+            const pushSeg = (dk: string, seg: CalSegment) => {
+              if (!segmentsByDay.has(dk)) segmentsByDay.set(dk, []);
+              segmentsByDay.get(dk)!.push(seg);
+            };
+            timedSheets.forEach(ts => {
+              const start = parseHHmm(ts.startTime);
+              if (start === null) return;
+              let end = parseHHmm(ts.endTime);
+              if (end === null) end = start + getNetHours(ts);
+              if (end <= start) end += 24; // overnight (e.g. 22:00 → 06:00)
+              const dk = format(parseISO(ts.date as unknown as string), "yyyy-MM-dd");
+              if (end > 24) {
+                pushSeg(dk, { ts, segKey: `${ts.id}-a`, start, end: 24, contFromPrev: false, contToNext: true });
+                const nextDk = format(addDays(parseISO(ts.date as unknown as string), 1), "yyyy-MM-dd");
+                pushSeg(nextDk, { ts, segKey: `${ts.id}-b`, start: 0, end: end - 24, contFromPrev: true, contToNext: false });
+              } else {
+                pushSeg(dk, { ts, segKey: ts.id as string, start, end, contFromPrev: false, contToNext: false });
+              }
+            });
+
             // Group untimed by day (timezone-safe)
             const untimedByDay = new Map<string, Timesheet[]>();
             untimedSheets.forEach(ts => {
@@ -1854,7 +2061,7 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
             const useLanes = laneUsers.length >= 2 && !tooManyUsers;
 
             // Helper: get first name or initials for a userId
-            const getUserLabel = (userId: number) => {
+            const getUserLabel = (userId: string) => {
               const name = getUserName(userId);
               const parts = name.trim().split(/\s+/);
               if (parts[0] && parts[0].length > 0) return parts[0];
@@ -1864,20 +2071,10 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
             // flex weight per day: Sunday = 0.5, others = 1
             const dayFlex = (day: Date) => getDay(day) === 0 ? 0.5 : 1;
 
-            const statusColors = (status: string) => {
-              if (status === "approved")
-                return "bg-status-success-bg border-status-success/40 text-status-success";
-              if (status === "submitted")
-                return "bg-status-warning-bg border-status-warning/40 text-status-warning";
-              if (status === "rejected")
-                return "bg-status-danger-bg border-status-danger/40 text-status-danger";
-              return "bg-muted/60 border-border text-muted-foreground";
-            };
-
             return (
               <div className="flex flex-col">
                 {/* Week Navigation — sticks to top of outer scroll container */}
-                <div className="sticky top-0 z-30 flex items-center gap-2 px-3 py-2 border-b border-border bg-card">
+                <div ref={calNavRef} className="sticky top-0 z-30 flex items-center gap-2 px-3 py-2 border-b border-border bg-card">
                   <Button
                     variant="outline"
                     size="icon"
@@ -1910,8 +2107,8 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
                 </div>
 
                 {/* Day headers — sticks just below the nav (nav = py-2 + h-7 = 44px) */}
-                <div className="sticky top-[44px] z-20 flex border-b-2 border-border bg-card">
-                  <div style={{ width: GUTTER_W, minWidth: GUTTER_W }} className="border-r border-border" />
+                <div ref={calHeadersRef} className="sticky top-[44px] z-20 flex border-b-2 border-border bg-card">
+                  <div style={{ width: CAL_GUTTER_W, minWidth: CAL_GUTTER_W }} className="border-r border-border" />
                   {calendarDays.map(day => {
                     const isToday = isSameDay(day, new Date());
                     const flex = dayFlex(day);
@@ -1959,7 +2156,7 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
                 {hasUntimed && (
                   <div className="flex border-b border-border bg-muted/10">
                     <div
-                      style={{ width: GUTTER_W, minWidth: GUTTER_W }}
+                      style={{ width: CAL_GUTTER_W, minWidth: CAL_GUTTER_W }}
                       className="text-label text-muted-foreground text-right pr-2 pt-1 leading-tight border-r border-border"
                     >
                       no<br />time
@@ -2036,16 +2233,16 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
                 )}
 
                 {/* Time grid — natural height, outer container scrolls */}
-                <div className="flex" style={{ height: totalHours * HOUR_PX }}>
+                <div ref={calGridRef} className="flex" style={{ height: totalHours * CAL_HOUR_PX }}>
                   {/* Hour labels */}
-                  <div style={{ width: GUTTER_W, minWidth: GUTTER_W }} className="relative select-none border-r border-border">
+                  <div style={{ width: CAL_GUTTER_W, minWidth: CAL_GUTTER_W }} className="relative select-none border-r border-border">
                     {Array.from({ length: totalHours }, (_, i) => {
                       const h = CAL_START_HOUR + i;
                       return (
                         <div
                           key={h}
                           className="absolute right-0 pr-2 text-data text-muted-foreground leading-none"
-                          style={{ top: i * HOUR_PX - 6 }}
+                          style={{ top: i * CAL_HOUR_PX - 6 }}
                         >
                           {h === 0 ? "12am" : h < 12 ? `${h}am` : h === 12 ? "12pm" : `${h - 12}pm`}
                         </div>
@@ -2057,7 +2254,7 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
                   {calendarDays.map(day => {
                     const dk = format(day, "yyyy-MM-dd");
                     const isToday = isSameDay(day, new Date());
-                    const dayTimed = timedSheets.filter(ts => format(parseISO(ts.date), "yyyy-MM-dd") === dk);
+                    const daySegs = segmentsByDay.get(dk) || [];
                     const flex = dayFlex(day);
 
                     return (
@@ -2071,7 +2268,7 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
                           <div
                             key={i}
                             className="absolute left-0 right-0 border-t border-border/50"
-                            style={{ top: i * HOUR_PX }}
+                            style={{ top: i * CAL_HOUR_PX }}
                           />
                         ))}
                         {/* Half-hour lines */}
@@ -2079,7 +2276,7 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
                           <div
                             key={`h${i}`}
                             className="absolute left-0 right-0 border-t border-border/25"
-                            style={{ top: i * HOUR_PX + HOUR_PX / 2 }}
+                            style={{ top: i * CAL_HOUR_PX + CAL_HOUR_PX / 2 }}
                           />
                         ))}
 
@@ -2098,29 +2295,37 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
                           const blockLanesMap = new Map<string, Map<string, { subLane: number; totalSubLanes: number }>>();
                           if (useLanes) {
                             laneUsers.forEach(uid => {
-                              const userEntries = dayTimed.filter(ts => ts.userId === uid);
-                              blockLanesMap.set(String(uid), computeBlockLanes(userEntries));
+                              const userSegs = daySegs.filter(sg => sg.ts.userId === uid);
+                              blockLanesMap.set(String(uid), computeBlockLanes(userSegs));
                             });
                           } else {
-                            const allLanes = computeBlockLanes(dayTimed);
-                            blockLanesMap.set("all", allLanes);
+                            blockLanesMap.set("all", computeBlockLanes(daySegs));
                           }
                           const INSET = 1;
-                          return dayTimed.map(ts => {
-                            const startDecimal = parseHHmm(ts.startTime);
-                            if (startDecimal === null) return null;
-
-                            let endDecimal = parseHHmm(ts.endTime);
-                            if (endDecimal === null) {
-                              endDecimal = startDecimal + getNetHours(ts);
+                          return daySegs.map(sg => {
+                            const { ts } = sg;
+                            // Segments fully outside the 5am–10pm window are no
+                            // longer dropped — they pin as a thin marker at the
+                            // nearest window edge so the entry stays discoverable.
+                            const fullyAbove = sg.end <= CAL_START_HOUR;
+                            const fullyBelow = sg.start >= CAL_END_HOUR;
+                            let top: number;
+                            let height: number;
+                            if (fullyAbove) {
+                              top = 0;
+                              height = 18;
+                            } else if (fullyBelow) {
+                              top = totalHours * CAL_HOUR_PX - 18;
+                              height = 18;
+                            } else {
+                              const clampedStart = Math.max(sg.start, CAL_START_HOUR);
+                              const clampedEnd = Math.min(sg.end, CAL_END_HOUR);
+                              top = (clampedStart - CAL_START_HOUR) * CAL_HOUR_PX;
+                              height = Math.max((clampedEnd - clampedStart) * CAL_HOUR_PX, 18);
                             }
-
-                            const clampedStart = Math.max(startDecimal, CAL_START_HOUR);
-                            const clampedEnd = Math.min(endDecimal, CAL_END_HOUR);
-                            if (clampedEnd <= clampedStart) return null;
-
-                            const top = (clampedStart - CAL_START_HOUR) * HOUR_PX;
-                            const height = Math.max((clampedEnd - clampedStart) * HOUR_PX, 18);
+                            // Continuation / clipping indicators
+                            const clippedTop = sg.contFromPrev || sg.start < CAL_START_HOUR || fullyAbove;
+                            const clippedBottom = sg.contToNext || sg.end > CAL_END_HOUR || fullyBelow;
 
                             const projColor = getProjectColor(ts.projectId);
                             const dotColor = statusDotColor(ts.status);
@@ -2138,16 +2343,21 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
 
                             // Sub-lane: collision detection within the user's lane
                             const laneKey = useLanes ? String(ts.userId) : "all";
-                            const subLaneInfo = blockLanesMap.get(laneKey)?.get(ts.id) ?? { subLane: 0, totalSubLanes: 1 };
+                            const subLaneInfo = blockLanesMap.get(laneKey)?.get(sg.segKey) ?? { subLane: 0, totalSubLanes: 1 };
                             const subWidthPct = userLaneWidthPct / subLaneInfo.totalSubLanes;
                             const leftPct = userLaneLeftPct + subLaneInfo.subLane * subWidthPct;
                             const widthPct = subWidthPct;
 
+                            // Tall blocks hide their label once the top scrolls
+                            // out of view — pin it below the sticky headers
+                            // instead so the block stays identified. (Secondary
+                            // lines are height-gated, so nothing can overflow a
+                            // short block even without overflow-hidden.)
                             return (
                               <div
-                                key={ts.id}
+                                key={sg.segKey}
                                 onClick={() => { setSelectedTimesheet(ts); setIsDialogOpen(true); }}
-                                className={`absolute rounded text-label px-1 py-0.5 cursor-pointer overflow-hidden hover-elevate text-foreground${projColor ? "" : " bg-muted/60 border-l-2 border-border"}`}
+                                className={`absolute rounded text-label px-1 py-0.5 cursor-pointer hover-elevate text-foreground${projColor ? "" : " bg-muted/60 border-l-2 border-border"}`}
                                 style={projColor ? {
                                   top,
                                   height,
@@ -2169,8 +2379,11 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
                                     style={{ backgroundColor: dotColor }}
                                   />
                                 )}
-                                <div className="font-bold truncate leading-tight pr-2">
-                                  {getProjectName(ts.projectId)}
+                                <div
+                                  className="font-bold truncate leading-tight pr-2"
+                                  style={{ position: "sticky", top: calStickyOffset + 2 }}
+                                >
+                                  {clippedTop ? "↑ " : ""}{getProjectName(ts.projectId)}{clippedBottom ? " ↓" : ""}
                                 </div>
                                 {height > 28 && (
                                   <div className="truncate leading-tight opacity-70">
@@ -2185,6 +2398,21 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
                               </div>
                             );
                           });
+                        })()}
+
+                        {/* Current-time line (today only) */}
+                        {isToday && (() => {
+                          const nowDec = nowTick.getHours() + nowTick.getMinutes() / 60;
+                          if (nowDec < CAL_START_HOUR || nowDec > CAL_END_HOUR) return null;
+                          return (
+                            <div
+                              className="absolute left-0 right-0 z-10 pointer-events-none"
+                              style={{ top: (nowDec - CAL_START_HOUR) * CAL_HOUR_PX }}
+                            >
+                              <div className="h-[2px] bg-[hsl(var(--teal))]" />
+                              <div className="absolute left-0 -top-[3px] w-2 h-2 rounded-full bg-[hsl(var(--teal))]" />
+                            </div>
+                          );
                         })()}
                       </div>
                     );
@@ -2320,6 +2548,28 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 text-xs"
+                disabled={!allocateProjectId}
+                onClick={() => setIsAllocateAllowanceOpen(true)}
+                data-testid="button-bulk-allocate-allowance"
+              >
+                <Wallet className="h-3.5 w-3.5 mr-1" />
+                Allowance
+              </Button>
+            </span>
+          </TooltipTrigger>
+          <TooltipContent side="top">
+            {allocateProjectId
+              ? "Allocate selected timesheets to an allowance"
+              : "Select entries from a single project to allocate"}
+          </TooltipContent>
+        </Tooltip>
         <AlertDialog>
           <AlertDialogTrigger asChild>
             <Button
@@ -2431,6 +2681,88 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
         userIdFilter={selectedUsers.length > 0 ? selectedUsers : undefined}
         allowedTimesheetIds={filteredTimesheets.map((t) => t.id)}
       />
+
+      {/* Allocate selected timesheets to a PC/PS allowance */}
+      <Dialog
+        open={isAllocateAllowanceOpen}
+        onOpenChange={(o) => {
+          setIsAllocateAllowanceOpen(o);
+          if (!o) setAllocateAllowanceId("");
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Allocate to Allowance</DialogTitle>
+          </DialogHeader>
+          {(() => {
+            const totalHrs = selectedTsObjects.reduce((s, ts) => s + timesheetHours(ts), 0);
+            const totalCents = selectedTsObjects.reduce((s, ts) => s + timesheetTotalExGstCents(ts), 0);
+            return (
+              <div className="space-y-3">
+                <div className="text-xs text-muted-foreground">
+                  {selectedTsObjects.length} {selectedTsObjects.length === 1 ? "entry" : "entries"} ·{" "}
+                  {formatDuration(totalHrs)} hrs
+                  {canViewTimesheetRates && <> · {formatCents(totalCents)} ex GST</>}
+                  {" — "}
+                  {getProjectName(allocateProjectId)}
+                </div>
+                <div className="max-h-64 overflow-auto space-y-1">
+                  {loadingAllowances ? (
+                    <div className="text-sm text-muted-foreground py-4 text-center">Loading allowances…</div>
+                  ) : allocateAllowances.length === 0 ? (
+                    <div className="text-sm text-muted-foreground py-4 text-center">
+                      No allowances on this project
+                    </div>
+                  ) : (
+                    allocateAllowances.map((a: any) => (
+                      <button
+                        key={a.id}
+                        type="button"
+                        onClick={() => setAllocateAllowanceId(a.id)}
+                        className={`w-full text-left px-2 py-1.5 border rounded-md text-xs hover-elevate flex items-center justify-between gap-2 ${
+                          allocateAllowanceId === a.id ? "bg-primary/10 border-primary/40" : ""
+                        }`}
+                        data-testid={`allowance-option-${a.id}`}
+                      >
+                        <span className="min-w-0">
+                          <span className="block truncate">{a.description}</span>
+                          {a.groupName && (
+                            <span className="block truncate text-muted-foreground/70 text-[10px]">{a.groupName}</span>
+                          )}
+                        </span>
+                        <Badge variant="secondary" className="text-data shrink-0">
+                          {a.allowance === "Prime Cost" ? "PC" : "PS"}
+                        </Badge>
+                      </button>
+                    ))
+                  )}
+                </div>
+                <div className="flex justify-end gap-2">
+                  <Button variant="outline" size="sm" onClick={() => setIsAllocateAllowanceOpen(false)}>
+                    Cancel
+                  </Button>
+                  <Button
+                    size="sm"
+                    disabled={!allocateAllowanceId || allocateAllowanceMutation.isPending}
+                    onClick={() => {
+                      if (allocateProjectId) {
+                        allocateAllowanceMutation.mutate({
+                          estimateItemId: allocateAllowanceId,
+                          projectId: allocateProjectId,
+                          timesheetIds: selectedTimesheets,
+                        });
+                      }
+                    }}
+                    data-testid="button-confirm-allocate-allowance"
+                  >
+                    {allocateAllowanceMutation.isPending ? "Allocating…" : "Allocate"}
+                  </Button>
+                </div>
+              </div>
+            );
+          })()}
+        </DialogContent>
+      </Dialog>
 
       <TimesheetImportDialog
         open={isImportOpen}

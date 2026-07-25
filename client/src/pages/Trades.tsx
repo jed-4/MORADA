@@ -48,6 +48,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { CostCodeSelect } from "@/components/CostCodeSelect";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -975,21 +976,15 @@ export default function Trades() {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Default Cost Code</FormLabel>
-                      <Select onValueChange={(val) => field.onChange(val === "none" ? null : val)} value={field.value || "none"}>
-                        <FormControl>
-                          <SelectTrigger data-testid="select-default-cost-code">
-                            <SelectValue placeholder="Select cost code" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          <SelectItem value="none">None</SelectItem>
-                          {costCodes.map((code) => (
-                            <SelectItem key={code.id} value={code.id}>
-                              {code.code} - {code.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <FormControl>
+                        <CostCodeSelect
+                          value={field.value || ""}
+                          onValueChange={(v) => field.onChange(v || null)}
+                          placeholder="Select cost code"
+                          allowNone
+                          data-testid="select-default-cost-code"
+                        />
+                      </FormControl>
                       <p className="text-xs text-muted-foreground">Auto-applies to bill line items</p>
                       <FormMessage />
                     </FormItem>

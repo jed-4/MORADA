@@ -50,21 +50,26 @@ export const TimeSelect = forwardRef<HTMLButtonElement, TimeSelectProps>(
     const fallbackIndex = defaultIndex >= 0 ? defaultIndex : DEFAULT_SCROLL_INDEX;
 
     const handleContentRef = useCallback((node: HTMLDivElement | null) => {
-      if (node) {
-        requestAnimationFrame(() => {
-          const viewport = node.querySelector('[data-radix-select-viewport]');
-          if (viewport) {
-            const targetIndex = value
-              ? TIME_OPTIONS.findIndex(opt => opt.value === value)
-              : fallbackIndex;
-
-            const scrollIndex = targetIndex >= 0 ? targetIndex : fallbackIndex;
-            const itemHeight = 32;
-            const scrollTop = Math.max(0, scrollIndex * itemHeight);
-            viewport.scrollTop = scrollTop;
-          }
-        });
-      }
+      if (!node) return;
+      const scrollToTarget = () => {
+        const viewport = node.querySelector('[data-radix-select-viewport]') as HTMLElement | null;
+        if (!viewport) return;
+        const targetIndex = value
+          ? TIME_OPTIONS.findIndex(opt => opt.value === value)
+          : fallbackIndex;
+        const scrollIndex = targetIndex >= 0 ? targetIndex : fallbackIndex;
+        const item = viewport.querySelectorAll('[role="option"]')[scrollIndex] as HTMLElement | undefined;
+        if (!item) return;
+        // Measure the real item position instead of assuming a fixed height.
+        viewport.scrollTop =
+          item.getBoundingClientRect().top - viewport.getBoundingClientRect().top + viewport.scrollTop;
+      };
+      // Radix focuses an item after open and scrolls it into view, which
+      // clobbers a single-frame scroll (the list then sat at 12 AM). Re-apply
+      // over the next frames so our target position wins.
+      requestAnimationFrame(scrollToTarget);
+      requestAnimationFrame(() => requestAnimationFrame(scrollToTarget));
+      setTimeout(scrollToTarget, 60);
     }, [value, fallbackIndex]);
 
     return (

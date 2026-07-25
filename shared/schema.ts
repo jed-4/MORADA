@@ -1179,6 +1179,13 @@ export const companySettings = pgTable("company_settings", {
   // systemConfiguration (which is global / non-tenant-scoped).
   billDefaultXeroAccount: text("bill_default_xero_account"),
 
+  // Fallback Xero revenue AccountCode applied to client-invoice line items that
+  // have no account on the line. Used by /api/xero/push-client-invoice pre-flight
+  // to avoid Xero 400 "Account code must be specified". Stored here (per company)
+  // — mirrors billDefaultXeroAccount. NB: the older systemConfiguration copy of
+  // this field was mislocated (global, and never persisted via /api/company-settings).
+  clientInvoiceDefaultXeroAccount: text("client_invoice_default_xero_account"),
+
   documentStyle: text("document_style").notNull().default("style1"),
   paymentDetails: text("payment_details"),
 
@@ -1278,7 +1285,6 @@ export const systemConfiguration = pgTable("system_configuration", {
   estimateStartNumber: integer("estimate_start_number").notNull().default(1000),
   variationStartNumber: integer("variation_start_number").notNull().default(1000),
   clientInvoiceStartNumber: integer("client_invoice_start_number").notNull().default(1000),
-  clientInvoiceDefaultXeroAccount: text("client_invoice_default_xero_account"),
   billStartNumber: integer("bill_start_number").notNull().default(1000),
   purchaseOrderStartNumber: integer("purchase_order_start_number").notNull().default(1000),
   rfqStartNumber: integer("rfq_start_number").notNull().default(1000),
@@ -2196,6 +2202,7 @@ export const xeroConnections = pgTable("xero_connections", {
   trackingCategory2Id: text("tracking_category_2_id"), // TC2: Jobs/Projects tracking category ID
   trackingCategory2Name: text("tracking_category_2_name"), // TC2: Jobs/Projects tracking category name
   isActive: boolean("is_active").notNull().default(true),
+  lastReconciledAt: timestamp("last_reconciled_at"), // last nightly bill reconciliation sweep
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -2210,6 +2217,28 @@ export const insertXeroConnectionSchema = createInsertSchema(xeroConnections).om
 
 export type InsertXeroConnection = z.infer<typeof insertXeroConnectionSchema>;
 export type XeroConnection = typeof xeroConnections.$inferSelect;
+
+// Outbox for Xero bill pushes — a durable queue so a failed push (Xero down,
+// 429, network) is retried in the background with backoff rather than lost.
+export const xeroPushQueue = pgTable("xero_push_queue", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id),
+  billId: varchar("bill_id").notNull().references(() => bills.id, { onDelete: "cascade" }),
+  status: text("status").notNull().default("pending"), // pending | processing | done | failed
+  attempts: integer("attempts").notNull().default(0),
+  maxAttempts: integer("max_attempts").notNull().default(6),
+  lastError: text("last_error"),
+  nextAttemptAt: timestamp("next_attempt_at").notNull().defaultNow(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  // At most one active (pending/processing) job per bill.
+  uniqueActivePerBill: uniqueIndex("xero_push_queue_bill_active_unique")
+    .on(table.billId)
+    .where(sql`status IN ('pending','processing')`),
+}));
+
+export type XeroPushJob = typeof xeroPushQueue.$inferSelect;
 
 // Variations (change orders/variations to projects)
 export const variations = pgTable("variations", {
@@ -2380,12 +2409,39 @@ export const clientInvoices = pgTable("client_invoices", {
   showAmountsIncTax: boolean("show_amounts_inc_tax").notNull().default(true), // Inc/exc GST toggle preference
   lineItemClaims: jsonb("line_item_claims").default({}), // Record<estimateItemId, claimPercent> for per-line-item claiming
   contractClaimRows: jsonb("contract_claim_rows").default([]), // Array of { id, name, description, claimPercent } for progress payment claims
+  // Persisted per-line money snapshot of the WHOLE invoice (contract claims,
+  // variations, allowances, labour, bills, selections, markup, custom lines) —
+  // written on every save by the client from the same math that renders the
+  // totals/PDF. This is the single source the Xero push materialises line items
+  // from, so the Xero total always equals what Morada displayed at save time.
+  // Shape: InvoiceLineBreakdownEntry[] (see invoiceLineBreakdownEntrySchema).
+  lineBreakdown: jsonb("line_breakdown"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({
   // Composite unique constraint: invoice numbers must be unique per company
   uniqueInvoiceNumberPerCompany: uniqueIndex("client_invoices_company_invoice_number_unique").on(table.companyId, table.invoiceNumber),
 }));
+
+// One line of the persisted invoice money snapshot. All amounts are integer
+// cents; amountExCents + gstCents must equal amountIncCents (validated).
+// `taxable: false` lines must carry gstCents 0. `accountCode` is the optional
+// per-line Xero account override (custom lines only today).
+export const invoiceLineBreakdownEntrySchema = z.object({
+  source: z.enum(["contract", "variation", "allowance", "labour", "bill", "selection", "markup", "custom"]),
+  description: z.string().min(1),
+  amountExCents: z.number().int(),
+  gstCents: z.number().int(),
+  amountIncCents: z.number().int(),
+  taxable: z.boolean(),
+  accountCode: z.string().optional().nullable(),
+}).refine((l) => l.amountExCents + l.gstCents === l.amountIncCents, {
+  message: "amountExCents + gstCents must equal amountIncCents",
+}).refine((l) => l.taxable || l.gstCents === 0, {
+  message: "non-taxable lines must have gstCents 0",
+});
+
+export type InvoiceLineBreakdownEntry = z.infer<typeof invoiceLineBreakdownEntrySchema>;
 
 export const insertClientInvoiceSchema = createInsertSchema(clientInvoices).omit({
   id: true,
@@ -2416,6 +2472,7 @@ export const insertClientInvoiceSchema = createInsertSchema(clientInvoices).omit
     description: z.string(),
     claimPercent: z.number(),
   })).optional().nullable(),
+  lineBreakdown: z.array(invoiceLineBreakdownEntrySchema).optional().nullable(),
 });
 
 export type InsertClientInvoice = z.infer<typeof insertClientInvoiceSchema>;

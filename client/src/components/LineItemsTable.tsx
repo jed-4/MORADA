@@ -20,6 +20,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { CostCodeSelect } from "@/components/CostCodeSelect";
 import { Check, Plus, Settings2, X } from "lucide-react";
 import { formatCents, incGstFromEx, exGstFromInc, dollarsToCents, centsToDollars, type Cents } from "@shared/money";
 
@@ -378,23 +379,17 @@ export function LineItemsTable({
         return <Input className={compact} placeholder="Description" value={draft.description} onChange={(e) => setDraft({ ...draft, description: e.target.value })} onKeyDown={handleKeyDown} data-testid="input-line-description" />;
       case "costCode":
         return (
-          <Select value={draft.costCode || "__none__"} onValueChange={(v) => setDraft({ ...draft, costCode: v === "__none__" ? "" : v })}>
-            {/* Chevron hidden until hover so the closed state reads as plain text */}
-            <SelectTrigger
-              className={`${compact} justify-start gap-1 [&>svg]:h-3 [&>svg]:w-3 [&>svg]:opacity-0 hover:[&>svg]:opacity-40 focus:[&>svg]:opacity-40`}
-              data-testid="select-line-cost-code"
-            >
-              <SelectValue placeholder="—" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="__none__" className="text-xs">— none —</SelectItem>
-              {costCodes.map((cc) => (
-                <SelectItem key={cc.id} value={cc.code} className="text-xs">
-                  {cc.code} · {cc.title}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <CostCodeSelect
+            // This table stores the cost-code STRING (not id), so translate.
+            value={costCodes.find((cc) => cc.code === draft.costCode)?.id || ""}
+            onValueChange={(id) =>
+              setDraft({ ...draft, costCode: id ? (costCodes.find((cc) => cc.id === id)?.code || "") : "" })
+            }
+            placeholder="—"
+            allowNone
+            triggerClassName={`${compact} justify-start gap-1 [&>svg]:h-3 [&>svg]:w-3 [&>svg]:opacity-0 hover:[&>svg]:opacity-40 focus:[&>svg]:opacity-40`}
+            data-testid="select-line-cost-code"
+          />
         );
       case "qty":
         return <Input className={`${compact} text-right`} type="number" step="0.01" min="0" value={draft.quantity} onChange={(e) => setDraft({ ...draft, quantity: e.target.value })} onKeyDown={handleKeyDown} data-testid="input-line-qty" />;

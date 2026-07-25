@@ -1,5 +1,23 @@
 import { storage } from "../storage";
 import type { XeroConnection } from "@shared/schema";
+import { encryptToken, decryptToken } from "../utils/encryption";
+
+// Encrypt Xero tokens at rest when a 32-char key is configured; otherwise store
+// as-is so a missing key never breaks the connection. Reads transparently
+// handle both encrypted and legacy plaintext values (gradual migration — rows
+// re-encrypt on the next refresh).
+const XERO_ENCRYPTION_ENABLED = (process.env.GOOGLE_OAUTH_ENCRYPTION_KEY || "").length === 32;
+const XERO_ENCRYPTED_RE = /^[0-9a-f]{32}:[0-9a-f]{32}:[0-9a-f]+$/i;
+
+export function encryptXeroToken(raw: string): string {
+  if (!XERO_ENCRYPTION_ENABLED || !raw) return raw;
+  try { return encryptToken(raw); } catch { return raw; }
+}
+
+export function decryptXeroToken(stored: string): string {
+  if (!stored || !XERO_ENCRYPTED_RE.test(stored)) return stored;
+  try { return decryptToken(stored); } catch { return stored; }
+}
 
 const XERO_CLIENT_ID = process.env.XERO_CLIENT_ID || "";
 const XERO_CLIENT_SECRET = process.env.XERO_CLIENT_SECRET || "";
@@ -8,6 +26,58 @@ const XERO_TOKEN_URL = "https://identity.xero.com/connect/token";
 const XERO_CONNECTIONS_URL = "https://api.xero.com/connections";
 const XERO_API_BASE = "https://api.xero.com/api.xro/2.0";
 const XERO_SCOPES = "openid profile email accounting.transactions accounting.attachments accounting.contacts accounting.settings accounting.reports.read offline_access";
+
+// Turn a Xero API error body (raw text or already-parsed JSON) into a short,
+// human-readable summary suitable for a toast. Xero nests validation messages
+// under top-level ValidationErrors and per-Element/LineItem ValidationErrors, and
+// repeats line-level messages once per line — so we collect, map the common ones
+// to plain English, and de-duplicate.
+export function summarizeXeroError(body: string | any): string {
+  let data: any = body;
+  if (typeof body === "string") {
+    try { data = JSON.parse(body); } catch { return body.slice(0, 300); }
+  }
+  if (!data || typeof data !== "object") return String(body).slice(0, 300);
+
+  const raw: string[] = [];
+  const pushErrors = (errs: any) => {
+    if (Array.isArray(errs)) {
+      for (const e of errs) {
+        if (e && typeof e.Message === "string") raw.push(e.Message);
+      }
+    }
+  };
+  pushErrors(data.ValidationErrors);
+  if (Array.isArray(data.Elements)) {
+    for (const el of data.Elements) {
+      pushErrors(el?.ValidationErrors);
+      if (Array.isArray(el?.LineItems)) {
+        for (const li of el.LineItems) pushErrors(li?.ValidationErrors);
+      }
+    }
+  }
+
+  // Map Xero's wording to something short and actionable.
+  const friendly = (msg: string): string => {
+    const m = msg.toLowerCase();
+    if (m.includes("duedate")) return "Due date is required";
+    if (m.includes("account code")) return "Each invoice line needs a Xero account code";
+    if (m.includes("contact")) return "The client isn't linked to a valid Xero contact";
+    if (m.includes("date")) return "The invoice date is invalid";
+    return msg.replace(/\.$/, "");
+  };
+
+  const seen = new Set<string>();
+  const summary: string[] = [];
+  for (const msg of raw) {
+    const f = friendly(msg);
+    if (!seen.has(f)) { seen.add(f); summary.push(f); }
+  }
+
+  if (summary.length > 0) return summary.join("; ");
+  if (typeof data.Message === "string" && data.Message) return data.Message;
+  return "Xero rejected the request";
+}
 
 export interface XeroTracking {
   TrackingCategoryID: string;
@@ -23,6 +93,10 @@ export interface XeroBillLineItem {
   taxType: string;
   accountCode?: string;
   tracking?: XeroTracking[];
+  // Explicit per-line tax override in dollars. When set, Xero uses this instead
+  // of computing tax from the rate — used by the client-invoice push so the
+  // Xero total matches Morada's stored totals to the cent.
+  taxAmount?: number;
 }
 
 export interface XeroBillData {
@@ -177,6 +251,11 @@ async function xeroFetchWithRetry(
   }
 }
 
+// De-duplicate concurrent token refreshes per connection. Xero rotates the
+// refresh token on every use, so two parallel refreshes invalidate each other;
+// sharing one in-flight promise prevents that self-inflicted disconnect.
+const refreshInFlight = new Map<string, Promise<XeroConnection>>();
+
 interface XeroTokenResponse {
   access_token: string;
   refresh_token: string;
@@ -242,6 +321,16 @@ export class XeroService {
   }
 
   async refreshAccessToken(connectionId: string): Promise<XeroConnection> {
+    const existing = refreshInFlight.get(connectionId);
+    if (existing) return existing;
+    const p = this.doRefreshAccessToken(connectionId).finally(() => {
+      refreshInFlight.delete(connectionId);
+    });
+    refreshInFlight.set(connectionId, p);
+    return p;
+  }
+
+  private async doRefreshAccessToken(connectionId: string): Promise<XeroConnection> {
     const connection = await storage.getXeroConnection(connectionId);
     if (!connection) {
       throw new Error(`Xero connection not found: ${connectionId}`);
@@ -249,7 +338,7 @@ export class XeroService {
 
     const body = new URLSearchParams({
       grant_type: "refresh_token",
-      refresh_token: connection.refreshToken,
+      refresh_token: decryptXeroToken(connection.refreshToken),
     });
 
     const response = await fetch(XERO_TOKEN_URL, {
@@ -263,6 +352,12 @@ export class XeroService {
 
     if (!response.ok) {
       const errorText = await response.text();
+      // invalid_grant = the refresh token was revoked/expired. That's terminal,
+      // so mark the connection inactive: /api/xero/status will report it
+      // disconnected and prompt a reconnect instead of retrying a dead token.
+      if (response.status === 400 && errorText.includes("invalid_grant")) {
+        await storage.updateXeroConnection(connectionId, { isActive: false }).catch(() => {});
+      }
       throw new Error(`Failed to refresh token: ${response.status} ${errorText}`);
     }
 
@@ -270,8 +365,8 @@ export class XeroService {
     const expiresAt = new Date(Date.now() + tokenData.expires_in * 1000);
 
     const updated = await storage.updateXeroConnection(connectionId, {
-      accessToken: tokenData.access_token,
-      refreshToken: tokenData.refresh_token,
+      accessToken: encryptXeroToken(tokenData.access_token),
+      refreshToken: encryptXeroToken(tokenData.refresh_token),
       tokenExpiresAt: expiresAt,
     });
 
@@ -309,7 +404,7 @@ export class XeroService {
       }
     }
 
-    return connection.accessToken;
+    return decryptXeroToken(connection.accessToken);
   }
 
   async getTenants(accessToken: string): Promise<XeroTenant[]> {
@@ -392,12 +487,17 @@ export class XeroService {
     return data.TrackingCategories || [];
   }
 
-  async getAccounts(connectionId: string): Promise<any[]> {
+  async getAccounts(connectionId: string, opts?: { types?: string[] }): Promise<any[]> {
     const accessToken = await this.getValidToken(connectionId);
     const connection = await storage.getXeroConnection(connectionId);
     if (!connection) throw new Error("Connection not found");
 
-    const response = await fetch(`${XERO_API_BASE}/Accounts?where=Type=="EXPENSE"||Type=="DIRECTCOSTS"||Type=="OVERHEADS"||Type=="CURRLIAB"`, {
+    // Default: expense/liability accounts (used for bills). Callers pushing
+    // client invoices pass revenue types so Sales-style accounts are returned.
+    const types = opts?.types ?? ["EXPENSE", "DIRECTCOSTS", "OVERHEADS", "CURRLIAB"];
+    const where = types.map((t) => `Type=="${t}"`).join("||");
+
+    const response = await fetch(`${XERO_API_BASE}/Accounts?where=${where}`, {
       headers: {
         Authorization: `Bearer ${accessToken}`,
         "Xero-Tenant-Id": connection.tenantId,
@@ -754,7 +854,7 @@ export class XeroService {
       invoicePayload.InvoiceNumber = billData.invoiceNumber;
     }
 
-    const response = await fetch(`${XERO_API_BASE}/Invoices`, {
+    const response = await xeroFetchWithRetry(`${XERO_API_BASE}/Invoices`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${accessToken}`,
@@ -763,7 +863,7 @@ export class XeroService {
         Accept: "application/json",
       },
       body: JSON.stringify({ Invoices: [invoicePayload] }),
-    });
+    }, { label: "createBill" });
 
     if (!response.ok) {
       throw await xeroErrorFromResponse(response, "Failed to create Xero bill");
@@ -815,7 +915,7 @@ export class XeroService {
     if (billData.reference) invoicePayload.Reference = billData.reference;
     if (billData.invoiceNumber) invoicePayload.InvoiceNumber = billData.invoiceNumber;
 
-    const response = await fetch(`${XERO_API_BASE}/Invoices/${xeroInvoiceId}`, {
+    const response = await xeroFetchWithRetry(`${XERO_API_BASE}/Invoices/${xeroInvoiceId}`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${accessToken}`,
@@ -824,7 +924,7 @@ export class XeroService {
         Accept: "application/json",
       },
       body: JSON.stringify({ Invoices: [invoicePayload] }),
-    });
+    }, { label: "updateBill" });
 
     if (!response.ok) {
       throw await xeroErrorFromResponse(response, "Failed to update Xero bill");
@@ -973,6 +1073,9 @@ export class XeroService {
         UnitAmount: item.unitAmount,
         TaxType: item.taxType === "INPUT" ? "OUTPUT" : item.taxType,
       };
+      if (item.taxAmount !== undefined) {
+        lineItem.TaxAmount = item.taxAmount;
+      }
       if (item.accountCode) {
         lineItem.AccountCode = item.accountCode;
       }
@@ -1017,7 +1120,13 @@ export class XeroService {
 
     if (!response.ok) {
       const errorText = await response.text();
-      throw new Error(`Failed to create Xero invoice: ${response.status} ${errorText}`);
+      const err = new Error(summarizeXeroError(errorText)) as Error & {
+        status?: number;
+        xeroBody?: string;
+      };
+      err.status = response.status;
+      err.xeroBody = errorText;
+      throw err;
     }
 
     const data = (await response.json()) as any;
@@ -1135,7 +1244,7 @@ export class XeroService {
     else throw new Error("createPayment requires accountCode or accountId");
     if (payment.reference) body.Reference = payment.reference;
 
-    const response = await fetch(`${XERO_API_BASE}/Payments`, {
+    const response = await xeroFetchWithRetry(`${XERO_API_BASE}/Payments`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${accessToken}`,
@@ -1144,7 +1253,7 @@ export class XeroService {
         "Content-Type": "application/json",
       },
       body: JSON.stringify(body),
-    });
+    }, { label: "createPayment" });
 
     if (!response.ok) {
       const errorText = await response.text();

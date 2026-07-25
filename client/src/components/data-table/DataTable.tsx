@@ -37,6 +37,7 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
+import { Checkbox } from "@/components/ui/checkbox";
 import { ArrowUp, ArrowDown, EyeOff, ArrowUpDown, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -74,6 +75,13 @@ export interface DataTableProps<TData> {
    * also used as the sticky first column's background so banding spans it.
    */
   rowStyle?: (row: TData, index: number) => React.CSSProperties | undefined;
+  /**
+   * Returns whether a row is currently selected. Selected rows get an
+   * active/highlighted background (including the sticky first column) and
+   * `data-state="selected"`. Pages that track selection externally (e.g. a
+   * Set of ids) can wire this up directly.
+   */
+  isRowSelected?: (row: TData) => boolean;
   /** Rendered when data is empty. */
   emptyState?: React.ReactNode;
   /** Optional class on the outer scroll container. */
@@ -238,6 +246,7 @@ export function DataTable<TData>({
   onRowClick,
   rowClassName,
   rowStyle,
+  isRowSelected,
   emptyState,
   className,
   headerClassName,
@@ -651,6 +660,7 @@ export function DataTable<TData>({
                     onRowClick={onRowClick}
                     className={rowClassName?.(row.original)}
                     style={rowStyle?.(row.original, index)}
+                    selected={isRowSelected?.(row.original)}
                   />,
                 ];
                 // Panel mode: render the custom panel beneath an expanded row.
@@ -687,6 +697,7 @@ function DataTableRow<TData>({
   onRowClick,
   className,
   style,
+  selected,
 }: {
   row: Row<TData>;
   rowHeight: number;
@@ -701,6 +712,7 @@ function DataTableRow<TData>({
   onRowClick?: (row: TData) => void;
   className?: string;
   style?: React.CSSProperties;
+  selected?: boolean;
 }) {
   // Determine if this row can be expanded (chevron visible).
   let canExpand = false;
@@ -714,13 +726,32 @@ function DataTableRow<TData>({
   }
   const isExpanded = expansionEnabled && row.getIsExpanded();
 
+  // Selected rows get an active tint. It must flow through --dt-row-bg so the
+  // sticky first column (which paints its own bg) matches during horizontal
+  // scroll — see the DataTable sticky-row-bg contract.
+  const selectedBg =
+    "linear-gradient(hsl(var(--primary) / 0.14), hsl(var(--primary) / 0.14)), hsl(var(--card))";
+  const rowStyleFinal: React.CSSProperties = {
+    height: rowHeight,
+    ...style,
+    ...(selected
+      ? ({ background: selectedBg, ["--dt-row-bg" as any]: selectedBg } as React.CSSProperties)
+      : {}),
+  };
+
   return (
     <tr
-      className={cn("border-b border-border/40 hover-elevate group", onRowClick && "cursor-pointer", className)}
-      style={{ height: rowHeight, ...style }}
+      className={cn(
+        "border-b border-border/40 hover-elevate group",
+        onRowClick && "cursor-pointer",
+        selected && "border-primary/30",
+        className,
+      )}
+      style={rowStyleFinal}
       onClick={onRowClick ? () => onRowClick(row.original) : undefined}
       data-testid={`row-${row.id}`}
       data-depth={row.depth}
+      data-state={selected ? "selected" : undefined}
     >
       {row.getVisibleCells().map((cell) => {
         const meta = (cell.column.columnDef.meta as DataTableColumnMeta | undefined) ?? {};
@@ -824,29 +855,34 @@ export function DataTableColumnPicker({
   };
 
   return (
-    <div className="space-y-1 p-2 min-w-[180px]">
-      <p className="text-xs font-medium text-muted-foreground mb-1">Columns</p>
-      {columns.map((c) => {
-        const isHidden = hidden[c.id] === false;
-        return (
-          <label
-            key={c.id}
-            className={cn(
-              "flex items-center gap-2 px-1.5 py-1 rounded text-xs",
-              c.pinned ? "opacity-50" : "hover-elevate cursor-pointer",
-            )}
-          >
-            <input
-              type="checkbox"
-              checked={!isHidden}
-              disabled={c.pinned}
-              onChange={() => !c.pinned && toggle(c.id)}
-              className="h-3 w-3"
-            />
-            <span className="truncate">{c.label}</span>
-          </label>
-        );
-      })}
+    <div className="p-1">
+      <div className="px-1.5 pt-1 text-sm font-semibold">Columns</div>
+      <p className="px-1.5 pb-2 text-xs text-muted-foreground">Toggle to show or hide.</p>
+      <div className="max-h-80 overflow-y-auto space-y-0.5 pr-0.5">
+        {columns.map((c) => {
+          const isVisible = hidden[c.id] !== false;
+          return (
+            <div
+              key={c.id}
+              className={cn(
+                "flex items-center gap-2 px-1.5 py-1 rounded-md",
+                c.pinned ? "opacity-50" : "hover:bg-muted cursor-pointer",
+              )}
+              onClick={() => !c.pinned && toggle(c.id)}
+              data-testid={`column-toggle-${c.id}`}
+            >
+              <Checkbox
+                checked={isVisible}
+                disabled={c.pinned}
+                onCheckedChange={() => !c.pinned && toggle(c.id)}
+                onClick={(e) => e.stopPropagation()}
+                className="flex-shrink-0"
+              />
+              <span className="truncate text-sm flex-1">{c.label}</span>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

@@ -15,6 +15,10 @@ export function computeBillTotalsCents(
   lineItems: BillTotalsLine[],
   taxMode: BillTaxMode,
   taxRatePercent: number,
+  // Manual rounding adjustment in cents (e.g. +/-1c to make the computed total
+  // match the figure printed on the supplier invoice, the way Xero adds a
+  // "Rounding" line). Applied to the total only, never to subtotal or tax.
+  roundingCents: number = 0,
 ): { subtotal: number; tax: number; total: number } {
   const rate = (Number(taxRatePercent) || 0) / 100;
   let subtotal = 0;
@@ -39,7 +43,19 @@ export function computeBillTotalsCents(
 
   const subtotalCents = Math.round(subtotal);
   const taxCents = Math.round(tax);
-  return { subtotal: subtotalCents, tax: taxCents, total: subtotalCents + taxCents };
+  const rounding = Math.round(Number(roundingCents) || 0);
+  return { subtotal: subtotalCents, tax: taxCents, total: subtotalCents + taxCents + rounding };
+}
+
+// Maximum absolute rounding adjustment we allow (in cents). Rounding is meant
+// to reconcile sub-cent drift against a supplier invoice, not to fudge amounts.
+export const MAX_ROUNDING_CENTS = 5;
+
+export function clampRoundingCents(cents: number): number {
+  const n = Math.round(Number(cents) || 0);
+  if (n > MAX_ROUNDING_CENTS) return MAX_ROUNDING_CENTS;
+  if (n < -MAX_ROUNDING_CENTS) return -MAX_ROUNDING_CENTS;
+  return n;
 }
 
 // Ex-GST value (in cents) of a single bill line, honouring the parent bill's

@@ -79,6 +79,7 @@ import {
   TrendingDown,
   DollarSign,
   SlidersHorizontal,
+  Columns3,
 } from "lucide-react";
 import {
   Popover,
@@ -781,7 +782,7 @@ function RegisterTab({ data, xeroConnected }: { data: OverheadsData; xeroConnect
         <div className="flex items-center gap-2">
           <Popover open={columnPickerOpen} onOpenChange={setColumnPickerOpen}>
             <PopoverTrigger asChild>
-              <Button size="sm" variant="outline"><SlidersHorizontal className="w-3.5 h-3.5 mr-1" />Columns</Button>
+              <Button size="icon" variant="outline" className="h-7 w-7" title="Columns" aria-label="Columns"><Columns3 className="w-3.5 h-3.5" /></Button>
             </PopoverTrigger>
             <PopoverContent align="end" className="w-56 p-0">
               <DataTableColumnPicker storageKey="business-overheads" columns={pickerColumns} />

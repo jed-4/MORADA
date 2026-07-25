@@ -41,6 +41,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { CostCodeSelect } from "@/components/CostCodeSelect";
 import {
   Form,
   FormControl,
@@ -58,7 +59,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { insertSupplierSchema, type Supplier, type InsertSupplier, type CostCode, type SupplierContact, type SupplierInsurance, type SupplierLabel } from "@shared/schema";
-import { Plus, MoreHorizontal, Pencil, Trash2, Store, Search, X, Building2, Users, Shield, Tag, Calendar, AlertTriangle, ChevronRight, Link2, Settings2, Loader2 } from "lucide-react";
+import { Plus, MoreHorizontal, Pencil, Trash2, Store, Search, X, Building2, Users, Shield, Tag, Calendar, AlertTriangle, ChevronRight, Link2, Settings2, Loader2, Columns3 } from "lucide-react";
 import { z } from "zod";
 import { BulkXeroContactMappingDialog } from "@/components/BulkXeroMappingDialog";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
@@ -746,12 +747,13 @@ export default function Suppliers() {
           <PopoverTrigger asChild>
             <Button
               variant="outline"
-              size="sm"
-              className="h-7 px-2 text-xs"
+              size="icon"
+              className="h-7 w-7"
               data-testid="button-column-picker"
+              title="Columns"
+              aria-label="Columns"
             >
-              <Settings2 className="w-3 h-3 mr-1" />
-              Columns
+              <Columns3 className="w-3.5 h-3.5" />
             </Button>
           </PopoverTrigger>
           <PopoverContent align="end" className="p-0 w-auto">
@@ -925,21 +927,15 @@ export default function Suppliers() {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Default Cost Code</FormLabel>
-                      <Select onValueChange={(val) => field.onChange(val === "none" ? null : val)} value={field.value || "none"}>
-                        <FormControl>
-                          <SelectTrigger data-testid="select-default-cost-code">
-                            <SelectValue placeholder="Select cost code" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          <SelectItem value="none">None</SelectItem>
-                          {costCodes.map((code) => (
-                            <SelectItem key={code.id} value={code.id}>
-                              {code.code} - {code.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <FormControl>
+                        <CostCodeSelect
+                          value={field.value || ""}
+                          onValueChange={(v) => field.onChange(v || null)}
+                          placeholder="Select cost code"
+                          allowNone
+                          data-testid="select-default-cost-code"
+                        />
+                      </FormControl>
                       <p className="text-xs text-muted-foreground">Auto-applies to bill line items</p>
                       <FormMessage />
                     </FormItem>

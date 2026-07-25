@@ -633,11 +633,12 @@ export default function CostCodes() {
           <Popover open={columnPickerOpen} onOpenChange={setColumnPickerOpen}>
             <PopoverTrigger asChild>
               <button
-                className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
+                className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
                 data-testid="button-column-picker"
+                title="Columns"
+                aria-label="Columns"
               >
                 <Columns3 className="w-3 h-3" />
-                <span>Columns</span>
               </button>
             </PopoverTrigger>
             <PopoverContent align="end" className="p-0">

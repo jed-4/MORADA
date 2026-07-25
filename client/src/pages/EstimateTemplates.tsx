@@ -222,7 +222,7 @@ export default function EstimateTemplates() {
     mutationFn: (data: { groupName: string; categoryName: string; brainstormNotes?: string }) =>
       apiRequest("/api/enote-templates", "POST", { ...data, sortOrder: enoteTemplates.length }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/enote-templates"] }),
-    onError: () => toast({ title: "Failed to add E-Note template", variant: "destructive" }),
+    onError: () => toast({ title: "Failed to add Detail template", variant: "destructive" }),
   });
 
   const updateEnoteTemplateMutation = useMutation({
@@ -850,7 +850,7 @@ export default function EstimateTemplates() {
             {tab === 'items' && <Calculator className="w-3 h-3" />}
             {tab === 'labour' && <Clock className="w-3 h-3" />}
             {tab === 'enotes' && <StickyNote className="w-3 h-3" />}
-            {tab === 'items' ? 'Estimate Items' : tab === 'labour' ? 'Labour Hours' : 'E-Notes'}
+            {tab === 'items' ? 'Estimate Items' : tab === 'labour' ? 'Labour Hours' : 'Details'}
           </button>
         ))}
         <div className="flex-1" />
@@ -869,11 +869,12 @@ export default function EstimateTemplates() {
             <Popover>
               <PopoverTrigger asChild>
                 <button
-                  className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5"
+                  className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
                   data-testid="button-columns-templates"
+                  title="Columns"
+                  aria-label="Columns"
                 >
                   <Columns3 className="w-3 h-3" />
-                  <span>Columns</span>
                 </button>
               </PopoverTrigger>
               <PopoverContent align="end" className="p-0 w-auto">
@@ -1191,7 +1192,7 @@ export default function EstimateTemplates() {
             {!selectedGroup ? (
               <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground flex-col gap-2">
                 <StickyNote className="w-8 h-8 text-muted-foreground/40" />
-                <p className="text-xs">Select a group to manage its E-Notes categories</p>
+                <p className="text-xs">Select a group to manage its Details categories</p>
               </div>
             ) : (
               <>
