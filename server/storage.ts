@@ -152,7 +152,7 @@ export function calendarDateMidnightUtcInTz(d: Date, tz: string): Date {
   } catch {}
   return d;
 }
-import type { Timesheet, InsertTimesheet, TimesheetCostCode, InsertTimesheetCostCode } from "@shared/schema";
+import type { Timesheet, InsertTimesheet, TimesheetCostCode, InsertTimesheetCostCode, TimesheetAllowance, InsertTimesheetAllowance } from "@shared/schema";
 import type { Defect, InsertDefect } from "@shared/schema";
 import type { UserColumnPreferences, InsertUserColumnPreferences } from "@shared/schema";
 import type { UserViewPreferences, InsertUserViewPreferences } from "@shared/schema";
@@ -788,6 +788,9 @@ export interface IStorage {
 
   // Timesheet Allowances
   getTimesheetAllowances(timesheetId: string): Promise<TimesheetAllowance[]>;
+  getTimesheetAllowance(id: string): Promise<TimesheetAllowance | undefined>;
+  getTimesheetAllowancesByEstimateItem(estimateItemId: string): Promise<TimesheetAllowance[]>;
+  createTimesheetAllowancesBulk(allowances: InsertTimesheetAllowance[]): Promise<TimesheetAllowance[]>;
   getTimesheetAllowancesByProject(projectId: string): Promise<TimesheetAllowance[]>;
   createTimesheetAllowance(allowance: InsertTimesheetAllowance): Promise<TimesheetAllowance>;
   updateTimesheetAllowance(id: string, allowance: Partial<InsertTimesheetAllowance>): Promise<TimesheetAllowance | undefined>;
@@ -1036,8 +1039,10 @@ export interface IStorage {
   getProjectIdsWithContractEstimate(companyId: string): Promise<string[]>;
 
   // Timesheets CRUD
-  getTimesheets(projectId?: string, filters?: { userId?: string; startDate?: Date; endDate?: Date; status?: string; costCodeId?: string; invoiced?: boolean }): Promise<Timesheet[]>;
+  getTimesheets(projectId?: string, filters?: { userId?: string; startDate?: Date; endDate?: Date; status?: string; costCodeId?: string; invoiced?: boolean; companyId?: string }): Promise<Timesheet[]>;
   getTimesheet(id: string): Promise<Timesheet | undefined>;
+  getTimesheetsByIds(ids: string[]): Promise<Timesheet[]>;
+  createTimesheetsBulk(timesheets: InsertTimesheet[]): Promise<Timesheet[]>;
   createTimesheet(timesheet: InsertTimesheet): Promise<Timesheet>;
   updateTimesheet(id: string, timesheet: Partial<InsertTimesheet>): Promise<Timesheet | undefined>;
   deleteTimesheet(id: string): Promise<boolean>;
@@ -1047,6 +1052,9 @@ export interface IStorage {
 
   // Timesheet Cost Codes (for split timesheets)
   getTimesheetCostCodes(timesheetId: string): Promise<TimesheetCostCode[]>;
+  getTimesheetCostCode(id: string): Promise<TimesheetCostCode | undefined>;
+  getTimesheetCostCodesByTimesheetIds(timesheetIds: string[]): Promise<TimesheetCostCode[]>;
+  replaceTimesheetCostCodes(timesheetId: string, splits: Omit<InsertTimesheetCostCode, "timesheetId">[]): Promise<TimesheetCostCode[]>;
   createTimesheetCostCode(costCode: InsertTimesheetCostCode): Promise<TimesheetCostCode>;
   updateTimesheetCostCode(id: string, costCode: Partial<InsertTimesheetCostCode>): Promise<TimesheetCostCode | undefined>;
   deleteTimesheetCostCode(id: string): Promise<boolean>;
@@ -15989,6 +15997,42 @@ export class DbStorage implements IStorage {
     }
   }
 
+  async getTimesheetAllowance(id: string): Promise<TimesheetAllowance | undefined> {
+    try {
+      const result = await db.select()
+        .from(schema.timesheetAllowances)
+        .where(eq(schema.timesheetAllowances.id, id))
+        .limit(1);
+      return result[0];
+    } catch (error) {
+      console.error("Database error in getTimesheetAllowance:", error);
+      throw error;
+    }
+  }
+
+  async getTimesheetAllowancesByEstimateItem(estimateItemId: string): Promise<TimesheetAllowance[]> {
+    try {
+      return await db.select()
+        .from(schema.timesheetAllowances)
+        .where(eq(schema.timesheetAllowances.estimateItemId, estimateItemId));
+    } catch (error) {
+      console.error("Database error in getTimesheetAllowancesByEstimateItem:", error);
+      throw error;
+    }
+  }
+
+  async createTimesheetAllowancesBulk(allowances: InsertTimesheetAllowance[]): Promise<TimesheetAllowance[]> {
+    if (allowances.length === 0) return [];
+    try {
+      return await db.insert(schema.timesheetAllowances)
+        .values(allowances)
+        .returning();
+    } catch (error) {
+      console.error("Database error in createTimesheetAllowancesBulk:", error);
+      throw error;
+    }
+  }
+
   async getTimesheetAllowancesByProject(projectId: string): Promise<TimesheetAllowance[]> {
     try {
       const allowances = await db.select({
@@ -19259,10 +19303,10 @@ export class DbStorage implements IStorage {
   }
 
   // Timesheets CRUD
-  async getTimesheets(projectId?: string, filters?: { userId?: string; startDate?: Date; endDate?: Date; status?: string; costCodeId?: string; invoiced?: boolean }): Promise<Timesheet[]> {
+  async getTimesheets(projectId?: string, filters?: { userId?: string; startDate?: Date; endDate?: Date; status?: string; costCodeId?: string; invoiced?: boolean; companyId?: string }): Promise<Timesheet[]> {
     try {
       let query = db.select().from(schema.timesheets);
-      
+
       const conditions: any[] = [];
       if (projectId) conditions.push(eq(schema.timesheets.projectId, projectId));
       if (filters?.userId) conditions.push(eq(schema.timesheets.userId, filters.userId));
@@ -19270,15 +19314,47 @@ export class DbStorage implements IStorage {
       if (filters?.invoiced !== undefined) conditions.push(eq(schema.timesheets.invoiced, filters.invoiced));
       if (filters?.startDate) conditions.push(gte(schema.timesheets.date, filters.startDate));
       if (filters?.endDate) conditions.push(lte(schema.timesheets.date, filters.endDate));
-      
+      // Tenancy: timesheets have no companyId column — scope through the owning
+      // user with a subquery so it stays a single round trip.
+      if (filters?.companyId) {
+        conditions.push(inArray(
+          schema.timesheets.userId,
+          db.select({ id: schema.users.id }).from(schema.users).where(eq(schema.users.companyId, filters.companyId)),
+        ));
+      }
+
       if (conditions.length > 0) {
         query = query.where(and(...conditions)) as any;
       }
-      
+
       const result = await query.orderBy(desc(schema.timesheets.date));
       return result;
     } catch (error) {
       console.error("Database error in getTimesheets:", error);
+      throw error;
+    }
+  }
+
+  async getTimesheetsByIds(ids: string[]): Promise<Timesheet[]> {
+    if (ids.length === 0) return [];
+    try {
+      return await db.select()
+        .from(schema.timesheets)
+        .where(inArray(schema.timesheets.id, ids));
+    } catch (error) {
+      console.error("Database error in getTimesheetsByIds:", error);
+      throw error;
+    }
+  }
+
+  async createTimesheetsBulk(timesheets: InsertTimesheet[]): Promise<Timesheet[]> {
+    if (timesheets.length === 0) return [];
+    try {
+      return await db.insert(schema.timesheets)
+        .values(timesheets)
+        .returning();
+    } catch (error) {
+      console.error("Database error in createTimesheetsBulk:", error);
       throw error;
     }
   }
@@ -19369,6 +19445,47 @@ export class DbStorage implements IStorage {
       return result;
     } catch (error) {
       console.error("Database error in getTimesheetCostCodes:", error);
+      throw error;
+    }
+  }
+
+  async getTimesheetCostCode(id: string): Promise<TimesheetCostCode | undefined> {
+    try {
+      const result = await db.select()
+        .from(schema.timesheetCostCodes)
+        .where(eq(schema.timesheetCostCodes.id, id))
+        .limit(1);
+      return result[0];
+    } catch (error) {
+      console.error("Database error in getTimesheetCostCode:", error);
+      throw error;
+    }
+  }
+
+  async getTimesheetCostCodesByTimesheetIds(timesheetIds: string[]): Promise<TimesheetCostCode[]> {
+    if (timesheetIds.length === 0) return [];
+    try {
+      return await db.select()
+        .from(schema.timesheetCostCodes)
+        .where(inArray(schema.timesheetCostCodes.timesheetId, timesheetIds));
+    } catch (error) {
+      console.error("Database error in getTimesheetCostCodesByTimesheetIds:", error);
+      throw error;
+    }
+  }
+
+  async replaceTimesheetCostCodes(timesheetId: string, splits: Omit<InsertTimesheetCostCode, "timesheetId">[]): Promise<TimesheetCostCode[]> {
+    try {
+      return await db.transaction(async (tx) => {
+        await tx.delete(schema.timesheetCostCodes)
+          .where(eq(schema.timesheetCostCodes.timesheetId, timesheetId));
+        if (splits.length === 0) return [];
+        return await tx.insert(schema.timesheetCostCodes)
+          .values(splits.map((s) => ({ ...s, timesheetId })))
+          .returning();
+      });
+    } catch (error) {
+      console.error("Database error in replaceTimesheetCostCodes:", error);
       throw error;
     }
   }

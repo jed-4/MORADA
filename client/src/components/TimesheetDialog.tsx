@@ -39,6 +39,16 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
@@ -48,7 +58,7 @@ import { ProjectSelect } from "@/components/ProjectSelect";
 import { UserSelect } from "@/components/UserSelect";
 import { CostCodeSelect } from "@/components/CostCodeSelect";
 import { TimeSelect } from "@/components/ui/time-select";
-import type { Timesheet, Project, User as UserType, CostCode, CompanySettings } from "@shared/schema";
+import type { Timesheet, Project, User as UserType, CostCode } from "@shared/schema";
 
 const timesheetSchema = z.object({
   projectId: z.string().optional(),
@@ -137,6 +147,11 @@ export function TimesheetDialog({
   const [showLabels, setShowLabels] = useState(false);
   const [rejectionReason, setRejectionReason] = useState("");
   const [showRejectInput, setShowRejectInput] = useState(false);
+  // When an approver saves changes to an APPROVED entry, hold the form data
+  // and ask whether to keep the approval or re-submit. Keeping it approved
+  // also leaves the subbie PO status untouched — the PO doesn't change just
+  // because the timesheet details did.
+  const [keepApprovedPromptData, setKeepApprovedPromptData] = useState<TimesheetFormData | null>(null);
 
   // Drawer mount/animation state
   const [isMounted, setIsMounted] = useState(open);
@@ -177,11 +192,6 @@ export function TimesheetDialog({
   // Fetch cost codes
   const { data: costCodes = [] } = useQuery<CostCode[]>({
     queryKey: ["/api/cost-codes"],
-  });
-
-  // Fetch company settings for standard work hours
-  const { data: companySettings } = useQuery<CompanySettings>({
-    queryKey: ["/api/company-settings"],
   });
 
   const breakDurationOptions = (() => {
@@ -370,7 +380,7 @@ export function TimesheetDialog({
 
   // Create/Update mutation
   const createMutation = useMutation({
-    mutationFn: async (data: TimesheetFormData) => {
+    mutationFn: async ({ data, keepApproved }: { data: TimesheetFormData; keepApproved: boolean }) => {
       if (!isSplit && !data.costCodeId) {
         form.setError("costCodeId", { message: "Cost code is required" });
         throw new Error("Please select a cost code");
@@ -398,11 +408,30 @@ export function TimesheetDialog({
         description: data.description || null,
         hourlyRate: hourlyRate.toString(),
         total: total,
-        status: "submitted",
+        // Omitting status leaves it unchanged on the server — that's how
+        // "keep approved" works without touching approval metadata or poStatus.
+        ...(keepApproved ? {} : { status: "submitted" as const }),
         invoiced: false,
         labels: data.labels || [],
         costCodeId: isSplit ? null : (data.costCodeId || null),
       };
+
+      // One atomic replace-splits call instead of a serial DELETE per old
+      // split + POST per new split (each was a full DB round trip, and a
+      // mid-sequence failure left the entry with missing splits).
+      const splitsPayload = isSplit
+        ? costCodeSplits.map((split) => ({
+            costCodeId: split.costCodeId,
+            duration: split.duration,
+            hourlyRate: split.hourlyRate,
+            total: split.total,
+          }))
+        : [{
+            costCodeId: data.costCodeId,
+            duration: duration.toString(),
+            hourlyRate: hourlyRate.toString(),
+            total: total,
+          }];
 
       if (timesheet) {
         const res = await apiRequest(
@@ -410,44 +439,7 @@ export function TimesheetDialog({
           "PATCH",
           timesheetData
         );
-        // Sync splits: delete all existing DB splits then recreate.
-        // Ignore 404 on delete — the split may already be gone if the dialog
-        // was holding a stale costCodeSplits reference from a prior save.
-        const existingSplits = (timesheet as any).costCodeSplits as any[] | undefined;
-        if (existingSplits && existingSplits.length > 0) {
-          for (const s of existingSplits) {
-            try {
-              await apiRequest(`/api/timesheets/cost-codes/${s.id}`, "DELETE");
-            } catch (e: any) {
-              if (!String(e?.message || "").includes("404")) throw e;
-            }
-          }
-        }
-        if (isSplit && costCodeSplits.length > 0) {
-          for (const split of costCodeSplits) {
-            await apiRequest(
-              `/api/timesheets/${timesheet.id}/cost-codes`,
-              "POST",
-              {
-                costCodeId: split.costCodeId,
-                duration: split.duration,
-                hourlyRate: split.hourlyRate,
-                total: split.total,
-              }
-            );
-          }
-        } else if (!isSplit) {
-          await apiRequest(
-            `/api/timesheets/${timesheet.id}/cost-codes`,
-            "POST",
-            {
-              costCodeId: data.costCodeId,
-              duration: duration.toString(),
-              hourlyRate: hourlyRate.toString(),
-              total: total,
-            }
-          );
-        }
+        await apiRequest(`/api/timesheets/${timesheet.id}/cost-codes`, "PUT", { splits: splitsPayload });
         return res;
       } else {
         const created = await apiRequest(
@@ -455,33 +447,7 @@ export function TimesheetDialog({
           "POST",
           timesheetData
         );
-
-        if (isSplit && costCodeSplits.length > 0) {
-          for (const split of costCodeSplits) {
-            await apiRequest(
-              `/api/timesheets/${created.id}/cost-codes`,
-              "POST",
-              {
-                costCodeId: split.costCodeId,
-                duration: split.duration,
-                hourlyRate: split.hourlyRate,
-                total: split.total,
-              }
-            );
-          }
-        } else {
-          await apiRequest(
-            `/api/timesheets/${created.id}/cost-codes`,
-            "POST",
-            {
-              costCodeId: data.costCodeId,
-              duration: duration.toString(),
-              hourlyRate: hourlyRate.toString(),
-              total: total,
-            }
-          );
-        }
-
+        await apiRequest(`/api/timesheets/${created.id}/cost-codes`, "PUT", { splits: splitsPayload });
         return created;
       }
     },
@@ -754,7 +720,15 @@ export function TimesheetDialog({
 
         <Form {...form}>
           <form
-            onSubmit={form.handleSubmit((data) => createMutation.mutate(data))}
+            onSubmit={form.handleSubmit((data) => {
+              // Approvers saving an approved entry choose whether to keep the
+              // approval; everyone else re-submits as before.
+              if (timesheet && timesheet.status === "approved" && canApproveTimesheets) {
+                setKeepApprovedPromptData(data);
+              } else {
+                createMutation.mutate({ data, keepApproved: false });
+              }
+            })}
             className="flex flex-col flex-1 min-h-0"
           >
             {/* Scrollable body */}
@@ -865,7 +839,7 @@ export function TimesheetDialog({
                               field.onChange(value);
                             }}
                             placeholder="Start"
-                            defaultScrollTime={companySettings?.standardWorkStart || "07:00"}
+                            defaultScrollTime="06:00"
                             showIcon={false}
                             className={selectTriggerClass}
                             data-testid="select-start-time"
@@ -890,7 +864,7 @@ export function TimesheetDialog({
                               field.onChange(value);
                             }}
                             placeholder="End"
-                            defaultScrollTime={companySettings?.standardWorkEnd || "15:30"}
+                            defaultScrollTime="15:00"
                             showIcon={false}
                             className={selectTriggerClass}
                             data-testid="select-end-time"
@@ -1427,6 +1401,49 @@ export function TimesheetDialog({
         linkedItemTitle={timesheet ? `Timesheet: ${format(new Date(timesheet.date), "MMM d, yyyy")}` : undefined}
         projectId={form.watch("projectId")}
       />
+      {/* Saving changes to an approved entry: keep the approval (and any PO
+          state) or send it back through the approval workflow. */}
+      <AlertDialog
+        open={!!keepApprovedPromptData}
+        onOpenChange={(o) => { if (!o) setKeepApprovedPromptData(null); }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>This timesheet is approved</AlertDialogTitle>
+            <AlertDialogDescription>
+              Save your changes and keep it approved, or send it back for
+              re-approval? Keeping it approved also leaves any PO status as-is.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="button-keep-approved-cancel">Cancel</AlertDialogCancel>
+            <Button
+              variant="outline"
+              className="h-9"
+              onClick={() => {
+                if (keepApprovedPromptData) {
+                  createMutation.mutate({ data: keepApprovedPromptData, keepApproved: false });
+                }
+                setKeepApprovedPromptData(null);
+              }}
+              data-testid="button-resubmit-for-approval"
+            >
+              Re-submit for approval
+            </Button>
+            <AlertDialogAction
+              onClick={() => {
+                if (keepApprovedPromptData) {
+                  createMutation.mutate({ data: keepApprovedPromptData, keepApproved: true });
+                }
+                setKeepApprovedPromptData(null);
+              }}
+              data-testid="button-keep-approved"
+            >
+              Keep approved
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }

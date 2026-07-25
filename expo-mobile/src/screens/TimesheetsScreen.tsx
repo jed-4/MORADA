@@ -107,7 +107,8 @@ function formatDisplayDate(dateStr: string): string {
 function generateTimeOptions() {
   const times: { value: string; label: string }[] = [];
   for (let i = 0; i < 96; i++) {
-    const adjustedIndex = (i + 26) % 96;
+    // Rotated so the list opens at 6:00 AM (24 quarter-hours past midnight)
+    const adjustedIndex = (i + 24) % 96;
     const totalMinutes = adjustedIndex * 15;
     const hours = Math.floor(totalMinutes / 60);
     const minutes = totalMinutes % 60;
@@ -1203,11 +1204,19 @@ export default function TimesheetsScreen() {
 
   useEffect(() => {
     if (showTimePicker !== null) {
+      // Anchor: start opens with 6 AM at the top, end with 3 PM at the top.
+      // If the field's current value sits within ~2 h below the anchor it
+      // stays visible on screen; otherwise scroll to the value itself.
+      const anchor = showTimePicker === 'start' ? '06:00' : '15:00';
+      const anchorIndex = TIME_OPTIONS.findIndex(t => t.value === anchor);
       const currentTime = showTimePicker === 'start' ? formStartTime : formEndTime;
       const index = TIME_OPTIONS.findIndex(t => t.value === currentTime);
-      if (index > 0) {
+      const useAnchor = index === -1 || (index >= anchorIndex && index <= anchorIndex + 8);
+      const target = useAnchor ? anchorIndex : index;
+      const viewPosition = useAnchor ? 0 : 0.3;
+      if (target > 0) {
         const timer = setTimeout(() => {
-          timePickerListRef.current?.scrollToIndex({ index, animated: false, viewPosition: 0.3 });
+          timePickerListRef.current?.scrollToIndex({ index: target, animated: false, viewPosition });
         }, 350);
         return () => clearTimeout(timer);
       }
