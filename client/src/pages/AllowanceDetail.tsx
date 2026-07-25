@@ -14,6 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useMemo, useRef, useState } from "react";
 import { useAllowanceStatusOptions } from "@/hooks/useAllowanceStatusOptions";
 import { Users, CalendarDays, Hash } from "lucide-react";
+import { useResizableColumns, ColResizeHandle } from "@/components/useResizableColumns";
 import {
   LineItemsTable,
   LineItemColumnsButton,
@@ -67,15 +68,20 @@ type Bill = {
   total: number; // cents inc GST
 };
 
-/** Bill line items store EX-GST amounts; totalIncGst is server-computed. */
+/**
+ * A line's raw `total` is ex- OR inc-GST depending on the bill's taxMode, so the
+ * server derives explicit `totalExGst`/`totalIncGst` — always use those, never
+ * `total`, for money in the allowance UI.
+ */
 type BillLineItem = {
   id: string;
   billId: string;
   description: string;
   quantity: number;
-  unitPrice: number; // cents ex GST
-  total: number; // cents ex GST
-  totalIncGst: number; // cents inc GST
+  unitPrice: number; // cents, basis depends on bill taxMode
+  total: number; // cents, basis depends on bill taxMode — do not use directly
+  totalExGst: number; // cents ex GST (server-computed, taxMode-aware)
+  totalIncGst: number; // cents inc GST (server-computed, taxMode-aware)
   costCodeId?: string | null;
 };
 
@@ -282,6 +288,8 @@ function BillsPickerModal({
   setSelected,
   expanded,
   setExpanded,
+  displayMode,
+  setDisplayMode,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
@@ -295,6 +303,8 @@ function BillsPickerModal({
   setSelected: (s: Set<string>) => void;
   expanded: Set<string>;
   setExpanded: (s: Set<string>) => void;
+  displayMode?: "bill" | "line";
+  setDisplayMode?: (m: "bill" | "line") => void;
 }) {
   type SortKey = "date" | "supplier" | "costcode";
   const [sortBy, setSortBy] = useState<SortKey>("date");
@@ -406,7 +416,7 @@ function BillsPickerModal({
                 const allSelected = lines.length > 0 && lines.every((li) => selected.has(li.id));
                 const someSelected = lines.some((li) => selected.has(li.id));
                 const codes = billCostCodes(bill.id);
-                const exTotal = lines.reduce((s, li) => s + li.total, 0);
+                const exTotal = lines.reduce((s, li) => s + li.totalExGst, 0);
                 return (
                   <div key={bill.id}>
                     {/* Bill row */}
@@ -487,7 +497,7 @@ function BillsPickerModal({
                           <span />
                           <p className="text-[10px] text-muted-foreground truncate">{costCodeLabel(li.costCodeId)}</p>
                           <span />
-                          <p className="text-[11px] text-foreground text-right">{formatCurrency(li.total)}</p>
+                          <p className="text-[11px] text-foreground text-right">{formatCurrency(li.totalExGst)}</p>
                           <p className="text-[11px] text-foreground text-right">{formatCurrency(li.totalIncGst)}</p>
                         </div>
                       ))}
@@ -499,11 +509,27 @@ function BillsPickerModal({
         </div>
 
         <div className="flex items-center justify-between pt-4 border-t gap-3 flex-wrap">
-          <p className="text-xs text-muted-foreground">
-            {selectedLines.length > 0
-              ? `${selectedLines.length} line${selectedLines.length === 1 ? "" : "s"} selected · ${formatCurrency(selectedLines.reduce((s, li) => s + li.totalIncGst, 0))} inc GST`
-              : "No lines selected"}
-          </p>
+          <div className="flex items-center gap-3 flex-wrap">
+            {setDisplayMode && (
+              <div className="flex items-center gap-2">
+                <Label className="text-xs text-muted-foreground whitespace-nowrap">Display in allowance:</Label>
+                <Select value={displayMode} onValueChange={(v) => setDisplayMode(v as "bill" | "line")}>
+                  <SelectTrigger className="h-7 text-xs w-36" data-testid="select-bill-display">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="bill" className="text-xs">By Bill</SelectItem>
+                    <SelectItem value="line" className="text-xs">By Line Item</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            <p className="text-xs text-muted-foreground">
+              {selectedLines.length > 0
+                ? `${selectedLines.length} line${selectedLines.length === 1 ? "" : "s"} selected · ${formatCurrency(selectedLines.reduce((s, li) => s + li.totalIncGst, 0))} inc GST`
+                : "No lines selected"}
+            </p>
+          </div>
           <div className="flex gap-2">
             <Button variant="outline" onClick={() => { setSelected(new Set()); onOpenChange(false); }}>
               Cancel
@@ -546,7 +572,7 @@ function RateCell({ rateCents, onCommit }: { rateCents: number; onCommit: (dolla
           if (e.key === "Enter") (e.target as HTMLInputElement).blur();
           if (e.key === "Escape") { setVal((rateCents / 100).toFixed(2)); (e.target as HTMLInputElement).blur(); }
         }}
-        className="w-12 bg-transparent border-0 p-0 text-right text-[11px] tabular-nums focus:outline-none focus:ring-1 focus:ring-primary/40 rounded-sm [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+        className="w-12 bg-transparent p-0 text-right text-[11px] tabular-nums rounded-sm cursor-text border-x-0 border-t-0 border-b border-dashed border-muted-foreground/50 hover:border-solid hover:border-primary/70 focus:border-solid focus:border-primary focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
         title="Charge rate — click to edit"
         data-testid="input-charge-rate"
       />
@@ -620,6 +646,26 @@ function SectionCard({
   );
 }
 
+// Resizable-column configs (pixel default widths) for the bespoke timesheet and
+// bills grids. Widths persist per namespace via useResizableColumns; the trailing
+// 28px action column is fixed (not draggable).
+const TS_COLUMNS = [
+  { key: "name", defaultWidth: 190 },
+  { key: "hours", defaultWidth: 70 },
+  { key: "rate", defaultWidth: 90 },
+  { key: "costCode", defaultWidth: 140 },
+  { key: "ex", defaultWidth: 100 },
+  { key: "inc", defaultWidth: 100 },
+];
+const BILL_COLUMNS = [
+  { key: "supplier", defaultWidth: 200 },
+  { key: "invoice", defaultWidth: 110 },
+  { key: "date", defaultWidth: 100 },
+  { key: "ex", defaultWidth: 100 },
+  { key: "inc", defaultWidth: 100 },
+  { key: "status", defaultWidth: 80 },
+];
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function AllowanceDetail() {
@@ -672,6 +718,15 @@ export default function AllowanceDetail() {
 
   const [expandedBills, setExpandedBills] = useState<Set<string>>(new Set());
   const [expandedPsBills, setExpandedPsBills] = useState<Set<string>>(new Set());
+  // Which people are expanded in the "By Person (totals)" view to reveal their
+  // individual entries (each with its own editable rate + delete).
+  const [expandedTsPersons, setExpandedTsPersons] = useState<Set<string>>(new Set());
+  const toggleTsPerson = (name: string) =>
+    setExpandedTsPersons((prev) => {
+      const next = new Set(prev);
+      next.has(name) ? next.delete(name) : next.add(name);
+      return next;
+    });
   const [selectedLineItems, setSelectedLineItems] = useState<Set<string>>(new Set());
   const [selectedPsLineItems, setSelectedPsLineItems] = useState<Set<string>>(new Set());
   const [selectedTimesheetKeys, setSelectedTimesheetKeys] = useState<Set<string>>(new Set());
@@ -793,6 +848,109 @@ export default function AllowanceDetail() {
     const cc = costCodeMap.get(costCodeId);
     return cc ? `${cc.code} · ${cc.title}` : "—";
   };
+
+  // Resizable columns for the timesheet + bills grids (widths persist per table).
+  const tsCols = useResizableColumns("allowance-timesheets", TS_COLUMNS, 28);
+  const billCols = useResizableColumns("allowance-bills", BILL_COLUMNS, 28);
+
+  // Bills display mode: one row per bill (grouped, expandable) or a flat list of
+  // every line-item allocation. Persisted; set from the bills modal footer.
+  const [billDisplayMode, setBillDisplayModeState] = useState<"bill" | "line">(() => {
+    try { return localStorage.getItem("allowance-bill-display") === "line" ? "line" : "bill"; } catch { return "bill"; }
+  });
+  const setBillDisplayMode = (m: "bill" | "line") => {
+    setBillDisplayModeState(m);
+    try { localStorage.setItem("allowance-bill-display", m); } catch { /* ignore */ }
+  };
+  const [expandedBillGroups, setExpandedBillGroups] = useState<Set<string>>(new Set());
+  const toggleBillGroup = (billId: string) =>
+    setExpandedBillGroups((prev) => {
+      const next = new Set(prev);
+      next.has(billId) ? next.delete(billId) : next.add(billId);
+      return next;
+    });
+
+  // Saved bill allocations grouped by their parent bill (several line-item
+  // allocations can share one bill).
+  const billGroups = (() => {
+    const m = new Map<string, AllocatedBill[]>();
+    for (const b of allocatedBills) {
+      if (!m.has(b.billId)) m.set(b.billId, []);
+      m.get(b.billId)!.push(b);
+    }
+    return Array.from(m.entries());
+  })();
+
+  // "By Bill" render: one summary row per bill (amounts summed), expandable into
+  // its individual line-item allocations, each removable. Used by both the PC and
+  // PS bills sections so their markup stays identical.
+  const renderBillGroups = () =>
+    billGroups.map(([billId, group], idx) => {
+      const first = group[0];
+      const ex = group.reduce((s, b) => s + b.amountExGst, 0);
+      const inc = group.reduce((s, b) => s + b.amountIncGst, 0);
+      const expanded = expandedBillGroups.has(billId);
+      return (
+        <div key={billId}>
+          <div
+            className="grid items-center py-2.5 border-b border-border gap-2 cursor-pointer hover:bg-muted/30 rounded-sm"
+            style={{ gridTemplateColumns: billCols.gridTemplate }}
+            onClick={() => toggleBillGroup(billId)}
+            data-testid={`bill-group-${billId}`}
+          >
+            <div className="flex items-center gap-1.5 min-w-0">
+              {expanded
+                ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+                : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />}
+              <div
+                className="w-7 h-7 rounded-full flex items-center justify-center text-[9px] font-bold flex-shrink-0"
+                style={{ background: avatarColor(idx).bg, color: avatarColor(idx).text }}
+              >
+                {initials(first.supplierName || first.billNumber)}
+              </div>
+              <div className="min-w-0">
+                <p className="text-xs font-semibold text-foreground truncate">{first.supplierName || "—"}</p>
+                <p className="text-[10px] text-muted-foreground truncate">{group.length} line{group.length === 1 ? "" : "s"}</p>
+              </div>
+            </div>
+            <p className="text-[11px] text-muted-foreground">{first.billNumber}</p>
+            <p className="text-[11px] text-muted-foreground">{formatFullDate(first.billDate)}</p>
+            <p className="text-xs font-semibold text-foreground text-right">{formatCurrency(ex)}</p>
+            <p className="text-xs font-semibold text-foreground text-right">{formatCurrency(inc)}</p>
+            <span
+              className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold w-fit"
+              style={{ background: "hsl(var(--sage-light))", color: "hsl(var(--sage))" }}
+            >
+              Saved
+            </span>
+            <span />
+          </div>
+          {expanded && group.map((bill) => (
+            <div
+              key={bill.id}
+              className="grid items-center py-2 border-b border-border gap-2"
+              style={{ gridTemplateColumns: billCols.gridTemplate, background: "hsl(var(--muted) / 0.15)" }}
+            >
+              <p className="text-[11px] text-foreground pl-8 truncate">{bill.lineItemDescription || "—"}</p>
+              <p className="text-[11px] text-muted-foreground">{bill.billNumber}</p>
+              <p className="text-[11px] text-muted-foreground">{formatFullDate(bill.billDate)}</p>
+              <p className="text-[11px] font-semibold text-foreground text-right">{formatCurrency(bill.amountExGst)}</p>
+              <p className="text-[11px] font-semibold text-foreground text-right">{formatCurrency(bill.amountIncGst)}</p>
+              <span />
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6"
+                onClick={() => deleteBillAllocationMutation.mutate(bill.id)}
+                data-testid={`button-remove-bill-${bill.id}`}
+              >
+                <Plus className="h-3 w-3 rotate-45" />
+              </Button>
+            </div>
+          ))}
+        </div>
+      );
+    });
 
   const { toast } = useToast();
 
@@ -1150,7 +1308,7 @@ export default function AllowanceDetail() {
 
   // Live (unsaved) additions, for the running totals in the summary bar
   const psPendingExCents =
-    pendingPsBillItems.reduce((s, li) => s + li.total, 0) +
+    pendingPsBillItems.reduce((s, li) => s + li.totalExGst, 0) +
     pendingTimesheetRows.reduce((s, r) => s + r.amountExCents, 0) +
     pendingLines.reduce((s, l) => s + exGstFromInc(l.totalPrice), 0);
   const psPendingIncCents =
@@ -1158,7 +1316,7 @@ export default function AllowanceDetail() {
     pendingTimesheetRows.reduce((s, r) => s + incGstFromEx(r.amountExCents), 0) +
     pendingLines.reduce((s, l) => s + l.totalPrice, 0);
   const pcPendingExCents =
-    pendingPcBillItems.reduce((s, li) => s + li.total, 0) +
+    pendingPcBillItems.reduce((s, li) => s + li.totalExGst, 0) +
     pcPendingLines.reduce((s, l) => s + exGstFromInc(l.totalPrice), 0);
   const pcPendingIncCents =
     pendingPcBillItems.reduce((s, li) => s + li.totalIncGst, 0) +
@@ -1270,15 +1428,18 @@ export default function AllowanceDetail() {
   const personSummaryRows = sectionTimesheetGroups.map(([staffName, rows]) => {
     const hours = rows.reduce((s, r) => s + r.hours, 0);
     const exCents = rows.reduce((s, r) => s + r.exCents, 0);
-    const codes = Array.from(new Set(rows.map((r) => r.costCode.split(" · ")[0]).filter((c) => c !== "—")));
+    // Keep the FULL "code · title" labels (not just the number). One code → show
+    // it in full; several → "N cost codes" (the individual codes show on expand).
+    const codeLabels = Array.from(new Set(rows.map((r) => r.costCode).filter((c) => c !== "—")));
     return {
       staffName,
       hours: Math.round(hours * 100) / 100,
       rateCents: hours > 0 ? Math.round(exCents / hours) : 0,
-      costCode: codes.length ? codes.join(", ") : "—",
+      costCode: codeLabels.length === 0 ? "—" : codeLabels.length === 1 ? codeLabels[0] : `${codeLabels.length} cost codes`,
       exCents,
       incCents: rows.reduce((s, r) => s + r.incCents, 0),
       allSaved: rows.every((r) => r.saved),
+      rows, // the underlying entries, revealed when the Totals row is expanded
     };
   });
 
@@ -1447,23 +1608,38 @@ export default function AllowanceDetail() {
                 />
               ) : (
                 <div className="pt-2">
+                 <div className="overflow-x-auto">
+                  <div style={{ minWidth: `${billCols.minWidth}px` }}>
                   <div
                     className="grid text-[9px] font-semibold text-muted-foreground uppercase tracking-wide py-2 border-b border-border gap-2"
-                    style={{ gridTemplateColumns: "2fr 1.2fr 1fr 1fr 1fr 80px 28px" }}
+                    style={{ gridTemplateColumns: billCols.gridTemplate }}
                   >
-                    <span>Supplier</span>
-                    <span>Invoice #</span>
-                    <span>Date</span>
-                    <span className="text-right">Ex GST</span>
-                    <span className="text-right">Inc GST</span>
-                    <span>Status</span>
+                    <span className="relative">Supplier
+                      <ColResizeHandle testId="resize-bill-supplier" onStart={(e) => billCols.startResize("supplier", e.clientX, billCols.widthFor("supplier", 200))} />
+                    </span>
+                    <span className="relative">Invoice #
+                      <ColResizeHandle testId="resize-bill-invoice" onStart={(e) => billCols.startResize("invoice", e.clientX, billCols.widthFor("invoice", 110))} />
+                    </span>
+                    <span className="relative">Date
+                      <ColResizeHandle testId="resize-bill-date" onStart={(e) => billCols.startResize("date", e.clientX, billCols.widthFor("date", 100))} />
+                    </span>
+                    <span className="relative text-right">Ex GST
+                      <ColResizeHandle testId="resize-bill-ex" onStart={(e) => billCols.startResize("ex", e.clientX, billCols.widthFor("ex", 100))} />
+                    </span>
+                    <span className="relative text-right">Inc GST
+                      <ColResizeHandle testId="resize-bill-inc" onStart={(e) => billCols.startResize("inc", e.clientX, billCols.widthFor("inc", 100))} />
+                    </span>
+                    <span className="relative">Status
+                      <ColResizeHandle testId="resize-bill-status" onStart={(e) => billCols.startResize("status", e.clientX, billCols.widthFor("status", 80))} />
+                    </span>
                     <span />
                   </div>
-                  {allocatedBills.map((bill, idx) => (
+                  {billDisplayMode === "bill" && renderBillGroups()}
+                  {billDisplayMode === "line" && allocatedBills.map((bill, idx) => (
                     <div
                       key={bill.id}
                       className="grid items-center py-2.5 border-b border-border gap-2"
-                      style={{ gridTemplateColumns: "2fr 1.2fr 1fr 1fr 1fr 80px 28px" }}
+                      style={{ gridTemplateColumns: billCols.gridTemplate }}
                     >
                       <div className="flex items-center gap-2 min-w-0">
                         <div
@@ -1500,12 +1676,12 @@ export default function AllowanceDetail() {
                   ))}
                   {pendingPsBillItems.map((li) => {
                     const parentBill = bills.find((b) => b.id === li.billId);
-                    const liExGst = li.total; // line items are stored ex GST
+                    const liExGst = li.totalExGst; // taxMode-aware ex-GST from the server
                     return (
                       <div
                         key={li.id}
                         className="grid items-center py-2.5 border-b border-border gap-2"
-                        style={{ gridTemplateColumns: "2fr 1.2fr 1fr 1fr 1fr 80px 28px", background: "hsl(var(--amber-light) / 0.4)" }}
+                        style={{ gridTemplateColumns: billCols.gridTemplate, background: "hsl(var(--amber-light) / 0.4)" }}
                       >
                         <div className="flex items-center gap-2 min-w-0">
                           <div
@@ -1544,6 +1720,8 @@ export default function AllowanceDetail() {
                       </div>
                     );
                   })}
+                  </div>
+                 </div>
                   {(allocatedBills.length > 0 || pendingPsBillItems.length > 0) && (
                     <div className="flex justify-between items-center pt-2">
                       <span
@@ -1557,7 +1735,7 @@ export default function AllowanceDetail() {
                         Subtotal:{" "}
                         {formatCurrency(
                           allocatedBills.reduce((s, b) => s + b.amountExGst, 0) +
-                            pendingPsBillItems.reduce((s, li) => s + li.total, 0)
+                            pendingPsBillItems.reduce((s, li) => s + li.totalExGst, 0)
                         )}{" "}
                         ex
                       </p>
@@ -1581,62 +1759,133 @@ export default function AllowanceDetail() {
                 <EmptyState variant="inline" title="No timesheets added yet." className="py-6" />
               ) : (
                 <div className="pt-2">
+                 <div className="overflow-x-auto">
+                  <div style={{ minWidth: `${tsCols.minWidth}px` }}>
                   <div
                     className="grid text-[9px] font-semibold text-muted-foreground uppercase tracking-wide py-2 border-b border-border gap-2"
-                    style={{ gridTemplateColumns: "1.8fr 0.7fr 0.9fr 1fr 1fr 1fr 28px" }}
+                    style={{ gridTemplateColumns: tsCols.gridTemplate }}
                   >
-                    <span>{timesheetDisplayPref === "person" ? "Date" : "Team member"}</span>
-                    <span className="text-right">Hours</span>
-                    <span className="text-right">Charge Rate</span>
-                    <span>Cost Code</span>
-                    <span className="text-right">Ex GST</span>
-                    <span className="text-right">Inc GST</span>
+                    <span className="relative">{timesheetDisplayPref === "person" ? "Date" : "Team member"}
+                      <ColResizeHandle testId="resize-ts-name" onStart={(e) => tsCols.startResize("name", e.clientX, tsCols.widthFor("name", 190))} />
+                    </span>
+                    <span className="relative text-right">Hours
+                      <ColResizeHandle testId="resize-ts-hours" onStart={(e) => tsCols.startResize("hours", e.clientX, tsCols.widthFor("hours", 70))} />
+                    </span>
+                    <span className="relative text-right">Charge Rate
+                      <ColResizeHandle testId="resize-ts-rate" onStart={(e) => tsCols.startResize("rate", e.clientX, tsCols.widthFor("rate", 90))} />
+                    </span>
+                    <span className="relative">Cost Code
+                      <ColResizeHandle testId="resize-ts-costCode" onStart={(e) => tsCols.startResize("costCode", e.clientX, tsCols.widthFor("costCode", 140))} />
+                    </span>
+                    <span className="relative text-right">Ex GST
+                      <ColResizeHandle testId="resize-ts-ex" onStart={(e) => tsCols.startResize("ex", e.clientX, tsCols.widthFor("ex", 100))} />
+                    </span>
+                    <span className="relative text-right">Inc GST
+                      <ColResizeHandle testId="resize-ts-inc" onStart={(e) => tsCols.startResize("inc", e.clientX, tsCols.widthFor("inc", 100))} />
+                    </span>
                     <span />
                   </div>
-                  {timesheetDisplayPref === "person-summary" && personSummaryRows.map((row, idx) => (
-                    <div
-                      key={row.staffName}
-                      className="grid items-center py-2.5 border-b border-border gap-2"
-                      style={{ gridTemplateColumns: "1.8fr 0.7fr 0.9fr 1fr 1fr 1fr 28px" }}
-                    >
-                      <div className="flex items-center gap-2">
-                        <div
-                          className="w-6 h-6 rounded-full flex items-center justify-center text-[8px] font-bold flex-shrink-0"
-                          style={{ background: avatarColor(idx).bg, color: avatarColor(idx).text }}
-                        >
-                          {initials(row.staffName)}
+                  {timesheetDisplayPref === "person-summary" && personSummaryRows.map((row, idx) => {
+                    const expanded = expandedTsPersons.has(row.staffName);
+                    return (
+                    <div key={row.staffName}>
+                      {/* Summary line — click to expand into this person's entries */}
+                      <div
+                        className="grid items-center py-2.5 border-b border-border gap-2 cursor-pointer hover:bg-muted/30 rounded-sm"
+                        style={{ gridTemplateColumns: tsCols.gridTemplate }}
+                        onClick={() => toggleTsPerson(row.staffName)}
+                        data-testid={`ts-person-summary-${row.staffName}`}
+                      >
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          {expanded
+                            ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+                            : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />}
+                          <div
+                            className="w-6 h-6 rounded-full flex items-center justify-center text-[8px] font-bold flex-shrink-0"
+                            style={{ background: avatarColor(idx).bg, color: avatarColor(idx).text }}
+                          >
+                            {initials(row.staffName)}
+                          </div>
+                          <p className="text-xs font-semibold text-foreground truncate">
+                            {row.staffName}
+                            {!row.allSaved && (
+                              <span
+                                className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-semibold"
+                                style={{ background: "hsl(var(--teal-light))", color: "hsl(var(--teal))" }}
+                              >
+                                Pending
+                              </span>
+                            )}
+                          </p>
                         </div>
-                        <p className="text-xs font-semibold text-foreground">
-                          {row.staffName}
-                          {!row.allSaved && (
-                            <span
-                              className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-semibold"
-                              style={{ background: "hsl(var(--teal-light))", color: "hsl(var(--teal))" }}
-                            >
-                              Pending
-                            </span>
-                          )}
-                        </p>
+                        <p className="text-[11px] text-foreground text-right">{row.hours} hrs</p>
+                        <p className="text-[11px] text-muted-foreground text-right" title="Weighted average — expand to edit each entry">{formatCurrency(row.rateCents)}/hr</p>
+                        <p className="text-[11px] text-muted-foreground truncate">{row.costCode}</p>
+                        <p className="text-xs font-semibold text-foreground text-right">{formatCurrency(row.exCents)}</p>
+                        <p className="text-xs font-semibold text-foreground text-right">{formatCurrency(row.incCents)}</p>
+                        <span />
                       </div>
-                      <p className="text-[11px] text-foreground text-right">{row.hours} hrs</p>
-                      <p className="text-[11px] text-foreground text-right">{formatCurrency(row.rateCents)}/hr</p>
-                      <p className="text-[11px] text-muted-foreground truncate">{row.costCode}</p>
-                      <p className="text-xs font-semibold text-foreground text-right">{formatCurrency(row.exCents)}</p>
-                      <p className="text-xs font-semibold text-foreground text-right">{formatCurrency(row.incCents)}</p>
-                      <span />
+                      {/* Expanded: individual entries, each with editable rate + delete */}
+                      {expanded && row.rows.map((entry) => (
+                        <div
+                          key={entry.id}
+                          className="grid items-center py-2 border-b border-border gap-2"
+                          style={{
+                            gridTemplateColumns: tsCols.gridTemplate,
+                            background: entry.saved ? "hsl(var(--muted) / 0.15)" : "hsl(var(--teal-light) / 0.3)",
+                          }}
+                        >
+                          <p className="text-[11px] text-foreground pl-8">
+                            {formatDayMonth(entry.date)}
+                            {!entry.saved && (
+                              <span
+                                className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-semibold"
+                                style={{ background: "hsl(var(--teal-light))", color: "hsl(var(--teal))" }}
+                              >
+                                Pending
+                              </span>
+                            )}
+                          </p>
+                          <p className="text-[11px] text-foreground text-right">{entry.hours} hrs</p>
+                          <RateCell
+                            rateCents={entry.rateCents}
+                            onCommit={(v) => commitRateEdit(entry, v)}
+                          />
+                          <p className="text-[11px] text-muted-foreground truncate">{entry.costCode}</p>
+                          <p className="text-xs font-semibold text-foreground text-right">{formatCurrency(entry.exCents)}</p>
+                          <p className="text-xs font-semibold text-foreground text-right">{formatCurrency(entry.incCents)}</p>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6"
+                            onClick={() =>
+                              entry.saved
+                                ? deleteTimesheetAllocationMutation.mutate(entry.id)
+                                : toggleTimesheetSelection(entry.id)
+                            }
+                            data-testid={`button-remove-timesheet-${entry.id}`}
+                          >
+                            <Plus className="h-3 w-3 rotate-45" />
+                          </Button>
+                        </div>
+                      ))}
                     </div>
-                  ))}
+                    );
+                  })}
                   {timesheetDisplayPref !== "person-summary" && sectionTimesheetGroups.map(([groupLabel, rows], groupIdx) => (
                     <div key={groupLabel}>
-                      <div className="flex items-center gap-2 pt-2.5 pb-1">
+                      <div
+                        className="flex items-center gap-2 px-2 py-1.5 mt-3 mb-1 rounded-md"
+                        style={{ background: "hsl(var(--muted))" }}
+                      >
                         <div
-                          className="w-6 h-6 rounded-full flex items-center justify-center text-[8px] font-bold flex-shrink-0"
+                          className="w-5 h-5 rounded-full flex items-center justify-center text-[8px] font-bold flex-shrink-0"
                           style={{ background: avatarColor(groupIdx).bg, color: avatarColor(groupIdx).text }}
                         >
                           {timesheetDisplayPref === "person" ? initials(groupLabel) : groupLabel.slice(0, 2)}
                         </div>
-                        <p className="text-xs font-semibold text-foreground">{groupLabel}</p>
-                        <p className="text-[10px] text-muted-foreground ml-auto">
+                        <p className="text-[11px] font-bold text-foreground uppercase tracking-wide">{groupLabel}</p>
+                        <p className="text-[10px] font-semibold text-muted-foreground ml-auto">
                           {formatCurrency(rows.reduce((s, r) => s + r.exCents, 0))} ex
                         </p>
                       </div>
@@ -1645,7 +1894,7 @@ export default function AllowanceDetail() {
                           key={row.id}
                           className="grid items-center py-2 border-b border-border gap-2"
                           style={{
-                            gridTemplateColumns: "1.8fr 0.7fr 0.9fr 1fr 1fr 1fr 28px",
+                            gridTemplateColumns: tsCols.gridTemplate,
                             background: row.saved ? undefined : "hsl(var(--teal-light) / 0.3)",
                           }}
                         >
@@ -1685,6 +1934,8 @@ export default function AllowanceDetail() {
                       ))}
                     </div>
                   ))}
+                  </div>
+                 </div>
                   <div className="flex justify-end pt-2">
                     <p className="text-xs font-semibold text-foreground">
                       Subtotal: {formatCurrency(sectionTimesheetRows.reduce((s, r) => s + r.exCents, 0))} ex
@@ -1912,23 +2163,38 @@ export default function AllowanceDetail() {
                 />
               ) : (
                 <div className="pt-2">
+                 <div className="overflow-x-auto">
+                  <div style={{ minWidth: `${billCols.minWidth}px` }}>
                   <div
                     className="grid text-[9px] font-semibold text-muted-foreground uppercase tracking-wide py-2 border-b border-border gap-2"
-                    style={{ gridTemplateColumns: "2fr 1.2fr 1fr 1fr 1fr 80px 28px" }}
+                    style={{ gridTemplateColumns: billCols.gridTemplate }}
                   >
-                    <span>Supplier</span>
-                    <span>Invoice #</span>
-                    <span>Date</span>
-                    <span className="text-right">Ex GST</span>
-                    <span className="text-right">Inc GST</span>
-                    <span>Status</span>
+                    <span className="relative">Supplier
+                      <ColResizeHandle testId="resize-bill-supplier" onStart={(e) => billCols.startResize("supplier", e.clientX, billCols.widthFor("supplier", 200))} />
+                    </span>
+                    <span className="relative">Invoice #
+                      <ColResizeHandle testId="resize-bill-invoice" onStart={(e) => billCols.startResize("invoice", e.clientX, billCols.widthFor("invoice", 110))} />
+                    </span>
+                    <span className="relative">Date
+                      <ColResizeHandle testId="resize-bill-date" onStart={(e) => billCols.startResize("date", e.clientX, billCols.widthFor("date", 100))} />
+                    </span>
+                    <span className="relative text-right">Ex GST
+                      <ColResizeHandle testId="resize-bill-ex" onStart={(e) => billCols.startResize("ex", e.clientX, billCols.widthFor("ex", 100))} />
+                    </span>
+                    <span className="relative text-right">Inc GST
+                      <ColResizeHandle testId="resize-bill-inc" onStart={(e) => billCols.startResize("inc", e.clientX, billCols.widthFor("inc", 100))} />
+                    </span>
+                    <span className="relative">Status
+                      <ColResizeHandle testId="resize-bill-status" onStart={(e) => billCols.startResize("status", e.clientX, billCols.widthFor("status", 80))} />
+                    </span>
                     <span />
                   </div>
-                  {allocatedBills.map((bill, idx) => (
+                  {billDisplayMode === "bill" && renderBillGroups()}
+                  {billDisplayMode === "line" && allocatedBills.map((bill, idx) => (
                     <div
                       key={bill.id}
                       className="grid items-center py-2.5 border-b border-border gap-2"
-                      style={{ gridTemplateColumns: "2fr 1.2fr 1fr 1fr 1fr 80px 28px" }}
+                      style={{ gridTemplateColumns: billCols.gridTemplate }}
                     >
                       <div className="flex items-center gap-2 min-w-0">
                         <div
@@ -1969,7 +2235,7 @@ export default function AllowanceDetail() {
                       <div
                         key={li.id}
                         className="grid items-center py-2.5 border-b border-border gap-2"
-                        style={{ gridTemplateColumns: "2fr 1.2fr 1fr 1fr 1fr 80px 28px", background: "hsl(var(--amber-light) / 0.4)" }}
+                        style={{ gridTemplateColumns: billCols.gridTemplate, background: "hsl(var(--amber-light) / 0.4)" }}
                       >
                         <div className="flex items-center gap-2 min-w-0">
                           <div
@@ -1989,7 +2255,7 @@ export default function AllowanceDetail() {
                         <p className="text-[11px] text-muted-foreground">
                           {parentBill ? formatFullDate(parentBill.billDate) : "—"}
                         </p>
-                        <p className="text-xs font-semibold text-foreground text-right">{formatCurrency(li.total)}</p>
+                        <p className="text-xs font-semibold text-foreground text-right">{formatCurrency(li.totalExGst)}</p>
                         <p className="text-xs font-semibold text-foreground text-right">{formatCurrency(li.totalIncGst)}</p>
                         <span
                           className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold w-fit"
@@ -2008,6 +2274,8 @@ export default function AllowanceDetail() {
                       </div>
                     );
                   })}
+                  </div>
+                 </div>
                 </div>
               )}
             </SectionCard>
@@ -2108,6 +2376,8 @@ export default function AllowanceDetail() {
         setSelected={setSelectedLineItems}
         expanded={expandedBills}
         setExpanded={setExpandedBills}
+        displayMode={billDisplayMode}
+        setDisplayMode={setBillDisplayMode}
       />
 
       <BillsPickerModal
@@ -2123,6 +2393,8 @@ export default function AllowanceDetail() {
         setSelected={setSelectedPsLineItems}
         expanded={expandedPsBills}
         setExpanded={setExpandedPsBills}
+        displayMode={billDisplayMode}
+        setDisplayMode={setBillDisplayMode}
       />
 
       {/* Timesheets modal */}

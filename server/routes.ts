@@ -24408,10 +24408,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const all: any[] = [];
       for (const bill of bills) {
         const lineItems = await storage.getBillLineItems(bill.id);
-        // Line items store ex-GST unitPrice/total; the allowance UI treats bill
-        // amounts as inc GST (matching bill.total), so expose an inc total too.
+        // A line's stored `total` means ex-GST OR inc-GST depending on the bill's
+        // taxMode ("exclusive" | "inclusive"), and only "GST on expenses" lines
+        // carry GST at all. Derive an explicit ex- and inc-GST figure per line so
+        // the allowance UI never has to guess (it used to assume every total was
+        // ex-GST, which double-counted GST on inclusive bills).
+        const inclusive = (bill as any).taxMode === "inclusive";
         for (const li of lineItems) {
-          all.push({ ...li, totalIncGst: Math.round((li.total || 0) * 1.1) });
+          const raw = li.total || 0;
+          const taxable = li.tax === "GST on expenses";
+          let totalExGst: number, totalIncGst: number;
+          if (!taxable) {
+            totalExGst = raw;
+            totalIncGst = raw;
+          } else if (inclusive) {
+            totalIncGst = raw;
+            totalExGst = Math.round(raw / 1.1);
+          } else {
+            totalExGst = raw;
+            totalIncGst = Math.round(raw * 1.1);
+          }
+          all.push({ ...li, totalExGst, totalIncGst });
         }
       }
       res.json(all);
@@ -24466,6 +24483,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             billLineItemId: bliaTable.billLineItemId,
             lineItemDescription: bliTable.description,
             billId: bliTable.billId,
+            lineTax: bliTable.tax,
           })
           .from(bliaTable)
           .innerJoin(bliTable, eq(bliTable.id, bliaTable.billLineItemId))
@@ -24493,8 +24511,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
             const bill = billMap.get(row.billId);
             const supplier = bill?.supplierId ? supplierMap.get(bill.supplierId) : null;
             const supplierName = supplier?.company || supplier?.name || "Unknown Supplier";
+            // The allocation `amount` is stored inc-GST. Only split out GST for
+            // taxable ("GST on expenses") lines; a No-GST line's ex == inc.
             const amountIncGst = row.amount;
-            const amountExGst = Math.round(amountIncGst / 1.1);
+            const amountExGst = row.lineTax === "GST on expenses" ? Math.round(amountIncGst / 1.1) : amountIncGst;
             return {
               id: row.id,
               billId: row.billId,
