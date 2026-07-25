@@ -724,6 +724,40 @@ export async function pushBillToXeroInternal(
   } catch (error: any) {
     if (error instanceof XeroValidationError) {
       const summary = error.validationErrors[0]?.message || error.message;
+
+      // A paid / credit-noted invoice is locked by Xero: it rejects line-item or
+      // status changes with "…must supply a LineItemID" / "…has payments or
+      // credit notes allocated to it". The guard near the top of this function
+      // skips the push when the bill is *known* paid — but if our local
+      // paid-state was stale (payment not yet synced back from Xero), the guard
+      // is blind, the push runs, and we land here with the raw Xero text. Treat
+      // it exactly like the guard: self-heal the local paid-state from Xero (so
+      // the bill flips to paid and the guard catches future edits), clear the
+      // red badge, and return the calm INVOICE_LOCKED result the client already
+      // renders as a plain "saved" note — never the raw validation string.
+      const invoiceLocked = error.validationErrors.some((v) =>
+        /LineItemID|payments or credit notes|has payments/i.test(v?.message || ""),
+      );
+      if (invoiceLocked) {
+        const lockedBill = await storage.getBillById(billId).catch(() => null);
+        if (lockedBill?.xeroInvoiceId) {
+          // Pull AmountPaid/status so Paid/Due reflect reality going forward.
+          await syncBillFromXeroInternal(billId, companyId).catch((e) => {
+            console.error("[pushBillToXeroInternal] self-heal sync failed:", e);
+          });
+        }
+        const lockedMsg =
+          "This bill is paid in Xero, so Xero won't accept changes to its line items. Your edit was saved in Morada.";
+        try {
+          await storage.updateBill(billId, {
+            xeroLastSyncStatus: null,
+            xeroLastSyncError: null,
+          } as any);
+        } catch {}
+        logOutcome({ ok: false, reason: "INVOICE_LOCKED", message: lockedMsg, xeroInvoiceId: lockedBill?.xeroInvoiceId ?? undefined });
+        return { ok: false, status: 409, error: "INVOICE_LOCKED", message: lockedMsg };
+      }
+
       console.error("[pushBillToXeroInternal] Xero validation error:", error.validationErrors);
       await writeSyncStatus("failed", summary);
       logOutcome({
