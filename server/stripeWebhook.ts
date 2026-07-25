@@ -1,5 +1,6 @@
 import type Stripe from "stripe";
 import { storage } from "./storage";
+import { claimFoundingSpot } from "./foundingMembers";
 import {
   cancelPendingCreditForInvoice,
   createPendingReferralCredit,
@@ -66,6 +67,23 @@ export async function handleStripeEvent(event: Stripe.Event): Promise<void> {
         };
         if ((company as any).chosenPlan) fields.plan = (company as any).chosenPlan;
         await storage.updateCompany(company.id, fields as any);
+
+        // Founding member programme: checkout stamped foundingClaim=1 on the
+        // subscription when this company was eligible for a spot. Confirm the
+        // claim now that the subscription exists — claimFoundingSpot re-checks
+        // the cap so a burst of signups can't overshoot the limit.
+        if ((sub.metadata as any)?.foundingClaim === "1") {
+          try {
+            const claimed = await claimFoundingSpot(company.id);
+            console.log(
+              claimed
+                ? `[billing] founding spot claimed by company ${company.id}`
+                : `[billing] founding claim by company ${company.id} not honoured (cap reached or already a member)`,
+            );
+          } catch (foundingErr) {
+            console.error("[billing] failed to claim founding spot:", foundingErr);
+          }
+        }
       } else if (custId) {
         console.warn(`[stripe webhook] no company matched stripe_customer_id=${custId}`);
       }

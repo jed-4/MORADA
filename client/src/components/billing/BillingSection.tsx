@@ -183,6 +183,12 @@ export function BillingSection() {
             </div>
           </div>
 
+          {(data as any).foundingMember === true && (
+            <p className="text-sm text-muted-foreground" data-testid="text-founding-member">
+              Founding member — Studio is half price for life on your account.
+            </p>
+          )}
+
           {data.cancelAtPeriodEnd && (
             <p className="text-sm text-destructive" data-testid="text-cancel-pending">
               Your subscription is set to cancel at the end of the current period.

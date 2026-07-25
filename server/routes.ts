@@ -192,7 +192,20 @@ import { requireAuth, requireAdmin, requireTeamMember, requireTeamMemberOrClient
 import { clientAccessGate } from "./middleware/clientAccess";
 import { requireActivePlan } from "./middleware/plan";
 import { getStripe, isStripeConfigured } from "./stripe";
-import { isPlanKey, getPlan, PLANS, PLAN_KEYS, type PlanKey, type BillingCycle } from "./config/plans";
+import {
+  isPlanKey,
+  getPlan,
+  PLANS,
+  PLAN_KEYS,
+  type PlanKey,
+  type BillingCycle,
+  FOUNDING_MEMBER_LIMIT,
+  FOUNDING_STUDIO_DISCOUNT_PERCENT,
+  FOUNDING_FREE_MONTH_DAYS,
+  foundingStudioCouponId,
+  isFoundingProgrammeConfigured,
+} from "./config/plans";
+import { foundingSpotsLeft } from "./foundingMembers";
 import { ensureCompanyReferralCode, getCompanyIdByReferralCode, getReferralStats } from "./referrals";
 import multer from "multer";
 import * as XLSX from "xlsx";
@@ -724,6 +737,40 @@ export async function pushBillToXeroInternal(
   } catch (error: any) {
     if (error instanceof XeroValidationError) {
       const summary = error.validationErrors[0]?.message || error.message;
+
+      // A paid / credit-noted invoice is locked by Xero: it rejects line-item or
+      // status changes with "…must supply a LineItemID" / "…has payments or
+      // credit notes allocated to it". The guard near the top of this function
+      // skips the push when the bill is *known* paid — but if our local
+      // paid-state was stale (payment not yet synced back from Xero), the guard
+      // is blind, the push runs, and we land here with the raw Xero text. Treat
+      // it exactly like the guard: self-heal the local paid-state from Xero (so
+      // the bill flips to paid and the guard catches future edits), clear the
+      // red badge, and return the calm INVOICE_LOCKED result the client already
+      // renders as a plain "saved" note — never the raw validation string.
+      const invoiceLocked = error.validationErrors.some((v) =>
+        /LineItemID|payments or credit notes|has payments/i.test(v?.message || ""),
+      );
+      if (invoiceLocked) {
+        const lockedBill = await storage.getBillById(billId).catch(() => null);
+        if (lockedBill?.xeroInvoiceId) {
+          // Pull AmountPaid/status so Paid/Due reflect reality going forward.
+          await syncBillFromXeroInternal(billId, companyId).catch((e) => {
+            console.error("[pushBillToXeroInternal] self-heal sync failed:", e);
+          });
+        }
+        const lockedMsg =
+          "This bill is paid in Xero, so Xero won't accept changes to its line items. Your edit was saved in Morada.";
+        try {
+          await storage.updateBill(billId, {
+            xeroLastSyncStatus: null,
+            xeroLastSyncError: null,
+          } as any);
+        } catch {}
+        logOutcome({ ok: false, reason: "INVOICE_LOCKED", message: lockedMsg, xeroInvoiceId: lockedBill?.xeroInvoiceId ?? undefined });
+        return { ok: false, status: 409, error: "INVOICE_LOCKED", message: lockedMsg };
+      }
+
       console.error("[pushBillToXeroInternal] Xero validation error:", error.validationErrors);
       await writeSyncStatus("failed", summary);
       logOutcome({
@@ -1433,10 +1480,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // ---- Discounts (in priority order — they never stack) ----
       // 1. An explicit promo code entered at checkout.
-      // 2. Founding member upgrade: a FOUNDING-SOLO subscriber moving up to
-      //    Builder/Studio carries their $50-off-forever discount across via
-      //    the FOUNDING promo code.
-      // 3. Referee discount: a referred company's FIRST subscription gets the
+      // 2. Legacy founding member upgrade: a FOUNDING-SOLO subscriber moving
+      //    up to Builder/Studio carries their $50-off-forever discount across
+      //    via the FOUNDING promo code.
+      // 3. Founding member programme: the first FOUNDING_MEMBER_LIMIT
+      //    companies to subscribe get Studio half price for life (coupon is
+      //    restricted to the Studio product in Stripe) + a free first month.
+      // 4. Referee discount: a referred company's FIRST subscription gets the
       //    50%-off-first-month coupon.
       let discounts: Array<{ promotion_code?: string; coupon?: string }> | undefined;
       let oldSubToCancel: string | null = null;
@@ -1453,6 +1503,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const existingSubId = (company as any).stripeSubscriptionId || null;
+
+      // Founding member programme eligibility. Already-flagged companies keep
+      // founding pricing forever; a company with no subscription yet can still
+      // claim a spot — the webhook confirms the claim (re-checking the cap)
+      // when the subscription activates.
+      const isFoundingMember = (company as any).isFoundingMember === true;
+      let claimingFoundingSpot = false;
+      if (!isFoundingMember && !existingSubId && isFoundingProgrammeConfigured()) {
+        try {
+          claimingFoundingSpot = (await foundingSpotsLeft()) > 0;
+        } catch (spotErr) {
+          console.error('[billing] failed to check founding spots:', spotErr);
+        }
+      }
 
       // Founding member upgrade policy (only when no explicit promo given).
       if (!discounts && existingSubId && (planKey === 'builder' || planKey === 'studio')) {
@@ -1487,6 +1551,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
+      // Founding member pricing: Studio half price for life. The coupon is
+      // restricted to the Studio product in Stripe, so it is only attached
+      // when Studio is being purchased; a founding member on a cheaper plan
+      // picks it up whenever they move to Studio.
+      if (
+        !discounts &&
+        planKey === 'studio' &&
+        (isFoundingMember || claimingFoundingSpot)
+      ) {
+        const couponId = foundingStudioCouponId();
+        if (couponId) {
+          discounts = [{ coupon: couponId }];
+          // A founding member upgrading from a cheaper plan winds down the
+          // old subscription, same as the FOUNDING-SOLO upgrade path.
+          if (existingSubId) oldSubToCancel = existingSubId;
+        }
+      }
+
       // Referee discount: only on the FIRST subscription, and never stacked
       // with another discount.
       if (
@@ -1504,9 +1586,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         line_items: [{ price: priceId, quantity: 1 }],
         success_url: `${baseUrl}/billing/success?session_id={CHECKOUT_SESSION_ID}`,
         cancel_url: `${baseUrl}/billing/cancelled`,
-        // If they've already used their trial, start billing immediately.
-        // If they're still trialing, let the trial run out naturally.
-        subscription_data: isTrialing ? undefined : { trial_end: 'now' },
+        // A company claiming a founding spot gets its free founding month as
+        // a trial period; the foundingClaim metadata tells the webhook to
+        // confirm the claim once the subscription activates. Otherwise: if
+        // they've already used their trial, start billing immediately, and if
+        // they're still trialing, let the trial run out naturally.
+        subscription_data: claimingFoundingSpot
+          ? { trial_period_days: FOUNDING_FREE_MONTH_DAYS, metadata: { foundingClaim: '1' } }
+          : isTrialing
+            ? undefined
+            : { trial_end: 'now' },
         ...(discounts ? { discounts, allow_promotion_codes: false } : {}),
         metadata: { companyId: String(company.id), planKey, billingCycle: cycle },
       });
@@ -1619,6 +1708,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         limits: plan.limits,
         usage: { activeProjects, fullUsers, storageUsedGB: null },
         foundingSoloDiscount,
+        foundingMember: (company as any).isFoundingMember === true,
         stripeConfigured: isStripeConfigured(),
       });
     } catch (error) {
@@ -1724,7 +1814,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // ---- Billing: public plan catalogue for the paywall / change-plan UI ----
-  app.get('/api/billing/plans', requireAuth, async (_req: any, res) => {
+  app.get('/api/billing/plans', requireAuth, async (req: any, res) => {
     const plans = PLAN_KEYS.map((k) => {
       const p = PLANS[k];
       return {
@@ -1736,7 +1826,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
         limits: p.limits,
       };
     });
-    return res.json({ plans, stripeConfigured: isStripeConfigured() });
+
+    // Founding member offer for the plan chooser: advertised while the
+    // caller's company holds founding status or could still claim a spot.
+    let foundingOffer:
+      | { limit: number; spotsLeft: number; discountPercent: number; freeMonthDays: number; alreadyMember: boolean }
+      | null = null;
+    try {
+      if (isStripeConfigured() && isFoundingProgrammeConfigured()) {
+        const companyId = req.user?.companyId || (req.session as any)?.companyId;
+        const company = companyId ? await storage.getCompany(companyId) : null;
+        const alreadyMember = (company as any)?.isFoundingMember === true;
+        const spotsLeft = await foundingSpotsLeft();
+        const canClaim = spotsLeft > 0 && !!company && !(company as any).stripeSubscriptionId;
+        if (alreadyMember || canClaim) {
+          foundingOffer = {
+            limit: FOUNDING_MEMBER_LIMIT,
+            spotsLeft,
+            discountPercent: FOUNDING_STUDIO_DISCOUNT_PERCENT,
+            freeMonthDays: FOUNDING_FREE_MONTH_DAYS,
+            alreadyMember,
+          };
+        }
+      }
+    } catch (foundingErr) {
+      console.error('[billing] plans: founding offer lookup failed:', foundingErr);
+    }
+
+    return res.json({ plans, stripeConfigured: isStripeConfigured(), foundingOffer });
   });
 
   // use storage to perform CRUD operations on the storage interface
@@ -24374,10 +24491,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const all: any[] = [];
       for (const bill of bills) {
         const lineItems = await storage.getBillLineItems(bill.id);
-        // Line items store ex-GST unitPrice/total; the allowance UI treats bill
-        // amounts as inc GST (matching bill.total), so expose an inc total too.
+        // A line's stored `total` means ex-GST OR inc-GST depending on the bill's
+        // taxMode ("exclusive" | "inclusive"), and only "GST on expenses" lines
+        // carry GST at all. Derive an explicit ex- and inc-GST figure per line so
+        // the allowance UI never has to guess (it used to assume every total was
+        // ex-GST, which double-counted GST on inclusive bills).
+        const inclusive = (bill as any).taxMode === "inclusive";
         for (const li of lineItems) {
-          all.push({ ...li, totalIncGst: Math.round((li.total || 0) * 1.1) });
+          const raw = li.total || 0;
+          const taxable = li.tax === "GST on expenses";
+          let totalExGst: number, totalIncGst: number;
+          if (!taxable) {
+            totalExGst = raw;
+            totalIncGst = raw;
+          } else if (inclusive) {
+            totalIncGst = raw;
+            totalExGst = Math.round(raw / 1.1);
+          } else {
+            totalExGst = raw;
+            totalIncGst = Math.round(raw * 1.1);
+          }
+          all.push({ ...li, totalExGst, totalIncGst });
         }
       }
       res.json(all);
@@ -24432,6 +24566,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             billLineItemId: bliaTable.billLineItemId,
             lineItemDescription: bliTable.description,
             billId: bliTable.billId,
+            lineTax: bliTable.tax,
           })
           .from(bliaTable)
           .innerJoin(bliTable, eq(bliTable.id, bliaTable.billLineItemId))
@@ -24459,8 +24594,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
             const bill = billMap.get(row.billId);
             const supplier = bill?.supplierId ? supplierMap.get(bill.supplierId) : null;
             const supplierName = supplier?.company || supplier?.name || "Unknown Supplier";
+            // The allocation `amount` is stored inc-GST. Only split out GST for
+            // taxable ("GST on expenses") lines; a No-GST line's ex == inc.
             const amountIncGst = row.amount;
-            const amountExGst = Math.round(amountIncGst / 1.1);
+            const amountExGst = row.lineTax === "GST on expenses" ? Math.round(amountIncGst / 1.1) : amountIncGst;
             return {
               id: row.id,
               billId: row.billId,

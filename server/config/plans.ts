@@ -192,3 +192,23 @@ export function isPlanKey(value: unknown): value is PlanKey {
 export function getPlan(key: PlanKey): PlanDefinition {
   return PLANS[key];
 }
+
+// ---- Founding member programme ----
+// The first FOUNDING_MEMBER_LIMIT companies to start a paid subscription (any
+// tier) become founding members: their first subscription starts with a free
+// month, and the Studio tier is half price for life. The 50%-off-forever
+// coupon lives in Stripe — create it restricted to the Studio product and set
+// STRIPE_FOUNDING_STUDIO_COUPON_ID (see scripts/seed-founding-coupon.ts).
+// The programme is OFF until that env var is set. Existing FOUNDING-SOLO
+// promo members are a separate, grandfathered deal handled in routes.ts.
+export const FOUNDING_MEMBER_LIMIT = Number(process.env.FOUNDING_MEMBER_LIMIT ?? 20);
+export const FOUNDING_STUDIO_DISCOUNT_PERCENT = 50;
+export const FOUNDING_FREE_MONTH_DAYS = 30;
+
+export function foundingStudioCouponId(): string | null {
+  return process.env.STRIPE_FOUNDING_STUDIO_COUPON_ID || null;
+}
+
+export function isFoundingProgrammeConfigured(): boolean {
+  return FOUNDING_MEMBER_LIMIT > 0 && !!foundingStudioCouponId();
+}
