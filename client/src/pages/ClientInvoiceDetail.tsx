@@ -416,7 +416,7 @@ export default function ClientInvoiceDetail() {
     enabled: !!selectedProjectId,
   });
 
-  const { data: variations = [] } = useQuery<Variation[]>({
+  const { data: variations = [], isLoading: variationsLoading } = useQuery<Variation[]>({
     queryKey: [`/api/variations?projectId=${selectedProjectId}`],
     enabled: !!selectedProjectId,
   });
@@ -444,17 +444,17 @@ export default function ClientInvoiceDetail() {
     enabled: !!selectedProjectId,
   });
 
-  const { data: bills = [] } = useQuery<Bill[]>({
+  const { data: bills = [], isLoading: billsLoading } = useQuery<Bill[]>({
     queryKey: [`/api/bills?projectId=${selectedProjectId}`],
     enabled: !!selectedProjectId,
   });
 
-  const { data: projectTimesheets = [] } = useQuery<any[]>({
+  const { data: projectTimesheets = [], isLoading: timesheetsLoading } = useQuery<any[]>({
     queryKey: [`/api/projects/${selectedProjectId}/timesheets`],
     enabled: !!selectedProjectId && invoiceType === "cost_plus",
   });
 
-  const { data: invoiceableSelections = [] } = useQuery<any[]>({
+  const { data: invoiceableSelections = [], isLoading: selectionsLoading } = useQuery<any[]>({
     queryKey: [`/api/projects/${selectedProjectId}/selection-options/invoiceable`],
     enabled: !!selectedProjectId && invoiceType === "cost_plus",
   });
@@ -477,7 +477,7 @@ export default function ClientInvoiceDetail() {
     queryKey: ["/api/cost-codes"],
   });
 
-  const { data: estimateItems = [] } = useQuery<EstimateItem[]>({
+  const { data: estimateItems = [], isLoading: estimateItemsLoading } = useQuery<EstimateItem[]>({
     queryKey: [`/api/estimates/${selectedEstimateId}/items`],
     enabled: !!selectedEstimateId,
   });
@@ -702,13 +702,37 @@ export default function ClientInvoiceDetail() {
   // revised here would double-count approved variations on the invoice.
   // Surfaces that need the revised total (Project Total panel, project header)
   // call /api/projects/:id/contract-metrics or use useProjectMetrics.
-  // Read the LIVE original contract price (computed from the selected estimate)
-  // rather than the stamped project.contractPrice snapshot, so progress claims
-  // track estimate edits while approved and stay correct once locked.
-  const getEffectiveContractPrice = () =>
-    (contractMetrics?.originalContractPriceIncGstCents
+  // Progress claims are only available once the project's selected estimate is
+  // marked as Contract — a draft/approved estimate isn't a contract yet, so
+  // there is nothing to claim against.
+  const selectedProjectEstimate = estimates.find(
+    (e: any) => e.id === (currentProject as any)?.selectedEstimateId
+  );
+  const hasContractEstimate = (selectedProjectEstimate as any)?.status === "contract";
+
+  // Contract price for claims:
+  // - DRAFT invoices read the LIVE original contract price (computed from the
+  //   contract estimate) so claims track estimate edits until the invoice is sent.
+  // - SENT/PAID invoices read the price stamped into lockedContractPrice at
+  //   send time (server-side), so a later estimate edit can never silently
+  //   change an invoice the client has already received.
+  const getEffectiveContractPrice = () => {
+    if (invoice && invoice.status !== "draft" && invoice.lockedContractPrice != null) {
+      return invoice.lockedContractPrice;
+    }
+    return (contractMetrics?.originalContractPriceIncGstCents
       ?? (currentProject as any)?.contractPrice
       ?? null);
+  };
+
+  // True when the live contract price has drifted from what this (sent)
+  // invoice was locked at — surfaced as a warning banner in the claims section.
+  const contractPriceDrifted =
+    !!invoice &&
+    invoice.status !== "draft" &&
+    invoice.lockedContractPrice != null &&
+    contractMetrics?.originalContractPriceIncGstCents != null &&
+    contractMetrics.originalContractPriceIncGstCents !== invoice.lockedContractPrice;
 
   // ── Closing-claim true-up ─────────────────────────────────────────────────
   // Progress claims are percentage-based and each row is rounded to the nearest
@@ -871,17 +895,164 @@ export default function ClientInvoiceDetail() {
     setContractClaimRows((prev) => prev.filter((row) => row.id !== id));
   };
 
-  const calculateGST = () => {
-    const subtotal = calculateSubtotal();
-    const markupVal = calculateMarkup();
-    return (subtotal + markupVal) * 0.1;
+  // GST and grand total are derived from the per-line breakdown (defined just
+  // below) so non-taxable custom lines carry no GST anywhere — footer, stored
+  // totals, PDF, and Xero all agree by construction.
+  const calculateGST = () => breakdownTotals(buildInvoiceLineBreakdown()).gstAmount / 100;
+
+  const calculateTotal = () => breakdownTotals(buildInvoiceLineBreakdown()).totalAmount / 100;
+
+  // ── Line breakdown snapshot ────────────────────────────────────────────────
+  // The single per-line money source for the saved snapshot (`lineBreakdown`),
+  // the stored header totals, the summary panel, and the PDF. Everything is
+  // integer cents; ex + gst always equals inc on every line, so the header
+  // totals derived from this can never drift from the lines — and the Xero
+  // push (which materialises its line items from the saved snapshot) always
+  // reconciles to the invoice total to the cent.
+  type BreakdownLine = {
+    source: "contract" | "variation" | "allowance" | "labour" | "bill" | "selection" | "markup" | "custom";
+    description: string;
+    amountExCents: number;
+    gstCents: number;
+    amountIncCents: number;
+    taxable: boolean;
+    accountCode?: string | null;
+    // PDF-only extras (stripped by the server's Zod schema on save)
+    label?: string;
+    pdfDescription?: string;
+    claimPct?: number;
   };
 
-  const calculateTotal = () => calculateSubtotal() + calculateMarkup() + calculateGST();
+  // Split an inc-GST cents amount into ex + gst (claims are stored inc GST).
+  const splitInc = (incCents: number) => {
+    const ex = Math.round(incCents / (1 + GST_RATE));
+    return { ex, gst: incCents - ex };
+  };
+  // GST on top of an ex-GST cents amount (cost-plus sources + custom lines).
+  const gstOnEx = (exCents: number, taxable: boolean) =>
+    taxable ? Math.round(exCents * GST_RATE) : 0;
 
-  const amountExTax = () => calculateSubtotal() + calculateMarkup();
-  const amountTax = () => calculateGST();
-  const amountIncTax = () => calculateTotal();
+  const buildInvoiceLineBreakdown = (): BreakdownLine[] => {
+    const lines: BreakdownLine[] = [];
+
+    if (invoiceType === "progress_payments") {
+      const contractRowCents = getContractClaimRowCents();
+      for (const row of contractClaimRows) {
+        if (!baseContractCents || !row.claimPercent) continue;
+        const inc = contractRowCents[row.id] ?? 0;
+        const { ex, gst } = splitInc(inc);
+        lines.push({
+          source: "contract",
+          description: `${row.name || "Contract Claim"}${row.description ? ` — ${row.description}` : ""} (${row.claimPercent}%)`,
+          amountExCents: ex, gstCents: gst, amountIncCents: inc, taxable: true,
+          label: row.name || "Contract Claim", pdfDescription: row.description, claimPct: row.claimPercent,
+        });
+      }
+      for (const v of getSelectedVariations()) {
+        const pct = variationClaims[v.id] ?? 100;
+        const inc = getVariationClaimCents(v);
+        const { ex, gst } = splitInc(inc);
+        lines.push({
+          source: "variation",
+          description: `Variation ${v.variationNumber || ""}${v.name ? `: ${v.name}` : ""} (${pct}%)`,
+          amountExCents: ex, gstCents: gst, amountIncCents: inc, taxable: true,
+          label: `Variation ${v.variationNumber || ""}`, pdfDescription: v.name || undefined, claimPct: pct,
+        });
+      }
+      for (const item of getSelectedAllowanceItems()) {
+        const pct = allowanceClaims[item.id] ?? 100;
+        const inc = getAllowanceClaimCents(item);
+        const { ex, gst } = splitInc(inc);
+        lines.push({
+          source: "allowance",
+          description: `Allowance — ${item.name || ""} (${pct}%)`,
+          amountExCents: ex, gstCents: gst, amountIncCents: inc, taxable: true,
+          label: `Allowance - ${item.name || ""}`, claimPct: pct,
+        });
+      }
+    } else {
+      // Cost plus. Labour/bills/selections feed the ex-GST base (mirrors
+      // calculateSubtotal) with GST added on the client invoice.
+      const selectedTimesheets = getSelectedTimesheets();
+      if (selectedTimesheets.length > 0) {
+        const ex = calculateLabourTotal();
+        const gst = gstOnEx(ex, true);
+        lines.push({
+          source: "labour",
+          description: `Labour — ${selectedTimesheets.length} timesheet${selectedTimesheets.length === 1 ? "" : "s"}`,
+          amountExCents: ex, gstCents: gst, amountIncCents: ex + gst, taxable: true,
+          label: "Labour",
+        });
+      }
+      for (const bill of getSelectedBills()) {
+        const ex = bill.total;
+        const gst = gstOnEx(ex, true);
+        const supplierName = (bill as any).supplierName as string | undefined;
+        lines.push({
+          source: "bill",
+          description: `${supplierName || "Bill"}${bill.billNumber ? ` — ${bill.billNumber}` : ""}`,
+          amountExCents: ex, gstCents: gst, amountIncCents: ex + gst, taxable: true,
+          label: supplierName || "Bill", pdfDescription: bill.billNumber || undefined,
+        });
+      }
+      for (const o of getSelectedSelectionOptions()) {
+        const ex = o.totalCost || 0;
+        const gst = gstOnEx(ex, true);
+        lines.push({
+          source: "selection",
+          description: `Selection — ${o.name || ""}`,
+          amountExCents: ex, gstCents: gst, amountIncCents: ex + gst, taxable: true,
+          label: `Selection - ${o.name || ""}`,
+        });
+      }
+      const markupEx = Math.round(calculateMarkup() * 100);
+      if (markupEx !== 0) {
+        const gst = gstOnEx(markupEx, true);
+        lines.push({
+          source: "markup",
+          description: `Builder's margin (${form.watch("markupPercent") || 0}%)`,
+          amountExCents: markupEx, gstCents: gst, amountIncCents: markupEx + gst, taxable: true,
+          label: "Builder's margin",
+        });
+      }
+    }
+
+    // Custom lines (both methods). Prices are entered EX GST; GST applies only
+    // when the line is taxable — this is the single GST convention (the row
+    // display, footer, PDF, and Xero all derive from these same cents).
+    for (const line of customLines) {
+      const ex = Math.round(line.totalPrice * 100);
+      const gst = gstOnEx(ex, line.taxable);
+      lines.push({
+        source: "custom",
+        description: line.name || line.description || "Custom Item",
+        amountExCents: ex, gstCents: gst, amountIncCents: ex + gst, taxable: line.taxable,
+        accountCode: line.xeroAccountCode || null,
+        label: line.name || line.description || "Custom Item",
+        pdfDescription: line.name ? line.description || undefined : undefined,
+      });
+    }
+
+    return lines;
+  };
+
+  // Header totals derived from the breakdown so lines and totals can never
+  // disagree. `subtotal` excludes the markup line (stored separately in
+  // `markupAmount`), matching the existing schema semantics.
+  const breakdownTotals = (lines: BreakdownLine[]) => {
+    const subtotal = lines.filter((l) => l.source !== "markup").reduce((s, l) => s + l.amountExCents, 0);
+    const markupAmount = lines.filter((l) => l.source === "markup").reduce((s, l) => s + l.amountExCents, 0);
+    const gstAmount = lines.reduce((s, l) => s + l.gstCents, 0);
+    const totalAmount = lines.reduce((s, l) => s + l.amountIncCents, 0);
+    return { subtotal, markupAmount, gstAmount, totalAmount };
+  };
+
+  const amountExTax = () => {
+    const t = breakdownTotals(buildInvoiceLineBreakdown());
+    return (t.subtotal + t.markupAmount) / 100;
+  };
+  const amountTax = () => breakdownTotals(buildInvoiceLineBreakdown()).gstAmount / 100;
+  const amountIncTax = () => breakdownTotals(buildInvoiceLineBreakdown()).totalAmount / 100;
 
   const formatCurrency = (amount: number) => {
     const isWholeNumber = amount % 1 === 0;
@@ -967,26 +1138,41 @@ export default function ClientInvoiceDetail() {
 
   // ── mutations ─────────────────────────────────────────────────────────────────
 
-  const buildInvoicePayload = (data: InvoiceFormData) => ({
-    projectId: data.projectId,
-    invoiceNumber: data.invoiceNumber || undefined,
-    name: data.name,
-    invoiceDate: data.invoiceDate,
-    dueDate: data.dueDate,
-    invoicingMethod: invoiceType,
-    markupPercent: data.markupPercent,
-    introductionText: data.introductionText,
-    closingText: data.closingText,
-    termsAndConditions: termsAndConditions || null,
-    subtotal: Math.round(calculateSubtotal() * 100),
-    markupAmount: Math.round(calculateMarkup() * 100),
-    gstAmount: Math.round(calculateGST() * 100),
-    totalAmount: Math.round(calculateTotal() * 100),
-    columnConfig: columnConfig,
-    showAmountsIncTax: showAmountsIncTax,
-    contractClaimRows: contractClaimRows,
-    sendToXero: sendToXero,
-  });
+  const buildInvoicePayload = (data: InvoiceFormData) => {
+    // Header totals and the persisted snapshot come from the SAME per-line
+    // cents, so stored totals always equal the sum of the stored lines.
+    const lineBreakdown = buildInvoiceLineBreakdown();
+    const totals = breakdownTotals(lineBreakdown);
+    return {
+      projectId: data.projectId,
+      invoiceNumber: data.invoiceNumber || undefined,
+      name: data.name,
+      invoiceDate: data.invoiceDate,
+      dueDate: data.dueDate,
+      invoicingMethod: invoiceType,
+      markupPercent: data.markupPercent,
+      introductionText: data.introductionText,
+      closingText: data.closingText,
+      termsAndConditions: termsAndConditions || null,
+      subtotal: totals.subtotal,
+      markupAmount: totals.markupAmount,
+      gstAmount: totals.gstAmount,
+      totalAmount: totals.totalAmount,
+      lineBreakdown: lineBreakdown.map((l) => ({
+        source: l.source,
+        description: l.description,
+        amountExCents: l.amountExCents,
+        gstCents: l.gstCents,
+        amountIncCents: l.amountIncCents,
+        taxable: l.taxable,
+        accountCode: l.accountCode ?? null,
+      })),
+      columnConfig: columnConfig,
+      showAmountsIncTax: showAmountsIncTax,
+      contractClaimRows: contractClaimRows,
+      sendToXero: sendToXero,
+    };
+  };
 
   const openXeroLinkModal = (error: any, retryFn: () => Promise<void>) => {
     const payload = error?.payload;
@@ -999,71 +1185,56 @@ export default function ClientInvoiceDetail() {
     return false;
   };
 
+  // Child rows for the transactional save — the FULL current selection (the
+  // server replaces children wholesale inside one DB transaction, so a
+  // mid-save failure can never leave a half-saved invoice).
+  const buildInvoiceChildren = () => ({
+    items: customLines.map((item, i) => ({
+      name: item.name,
+      description: item.description,
+      quantity: item.quantity,
+      unitPrice: Math.round(item.unitPrice * 100),
+      taxable: item.taxable,
+      sortOrder: i,
+      unit: item.unit || null,
+      costCodeId: item.costCodeId || null,
+      xeroAccountCode: item.xeroAccountCode || null,
+    })),
+    variations: selectedVariationIds.map((variationId) => ({
+      variationId,
+      claimPercent: variationClaims[variationId] ?? 100,
+    })),
+    allowances: selectedAllowanceIds.map((estimateItemId) => ({
+      estimateItemId,
+      claimPercent: allowanceClaims[estimateItemId] ?? 100,
+    })),
+    bills: invoiceType === "cost_plus" ? selectedBillIds : [],
+    timesheets: invoiceType === "cost_plus" ? selectedTimesheetIds : [],
+    selections: invoiceType === "cost_plus" ? selectedSelectionOptionIds : [],
+  });
+
+  // Refetch the invoice's children after a wholesale save (row ids change).
+  const invalidateInvoiceChildQueries = (invoiceId: string) => {
+    for (const child of ["items", "variations", "allowances", "bills", "timesheets", "selections", "payments"]) {
+      queryClient.invalidateQueries({ queryKey: [`/api/client-invoices/${invoiceId}/${child}`] });
+    }
+  };
+
   const createMutation = useMutation({
     mutationFn: async (data: InvoiceFormData) => {
+      const payload = buildInvoicePayload(data);
       const invoiceData = {
-        ...buildInvoicePayload(data),
+        ...payload,
         paidAmount: 0,
-        balanceAmount: Math.round(calculateTotal() * 100),
+        balanceAmount: payload.totalAmount,
         status: "draft",
       };
 
-      const newInvoice = (await apiRequest("/api/client-invoices", "POST", invoiceData)) as ClientInvoice;
-
-      for (let i = 0; i < customLines.length; i++) {
-        const item = customLines[i];
-        await apiRequest(`/api/client-invoices/${newInvoice.id}/items`, "POST", {
-          invoiceId: newInvoice.id,
-          name: item.name,
-          description: item.description,
-          quantity: item.quantity,
-          unitPrice: Math.round(item.unitPrice * 100),
-          totalPrice: Math.round(item.totalPrice * 100),
-          taxable: item.taxable,
-          sortOrder: i,
-          unit: item.unit || null,
-          costCodeId: item.costCodeId || null,
-          xeroAccountCode: item.xeroAccountCode || null,
-        });
-      }
-
-
-      for (const variationId of selectedVariationIds) {
-        await apiRequest(`/api/client-invoices/${newInvoice.id}/variations`, "POST", {
-          invoiceId: newInvoice.id,
-          variationId,
-          claimPercent: variationClaims[variationId] ?? 100,
-        });
-      }
-
-      for (const estimateItemId of selectedAllowanceIds) {
-        await apiRequest(`/api/client-invoices/${newInvoice.id}/allowances`, "POST", {
-          invoiceId: newInvoice.id,
-          estimateItemId,
-          claimPercent: allowanceClaims[estimateItemId] ?? 100,
-        });
-      }
-
-      if (invoiceType === "cost_plus") {
-        for (const billId of selectedBillIds) {
-          await apiRequest(`/api/client-invoices/${newInvoice.id}/bills`, "POST", {
-            invoiceId: newInvoice.id,
-            billId,
-          });
-        }
-        for (const timesheetId of selectedTimesheetIds) {
-          await apiRequest(`/api/client-invoices/${newInvoice.id}/timesheets`, "POST", {
-            invoiceId: newInvoice.id,
-            timesheetId,
-          });
-        }
-        for (const selectionOptionId of selectedSelectionOptionIds) {
-          await apiRequest(`/api/client-invoices/${newInvoice.id}/selections`, "POST", {
-            invoiceId: newInvoice.id,
-            selectionOptionId,
-          });
-        }
-      }
+      // One request, one DB transaction — invoice + all child rows.
+      const newInvoice = (await apiRequest("/api/client-invoices/full", "POST", {
+        invoice: invoiceData,
+        ...buildInvoiceChildren(),
+      })) as ClientInvoice;
 
       return newInvoice;
     },
@@ -1096,7 +1267,7 @@ export default function ClientInvoiceDetail() {
           handleCancel();
         } catch (xeroErr: any) {
           if (!openXeroLinkModal(xeroErr, doPush)) {
-            toast({ title: "Created, but Xero push failed", description: xeroErr.message || "Invoice saved — you can push to Xero manually", variant: "destructive" });
+            toast({ title: "Created, but Xero push failed", description: xeroErr?.payload?.message || xeroErr.message || "Invoice saved — you can push to Xero manually", variant: "destructive" });
             handleCancel();
           }
           // if modal opened, stay on page so user can link and retry
@@ -1116,93 +1287,21 @@ export default function ClientInvoiceDetail() {
 
   const updateMutation = useMutation({
     mutationFn: async (data: InvoiceFormData) => {
+      const payload = buildInvoicePayload(data);
       const invoiceData = {
-        ...buildInvoicePayload(data),
+        ...payload,
         paidAmount: invoice?.paidAmount || 0,
-        balanceAmount:
-          Math.round(calculateTotal() * 100) - (invoice?.paidAmount || 0),
+        balanceAmount: payload.totalAmount - (invoice?.paidAmount || 0),
       };
 
+      // One request, one DB transaction — invoice + all child rows replaced
+      // wholesale. (The old diff-per-row flow also never synced variation or
+      // allowance links on update at all.)
       const updatedInvoice = (await apiRequest(
-        `/api/client-invoices/${effectiveInvoiceId}`,
-        "PATCH",
-        invoiceData
+        `/api/client-invoices/${effectiveInvoiceId}/full`,
+        "PUT",
+        { invoice: invoiceData, ...buildInvoiceChildren() }
       )) as ClientInvoice;
-
-      // Sync custom lines
-      const existingIds = existingCustomLines.map((item) => item.id);
-      const currentIds = customLines.map((item) => item.id).filter(Boolean);
-      for (const itemId of existingIds.filter((id) => !currentIds.includes(id))) {
-        await apiRequest(`/api/client-invoice-items/${itemId}`, "DELETE");
-      }
-      for (let i = 0; i < customLines.length; i++) {
-        const item = customLines[i];
-        const itemData = {
-          invoiceId: effectiveInvoiceId,
-          name: item.name,
-          description: item.description,
-          quantity: item.quantity,
-          unitPrice: Math.round(item.unitPrice * 100),
-          totalPrice: Math.round(item.totalPrice * 100),
-          taxable: item.taxable,
-          sortOrder: i,
-          unit: item.unit || null,
-          costCodeId: item.costCodeId || null,
-          xeroAccountCode: item.xeroAccountCode || null,
-        };
-        if (item.id) {
-          await apiRequest(`/api/client-invoice-items/${item.id}`, "PATCH", itemData);
-        } else {
-          await apiRequest(
-            `/api/client-invoices/${effectiveInvoiceId}/items`,
-            "POST",
-            itemData
-          );
-        }
-      }
-
-      // Sync cost-plus junctions: delete old, re-add current selection
-      if (invoiceType === "cost_plus") {
-        // Bills: delete removed
-        for (const lb of linkedBills) {
-          if (!selectedBillIds.includes(lb.billId)) {
-            await apiRequest(`/api/invoice-bills/${lb.id}`, "DELETE");
-          }
-        }
-        for (const billId of selectedBillIds) {
-          if (!linkedBills.find((lb: any) => lb.billId === billId)) {
-            await apiRequest(`/api/client-invoices/${effectiveInvoiceId}/bills`, "POST", {
-              invoiceId: effectiveInvoiceId, billId,
-            });
-          }
-        }
-        // Timesheets: delete removed
-        for (const lt of linkedTimesheets) {
-          if (!selectedTimesheetIds.includes(lt.timesheetId)) {
-            await apiRequest(`/api/invoice-timesheets/${lt.id}`, "DELETE");
-          }
-        }
-        for (const timesheetId of selectedTimesheetIds) {
-          if (!linkedTimesheets.find((lt: any) => lt.timesheetId === timesheetId)) {
-            await apiRequest(`/api/client-invoices/${effectiveInvoiceId}/timesheets`, "POST", {
-              invoiceId: effectiveInvoiceId, timesheetId,
-            });
-          }
-        }
-        // Selections: delete removed
-        for (const ls of linkedSelections) {
-          if (!selectedSelectionOptionIds.includes(ls.selectionOptionId)) {
-            await apiRequest(`/api/invoice-selections/${ls.id}`, "DELETE");
-          }
-        }
-        for (const selectionOptionId of selectedSelectionOptionIds) {
-          if (!linkedSelections.find((ls: any) => ls.selectionOptionId === selectionOptionId)) {
-            await apiRequest(`/api/client-invoices/${effectiveInvoiceId}/selections`, "POST", {
-              invoiceId: effectiveInvoiceId, selectionOptionId,
-            });
-          }
-        }
-      }
 
       return updatedInvoice;
     },
@@ -1211,6 +1310,7 @@ export default function ClientInvoiceDetail() {
       queryClient.invalidateQueries({
         queryKey: [`/api/client-invoices/${effectiveInvoiceId}`],
       });
+      if (effectiveInvoiceId) invalidateInvoiceChildQueries(effectiveInvoiceId);
       if (user?.id) {
         logActivity({
           projectId: inv.projectId,
@@ -1242,7 +1342,7 @@ export default function ClientInvoiceDetail() {
           handleCancel();
         } catch (xeroErr: any) {
           if (!openXeroLinkModal(xeroErr, doPush)) {
-            toast({ title: "Saved, but Xero sync failed", description: xeroErr.message || "Unknown Xero error", variant: "destructive" });
+            toast({ title: "Saved, but Xero sync failed", description: xeroErr?.payload?.message || xeroErr.message || "Unknown Xero error", variant: "destructive" });
             handleCancel();
           }
           // if modal opened, stay on page so user can link and retry
@@ -1283,25 +1383,21 @@ export default function ClientInvoiceDetail() {
         notes: data.notes,
       };
 
+      // Clamp to the outstanding balance — an overpayment is almost always a
+      // typo, and it would flip the invoice to "paid" with a negative residual.
+      const outstandingCents = Math.max(0, (invoice?.totalAmount || 0) - (invoice?.paidAmount || 0));
+      if (paymentData.amount > outstandingCents) {
+        throw new Error(`Payment is more than the outstanding balance (${formatCurrency(outstandingCents / 100)})`);
+      }
+
+      // The server recomputes paidAmount/balanceAmount/status from the payment
+      // rows when the payment is created (single writer) — no client-side
+      // PATCH of paid state.
       const newPayment = (await apiRequest(
         `/api/client-invoices/${effectiveInvoiceId}/payments`,
         "POST",
         paymentData
       )) as ClientInvoicePayment;
-
-      const currentPaid = invoice?.paidAmount || 0;
-      const newPaid = currentPaid + Math.round(data.amount * 100);
-      const total = invoice?.totalAmount || 0;
-      const newBalance = total - newPaid;
-      let newStatus = invoice?.status || "draft";
-      if (newBalance <= 0) newStatus = "paid";
-      else if (newPaid > 0) newStatus = "partial";
-
-      await apiRequest(`/api/client-invoices/${effectiveInvoiceId}`, "PATCH", {
-        paidAmount: newPaid,
-        balanceAmount: newBalance,
-        status: newStatus,
-      });
 
       return newPayment;
     },
@@ -1362,7 +1458,7 @@ export default function ClientInvoiceDetail() {
           handleCancel();
         } catch (xeroErr: any) {
           if (!openXeroLinkModal(xeroErr, doPush)) {
-            toast({ title: "Sent, but Xero sync failed", description: xeroErr.message || "Invoice sent — you can sync to Xero manually", variant: "destructive" });
+            toast({ title: "Sent, but Xero sync failed", description: xeroErr?.payload?.message || xeroErr.message || "Invoice sent — you can sync to Xero manually", variant: "destructive" });
             handleCancel();
           }
           // if modal opened, stay on page so user can link and retry
@@ -1441,7 +1537,7 @@ export default function ClientInvoiceDetail() {
       if (!openXeroLinkModal(error, doPush)) {
         toast({
           title: "Failed to send to Xero",
-          description: error.message || "Could not push invoice to Xero",
+          description: error?.payload?.message || error.message || "Could not push invoice to Xero",
           variant: "destructive",
         });
       }
@@ -1513,51 +1609,19 @@ export default function ClientInvoiceDetail() {
   const contractTotal = calculateContractPrice() / 100;
 
   // T004: Build PDF line items from current invoice state
-  const buildInvoicePdfLineItems = () => {
-    const lineItems: Array<{ label: string; description?: string; claimPct?: number; amountExTax: number; gst: number; amountIncTax: number }> = [];
-    const GST = 0.1;
-    if (invoiceType === "progress_payments") {
-      // Contract claim rows (closing row trued up to the exact remaining balance)
-      const contractRowCents = getContractClaimRowCents();
-      for (const row of contractClaimRows) {
-        if (!baseContractCents || !row.claimPercent) continue;
-        const incTax = contractRowCents[row.id] ?? 0;
-        const exTax = Math.round(incTax / (1 + GST));
-        const gst = incTax - exTax;
-        lineItems.push({ label: row.name || "Contract Claim", description: row.description, claimPct: row.claimPercent, amountExTax: exTax, gst, amountIncTax: incTax });
-      }
-      // Selected variations (closing claim trued up)
-      for (const v of getSelectedVariations()) {
-        const pct = variationClaims[v.id] ?? 100;
-        const incTax = getVariationClaimCents(v);
-        const exTax = Math.round(incTax / (1 + GST));
-        const gst = incTax - exTax;
-        lineItems.push({ label: `Variation ${v.variationNumber || ""}`, description: v.name || undefined, claimPct: pct, amountExTax: exTax, gst, amountIncTax: incTax });
-      }
-      // Selected allowances (closing claim trued up)
-      for (const item of getSelectedAllowanceItems()) {
-        const pct = allowanceClaims[item.id] ?? 100;
-        const incTax = getAllowanceClaimCents(item);
-        const exTax = Math.round(incTax / (1 + GST));
-        const gst = incTax - exTax;
-        lineItems.push({ label: `Allowance - ${item.name || ""}`, claimPct: pct, amountExTax: exTax, gst, amountIncTax: incTax });
-      }
-    } else {
-      // Bills
-      for (const bill of getSelectedBills()) {
-        const incTax = bill.total;
-        const exTax = Math.round(incTax / (1 + GST));
-        lineItems.push({ label: bill.supplierName || "Bill", description: bill.billNumber || undefined, amountExTax: exTax, gst: incTax - exTax, amountIncTax: incTax });
-      }
-    }
-    // Custom lines (always)
-    for (const line of customLines) {
-      const exTax = Math.round(line.totalPrice * 100);
-      const gst = Math.round(exTax * GST);
-      lineItems.push({ label: line.description || "Custom Item", amountExTax: exTax, gst, amountIncTax: exTax + gst });
-    }
-    return lineItems;
-  };
+  // PDF rows come from the same breakdown as the saved snapshot/totals/Xero,
+  // so every line whose money is in the total appears on the PDF (previously
+  // cost-plus labour, selections, and markup were omitted while their amounts
+  // stayed in the totals) and per-line `taxable` is honoured.
+  const buildInvoicePdfLineItems = () =>
+    buildInvoiceLineBreakdown().map((l) => ({
+      label: l.label || l.description,
+      description: l.pdfDescription,
+      claimPct: l.claimPct,
+      amountExTax: l.amountExCents,
+      gst: l.gstCents,
+      amountIncTax: l.amountIncCents,
+    }));
 
   const handleDownloadInvoicePdf = async () => {
     setInvoicePdfGenerating(true);
@@ -2283,13 +2347,48 @@ export default function ClientInvoiceDetail() {
                       </div>{/* end contract price header */}
 
                       <div className="px-4 py-3 space-y-3">
-                        {/* Locked contract price display (read-only — sourced from approved estimate) */}
+                        {/* Progress claims need a contract: gate on the project's
+                            selected estimate being marked as Contract. */}
+                        {!hasContractEstimate && (
+                          <div
+                            className="flex items-start gap-2 rounded-md border px-3 py-2 text-sm"
+                            style={{ borderColor: "hsl(var(--amber))", backgroundColor: "hsl(var(--amber-light))" }}
+                            data-testid="banner-no-contract-estimate"
+                          >
+                            <Lock className="w-4 h-4 mt-0.5 shrink-0" style={{ color: "hsl(var(--amber))" }} />
+                            <span>
+                              Progress claims need a contract. Mark this project's estimate as{" "}
+                              <strong>Contract</strong> in the Estimates tab to enable claiming.
+                            </span>
+                          </div>
+                        )}
+
+                        {/* Sent invoices are locked to the contract price at send time —
+                            warn when the live estimate has since drifted. */}
+                        {contractPriceDrifted && (
+                          <div
+                            className="flex items-start gap-2 rounded-md border px-3 py-2 text-sm"
+                            style={{ borderColor: "hsl(var(--coral))", backgroundColor: "hsl(var(--coral-light))" }}
+                            data-testid="banner-contract-price-drift"
+                          >
+                            <Lock className="w-4 h-4 mt-0.5 shrink-0" style={{ color: "hsl(var(--coral))" }} />
+                            <span>
+                              The contract price has changed since this invoice was sent
+                              (now {formatCurrency((contractMetrics?.originalContractPriceIncGstCents ?? 0) / 100)},
+                              invoiced at {formatCurrency((invoice?.lockedContractPrice ?? 0) / 100)}).
+                              This invoice keeps the amount it was sent with.
+                            </span>
+                          </div>
+                        )}
+
+                        {/* Locked contract price display (read-only — sourced from contract estimate) */}
                         {(() => {
                           const baseCents = getEffectiveContractPrice();
+                          const isLocked = !!invoice && invoice.status !== "draft" && invoice.lockedContractPrice != null;
                           return (
                             <div className="flex items-center gap-3 py-2 border-b">
                               <span className="text-xs text-muted-foreground uppercase tracking-wide">
-                                Locked Contract Price
+                                {isLocked ? "Contract Price (locked at send)" : "Contract Price"}
                               </span>
                               <span className="font-semibold text-sm" data-testid="text-locked-contract-price">
                                 {baseCents ? formatCurrency(baseCents / 100) : (
@@ -2297,7 +2396,7 @@ export default function ClientInvoiceDetail() {
                                 )}
                               </span>
                               <span className="text-xs text-muted-foreground italic">
-                                from approved estimate (inc GST)
+                                {isLocked ? "frozen when the invoice was sent (inc GST)" : "from contract estimate (inc GST)"}
                               </span>
                             </div>
                           );
@@ -2388,12 +2487,14 @@ export default function ClientInvoiceDetail() {
                           </>
                         ) : (
                           <p className="text-sm text-muted-foreground text-center py-2">
-                            No claim rows yet. Click "Add Claim Row" to begin.
+                            {hasContractEstimate
+                              ? 'No claim rows yet. Click "Add Claim Row" to begin.'
+                              : "Claiming is disabled until an estimate is marked as Contract."}
                           </p>
                         )}
 
                         <div className="mt-1 flex items-center gap-3">
-                          {contractClaimRows.length < 5 && (
+                          {contractClaimRows.length < 5 && hasContractEstimate && (
                             <button
                               type="button"
                               onClick={addContractClaimRow}
@@ -3126,7 +3227,7 @@ export default function ClientInvoiceDetail() {
                             <TableHead className="w-36 text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Cost Code</TableHead>
                             <TableHead className="w-20 text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Unit</TableHead>
                             <TableHead className="text-right w-14 text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Qty</TableHead>
-                            <TableHead className="text-right w-24 text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Unit Cost</TableHead>
+                            <TableHead className="text-right w-24 text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Unit Cost (ex GST)</TableHead>
                             <TableHead className="w-28 text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Tax</TableHead>
                             <TableHead className="w-32 text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Account</TableHead>
                             {isColVisible("amountExTax") && (
@@ -3143,8 +3244,10 @@ export default function ClientInvoiceDetail() {
                         </TableHeader>
                         <TableBody>
                           {customLines.map((line, index) => {
-                            const exTax = line.totalPrice / (1 + GST_RATE);
-                            const tax = line.totalPrice - exTax;
+                            // Prices are entered EX GST; GST is added on top for
+                            // taxable lines (same convention as the totals/PDF/Xero).
+                            const exTax = line.totalPrice;
+                            const tax = line.taxable ? line.totalPrice * GST_RATE : 0;
                             return (
                               <TableRow key={index} className="h-9" data-testid={`custom-line-${index}`}>
                                 {/* Visual-only checkbox */}
@@ -3247,17 +3350,17 @@ export default function ClientInvoiceDetail() {
                                 </TableCell>
                                 {isColVisible("amountExTax") && (
                                   <TableCell className="text-right text-sm py-1">
-                                    {line.taxable ? formatCurrency(exTax) : formatCurrency(line.totalPrice)}
+                                    {formatCurrency(exTax)}
                                   </TableCell>
                                 )}
                                 {isColVisible("amountTax") && (
                                   <TableCell className="text-right text-sm py-1">
-                                    {line.taxable ? formatCurrency(tax) : formatCurrency(0)}
+                                    {formatCurrency(tax)}
                                   </TableCell>
                                 )}
                                 {isColVisible("amountIncTax") && (
                                   <TableCell className="text-right text-sm font-medium py-1">
-                                    {formatCurrency(line.totalPrice)}
+                                    {formatCurrency(exTax + tax)}
                                   </TableCell>
                                 )}
                                 <TableCell className="py-1 w-8">
@@ -3705,7 +3808,9 @@ export default function ClientInvoiceDetail() {
           </DialogHeader>
 
           <div className="space-y-2 max-h-96 overflow-y-auto">
-            {variations.length === 0 ? (
+            {variationsLoading ? (
+              <div className="text-center py-8"><Loader2 className="w-5 h-5 animate-spin mx-auto text-muted-foreground" /></div>
+            ) : variations.length === 0 ? (
               <p className="text-sm text-muted-foreground text-center py-8">
                 No variations found for this project.
               </p>
@@ -3797,7 +3902,9 @@ export default function ClientInvoiceDetail() {
           </DialogHeader>
 
           <div className="space-y-2 max-h-96 overflow-y-auto">
-            {getAllowanceItems().length === 0 ? (
+            {estimateItemsLoading ? (
+              <div className="text-center py-8"><Loader2 className="w-5 h-5 animate-spin mx-auto text-muted-foreground" /></div>
+            ) : getAllowanceItems().length === 0 ? (
               <p className="text-sm text-muted-foreground text-center py-8">
                 No allowance items (PC/PS) found in the selected estimate.
               </p>
@@ -4027,7 +4134,9 @@ export default function ClientInvoiceDetail() {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {base.length === 0 ? (
+                        {timesheetsLoading ? (
+                          <TableRow><TableCell colSpan={7} className="text-center py-8"><Loader2 className="w-5 h-5 animate-spin mx-auto text-muted-foreground" /></TableCell></TableRow>
+                        ) : base.length === 0 ? (
                           <TableRow><TableCell colSpan={7} className="text-center text-sm text-muted-foreground py-8">No timesheets found.</TableCell></TableRow>
                         ) : base.map((t: any) => {
                           const isApproved = t.status === "approved";
@@ -4185,7 +4294,9 @@ export default function ClientInvoiceDetail() {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {sorted.length === 0 ? (
+                        {billsLoading ? (
+                          <TableRow><TableCell colSpan={colCount} className="text-center py-8"><Loader2 className="w-5 h-5 animate-spin mx-auto text-muted-foreground" /></TableCell></TableRow>
+                        ) : sorted.length === 0 ? (
                           <TableRow>
                             <TableCell colSpan={colCount} className="text-center text-sm text-muted-foreground py-8">
                               No bills found for this project.
@@ -4285,6 +4396,15 @@ export default function ClientInvoiceDetail() {
                         o.room?.toLowerCase().includes(q)
                       );
                     });
+                    if (selectionsLoading) {
+                      return (
+                        <TableRow>
+                          <TableCell colSpan={6} className="text-center py-8">
+                            <Loader2 className="w-5 h-5 animate-spin mx-auto text-muted-foreground" />
+                          </TableCell>
+                        </TableRow>
+                      );
+                    }
                     if (filtered.length === 0) {
                       return (
                         <TableRow>
@@ -4362,21 +4482,29 @@ export default function ClientInvoiceDetail() {
               <FormField
                 control={paymentForm.control}
                 name="amount"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Amount (AUD)*</FormLabel>
-                    <FormControl>
-                      <Input
-                        type="number"
-                        step="0.01"
-                        {...field}
-                        onChange={(e) => field.onChange(parseFloat(e.target.value) || 0)}
-                        data-testid="input-payment-amount"
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
+                render={({ field }) => {
+                  const outstandingCents = Math.max(0, (invoice?.totalAmount || 0) - (invoice?.paidAmount || 0));
+                  return (
+                    <FormItem>
+                      <FormLabel>Amount (AUD)*</FormLabel>
+                      <FormControl>
+                        <Input
+                          type="number"
+                          step="0.01"
+                          min="0.01"
+                          max={outstandingCents / 100}
+                          {...field}
+                          onChange={(e) => field.onChange(parseFloat(e.target.value) || 0)}
+                          data-testid="input-payment-amount"
+                        />
+                      </FormControl>
+                      <p className="text-xs text-muted-foreground">
+                        Outstanding balance: {formatCurrency(outstandingCents / 100)}
+                      </p>
+                      <FormMessage />
+                    </FormItem>
+                  );
+                }}
               />
 
               <FormField
@@ -4543,7 +4671,7 @@ export default function ClientInvoiceDetail() {
           paymentDetails={companySettings?.paymentDetails}
           termsAndConditions={(invoice as any).termsAndConditions}
           status={invoice?.status}
-          clientEmail={clientContact?.email}
+          clientEmail={clientContact?.email ?? undefined}
           initialSubject={invoiceSendData.initialSubject}
           initialBody={invoiceSendData.initialBody}
         />
@@ -4565,7 +4693,7 @@ export default function ClientInvoiceDetail() {
             try {
               await retry();
             } catch (err: any) {
-              toast({ title: "Xero push failed", description: err.message || "Could not push invoice to Xero", variant: "destructive" });
+              toast({ title: "Xero push failed", description: err?.payload?.message || err.message || "Could not push invoice to Xero", variant: "destructive" });
             }
           }
         }}

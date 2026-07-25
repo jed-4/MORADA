@@ -10,6 +10,7 @@ import {
   type TaskView, type InsertTaskView,
   type Estimate, type InsertEstimate,
   type EstimateItem, type InsertEstimateItem,
+  type AllowanceItem, type InsertAllowanceItem,
   type EstimateGroup, type InsertEstimateGroup,
   type EstimateNote, type InsertEstimateNote,
   type UserRole, type InsertUserRole,
@@ -181,6 +182,28 @@ export class InvalidProposalStateError extends Error {
     this.name = 'InvalidProposalStateError';
   }
 }
+
+// Child rows saved together with a client invoice in one transaction (see
+// createClientInvoiceFull / updateClientInvoiceFull). Payments are excluded —
+// they have their own lifecycle and are never replaced on save.
+export type ClientInvoiceChildren = {
+  items?: Array<{
+    name?: string | null;
+    description?: string;
+    quantity?: number;
+    unitPrice?: number;
+    taxable?: boolean;
+    sortOrder?: number;
+    unit?: string | null;
+    costCodeId?: string | null;
+    xeroAccountCode?: string | null;
+  }>;
+  variations?: Array<{ variationId: string; claimPercent?: number }>;
+  allowances?: Array<{ estimateItemId: string; claimPercent?: number }>;
+  bills?: string[];
+  timesheets?: string[];
+  selections?: string[];
+};
 
 export interface IStorage {
   // User operations
@@ -571,8 +594,8 @@ export interface IStorage {
   expireLapsedTrials(): Promise<{ expired: number }>;
   
   // Company Settings
-  getCompanySettings(): Promise<CompanySettings | undefined>;
-  updateCompanySettings(settings: Partial<InsertCompanySettings>): Promise<CompanySettings | undefined>;
+  getCompanySettings(companyId?: string): Promise<CompanySettings | undefined>;
+  updateCompanySettings(settings: Partial<InsertCompanySettings>, companyId?: string): Promise<CompanySettings | undefined>;
 
   // System Configuration
   getSystemConfiguration(): Promise<SystemConfiguration | undefined>;
@@ -664,6 +687,7 @@ export interface IStorage {
 
   // Supplier Insurances CRUD
   getSupplierInsurances(supplierId: string): Promise<SupplierInsurance[]>;
+  getSupplierInsuranceById(id: string): Promise<SupplierInsurance | undefined>;
   createSupplierInsurance(insurance: InsertSupplierInsurance): Promise<SupplierInsurance>;
   updateSupplierInsurance(id: string, insurance: Partial<InsertSupplierInsurance>): Promise<SupplierInsurance>;
   deleteSupplierInsurance(id: string): Promise<void>;
@@ -671,6 +695,7 @@ export interface IStorage {
 
   // Contact Insurances CRUD (for contacts with contactType='supplier')
   getContactInsurances(contactId: string): Promise<ContactInsurance[]>;
+  getContactInsuranceById(id: string): Promise<ContactInsurance | undefined>;
   createContactInsurance(insurance: InsertContactInsurance): Promise<ContactInsurance>;
   updateContactInsurance(id: string, insurance: Partial<InsertContactInsurance>): Promise<ContactInsurance>;
   deleteContactInsurance(id: string): Promise<void>;
@@ -678,6 +703,7 @@ export interface IStorage {
 
   // Supplier Contacts CRUD
   getSupplierContacts(supplierId: string): Promise<SupplierContact[]>;
+  getSupplierContactById(id: string): Promise<SupplierContact | undefined>;
   createSupplierContact(contact: InsertSupplierContact): Promise<SupplierContact>;
   updateSupplierContact(id: string, contact: Partial<InsertSupplierContact>): Promise<SupplierContact>;
   deleteSupplierContact(id: string): Promise<void>;
@@ -707,6 +733,7 @@ export interface IStorage {
 
   // RFQ Items CRUD
   getRFQItems(rfqId: string): Promise<RfqItem[]>;
+  getRFQItemById(id: string): Promise<RfqItem | undefined>;
   createRFQItem(item: InsertRfqItem): Promise<RfqItem>;
   updateRFQItem(id: string, item: Partial<InsertRfqItem>): Promise<RfqItem | undefined>;
   deleteRFQItem(id: string): Promise<boolean>;
@@ -796,6 +823,7 @@ export interface IStorage {
 
   // Allowance Items (custom lines for PS allowances)
   getAllowanceItems(estimateItemId: string): Promise<AllowanceItem[]>;
+  getAllowanceItemById(id: string): Promise<AllowanceItem | undefined>;
   createAllowanceItem(item: InsertAllowanceItem): Promise<AllowanceItem>;
   updateAllowanceItem(id: string, item: Partial<InsertAllowanceItem>): Promise<AllowanceItem | undefined>;
   deleteAllowanceItem(id: string): Promise<void>;
@@ -810,7 +838,7 @@ export interface IStorage {
   canUserViewTimesheetRates(userId: string): Promise<boolean>;
 
   // Variations CRUD
-  getVariations(projectId?: string, status?: string): Promise<Variation[]>;
+  getVariations(projectId?: string, status?: string, companyId?: string): Promise<Variation[]>;
   getVariation(id: string): Promise<Variation | undefined>;
   createVariation(variation: InsertVariation): Promise<Variation>;
   updateVariation(id: string, variation: Partial<InsertVariation>): Promise<Variation | undefined>;
@@ -823,7 +851,9 @@ export interface IStorage {
   deleteVariationItem(id: string): Promise<boolean>;
 
   // Client Invoices CRUD
-  getClientInvoices(projectId?: string, status?: string): Promise<ClientInvoice[]>;
+  getClientInvoices(projectId?: string, status?: string, companyId?: string): Promise<ClientInvoice[]>;
+  createClientInvoiceFull(invoice: InsertClientInvoice, children: ClientInvoiceChildren): Promise<ClientInvoice>;
+  updateClientInvoiceFull(id: string, invoice: Partial<InsertClientInvoice>, children: ClientInvoiceChildren): Promise<ClientInvoice | undefined>;
   getNextClientInvoiceNumber(prefix: string, startNumber: number, companyId: string): Promise<string>;
   getClientInvoiceNumbersByPrefix(prefix: string, companyId: string): Promise<string[]>;
   getClientInvoice(id: string): Promise<ClientInvoice | undefined>;
@@ -834,12 +864,14 @@ export interface IStorage {
 
   // Client Invoice Items CRUD
   getClientInvoiceItems(invoiceId: string): Promise<ClientInvoiceItem[]>;
+  getClientInvoiceItem(id: string): Promise<ClientInvoiceItem | undefined>;
   createClientInvoiceItem(item: InsertClientInvoiceItem): Promise<ClientInvoiceItem>;
   updateClientInvoiceItem(id: string, item: Partial<InsertClientInvoiceItem>): Promise<ClientInvoiceItem | undefined>;
   deleteClientInvoiceItem(id: string): Promise<boolean>;
 
   // Client Invoice Payments CRUD
   getClientInvoicePayments(invoiceId: string): Promise<ClientInvoicePayment[]>;
+  getClientInvoicePayment(id: string): Promise<ClientInvoicePayment | undefined>;
   createClientInvoicePayment(payment: InsertClientInvoicePayment): Promise<ClientInvoicePayment>;
   deleteClientInvoicePayment(id: string): Promise<boolean>;
   voidClientInvoicePayment(id: string): Promise<ClientInvoicePayment | undefined>;
@@ -863,6 +895,7 @@ export interface IStorage {
 
   // Invoice-Variation Junction Table
   getInvoiceVariations(invoiceId: string): Promise<InvoiceVariation[]>;
+  getInvoiceVariationById(id: string): Promise<InvoiceVariation | undefined>;
   getInvoiceVariationsByProject(projectId: string): Promise<Array<{ variationId: string; invoiceId: string; invoiceNumber: string | null; claimPercent: number }>>;
   createInvoiceVariation(data: InsertInvoiceVariation): Promise<InvoiceVariation>;
   updateInvoiceVariation(id: string, data: Partial<InsertInvoiceVariation>): Promise<InvoiceVariation | undefined>;
@@ -870,6 +903,7 @@ export interface IStorage {
 
   // Invoice-Allowance Junction Table
   getInvoiceAllowances(invoiceId: string): Promise<InvoiceAllowance[]>;
+  getInvoiceAllowanceById(id: string): Promise<InvoiceAllowance | undefined>;
   getInvoiceAllowancesByProject(projectId: string): Promise<Array<{ estimateItemId: string; invoiceId: string; invoiceNumber: string | null; claimPercent: number }>>;
   createInvoiceAllowance(data: InsertInvoiceAllowance): Promise<InvoiceAllowance>;
   updateInvoiceAllowance(id: string, data: Partial<InsertInvoiceAllowance>): Promise<InvoiceAllowance | undefined>;
@@ -887,16 +921,19 @@ export interface IStorage {
 
   // Invoice-Bill Junction Table
   getInvoiceBills(invoiceId: string): Promise<InvoiceBill[]>;
+  getInvoiceBillById(id: string): Promise<InvoiceBill | undefined>;
   createInvoiceBill(data: InsertInvoiceBill): Promise<InvoiceBill>;
   deleteInvoiceBill(id: string): Promise<boolean>;
 
   // Invoice-Timesheet Junction Table
   getInvoiceTimesheets(invoiceId: string): Promise<any[]>;
+  getInvoiceTimesheetById(id: string): Promise<InvoiceTimesheet | undefined>;
   createInvoiceTimesheet(data: InsertInvoiceTimesheet): Promise<InvoiceTimesheet>;
   deleteInvoiceTimesheet(id: string): Promise<boolean>;
 
   // Invoice-Selection Junction Table
   getInvoiceSelections(invoiceId: string): Promise<any[]>;
+  getInvoiceSelectionById(id: string): Promise<InvoiceSelection | undefined>;
   createInvoiceSelection(data: InsertInvoiceSelection): Promise<InvoiceSelection>;
   deleteInvoiceSelection(id: string): Promise<boolean>;
 
@@ -6631,6 +6668,25 @@ export class MemStorage implements IStorage {
   async repairDuplicateScopeStages(): Promise<{ projectsScanned: number; duplicatesRemoved: number }> { return { projectsScanned: 0, duplicatesRemoved: 0 }; }
   async syncClientInvoicePaidStatus(_invoiceId: string): Promise<void> {}
   async healVoidedClientInvoicePaidAmounts(): Promise<{ fixed: number }> { return { fixed: 0 }; }
+
+  // Client-invoice transactional save — MemStorage stubs
+  async createClientInvoiceFull(_invoice: InsertClientInvoice, _children: ClientInvoiceChildren): Promise<ClientInvoice> { throw new Error("Not implemented"); }
+  async updateClientInvoiceFull(_id: string, _invoice: Partial<InsertClientInvoice>, _children: ClientInvoiceChildren): Promise<ClientInvoice | undefined> { return undefined; }
+
+  async getAllowanceItemById(_id: string): Promise<AllowanceItem | undefined> { return undefined; }
+  async getRFQItemById(_id: string): Promise<RfqItem | undefined> { return undefined; }
+  async getSupplierInsuranceById(_id: string): Promise<SupplierInsurance | undefined> { return undefined; }
+  async getContactInsuranceById(_id: string): Promise<ContactInsurance | undefined> { return undefined; }
+  async getSupplierContactById(_id: string): Promise<SupplierContact | undefined> { return undefined; }
+
+  // Client-invoice by-id getters — MemStorage stubs
+  async getClientInvoiceItem(_id: string): Promise<ClientInvoiceItem | undefined> { return undefined; }
+  async getClientInvoicePayment(_id: string): Promise<ClientInvoicePayment | undefined> { return undefined; }
+  async getInvoiceVariationById(_id: string): Promise<InvoiceVariation | undefined> { return undefined; }
+  async getInvoiceAllowanceById(_id: string): Promise<InvoiceAllowance | undefined> { return undefined; }
+  async getInvoiceBillById(_id: string): Promise<InvoiceBill | undefined> { return undefined; }
+  async getInvoiceTimesheetById(_id: string): Promise<InvoiceTimesheet | undefined> { return undefined; }
+  async getInvoiceSelectionById(_id: string): Promise<InvoiceSelection | undefined> { return undefined; }
 
   async ensureAiTables(): Promise<void> {}
   async createAiConversation(_data: InsertAiConversation): Promise<AiConversation> { throw new Error("Not implemented"); }
@@ -13680,8 +13736,34 @@ export class DbStorage implements IStorage {
     return { expired: result.rowCount ?? 0 };
   }
 
-  async getCompanySettings(): Promise<CompanySettings | undefined> { 
-    // Get first (and only) company settings record
+  async getCompanySettings(companyId?: string): Promise<CompanySettings | undefined> {
+    // Per-company row when a companyId is supplied (the /api/company-settings
+    // routes always pass the caller's). Without one (internal service callers),
+    // fall back to the legacy first-row behaviour — single-tenant compatible.
+    if (companyId) {
+      const [scoped] = await db.select().from(schema.companySettings)
+        .where(eq(schema.companySettings.companyId, companyId))
+        .limit(1);
+      if (scoped) return scoped;
+      // Self-heal: claim the legacy unowned (pre-multi-tenant) row for the
+      // first company that reads it; every other company strictly misses and
+      // gets its own row created on first save.
+      const [legacy] = await db.select().from(schema.companySettings)
+        .where(isNull(schema.companySettings.companyId))
+        .limit(1);
+      if (legacy) {
+        const [claimed] = await db.update(schema.companySettings)
+          .set({ companyId, updatedAt: new Date() } as any)
+          .where(and(
+            eq(schema.companySettings.id, legacy.id),
+            isNull(schema.companySettings.companyId),
+          ))
+          .returning();
+        return claimed ?? undefined;
+      }
+      return undefined;
+    }
+    // Legacy: first (historically only) company settings record
     const [settings] = await db.select().from(schema.companySettings).limit(1);
     return settings;
   }
@@ -13759,21 +13841,24 @@ export class DbStorage implements IStorage {
     }
   }
 
-  async updateCompanySettings(settings: Partial<InsertCompanySettings>): Promise<CompanySettings | undefined> {
-    // Get existing settings
-    const existing = await this.getCompanySettings();
-    
+  async updateCompanySettings(settings: Partial<InsertCompanySettings>, companyId?: string): Promise<CompanySettings | undefined> {
+    // Per-company row when a companyId is supplied — an admin of company B can
+    // no longer edit the row every other company reads. Never allow the body
+    // to re-point the row at another company.
+    const { companyId: _ignored, ...safeSettings } = settings as any;
+    const existing = await this.getCompanySettings(companyId);
+
     if (existing) {
       // Update existing record
       const [updated] = await db.update(schema.companySettings)
-        .set({ ...settings, updatedAt: new Date() } as any)
+        .set({ ...safeSettings, updatedAt: new Date() } as any)
         .where(eq(schema.companySettings.id, existing.id))
         .returning();
       return updated;
     } else {
-      // Create new record
+      // Create new record (stamped with the owning company when known)
       const [created] = await db.insert(schema.companySettings)
-        .values(settings as any)
+        .values({ ...safeSettings, ...(companyId ? { companyId } : {}) } as any)
         .returning();
       return created;
     }
@@ -14108,6 +14193,20 @@ export class DbStorage implements IStorage {
     }
   }
 
+
+  async getSupplierInsuranceById(id: string): Promise<SupplierInsurance | undefined> {
+    try {
+      const result = await db.select()
+        .from(schema.supplierInsurances)
+        .where(eq(schema.supplierInsurances.id, id))
+        .limit(1);
+      return result[0];
+    } catch (error) {
+      console.error("Database error in getSupplierInsuranceById:", error);
+      return undefined;
+    }
+  }
+
   async updateSupplierInsurance(id: string, insurance: Partial<InsertSupplierInsurance>): Promise<SupplierInsurance> {
     try {
       const updatedInsurances = await db.update(schema.supplierInsurances)
@@ -14190,6 +14289,20 @@ export class DbStorage implements IStorage {
     } catch (error) {
       console.error("Database error in createContactInsurance:", error);
       throw error;
+    }
+  }
+
+
+  async getContactInsuranceById(id: string): Promise<ContactInsurance | undefined> {
+    try {
+      const result = await db.select()
+        .from(schema.contactInsurances)
+        .where(eq(schema.contactInsurances.id, id))
+        .limit(1);
+      return result[0];
+    } catch (error) {
+      console.error("Database error in getContactInsuranceById:", error);
+      return undefined;
     }
   }
 
@@ -14276,6 +14389,20 @@ export class DbStorage implements IStorage {
     } catch (error) {
       console.error("Database error in createSupplierContact:", error);
       throw error;
+    }
+  }
+
+
+  async getSupplierContactById(id: string): Promise<SupplierContact | undefined> {
+    try {
+      const result = await db.select()
+        .from(schema.supplierContacts)
+        .where(eq(schema.supplierContacts.id, id))
+        .limit(1);
+      return result[0];
+    } catch (error) {
+      console.error("Database error in getSupplierContactById:", error);
+      return undefined;
     }
   }
 
@@ -14749,6 +14876,19 @@ export class DbStorage implements IStorage {
   }
 
   // RFQ Items Methods
+  async getRFQItemById(id: string): Promise<RfqItem | undefined> {
+    try {
+      const result = await db.select()
+        .from(schema.rfqItems)
+        .where(eq(schema.rfqItems.id, id))
+        .limit(1);
+      return result[0];
+    } catch (error) {
+      console.error("Database error in getRFQItemById:", error);
+      return undefined;
+    }
+  }
+
   async getRFQItems(rfqId: string): Promise<RfqItem[]> {
     try {
       const items = await db.select()
@@ -16067,6 +16207,19 @@ export class DbStorage implements IStorage {
     }
   }
 
+  async getAllowanceItemById(id: string): Promise<AllowanceItem | undefined> {
+    try {
+      const result = await db.select()
+        .from(schema.allowanceItems)
+        .where(eq(schema.allowanceItems.id, id))
+        .limit(1);
+      return result[0];
+    } catch (error) {
+      console.error("Database error in getAllowanceItemById:", error);
+      return undefined;
+    }
+  }
+
   async createAllowanceItem(item: InsertAllowanceItem): Promise<AllowanceItem> {
     try {
       const [newItem] = await db.insert(schema.allowanceItems)
@@ -16364,22 +16517,35 @@ export class DbStorage implements IStorage {
   }
 
   // Variations CRUD operations
-  async getVariations(projectId?: string, status?: string): Promise<Variation[]> {
+  async getVariations(projectId?: string, status?: string, companyId?: string): Promise<Variation[]> {
     try {
-      let query = db.select().from(schema.variations);
       const conditions = [];
-      
+
       if (projectId) {
         conditions.push(eq(schema.variations.projectId, projectId));
       }
       if (status) {
         conditions.push(eq(schema.variations.status, status as any));
       }
-      
+
+      // Tenant scoping: variations have no companyId column, so scope via the
+      // owning project. Routes always pass the caller's companyId.
+      if (companyId) {
+        conditions.push(
+          inArray(
+            schema.variations.projectId,
+            db.select({ id: schema.projects.id })
+              .from(schema.projects)
+              .where(eq(schema.projects.companyId, companyId)),
+          ),
+        );
+      }
+
+      let query = db.select().from(schema.variations);
       if (conditions.length > 0) {
         query = query.where(and(...conditions)) as any;
       }
-      
+
       return await query.orderBy(desc(schema.variations.createdAt));
     } catch (error) {
       console.error("Database error in getVariations:", error);
@@ -16486,22 +16652,27 @@ export class DbStorage implements IStorage {
   }
 
   // Client Invoices CRUD
-  async getClientInvoices(projectId?: string, status?: string): Promise<ClientInvoice[]> {
+  async getClientInvoices(projectId?: string, status?: string, companyId?: string): Promise<ClientInvoice[]> {
     try {
       let query = db.select().from(schema.clientInvoices);
       const conditions = [];
-      
+
       if (projectId) {
         conditions.push(eq(schema.clientInvoices.projectId, projectId));
       }
       if (status) {
         conditions.push(eq(schema.clientInvoices.status, status as any));
       }
-      
+      // Tenant scoping — routes always pass the caller's companyId so one
+      // company can never list another company's invoices.
+      if (companyId) {
+        conditions.push(eq(schema.clientInvoices.companyId, companyId));
+      }
+
       if (conditions.length > 0) {
         query = query.where(and(...conditions)) as any;
       }
-      
+
       return await query;
     } catch (error) {
       console.error("Database error in getClientInvoices:", error);
@@ -16624,6 +16795,98 @@ export class DbStorage implements IStorage {
     }
   }
 
+  // Bulk-insert an invoice's child rows inside an open transaction. Bulk (one
+  // INSERT per table, not per row) — Neon round trips are ~400ms from AU.
+  private async insertClientInvoiceChildrenTx(tx: any, invoiceId: string, children: ClientInvoiceChildren): Promise<void> {
+    const items = children.items ?? [];
+    if (items.length > 0) {
+      await tx.insert(schema.clientInvoiceItems).values(items.map((it: any, i: number) => ({
+        invoiceId,
+        name: it.name ?? null,
+        description: it.description ?? "",
+        quantity: it.quantity ?? 1,
+        unitPrice: it.unitPrice ?? 0,
+        // Line invariant enforced here too: totalPrice is always derived.
+        totalPrice: Math.round((it.quantity ?? 1) * (it.unitPrice ?? 0)),
+        taxable: it.taxable ?? true,
+        sortOrder: it.sortOrder ?? i,
+        unit: it.unit ?? null,
+        costCodeId: it.costCodeId ?? null,
+        xeroAccountCode: it.xeroAccountCode ?? null,
+      })));
+    }
+    if ((children.variations ?? []).length > 0) {
+      await tx.insert(schema.invoiceVariations).values(children.variations!.map((v) => ({
+        invoiceId, variationId: v.variationId, claimPercent: v.claimPercent ?? 100,
+      })));
+    }
+    if ((children.allowances ?? []).length > 0) {
+      await tx.insert(schema.invoiceAllowances).values(children.allowances!.map((a) => ({
+        invoiceId, estimateItemId: a.estimateItemId, claimPercent: a.claimPercent ?? 100,
+      })));
+    }
+    if ((children.bills ?? []).length > 0) {
+      await tx.insert(schema.invoiceBills).values(children.bills!.map((billId) => ({ invoiceId, billId })));
+    }
+    if ((children.timesheets ?? []).length > 0) {
+      await tx.insert(schema.invoiceTimesheets).values(children.timesheets!.map((timesheetId) => ({ invoiceId, timesheetId })));
+    }
+    if ((children.selections ?? []).length > 0) {
+      await tx.insert(schema.invoiceSelections).values(children.selections!.map((selectionOptionId) => ({ invoiceId, selectionOptionId })));
+    }
+  }
+
+  // Create an invoice AND all of its child rows in one transaction — either
+  // everything commits or nothing does (the old path was ~15 serial requests
+  // that could fail halfway and leave a half-saved invoice).
+  async createClientInvoiceFull(invoice: InsertClientInvoice, children: ClientInvoiceChildren): Promise<ClientInvoice> {
+    try {
+      // Tenancy: derive companyId from the owning project when absent (same as
+      // createClientInvoice).
+      let values = invoice as any;
+      if (!values.companyId && values.projectId) {
+        const [proj] = await db.select({ companyId: schema.projects.companyId })
+          .from(schema.projects)
+          .where(eq(schema.projects.id, values.projectId))
+          .limit(1);
+        if (proj?.companyId) values = { ...values, companyId: proj.companyId };
+      }
+      return await db.transaction(async (tx) => {
+        const [created] = await tx.insert(schema.clientInvoices).values(values).returning();
+        await this.insertClientInvoiceChildrenTx(tx, created.id, children);
+        return created;
+      });
+    } catch (error) {
+      console.error("Database error in createClientInvoiceFull:", error);
+      throw error;
+    }
+  }
+
+  // Update an invoice and REPLACE its child rows wholesale in one transaction.
+  // Payments are never touched here.
+  async updateClientInvoiceFull(id: string, invoice: Partial<InsertClientInvoice>, children: ClientInvoiceChildren): Promise<ClientInvoice | undefined> {
+    try {
+      return await db.transaction(async (tx) => {
+        const [updated] = await tx.update(schema.clientInvoices)
+          .set({ ...(invoice as any), updatedAt: new Date() })
+          .where(eq(schema.clientInvoices.id, id))
+          .returning();
+        if (!updated) return undefined;
+        await tx.delete(schema.clientInvoiceItems).where(eq(schema.clientInvoiceItems.invoiceId, id));
+        await tx.delete(schema.invoiceVariations).where(eq(schema.invoiceVariations.invoiceId, id));
+        await tx.delete(schema.invoiceAllowances).where(eq(schema.invoiceAllowances.invoiceId, id));
+        await tx.delete(schema.invoiceBills).where(eq(schema.invoiceBills.invoiceId, id));
+        await tx.delete(schema.invoiceTimesheets).where(eq(schema.invoiceTimesheets.invoiceId, id));
+        await tx.delete(schema.invoiceSelections).where(eq(schema.invoiceSelections.invoiceId, id));
+        await this.insertClientInvoiceChildrenTx(tx, id, children);
+        return updated;
+      });
+    } catch (error) {
+      console.error("Database error in updateClientInvoiceFull:", error);
+      throw error;
+    }
+  }
+
   // Client Invoice Items CRUD
   async getClientInvoiceItems(invoiceId: string): Promise<ClientInvoiceItem[]> {
     try {
@@ -16637,10 +16900,29 @@ export class DbStorage implements IStorage {
     }
   }
 
+  async getClientInvoiceItem(id: string): Promise<ClientInvoiceItem | undefined> {
+    try {
+      const result = await db.select()
+        .from(schema.clientInvoiceItems)
+        .where(eq(schema.clientInvoiceItems.id, id))
+        .limit(1);
+      return result[0];
+    } catch (error) {
+      console.error("Database error in getClientInvoiceItem:", error);
+      return undefined;
+    }
+  }
+
   async createClientInvoiceItem(item: InsertClientInvoiceItem): Promise<ClientInvoiceItem> {
     try {
+      // Enforce the line invariant server-side: totalPrice is always derived
+      // from quantity × unitPrice, never trusted from the caller.
+      const values = {
+        ...item,
+        totalPrice: Math.round((item.quantity ?? 1) * (item.unitPrice ?? 0)),
+      };
       const result = await db.insert(schema.clientInvoiceItems)
-        .values(item)
+        .values(values)
         .returning();
       return result[0];
     } catch (error) {
@@ -16651,8 +16933,18 @@ export class DbStorage implements IStorage {
 
   async updateClientInvoiceItem(id: string, item: Partial<InsertClientInvoiceItem>): Promise<ClientInvoiceItem | undefined> {
     try {
+      // Recompute totalPrice from the merged row whenever quantity or unitPrice
+      // is touched (partial PATCHes can't leave totalPrice ≠ qty × unitPrice).
+      let values = { ...item };
+      if (item.quantity !== undefined || item.unitPrice !== undefined || item.totalPrice !== undefined) {
+        const existing = await this.getClientInvoiceItem(id);
+        if (!existing) return undefined;
+        const quantity = item.quantity ?? existing.quantity ?? 1;
+        const unitPrice = item.unitPrice ?? existing.unitPrice ?? 0;
+        values = { ...item, totalPrice: Math.round(quantity * unitPrice) };
+      }
       const result = await db.update(schema.clientInvoiceItems)
-        .set(item)
+        .set(values)
         .where(eq(schema.clientInvoiceItems.id, id))
         .returning();
       return result[0];
@@ -16686,11 +16978,28 @@ export class DbStorage implements IStorage {
     }
   }
 
+  async getClientInvoicePayment(id: string): Promise<ClientInvoicePayment | undefined> {
+    try {
+      const result = await db.select()
+        .from(schema.clientInvoicePayments)
+        .where(eq(schema.clientInvoicePayments.id, id))
+        .limit(1);
+      return result[0];
+    } catch (error) {
+      console.error("Database error in getClientInvoicePayment:", error);
+      return undefined;
+    }
+  }
+
   async createClientInvoicePayment(payment: InsertClientInvoicePayment): Promise<ClientInvoicePayment> {
     try {
       const result = await db.insert(schema.clientInvoicePayments)
         .values(payment)
         .returning();
+      // Recompute the invoice's paid/balance/status from the payment rows —
+      // same single writer that void/delete use, so paidAmount always equals
+      // the sum of non-voided payments (no client-side PATCH needed).
+      if (result[0]?.invoiceId) await this.syncClientInvoicePaidStatus(result[0].invoiceId);
       return result[0];
     } catch (error) {
       console.error("Database error in createClientInvoicePayment:", error);
@@ -16871,6 +17180,19 @@ export class DbStorage implements IStorage {
     }
   }
 
+  async getInvoiceVariationById(id: string): Promise<InvoiceVariation | undefined> {
+    try {
+      const result = await db.select()
+        .from(schema.invoiceVariations)
+        .where(eq(schema.invoiceVariations.id, id))
+        .limit(1);
+      return result[0];
+    } catch (error) {
+      console.error("Database error in getInvoiceVariationById:", error);
+      return undefined;
+    }
+  }
+
   async getInvoiceVariationsByProject(projectId: string): Promise<Array<{ variationId: string; invoiceId: string; invoiceNumber: string | null; claimPercent: number }>> {
     try {
       const rows = await db
@@ -16927,6 +17249,19 @@ export class DbStorage implements IStorage {
   }
 
   // Invoice-Allowance Junction Table
+  async getInvoiceAllowanceById(id: string): Promise<InvoiceAllowance | undefined> {
+    try {
+      const result = await db.select()
+        .from(schema.invoiceAllowances)
+        .where(eq(schema.invoiceAllowances.id, id))
+        .limit(1);
+      return result[0];
+    } catch (error) {
+      console.error("Database error in getInvoiceAllowanceById:", error);
+      return undefined;
+    }
+  }
+
   async getInvoiceAllowances(invoiceId: string): Promise<InvoiceAllowance[]> {
     try {
       return await db.select()
@@ -17082,6 +17417,19 @@ export class DbStorage implements IStorage {
     }
   }
 
+  async getInvoiceBillById(id: string): Promise<InvoiceBill | undefined> {
+    try {
+      const result = await db.select()
+        .from(schema.invoiceBills)
+        .where(eq(schema.invoiceBills.id, id))
+        .limit(1);
+      return result[0];
+    } catch (error) {
+      console.error("Database error in getInvoiceBillById:", error);
+      return undefined;
+    }
+  }
+
   async getInvoiceBills(invoiceId: string): Promise<InvoiceBill[]> {
     try {
       return await db.select()
@@ -17117,6 +17465,19 @@ export class DbStorage implements IStorage {
   }
 
   // Invoice-Timesheet Junction Table
+  async getInvoiceTimesheetById(id: string): Promise<InvoiceTimesheet | undefined> {
+    try {
+      const result = await db.select()
+        .from(schema.invoiceTimesheets)
+        .where(eq(schema.invoiceTimesheets.id, id))
+        .limit(1);
+      return result[0];
+    } catch (error) {
+      console.error("Database error in getInvoiceTimesheetById:", error);
+      return undefined;
+    }
+  }
+
   async getInvoiceTimesheets(invoiceId: string): Promise<any[]> {
     try {
       const rows = await db
@@ -17167,6 +17528,19 @@ export class DbStorage implements IStorage {
   }
 
   // Invoice-Selection Junction Table
+  async getInvoiceSelectionById(id: string): Promise<InvoiceSelection | undefined> {
+    try {
+      const result = await db.select()
+        .from(schema.invoiceSelections)
+        .where(eq(schema.invoiceSelections.id, id))
+        .limit(1);
+      return result[0];
+    } catch (error) {
+      console.error("Database error in getInvoiceSelectionById:", error);
+      return undefined;
+    }
+  }
+
   async getInvoiceSelections(invoiceId: string): Promise<any[]> {
     try {
       const rows = await db

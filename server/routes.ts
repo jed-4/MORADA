@@ -11,7 +11,7 @@ import { sendInvitationEmail, sendClientPortalInviteEmail, initializeEmailServic
 import { sanitizeNoteHtml } from "./utils/sanitizeNoteHtml";
 import { GoogleOAuthService } from "./services/googleOAuthService";
 import { ObjectStorageService } from "./replit_integrations/object_storage";
-import { xeroService, XeroValidationError, type XeroValidationIssue, encryptXeroToken } from "./services/xeroService";
+import { xeroService, XeroValidationError, type XeroValidationIssue, encryptXeroToken, summarizeXeroError } from "./services/xeroService";
 import { enqueueXeroPush } from "./services/xeroPushQueue";
 import { recomputePOStatusFromBills, recomputePOStatusForLinks } from "./services/poStatusFromBills";
 import { applyPOSuggestionsToBill } from "./services/poSuggestions";
@@ -62,6 +62,7 @@ import {
   insertVariationSchema,
   insertVariationItemSchema,
   insertClientInvoiceSchema,
+  invoiceLineBreakdownEntrySchema,
   insertClientInvoiceItemSchema,
   insertClientInvoicePaymentSchema,
   insertBillPaymentSchema,
@@ -420,7 +421,10 @@ export async function pushBillToXeroInternal(
       return { ok: false, status: 404, error: "NOT_FOUND", message: "Bill not found" };
     }
 
-    // Tenant ownership: bill must belong to a project in the requester's company
+    // Tenant ownership: bill must belong to the requester's company — via its
+    // project when linked, otherwise via the bill's own companyId. (Previously
+    // a project-less bill skipped the check entirely and could be pushed into
+    // another company's Xero.)
     if (bill.projectId) {
       const billProject = await storage.getProject(bill.projectId);
       if (!billProject || (billProject as any).companyId !== companyId) {
@@ -429,6 +433,11 @@ export async function pushBillToXeroInternal(
         logOutcome({ ok: false, reason: "FORBIDDEN", message: msg });
         return { ok: false, status: 403, error: "FORBIDDEN", message: msg };
       }
+    } else if ((bill as any).companyId && (bill as any).companyId !== companyId) {
+      const msg = "Bill does not belong to this company";
+      await writeSyncStatus("failed", msg);
+      logOutcome({ ok: false, reason: "FORBIDDEN", message: msg });
+      return { ok: false, status: 403, error: "FORBIDDEN", message: msg };
     }
 
     // A Xero invoice with a payment allocated is locked by Xero: it rejects any
@@ -2964,8 +2973,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/defects", async (req, res) => {
     try {
       const { projectId } = req.query;
+      // Tenant scoping: a projectId must belong to the caller's company; an
+      // omitted projectId previously returned every company's defects.
+      if (projectId) {
+        if (!(await enforceProjectCompany(req, res, projectId as string, "Project not found"))) return;
+      } else if (!(req.user as any)?.companyId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
       const defects = await storage.getDefects(projectId as string | undefined);
-      res.json(defects);
+      const userCompanyId = (req.user as any)?.companyId;
+      const scoped = projectId ? defects : await (async () => {
+        const { projects: projectsTbl } = await import("@shared/schema");
+        const companyProjects = await db.select({ id: projectsTbl.id })
+          .from(projectsTbl).where(eq(projectsTbl.companyId, userCompanyId));
+        const ids = new Set(companyProjects.map((pr: any) => pr.id));
+        return defects.filter((d: any) => ids.has(d.projectId));
+      })();
+      res.json(scoped);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch defects" });
     }
@@ -7341,6 +7365,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/enote-attachments/:attachmentId", requireAuth, async (req, res) => {
     try {
+      // Ownership: attachment → enote → estimate → company.
+      const { enoteAttachments: enoteAttachmentsTbl, estimateEnotes: estimateEnotesTbl } = await import("@shared/schema");
+      const [att] = await db.select().from(enoteAttachmentsTbl)
+        .where(eq(enoteAttachmentsTbl.id, req.params.attachmentId)).limit(1);
+      if (!att) return res.status(404).json({ error: "Attachment not found" });
+      const [enote] = await db.select().from(estimateEnotesTbl)
+        .where(eq(estimateEnotesTbl.id, att.enoteId)).limit(1);
+      if (!enote) return res.status(404).json({ error: "Attachment not found" });
+      if (!(await getOwnedEstimate(req, res, enote.estimateId, "Attachment not found"))) return;
+
       const ok = await storage.deleteEnoteAttachment(req.params.attachmentId);
       if (!ok) return res.status(404).json({ error: "Attachment not found" });
       res.status(204).send();
@@ -7692,6 +7726,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get all scope items for a project
   app.get("/api/projects/:projectId/scope", requireAuth, requireTeamMember, async (req, res) => {
     try {
+      if (!(await enforceProjectCompany(req, res, req.params.projectId, "Project not found"))) return;
       const items = await storage.getScopeItems(req.params.projectId);
       res.json(items);
     } catch (error) {
@@ -7794,7 +7829,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/scope/:id", requireAuth, requireTeamMember, async (req, res) => {
     try {
       const item = await storage.getScopeItem(req.params.id);
-      if (!item) {
+      if (!item || (item as any).companyId !== (req.user as any)?.companyId) {
         return res.status(404).json({ error: "Scope item not found" });
       }
       res.json(item);
@@ -7811,6 +7846,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.log('POST /api/projects/:projectId/scope - req.body:', req.body);
       console.log('POST /api/projects/:projectId/scope - req.user:', req.user);
       
+      if (!(await enforceProjectCompany(req, res, req.params.projectId, "Project not found"))) return;
       const validationResult = insertScopeItemSchema.omit({ projectId: true, companyId: true }).safeParse(req.body);
       if (!validationResult.success) {
         return res.status(400).json({ 
@@ -7836,6 +7872,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Bulk create scope items
   app.post("/api/projects/:projectId/scope/bulk", requireAuth, requireTeamMember, async (req, res) => {
     try {
+      if (!(await enforceProjectCompany(req, res, req.params.projectId, "Project not found"))) return;
       const { items } = req.body;
       if (!Array.isArray(items)) {
         return res.status(400).json({ error: "Items must be an array" });
@@ -7868,6 +7905,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
+      // Ownership: scope items carry companyId directly.
+      const existingScopeItem = await storage.getScopeItem(req.params.id);
+      if (!existingScopeItem || (existingScopeItem as any).companyId !== (req.user as any)?.companyId) {
+        return res.status(404).json({ error: "Scope item not found" });
+      }
+
       const updatedItem = await storage.updateScopeItem(req.params.id, validationResult.data);
       if (!updatedItem) {
         return res.status(404).json({ error: "Scope item not found" });
@@ -7883,6 +7926,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Delete a scope item
   app.delete("/api/scope/:id", requireAuth, requireTeamMember, async (req, res) => {
     try {
+      // Ownership: scope items carry companyId directly.
+      const existingScopeItem = await storage.getScopeItem(req.params.id);
+      if (!existingScopeItem || (existingScopeItem as any).companyId !== (req.user as any)?.companyId) {
+        return res.status(404).json({ error: "Scope item not found" });
+      }
+
       const success = await storage.deleteScopeItem(req.params.id);
       if (!success) {
         return res.status(404).json({ error: "Scope item not found" });
@@ -7902,6 +7951,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "Updates must be an array" });
       }
 
+      // Per-record ownership before writing any order changes.
+      const reorderItems = await Promise.all(updates.map((u: any) => storage.getScopeItem(u.id)));
+      for (const it of reorderItems) {
+        if (!it || (it as any).companyId !== (req.user as any)?.companyId) {
+          return res.status(404).json({ error: "Scope item not found" });
+        }
+      }
+
       await storage.reorderScopeItems(updates);
       res.status(204).send();
     } catch (error) {
@@ -7917,6 +7974,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get all scope stages for a project
   app.get("/api/projects/:projectId/scope-stages", requireAuth, requireTeamMember, async (req, res) => {
     try {
+      if (!(await enforceProjectCompany(req, res, req.params.projectId, "Project not found"))) return;
       const stages = await storage.getScopeStages(req.params.projectId);
       res.json(stages);
     } catch (error) {
@@ -7928,6 +7986,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Create a new scope stage
   app.post("/api/projects/:projectId/scope-stages", requireAuth, requireTeamMember, async (req, res) => {
     try {
+      if (!(await enforceProjectCompany(req, res, req.params.projectId, "Project not found"))) return;
       const validationResult = insertScopeStageSchema.omit({ projectId: true, companyId: true }).safeParse(req.body);
       if (!validationResult.success) {
         return res.status(400).json({ 
@@ -9760,6 +9819,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/objects/company/:companyId/*", requireAuth, async (req: any, res) => {
     try {
       const { companyId } = req.params;
+
+      // Tenant isolation: the company segment in the URL must be the caller's
+      // own company. The storage lookup below strips the segment (the bucket
+      // is flat), so without this check the URL's companyId was cosmetic and
+      // any logged-in user could fetch any company's file by path. 404 (not
+      // 403) so existence is never confirmed to an unauthorized caller.
+      const userCompanyId = req.user?.companyId;
+      if (!userCompanyId || companyId !== userCompanyId) {
+        return res.status(404).json({ error: "Object not found" });
+      }
 
       // Extract the actual object path after company prefix
       const pathAfterCompany = req.path.replace(`/objects/company/${companyId}`, '/objects');
@@ -12881,6 +12950,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!projectId) {
         return res.status(400).json({ error: "projectId is required" });
       }
+      if (!(await enforceProjectCompany(req, res, projectId as string, "Project not found"))) return;
       const selections = await storage.getSelections(projectId as string);
       res.json(selections);
     } catch (error) {
@@ -12894,6 +12964,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!projectId) {
         return res.status(400).json({ error: "projectId is required" });
       }
+      if (!(await enforceProjectCompany(req, res, projectId as string, "Project not found"))) return;
       const selections = await storage.getSelectionsWithOptions(projectId as string);
       res.json(selections);
     } catch (error) {
@@ -12931,6 +13002,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
+      // The target project must belong to the caller's company.
+      if (!(await enforceProjectCompany(req, res, validationResult.data.projectId, "Project not found"))) return;
+
       const selection = await storage.createSelection(validationResult.data);
       res.status(201).json(selection);
     } catch (error) {
@@ -12944,6 +13018,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { id } = req.params;
       const [original] = await db.select().from(selections).where(eq(selections.id, id));
       if (!original) return res.status(404).json({ error: "Selection not found" });
+      // Ownership: selection → project → company (copying reads the source AND
+      // writes new rows into its project).
+      if (!(await enforceProjectCompany(req, res, original.projectId, "Selection not found"))) return;
 
       const opts = await db.select().from(selectionOptions).where(eq(selectionOptions.selectionId, id));
 
@@ -13227,6 +13304,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Selection Options API Routes
   app.get("/api/selections/:selectionId/options", async (req, res) => {
     try {
+      // Ownership: selection → project → company.
+      const parentSelection = await storage.getSelection(req.params.selectionId);
+      if (!parentSelection) return res.status(404).json({ error: "Selection not found" });
+      if (!(await enforceProjectCompany(req, res, parentSelection.projectId, "Selection not found"))) return;
       const options = await storage.getSelectionOptions(req.params.selectionId);
       res.json(options);
     } catch (error) {
@@ -13246,6 +13327,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
           details: fromZodError(validationResult.error).toString() 
         });
       }
+
+      // Ownership: selection → project → company.
+      const parentSelection = await storage.getSelection(req.params.selectionId);
+      if (!parentSelection) return res.status(404).json({ error: "Selection not found" });
+      if (!(await enforceProjectCompany(req, res, parentSelection.projectId, "Selection not found"))) return;
 
       const option = await storage.createSelectionOption(validationResult.data);
       res.status(201).json(option);
@@ -13989,6 +14075,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Supplier Label Assignments
   app.get("/api/suppliers/:id/labels", requireAuth, requireTeamMember, async (req, res) => {
     try {
+      if (!(await getOwnedSupplier(req, res, req.params.id))) return;
       const assignments = await storage.getSupplierLabelAssignments(req.params.id);
       res.json(assignments);
     } catch (error) {
@@ -13998,6 +14085,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.put("/api/suppliers/:id/labels", requireAuth, requireTeamMember, async (req, res) => {
     try {
+      if (!(await getOwnedSupplier(req, res, req.params.id))) return;
       const { labelIds } = req.body;
       if (!Array.isArray(labelIds)) {
         return res.status(400).json({ error: "labelIds must be an array" });
@@ -14012,6 +14100,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Supplier Insurances API Routes
   app.get("/api/suppliers/:id/insurances", requireAuth, requireTeamMember, async (req, res) => {
     try {
+      if (!(await getOwnedSupplier(req, res, req.params.id))) return;
       const insurances = await storage.getSupplierInsurances(req.params.id);
       res.json(insurances);
     } catch (error) {
@@ -14021,6 +14110,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/suppliers/:id/insurances", requireAuth, requireTeamMember, async (req, res) => {
     try {
+      if (!(await getOwnedSupplier(req, res, req.params.id))) return;
       const validationResult = insertSupplierInsuranceSchema.safeParse({
         ...req.body,
         supplierId: req.params.id,
@@ -14049,6 +14139,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
+      // Ownership: insurance → supplier → company
+      const existingSupplierInsurance = await storage.getSupplierInsuranceById(req.params.id);
+      if (!existingSupplierInsurance) return res.status(404).json({ error: "Supplier insurance not found" });
+      if (!(await getOwnedSupplier(req, res, (existingSupplierInsurance as any).supplierId, "Supplier insurance not found"))) return;
+
       const insurance = await storage.updateSupplierInsurance(req.params.id, validationResult.data);
       res.json(insurance);
     } catch (error) {
@@ -14061,6 +14156,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/supplier-insurances/:id", requireAuth, requireTeamMember, async (req, res) => {
     try {
+      // Ownership: insurance → supplier → company
+      const existingSupplierInsurance = await storage.getSupplierInsuranceById(req.params.id);
+      if (!existingSupplierInsurance) return res.status(404).json({ error: "Supplier insurance not found" });
+      if (!(await getOwnedSupplier(req, res, (existingSupplierInsurance as any).supplierId, "Supplier insurance not found"))) return;
+
       await storage.deleteSupplierInsurance(req.params.id);
       res.status(204).send();
     } catch (error) {
@@ -14083,6 +14183,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Contact Insurances API Routes (for contacts with contactType='supplier')
   app.get("/api/contacts/:id/insurances", requireAuth, requireTeamMember, async (req, res) => {
     try {
+      const ownedContact = await storage.getContact(req.params.id, req.user!.companyId!);
+      if (!ownedContact) return res.status(404).json({ error: "Contact not found" });
       const insurances = await storage.getContactInsurances(req.params.id);
       res.json(insurances);
     } catch (error) {
@@ -14092,6 +14194,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/contacts/:id/insurances", requireAuth, requireTeamMember, async (req, res) => {
     try {
+      const ownedContact = await storage.getContact(req.params.id, req.user!.companyId!);
+      if (!ownedContact) return res.status(404).json({ error: "Contact not found" });
       const validationResult = insertContactInsuranceSchema.safeParse({
         ...req.body,
         contactId: req.params.id,
@@ -14120,6 +14224,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
+      // Ownership: insurance → contact → company
+      const existingContactInsurance = await storage.getContactInsuranceById(req.params.id);
+      if (!existingContactInsurance) return res.status(404).json({ error: "Contact insurance not found" });
+      if (!(await storage.getContact((existingContactInsurance as any).contactId, req.user!.companyId!))) {
+        return res.status(404).json({ error: "Contact insurance not found" });
+      }
+
       const insurance = await storage.updateContactInsurance(req.params.id, validationResult.data);
       res.json(insurance);
     } catch (error) {
@@ -14132,6 +14243,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/contact-insurances/:id", requireAuth, requireTeamMember, async (req, res) => {
     try {
+      // Ownership: insurance → contact → company
+      const existingContactInsurance = await storage.getContactInsuranceById(req.params.id);
+      if (!existingContactInsurance) return res.status(404).json({ error: "Contact insurance not found" });
+      if (!(await storage.getContact((existingContactInsurance as any).contactId, req.user!.companyId!))) {
+        return res.status(404).json({ error: "Contact insurance not found" });
+      }
+
       await storage.deleteContactInsurance(req.params.id);
       res.status(204).send();
     } catch (error) {
@@ -14154,6 +14272,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Supplier Contacts API Routes
   app.get("/api/suppliers/:id/contacts", requireAuth, requireTeamMember, async (req, res) => {
     try {
+      if (!(await getOwnedSupplier(req, res, req.params.id))) return;
       const contacts = await storage.getSupplierContacts(req.params.id);
       res.json(contacts);
     } catch (error) {
@@ -14163,6 +14282,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/suppliers/:id/contacts", requireAuth, requireTeamMember, async (req, res) => {
     try {
+      if (!(await getOwnedSupplier(req, res, req.params.id))) return;
       const validationResult = insertSupplierContactSchema.safeParse({
         ...req.body,
         supplierId: req.params.id,
@@ -14191,6 +14311,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
+      // Ownership: supplier contact → supplier → company
+      const existingSupplierContact = await storage.getSupplierContactById(req.params.id);
+      if (!existingSupplierContact) return res.status(404).json({ error: "Supplier contact not found" });
+      if (!(await getOwnedSupplier(req, res, (existingSupplierContact as any).supplierId, "Supplier contact not found"))) return;
+
       const contact = await storage.updateSupplierContact(req.params.id, validationResult.data);
       res.json(contact);
     } catch (error) {
@@ -14203,6 +14328,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/supplier-contacts/:id", requireAuth, requireTeamMember, async (req, res) => {
     try {
+      // Ownership: supplier contact → supplier → company
+      const existingSupplierContact = await storage.getSupplierContactById(req.params.id);
+      if (!existingSupplierContact) return res.status(404).json({ error: "Supplier contact not found" });
+      if (!(await getOwnedSupplier(req, res, (existingSupplierContact as any).supplierId, "Supplier contact not found"))) return;
+
       await storage.deleteSupplierContact(req.params.id);
       res.status(204).send();
     } catch (error) {
@@ -14996,6 +15126,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
+      // Ownership: the target RFQ must belong to the caller's company
+      // (mirrors the rfq-quotes routes below).
+      const parentRfq = await storage.getRFQ(validationResult.data.rfqId);
+      if (!parentRfq || parentRfq.companyId !== req.user!.companyId) {
+        return res.status(404).json({ error: "RFQ not found" });
+      }
+
       const item = await storage.createRFQItem(validationResult.data);
       res.status(201).json(item);
     } catch (error: any) {
@@ -15015,6 +15152,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
+      // Ownership: item → RFQ → company.
+      const existingRfqItem = await storage.getRFQItemById(req.params.id);
+      if (!existingRfqItem) return res.status(404).json({ error: "RFQ item not found" });
+      const parentRfq = await storage.getRFQ((existingRfqItem as any).rfqId);
+      if (!parentRfq || parentRfq.companyId !== req.user!.companyId) {
+        return res.status(404).json({ error: "RFQ item not found" });
+      }
+
       const item = await storage.updateRFQItem(req.params.id, validationResult.data);
       if (!item) {
         return res.status(404).json({ error: "RFQ item not found" });
@@ -15028,6 +15173,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/rfq-items/:id", requireAuth, requireTeamMember, async (req, res) => {
     try {
+      // Ownership: item → RFQ → company.
+      const existingRfqItem = await storage.getRFQItemById(req.params.id);
+      if (!existingRfqItem) return res.status(404).json({ error: "RFQ item not found" });
+      const parentRfq = await storage.getRFQ((existingRfqItem as any).rfqId);
+      if (!parentRfq || parentRfq.companyId !== req.user!.companyId) {
+        return res.status(404).json({ error: "RFQ item not found" });
+      }
+
       const deleted = await storage.deleteRFQItem(req.params.id);
       if (!deleted) {
         return res.status(404).json({ error: "RFQ item not found" });
@@ -16645,7 +16798,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      const lineItem = await storage.createBillLineItem(validationResult.data);
+      // Pin the line to the URL's (ownership-checked) bill — a different
+      // billId smuggled in the body must never win.
+      const lineItem = await storage.createBillLineItem({
+        ...validationResult.data,
+        billId: req.params.billId,
+      });
       void maybeAutoPushParentBill(req.params.billId, (req as any).user?.companyId);
       await recalcBudgetForBill(req.params.billId);
       res.status(201).json(lineItem);
@@ -17230,9 +17388,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/variations", async (req, res) => {
     try {
       const { projectId, status } = req.query;
+      // Tenant scoping: always restrict to the caller's company (previously an
+      // omitted projectId returned every company's variations).
+      const userCompanyId = (req.user as any)?.companyId;
+      if (!userCompanyId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      if (projectId && !(await enforceProjectCompany(req, res, projectId as string, "Project not found"))) return;
       const variations = await storage.getVariations(
         projectId as string | undefined,
-        status as string | undefined
+        status as string | undefined,
+        userCompanyId
       );
       res.json(variations);
     } catch (error) {
@@ -17304,6 +17470,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/variations/bulk-status", async (req, res) => {
     try {
+      const userCompanyId = (req.user as any)?.companyId;
+      if (!userCompanyId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
       const { ids, status } = req.body;
       if (!Array.isArray(ids) || ids.length === 0) {
         return res.status(400).json({ error: "ids must be a non-empty array" });
@@ -17315,6 +17485,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Task #257: capture pre-update statuses so we can log approved-boundary
       // transitions for the contract-metrics derivation.
       const previous = await Promise.all(ids.map((id: string) => storage.getVariation(id)));
+
+      // Per-record company ownership (via each variation's project) — reject
+      // mixed/foreign IDs before writing anything, mirroring PO bulk-status.
+      const projectIds = Array.from(new Set(previous.map((v: any) => v?.projectId).filter(Boolean)));
+      const projectRows = await Promise.all(projectIds.map((pid: string) => storage.getProject(pid)));
+      const projectCompany = new Map(projectRows.filter(Boolean).map((p: any) => [p.id, p.companyId]));
+      for (let i = 0; i < previous.length; i++) {
+        const v: any = previous[i];
+        if (!v || !v.projectId || projectCompany.get(v.projectId) !== userCompanyId) {
+          return res.status(404).json({ error: `Variation not found: ${ids[i]}` });
+        }
+      }
+
       await Promise.all(ids.map((id: string) => storage.updateVariation(id, { status })));
       const APPROVED = new Set(["approved", "released"]);
       const projectsAffected = new Set<string>();
@@ -19039,9 +19222,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/client-invoices", async (req, res) => {
     try {
       const { projectId, status } = req.query;
+      // Tenant scoping: results are always restricted to the caller's company.
+      // (Previously an omitted projectId returned every company's invoices.)
+      const companyId = (req.user as any)?.companyId;
+      if (!companyId) {
+        return res.status(401).json({ error: "Unauthorized - no company context" });
+      }
+      if (projectId && !(await enforceProjectCompany(req, res, projectId as string, "Project not found"))) return;
       const invoices = await storage.getClientInvoices(
         projectId as string | undefined,
-        status as string | undefined
+        status as string | undefined,
+        companyId
       );
       res.json(invoices);
     } catch (error) {
@@ -19094,6 +19285,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!projectId) {
         return res.status(400).json({ error: "projectId is required" });
       }
+      if (!(await enforceProjectCompany(req, res, projectId as string, "Project not found"))) return;
       const project = await storage.getProject(projectId as string);
       if (!project) {
         return res.status(404).json({ error: "Project not found" });
@@ -19124,17 +19316,83 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Contract price (inc GST cents) an invoice locks to when it leaves draft —
+  // same derivation as GET /api/projects/:id/contract-metrics. Stamped into
+  // clientInvoices.lockedContractPrice so a later estimate edit can never
+  // silently change a claim on an invoice the client has already received.
+  const computeProjectContractPriceCents = async (projectId: string): Promise<number | null> => {
+    try {
+      const { computeContractMetrics } = await import("@shared/projectMetrics");
+      const project = await storage.getProject(projectId);
+      if (!project) return null;
+      if (!project.selectedEstimateId) return (project as any)?.contractPrice ?? null;
+      const items = await storage.getEstimateItems(project.selectedEstimateId);
+      const variations = await storage.getVariations(projectId);
+      const selectedEstimate = await storage.getEstimate(project.selectedEstimateId);
+      const metrics = computeContractMetrics(
+        items.map((i: any) => ({
+          priceIncTax: i.priceIncTax,
+          taxAmount: i.taxAmount,
+          unitCostExTax: i.unitCostExTax,
+          quantity: i.quantity,
+          markupPercent: i.markupPercent,
+        })),
+        variations.map((v: any) => ({
+          status: v.status ?? null,
+          subtotal: v.subtotal ?? null,
+          totalAmount: v.totalAmount ?? v.totalIncTax ?? null,
+        })),
+        (selectedEstimate as any)?.projectMarkupPercent ?? 0,
+        (selectedEstimate as any)?.taxRate ?? 10,
+      );
+      return (metrics as any)?.originalContractPriceIncGstCents ?? null;
+    } catch (e) {
+      console.error("[client-invoices] failed to compute contract price for lock:", e);
+      return null;
+    }
+  };
+
+  // When a lineBreakdown snapshot is present, the header totals must equal the
+  // snapshot sums — reject drift instead of storing totals that disagree with
+  // the lines (the Xero push and the PDF both rely on this invariant).
+  const invoiceTotalsBreakdownMismatch = (data: any): string | null => {
+    const lines = data.lineBreakdown;
+    if (!Array.isArray(lines) || lines.length === 0) return null;
+    const sumInc = lines.reduce((s: number, l: any) => s + (l.amountIncCents || 0), 0);
+    const sumGst = lines.reduce((s: number, l: any) => s + (l.gstCents || 0), 0);
+    const sumEx = lines.reduce((s: number, l: any) => s + (l.amountExCents || 0), 0);
+    if (data.totalAmount !== undefined && data.totalAmount !== sumInc) {
+      return `Invoice total (${data.totalAmount}c) does not equal the sum of its lines (${sumInc}c)`;
+    }
+    if (data.gstAmount !== undefined && data.gstAmount !== sumGst) {
+      return `Invoice GST (${data.gstAmount}c) does not equal the sum of line GST (${sumGst}c)`;
+    }
+    if (data.subtotal !== undefined && data.markupAmount !== undefined && data.subtotal + data.markupAmount !== sumEx) {
+      return `Invoice subtotal + markup does not equal the sum of ex-GST line amounts (${sumEx}c)`;
+    }
+    return null;
+  };
+
   app.post("/api/client-invoices", async (req, res) => {
     try {
       const validationResult = insertClientInvoiceSchema.safeParse(req.body);
       if (!validationResult.success) {
-        return res.status(400).json({ 
-          error: "Validation failed", 
-          details: fromZodError(validationResult.error).toString() 
+        return res.status(400).json({
+          error: "Validation failed",
+          details: fromZodError(validationResult.error).toString()
         });
       }
 
       const data = validationResult.data;
+
+      // Tenant scoping: the target project must belong to the caller's company
+      // (previously an invoice could be created under any company's project).
+      if (!(await enforceProjectCompany(req, res, data.projectId, "Project not found"))) return;
+
+      const totalsMismatch = invoiceTotalsBreakdownMismatch(data);
+      if (totalsMismatch) {
+        return res.status(400).json({ error: totalsMismatch });
+      }
 
       // Cumulative claim % is allowed to exceed 100% (e.g. variations/extras),
       // so no server-side cap is enforced here — the remaining-% figure shown
@@ -19188,8 +19446,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Cumulative claim % is allowed to exceed 100% on update as well; the
       // remaining-% figure shown in the UI is informational only.
 
+      const totalsMismatch = invoiceTotalsBreakdownMismatch(data);
+      if (totalsMismatch) {
+        return res.status(400).json({ error: totalsMismatch });
+      }
+
       const owned = await getOwnedClientInvoice(req, res, req.params.id, "Client invoice not found");
       if (!owned) return;
+
+      // Leaving draft locks the invoice to the contract price at that moment
+      // (once only — a re-send never re-stamps).
+      if (
+        data.status && data.status !== "draft" &&
+        (owned as any).status === "draft" &&
+        (owned as any).lockedContractPrice == null
+      ) {
+        const priceCents = await computeProjectContractPriceCents((owned as any).projectId);
+        if (priceCents != null) (data as any).lockedContractPrice = priceCents;
+      }
+
       const invoice = await storage.updateClientInvoice(req.params.id, data);
       if (!invoice) {
         return res.status(404).json({ error: "Client invoice not found" });
@@ -19211,6 +19486,242 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(204).send();
     } catch (error) {
       res.status(500).json({ error: "Failed to delete client invoice" });
+    }
+  });
+
+  // Duplicate an invoice as a fresh draft: copies the document content (lines,
+  // claims, junctions, snapshot) but resets lifecycle state — new number,
+  // today's date, no payments, no Xero link, no locked contract price.
+  app.post("/api/client-invoices/:id/duplicate", async (req, res) => {
+    try {
+      const original = await getOwnedClientInvoice(req, res, req.params.id, "Client invoice not found");
+      if (!original) return;
+
+      const project = await storage.getProject((original as any).projectId);
+      const jobNum = getProjectJobNumber(project);
+      const dupCompanyId = (project as any)?.companyId;
+
+      const nextNumber = async (): Promise<string> => {
+        if (jobNum) return generateNextJobCiNumber(jobNum, dupCompanyId);
+        const prefix = (project as any)?.clientInvoicePrefix || "INV-";
+        const startNumber = (project as any)?.clientInvoiceStartNumber || 1000;
+        return storage.getNextClientInvoiceNumber(prefix, startNumber, dupCompanyId);
+      };
+
+      const basePayload: any = {
+        projectId: (original as any).projectId,
+        companyId: (original as any).companyId,
+        name: `${(original as any).name} (copy)`,
+        clientId: (original as any).clientId,
+        invoiceDate: new Date(),
+        invoicingMethod: (original as any).invoicingMethod,
+        markupPercent: (original as any).markupPercent,
+        introductionText: (original as any).introductionText,
+        closingText: (original as any).closingText,
+        termsAndConditions: (original as any).termsAndConditions,
+        subtotal: (original as any).subtotal,
+        markupAmount: (original as any).markupAmount,
+        gstAmount: (original as any).gstAmount,
+        totalAmount: (original as any).totalAmount,
+        paidAmount: 0,
+        balanceAmount: (original as any).totalAmount,
+        status: "draft",
+        sendToXero: false,
+        columnConfig: (original as any).columnConfig,
+        showAmountsIncTax: (original as any).showAmountsIncTax,
+        lineItemClaims: (original as any).lineItemClaims,
+        contractClaimRows: (original as any).contractClaimRows,
+        lineBreakdown: (original as any).lineBreakdown,
+      };
+
+      // Self-heal number collisions like the create route.
+      let copy;
+      for (let attempt = 0; ; attempt++) {
+        try {
+          copy = await storage.createClientInvoice({ ...basePayload, invoiceNumber: await nextNumber() });
+          break;
+        } catch (error: any) {
+          if (!isInvoiceNumberConflict(error) || attempt >= 5) throw error;
+        }
+      }
+
+      // Copy children: custom line items + all junction links.
+      const items = await storage.getClientInvoiceItems((original as any).id);
+      for (const it of items) {
+        await storage.createClientInvoiceItem({
+          invoiceId: copy.id,
+          name: (it as any).name,
+          description: it.description,
+          quantity: it.quantity,
+          unitPrice: it.unitPrice,
+          totalPrice: it.totalPrice,
+          taxable: it.taxable,
+          sortOrder: it.sortOrder,
+          unit: (it as any).unit ?? null,
+          costCodeId: (it as any).costCodeId ?? null,
+          xeroAccountCode: (it as any).xeroAccountCode ?? null,
+        } as any);
+      }
+      for (const v of await storage.getInvoiceVariations((original as any).id)) {
+        await storage.createInvoiceVariation({ invoiceId: copy.id, variationId: (v as any).variationId, claimPercent: (v as any).claimPercent } as any);
+      }
+      for (const a of await storage.getInvoiceAllowances((original as any).id)) {
+        await storage.createInvoiceAllowance({ invoiceId: copy.id, estimateItemId: (a as any).estimateItemId, claimPercent: (a as any).claimPercent } as any);
+      }
+      for (const b of await storage.getInvoiceBills((original as any).id)) {
+        await storage.createInvoiceBill({ invoiceId: copy.id, billId: (b as any).billId } as any);
+      }
+      for (const t of await storage.getInvoiceTimesheets((original as any).id)) {
+        await storage.createInvoiceTimesheet({ invoiceId: copy.id, timesheetId: (t as any).timesheetId } as any);
+      }
+      for (const s of await storage.getInvoiceSelections((original as any).id)) {
+        await storage.createInvoiceSelection({ invoiceId: copy.id, selectionOptionId: (s as any).selectionOptionId } as any);
+      }
+
+      res.status(201).json(copy);
+    } catch (error) {
+      console.error("Failed to duplicate client invoice:", error);
+      res.status(500).json({ error: "Failed to duplicate client invoice" });
+    }
+  });
+
+  // ── Transactional invoice save ────────────────────────────────────────────
+  // One request writes the invoice AND all child rows atomically (the old flow
+  // was ~15 serial requests that could fail halfway through).
+
+  const invoiceChildrenSchema = z.object({
+    items: z.array(z.object({
+      name: z.string().nullish(),
+      description: z.string().default(""),
+      quantity: z.number().default(1),
+      unitPrice: z.number().int().default(0),
+      taxable: z.boolean().default(true),
+      sortOrder: z.number().int().optional(),
+      unit: z.string().nullish(),
+      costCodeId: z.string().nullish(),
+      xeroAccountCode: z.string().nullish(),
+    })).default([]),
+    variations: z.array(z.object({ variationId: z.string(), claimPercent: z.number().min(0).max(100).default(100) })).default([]),
+    allowances: z.array(z.object({ estimateItemId: z.string(), claimPercent: z.number().min(0).max(100).default(100) })).default([]),
+    bills: z.array(z.string()).default([]),
+    timesheets: z.array(z.string()).default([]),
+    selections: z.array(z.string()).default([]),
+  });
+
+  // Every linked entity must belong to the caller's company (same checks as
+  // the individual junction routes). Writes the 404 itself and returns false
+  // on the first failure.
+  const verifyInvoiceChildrenOwnership = async (req: any, res: any, children: z.infer<typeof invoiceChildrenSchema>): Promise<boolean> => {
+    for (const v of children.variations) {
+      const variation = await storage.getVariation(v.variationId);
+      if (!variation || !(await enforceProjectCompany(req, res, (variation as any).projectId, "Variation not found"))) return false;
+    }
+    for (const a of children.allowances) {
+      const estimateItem = await storage.getEstimateItem(a.estimateItemId);
+      if (!estimateItem) { res.status(404).json({ error: "Allowance item not found" }); return false; }
+      if (!(await getOwnedEstimate(req, res, (estimateItem as any).estimateId, "Allowance item not found"))) return false;
+    }
+    for (const billId of children.bills) {
+      if (!(await getOwnedBill(req, res, billId, "Bill not found"))) return false;
+    }
+    for (const timesheetId of children.timesheets) {
+      const t = await storage.getTimesheet(timesheetId);
+      if (!t || !(await enforceProjectCompany(req, res, (t as any).projectId, "Timesheet not found"))) return false;
+    }
+    return true;
+  };
+
+  app.post("/api/client-invoices/full", async (req, res) => {
+    try {
+      const { invoice: invoiceBody, ...childrenBody } = (req.body ?? {}) as any;
+      const invoiceResult = insertClientInvoiceSchema.safeParse(invoiceBody);
+      if (!invoiceResult.success) {
+        return res.status(400).json({ error: "Validation failed", details: fromZodError(invoiceResult.error).toString() });
+      }
+      const childrenResult = invoiceChildrenSchema.safeParse(childrenBody);
+      if (!childrenResult.success) {
+        return res.status(400).json({ error: "Validation failed", details: fromZodError(childrenResult.error).toString() });
+      }
+      const data = invoiceResult.data;
+      const children = childrenResult.data;
+
+      if (!(await enforceProjectCompany(req, res, data.projectId, "Project not found"))) return;
+      const totalsMismatch = invoiceTotalsBreakdownMismatch(data);
+      if (totalsMismatch) return res.status(400).json({ error: totalsMismatch });
+      if (!(await verifyInvoiceChildrenOwnership(req, res, children))) return;
+
+      // Same self-healing invoice-number retry as the plain create route.
+      let payload = data;
+      let invoice;
+      for (let attempt = 0; ; attempt++) {
+        try {
+          invoice = await storage.createClientInvoiceFull(payload, children);
+          break;
+        } catch (error: any) {
+          if (!isInvoiceNumberConflict(error) || attempt >= 5) throw error;
+          const project = await storage.getProject((payload as any).projectId);
+          const jobNum = getProjectJobNumber(project);
+          const ciPrefix = jobNum ? `${jobNum}-CI-` : null;
+          if (!ciPrefix || !(payload as any).invoiceNumber?.startsWith(ciPrefix)) throw error;
+          payload = { ...payload, invoiceNumber: await generateNextJobCiNumber(jobNum!, (project as any).companyId) };
+        }
+      }
+      res.status(201).json(invoice);
+    } catch (error: any) {
+      if (isInvoiceNumberConflict(error)) {
+        return res.status(409).json({
+          error: `Invoice number "${(req.body as any)?.invoice?.invoiceNumber ?? ""}" is already in use. Please pick a different number and try again.`,
+        });
+      }
+      console.error("Failed to create client invoice (full):", error);
+      res.status(500).json({ error: "Failed to create client invoice" });
+    }
+  });
+
+  app.put("/api/client-invoices/:id/full", async (req, res) => {
+    try {
+      const owned = await getOwnedClientInvoice(req, res, req.params.id, "Client invoice not found");
+      if (!owned) return;
+
+      const { invoice: invoiceBody, ...childrenBody } = (req.body ?? {}) as any;
+      const invoiceResult = insertClientInvoiceSchema.partial().safeParse(invoiceBody);
+      if (!invoiceResult.success) {
+        return res.status(400).json({ error: "Validation failed", details: fromZodError(invoiceResult.error).toString() });
+      }
+      const childrenResult = invoiceChildrenSchema.safeParse(childrenBody);
+      if (!childrenResult.success) {
+        return res.status(400).json({ error: "Validation failed", details: fromZodError(childrenResult.error).toString() });
+      }
+      const data = invoiceResult.data;
+      const children = childrenResult.data;
+
+      const totalsMismatch = invoiceTotalsBreakdownMismatch(data);
+      if (totalsMismatch) return res.status(400).json({ error: totalsMismatch });
+      if (!(await verifyInvoiceChildrenOwnership(req, res, children))) return;
+
+      // Leaving draft locks the invoice to the contract price at that moment.
+      if (
+        data.status && data.status !== "draft" &&
+        (owned as any).status === "draft" &&
+        (owned as any).lockedContractPrice == null
+      ) {
+        const priceCents = await computeProjectContractPriceCents((owned as any).projectId);
+        if (priceCents != null) (data as any).lockedContractPrice = priceCents;
+      }
+
+      const invoice = await storage.updateClientInvoiceFull(req.params.id, data, children);
+      if (!invoice) {
+        return res.status(404).json({ error: "Client invoice not found" });
+      }
+      res.json(invoice);
+    } catch (error: any) {
+      if (isInvoiceNumberConflict(error)) {
+        return res.status(409).json({
+          error: `Invoice number "${(req.body as any)?.invoice?.invoiceNumber ?? ""}" is already in use. Please pick a different number and try again.`,
+        });
+      }
+      console.error("Failed to update client invoice (full):", error);
+      res.status(500).json({ error: "Failed to update client invoice" });
     }
   });
 
@@ -19250,11 +19761,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/client-invoice-items/:id", async (req, res) => {
     try {
+      // Ownership: item → invoice → project → company
+      const existingItem = await storage.getClientInvoiceItem(req.params.id);
+      if (!existingItem) {
+        return res.status(404).json({ error: "Client invoice item not found" });
+      }
+      const ownedInvoice = await getOwnedClientInvoice(req, res, existingItem.invoiceId, "Client invoice item not found");
+      if (!ownedInvoice) return;
+
       const validationResult = insertClientInvoiceItemSchema.partial().safeParse(req.body);
       if (!validationResult.success) {
-        return res.status(400).json({ 
-          error: "Validation failed", 
-          details: fromZodError(validationResult.error).toString() 
+        return res.status(400).json({
+          error: "Validation failed",
+          details: fromZodError(validationResult.error).toString()
         });
       }
 
@@ -19270,6 +19789,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/client-invoice-items/:id", async (req, res) => {
     try {
+      // Ownership: item → invoice → project → company
+      const existingItem = await storage.getClientInvoiceItem(req.params.id);
+      if (!existingItem) {
+        return res.status(404).json({ error: "Client invoice item not found" });
+      }
+      const ownedInvoice = await getOwnedClientInvoice(req, res, existingItem.invoiceId, "Client invoice item not found");
+      if (!ownedInvoice) return;
+
       const deleted = await storage.deleteClientInvoiceItem(req.params.id);
       if (!deleted) {
         return res.status(404).json({ error: "Client invoice item not found" });
@@ -19283,6 +19810,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Client Invoice Payments API Routes
   app.get("/api/client-invoices/:id/payments", async (req, res) => {
     try {
+      if (!(await getOwnedClientInvoice(req, res, req.params.id, "Client invoice not found"))) return;
       const payments = await storage.getClientInvoicePayments(req.params.id);
       res.json(payments);
     } catch (error) {
@@ -19292,15 +19820,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/client-invoices/:id/payments", async (req, res) => {
     try {
+      if (!(await getOwnedClientInvoice(req, res, req.params.id, "Client invoice not found"))) return;
       const validationResult = insertClientInvoicePaymentSchema.safeParse({
         ...req.body,
         invoiceId: req.params.id
       });
       if (!validationResult.success) {
-        return res.status(400).json({ 
-          error: "Validation failed", 
-          details: fromZodError(validationResult.error).toString() 
+        return res.status(400).json({
+          error: "Validation failed",
+          details: fromZodError(validationResult.error).toString()
         });
+      }
+      // A payment must be a positive amount — reversals are voids, not
+      // negative payments.
+      if (!Number.isInteger(validationResult.data.amount) || validationResult.data.amount <= 0) {
+        return res.status(400).json({ error: "Payment amount must be a positive whole number of cents" });
       }
 
       const payment = await storage.createClientInvoicePayment(validationResult.data);
@@ -19312,6 +19846,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/client-invoice-payments/:id", async (req, res) => {
     try {
+      // Ownership: payment → invoice → project → company
+      const existingPayment = await storage.getClientInvoicePayment(req.params.id);
+      if (!existingPayment) {
+        return res.status(404).json({ error: "Client invoice payment not found" });
+      }
+      if (!(await getOwnedClientInvoice(req, res, existingPayment.invoiceId, "Client invoice payment not found"))) return;
+
       const deleted = await storage.deleteClientInvoicePayment(req.params.id);
       if (!deleted) {
         return res.status(404).json({ error: "Client invoice payment not found" });
@@ -19324,6 +19865,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/client-invoice-payments/:id/void", requireAuth, async (req, res) => {
     try {
+      // Ownership: payment → invoice → project → company
+      const existingPayment = await storage.getClientInvoicePayment(req.params.id);
+      if (!existingPayment) {
+        return res.status(404).json({ error: "Client invoice payment not found" });
+      }
+      if (!(await getOwnedClientInvoice(req, res, existingPayment.invoiceId, "Client invoice payment not found"))) return;
+
       const result = await storage.voidClientInvoicePayment(req.params.id);
       if (!result) {
         return res.status(404).json({ error: "Client invoice payment not found" });
@@ -19389,6 +19937,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Invoice-Variation Junction Routes
   app.get("/api/client-invoices/:id/variations", async (req, res) => {
     try {
+      if (!(await getOwnedClientInvoice(req, res, req.params.id))) return;
       const variations = await storage.getInvoiceVariations(req.params.id);
       res.json(variations);
     } catch (error) {
@@ -19398,16 +19947,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/client-invoices/:id/variations", async (req, res) => {
     try {
+      const ownedInvoice = await getOwnedClientInvoice(req, res, req.params.id);
+      if (!ownedInvoice) return;
       const validationResult = insertInvoiceVariationSchema.safeParse({
         ...req.body,
         invoiceId: req.params.id
       });
       if (!validationResult.success) {
-        return res.status(400).json({ 
-          error: "Validation failed", 
-          details: fromZodError(validationResult.error).toString() 
+        return res.status(400).json({
+          error: "Validation failed",
+          details: fromZodError(validationResult.error).toString()
         });
       }
+      // The variation being linked must belong to the caller's company too.
+      const variation = await storage.getVariation(validationResult.data.variationId);
+      if (!variation || !(await enforceProjectCompany(req, res, (variation as any).projectId, "Variation not found"))) return;
 
       const invoiceVariation = await storage.createInvoiceVariation(validationResult.data);
       res.status(201).json(invoiceVariation);
@@ -19436,6 +19990,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/invoice-variations/:id", async (req, res) => {
     try {
+      // Scope by the owning client invoice.
+      const link = await storage.getInvoiceVariationById(req.params.id);
+      if (!link) return res.status(404).json({ error: "Invoice variation not found" });
+      if (!(await getOwnedClientInvoice(req, res, link.invoiceId, "Invoice variation not found"))) return;
+
       const validationResult = insertInvoiceVariationSchema.partial().safeParse(req.body);
       if (!validationResult.success) {
         return res.status(400).json({ error: "Validation failed", details: fromZodError(validationResult.error).toString() });
@@ -19452,6 +20011,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/invoice-variations/:id", async (req, res) => {
     try {
+      // Scope by the owning client invoice.
+      const link = await storage.getInvoiceVariationById(req.params.id);
+      if (!link) return res.status(404).json({ error: "Invoice variation not found" });
+      if (!(await getOwnedClientInvoice(req, res, link.invoiceId, "Invoice variation not found"))) return;
+
       const deleted = await storage.deleteInvoiceVariation(req.params.id);
       if (!deleted) {
         return res.status(404).json({ error: "Invoice variation not found" });
@@ -19465,6 +20029,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Invoice-Allowance Junction Routes
   app.get("/api/client-invoices/:id/allowances", async (req, res) => {
     try {
+      if (!(await getOwnedClientInvoice(req, res, req.params.id))) return;
       const allowances = await storage.getInvoiceAllowances(req.params.id);
       res.json(allowances);
     } catch (error) {
@@ -19474,6 +20039,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/client-invoices/:id/allowances", async (req, res) => {
     try {
+      const ownedInvoice = await getOwnedClientInvoice(req, res, req.params.id);
+      if (!ownedInvoice) return;
       const validationResult = insertInvoiceAllowanceSchema.safeParse({
         ...req.body,
         invoiceId: req.params.id
@@ -19481,6 +20048,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!validationResult.success) {
         return res.status(400).json({ error: "Validation failed", details: fromZodError(validationResult.error).toString() });
       }
+      // The allowance (estimate item) being linked must belong to the caller's
+      // company too — resolve item → estimate → project → company.
+      const estimateItem = await storage.getEstimateItem(validationResult.data.estimateItemId);
+      if (!estimateItem) return res.status(404).json({ error: "Allowance item not found" });
+      if (!(await getOwnedEstimate(req, res, (estimateItem as any).estimateId, "Allowance item not found"))) return;
+
       const allowance = await storage.createInvoiceAllowance(validationResult.data);
       res.status(201).json(allowance);
     } catch (error) {
@@ -19508,6 +20081,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/invoice-allowances/:id", async (req, res) => {
     try {
+      // Scope by the owning client invoice.
+      const link = await storage.getInvoiceAllowanceById(req.params.id);
+      if (!link) return res.status(404).json({ error: "Invoice allowance not found" });
+      if (!(await getOwnedClientInvoice(req, res, link.invoiceId, "Invoice allowance not found"))) return;
+
       const validationResult = insertInvoiceAllowanceSchema.partial().safeParse(req.body);
       if (!validationResult.success) {
         return res.status(400).json({ error: "Validation failed", details: fromZodError(validationResult.error).toString() });
@@ -19524,6 +20102,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/invoice-allowances/:id", async (req, res) => {
     try {
+      // Scope by the owning client invoice.
+      const link = await storage.getInvoiceAllowanceById(req.params.id);
+      if (!link) return res.status(404).json({ error: "Invoice allowance not found" });
+      if (!(await getOwnedClientInvoice(req, res, link.invoiceId, "Invoice allowance not found"))) return;
+
       const deleted = await storage.deleteInvoiceAllowance(req.params.id);
       if (!deleted) {
         return res.status(404).json({ error: "Invoice allowance not found" });
@@ -19537,6 +20120,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Invoice-Bill Junction Routes
   app.get("/api/client-invoices/:id/bills", async (req, res) => {
     try {
+      if (!(await getOwnedClientInvoice(req, res, req.params.id))) return;
       const bills = await storage.getInvoiceBills(req.params.id);
       res.json(bills);
     } catch (error) {
@@ -19546,16 +20130,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/client-invoices/:id/bills", async (req, res) => {
     try {
+      const ownedInvoice = await getOwnedClientInvoice(req, res, req.params.id);
+      if (!ownedInvoice) return;
       const validationResult = insertInvoiceBillSchema.safeParse({
         ...req.body,
         invoiceId: req.params.id
       });
       if (!validationResult.success) {
-        return res.status(400).json({ 
-          error: "Validation failed", 
-          details: fromZodError(validationResult.error).toString() 
+        return res.status(400).json({
+          error: "Validation failed",
+          details: fromZodError(validationResult.error).toString()
         });
       }
+      // The bill being linked must belong to the caller's company too.
+      if (!(await getOwnedBill(req, res, validationResult.data.billId, "Bill not found"))) return;
 
       const invoiceBill = await storage.createInvoiceBill(validationResult.data);
       res.status(201).json(invoiceBill);
@@ -19566,6 +20154,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/invoice-bills/:id", async (req, res) => {
     try {
+      // Scope by the owning client invoice.
+      const link = await storage.getInvoiceBillById(req.params.id);
+      if (!link) return res.status(404).json({ error: "Invoice bill not found" });
+      if (!(await getOwnedClientInvoice(req, res, link.invoiceId, "Invoice bill not found"))) return;
+
       const deleted = await storage.deleteInvoiceBill(req.params.id);
       if (!deleted) {
         return res.status(404).json({ error: "Invoice bill not found" });
@@ -19579,6 +20172,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Invoice Timesheet Routes
   app.get("/api/client-invoices/:id/timesheets", async (req, res) => {
     try {
+      if (!(await getOwnedClientInvoice(req, res, req.params.id))) return;
       const rows = await storage.getInvoiceTimesheets(req.params.id);
       res.json(rows);
     } catch (error) {
@@ -19588,6 +20182,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/client-invoices/:id/timesheets", async (req, res) => {
     try {
+      const ownedInvoice = await getOwnedClientInvoice(req, res, req.params.id);
+      if (!ownedInvoice) return;
       const validationResult = insertInvoiceTimesheetSchema.safeParse({
         ...req.body,
         invoiceId: req.params.id,
@@ -19595,6 +20191,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!validationResult.success) {
         return res.status(400).json({ error: "Validation failed" });
       }
+      // The timesheet being linked must belong to the caller's company too.
+      const timesheet = await storage.getTimesheet(validationResult.data.timesheetId);
+      if (!timesheet || !(await enforceProjectCompany(req, res, (timesheet as any).projectId, "Timesheet not found"))) return;
+
       const row = await storage.createInvoiceTimesheet(validationResult.data);
       res.status(201).json(row);
     } catch (error) {
@@ -19604,6 +20204,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/invoice-timesheets/:id", async (req, res) => {
     try {
+      // Scope by the owning client invoice.
+      const link = await storage.getInvoiceTimesheetById(req.params.id);
+      if (!link) return res.status(404).json({ error: "Invoice timesheet not found" });
+      if (!(await getOwnedClientInvoice(req, res, link.invoiceId, "Invoice timesheet not found"))) return;
+
       const deleted = await storage.deleteInvoiceTimesheet(req.params.id);
       if (!deleted) {
         return res.status(404).json({ error: "Invoice timesheet not found" });
@@ -19617,6 +20222,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Invoice Selection Routes
   app.get("/api/client-invoices/:id/selections", async (req, res) => {
     try {
+      if (!(await getOwnedClientInvoice(req, res, req.params.id))) return;
       const rows = await storage.getInvoiceSelections(req.params.id);
       res.json(rows);
     } catch (error) {
@@ -19626,6 +20232,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/client-invoices/:id/selections", async (req, res) => {
     try {
+      const ownedInvoice = await getOwnedClientInvoice(req, res, req.params.id);
+      if (!ownedInvoice) return;
       const validationResult = insertInvoiceSelectionSchema.safeParse({
         ...req.body,
         invoiceId: req.params.id,
@@ -19642,6 +20250,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/invoice-selections/:id", async (req, res) => {
     try {
+      // Scope by the owning client invoice.
+      const link = await storage.getInvoiceSelectionById(req.params.id);
+      if (!link) return res.status(404).json({ error: "Invoice selection not found" });
+      if (!(await getOwnedClientInvoice(req, res, link.invoiceId, "Invoice selection not found"))) return;
+
       const deleted = await storage.deleteInvoiceSelection(req.params.id);
       if (!deleted) {
         return res.status(404).json({ error: "Invoice selection not found" });
@@ -19656,8 +20269,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/client-invoices/:id/send-email", requireAuth, requireTeamMember, async (req: any, res) => {
     try {
       const userId = req.user.id;
-      const invoice = await storage.getClientInvoice(req.params.id);
-      if (!invoice) return res.status(404).json({ error: "Invoice not found" });
+      // Ownership: only the invoice's own company can email it.
+      const invoice = await getOwnedClientInvoice(req, res, req.params.id, "Invoice not found");
+      if (!invoice) return;
 
       const { to, subject, body, pdfBase64, pdfFilename } = req.body as {
         to: string;
@@ -19688,9 +20302,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
         attachments,
       });
 
-      // Merge: mark invoice as sent in the same operation
+      // Mark the invoice as sent — but never clobber payment-derived states
+      // (re-emailing a paid/partial invoice must not revert it to "sent").
+      const statusUpdate = invoice.status === "draft" ? { status: "sent" as const } : {};
+      // Leaving draft locks the invoice to the contract price at that moment.
+      let lockUpdate: any = {};
+      if (invoice.status === "draft" && (invoice as any).lockedContractPrice == null) {
+        const priceCents = await computeProjectContractPriceCents(invoice.projectId);
+        if (priceCents != null) lockUpdate = { lockedContractPrice: priceCents };
+      }
       await storage.updateClientInvoice(invoice.id, {
-        status: "sent",
+        ...statusUpdate,
+        ...lockUpdate,
         sentDate: new Date(),
       } as any);
 
@@ -19705,6 +20328,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/projects/:projectId/selection-options/invoiceable", async (req, res) => {
     try {
       const { projectId } = req.params;
+      if (!(await enforceProjectCompany(req, res, projectId, "Project not found"))) return;
       const rows = await db
         .select({
           id: schema.selectionOptions.id,
@@ -19737,12 +20361,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/proposals", async (req, res) => {
     try {
       const { projectId, status, parentProposalId, parentId } = req.query;
+      // Tenant scoping: a projectId must belong to the caller's company; an
+      // omitted projectId previously returned every company's proposals.
+      if (projectId) {
+        if (!(await enforceProjectCompany(req, res, projectId as string, "Project not found"))) return;
+      } else if (!(req.user as any)?.companyId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
       const proposals = await storage.getProposals(
         projectId as string | undefined,
         status as string | undefined,
         (parentProposalId as string | undefined) ?? (parentId as string | undefined),
       );
-      res.json(proposals);
+      const userCompanyId = (req.user as any)?.companyId;
+      const scoped = projectId ? proposals : await (async () => {
+        const { projects: projectsTbl } = await import("@shared/schema");
+        const companyProjects = await db.select({ id: projectsTbl.id })
+          .from(projectsTbl).where(eq(projectsTbl.companyId, userCompanyId));
+        const ids = new Set(companyProjects.map((pr: any) => pr.id));
+        return proposals.filter((pp: any) => ids.has(pp.projectId));
+      })();
+      res.json(scoped);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch proposals" });
     }
@@ -20179,59 +20818,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Proposal to Invoice Conversion
-  app.post("/api/proposals/:id/convert-to-invoice", async (req, res) => {
-    try {
-      const proposal = await storage.getProposal(req.params.id);
-      if (!proposal) {
-        return res.status(404).json({ error: "Proposal not found" });
-      }
-
-      if (proposal.status !== "accepted") {
-        return res.status(400).json({ error: "Only accepted proposals can be converted to invoices" });
-      }
-
-      // Get proposal items
-      const items = await storage.getProposalItems(req.params.id);
-
-      // Create client invoice
-      const invoice = await storage.createClientInvoice({
-        projectId: proposal.projectId,
-        invoiceNumber: `INV-${Date.now()}`, // Generate invoice number
-        issueDate: new Date(),
-        dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days from now
-        status: "draft",
-        subtotal: proposal.totalAmount,
-        taxAmount: proposal.taxAmount,
-        total: proposal.totalAmount + proposal.taxAmount,
-        notes: `Converted from proposal: ${proposal.title}`,
-        termsAndConditions: proposal.termsAndConditions
-      });
-
-      // Create invoice items from proposal items
-      for (const item of items) {
-        await storage.createClientInvoiceItem({
-          invoiceId: invoice.id,
-          description: item.description,
-          quantity: item.quantity,
-          unitPrice: item.unitPrice,
-          taxRate: item.taxRate,
-          amount: item.totalAmount
-        });
-      }
-
-      // Update proposal to mark as converted
-      await storage.updateProposal(req.params.id, {
-        convertedToInvoiceAt: new Date(),
-        invoiceId: invoice.id
-      });
-
-      res.json({ invoice, proposal });
-    } catch (error) {
-      console.error("Error converting proposal to invoice:", error);
-      res.status(500).json({ error: "Failed to convert proposal to invoice" });
-    }
-  });
+  // NOTE: the old POST /api/proposals/:id/convert-to-invoice route was removed
+  // (2026-07-23). It had no callers anywhere in the client/mobile apps, wrote
+  // columns that don't exist in the schema (issueDate/taxAmount/total on the
+  // invoice; taxRate/amount on items), bypassed per-company invoice numbering
+  // with `INV-<timestamp>`, and had no ownership check on the proposal.
 
   // Next sequential proposal number (PROP-YYYY-NNNN) — scoped to the caller's company
   app.get("/api/proposal-numbers/next", async (req, res) => {
@@ -20506,6 +21097,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Company routes
   app.get("/api/companies/:id", requireAuth, async (req, res) => {
     try {
+      // A user may only read their OWN company's record.
+      if (req.params.id !== (req.user as any)?.companyId) {
+        return res.status(404).json({ error: "Company not found" });
+      }
       const company = await storage.getCompany(req.params.id);
       if (!company) {
         return res.status(404).json({ error: "Company not found" });
@@ -20556,7 +21151,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/company-settings", requireAuth, async (req, res) => {
     try {
-      const settings = await storage.getCompanySettings();
+      // Scoped to the caller's company (previously one global row was shared
+      // by every company).
+      const settings = await storage.getCompanySettings((req.user as any)?.companyId);
       res.json(settings || {});
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch company settings" });
@@ -20587,6 +21184,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/hbcf-projects/:id", requireAuth, async (req, res) => {
     try {
+      // Ownership: HBCF rows carry companyId directly.
+      const companyRows = await storage.getHbcfProjects((req.user as any)?.companyId);
+      if (!companyRows.some((r: any) => r.id === req.params.id)) {
+        return res.status(404).json({ error: "HBCF project not found" });
+      }
       const updated = await storage.updateHbcfProject(req.params.id, req.body);
       res.json(updated);
     } catch (error) {
@@ -20596,6 +21198,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/hbcf-projects/:id", requireAuth, async (req, res) => {
     try {
+      // Ownership: HBCF rows carry companyId directly.
+      const companyRows = await storage.getHbcfProjects((req.user as any)?.companyId);
+      if (!companyRows.some((r: any) => r.id === req.params.id)) {
+        return res.status(404).json({ error: "HBCF project not found" });
+      }
       await storage.deleteHbcfProject(req.params.id);
       res.status(204).send();
     } catch (error) {
@@ -20614,7 +21221,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      const settings = await storage.updateCompanySettings(validationResult.data);
+      const settings = await storage.updateCompanySettings(validationResult.data, (req.user as any)?.companyId);
       res.json(settings);
     } catch (error) {
       res.status(500).json({ error: "Failed to update company settings" });
@@ -21751,6 +22358,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Site Diary Entry routes
   app.get("/api/projects/:projectId/site-diary-entries", async (req, res) => {
     try {
+      if (!(await enforceProjectCompany(req, res, req.params.projectId, "Project not found"))) return;
       const entries = await storage.getSiteDiaryEntries(req.params.projectId);
       res.json(entries);
     } catch (error: any) {
@@ -21790,11 +22398,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "Template not found" });
       }
 
-      // Verify project exists
-      const project = await storage.getProject(validationResult.data.projectId);
-      if (!project) {
-        return res.status(400).json({ error: "Project not found" });
-      }
+      // Verify the project exists AND belongs to the caller's company.
+      if (!(await enforceProjectCompany(req, res, validationResult.data.projectId, "Project not found"))) return;
 
       const entry = await storage.createSiteDiaryEntry(validationResult.data);
 
@@ -23702,7 +24307,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const currentUser = req.user as any;
       const userId = currentUser ? String(currentUser.id) : undefined;
       const isAdmin = currentUser?.role === 'admin' || currentUser?.isAdmin;
-      const instances = await storage.getChecklistInstances(projectId, userId, isAdmin);
+      if (projectId && !(await enforceProjectCompany(req, res, projectId, "Project not found"))) return;
+      const fetchedInstances = await storage.getChecklistInstances(projectId, userId, isAdmin);
+      // Tenant scoping: instances carry companyId directly.
+      const instances = fetchedInstances.filter((i: any) => i.companyId === currentUser?.companyId);
       
       // Get item counts for each instance
       const instancesWithCounts = await Promise.all(
@@ -23729,7 +24337,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/checklist-instances/:id", async (req, res) => {
     try {
       const instance = await storage.getChecklistInstance(req.params.id);
-      if (!instance) {
+      if (!instance || (instance as any).companyId !== (req.user as any)?.companyId) {
         return res.status(404).json({ error: "Checklist instance not found" });
       }
       res.json(instance);
@@ -23751,6 +24359,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           details: fromZodError(validationResult.error).toString() 
         });
       }
+
+      // The target project (when provided) must belong to the caller's company.
+      if (validationResult.data.projectId && !(await enforceProjectCompany(req, res, validationResult.data.projectId, "Project not found"))) return;
 
       const data = {
         ...validationResult.data,
@@ -23825,9 +24436,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
+      // Ownership: instances carry companyId directly.
+      const ownedInstance = await storage.getChecklistInstance(req.params.id);
+      if (!ownedInstance || (ownedInstance as any).companyId !== currentUser?.companyId) {
+        return res.status(404).json({ error: "Checklist instance not found" });
+      }
+
       // Only admins or the instance creator/assignee can change visibility
       if (validationResult.data.visibility !== undefined && !isAdmin) {
-        const existing = await storage.getChecklistInstance(req.params.id);
+        const existing = ownedInstance;
         if (!existing) {
           return res.status(404).json({ error: "Checklist instance not found" });
         }
@@ -23852,6 +24469,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/checklist-instances/:id", async (req, res) => {
     try {
+      // Ownership: instances carry companyId directly.
+      const ownedInstance = await storage.getChecklistInstance(req.params.id);
+      if (!ownedInstance || (ownedInstance as any).companyId !== (req.user as any)?.companyId) {
+        return res.status(404).json({ error: "Checklist instance not found" });
+      }
+
       const success = await storage.deleteChecklistInstance(req.params.id);
       if (!success) {
         return res.status(404).json({ error: "Checklist instance not found" });
@@ -24071,6 +24694,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const existingItem = await storage.getChecklistInstanceItem(req.params.id);
+      if (!existingItem) {
+        return res.status(404).json({ error: "Checklist instance item not found" });
+      }
+      // Ownership: item → instance → companyId.
+      const parentInstance = await storage.getChecklistInstance(existingItem.instanceId);
+      if (!parentInstance || (parentInstance as any).companyId !== (req.user as any)?.companyId) {
+        return res.status(404).json({ error: "Checklist instance item not found" });
+      }
+
       const item = await storage.updateChecklistInstanceItem(req.params.id, validationResult.data);
       if (!item) {
         return res.status(404).json({ error: "Checklist instance item not found" });
@@ -24195,6 +24827,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/checklist-instance-items/:id", async (req, res) => {
     try {
+      // Ownership: item → instance → companyId.
+      const existingItem = await storage.getChecklistInstanceItem(req.params.id);
+      if (!existingItem) {
+        return res.status(404).json({ error: "Checklist instance item not found" });
+      }
+      const parentInstance = await storage.getChecklistInstance(existingItem.instanceId);
+      if (!parentInstance || (parentInstance as any).companyId !== (req.user as any)?.companyId) {
+        return res.status(404).json({ error: "Checklist instance item not found" });
+      }
+
       const success = await storage.deleteChecklistInstanceItem(req.params.id);
       if (!success) {
         return res.status(404).json({ error: "Checklist instance item not found" });
@@ -24523,12 +25165,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Allowances routes
   app.get("/api/projects/:projectId/allowances", async (req, res) => {
     try {
+      if (!(await enforceProjectCompany(req, res, req.params.projectId, "Project not found"))) return;
       const allowances = await storage.getProjectAllowances(req.params.projectId);
       res.json(allowances);
     } catch (error: any) {
-      res.status(500).json({ 
+      res.status(500).json({
         error: "Failed to fetch allowances",
-        details: error.message 
+        details: error.message
       });
     }
   });
@@ -25931,6 +26574,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Allowance Items (custom lines for PS allowances)
   app.get("/api/estimate-items/:estimateItemId/allowance-items", async (req, res) => {
     try {
+      // Ownership: allowance items hang off an estimate item → estimate → company.
+      if (!(await getOwnedEstimateItem(req, res, req.params.estimateItemId, "Estimate item not found"))) return;
       const items = await storage.getAllowanceItems(req.params.estimateItemId);
       res.json(items);
     } catch (error) {
@@ -25942,11 +26587,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const validationResult = insertAllowanceItemSchema.safeParse(req.body);
       if (!validationResult.success) {
-        return res.status(400).json({ 
-          error: "Validation failed", 
-          details: fromZodError(validationResult.error).toString() 
+        return res.status(400).json({
+          error: "Validation failed",
+          details: fromZodError(validationResult.error).toString()
         });
       }
+
+      // Ownership: the target estimate item must belong to the caller's company.
+      if (!(await getOwnedEstimateItem(req, res, validationResult.data.estimateItemId, "Estimate item not found"))) return;
 
       const item = await storage.createAllowanceItem(validationResult.data);
       res.status(201).json(item);
@@ -25958,11 +26606,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/allowance-items/:id", async (req, res) => {
     try {
+      // Ownership: allowance item → estimate item → estimate → company.
+      const existing = await storage.getAllowanceItemById(req.params.id);
+      if (!existing) return res.status(404).json({ error: "Allowance item not found" });
+      if (!(await getOwnedEstimateItem(req, res, (existing as any).estimateItemId, "Allowance item not found"))) return;
+
       const validationResult = insertAllowanceItemSchema.partial().safeParse(req.body);
       if (!validationResult.success) {
-        return res.status(400).json({ 
-          error: "Validation failed", 
-          details: fromZodError(validationResult.error).toString() 
+        return res.status(400).json({
+          error: "Validation failed",
+          details: fromZodError(validationResult.error).toString()
         });
       }
 
@@ -25978,6 +26631,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/allowance-items/:id", async (req, res) => {
     try {
+      // Ownership: allowance item → estimate item → estimate → company.
+      const existing = await storage.getAllowanceItemById(req.params.id);
+      if (!existing) return res.status(404).json({ error: "Allowance item not found" });
+      if (!(await getOwnedEstimateItem(req, res, (existing as any).estimateItemId, "Allowance item not found"))) return;
+
       await storage.deleteAllowanceItem(req.params.id);
       res.status(204).send();
     } catch (error) {
@@ -26000,6 +26658,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/companies/:companyId/non-working-days", async (req, res) => {
     if (!req.user) return res.status(401).json({ error: "Not authenticated" });
     const { companyId } = req.params;
+    // A user may only read their own company's calendar config.
+    if (companyId !== (req.user as any)?.companyId) {
+      return res.status(404).json({ error: "Not found" });
+    }
     const scheduleId = req.query.scheduleId as string | undefined;
     let days;
     if (scheduleId) {
@@ -26017,6 +26679,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/companies/:companyId/non-working-days", async (req, res) => {
     if (!req.user) return res.status(401).json({ error: "Not authenticated" });
     const { companyId } = req.params;
+    // A user may only write their own company's calendar config.
+    if (companyId !== (req.user as any)?.companyId) {
+      return res.status(404).json({ error: "Not found" });
+    }
     const data = insertNonWorkingDaySchema.parse({ ...req.body, companyId });
     const [day] = await db.insert(nonWorkingDays).values(data).returning();
     res.json(day);
@@ -26024,7 +26690,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/non-working-days/:id", async (req, res) => {
     if (!req.user) return res.status(401).json({ error: "Not authenticated" });
-    await db.delete(nonWorkingDays).where(eq(nonWorkingDays.id, req.params.id));
+    // Ownership: only delete rows belonging to the caller's company.
+    await db.delete(nonWorkingDays).where(and(
+      eq(nonWorkingDays.id, req.params.id),
+      eq(nonWorkingDays.companyId, (req.user as any).companyId),
+    ));
     res.json({ success: true });
   });
 
@@ -32992,14 +33662,20 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
         return res.json([]);
       }
 
-      const accounts = await xeroService.getAccounts(connection.id);
+      // ?kind=revenue returns Sales-style income accounts (for client invoices);
+      // default returns expense/liability accounts (for bills).
+      const accounts = req.query.kind === "revenue"
+        ? await xeroService.getAccounts(connection.id, { types: ["REVENUE", "SALES"] })
+        : await xeroService.getAccounts(connection.id);
       const mapped = accounts.map((a: any) => ({
         code: a.Code,
         name: a.Name,
         type: a.Type,
         accountId: a.AccountID,
       }));
-      mapped.sort((a: any, b: any) => (a.code || "").localeCompare(b.code || ""));
+      // Sort alphabetically by account name (more meaningful to users than the
+      // Xero account number).
+      mapped.sort((a: any, b: any) => (a.name || "").localeCompare(b.name || ""));
       res.json(mapped);
     } catch (error: any) {
       console.error("Error fetching Xero accounts:", error);
@@ -33390,6 +34066,30 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
   });
 
   // Xero: Push client invoice as AR invoice
+  // Fallback Xero revenue account for client-invoice lines with no account code:
+  // company default (Settings → clientInvoiceDefaultXeroAccount) → the Xero
+  // account named "Sales". Shared by the push and update routes.
+  const resolveClientInvoiceFallbackAccount = async (connectionId: string): Promise<string | undefined> => {
+    try {
+      const settings = await storage.getCompanySettings();
+      const configured = (settings as any)?.clientInvoiceDefaultXeroAccount;
+      if (configured) return configured;
+    } catch {}
+    try {
+      const revenueAccounts = await xeroService.getAccounts(connectionId, { types: ["REVENUE", "SALES"] });
+      const match = (revenueAccounts as any[]).find(
+        (a) =>
+          typeof a?.Name === "string" &&
+          a.Name.trim().toLowerCase() === "sales" &&
+          (!a.Status || a.Status === "ACTIVE"),
+      );
+      if (match?.Code) return match.Code;
+    } catch (e) {
+      console.warn("[client-invoice-xero] could not load Xero revenue accounts:", (e as any)?.message || e);
+    }
+    return undefined;
+  };
+
   app.post("/api/xero/push-client-invoice", requireAuth, async (req, res) => {
     try {
       const user = req.user as any;
@@ -33419,7 +34119,33 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
         return res.status(400).json({ error: "Invoice already pushed to Xero", xeroInvoiceId: invoice.xeroInvoiceId });
       }
 
-      const lineItems = await storage.getClientInvoiceItems(invoiceId);
+      // Xero lines come from the persisted lineBreakdown snapshot — the SAME
+      // per-line cents the invoice totals were saved from. This is what
+      // guarantees the Xero invoice total equals Morada's total: previously
+      // only custom line items were pushed, silently dropping progress claims,
+      // variations, allowances, labour, bills and selections.
+      const rawBreakdown = (invoice as any).lineBreakdown;
+      if (!Array.isArray(rawBreakdown) || rawBreakdown.length === 0) {
+        return res.status(422).json({
+          error: "MISSING_LINE_SNAPSHOT",
+          message: "This invoice needs resaving before it can sync: open it, click Update, then push to Xero again.",
+        });
+      }
+      const parsedBreakdown = z.array(invoiceLineBreakdownEntrySchema).safeParse(rawBreakdown);
+      if (!parsedBreakdown.success) {
+        return res.status(422).json({
+          error: "INVALID_LINE_SNAPSHOT",
+          message: "This invoice's line snapshot is invalid — open it, click Update, then push to Xero again.",
+        });
+      }
+      const breakdown = parsedBreakdown.data;
+      const snapshotTotalCents = breakdown.reduce((s, l) => s + l.amountIncCents, 0);
+      if (snapshotTotalCents !== invoice.totalAmount) {
+        return res.status(422).json({
+          error: "STALE_LINE_SNAPSHOT",
+          message: "This invoice's totals have changed since it was last saved — open it, click Update, then push to Xero again.",
+        });
+      }
 
       let clientName = "Unknown Client";
       let clientXeroContactId: string | undefined;
@@ -33478,37 +34204,51 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
         return date.toISOString().split("T")[0];
       };
 
-      const xeroLineItems = lineItems.map((item: any) => {
-        const tracking: any[] = [];
+      // Resolve the fallback revenue account for lines without their own code:
+      //   line.accountCode -> company default -> Xero account named "Sales".
+      // Xero rejects AUTHORISED invoices whose lines have no account code, so we
+      // pre-flight this rather than let the push 400.
+      const fallbackAccountCode = await resolveClientInvoiceFallbackAccount(connection.id);
 
-        if (projectXeroTrackingOptionId && connection.trackingCategory2Id) {
-          tracking.push({
-            TrackingCategoryID: connection.trackingCategory2Id,
-            TrackingOptionID: projectXeroTrackingOptionId,
-          });
-        }
+      const lineTracking: any[] = [];
+      if (projectXeroTrackingOptionId && connection.trackingCategory2Id) {
+        lineTracking.push({
+          TrackingCategoryID: connection.trackingCategory2Id,
+          TrackingOptionID: projectXeroTrackingOptionId,
+        });
+      }
 
-        return {
-          description: item.description || "",
-          quantity: typeof item.quantity === "number" ? item.quantity : 1,
-          unitAmount: typeof item.unitPrice === "number" ? item.unitPrice / 100 : 0,
-          taxType: item.taxable ? "OUTPUT" : "NONE",
-          accountCode: (item as any).xeroAccountCode || undefined,
-          tracking: tracking.length > 0 ? tracking : undefined,
-        };
-      });
+      // Quantity is always 1 with the line's ex-GST amount as the unit price,
+      // and the explicit per-line TaxAmount override keeps Xero's tax equal to
+      // Morada's stored GST to the cent (no re-derivation drift).
+      const xeroLineItems = breakdown.map((l) => ({
+        description: l.description,
+        quantity: 1,
+        unitAmount: l.amountExCents / 100,
+        taxType: l.taxable ? "OUTPUT" : "NONE",
+        taxAmount: l.gstCents / 100,
+        accountCode: l.accountCode || fallbackAccountCode || undefined,
+        tracking: lineTracking.length > 0 ? lineTracking : undefined,
+      }));
 
-      if (xeroLineItems.length === 0) {
-        return res.status(400).json({ error: "Invoice has no line items to push" });
+      // Clear, actionable pre-flight errors (short enough for a toast) instead of
+      // letting Xero return a raw validation blob.
+      if (xeroLineItems.some((li) => !li.accountCode)) {
+        return res.status(422).json({
+          error: "MISSING_ACCOUNT_CODE",
+          message: "Set a default Xero sales account in Settings → Company, or add an account code to each invoice line.",
+        });
       }
 
       const xeroInvoice = await xeroService.createInvoice(connection.id, {
         clientName,
         clientXeroContactId,
         invoiceDate: formatDate(invoice.invoiceDate),
-        dueDate: invoice.dueDate ? formatDate(invoice.dueDate) : undefined,
-        reference: invoice.invoiceNumber,
-        invoiceNumber: invoice.invoiceNumber,
+        // Xero requires a due date on authorised invoices — default to the
+        // invoice date when the Morada invoice has none set.
+        dueDate: formatDate(invoice.dueDate || invoice.invoiceDate),
+        reference: invoice.invoiceNumber || undefined,
+        invoiceNumber: invoice.invoiceNumber || undefined,
         lineItems: xeroLineItems,
       });
 
@@ -33527,7 +34267,12 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
       });
     } catch (error: any) {
       console.error("Error pushing client invoice to Xero:", error);
-      res.status(500).json({ error: error.message || "Failed to push client invoice to Xero" });
+      // error.message is already a short, human summary (see summarizeXeroError).
+      const message = error?.message || "Failed to push client invoice to Xero";
+      res.status(error?.status && error.status < 500 ? error.status : 500).json({
+        error: message,
+        message,
+      });
     }
   });
 
@@ -33545,7 +34290,29 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
       if (!invoice) return res.status(404).json({ error: "Client invoice not found" });
       if (!invoice.xeroInvoiceId) return res.status(400).json({ error: "Invoice has not been pushed to Xero yet. Use push route first." });
 
-      const lineItems = await storage.getClientInvoiceItems(invoice.id);
+      // Same snapshot-based line source as the push route (see push for why).
+      const rawBreakdown = (invoice as any).lineBreakdown;
+      if (!Array.isArray(rawBreakdown) || rawBreakdown.length === 0) {
+        return res.status(422).json({
+          error: "MISSING_LINE_SNAPSHOT",
+          message: "This invoice needs resaving before it can sync: open it, click Update, then sync to Xero again.",
+        });
+      }
+      const parsedBreakdown = z.array(invoiceLineBreakdownEntrySchema).safeParse(rawBreakdown);
+      if (!parsedBreakdown.success) {
+        return res.status(422).json({
+          error: "INVALID_LINE_SNAPSHOT",
+          message: "This invoice's line snapshot is invalid — open it, click Update, then sync to Xero again.",
+        });
+      }
+      const breakdown = parsedBreakdown.data;
+      const snapshotTotalCents = breakdown.reduce((s, l) => s + l.amountIncCents, 0);
+      if (snapshotTotalCents !== invoice.totalAmount) {
+        return res.status(422).json({
+          error: "STALE_LINE_SNAPSHOT",
+          message: "This invoice's totals have changed since it was last saved — open it, click Update, then sync to Xero again.",
+        });
+      }
 
       let clientName = "Unknown Client";
       let clientXeroContactId: string | undefined;
@@ -33599,44 +34366,45 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
         return date.toISOString().split("T")[0];
       };
 
-      const xeroLineItems = lineItems.map((item: any) => {
-        const tracking: any[] = [];
-        if (projectXeroTrackingOptionId && connection.trackingCategory2Id) {
-          tracking.push({ TrackingCategoryID: connection.trackingCategory2Id, TrackingOptionID: projectXeroTrackingOptionId });
-        }
-        return {
-          description: item.description || "",
-          quantity: typeof item.quantity === "number" ? item.quantity : 1,
-          unitAmount: typeof item.unitPrice === "number" ? item.unitPrice / 100 : 0,
-          taxType: item.taxable ? "OUTPUT" : "NONE",
-          accountCode: (item as any).xeroAccountCode || undefined,
-          tracking: tracking.length > 0 ? tracking : undefined,
-        };
-      });
+      const fallbackAccountCode = await resolveClientInvoiceFallbackAccount(connection.id);
 
-      if (xeroLineItems.length === 0) return res.status(400).json({ error: "Invoice has no line items to sync" });
+      const lineTracking: any[] = [];
+      if (projectXeroTrackingOptionId && connection.trackingCategory2Id) {
+        lineTracking.push({ TrackingCategoryID: connection.trackingCategory2Id, TrackingOptionID: projectXeroTrackingOptionId });
+      }
 
-      // Xero's POST /Invoices with InvoiceID performs an upsert
+      if (breakdown.some((l) => !l.accountCode && !fallbackAccountCode)) {
+        return res.status(422).json({
+          error: "MISSING_ACCOUNT_CODE",
+          message: "Set a default Xero sales account in Settings → Company, or add an account code to each invoice line.",
+        });
+      }
+
+      // Xero's POST /Invoices with InvoiceID performs an upsert. Lines come
+      // from the validated snapshot with explicit TaxAmount so Xero's total
+      // matches Morada's stored totals to the cent.
       const accessToken = await xeroService.getValidToken(connection.id);
       const invoicePayload: any = {
         InvoiceID: invoice.xeroInvoiceId,
         Type: "ACCREC",
         Contact: { ContactID: clientXeroContactId },
         Date: formatDate(invoice.invoiceDate),
-        LineItems: xeroLineItems.map((li: any) => ({
-          Description: li.description,
-          Quantity: li.quantity,
-          UnitAmount: li.unitAmount,
-          TaxType: li.taxType,
-          ...(li.accountCode ? { AccountCode: li.accountCode } : {}),
-          ...(li.tracking?.length ? { Tracking: li.tracking } : {}),
+        LineItems: breakdown.map((l) => ({
+          Description: l.description,
+          Quantity: 1,
+          UnitAmount: l.amountExCents / 100,
+          TaxType: l.taxable ? "OUTPUT" : "NONE",
+          TaxAmount: l.gstCents / 100,
+          AccountCode: l.accountCode || fallbackAccountCode,
+          ...(lineTracking.length ? { Tracking: lineTracking } : {}),
         })),
         LineAmountTypes: "Exclusive",
         Status: "AUTHORISED",
         InvoiceNumber: invoice.invoiceNumber,
         Reference: invoice.invoiceNumber,
       };
-      if (invoice.dueDate) invoicePayload.DueDate = formatDate(invoice.dueDate);
+      // Xero requires a due date on authorised invoices — default to the invoice date.
+      invoicePayload.DueDate = formatDate(invoice.dueDate || invoice.invoiceDate);
 
       const updateResponse = await fetch("https://api.xero.com/api.xro/2.0/Invoices", {
         method: "POST",
@@ -33651,7 +34419,9 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
 
       if (!updateResponse.ok) {
         const errorText = await updateResponse.text();
-        throw new Error(`Xero API error: ${updateResponse.status} ${errorText}`);
+        const err = new Error(summarizeXeroError(errorText)) as Error & { status?: number };
+        err.status = updateResponse.status;
+        throw err;
       }
 
       const updateData = (await updateResponse.json()) as any;
@@ -33669,7 +34439,8 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
       });
     } catch (error: any) {
       console.error("Error updating client invoice in Xero:", error);
-      res.status(500).json({ error: error.message || "Failed to update client invoice in Xero" });
+      const message = error?.message || "Failed to update client invoice in Xero";
+      res.status(error?.status && error.status < 500 ? error.status : 500).json({ error: message, message });
     }
   });
 
@@ -33700,21 +34471,11 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
       const xeroStatus: string = xeroInvoice.Status;
       const amountDueCents = Math.round((xeroInvoice.AmountDue || 0) * 100);
 
-      let newLocalStatus: string = invoice.status;
-      if (xeroStatus === "PAID") {
-        newLocalStatus = "paid";
-      } else if (amountPaidCents > 0) {
-        newLocalStatus = "partial";
-      } else if (xeroStatus === "VOIDED") {
-        newLocalStatus = "draft";
-      }
-
-      const updates: any = {
-        paidAmount: amountPaidCents,
-        balanceAmount: Math.max(0, amountDueCents),
-        status: newLocalStatus,
-      };
-
+      // Record the Xero-side payment increase as a payment row, then let
+      // syncClientInvoicePaidStatus recompute paid/balance/status from the
+      // rows — the single writer for paid state. (Previously this route
+      // OVERWROTE paidAmount with Xero's absolute figure, silently clobbering
+      // payments recorded in Morada that Xero doesn't know about.)
       if (amountPaidCents > (invoice.paidAmount || 0)) {
         const diff = amountPaidCents - (invoice.paidAmount || 0);
         await storage.createClientInvoicePayment({
@@ -33727,16 +34488,24 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
           isVoided: false,
           recordedBy: user?.id || null,
         } as any);
+        // createClientInvoicePayment already ran the sync.
+      } else {
+        await storage.syncClientInvoicePaidStatus(invoice.id);
       }
 
-      await storage.updateClientInvoice(invoice.id, updates);
+      // VOIDED in Xero is a document-state change, not a payment change —
+      // reflect it explicitly (payments sync above never sets "draft").
+      if (xeroStatus === "VOIDED") {
+        await storage.updateClientInvoice(invoice.id, { status: "draft" } as any);
+      }
 
+      const updated = await storage.getClientInvoice(invoice.id);
       res.json({
         success: true,
         xeroStatus,
         amountPaidCents,
         amountDueCents,
-        newLocalStatus,
+        newLocalStatus: updated?.status ?? invoice.status,
       });
     } catch (error: any) {
       console.error("Error pulling client invoice from Xero:", error);
@@ -33908,22 +34677,13 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
           if (!xeroInvoice) continue;
 
           const amountPaidCents = Math.round((xeroInvoice.AmountPaid || 0) * 100);
-          const amountDueCents = Math.round((xeroInvoice.AmountDue || 0) * 100);
           const xeroStatus: string = xeroInvoice.Status;
 
-          // Map Xero invoice statuses to local statuses
-          let newLocalStatus: string = localInvoice.status;
-          if (xeroStatus === "PAID") {
-            newLocalStatus = "paid";
-          } else if (xeroStatus === "VOIDED" || xeroStatus === "DELETED") {
-            newLocalStatus = "draft"; // Reverting to draft is the safest option for voided/deleted
-          } else if (xeroStatus === "AUTHORISED" && amountPaidCents > 0 && amountDueCents > 0) {
-            newLocalStatus = "partial";
-          } else if (xeroStatus === "AUTHORISED" || xeroStatus === "SUBMITTED") {
-            // Keep the current status but record payment changes if any
-            newLocalStatus = localInvoice.status;
-          }
-
+          // Record the Xero-side payment increase as a payment row; paid/
+          // balance/status recompute from the rows inside
+          // createClientInvoicePayment (single writer — never overwrite
+          // paidAmount with Xero's absolute figure, which clobbers payments
+          // recorded only in Morada).
           if (amountPaidCents > (localInvoice.paidAmount || 0)) {
             const diff = amountPaidCents - (localInvoice.paidAmount || 0);
             await storage.createClientInvoicePayment({
@@ -33938,11 +34698,11 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
             } as any);
           }
 
-          await storage.updateClientInvoice(localInvoice.id, {
-            paidAmount: amountPaidCents,
-            balanceAmount: Math.max(0, amountDueCents),
-            status: newLocalStatus,
-          } as any);
+          // Document-state change (not derivable from payments): voided or
+          // deleted in Xero reverts the local invoice to draft.
+          if (xeroStatus === "VOIDED" || xeroStatus === "DELETED") {
+            await storage.updateClientInvoice(localInvoice.id, { status: "draft" } as any);
+          }
 
           processed++;
         } catch (err) {
@@ -33968,6 +34728,12 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
       if (!invoice) return res.status(404).json({ error: "Invoice not found" });
       if (!invoice.xeroInvoiceId) return res.status(400).json({ error: "Invoice has not been pushed to Xero" });
 
+      // Explicit ownership check: ensure the invoice's project belongs to this company
+      const invoiceProject = await storage.getProject(invoice.projectId);
+      if (!invoiceProject || (invoiceProject as any).companyId !== companyId) {
+        return res.status(403).json({ error: "Forbidden - invoice does not belong to your company" });
+      }
+
       const connection = await storage.getXeroConnectionByCompanyId(companyId);
       if (!connection) return res.status(400).json({ error: "Xero is not connected" });
 
@@ -33978,6 +34744,9 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
       const currentPaid = invoice.paidAmount || 0;
       const diff = amountPaidCents - currentPaid;
 
+      // Payment rows are the single source of paid state; the insert below
+      // recomputes paid/balance/status from the rows (see
+      // syncClientInvoicePaidStatus) — no absolute overwrite from Xero.
       if (diff > 0) {
         await storage.createClientInvoicePayment({
           invoiceId: invoice.id,
@@ -33988,14 +34757,6 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
           notes: null,
           isVoided: false,
           recordedBy: user?.id || null,
-        } as any);
-
-        const newBalance = (invoice.totalAmount || 0) - amountPaidCents;
-        const newStatus = amountPaidCents >= (invoice.totalAmount || 0) ? "paid" : "partial";
-        await storage.updateClientInvoice(invoice.id, {
-          paidAmount: amountPaidCents,
-          balanceAmount: Math.max(0, newBalance),
-          status: newStatus,
         } as any);
       }
 

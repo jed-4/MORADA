@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { LineItemTable } from "@/components/LineItemTable";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -2769,6 +2770,11 @@ function TermsConditionsSection() {
     queryKey: ["/api/xero/accounts"],
   });
 
+  // Revenue/Sales accounts for the client-invoice default (bills use expense accounts above).
+  const { data: xeroRevenueAccounts = [] } = useQuery<Array<{ code: string; name: string; type: string; accountId: string }>>({
+    queryKey: ["/api/xero/accounts?kind=revenue"],
+  });
+
   const saveDefaultAccountMutation = useMutation({
     mutationFn: async (accountCode: string | null) => {
       return await apiRequest("/api/company-settings", "PATCH", { clientInvoiceDefaultXeroAccount: accountCode });
@@ -2966,26 +2972,23 @@ function TermsConditionsSection() {
           <div className="flex items-center justify-between gap-4 flex-wrap">
             <div>
               <h4 className="font-semibold text-sm">Default Xero Account (Client Invoices)</h4>
-              <p className="text-sm text-muted-foreground mt-0.5">Applied automatically to new custom line items on client invoices</p>
+              <p className="text-sm text-muted-foreground mt-0.5">Sales account used as a fallback for client-invoice lines with no account code when pushing to Xero</p>
             </div>
-            {xeroAccounts.length > 0 ? (
-              <Select
-                value={companySettings?.clientInvoiceDefaultXeroAccount || "__none__"}
-                onValueChange={(val) => saveDefaultAccountMutation.mutate(val === "__none__" ? null : val)}
+            {xeroRevenueAccounts.length > 0 ? (
+              <SearchableSelect
+                value={companySettings?.clientInvoiceDefaultXeroAccount || ""}
+                onValueChange={(val) => saveDefaultAccountMutation.mutate(val || null)}
                 disabled={saveDefaultAccountMutation.isPending}
-              >
-                <SelectTrigger className="w-64" data-testid="select-default-xero-account">
-                  <SelectValue placeholder="Select account..." />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__none__">None</SelectItem>
-                  {xeroAccounts.map((acc) => (
-                    <SelectItem key={acc.code} value={acc.code}>
-                      {acc.code} — {acc.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                allowClear
+                placeholder="Select account..."
+                searchPlaceholder="Search accounts..."
+                emptyMessage="No sales accounts found."
+                triggerClassName="w-64"
+                data-testid="select-default-xero-account"
+                options={[...xeroRevenueAccounts]
+                  .sort((a, b) => (a.name || "").localeCompare(b.name || ""))
+                  .map((acc) => ({ value: acc.code, label: `${acc.code} — ${acc.name}` }))}
+              />
             ) : (
               <p className="text-sm text-muted-foreground italic">Connect Xero in Integrations to enable this setting</p>
             )}
@@ -3001,23 +3004,20 @@ function TermsConditionsSection() {
               <p className="text-sm text-muted-foreground mt-0.5">Used as a fallback when a bill line item has no account code and the supplier has no Xero default account set</p>
             </div>
             {xeroAccounts.length > 0 ? (
-              <Select
-                value={companySettings?.billDefaultXeroAccount || "__none__"}
-                onValueChange={(val) => saveBillDefaultAccountMutation.mutate(val === "__none__" ? null : val)}
+              <SearchableSelect
+                value={companySettings?.billDefaultXeroAccount || ""}
+                onValueChange={(val) => saveBillDefaultAccountMutation.mutate(val || null)}
                 disabled={saveBillDefaultAccountMutation.isPending}
-              >
-                <SelectTrigger className="w-64" data-testid="select-bill-default-xero-account">
-                  <SelectValue placeholder="Select account..." />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__none__">None</SelectItem>
-                  {xeroAccounts.map((acc) => (
-                    <SelectItem key={acc.code} value={acc.code}>
-                      {acc.code} — {acc.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                allowClear
+                placeholder="Select account..."
+                searchPlaceholder="Search accounts..."
+                emptyMessage="No accounts found."
+                triggerClassName="w-64"
+                data-testid="select-bill-default-xero-account"
+                options={[...xeroAccounts]
+                  .sort((a, b) => (a.name || "").localeCompare(b.name || ""))
+                  .map((acc) => ({ value: acc.code, label: `${acc.code} — ${acc.name}` }))}
+              />
             ) : (
               <p className="text-sm text-muted-foreground italic">Connect Xero in Integrations to enable this setting</p>
             )}
