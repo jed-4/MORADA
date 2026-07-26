@@ -4,7 +4,7 @@ import { TaskTooltip } from "@/components/ui/task-tooltip";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { type Task, type TaskTemplateStatus } from "@shared/schema";
+import { type Task, type FieldCategoryWithOptions } from "@shared/schema";
 import {
   Plus, Circle, CheckSquare, ChevronDown, ChevronRight, AlertCircle, SlidersHorizontal, Eye, EyeOff,
 } from "lucide-react";
@@ -181,15 +181,19 @@ export default function TasksWidget({ widget, onUpdate, isConfiguring, onCloseCo
     enabled: !!currentProject?.id,
   });
 
-  const { data: customStatuses = [] } = useQuery<TaskTemplateStatus[]>({
-    queryKey: ["/api/task-template-statuses"],
+  // Task statuses live in field categories ("task.status") and tasks store the
+  // option KEY (e.g. "in-progress"), so group/sort by key, not display name.
+  const { data: fieldCategories = [] } = useQuery<FieldCategoryWithOptions[]>({
+    queryKey: ["/api/field-categories"],
     staleTime: 5 * 60 * 1000,
   });
 
-  const sortedStatuses = useMemo(() =>
-    [...customStatuses].sort((a, b) => (a.order ?? 0) - (b.order ?? 0)),
-    [customStatuses],
-  );
+  const sortedStatuses = useMemo(() => {
+    const options = fieldCategories.find(cat => cat.key === "task.status")?.options || [];
+    return options
+      .filter(o => o.isActive !== false)
+      .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+  }, [fieldCategories]);
 
   const deleteTaskMutation = useMutation({
     mutationFn: async (taskId: string) => { await apiRequest(`/api/tasks/${taskId}`, "DELETE"); },
@@ -254,7 +258,7 @@ export default function TasksWidget({ widget, onUpdate, isConfiguring, onCloseCo
           break;
         case "status": {
           const so: Record<string, number> = {};
-          sortedStatuses.forEach((s, i) => { so[s.name] = i; });
+          sortedStatuses.forEach((s, i) => { so[s.key] = i; });
           cmp = (so[a.status ?? ""] ?? 99) - (so[b.status ?? ""] ?? 99);
           break;
         }
@@ -277,7 +281,7 @@ export default function TasksWidget({ widget, onUpdate, isConfiguring, onCloseCo
     }).length, [processedTasks]);
 
   const inProgressCount = useMemo(() =>
-    processedTasks.filter(t => t.status === "in_progress").length, [processedTasks]);
+    processedTasks.filter(t => t.status === "in-progress" || t.status === "in_progress").length, [processedTasks]);
 
   const visibleTasks = useMemo(() => {
     if (showCompleted) return processedTasks;
@@ -289,11 +293,11 @@ export default function TasksWidget({ widget, onUpdate, isConfiguring, onCloseCo
 
   const groupedSections = useMemo(() => {
     if (displayMode !== "grouped") return null;
-    const knownStatuses = sortedStatuses.map(s => s.name);
+    const knownStatuses = sortedStatuses.map(s => s.key);
     const sections = sortedStatuses.map(s => ({
-      key: s.name,
+      key: s.key,
       label: s.name,
-      tasks: cappedTasks.filter(t => t.status === s.name),
+      tasks: cappedTasks.filter(t => t.status === s.key),
     }));
     const otherTasks = cappedTasks.filter(t => !knownStatuses.includes(t.status ?? ""));
     if (otherTasks.length > 0) {

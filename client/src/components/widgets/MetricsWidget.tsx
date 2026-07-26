@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { TrendingUp, TrendingDown, DollarSign, Percent, BarChart3, ArrowRight, Settings, ExternalLink, ChevronUp, ChevronDown } from "lucide-react";
+import { TrendingUp, TrendingDown, DollarSign, Percent, BarChart3, ArrowRight, Settings, ExternalLink, ChevronUp, ChevronDown, AlertCircle } from "lucide-react";
 import { WidgetProps } from "@/types/widgets";
 import { useProject } from "@/contexts/ProjectContext";
 import { useProjectMetrics, metricDefinitions, type MetricId } from "@/hooks/useProjectMetrics";
@@ -40,7 +40,7 @@ const defaultMetricConfigs: MetricConfig[] = [
 
 export default function MetricsWidget({ widget, onUpdate, isConfiguring, onCloseConfig }: WidgetProps) {
   const { currentProject } = useProject();
-  const { metrics, isLoading, formatCurrency, formatPercentage } = useProjectMetrics();
+  const { metrics, isLoading, isError, formatCurrency, formatPercentage } = useProjectMetrics();
   const [showAllMetrics, setShowAllMetrics] = useState(false);
   const [editingTitle, setEditingTitle] = useState(widget.title);
   
@@ -132,7 +132,7 @@ export default function MetricsWidget({ widget, onUpdate, isConfiguring, onClose
     );
   }
 
-  if (isLoading) {
+  if (isLoading && !isConfiguring) {
     return (
       <div className="space-y-3">
         {[1, 2, 3].map(i => (
@@ -141,6 +141,15 @@ export default function MetricsWidget({ widget, onUpdate, isConfiguring, onClose
             <div className="h-6 bg-muted rounded w-2/3"></div>
           </div>
         ))}
+      </div>
+    );
+  }
+
+  if (isError && !isConfiguring) {
+    return (
+      <div className="flex items-center gap-2 py-4 text-sm text-muted-foreground justify-center">
+        <AlertCircle className="h-4 w-4 text-destructive" />
+        Couldn't load project metrics — try refreshing
       </div>
     );
   }

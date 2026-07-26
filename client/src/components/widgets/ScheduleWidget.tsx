@@ -138,54 +138,87 @@ export default function ScheduleWidget({ widget, onUpdate, isConfiguring, onClos
   }, [viewMode, displayMode, effectiveTimezone]);
 
   const { data: tasks = [], isLoading: tasksLoading } = useQuery<any[]>({
-    queryKey: ["/api/projects", currentProject?.id, "tasks"],
+    // Keyed to match TasksWidget and the Tasks page so mutations there
+    // (which invalidate ["/api/tasks"]) refresh this widget too.
+    queryKey: ["/api/tasks", currentProject?.id],
     queryFn: async () => {
       if (!currentProject) return [];
       const response = await fetch(`/api/tasks?projectId=${currentProject.id}`, { credentials: "include" });
-      if (!response.ok) return [];
+      if (!response.ok) throw new Error(`Failed to load tasks (${response.status})`);
       return response.json();
     },
     enabled: !!currentProject,
   });
 
-  const { data: milestones = [], isLoading: milestonesLoading } = useQuery<any[]>({
-    queryKey: ["/api/projects", currentProject?.id, "milestones"],
+  // Milestones are schedule items with type "milestone" (there is no standalone
+  // milestones entity/endpoint). Same key as ProgrammeScheduleWidget to share cache.
+  const { data: allScheduleItems = [], isLoading: milestonesLoading } = useQuery<any[]>({
+    queryKey: ["/api/projects", currentProject?.id, "schedule-items"],
     queryFn: async () => {
       if (!currentProject) return [];
-      const response = await fetch(`/api/milestones?projectId=${currentProject.id}`, { credentials: "include" });
-      if (!response.ok) return [];
+      const response = await fetch(`/api/projects/${currentProject.id}/schedule-items`, { credentials: "include" });
+      if (!response.ok) throw new Error(`Failed to load schedule items (${response.status})`);
       return response.json();
     },
     enabled: !!currentProject && showMilestones,
   });
 
+  const milestones = useMemo(
+    () =>
+      allScheduleItems
+        .filter((i: any) => i.type === "milestone")
+        .map((i: any) => ({
+          id: i.id,
+          name: i.name,
+          targetDate: i.endDate || i.startDate,
+          completed: i.status === "completed",
+          progress: i.progress || 0,
+        })),
+    [allScheduleItems],
+  );
+
   const scheduleItems = useMemo(() => {
     const now = new Date();
     const items: ScheduleItem[] = [];
 
+    // Task statuses are stored as "todo" | "in-progress" | "done" keys.
+    const isDone = (status: string | null | undefined) =>
+      status === "done" || status === "complete" || status === "completed";
+    const isInProgress = (status: string | null | undefined) =>
+      status === "in-progress" || status === "in_progress";
+    // Overdue means past the END of the due day, not past the stored timestamp.
+    const startOfToday = new Date(now);
+    startOfToday.setHours(0, 0, 0, 0);
+    const isPastDue = (d: Date) => {
+      const day = new Date(d);
+      day.setHours(0, 0, 0, 0);
+      return day < startOfToday;
+    };
+
     if (showTasks) {
       tasks.forEach((task: any) => {
         if (!task.dueDate) return;
-        
+
         const dueDate = new Date(task.dueDate);
-        const isOverdue = task.status !== 'completed' && dueDate < now;
-        
-        if (!showCompleted && task.status === 'completed') return;
+        const isOverdue = !isDone(task.status) && isPastDue(dueDate);
+
+        if (!showCompleted && isDone(task.status)) return;
         if (!showOverdue && isOverdue) return;
-        
+
         if (priorityFilter !== "all" && task.priority !== priorityFilter) return;
         if (statusFilter !== "all") {
           if (statusFilter === "overdue" && !isOverdue) return;
-          if (statusFilter === "in_progress" && task.status !== "in_progress") return;
-          if (statusFilter === "scheduled" && (task.status !== "todo" && !isOverdue && task.status !== "in_progress")) return;
+          if (statusFilter === "in_progress" && !isInProgress(task.status)) return;
+          if (statusFilter === "scheduled" && (task.status !== "todo" && !isOverdue && !isInProgress(task.status))) return;
         }
 
         items.push({
           id: task.id,
           title: task.title || task.name,
           date: task.dueDate,
+          time: task.startTime || undefined,
           type: "task",
-          status: isOverdue ? "overdue" : task.status === 'completed' ? "completed" : task.status === 'in_progress' ? "in_progress" : "scheduled",
+          status: isOverdue ? "overdue" : isDone(task.status) ? "completed" : isInProgress(task.status) ? "in_progress" : "scheduled",
           priority: task.priority,
           assigneeName: task.assigneeName,
           progress: task.progress || 0,
@@ -198,7 +231,7 @@ export default function ScheduleWidget({ widget, onUpdate, isConfiguring, onClos
         if (!milestone.targetDate) return;
         
         const targetDate = new Date(milestone.targetDate);
-        const isOverdue = !milestone.completed && targetDate < now;
+        const isOverdue = !milestone.completed && isPastDue(targetDate);
         
         if (!showCompleted && milestone.completed) return;
         if (!showOverdue && isOverdue) return;
@@ -982,9 +1015,9 @@ export default function ScheduleWidget({ widget, onUpdate, isConfiguring, onClos
         </div>
 
         <div className="grid grid-cols-7 border-b">
-          {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map(d => (
-            <div key={d} className="text-center py-1 text-label text-muted-foreground uppercase border-r last:border-r-0">
-              {d}
+          {weeks[0].map(d => (
+            <div key={d.toISOString()} className="text-center py-1 text-label text-muted-foreground uppercase border-r last:border-r-0">
+              {format(d, "EEE")}
             </div>
           ))}
         </div>

@@ -416,7 +416,7 @@ export default function NotesWidget({ widget, onUpdate, isConfiguring, onCloseCo
         )}
       </div>
       
-      {displayNotes.length === 0 && !isCreating && (
+      {displayNotes.length === 0 && !isCreating && !isLoading && (
         <div className="text-center py-4 text-sm text-muted-foreground">
           No project notes yet
         </div>

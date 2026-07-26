@@ -30,7 +30,7 @@ import {
 import { WidgetProps } from "@/types/widgets";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { type ChecklistInstance, type ChecklistInstanceGroup, type ChecklistInstanceItem, type User as UserType } from "@shared/schema";
+import { type ChecklistInstance, type ChecklistInstanceGroup, type ChecklistInstanceItem } from "@shared/schema";
 import { useProject } from "@/contexts/ProjectContext";
 import { useAuth } from "@/hooks/use-auth";
 import { useLocation } from "wouter";
@@ -118,10 +118,6 @@ export default function ChecklistWidget({ widget, onUpdate, isConfiguring, onClo
       return response.json();
     },
     enabled: !!currentProject?.id,
-  });
-
-  const { data: users = [] } = useQuery<UserType[]>({
-    queryKey: ["/api/users"],
   });
 
   const uniqueAssignees = useMemo(() => {
@@ -584,7 +580,7 @@ function ChecklistAccordionItem({
     ? Math.round((checklist.completedCount / checklist.totalCount) * 100) 
     : 0;
 
-  const { data: groups = [] } = useQuery<ChecklistGroupWithItems[]>({
+  const { data: groups = [], isLoading: groupsLoading } = useQuery<ChecklistGroupWithItems[]>({
     queryKey: ["/api/checklist-instances", checklist.id, "groups"],
     queryFn: async () => {
       const response = await fetch(`/api/checklist-instances/${checklist.id}/groups`, {
@@ -670,7 +666,11 @@ function ChecklistAccordionItem({
         
         <CollapsibleContent>
           <div className="border-t bg-muted/30 px-2 py-1 space-y-0.5">
-            {groups.length === 0 ? (
+            {groupsLoading ? (
+              <div className="text-data text-muted-foreground text-center py-1 animate-pulse">
+                Loading…
+              </div>
+            ) : groups.length === 0 ? (
               <div className="text-data text-muted-foreground text-center py-1">
                 No checklists in this group
               </div>
@@ -729,7 +729,7 @@ function ChecklistGroupItem({
 }) {
   const [, setLocation] = useLocation();
 
-  const { data: items = [] } = useQuery<ChecklistInstanceItem[]>({
+  const { data: items = [], isLoading: itemsLoading } = useQuery<ChecklistInstanceItem[]>({
     queryKey: ["/api/checklist-instance-groups", group.id, "items"],
     queryFn: async () => {
       const response = await fetch(`/api/checklist-instance-groups/${group.id}/items`, {
@@ -828,7 +828,9 @@ function ChecklistGroupItem({
 
       <CollapsibleContent>
         <div className="ml-4 pl-2 border-l border-muted space-y-0.5 py-1">
-          {items.length === 0 ? (
+          {itemsLoading ? (
+            <div className="text-xs text-muted-foreground py-1 animate-pulse">Loading…</div>
+          ) : items.length === 0 ? (
             <div className="text-xs text-muted-foreground py-1">No items</div>
           ) : (
             items
