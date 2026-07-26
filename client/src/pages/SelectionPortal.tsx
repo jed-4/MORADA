@@ -10,11 +10,42 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
-import type { SelectionWithOptions, SelectionOption, SelectionComment } from "@shared/schema";
+import { formatCents } from "@shared/money";
+import type { SelectionComment } from "@shared/schema";
+
+interface PortalAttachment {
+  id: string;
+  fileName: string;
+  fileType: string;
+  filePath: string;
+  thumbnailX?: number;
+  thumbnailY?: number;
+}
+
+interface PortalOption {
+  id: string;
+  name: string;
+  description?: string | null;
+  sku?: string | null;
+  brand?: string | null;
+  approvedAt?: string | null;
+  isSelectedByClient?: boolean;
+  clientPrice?: number | null; // cents inc GST; null when hidden or not costed
+  attachments?: PortalAttachment[];
+}
 
 interface PortalData {
-  selection: SelectionWithOptions & { portalToken?: string; lockedAt?: string | null; allowance?: number | null; clientCanSeePrice?: boolean };
-  clientSelection: { selectedOptionId: string; clientName?: string } | null;
+  selection: {
+    id: string;
+    name: string;
+    description?: string | null;
+    allowance?: number | null; // cents; null when price hidden
+    clientCanSeePrice?: boolean;
+    clientCanChange?: boolean;
+    locked?: boolean;
+    options: PortalOption[];
+  };
+  clientSelection: { id: string; optionId: string } | null;
   comments: SelectionComment[];
 }
 
@@ -86,12 +117,11 @@ export default function SelectionPortal() {
   }
 
   const { selection, clientSelection, comments } = data;
-  const isLocked = !!(selection as any).lockedAt;
-  const selectedOptionId = clientSelection?.selectedOptionId;
-  const allowance = (selection as any).allowance;
-  const clientCanSeePrice = (selection as any).clientCanSeePrice;
-
-  const selectedOption = selection.options.find(o => o.id === selectedOptionId);
+  const isLocked = !!selection.locked;
+  const selectedOptionId = clientSelection?.optionId;
+  const allowance = selection.allowance; // cents
+  const clientCanSeePrice = !!selection.clientCanSeePrice;
+  const changeBlocked = !!selectedOptionId && selection.clientCanChange === false;
 
   return (
     <PortalLayout title="Selection Request" maxWidth="max-w-2xl">
@@ -118,10 +148,10 @@ export default function SelectionPortal() {
               )}
             </div>
 
-            {allowance && (
+            {!!allowance && clientCanSeePrice && (
               <div className="mt-3 flex items-center gap-2">
                 <span className="text-xs text-muted-foreground">Allowance:</span>
-                <span className="text-sm font-medium">${Number(allowance).toLocaleString("en-AU", { minimumFractionDigits: 2 })}</span>
+                <span className="text-sm font-medium">{formatCents(allowance, { alwaysShowDecimals: true })}</span>
               </div>
             )}
           </div>
@@ -149,17 +179,21 @@ export default function SelectionPortal() {
               <p className="text-sm text-muted-foreground">No options added yet</p>
             </div>
           )}
-          {selection.options.map((option: SelectionOption & { attachments?: any[] }) => {
+          {selection.options.map((option) => {
             const isSelected = option.id === selectedOptionId;
-            const isApproved = !!(option as any).approvedAt;
-            const price = (option as any).unitPrice;
-            const overAllowance = allowance && price ? Number(price) > Number(allowance) : false;
+            const isApproved = !!option.approvedAt;
+            const price = option.clientPrice; // cents inc GST, null when hidden/uncosted
+            const overAllowance = !!allowance && price != null && price > allowance;
+            const heroImage = option.attachments?.find(a =>
+              a.fileType === "image" || /\.(jpe?g|png|gif|webp|avif)$/i.test(a.fileName || "")
+            );
+            const disabled = isLocked || isApproved || changeBlocked || selectOptionMutation.isPending;
 
             return (
               <button
                 key={option.id}
-                disabled={isLocked || isApproved || selectOptionMutation.isPending}
-                onClick={() => !isLocked && !isApproved && selectOptionMutation.mutate(option.id)}
+                disabled={disabled}
+                onClick={() => !disabled && selectOptionMutation.mutate(option.id)}
                 className={cn(
                   "w-full text-left bg-card rounded-xl overflow-hidden border-2 transition-colors",
                   isSelected
@@ -196,11 +230,11 @@ export default function SelectionPortal() {
                       )}
 
                       <div className="mt-2 flex flex-wrap gap-3 text-xs text-muted-foreground">
-                        {option.supplierName && <span>Supplier: {option.supplierName}</span>}
+                        {option.brand && <span>Brand: {option.brand}</span>}
                         {option.sku && <span>SKU: {option.sku}</span>}
-                        {clientCanSeePrice && price && (
+                        {clientCanSeePrice && price != null && (
                           <span className={cn("font-medium", overAllowance ? "text-status-warning" : "")}>
-                            ${Number(price).toLocaleString("en-AU", { minimumFractionDigits: 2 })}
+                            {formatCents(price, { alwaysShowDecimals: true })}
                             {overAllowance && " (over allowance)"}
                           </span>
                         )}
@@ -208,11 +242,12 @@ export default function SelectionPortal() {
                     </div>
 
                     {/* Image thumbnail */}
-                    {option.attachments && option.attachments.length > 0 && option.attachments[0].url && (
+                    {heroImage && (
                       <img
-                        src={option.attachments[0].url}
+                        src={heroImage.filePath}
                         alt={option.name}
                         className="w-16 h-16 rounded-lg object-cover shrink-0"
+                        style={{ objectPosition: `${heroImage.thumbnailX ?? 50}% ${heroImage.thumbnailY ?? 50}%` }}
                       />
                     )}
                   </div>

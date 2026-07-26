@@ -14018,10 +14018,18 @@ export class DbStorage implements IStorage {
       throw error;
     }
   }
-  async getClientSelections(projectId: string): Promise<ClientSelection[]> { return []; }
-  async createClientSelection(selection: InsertClientSelection): Promise<ClientSelection> { throw new Error("Not implemented"); }
-  async deleteClientSelection(id: string): Promise<boolean> { return false; }
-  async getClientSelectionBySelectionId(selectionId: string): Promise<ClientSelection | undefined> { return undefined; }
+  async getClientSelections(projectId: string): Promise<ClientSelection[]> {
+    return db.select().from(schema.clientSelections)
+      .where(eq(schema.clientSelections.projectId, projectId));
+  }
+  async createClientSelection(selection: InsertClientSelection): Promise<ClientSelection> {
+    const [row] = await db.insert(schema.clientSelections).values(selection).returning();
+    return row;
+  }
+  async deleteClientSelection(id: string): Promise<boolean> {
+    const result = await db.delete(schema.clientSelections).where(eq(schema.clientSelections.id, id));
+    return result.rowCount > 0;
+  }
   async getSelectionComments(selectionId: string): Promise<SelectionComment[]> { return []; }
   async createSelectionComment(comment: InsertSelectionComment): Promise<SelectionComment> { throw new Error("Not implemented"); }
   async deleteSelectionComment(id: string): Promise<boolean> { return false; }
