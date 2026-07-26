@@ -99,16 +99,6 @@ interface EstimateItem {
   priceIncTax: number | null;
 }
 
-interface VariationItem {
-  id: string;
-  quantity: number | null;
-  unitCost: number | null;
-  markupPercent: number | null;
-  totalExTax: number | null;
-  taxAmount: number | null;
-  totalIncTax: number | null;
-}
-
 interface BillLineItem {
   id: string;
   quantity: number | null;
@@ -123,12 +113,12 @@ export function useProjectMetrics() {
   const projectId = currentProject?.id;
 
   // Fetch all required data
-  const { data: estimates = [], isLoading: estimatesLoading } = useQuery<Estimate[]>({
-    queryKey: ["/api/projects", projectId, "estimates"],
+  const { data: estimates = [], isLoading: estimatesLoading, isError: estimatesError } = useQuery<Estimate[]>({
+    queryKey: ["/api/estimates", { projectId }],
     queryFn: async () => {
       if (!projectId) return [];
       const response = await fetch(`/api/estimates?projectId=${projectId}`, { credentials: "include" });
-      if (!response.ok) return [];
+      if (!response.ok) throw new Error(`Failed to load estimates (${response.status})`);
       return response.json();
     },
     enabled: !!projectId,
@@ -139,12 +129,11 @@ export function useProjectMetrics() {
   // project estimate items only when no selected estimate is set.
   const selectedEstimateIdForItems =
     (currentProject as any)?.selectedEstimateId || null;
-  const { data: estimateItems = [], isLoading: itemsLoading } = useQuery<EstimateItem[]>({
+  const { data: estimateItems = [], isLoading: itemsLoading, isError: itemsError } = useQuery<EstimateItem[]>({
     queryKey: [
-      "/api/projects",
-      projectId,
-      "estimate-items",
-      { selectedEstimateId: selectedEstimateIdForItems },
+      "/api/estimates",
+      "items",
+      { projectId, selectedEstimateId: selectedEstimateIdForItems },
     ],
     queryFn: async () => {
       if (!projectId) return [];
@@ -152,70 +141,60 @@ export function useProjectMetrics() {
         ? `/api/estimates/${selectedEstimateIdForItems}/items`
         : `/api/projects/${projectId}/estimate-items`;
       const response = await fetch(url, { credentials: "include" });
-      if (!response.ok) return [];
+      if (!response.ok) throw new Error(`Failed to load estimate items (${response.status})`);
       return response.json();
     },
     enabled: !!projectId,
   });
 
-  const { data: bills = [], isLoading: billsLoading } = useQuery<Bill[]>({
-    queryKey: ["/api/projects", projectId, "bills"],
+  const { data: bills = [], isLoading: billsLoading, isError: billsError } = useQuery<Bill[]>({
+    queryKey: ["/api/bills", { projectId }],
     queryFn: async () => {
       if (!projectId) return [];
       const response = await fetch(`/api/bills?projectId=${projectId}`, { credentials: "include" });
-      if (!response.ok) return [];
+      if (!response.ok) throw new Error(`Failed to load bills (${response.status})`);
       return response.json();
     },
     enabled: !!projectId,
   });
 
-  const { data: variations = [], isLoading: variationsLoading } = useQuery<Variation[]>({
-    queryKey: ["/api/projects", projectId, "variations"],
+  const { data: variations = [], isLoading: variationsLoading, isError: variationsError } = useQuery<Variation[]>({
+    queryKey: ["/api/variations", { projectId }],
     queryFn: async () => {
       if (!projectId) return [];
       const response = await fetch(`/api/variations?projectId=${projectId}`, { credentials: "include" });
-      if (!response.ok) return [];
+      if (!response.ok) throw new Error(`Failed to load variations (${response.status})`);
       return response.json();
     },
     enabled: !!projectId,
   });
 
-  const { data: variationItems = [], isLoading: variationItemsLoading } = useQuery<VariationItem[]>({
-    queryKey: ["/api/projects", projectId, "variation-items"],
-    queryFn: async () => {
-      if (!projectId) return [];
-      const response = await fetch(`/api/variation-items?projectId=${projectId}`, { credentials: "include" });
-      if (!response.ok) return [];
-      return response.json();
-    },
-    enabled: !!projectId,
-  });
-
-  const { data: clientInvoices = [], isLoading: invoicesLoading } = useQuery<ClientInvoice[]>({
-    queryKey: ["/api/projects", projectId, "client-invoices"],
+  const { data: clientInvoices = [], isLoading: invoicesLoading, isError: invoicesError } = useQuery<ClientInvoice[]>({
+    queryKey: ["/api/client-invoices", { projectId }],
     queryFn: async () => {
       if (!projectId) return [];
       const response = await fetch(`/api/client-invoices?projectId=${projectId}`, { credentials: "include" });
-      if (!response.ok) return [];
+      if (!response.ok) throw new Error(`Failed to load invoices (${response.status})`);
       return response.json();
     },
     enabled: !!projectId,
   });
 
-  const { data: invoiceVariations = [], isLoading: invoiceVariationsLoading } = useQuery<
+  const { data: invoiceVariations = [], isLoading: invoiceVariationsLoading, isError: invoiceVariationsError } = useQuery<
     Array<{ variationId: string; invoiceId: string; invoiceNumber: string | null; claimPercent: number }>
   >({
-    queryKey: ["/api/projects", projectId, "invoice-variations"],
+    queryKey: ["/api/invoice-variations/by-project", projectId],
     queryFn: async () => {
       if (!projectId) return [];
       const response = await fetch(`/api/invoice-variations/by-project?projectId=${projectId}`, { credentials: "include" });
-      if (!response.ok) return [];
+      if (!response.ok) throw new Error(`Failed to load invoice variations (${response.status})`);
       return response.json();
     },
     enabled: !!projectId,
   });
 
-  const isLoading = estimatesLoading || itemsLoading || billsLoading || variationsLoading || variationItemsLoading || invoicesLoading || invoiceVariationsLoading;
+  const isLoading = estimatesLoading || itemsLoading || billsLoading || variationsLoading || invoicesLoading || invoiceVariationsLoading;
+  const isError = estimatesError || itemsError || billsError || variationsError || invoicesError || invoiceVariationsError;
 
   // Calculate metrics
   const calculateMetrics = (): ProjectMetricsData => {
@@ -329,12 +308,13 @@ export function useProjectMetrics() {
     // Contract Price (legacy alias — inc-GST dollars)
     const contractPrice = contractMetrics.originalContractPriceIncGst;
 
-    // Contract Costs: Estimate values without markup
+    // Contract Costs: Estimate values without markup.
+    // estimate_items.unitCostExTax is already DOLLARS (doublePrecision), not cents.
     const contractCosts = estimateItems.reduce((sum, item) => {
       const unitCost = item.unitCostExTax || 0;
       const qty = item.quantity || 1;
       return sum + (unitCost * qty);
-    }, 0) / 100;
+    }, 0);
 
     // Variation status buckets (for counts + pending value)
     const approvedVariationsList = variations.filter(v => v.status === 'approved' || v.status === 'released');
@@ -373,18 +353,12 @@ export function useProjectMetrics() {
       return sum + (value * pct) / 100;
     }, 0) / 100;
 
-    // Change order costs (without markup)
-    const changeOrderCosts = variationItems.reduce((sum, item) => {
-      const unitCost = item.unitCost || 0;
-      const qty = item.quantity || 1;
-      return sum + (unitCost * qty);
-    }, 0) / 100;
-
     // Revised Contract Price (legacy alias — inc-GST dollars)
     const revisedContractPrice = contractMetrics.revisedContractPriceIncGst;
 
-    // Total Project Costs
-    const totalProjectCosts = contractCosts + changeOrderCosts;
+    // Total Project Costs. Variation (change-order) costs are not yet included:
+    // there is no per-project variation-items endpoint to source builder costs from.
+    const totalProjectCosts = contractCosts;
 
     // Bills calculations
     const now = new Date();
@@ -589,6 +563,7 @@ export function useProjectMetrics() {
     metrics,
     metricsList: getMetricsList(),
     isLoading,
+    isError,
     formatCurrency,
     formatPercentage,
   };

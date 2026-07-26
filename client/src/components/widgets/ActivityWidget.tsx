@@ -39,12 +39,14 @@ export default function ActivityWidget({ widget, onUpdate, isConfiguring, onClos
     setConfigMaxItems(widget.config?.maxItems || 20);
   }, [widget.title, widget.config]);
 
+  const maxItemsConfig = widget.config?.maxItems || 20;
+
   const { data: activities = [], isLoading } = useQuery<Activity[]>({
-    queryKey: ["/api/activities", currentProject?.id],
+    queryKey: ["/api/activities", currentProject?.id, maxItemsConfig],
     queryFn: async () => {
       if (!currentProject?.id) return [];
       const response = await fetch(
-        `/api/activities?projectId=${currentProject.id}&limit=20`,
+        `/api/activities?projectId=${currentProject.id}&limit=${maxItemsConfig}`,
         {
           credentials: "include",
         }

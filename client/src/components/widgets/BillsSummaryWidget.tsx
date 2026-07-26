@@ -12,7 +12,7 @@ import { useLocation } from "wouter";
 
 export default function BillsSummaryWidget({ widget, onUpdate, isConfiguring, onCloseConfig }: WidgetProps) {
   const { currentProject } = useProject();
-  const { metrics, isLoading, formatCurrency } = useProjectMetrics();
+  const { metrics, isLoading, isError, formatCurrency } = useProjectMetrics();
   const [, navigate] = useLocation();
   const [editingTitle, setEditingTitle] = useState(widget.title);
   
@@ -28,16 +28,7 @@ export default function BillsSummaryWidget({ widget, onUpdate, isConfiguring, on
     );
   }
 
-  if (isLoading) {
-    return (
-      <div className="space-y-3 animate-pulse">
-        <div className="h-6 bg-muted rounded w-1/2"></div>
-        <div className="h-16 bg-muted rounded"></div>
-      </div>
-    );
-  }
-
-  // Configuration mode
+  // Configuration mode (before loading/error so the panel can open any time)
   if (isConfiguring) {
     const handleSaveConfig = () => {
       if (onUpdate) {
@@ -75,7 +66,25 @@ export default function BillsSummaryWidget({ widget, onUpdate, isConfiguring, on
     );
   }
 
-  const paidPercentage = metrics.totalBills > 0 
+  if (isLoading) {
+    return (
+      <div className="space-y-3 animate-pulse">
+        <div className="h-6 bg-muted rounded w-1/2"></div>
+        <div className="h-16 bg-muted rounded"></div>
+      </div>
+    );
+  }
+
+  if (isError) {
+    return (
+      <div className="flex items-center gap-2 py-4 text-sm text-muted-foreground justify-center">
+        <AlertCircle className="h-4 w-4 text-destructive" />
+        Couldn't load bills — try refreshing
+      </div>
+    );
+  }
+
+  const paidPercentage = metrics.totalBills > 0
     ? (metrics.paidBills / metrics.totalBills) * 100 
     : 0;
 
