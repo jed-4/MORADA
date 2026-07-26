@@ -1,9 +1,8 @@
 import { useState, useEffect } from "react";
-import { TrendingUp, TrendingDown, DollarSign, Percent, BarChart3, ArrowRight, Settings, ExternalLink, ChevronUp, ChevronDown, AlertCircle } from "lucide-react";
+import { TrendingUp, TrendingDown, Settings, ExternalLink, ChevronUp, ChevronDown, AlertCircle } from "lucide-react";
 import { WidgetProps } from "@/types/widgets";
 import { useProject } from "@/contexts/ProjectContext";
 import { useProjectMetrics, metricDefinitions, metricGroups, type MetricId } from "@/hooks/useProjectMetrics";
-import { Progress } from "@/components/ui/progress";
 import {
   Select,
   SelectContent,
@@ -12,9 +11,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
   DialogContent,
@@ -40,6 +37,33 @@ const defaultMetricConfigs: MetricConfig[] = [
 ];
 
 const CARD_STYLES: DisplayStyle[] = ["number", "comparison", "progress"];
+
+// Morada section accents by metric family (see index.css / CLAUDE.md)
+const CATEGORY_ACCENT: Record<string, string> = {
+  contract: "hsl(var(--primary))",
+  progress: "hsl(var(--primary))",
+  costs: "hsl(var(--amber))",
+  billing: "hsl(var(--teal))",
+  margins: "hsl(var(--sage))",
+  counts: "hsl(var(--muted-foreground))",
+};
+const accentFor = (category: string) => CATEGORY_ACCENT[category] ?? "hsl(var(--primary))";
+
+const CORAL = "hsl(var(--coral))";
+const CHIP_GOOD = { backgroundColor: "hsl(var(--sage-light))", color: "hsl(147 39% 30%)" };
+const CHIP_BAD = { backgroundColor: "hsl(var(--coral-light))", color: "hsl(11 52% 42%)" };
+const CHIP_NEUTRAL = { backgroundColor: "hsl(var(--muted))", color: "hsl(var(--muted-foreground))" };
+
+function AccentBar({ pct, color, className }: { pct: number; color: string; className?: string }) {
+  return (
+    <div className={cn("h-1.5 rounded-full bg-muted overflow-hidden", className)}>
+      <div
+        className="h-full rounded-full transition-all"
+        style={{ width: `${Math.min(100, Math.max(0, pct))}%`, backgroundColor: color }}
+      />
+    </div>
+  );
+}
 
 export default function MetricsWidget({ widget, onUpdate, isConfiguring, onCloseConfig }: WidgetProps) {
   const { currentProject } = useProject();
@@ -258,11 +282,14 @@ export default function MetricsWidget({ widget, onUpdate, isConfiguring, onClose
 
   if (isLoading) {
     return (
-      <div className="space-y-3">
-        {[1, 2, 3].map(i => (
-          <div key={i} className="animate-pulse">
-            <div className="h-4 bg-muted rounded w-1/3 mb-2"></div>
-            <div className="h-6 bg-muted rounded w-2/3"></div>
+      <div
+        className="grid gap-2"
+        style={{ gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))" }}
+      >
+        {[1, 2, 3, 4].map(i => (
+          <div key={i} className="animate-pulse p-3 pl-4 border rounded-lg bg-card space-y-2">
+            <div className="h-2.5 bg-muted rounded w-2/3"></div>
+            <div className="h-6 bg-muted rounded w-1/2"></div>
           </div>
         ))}
       </div>
@@ -287,23 +314,27 @@ export default function MetricsWidget({ widget, onUpdate, isConfiguring, onClose
     const formattedValue = formatValue(config.metricId, value);
 
     switch (config.displayStyle) {
-      case "number":
+      case "number": {
+        const accent = accentFor(def.category);
+        const isNegative = def.type === "currency" && value < 0;
         return (
-          <div key={index} className="p-3 border rounded-md space-y-1" data-testid={`metric-${config.metricId}`}>
-            <div className="flex items-center justify-between">
-              <span className="text-xs text-muted-foreground">{def.name}</span>
-              {def.type === "currency" && <DollarSign className="h-3 w-3 text-muted-foreground" />}
-              {def.type === "percentage" && <Percent className="h-3 w-3 text-muted-foreground" />}
-              {def.type === "count" && <BarChart3 className="h-3 w-3 text-muted-foreground" />}
+          <div key={index} className="relative overflow-hidden p-3 pl-4 border rounded-lg bg-card space-y-1" data-testid={`metric-${config.metricId}`}>
+            <span className="absolute inset-y-0 left-0 w-[3px]" style={{ backgroundColor: accent }} />
+            <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground block truncate">
+              {def.name}
+            </span>
+            <div className={cn("text-xl font-semibold tabular-nums leading-tight")} style={isNegative ? { color: CORAL } : undefined}>
+              {formattedValue}
             </div>
-            <div className="text-lg font-bold">{formattedValue}</div>
             {def.type === "percentage" && (
-              <Progress value={Math.min(100, Math.max(0, value))} className="h-1.5" />
+              <AccentBar pct={value} color={value > 100 ? CORAL : accent} />
             )}
           </div>
         );
+      }
 
       case "comparison": {
+        const accent = accentFor(def.category);
         const hasTarget = !!config.compareToId;
         const compareValue = hasTarget ? getMetricValue(config.compareToId!) : 0;
         const compareDef = hasTarget ? getMetricDef(config.compareToId!) : null;
@@ -311,69 +342,79 @@ export default function MetricsWidget({ widget, onUpdate, isConfiguring, onClose
         const isOver = value > compareValue;
         // Direction: exceeding a target is bad for costs, good elsewhere
         const overIsBad = def.category === "costs";
+        const isBad = isOver && overIsBad;
+        const isGood = (isOver && !overIsBad) || (!isOver && overIsBad);
+        const chipStyle = isBad ? CHIP_BAD : isGood ? CHIP_GOOD : CHIP_NEUTRAL;
 
         if (!hasTarget || !compareDef) {
           return (
-            <div key={index} className="p-3 border rounded-md space-y-1" data-testid={`metric-${config.metricId}`}>
-              <span className="text-xs text-muted-foreground">{def.name}</span>
-              <div className="text-lg font-bold">{formattedValue}</div>
+            <div key={index} className="relative overflow-hidden p-3 pl-4 border rounded-lg bg-card space-y-1" data-testid={`metric-${config.metricId}`}>
+              <span className="absolute inset-y-0 left-0 w-[3px]" style={{ backgroundColor: accent }} />
+              <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground block truncate">
+                {def.name}
+              </span>
+              <div className="text-xl font-semibold tabular-nums leading-tight">{formattedValue}</div>
               <p className="text-[10px] text-muted-foreground">No comparison set — choose one in settings</p>
             </div>
           );
         }
 
         return (
-          <div key={index} className="p-3 border rounded-md space-y-2" data-testid={`metric-${config.metricId}`}>
-            <div className="flex items-center justify-between">
-              <span className="text-xs text-muted-foreground">{def.name}</span>
-              {isOver ? (
-                <TrendingUp className={cn("h-3 w-3", overIsBad ? "text-red-500" : "text-green-500")} />
-              ) : (
-                <TrendingDown className={cn("h-3 w-3", overIsBad ? "text-green-500" : "text-muted-foreground")} />
-              )}
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-lg font-bold">{formattedValue}</span>
-              <ArrowRight className="h-3 w-3 text-muted-foreground" />
-              <span className="text-sm text-muted-foreground">
-                {formatValue(config.compareToId!, compareValue)}
+          <div key={index} className="relative overflow-hidden p-3 pl-4 border rounded-lg bg-card space-y-1.5" data-testid={`metric-${config.metricId}`}>
+            <span className="absolute inset-y-0 left-0 w-[3px]" style={{ backgroundColor: accent }} />
+            <div className="flex items-start justify-between gap-1">
+              <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground truncate">
+                {def.name}
               </span>
-            </div>
-            <div className="flex items-center gap-2">
-              <Progress value={Math.min(100, percentage)} className="h-1.5 flex-1" />
-              <span className={cn(
-                "text-xs",
-                isOver
-                  ? (overIsBad ? "text-red-500" : "text-green-500")
-                  : (overIsBad ? "text-green-500" : "text-muted-foreground"),
-              )}>
+              <span
+                className="flex items-center gap-0.5 text-[10px] font-medium px-1.5 py-0.5 rounded-full flex-shrink-0 tabular-nums"
+                style={chipStyle}
+              >
+                {isOver
+                  ? <TrendingUp className="h-2.5 w-2.5" />
+                  : <TrendingDown className="h-2.5 w-2.5" />}
                 {percentage.toFixed(0)}%
               </span>
             </div>
+            <div className="flex items-baseline gap-1.5 min-w-0">
+              <span className="text-xl font-semibold tabular-nums leading-tight">{formattedValue}</span>
+              <span className="text-xs text-muted-foreground tabular-nums truncate">
+                / {formatValue(config.compareToId!, compareValue)}
+              </span>
+            </div>
+            <AccentBar pct={percentage} color={isBad ? CORAL : accent} />
           </div>
         );
       }
 
       case "progress": {
+        const accent = accentFor(def.category);
         const progressValue = def.type === "percentage" ? value : 0;
         return (
-          <div key={index} className="p-3 border rounded-md space-y-2" data-testid={`metric-${config.metricId}`}>
-            <div className="flex items-center justify-between">
-              <span className="text-xs text-muted-foreground">{def.name}</span>
-              <span className="text-sm font-medium">{formattedValue}</span>
+          <div key={index} className="relative overflow-hidden p-3 pl-4 border rounded-lg bg-card space-y-2" data-testid={`metric-${config.metricId}`}>
+            <span className="absolute inset-y-0 left-0 w-[3px]" style={{ backgroundColor: accent }} />
+            <div className="flex items-center justify-between gap-1">
+              <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground truncate">
+                {def.name}
+              </span>
+              <span className="text-sm font-semibold tabular-nums">{formattedValue}</span>
             </div>
-            <Progress value={Math.min(100, Math.max(0, progressValue))} className="h-2" />
+            <AccentBar pct={progressValue} color={progressValue > 100 ? CORAL : accent} className="h-2" />
           </div>
         );
       }
 
       case "compact":
         return (
-          <div key={index} className="flex items-center justify-between py-1 border-b last:border-0" data-testid={`metric-${config.metricId}`}>
-            <span className="text-xs text-muted-foreground">{def.name}</span>
-            <Badge variant="secondary" className="text-xs font-medium h-5">
-              {formattedValue}
-            </Badge>
+          <div key={index} className="flex items-center justify-between gap-2 py-1.5 border-b border-border/60 last:border-0" data-testid={`metric-${config.metricId}`}>
+            <span className="flex items-center gap-1.5 text-xs text-muted-foreground min-w-0">
+              <span
+                className="w-1.5 h-1.5 rounded-full flex-shrink-0"
+                style={{ backgroundColor: accentFor(def.category) }}
+              />
+              <span className="truncate">{def.name}</span>
+            </span>
+            <span className="text-xs font-medium tabular-nums flex-shrink-0">{formattedValue}</span>
           </div>
         );
 
@@ -447,14 +488,19 @@ export default function MetricsWidget({ widget, onUpdate, isConfiguring, onClose
             {metricGroups.map(group => {
               const defs = metricDefinitions.filter(d => d.group === group);
               if (defs.length === 0) return null;
+              const groupAccent = accentFor(defs[0].category);
               return (
                 <div key={group} className="space-y-2">
-                  <h4 className="text-sm font-medium text-muted-foreground">{group}</h4>
+                  <h4 className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    <span className="w-2 h-2 rounded-full" style={{ backgroundColor: groupAccent }} />
+                    {group}
+                  </h4>
                   <div className="grid grid-cols-2 gap-2">
                     {defs.map(def => (
-                      <div key={def.id} className="p-2 border rounded-md">
-                        <div className="text-xs text-muted-foreground">{def.name}</div>
-                        <div className="text-sm font-medium">{formatValue(def.id, getMetricValue(def.id))}</div>
+                      <div key={def.id} className="relative overflow-hidden p-2 pl-3 border rounded-md bg-card">
+                        <span className="absolute inset-y-0 left-0 w-[3px]" style={{ backgroundColor: accentFor(def.category) }} />
+                        <div className="text-xs text-muted-foreground truncate">{def.name}</div>
+                        <div className="text-sm font-medium tabular-nums">{formatValue(def.id, getMetricValue(def.id))}</div>
                       </div>
                     ))}
                   </div>
