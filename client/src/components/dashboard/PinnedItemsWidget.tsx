@@ -764,6 +764,8 @@ export default function PinnedItemsWidget({
         <ScrollArea className="flex-1">
           {itemsQ.isLoading ? (
             <PersonalWidgetSkeleton rows={3} />
+          ) : itemsQ.isError ? (
+            <WidgetError onRetry={() => itemsQ.refetch()} />
           ) : sortedItems.length === 0 ? (
             <PersonalWidgetEmpty icon={Pin} message="No pinned items yet. Click + to add favorites." />
           ) : (
@@ -1073,6 +1075,10 @@ function PinModal({ open, onOpenChange, projectId, existingItems, onPinned }: Pi
     enabled: open,
   });
 
+  const sourceQueries = [billsQ, variationsQ, defectsQ, checklistsQ, diaryQ, notesQ];
+  const sourcesLoading = sourceQueries.some((q) => q.isLoading);
+  const sourcesErrored = sourceQueries.some((q) => q.isError);
+
   const pinMutation = useMutation({
     mutationFn: (data: any) => apiRequest(`/api/projects/${projectId}/pinned-items`, "POST", data),
     onSuccess: () => {
@@ -1199,9 +1205,26 @@ function PinModal({ open, onOpenChange, projectId, existingItems, onPinned }: Pi
           </div>
 
           <div className="max-h-56 overflow-auto border border-bp-border rounded-md">
-            {filtered.length === 0 ? (
+            {sourcesLoading && filtered.length === 0 ? (
+              <div className="p-3 text-xs text-[hsl(var(--bp-muted))] text-center animate-pulse">
+                Loading items…
+              </div>
+            ) : filtered.length === 0 ? (
               <div className="p-3 text-xs text-[hsl(var(--bp-muted))] text-center">
-                No matching items
+                {sourcesErrored ? (
+                  <>
+                    Some items couldn't be loaded.{" "}
+                    <button
+                      type="button"
+                      className="underline"
+                      onClick={() => sourceQueries.forEach((q) => q.isError && q.refetch())}
+                    >
+                      Retry
+                    </button>
+                  </>
+                ) : (
+                  "No matching items"
+                )}
               </div>
             ) : (
               filtered.map((r) => {
