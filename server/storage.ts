@@ -14047,7 +14047,7 @@ export class DbStorage implements IStorage {
   }
   async deleteClientSelection(id: string): Promise<boolean> {
     const result = await db.delete(schema.clientSelections).where(eq(schema.clientSelections.id, id));
-    return result.rowCount > 0;
+    return (result.rowCount ?? 0) > 0;
   }
   async getSelectionComments(selectionId: string): Promise<SelectionComment[]> { return []; }
   async createSelectionComment(comment: InsertSelectionComment): Promise<SelectionComment> { throw new Error("Not implemented"); }
