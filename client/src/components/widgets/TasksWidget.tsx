@@ -286,14 +286,9 @@ export default function TasksWidget({ widget, onUpdate, isConfiguring, onCloseCo
   useEffect(() => { setSortBy(defaultSortBy); }, [defaultSortBy]);
   useEffect(() => { setSortOrder(defaultSortOrder); }, [defaultSortOrder]);
 
-  const updateConfig = (patch: Record<string, unknown>) =>
-    onUpdate?.({ ...widget, config: { ...widget.config, ...patch } });
-
-  const commitTitle = () => {
-    if (editingTitle.trim() && editingTitle !== widget.title) {
-      onUpdate?.({ ...widget, title: editingTitle.trim() });
-    }
-  };
+  // Config changes stage into a local draft and only persist on Save
+  const [draft, setDraft] = useState<Record<string, unknown> | null>(null);
+  useEffect(() => { if (!isConfiguring) setDraft(null); }, [isConfiguring]);
 
   const { data: allTasks = [], isLoading, isError, refetch } = useQuery<Task[]>({
     queryKey: ["/api/tasks", currentProject?.id],
@@ -629,6 +624,46 @@ export default function TasksWidget({ widget, onUpdate, isConfiguring, onCloseCo
   // Inline configuration panel (instant apply, Morada style)
   // ------------------------------------------------------------------
   if (isConfiguring) {
+    // Draft-aware values shadow the persisted ones inside this panel
+    const cfg = { ...widget.config, ...(draft ?? {}) } as Record<string, any>;
+    const rawDraftMode = cfg.displayMode as string | undefined;
+    const viewMode: ViewMode =
+      rawDraftMode === "flat" || rawDraftMode === "list" ? "list"
+      : rawDraftMode === "board" ? "board"
+      : rawDraftMode === "week" ? "week"
+      : "grouped";
+    const groupBy = (cfg.groupBy as GroupBy) || "status";
+    const showCompletedDefault = cfg.showCompleted !== false;
+    const myTasksOnly = cfg.myTasksOnly === true;
+    const maxItems = (cfg.maxItems as number) || 8;
+    const defaultSortBy = (cfg.defaultSortBy as SortBy) || "dueDate";
+    const defaultSortOrder = (cfg.defaultSortOrder as SortOrder) || "asc";
+    const dateRange = (cfg.dateRange as {
+      thisWeek?: boolean; nextWeek?: boolean; custom?: boolean;
+      daysBehind?: number; daysAhead?: number;
+    }) || {};
+    const drThisWeek = dateRange.thisWeek === true;
+    const drNextWeek = dateRange.nextWeek === true;
+    const drCustom = dateRange.custom === true;
+    const drBehind = dateRange.daysBehind ?? 7;
+    const drAhead = dateRange.daysAhead ?? 7;
+    const updateConfig = (patch: Record<string, unknown>) =>
+      setDraft(prev => ({ ...(prev ?? {}), ...patch }));
+    const cancelConfig = () => {
+      setEditingTitle(widget.title);
+      setDraft(null);
+      onCloseConfig?.();
+    };
+    const saveConfig = () => {
+      onUpdate?.({
+        ...widget,
+        title: editingTitle.trim() || widget.title,
+        config: { ...widget.config, ...(draft ?? {}) },
+      });
+      setDraft(null);
+      onCloseConfig?.();
+    };
+
     const pill = (active: boolean) =>
       cn(
         "px-3 py-1.5 rounded-md border text-[11px] font-medium",
@@ -646,8 +681,6 @@ export default function TasksWidget({ widget, onUpdate, isConfiguring, onCloseCo
           <Input
             value={editingTitle}
             onChange={e => setEditingTitle(e.target.value)}
-            onBlur={commitTitle}
-            onKeyDown={e => { if (e.key === "Enter") commitTitle(); }}
             className="h-8 text-xs"
             placeholder="Widget title"
             data-testid="config-input-title"
@@ -821,9 +854,12 @@ export default function TasksWidget({ widget, onUpdate, isConfiguring, onCloseCo
           </div>
         </section>
 
-        <div className="flex justify-end pt-1">
-          <Button size="sm" className="h-7 px-3 text-xs" onClick={() => onCloseConfig?.()} data-testid="button-done-config">
-            Done
+        <div className="flex justify-end gap-2 pt-1">
+          <Button size="sm" variant="outline" className="h-7 px-3 text-xs" onClick={cancelConfig} data-testid="button-cancel-config">
+            Cancel
+          </Button>
+          <Button size="sm" className="h-7 px-3 text-xs" onClick={saveConfig} data-testid="button-save-config">
+            Save
           </Button>
         </div>
       </div>
