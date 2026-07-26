@@ -174,6 +174,10 @@ import {
   insertSuggestionSchema,
   type CircuitContext
 } from "@shared/schema";
+// Namespace import for table references (schema.selections etc.). Several
+// existing routes already referenced `schema.` without this import and threw
+// a ReferenceError at runtime (every selections-portal request 500ed).
+import * as schema from "@shared/schema";
 import Anthropic from "@anthropic-ai/sdk";
 import { AI_TOOLS } from "./ai/tools";
 import { AI_MODEL, buildSystemPrompt, buildCircuitStartMessage } from "./ai/prompts";
@@ -13134,7 +13138,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       // Tenant isolation: every referenced selection must belong to the
       // caller's company
-      const companyId = req.user?.companyId;
+      const companyId = (req.user as any)?.companyId;
       if (!companyId) return res.status(401).json({ error: "Not authenticated" });
       const ids = updates.map((u: any) => u.id);
       const owned = await db.select({ id: schema.selections.id })
