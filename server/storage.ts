@@ -903,6 +903,8 @@ export interface IStorage {
   createInvoiceVariation(data: InsertInvoiceVariation): Promise<InvoiceVariation>;
   updateInvoiceVariation(id: string, data: Partial<InsertInvoiceVariation>): Promise<InvoiceVariation | undefined>;
   deleteInvoiceVariation(id: string): Promise<boolean>;
+  syncVariationPaidAmountsForInvoice(invoiceId: string): Promise<void>;
+  recomputeVariationPaidAmount(variationId: string): Promise<void>;
 
   // Invoice-Allowance Junction Table
   getInvoiceAllowances(invoiceId: string): Promise<InvoiceAllowance[]>;
@@ -17119,9 +17121,67 @@ export class DbStorage implements IStorage {
       await db.update(schema.clientInvoices)
         .set({ paidAmount: paid, balanceAmount: balance, status, updatedAt: new Date() })
         .where(eq(schema.clientInvoices.id, invoiceId));
+
+      // Flow the payment change through to any variations claimed on this
+      // invoice — their paid/balance track invoice payments pro-rata.
+      await this.syncVariationPaidAmountsForInvoice(invoiceId);
     } catch (error) {
       console.error("Database error in syncClientInvoicePaidStatus:", error);
       throw error;
+    }
+  }
+
+  // Recompute paidAmount/balanceAmount for every variation claimed on the
+  // given invoice. Best-effort: paid tracking is informational and must never
+  // fail the payment write.
+  async syncVariationPaidAmountsForInvoice(invoiceId: string): Promise<void> {
+    try {
+      const claims = await db.select({ variationId: schema.invoiceVariations.variationId })
+        .from(schema.invoiceVariations)
+        .where(eq(schema.invoiceVariations.invoiceId, invoiceId));
+      for (const claim of claims) {
+        await this.recomputeVariationPaidAmount(claim.variationId);
+      }
+    } catch (error) {
+      console.error("Database error in syncVariationPaidAmountsForInvoice:", error);
+    }
+  }
+
+  // A variation's paidAmount = sum over every invoice claiming it of
+  // (claimPercent of the variation total) × (that invoice's paid ratio).
+  // Cents throughout; the paid ratio is clamped to [0,1] so overpayments
+  // don't inflate the variation beyond its claim.
+  async recomputeVariationPaidAmount(variationId: string): Promise<void> {
+    try {
+      const [variation] = await db.select().from(schema.variations)
+        .where(eq(schema.variations.id, variationId)).limit(1);
+      if (!variation) return;
+
+      const claimRows = await db
+        .select({
+          claimPercent: schema.invoiceVariations.claimPercent,
+          invoicePaid: schema.clientInvoices.paidAmount,
+          invoiceTotal: schema.clientInvoices.totalAmount,
+        })
+        .from(schema.invoiceVariations)
+        .innerJoin(schema.clientInvoices, eq(schema.invoiceVariations.invoiceId, schema.clientInvoices.id))
+        .where(eq(schema.invoiceVariations.variationId, variationId));
+
+      const totalAmount = variation.totalAmount ?? 0;
+      let paid = 0;
+      for (const row of claimRows) {
+        const invoiceTotal = row.invoiceTotal ?? 0;
+        if (invoiceTotal <= 0) continue;
+        const claimCents = Math.round((totalAmount * (row.claimPercent ?? 100)) / 100);
+        const paidRatio = Math.min(1, Math.max(0, (row.invoicePaid ?? 0) / invoiceTotal));
+        paid += Math.round(claimCents * paidRatio);
+      }
+
+      await db.update(schema.variations)
+        .set({ paidAmount: paid, balanceAmount: totalAmount - paid, updatedAt: new Date() })
+        .where(eq(schema.variations.id, variationId));
+    } catch (error) {
+      console.error("Database error in recomputeVariationPaidAmount:", error);
     }
   }
 

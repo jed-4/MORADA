@@ -20217,6 +20217,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const invoiceVariation = await storage.createInvoiceVariation(validationResult.data);
+      await storage.recomputeVariationPaidAmount(validationResult.data.variationId);
       res.status(201).json(invoiceVariation);
     } catch (error) {
       res.status(500).json({ error: "Failed to create invoice variation" });
@@ -20256,6 +20257,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!updated) {
         return res.status(404).json({ error: "Invoice variation not found" });
       }
+      await storage.recomputeVariationPaidAmount(updated.variationId);
       res.json(updated);
     } catch (error) {
       res.status(500).json({ error: "Failed to update invoice variation" });
@@ -20273,6 +20275,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!deleted) {
         return res.status(404).json({ error: "Invoice variation not found" });
       }
+      await storage.recomputeVariationPaidAmount(link.variationId);
       res.status(204).send();
     } catch (error) {
       res.status(500).json({ error: "Failed to delete invoice variation" });
