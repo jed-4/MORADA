@@ -17791,9 +17791,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // fields (unitCostExTax dollars × markup × qty → ex-GST cents) so a
       // buggy or hand-crafted client can't store prices that disagree with
       // the line's own inputs. Allowance adjustment lines set their amount
-      // directly and are stored as sent.
+      // directly and are stored as sent. Lines with no cost basis (legacy
+      // rows carry the price only in unitPrice) keep their explicit prices —
+      // deriving from a zero cost would wipe them.
       const data: Record<string, any> = { ...validationResult.data };
-      if ((data.itemType ?? "cost_line") === "cost_line") {
+      if ((data.itemType ?? "cost_line") === "cost_line" && (data.unitCostExTax ?? 0) !== 0) {
         const priced = computeVariationLinePriceCents({
           quantity: data.quantity ?? 1,
           unitCostExTax: data.unitCostExTax ?? 0,
@@ -17827,10 +17829,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Same server-side pricing rule as item create: recompute the stored
-      // client price from the merged line's cost inputs.
+      // client price from the merged line's cost inputs (skipped when there is
+      // no cost basis — legacy lines keep their explicit prices).
       const data: Record<string, any> = { ...validationResult.data };
       const merged: Record<string, any> = { ...viRow, ...data };
-      if ((merged.itemType ?? "cost_line") === "cost_line") {
+      if ((merged.itemType ?? "cost_line") === "cost_line" && (merged.unitCostExTax ?? 0) !== 0) {
         const priced = computeVariationLinePriceCents({
           quantity: merged.quantity ?? 1,
           unitCostExTax: merged.unitCostExTax ?? 0,

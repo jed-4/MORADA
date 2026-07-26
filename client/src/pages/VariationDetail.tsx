@@ -430,7 +430,11 @@ export default function VariationDetail() {
           unitType: item.unitType || "each",
           costCode: item.costCode || "",
           quantity: item.quantity,
-          unitCostExTax: item.unitCostExTax ?? (item.unitPrice / 100),
+          // Legacy rows (pre cost-fields) have unitCostExTax 0/null with the
+          // real client price only in unitPrice — adopt it as the cost basis
+          // (price = cost, 0% markup) so their value isn't displayed, and on
+          // save re-derived, as $0.
+          unitCostExTax: item.unitCostExTax || centsToDollars(item.unitPrice ?? 0),
           markupPercent: item.markupPercent ?? null,
           taxable: item.taxable,
           sortOrder: item.sortOrder,
