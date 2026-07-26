@@ -254,6 +254,16 @@ export default function TasksWidget({ widget, onUpdate, isConfiguring, onCloseCo
   const maxItems = (widget.config?.maxItems as number) || 8;
   const myTasksOnly = widget.config?.myTasksOnly === true;
   const showCompletedDefault = widget.config?.showCompleted !== false;
+  // Due-date range toggles (union; none active = show all tasks)
+  const dateRange = (widget.config?.dateRange as {
+    thisWeek?: boolean; nextWeek?: boolean; custom?: boolean;
+    daysBehind?: number; daysAhead?: number;
+  }) || {};
+  const drThisWeek = dateRange.thisWeek === true;
+  const drNextWeek = dateRange.nextWeek === true;
+  const drCustom = dateRange.custom === true;
+  const drBehind = dateRange.daysBehind ?? 7;
+  const drAhead = dateRange.daysAhead ?? 7;
   const defaultFilterPriority = (widget.config?.defaultFilterPriority as FilterPriority) || "all";
   const defaultSortBy = (widget.config?.defaultSortBy as SortBy) || "dueDate";
   const defaultSortOrder = (widget.config?.defaultSortOrder as SortOrder) || "asc";
@@ -372,6 +382,33 @@ export default function TasksWidget({ widget, onUpdate, isConfiguring, onCloseCo
       tasks = tasks.filter(t => t.priority === filterPriority);
     }
 
+    // Week view is already a date range, so the toggles only apply elsewhere
+    if ((drThisWeek || drNextWeek || drCustom) && viewMode !== "week") {
+      const today = startOfToday();
+      const monday = new Date(today);
+      monday.setDate(today.getDate() - ((today.getDay() + 6) % 7));
+      const sunday = new Date(monday);
+      sunday.setDate(monday.getDate() + 6);
+      const nextMonday = new Date(monday);
+      nextMonday.setDate(monday.getDate() + 7);
+      const nextSunday = new Date(monday);
+      nextSunday.setDate(monday.getDate() + 13);
+      const customFrom = new Date(today);
+      customFrom.setDate(today.getDate() - drBehind);
+      const customTo = new Date(today);
+      customTo.setDate(today.getDate() + drAhead);
+
+      tasks = tasks.filter(t => {
+        if (!t.dueDate) return false;
+        const due = new Date(t.dueDate as unknown as string);
+        due.setHours(0, 0, 0, 0);
+        if (drThisWeek && due >= monday && due <= sunday) return true;
+        if (drNextWeek && due >= nextMonday && due <= nextSunday) return true;
+        if (drCustom && due >= customFrom && due <= customTo) return true;
+        return false;
+      });
+    }
+
     tasks.sort((a, b) => {
       let cmp = 0;
       switch (sortBy) {
@@ -401,7 +438,7 @@ export default function TasksWidget({ widget, onUpdate, isConfiguring, onCloseCo
     });
 
     return tasks;
-  }, [allTasks, myTasksOnly, currentUserId, filterPriority, sortBy, sortOrder, statusOptions, priorityOptions]);
+  }, [allTasks, myTasksOnly, currentUserId, filterPriority, sortBy, sortOrder, statusOptions, priorityOptions, drThisWeek, drNextWeek, drCustom, drBehind, drAhead, viewMode]);
 
   const visibleTasks = useMemo(() => {
     if (showCompleted) return processedTasks;
@@ -654,6 +691,72 @@ export default function TasksWidget({ widget, onUpdate, isConfiguring, onCloseCo
             </div>
           </section>
         )}
+
+        <section>
+          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+            Date range
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <button
+              className={pill(drThisWeek)}
+              onClick={() => updateConfig({ dateRange: { ...dateRange, thisWeek: !drThisWeek } })}
+              data-testid="config-range-thisweek"
+            >
+              This week
+            </button>
+            <button
+              className={pill(drNextWeek)}
+              onClick={() => updateConfig({ dateRange: { ...dateRange, nextWeek: !drNextWeek } })}
+              data-testid="config-range-nextweek"
+            >
+              Next week
+            </button>
+            <button
+              className={pill(drCustom)}
+              onClick={() => updateConfig({ dateRange: { ...dateRange, custom: !drCustom } })}
+              data-testid="config-range-custom"
+            >
+              Custom
+            </button>
+          </div>
+          {drCustom && (
+            <div className="flex items-end gap-2 mt-2">
+              <div className="space-y-1">
+                <Label className="text-[10px] text-muted-foreground">Days behind</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  max={365}
+                  className="w-20 h-8 text-xs"
+                  value={drBehind}
+                  onChange={e => {
+                    const n = parseInt(e.target.value);
+                    if (n >= 0 && n <= 365) updateConfig({ dateRange: { ...dateRange, daysBehind: n } });
+                  }}
+                  data-testid="config-range-behind"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-[10px] text-muted-foreground">Days ahead</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  max={365}
+                  className="w-20 h-8 text-xs"
+                  value={drAhead}
+                  onChange={e => {
+                    const n = parseInt(e.target.value);
+                    if (n >= 0 && n <= 365) updateConfig({ dateRange: { ...dateRange, daysAhead: n } });
+                  }}
+                  data-testid="config-range-ahead"
+                />
+              </div>
+            </div>
+          )}
+          <p className="text-[10px] text-muted-foreground mt-1.5">
+            Nothing selected shows all tasks. Tasks without a due date are hidden while a range is active.
+          </p>
+        </section>
 
         <section className="space-y-2">
           <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">
