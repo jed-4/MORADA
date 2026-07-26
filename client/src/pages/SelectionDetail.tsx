@@ -626,6 +626,69 @@ export default function SelectionDetail() {
   const [totalCostDisplayStr, setTotalCostDisplayStr] = useState<string>("");
   const [markupDisplayStr, setMarkupDisplayStr] = useState<string>("");
 
+  // Capture ergonomics: product-library picker + paste-a-URL import
+  const [productLibraryOpen, setProductLibraryOpen] = useState(false);
+  const [productSearch, setProductSearch] = useState("");
+  const [urlImportOpen, setUrlImportOpen] = useState(false);
+  const [importUrl, setImportUrl] = useState("");
+  // Scraped image URLs staged on the add form; downloaded server-side on save
+  const [pendingRemoteImages, setPendingRemoteImages] = useState<string[]>([]);
+
+  const { data: libraryProducts = [] } = useQuery<any[]>({
+    queryKey: ["/api/products"],
+    enabled: productLibraryOpen,
+  });
+
+  const addFromLibraryMutation = useMutation({
+    mutationFn: async (productId: number) =>
+      await apiRequest(`/api/selections/${id}/options/from-product`, "POST", { productId }),
+    onSuccess: (newOption: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/selections", id] });
+      queryClient.invalidateQueries({ queryKey: ["/api/selections/with-options"] });
+      setProductLibraryOpen(false);
+      toast({
+        title: "Added from library",
+        description: "Adjust quantity and markup if needed.",
+      });
+      if (newOption?.id) handleEditOption({ ...newOption, attachments: newOption.attachments ?? [] } as SelectionOption);
+    },
+    onError: (err: any) => {
+      toast({ title: "Error", description: err?.message ?? "Failed to add from library.", variant: "destructive" });
+    },
+  });
+
+  const scrapeUrlMutation = useMutation({
+    mutationFn: async (url: string) =>
+      await apiRequest(`/api/products/scrape-url`, "POST", { url }),
+    onSuccess: (scraped: any) => {
+      setUrlImportOpen(false);
+      setImportUrl("");
+      // Open a fresh add form pre-filled with everything we could extract
+      handleAddOption();
+      if (scraped?.name) optionForm.setValue("name", scraped.name);
+      if (scraped?.brand) optionForm.setValue("brand", scraped.brand);
+      if (scraped?.sku) optionForm.setValue("sku", scraped.sku);
+      if (scraped?.description) optionForm.setValue("description", scraped.description);
+      if (scraped?.url) optionForm.setValue("url", scraped.url);
+      if (scraped?.priceCents) {
+        // AU retail pages list inc-GST prices
+        optionForm.setValue("unitCost", scraped.priceCents);
+        optionForm.setValue("gstInclusive", true);
+        setGstInclusive(true);
+        setUnitCostDisplayStr((scraped.priceCents / 100).toFixed(2));
+      }
+      setPendingRemoteImages(Array.isArray(scraped?.images) ? scraped.images : []);
+      toast({
+        title: "Product imported",
+        description: "Review the details, then save.",
+      });
+    },
+    onError: (err: any) => {
+      const msg = err?.message?.replace(/^\d+:\s*/, "") ?? "Could not read that page.";
+      toast({ title: "Import failed", description: msg, variant: "destructive" });
+    },
+  });
+
   const optionForm = useForm<InsertSelectionOption>({
     resolver: zodResolver(insertSelectionOptionSchema),
     defaultValues: {
@@ -671,6 +734,7 @@ export default function SelectionDetail() {
       setTotalCostDisplayStr("");
       setMarkupDisplayStr("");
       setPendingDocs([]);
+      setPendingRemoteImages([]);
       setPendingImages((prev) => {
         prev.forEach((p) => URL.revokeObjectURL(p.previewUrl));
         return [];
@@ -742,6 +806,21 @@ export default function SelectionDetail() {
     });
   };
 
+  // Shared sink for pasted/dropped image files: uploads immediately when
+  // editing an existing option, stages for post-create upload otherwise.
+  const stageOrUploadImageFiles = (files: File[]) => {
+    const images = files.filter((f) => f.type.startsWith("image/"));
+    if (images.length === 0) return;
+    if (editingOption?.id) {
+      images.forEach((f) => handleImageUpload(f));
+    } else {
+      setPendingImages((prev) => [
+        ...prev,
+        ...images.map((file) => ({ file, previewUrl: URL.createObjectURL(file) })),
+      ]);
+    }
+  };
+
   const handleSaveNotes = (value: string) => {
     if (noteSaveRef.current) clearTimeout(noteSaveRef.current);
     noteSaveRef.current = setTimeout(() => {
@@ -777,6 +856,27 @@ export default function SelectionDetail() {
             setUploadingImage(false);
           }
         }
+        if (pendingRemoteImages.length > 0 && newOption?.id) {
+          setUploadingImage(true);
+          try {
+            const result: any = await apiRequest(
+              `/api/selection-options/${newOption.id}/attachments-from-url`,
+              "POST",
+              { urls: pendingRemoteImages },
+            );
+            if (result?.failed?.length) {
+              toast({
+                title: "Some images couldn't be imported",
+                description: `${result.failed.length} image${result.failed.length === 1 ? "" : "s"} failed to download.`,
+              });
+            }
+            queryClient.invalidateQueries({ queryKey: ["/api/selections", id] });
+          } catch {
+            toast({ title: "Image import failed", description: "The product was saved without its images.", variant: "destructive" });
+          } finally {
+            setUploadingImage(false);
+          }
+        }
         if (pendingDocs.length > 0 && newOption?.id) {
           setUploadingDoc(true);
           try {
@@ -793,6 +893,7 @@ export default function SelectionDetail() {
           return [];
         });
         setPendingDocs([]);
+        setPendingRemoteImages([]);
       } catch {
         // errors handled by mutation
       }
@@ -1639,14 +1740,29 @@ export default function SelectionDetail() {
                 </div>
 
                 {/* Add option */}
-                <Button
-                  size="sm"
-                  onClick={handleAddOption}
-                  data-testid="button-add-option"
-                >
-                  <Plus className="w-3.5 h-3.5 mr-1" />
-                  Add Product
-                </Button>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button size="sm" data-testid="button-add-option">
+                      <Plus className="w-3.5 h-3.5 mr-1" />
+                      Add Product
+                      <ChevronDown className="w-3 h-3 ml-1" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onClick={handleAddOption} data-testid="menu-add-new-product">
+                      <Plus className="h-3.5 w-3.5 mr-2" />
+                      New product
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => { setProductSearch(""); setProductLibraryOpen(true); }} data-testid="menu-add-from-library">
+                      <BookMarked className="h-3.5 w-3.5 mr-2" />
+                      From product library
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => { setImportUrl(""); setUrlImportOpen(true); }} data-testid="menu-add-from-url">
+                      <Link2 className="h-3.5 w-3.5 mr-2" />
+                      Import from URL
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </div>
             </div>
             
@@ -2214,7 +2330,16 @@ export default function SelectionDetail() {
         open={isAddingOption || !!editingOption} 
         onOpenChange={handleDialogChange}
       >
-        <DialogContent className="sm:max-w-[700px] max-h-[95vh] flex flex-col">
+        <DialogContent
+          className="sm:max-w-[700px] max-h-[95vh] flex flex-col"
+          onPaste={(e) => {
+            const files = Array.from(e.clipboardData?.files ?? []).filter((f) => f.type.startsWith("image/"));
+            if (files.length > 0) {
+              e.preventDefault();
+              stageOrUploadImageFiles(files);
+            }
+          }}
+        >
           <DialogHeader className="flex-shrink-0">
             <DialogTitle>
               {editingOption ? "Edit Product" : "Add Product"}
@@ -2553,8 +2678,20 @@ export default function SelectionDetail() {
 
                 <Separator />
 
-                {/* Images */}
-                <div className="space-y-2">
+                {/* Images (drop zone: drag files from Finder/browser or paste) */}
+                <div
+                  className="space-y-2"
+                  onDragOver={(e) => {
+                    if (e.dataTransfer.types.includes("Files")) e.preventDefault();
+                  }}
+                  onDrop={(e) => {
+                    const files = Array.from(e.dataTransfer?.files ?? []).filter((f) => f.type.startsWith("image/"));
+                    if (files.length > 0) {
+                      e.preventDefault();
+                      stageOrUploadImageFiles(files);
+                    }
+                  }}
+                >
                   <div className="flex items-center justify-between">
                     <span className="text-sm font-medium">Images</span>
                     <Button
@@ -2621,8 +2758,20 @@ export default function SelectionDetail() {
                         No images yet
                       </div>
                     );
-                  })() : pendingImages.length > 0 ? (
+                  })() : (pendingImages.length > 0 || pendingRemoteImages.length > 0) ? (
                     <div className="grid grid-cols-3 gap-2">
+                      {pendingRemoteImages.map((src, idx) => (
+                        <div key={`remote-${idx}`} className="relative aspect-square rounded-md overflow-hidden border border-border">
+                          <img src={src} alt="Imported product image" className="w-full h-full object-cover" />
+                          <button
+                            type="button"
+                            onClick={() => setPendingRemoteImages((prev) => prev.filter((_, i) => i !== idx))}
+                            className="absolute top-1 right-1 w-5 h-5 rounded-full bg-black/60 flex items-center justify-center text-white hover:bg-black/80"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
+                      ))}
                       {pendingImages.map((p, idx) => (
                         <div key={idx} className="relative aspect-square rounded-md overflow-hidden border border-border">
                           <img src={p.previewUrl} alt={p.file.name} className="w-full h-full object-cover" />
@@ -2642,7 +2791,7 @@ export default function SelectionDetail() {
                   ) : (
                     <div className="border border-dashed rounded-md p-4 text-center text-muted-foreground text-xs">
                       <ImageIcon className="w-6 h-6 mx-auto mb-1 opacity-40" />
-                      No images yet — they'll be uploaded when you save
+                      No images yet — add, paste, or drag them here; they'll be uploaded when you save
                     </div>
                   )}
                 </div>
@@ -2974,6 +3123,117 @@ export default function SelectionDetail() {
               </form>
             </Form>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Product Library Picker */}
+      <Dialog open={productLibraryOpen} onOpenChange={setProductLibraryOpen}>
+        <DialogContent className="sm:max-w-lg max-h-[80vh] flex flex-col">
+          <DialogHeader className="flex-shrink-0">
+            <DialogTitle>Product Library</DialogTitle>
+            <DialogDescription>Pick a product to add as an option — images and details come with it.</DialogDescription>
+          </DialogHeader>
+          <div className="flex-shrink-0 mb-2">
+            <div className="relative">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+              <Input
+                placeholder="Search products..."
+                value={productSearch}
+                onChange={(e) => setProductSearch(e.target.value)}
+                className="pl-7 h-8 text-sm"
+                data-testid="input-product-search"
+              />
+            </div>
+          </div>
+          <div className="flex-1 overflow-y-auto space-y-1 min-h-0">
+            {libraryProducts.length === 0 ? (
+              <div className="text-center py-8 text-sm text-muted-foreground">
+                <Package className="h-8 w-8 mx-auto mb-2 opacity-40" />
+                No products in library yet — save an option to the library or import one from a URL.
+              </div>
+            ) : (() => {
+              const q = productSearch.toLowerCase();
+              const filtered = libraryProducts.filter((p) =>
+                !q ||
+                p.name?.toLowerCase().includes(q) ||
+                p.brand?.toLowerCase().includes(q) ||
+                p.sku?.toLowerCase().includes(q)
+              );
+              if (filtered.length === 0) {
+                return <div className="text-center py-8 text-sm text-muted-foreground">No products match your search</div>;
+              }
+              return filtered.map((product) => (
+                <button
+                  key={product.id}
+                  className="w-full flex items-center gap-3 px-3 py-2 rounded-md border bg-card hover-elevate text-left disabled:opacity-60"
+                  disabled={addFromLibraryMutation.isPending}
+                  onClick={() => addFromLibraryMutation.mutate(product.id)}
+                  data-testid={`library-product-${product.id}`}
+                >
+                  {product.images?.[0]?.filePath ? (
+                    <img src={product.images[0].filePath} alt={product.name} className="w-10 h-10 rounded object-cover flex-shrink-0" />
+                  ) : (
+                    <div className="w-10 h-10 rounded bg-muted flex items-center justify-center flex-shrink-0">
+                      <Package className="h-4 w-4 text-muted-foreground" />
+                    </div>
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <div className="font-medium text-sm truncate">{product.name}</div>
+                    {(product.brand || product.sku) && (
+                      <div className="text-xs text-muted-foreground truncate">
+                        {[product.brand, product.sku ? `SKU: ${product.sku}` : null].filter(Boolean).join(" · ")}
+                      </div>
+                    )}
+                    {product.defaultUnitCost != null && (
+                      <div className="text-xs text-muted-foreground">${(product.defaultUnitCost / 100).toFixed(2)}</div>
+                    )}
+                  </div>
+                  {addFromLibraryMutation.isPending && addFromLibraryMutation.variables === product.id && (
+                    <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
+                  )}
+                </button>
+              ));
+            })()}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Import from URL */}
+      <Dialog open={urlImportOpen} onOpenChange={(open) => { setUrlImportOpen(open); if (!open) setImportUrl(""); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Link2 className="w-4 h-4" />
+              Import product from URL
+            </DialogTitle>
+            <DialogDescription>
+              Paste a supplier product page — name, price and images are pulled in for you to review.
+            </DialogDescription>
+          </DialogHeader>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (importUrl.trim()) scrapeUrlMutation.mutate(importUrl.trim());
+            }}
+            className="space-y-3"
+          >
+            <Input
+              autoFocus
+              placeholder="https://supplier.com.au/products/…"
+              value={importUrl}
+              onChange={(e) => setImportUrl(e.target.value)}
+              data-testid="input-import-url"
+            />
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="outline" onClick={() => setUrlImportOpen(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={!importUrl.trim() || scrapeUrlMutation.isPending} data-testid="button-import-url">
+                {scrapeUrlMutation.isPending && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
+                {scrapeUrlMutation.isPending ? "Reading page…" : "Import"}
+              </Button>
+            </div>
+          </form>
         </DialogContent>
       </Dialog>
 

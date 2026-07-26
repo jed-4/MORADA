@@ -13769,6 +13769,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
         search: search || undefined,
         isActive: true,
       });
+      // Attach each product's first image so pickers can show thumbnails
+      // (single batched query — no per-product fan-out)
+      if (products.length > 0) {
+        const images = await db.select().from(schema.productImages)
+          .where(inArray(schema.productImages.productId, products.map((p) => p.id)))
+          .orderBy(asc(schema.productImages.sortOrder));
+        const firstByProduct = new Map<number, any>();
+        for (const img of images) {
+          if (!firstByProduct.has(img.productId)) firstByProduct.set(img.productId, img);
+        }
+        return res.json(products.map((p) => ({
+          ...p,
+          images: firstByProduct.has(p.id) ? [firstByProduct.get(p.id)] : [],
+        })));
+      }
       res.json(products);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch products" });
@@ -13855,6 +13870,63 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(204).send();
     } catch (error) {
       res.status(500).json({ error: "Failed to delete product image" });
+    }
+  });
+
+  // Scrape a supplier product page (name/brand/price/images) for URL import.
+  // Read-only: returns extracted fields for the client to review — nothing is
+  // created until the user saves the pre-filled option.
+  app.post("/api/products/scrape-url", requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      const { url } = req.body ?? {};
+      if (!url || typeof url !== "string") {
+        return res.status(400).json({ error: "url is required" });
+      }
+      const { scrapeProductUrl } = await import("./services/productScraper");
+      const scraped = await scrapeProductUrl(url);
+      res.json(scraped);
+    } catch (error: any) {
+      res.status(422).json({ error: error?.message || "Could not read that page" });
+    }
+  });
+
+  // Download remote images (e.g. from a scraped product page) into object
+  // storage as attachments on an option. Capped; each URL is SSRF-guarded.
+  app.post("/api/selection-options/:id/attachments-from-url", requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      const option = await assertOptionAccess(req, res, req.params.id);
+      if (!option) return;
+      const { urls } = req.body ?? {};
+      if (!Array.isArray(urls) || urls.length === 0 || urls.some((u: any) => typeof u !== "string")) {
+        return res.status(400).json({ error: "urls (string array) is required" });
+      }
+      const { downloadImage } = await import("./services/productScraper");
+      const { ObjectStorageService } = await import("./replit_integrations/object_storage/objectStorage");
+      const objectStorage = new ObjectStorageService();
+      const existing = await storage.getOptionAttachments(req.params.id);
+      let sortOrder = existing.length;
+      const created: any[] = [];
+      const failed: Array<{ url: string; reason: string }> = [];
+      for (const u of urls.slice(0, 6)) {
+        try {
+          const { buffer, mimeType, fileName } = await downloadImage(u);
+          const objectPath = await objectStorage.uploadObjectEntity(buffer, mimeType, "selections");
+          created.push(await storage.createOptionAttachment({
+            optionId: req.params.id,
+            fileName,
+            filePath: objectPath,
+            fileType: "image",
+            fileSize: buffer.length,
+            mimeType,
+            sortOrder: sortOrder++,
+          }));
+        } catch (e: any) {
+          failed.push({ url: u, reason: e?.message || "download failed" });
+        }
+      }
+      res.status(created.length > 0 ? 201 : 422).json({ attachments: created, failed });
+    } catch (error: any) {
+      res.status(500).json({ error: error?.message || "Failed to import images" });
     }
   });
 
