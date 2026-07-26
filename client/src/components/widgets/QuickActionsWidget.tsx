@@ -22,22 +22,22 @@ interface QuickAction {
   id: string;
   label: string;
   icon: typeof Plus;
-  path?: string;
-  action?: () => void;
+  /** Build the target path for the current project. All paths must be real routes in App.tsx. */
+  getPath: (projectId: string) => string;
   color?: string;
 }
 
 const defaultActions: QuickAction[] = [
-  { id: "add-task", label: "Add Task", icon: Plus, path: "/tasks?action=new", color: "text-blue-500" },
-  { id: "add-bill", label: "Add Bill", icon: Receipt, path: "/bills?action=new", color: "text-green-500" },
-  { id: "add-variation", label: "Add Variation", icon: FileEdit, path: "/variations?action=new", color: "text-purple-500" },
-  { id: "create-invoice", label: "Create Invoice", icon: FileText, path: "/invoices?action=new", color: "text-amber-500" },
-  { id: "schedule-meeting", label: "Schedule", icon: Calendar, path: "/my-calendar", color: "text-red-500" },
-  { id: "view-contacts", label: "Contacts", icon: Users, path: "/contacts", color: "text-indigo-500" },
-  { id: "view-checklists", label: "Checklists", icon: ClipboardList, path: "/checklists", color: "text-teal-500" },
-  { id: "site-diary", label: "Site Diary", icon: Camera, path: "/site-diary", color: "text-orange-500" },
-  { id: "messages", label: "Messages", icon: MessageSquare, path: "/messages", color: "text-pink-500" },
-  { id: "files", label: "Files", icon: FolderOpen, path: "/files", color: "text-cyan-500" },
+  { id: "add-task", label: "Tasks", icon: Plus, getPath: (id) => `/projects/${id}/tasks`, color: "text-blue-500" },
+  { id: "add-bill", label: "Add Bill", icon: Receipt, getPath: () => "/bills/new", color: "text-green-500" },
+  { id: "add-variation", label: "Add Variation", icon: FileEdit, getPath: (id) => `/projects/${id}/variations/new`, color: "text-purple-500" },
+  { id: "create-invoice", label: "Create Invoice", icon: FileText, getPath: (id) => `/projects/${id}/client-invoices/new`, color: "text-amber-500" },
+  { id: "schedule-meeting", label: "Schedule", icon: Calendar, getPath: () => "/my-calendar", color: "text-red-500" },
+  { id: "view-contacts", label: "Contacts", icon: Users, getPath: () => "/contacts", color: "text-indigo-500" },
+  { id: "view-checklists", label: "Checklists", icon: ClipboardList, getPath: (id) => `/projects/${id}/checklists`, color: "text-teal-500" },
+  { id: "site-diary", label: "Site Diary", icon: Camera, getPath: (id) => `/projects/${id}/site-diary`, color: "text-orange-500" },
+  { id: "messages", label: "Messages", icon: MessageSquare, getPath: (id) => `/projects/${id}/messages`, color: "text-pink-500" },
+  { id: "files", label: "Files", icon: FolderOpen, getPath: (id) => `/projects/${id}/files`, color: "text-cyan-500" },
 ];
 
 export default function QuickActionsWidget({ widget, onUpdate, isConfiguring, onCloseConfig }: WidgetProps) {
@@ -138,11 +138,7 @@ export default function QuickActionsWidget({ widget, onUpdate, isConfiguring, on
   }
 
   const handleActionClick = (action: QuickAction) => {
-    if (action.action) {
-      action.action();
-    } else if (action.path) {
-      navigate(action.path);
-    }
+    navigate(action.getPath(currentProject.id));
   };
 
   return (

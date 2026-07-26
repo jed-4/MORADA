@@ -34,13 +34,14 @@ export default function AlertsWidget({ widget, onUpdate, isConfiguring, onCloseC
   }, [widget.title]);
   const { metrics, isLoading: metricsLoading, formatCurrency } = useProjectMetrics();
 
-  // Fetch tasks to check for overdue
-  const { data: tasks = [] } = useQuery<any[]>({
-    queryKey: ["/api/projects", currentProject?.id, "tasks"],
+  // Fetch tasks to check for overdue. Keyed under ["/api/tasks"] so the
+  // app-wide task-mutation invalidations refresh this widget too.
+  const { data: tasks = [], isLoading: tasksLoading } = useQuery<any[]>({
+    queryKey: ["/api/tasks", currentProject?.id],
     queryFn: async () => {
       if (!currentProject) return [];
       const response = await fetch(`/api/tasks?projectId=${currentProject.id}`, { credentials: "include" });
-      if (!response.ok) return [];
+      if (!response.ok) throw new Error(`Failed to load tasks (${response.status})`);
       return response.json();
     },
     enabled: !!currentProject,
@@ -54,7 +55,7 @@ export default function AlertsWidget({ widget, onUpdate, isConfiguring, onCloseC
     );
   }
 
-  if (metricsLoading) {
+  if ((metricsLoading || tasksLoading) && !isConfiguring) {
     return (
       <div className="space-y-2 animate-pulse">
         {[1, 2, 3].map(i => (
@@ -172,9 +173,14 @@ export default function AlertsWidget({ widget, onUpdate, isConfiguring, onCloseC
   // Overdue tasks
   const now = new Date();
   const overdueTasks = tasks.filter((t: any) => {
-    if (t.status === 'completed') return false;
+    // Task statuses are "todo" | "in-progress" | "done"
+    if (t.status === 'done' || t.status === 'complete' || t.status === 'completed') return false;
     if (!t.dueDate) return false;
-    return new Date(t.dueDate) < now;
+    const due = new Date(t.dueDate);
+    due.setHours(0, 0, 0, 0);
+    const today = new Date(now);
+    today.setHours(0, 0, 0, 0);
+    return due < today;
   });
   if (overdueTasks.length > 0) {
     alerts.push({
