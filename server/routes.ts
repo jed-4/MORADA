@@ -18535,6 +18535,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // All variation items for a project (dashboard cost metrics)
+  app.get("/api/variation-items", async (req, res) => {
+    try {
+      const { projectId } = req.query;
+      if (!(req.user as any)?.companyId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      if (!projectId) return res.status(400).json({ error: "projectId is required" });
+      if (!(await enforceProjectCompany(req, res, projectId as string, "Project not found"))) return;
+      const items = await storage.getVariationItemsByProject(projectId as string);
+      res.json(items);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch variation items" });
+    }
+  });
+
   app.patch("/api/variation-items/:id", async (req, res) => {
     try {
       const { variationItems: viTbl } = await import("@shared/schema");

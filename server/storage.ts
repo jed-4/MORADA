@@ -849,6 +849,7 @@ export interface IStorage {
 
   // Variation Items CRUD
   getVariationItems(variationId: string): Promise<VariationItem[]>;
+  getVariationItemsByProject(projectId: string): Promise<VariationItem[]>;
   createVariationItem(item: InsertVariationItem): Promise<VariationItem>;
   updateVariationItem(id: string, item: Partial<InsertVariationItem>): Promise<VariationItem | undefined>;
   deleteVariationItem(id: string): Promise<boolean>;
@@ -16691,6 +16692,21 @@ export class DbStorage implements IStorage {
         .orderBy(schema.variationItems.sortOrder);
     } catch (error) {
       console.error("Database error in getVariationItems:", error);
+      throw error;
+    }
+  }
+
+  // All variation items for a project in one query (dashboard metrics)
+  async getVariationItemsByProject(projectId: string): Promise<VariationItem[]> {
+    try {
+      const rows = await db.select({ item: schema.variationItems })
+        .from(schema.variationItems)
+        .innerJoin(schema.variations, eq(schema.variationItems.variationId, schema.variations.id))
+        .where(eq(schema.variations.projectId, projectId))
+        .orderBy(schema.variationItems.sortOrder);
+      return rows.map(r => r.item);
+    } catch (error) {
+      console.error("Database error in getVariationItemsByProject:", error);
       throw error;
     }
   }
