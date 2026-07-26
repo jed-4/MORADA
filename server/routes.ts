@@ -1,7 +1,7 @@
 import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
 import { storage, InvalidProposalStateError, calendarDateMidnightUtcInTz } from "./storage";
-import { timesheetHours, timesheetTotalExGstCents } from "@shared/money";
+import { timesheetHours, timesheetTotalExGstCents, exGstFromInc, incGstFromEx, gstSplit } from "@shared/money";
 import { db, pool } from "./db";
 import { google } from "googleapis";
 import { randomBytes, randomUUID } from "crypto";
@@ -15469,6 +15469,44 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Public Selection Portal (no auth required - clients access via token link)
+  // Client price for a selection option in cents INC GST. Derived from
+  // unitCost/gstInclusive/markupPercent — NEVER from totalCost, whose GST-ness
+  // is unreliable (see syncSelectionCostingToAllowance). Returns null when the
+  // option has no cost entered.
+  function selectionOptionClientPriceCents(opt: any): number | null {
+    const rawUnit = opt?.unitCost;
+    if (rawUnit == null) return null;
+    const qty = Number(opt.quantity) || 1;
+    const markup = Number(opt.markupPercent) || 0;
+    const unitEx = opt.gstInclusive ? exGstFromInc(rawUnit) : rawUnit;
+    const totalEx = Math.round(unitEx * qty * (1 + markup / 100));
+    return incGstFromEx(totalEx);
+  }
+
+  // A selection is closed to further client changes once an option is approved
+  // (locked) or the selection has moved into procurement.
+  function isSelectionLockedForClient(sel: any, options: any[]): boolean {
+    if (["approved", "ordered", "received"].includes(sel.status)) return true;
+    return options.some((o: any) => o.lockedAt);
+  }
+
+  // Rewrite an attachment's file path to the public, token-scoped portal file
+  // route (raw /objects/... paths are behind authenticated company-scoped URLs
+  // that a portal visitor cannot load).
+  function portalAttachmentView(att: any, urlPrefix: string) {
+    return {
+      id: att.id,
+      optionId: att.optionId,
+      fileName: att.fileName,
+      fileType: att.fileType,
+      mimeType: att.mimeType,
+      sortOrder: att.sortOrder,
+      thumbnailX: att.thumbnailX,
+      thumbnailY: att.thumbnailY,
+      filePath: `${urlPrefix}/attachments/${att.id}`,
+    };
+  }
+
   app.get("/api/portal/selections/:token", async (req, res) => {
     try {
       const { token } = req.params;
@@ -15478,78 +15516,185 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .limit(1);
       if (!sel) return res.status(404).json({ error: "Invalid link" });
 
-      const selWithOptions = await storage.getSelectionWithOptions(sel.id);
-      if (!selWithOptions) return res.status(404).json({ error: "Selection not found" });
-
+      const options = await storage.getSelectionOptions(sel.id);
       const clientSelection = await storage.getClientSelectionBySelectionId(sel.id);
       const comments = await storage.getSelectionComments(sel.id);
 
-      res.json({ selection: selWithOptions, clientSelection, comments });
+      // Client-safe projection: only client-visible options, and NEVER the
+      // builder's cost fields (unitCost/unitTax/markupPercent/totalCost) or
+      // internal trades notes. Price is exposed only as a derived inc-GST
+      // client price, and only when the builder enabled clientCanSeePrice.
+      const clientCanSeePrice = !!(sel as any).clientCanSeePrice;
+      const urlPrefix = `/api/portal/selections/${token}`;
+      const safeOptions = options
+        .filter((o: any) => o.visibleToClient !== false)
+        .map((o: any) => ({
+          id: o.id,
+          selectionId: o.selectionId,
+          name: o.name,
+          description: o.description,
+          sku: o.sku,
+          brand: o.brand,
+          category: o.category,
+          subcategory: o.subcategory,
+          quantity: o.quantity,
+          unitType: o.unitType,
+          url: o.url,
+          specifications: o.specifications,
+          isSelectedByClient: o.isSelectedByClient,
+          sortOrder: o.sortOrder,
+          approvedAt: o.approvedAt,
+          clientPrice: clientCanSeePrice ? selectionOptionClientPriceCents(o) : null,
+          attachments: ((o as any).attachments ?? []).map((a: any) => portalAttachmentView(a, urlPrefix)),
+        }))
+        .sort((a: any, b: any) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+
+      const safeSelection = {
+        id: sel.id,
+        name: (sel as any).name,
+        category: (sel as any).category,
+        room: (sel as any).room,
+        description: (sel as any).description,
+        status: (sel as any).status,
+        deadline: (sel as any).deadline,
+        clientCanChange: (sel as any).clientCanChange,
+        clientCanSeePrice,
+        allowance: clientCanSeePrice ? (sel as any).allowance : null,
+        locked: isSelectionLockedForClient(sel, options),
+        options: safeOptions,
+      };
+
+      res.json({ selection: safeSelection, clientSelection, comments });
     } catch (error) {
       console.error("Portal selection error:", error);
       res.status(500).json({ error: "Failed to load selection" });
     }
   });
 
-  app.patch("/api/portal/selections/:token/options/:optionId/select", async (req, res) => {
+  // Public, token-scoped file serving for portal option attachments. The raw
+  // object paths are only served to authenticated same-company users, so the
+  // portal rewrites attachment URLs to this route instead.
+  app.get("/api/portal/selections/:token/attachments/:attachmentId", async (req, res) => {
     try {
-      const { token, optionId } = req.params;
-      const { clientName } = req.body;
+      const { token, attachmentId } = req.params;
       const { eq: eqFn } = await import("drizzle-orm");
       const [sel] = await db.select().from(schema.selections as any)
         .where(eqFn((schema.selections as any).portalToken, token))
         .limit(1);
-      if (!sel) return res.status(404).json({ error: "Invalid link" });
-      if ((sel as any).lockedAt) return res.status(403).json({ error: "Selection is locked" });
+      if (!sel) return res.status(404).json({ error: "Not found" });
 
-      const allOptionsForCheck = await storage.getSelectionOptions(sel.id);
-      const option = allOptionsForCheck.find(o => o.id === optionId);
-      if (!option) return res.status(403).json({ error: "Option not accessible" });
-
-      // Clear previous client selections on this selection
-      const prevClientSelection = await storage.getClientSelectionBySelectionId(sel.id);
-      if (prevClientSelection) await storage.deleteClientSelection(prevClientSelection.id);
-
-      // Deselect all options for this selection
-      const allOptions = await storage.getSelectionOptions(sel.id);
-      for (const opt of allOptions) {
-        if (opt.isSelectedByClient) {
-          await storage.updateSelectionOption(opt.id, { isSelectedByClient: false });
-        }
+      const attachment = await storage.getOptionAttachmentById(attachmentId);
+      if (!attachment) return res.status(404).json({ error: "Not found" });
+      const option = await storage.getSelectionOption(attachment.optionId);
+      if (!option || option.selectionId !== sel.id || option.visibleToClient === false) {
+        return res.status(404).json({ error: "Not found" });
       }
 
-      // Mark the chosen option as selected
-      await storage.updateSelectionOption(optionId, { isSelectedByClient: true });
+      // Stored paths may be raw /objects/... or company-scoped
+      // /objects/company/<id>/objects/... — normalise to the raw form.
+      const normalisedPath = (attachment.filePath || "").replace(/^\/objects\/company\/[^/]+\/objects\//, "/objects/");
+      const objectFile = await objectStorageService.getObjectEntityFile(normalisedPath);
+      await objectStorageService.downloadObject(objectFile, res);
+    } catch (error: any) {
+      if (error?.name === "ObjectNotFoundError") {
+        return res.status(404).json({ error: "Not found" });
+      }
+      console.error("Portal attachment error:", error);
+      res.status(500).json({ error: "Failed to load attachment" });
+    }
+  });
 
-      // Create clientSelection record
+  app.patch("/api/portal/selections/:token/options/:optionId/select", async (req, res) => {
+    try {
+      const { token, optionId } = req.params;
+      const { eq: eqFn, and: andFn } = await import("drizzle-orm");
+      const [sel] = await db.select().from(schema.selections as any)
+        .where(eqFn((schema.selections as any).portalToken, token))
+        .limit(1);
+      if (!sel) return res.status(404).json({ error: "Invalid link" });
+
+      const allOptions = await storage.getSelectionOptions(sel.id);
+      if (isSelectionLockedForClient(sel, allOptions)) {
+        return res.status(403).json({ error: "This selection has been finalised and can no longer be changed. Please contact your builder." });
+      }
+
+      const option = allOptions.find(o => o.id === optionId);
+      if (!option || option.visibleToClient === false) {
+        return res.status(403).json({ error: "Option not accessible" });
+      }
+
+      const prevClientSelection = await storage.getClientSelectionBySelectionId(sel.id);
+      if (prevClientSelection && (sel as any).clientCanChange === false) {
+        return res.status(403).json({ error: "Your choice has been submitted and can no longer be changed. Please contact your builder." });
+      }
+      if (prevClientSelection) await storage.deleteClientSelection(prevClientSelection.id);
+
+      // Move the client's choice: clear any current choice, set the new one
+      const now = new Date();
+      await db.update(schema.selectionOptions)
+        .set({ isSelectedByClient: false, updatedAt: now })
+        .where(andFn(
+          eqFn(schema.selectionOptions.selectionId, sel.id),
+          eqFn(schema.selectionOptions.isSelectedByClient, true),
+        ));
+      await db.update(schema.selectionOptions)
+        .set({ isSelectedByClient: true, updatedAt: now })
+        .where(eqFn(schema.selectionOptions.id, optionId));
+
       const newClientSelection = await storage.createClientSelection({
         projectId: sel.projectId,
         selectionId: sel.id,
-        selectedOptionId: optionId,
-        clientName: clientName || "Client",
+        optionId,
       });
 
-      // Auto-generate a draft variation if selection exceeds allowance
+      // A choice moves a still-draft selection into pending review
+      if ((sel as any).status === "draft") {
+        await storage.updateSelection(sel.id, { status: "pending" } as any);
+      }
+
+      // Maintain the auto-generated draft over-allowance variation for this
+      // selection: create it when the chosen option exceeds the allowance,
+      // update it when the client changes choice, remove it when the new
+      // choice fits within the allowance. Non-fatal — variation upkeep must
+      // not break the client's selection.
       try {
-        const chosenOption = await storage.getSelectionOption(optionId);
         const allowanceCents = Number((sel as any).allowance) || 0;
-        const totalCostCents = Number(chosenOption?.totalCost) || 0;
-        if (allowanceCents > 0 && totalCostCents > allowanceCents) {
-          const overageCents = totalCostCents - allowanceCents;
-          const gstCents = Math.round(overageCents * 0.1);
-          const totalCents = overageCents + gstCents;
-          await storage.createVariation({
-            projectId: sel.projectId,
-            variationNumber: `SEL-OA-${Date.now().toString(36).toUpperCase()}`,
-            name: `Over-allowance: ${(sel as any).name}`,
-            status: "draft",
-            subtotal: overageCents,
-            gstAmount: gstCents,
-            totalAmount: totalCents,
-            paidAmount: 0,
-            balanceAmount: totalCents,
-            relatedTo: sel.id,
-          });
+        if (allowanceCents > 0) {
+          const priceCents = selectionOptionClientPriceCents(option) ?? 0;
+          const overageIncCents = priceCents - allowanceCents;
+
+          const existingDrafts = await db.select().from(schema.variations)
+            .where(andFn(
+              eqFn(schema.variations.relatedTo, sel.id),
+              eqFn(schema.variations.status, "draft"),
+            ));
+          const existingAuto = existingDrafts.find((v: any) => String(v.variationNumber || "").startsWith("SEL-OA-"));
+
+          if (overageIncCents > 0) {
+            // Overage is inc GST (client price vs inc-GST allowance) — split it
+            const { exGst, gst } = gstSplit(overageIncCents);
+            const payload = {
+              name: `Over-allowance: ${(sel as any).name}`,
+              subtotal: exGst,
+              gstAmount: gst,
+              totalAmount: overageIncCents,
+              paidAmount: 0,
+              balanceAmount: overageIncCents,
+            };
+            if (existingAuto) {
+              await storage.updateVariation(existingAuto.id, payload as any);
+            } else {
+              await storage.createVariation({
+                projectId: sel.projectId,
+                variationNumber: `SEL-OA-${Date.now().toString(36).toUpperCase()}`,
+                status: "draft",
+                relatedTo: sel.id,
+                ...payload,
+              });
+            }
+          } else if (existingAuto) {
+            await storage.deleteVariation(existingAuto.id);
+          }
         }
       } catch (_varErr) {
         // Non-fatal — variation auto-gen failure should not break selection
@@ -15569,6 +15714,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!content || typeof content !== "string" || !content.trim()) {
         return res.status(400).json({ error: "Content is required" });
       }
+      if (content.length > 5000) {
+        return res.status(400).json({ error: "Comment is too long" });
+      }
       const { eq: eqFn } = await import("drizzle-orm");
       const [sel] = await db.select().from(schema.selections as any)
         .where(eqFn((schema.selections as any).portalToken, token))
@@ -15581,7 +15729,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         attachmentUrls: [],
         attachmentFileNames: [],
         createdById: null,
-        createdByName: clientName || "Client",
+        createdByName: (typeof clientName === "string" && clientName.trim() ? clientName.trim().slice(0, 100) : "Client"),
         isClientComment: true,
       });
       res.status(201).json(comment);
@@ -15601,23 +15749,81 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .limit(1);
       if (!project) return res.status(404).json({ error: "Invalid or expired link" });
 
-      const selectionsRaw = await db.select().from(schemaImp.selections)
-        .where(eqFn(schemaImp.selections.projectId, project.id))
-        .orderBy(schemaImp.selections.name);
+      const selectionsWithOptions = await storage.getSelectionsWithOptions(project.id);
 
-      const selectionsWithOptions: any[] = [];
-      for (const s of selectionsRaw) {
-        const withOptions = await storage.getSelectionWithOptions(s.id);
-        if (withOptions) selectionsWithOptions.push(withOptions);
-      }
+      // Public payload — trades need product/spec/image data, never the
+      // builder's cost fields (unitCost/unitTax/markupPercent/totalCost).
+      const urlPrefix = `/api/portal/project/${token}/trades`;
+      const safeSelections = selectionsWithOptions
+        .sort((a: any, b: any) => String(a.name).localeCompare(String(b.name)))
+        .map((s: any) => ({
+          id: s.id,
+          name: s.name,
+          category: s.category,
+          room: s.room,
+          description: s.description,
+          status: s.status,
+          deadline: s.deadline,
+          notes: s.notes,
+          options: (s.options ?? []).map((o: any) => ({
+            id: o.id,
+            selectionId: o.selectionId,
+            name: o.name,
+            description: o.description,
+            sku: o.sku,
+            brand: o.brand,
+            category: o.category,
+            subcategory: o.subcategory,
+            quantity: o.quantity,
+            unitType: o.unitType,
+            url: o.url,
+            specifications: o.specifications,
+            notes: o.notes,
+            isSelectedByClient: o.isSelectedByClient,
+            approvedAt: o.approvedAt,
+            sortOrder: o.sortOrder,
+            attachments: (o.attachments ?? []).map((a: any) => portalAttachmentView(a, urlPrefix)),
+          })),
+        }));
 
       res.json({
         project: { id: project.id, name: (project as any).name, address: (project as any).address },
-        selections: selectionsWithOptions,
+        selections: safeSelections,
       });
     } catch (error) {
       console.error("Trades portal error:", error);
       res.status(500).json({ error: "Failed to load trades portal" });
+    }
+  });
+
+  // Public, token-scoped file serving for trades-portal option attachments
+  app.get("/api/portal/project/:token/trades/attachments/:attachmentId", async (req, res) => {
+    try {
+      const { token, attachmentId } = req.params;
+      const { eq: eqFn } = await import("drizzle-orm");
+      const schemaImp = await import("@shared/schema");
+      const [project] = await db.select().from(schemaImp.projects)
+        .where(eqFn((schemaImp.projects as any).tradesPortalToken, token))
+        .limit(1);
+      if (!project) return res.status(404).json({ error: "Not found" });
+
+      const attachment = await storage.getOptionAttachmentById(attachmentId);
+      if (!attachment) return res.status(404).json({ error: "Not found" });
+      const option = await storage.getSelectionOption(attachment.optionId);
+      const selection = option ? await storage.getSelection(option.selectionId) : undefined;
+      if (!selection || selection.projectId !== project.id) {
+        return res.status(404).json({ error: "Not found" });
+      }
+
+      const normalisedPath = (attachment.filePath || "").replace(/^\/objects\/company\/[^/]+\/objects\//, "/objects/");
+      const objectFile = await objectStorageService.getObjectEntityFile(normalisedPath);
+      await objectStorageService.downloadObject(objectFile, res);
+    } catch (error: any) {
+      if (error?.name === "ObjectNotFoundError") {
+        return res.status(404).json({ error: "Not found" });
+      }
+      console.error("Trades portal attachment error:", error);
+      res.status(500).json({ error: "Failed to load attachment" });
     }
   });
 
