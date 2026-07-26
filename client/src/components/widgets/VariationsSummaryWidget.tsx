@@ -4,7 +4,7 @@ import { WidgetProps, Widget } from "@/types/widgets";
 import { useProject } from "@/contexts/ProjectContext";
 import { useProjectMetrics } from "@/hooks/useProjectMetrics";
 import { useFinancialPermission } from "@/hooks/use-permission";
-import { WidgetSkeleton, WidgetEmpty } from "@/components/ui/widget-states";
+import { WidgetSkeleton, WidgetEmpty, WidgetError } from "@/components/ui/widget-states";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -57,7 +57,7 @@ function AmountRow({
 
 export default function VariationsSummaryWidget({ widget, onUpdate, isConfiguring, onCloseConfig }: WidgetProps) {
   const { currentProject } = useProject();
-  const { metrics, isLoading, formatCurrency } = useProjectMetrics();
+  const { metrics, isLoading, isError, formatCurrency } = useProjectMetrics();
   const allowed = useFinancialPermission();
   const [, navigate] = useLocation();
   const [editingTitle, setEditingTitle] = useState(widget.title);
@@ -140,6 +140,7 @@ export default function VariationsSummaryWidget({ widget, onUpdate, isConfigurin
   if (!currentProject) return <WidgetEmpty message="Select a project to view variations" />;
   if (!allowed) return <WidgetEmpty message="You don't have access to financial data" />;
   if (isLoading) return <WidgetSkeleton />;
+  if (isError) return <WidgetError />;
 
   const variationsPath = currentProject?.id
     ? `/projects/${currentProject.id}/variations`

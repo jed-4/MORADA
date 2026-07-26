@@ -105,7 +105,7 @@ export default function OpenItemsWidget({ widget }: WidgetProps) {
       label: "Open Defects",
       count: defects,
       icon: AlertTriangle,
-      to: `/defects?projectId=${projectId}`,
+      to: `/projects/${projectId}/defects`,
       tone: "text-bp-amber",
     },
     {
