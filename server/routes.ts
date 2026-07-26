@@ -180,7 +180,6 @@ import { AI_MODEL, buildSystemPrompt, buildCircuitStartMessage } from "./ai/prom
 import { executeTool } from "./ai/executor";
 import { computeBillTotalsCents, billLineExGstCents, clampRoundingCents } from "@shared/billTotals";
 import { computeVariationTotals, computeVariationLinePriceCents } from "@shared/variationTotals";
-import { timesheetTotalExGstCents } from "@shared/money";
 import { matchSupplier } from "@shared/supplierMatcher";
 import {
   fuzzyMatchTimesheetCostCode,
@@ -17672,9 +17671,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
         variationNumber = `${projectPrefix}-VO-${String(variationCount).padStart(3, '0')}`;
       }
 
+      // Money totals start at zero — recomputeVariationTotals fills them as
+      // items/bills/timesheets are attached (guarded fields are stripped from
+      // the create schema, so they can't come from the client).
       const variation = await storage.createVariation({
         ...validationResult.data,
-        variationNumber
+        variationNumber,
+        subtotal: 0,
+        gstAmount: 0,
+        totalAmount: 0,
+        paidAmount: 0,
+        balanceAmount: 0,
       });
       res.status(201).json(variation);
     } catch (error) {
@@ -20206,11 +20213,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           details: fromZodError(validationResult.error).toString()
         });
       }
-      // The variation being linked must belong to the caller's company too.
-      const variation = await storage.getVariation(validationResult.data.variationId);
-      if (!variation || !(await enforceProjectCompany(req, res, (variation as any).projectId, "Variation not found"))) return;
-
-      // The claimed variation must belong to the same project as the invoice.
+      // The claimed variation must belong to the same project as the (owned)
+      // invoice — which also pins it to the caller's company.
       const variation = await storage.getVariation(validationResult.data.variationId);
       if (!variation || (variation as any).projectId !== (invoice as any).projectId) {
         return res.status(400).json({ error: "Variation does not belong to this invoice's project" });
