@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { centsToDollars } from "@shared/money";
 import { AlertCircle } from "lucide-react";
 import {
   Area,
@@ -103,7 +104,7 @@ function readConfig(widget?: Widget): CashFlowConfig {
 
 function formatCurrencyShort(v: number): string {
   if (!Number.isFinite(v)) return "$0";
-  const dollars = v / 100;
+  const dollars = centsToDollars(v);
   if (Math.abs(dollars) >= 1_000_000) return `$${(dollars / 1_000_000).toFixed(1)}M`;
   if (Math.abs(dollars) >= 1_000) return `$${(dollars / 1_000).toFixed(0)}k`;
   return `$${Math.round(dollars)}`;
