@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useProject } from "@/contexts/ProjectContext";
 import type { Estimate, Bill, Variation, ClientInvoice } from "@shared/schema";
 import { computeContractMetrics, type ContractMetrics } from "@shared/projectMetrics";
+import { timesheetTotalExGstCents, exGstFromInc } from "@shared/money";
 
 export interface ProjectMetric {
   id: string;
@@ -108,6 +109,19 @@ interface BillLineItem {
   totalIncTax: number | null;
 }
 
+// variation_items.unitCostExTax is DOLLARS ex GST (doublePrecision), like estimate_items
+interface VariationItemRow {
+  id: string;
+  variationId: string;
+  quantity: number | null;
+  unitCostExTax: number | null;
+}
+
+interface TimesheetRow {
+  id: string;
+  total: string | number | null;
+}
+
 export function useProjectMetrics() {
   const { currentProject } = useProject();
   const projectId = currentProject?.id;
@@ -193,8 +207,32 @@ export function useProjectMetrics() {
     enabled: !!projectId,
   });
 
-  const isLoading = estimatesLoading || itemsLoading || billsLoading || variationsLoading || invoicesLoading || invoiceVariationsLoading;
-  const isError = estimatesError || itemsError || billsError || variationsError || invoicesError || invoiceVariationsError;
+  // Variation items feed change-order costs (builder cost ex GST, no markup)
+  const { data: variationItems = [], isLoading: variationItemsLoading, isError: variationItemsError } = useQuery<VariationItemRow[]>({
+    queryKey: ["/api/variation-items", { projectId }],
+    queryFn: async () => {
+      if (!projectId) return [];
+      const response = await fetch(`/api/variation-items?projectId=${projectId}`, { credentials: "include" });
+      if (!response.ok) throw new Error(`Failed to load variation items (${response.status})`);
+      return response.json();
+    },
+    enabled: !!projectId,
+  });
+
+  // Approved timesheet labour is a real cost (dollars EX GST — wages carry no GST)
+  const { data: approvedTimesheets = [], isLoading: timesheetsLoading, isError: timesheetsError } = useQuery<TimesheetRow[]>({
+    queryKey: ["/api/timesheets", { projectId, status: "approved" }],
+    queryFn: async () => {
+      if (!projectId) return [];
+      const response = await fetch(`/api/timesheets?projectId=${projectId}&status=approved`, { credentials: "include" });
+      if (!response.ok) throw new Error(`Failed to load timesheets (${response.status})`);
+      return response.json();
+    },
+    enabled: !!projectId,
+  });
+
+  const isLoading = estimatesLoading || itemsLoading || billsLoading || variationsLoading || invoicesLoading || invoiceVariationsLoading || variationItemsLoading || timesheetsLoading;
+  const isError = estimatesError || itemsError || billsError || variationsError || invoicesError || invoiceVariationsError || variationItemsError || timesheetsError;
 
   // Calculate metrics
   const calculateMetrics = (): ProjectMetricsData => {
@@ -354,9 +392,18 @@ export function useProjectMetrics() {
     // Revised Contract Price (legacy alias — inc-GST dollars)
     const revisedContractPrice = contractMetrics.revisedContractPriceIncGst;
 
-    // Total Project Costs. Variation (change-order) costs are not yet included:
-    // there is no per-project variation-items endpoint to source builder costs from.
-    const totalProjectCosts = contractCosts;
+    // Change-order costs: builder cost (no markup) of approved variations,
+    // ex GST dollars — variation_items.unitCostExTax is dollars like estimate_items.
+    const approvedVariationIds = new Set(approvedVariationsList.map(v => v.id));
+    const changeOrderCosts = variationItems.reduce((sum, item) => {
+      if (!approvedVariationIds.has(item.variationId)) return sum;
+      const unitCost = item.unitCostExTax || 0;
+      const qty = item.quantity || 1;
+      return sum + (unitCost * qty);
+    }, 0);
+
+    // Total Project Costs — ex GST (contract + approved change-order costs)
+    const totalProjectCosts = contractCosts + changeOrderCosts;
 
     // Bills calculations
     const now = new Date();
@@ -369,17 +416,22 @@ export function useProjectMetrics() {
       return new Date(b.dueDate) < now;
     });
 
-    const paidBillsAmount = paidBillsList.reduce((sum, b) => sum + (b.total || 0), 0) / 100;
-
-    // Actual Costs: Paid Bills + Approved Time Logs (simplified - just bills for now)
-    const actualCosts = paidBillsAmount;
+    // Actual Costs — ex GST so they compare like-for-like with estimate costs:
+    // paid bills at their ex-GST subtotal + approved timesheet labour (wages
+    // carry no GST, so timesheet totals are already ex GST).
+    const paidBillsExGst = paidBillsList.reduce((sum, b) => sum + (b.subtotal || 0), 0) / 100;
+    const approvedLabourExGst = approvedTimesheets.reduce(
+      (sum, ts) => sum + timesheetTotalExGstCents(ts), 0) / 100;
+    const actualCosts = paidBillsExGst + approvedLabourExGst;
 
     // Cost to Complete
     const costToComplete = Math.max(0, totalProjectCosts - actualCosts);
 
-    // Gross Profit & Margin
-    const grossProfit = revisedContractPrice - totalProjectCosts;
-    const grossMargin = revisedContractPrice > 0 ? (grossProfit / revisedContractPrice) * 100 : 0;
+    // Gross Profit & Margin — ex GST both sides (GST is pass-through, so
+    // builder P&L compares ex-GST revenue against ex-GST costs).
+    const revisedContractPriceExGst = contractMetrics.revisedContractPriceExGst;
+    const grossProfit = revisedContractPriceExGst - totalProjectCosts;
+    const grossMargin = revisedContractPriceExGst > 0 ? (grossProfit / revisedContractPriceExGst) * 100 : 0;
 
     // Client Invoices calculations
     // Invoice rows come from /api/client-invoices (raw ClientInvoice rows), so
@@ -425,7 +477,7 @@ export function useProjectMetrics() {
     const remainingToInvoice = revisedContractPrice - invoicedAmount;
     const remainingToInvoicePercentage = revisedContractPrice > 0 ? (remainingToInvoice / revisedContractPrice) * 100 : 0;
 
-    // Completion Percentage (cost-based)
+    // Completion Percentage (cost-based; spend and budget are both ex GST)
     const completionPercentage = totalProjectCosts > 0 ? (actualCosts / totalProjectCosts) * 100 : 0;
 
     // Earned Revenue
@@ -434,9 +486,18 @@ export function useProjectMetrics() {
     // WIP (Work in Progress)
     const wip = earnedRevenue - invoicedAmount;
 
-    // Actual Gross Profit & Margin
-    const actualGrossProfit = invoicedAmount - actualCosts;
-    const actualGrossMargin = invoicedAmount > 0 ? (actualGrossProfit / invoicedAmount) * 100 : 0;
+    // Actual Gross Profit & Margin — ex GST both sides. Prefer the stored
+    // gstAmount; fall back to backing GST out of the inc-GST total for legacy
+    // rows that never populated it.
+    const invoicedAmountExGst = nonCancelledInvoices.reduce((sum, inv) => {
+      const totalCents = invTotalCents(inv);
+      const exCents = (inv.gstAmount || 0) > 0
+        ? totalCents - (inv.gstAmount || 0)
+        : exGstFromInc(totalCents);
+      return sum + exCents;
+    }, 0) / 100;
+    const actualGrossProfit = invoicedAmountExGst - actualCosts;
+    const actualGrossMargin = invoicedAmountExGst > 0 ? (actualGrossProfit / invoicedAmountExGst) * 100 : 0;
 
     // WIP AA (Actual vs Allocated)
     const wipAA = actualCosts - (totalProjectCosts * (invoicedPercentage / 100));
@@ -597,7 +658,8 @@ export const metricDefinitions = [
   { id: "paidInvoicesPercentage", name: "Paid %", category: "billing", type: "percentage", group: "Invoicing & Billing" },
   { id: "remainingBalance", name: "Remaining Balance", category: "billing", type: "currency", group: "Invoicing & Billing" },
   { id: "remainingToInvoice", name: "Remaining to Invoice", category: "billing", type: "currency", group: "Invoicing & Billing" },
-  
+  { id: "remainingToInvoicePercentage", name: "Remaining to Invoice %", category: "billing", type: "percentage", group: "Invoicing & Billing" },
+
   // Counts - Bills
   { id: "totalBills", name: "Total Bills", category: "counts", type: "count", group: "Bills Summary" },
   { id: "paidBills", name: "Paid Bills", category: "counts", type: "count", group: "Bills Summary" },
@@ -608,12 +670,17 @@ export const metricDefinitions = [
   { id: "totalVariations", name: "Total Variations", category: "counts", type: "count", group: "Variations Summary" },
   { id: "approvedVariations", name: "Approved Variations", category: "counts", type: "count", group: "Variations Summary" },
   { id: "pendingVariations", name: "Pending Variations", category: "counts", type: "count", group: "Variations Summary" },
-  
+  { id: "pendingVariationValue", name: "Pending Variation Value", category: "contract", type: "currency", group: "Variations Summary" },
+  { id: "totalVariationValue", name: "Total Variation Value", category: "contract", type: "currency", group: "Variations Summary" },
+  { id: "invoicedVariationValue", name: "Invoiced Variation Value", category: "contract", type: "currency", group: "Variations Summary" },
+
   // Counts - Invoices
   { id: "totalInvoices", name: "Total Invoices", category: "counts", type: "count", group: "Invoices Summary" },
   { id: "paidInvoicesCount", name: "Paid Invoices Count", category: "counts", type: "count", group: "Invoices Summary" },
   { id: "unpaidInvoices", name: "Unpaid Invoices", category: "counts", type: "count", group: "Invoices Summary" },
   { id: "overdueInvoices", name: "Overdue Invoices", category: "counts", type: "count", group: "Invoices Summary" },
+  { id: "overdueAmount", name: "Overdue Amount", category: "billing", type: "currency", group: "Invoices Summary" },
+  { id: "oldestOverdueDays", name: "Oldest Overdue (Days)", category: "counts", type: "count", group: "Invoices Summary" },
 ] as const;
 
 export const metricGroups = [
