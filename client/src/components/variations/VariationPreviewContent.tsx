@@ -57,6 +57,8 @@ export interface VariationPreviewProps {
   };
   items: VariationItem[];
   bills?: Bill[];
+  /** On-charged labour total in ex-GST cents (aggregated server-side — raw timesheets never reach the portal). */
+  labourTotalCents?: number | null;
   company?: Company | null;
   companySettings?: CompanySettings | null;
   project?: Project | null;
@@ -79,6 +81,15 @@ function hexToRgba(hex: string, alpha: number): string {
   const g = parseInt(hex.slice(3, 5), 16);
   const b = parseInt(hex.slice(5, 7), 16);
   return `rgba(${r},${g},${b},${alpha})`;
+}
+
+// Client-facing unit price in ex-GST dollars. Saved lines carry the
+// server-derived marked-up unitPrice (cents) — preferred. Unsaved builder-side
+// previews may only have cost + markup, so fall back to deriving it. Builder
+// cost and markup are never shown here.
+function getClientUnitPrice(item: any): number {
+  if (item.unitPrice != null) return item.unitPrice / 100;
+  return (item.unitCostExTax ?? 0) * (1 + (item.markupPercent ?? 0) / 100);
 }
 
 const TYPE_LABELS: Record<string, string> = {
@@ -224,6 +235,7 @@ export function VariationPreviewContent({
   variation,
   items,
   bills = [],
+  labourTotalCents = 0,
   company,
   companySettings,
   project,
@@ -264,15 +276,20 @@ export function VariationPreviewContent({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      if (!res.ok) throw new Error("Sign failed");
+      if (!res.ok) {
+        // Surface the server's guard messages (already signed / finalised /
+        // deadline passed) instead of a generic failure.
+        const errBody = await res.json().catch(() => ({}));
+        throw new Error(errBody.error || "Sign failed");
+      }
       return res.json();
     },
     onSuccess: (data, vars) => {
       toast({ title: vars.action === "approve" ? "Variation approved" : "Rejection submitted" });
       onSigned?.(vars);
     },
-    onError: () => {
-      toast({ title: "Failed to sign", variant: "destructive" });
+    onError: (error: Error) => {
+      toast({ title: "Failed to sign", description: error.message, variant: "destructive" });
     },
   });
 
@@ -404,21 +421,18 @@ export function VariationPreviewContent({
                 className="grid text-xs font-semibold text-white px-3 py-2"
                 style={{
                   backgroundColor: primaryColor,
-                  gridTemplateColumns: "1fr 80px 90px 70px 90px",
+                  gridTemplateColumns: "1fr 80px 100px 100px",
                 }}
               >
                 <span>Description</span>
                 <span className="text-right">Qty</span>
-                <span className="text-right">Unit Cost</span>
-                <span className="text-right">Markup</span>
+                <span className="text-right">Unit Price</span>
                 <span className="text-right">Amt inc. GST</span>
               </div>
 
               {Object.entries(typeGroups).map(([type, typeItems]) => {
                 const typeTotal = typeItems.reduce((sum, item) => {
-                  const exTax = (item.quantity ?? 1) * ((item.unitCostExTax ?? (item.unitPrice ?? 0) / 100));
-                  const markup = exTax * ((item.markupPercent ?? 0) / 100);
-                  const withMarkup = exTax + markup;
+                  const withMarkup = (item.quantity ?? 1) * getClientUnitPrice(item);
                   const incTax = (item as any).taxable !== false ? withMarkup * 1.1 : withMarkup;
                   return sum + incTax;
                 }, 0);
@@ -436,11 +450,9 @@ export function VariationPreviewContent({
                     </div>
 
                     {typeItems.map((item, idx) => {
-                      const unitCost = item.unitCostExTax ?? (item.unitPrice ?? 0) / 100;
+                      const unitPrice = getClientUnitPrice(item);
                       const qty = item.quantity ?? 1;
-                      const exTax = qty * unitCost;
-                      const markup = exTax * ((item.markupPercent ?? 0) / 100);
-                      const withMarkup = exTax + markup;
+                      const withMarkup = qty * unitPrice;
                       const incTax = (item as any).taxable !== false ? withMarkup * 1.1 : withMarkup;
                       const isAlt = idx % 2 === 1;
 
@@ -450,7 +462,7 @@ export function VariationPreviewContent({
                           className="grid px-3 py-2 border-t border-border text-sm"
                           style={{
                             backgroundColor: isAlt ? "#f9fafb" : "#ffffff",
-                            gridTemplateColumns: "1fr 80px 90px 70px 90px",
+                            gridTemplateColumns: "1fr 80px 100px 100px",
                           }}
                         >
                           <div className="pr-2 min-w-0">
@@ -462,10 +474,7 @@ export function VariationPreviewContent({
                             {qty} {(item as any).unitType || ""}
                           </span>
                           <span className="text-right text-secondary text-xs tabular-nums">
-                            {new Intl.NumberFormat("en-AU", { style: "currency", currency: "AUD" }).format(unitCost)}
-                          </span>
-                          <span className="text-right text-secondary text-xs tabular-nums">
-                            {item.markupPercent ? `${item.markupPercent}%` : "—"}
+                            {new Intl.NumberFormat("en-AU", { style: "currency", currency: "AUD" }).format(unitPrice)}
                           </span>
                           <span className="text-right text-foreground font-medium text-xs tabular-nums">
                             {new Intl.NumberFormat("en-AU", { style: "currency", currency: "AUD" }).format(incTax)}
@@ -543,6 +552,19 @@ export function VariationPreviewContent({
                   </div>
                 );
               })}
+            </div>
+          </div>
+        )}
+
+        {/* On-charged site labour (aggregated; individual timesheets stay private) */}
+        {(labourTotalCents ?? 0) > 0 && (
+          <div>
+            <h2 className="text-xs font-semibold text-muted uppercase tracking-wider mb-3">Site Labour</h2>
+            <div className="border border-border rounded-lg overflow-hidden">
+              <div className="flex items-center justify-between px-3 py-2 text-sm">
+                <span className="text-foreground">Labour (ex GST)</span>
+                <span className="font-medium tabular-nums">{formatCents(labourTotalCents ?? 0)}</span>
+              </div>
             </div>
           </div>
         )}

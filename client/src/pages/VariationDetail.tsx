@@ -8,6 +8,8 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { format } from "date-fns";
 import { pdf } from "@react-pdf/renderer";
+import { computeVariationTotals } from "@shared/variationTotals";
+import { formatCents, dollarsToCents, centsToDollars, exGstFromInc, toNumber } from "@shared/money";
 import { 
   ArrowLeft, 
   Plus, 
@@ -121,7 +123,8 @@ type CostLine = {
 type AllowanceLine = {
   id?: string;
   description: string;
-  amount: number;
+  amount: number; // ex-GST dollars (legacy rows loaded with taxable=false hold inc-GST amounts)
+  taxable: boolean;
   sortOrder: number;
 };
 
@@ -439,7 +442,11 @@ export default function VariationDetail() {
         allowanceItems.map((item) => ({
           id: item.id,
           description: item.description,
-          amount: item.totalPrice / 100,
+          amount: centsToDollars(item.totalPrice),
+          // Preserve the stored flag: new adjustment lines are ex-GST taxable;
+          // legacy rows were saved taxable=false with inc-GST amounts, and
+          // flipping them on load would change their client total.
+          taxable: item.taxable !== false,
           sortOrder: item.sortOrder,
         }))
       );
@@ -539,7 +546,7 @@ export default function VariationDetail() {
   const addAllowanceLine = (prefill?: { description?: string; amount?: number }) => {
     setAllowanceLines([
       ...allowanceLines,
-      { description: prefill?.description ?? "", amount: prefill?.amount ?? 0, sortOrder: allowanceLines.length },
+      { description: prefill?.description ?? "", amount: prefill?.amount ?? 0, taxable: true, sortOrder: allowanceLines.length },
     ]);
   };
 
@@ -746,6 +753,11 @@ export default function VariationDetail() {
   };
 
   // ── Financial calculations ─────────────────────────────────────────────────
+  // Display totals go through shared/variationTotals — the same function the
+  // server uses to persist subtotal/gstAmount/totalAmount — so the preview can
+  // never drift from what gets saved. All amounts below are EX-GST dollars
+  // unless noted; bills are stored inc-GST cents, timesheets ex-GST dollar
+  // strings (see shared/money.ts).
 
   const calculateCostLinesBaseTotal = () =>
     costLines.reduce((sum, item) => sum + item.quantity * item.unitCostExTax, 0);
@@ -757,32 +769,42 @@ export default function VariationDetail() {
     allowanceLines.reduce((sum, item) => sum + item.amount, 0);
 
   const calculateBillsTotal = () =>
-    getSelectedBills().reduce((sum: number, b: any) => sum + (b.total || 0) / 100, 0);
+    centsToDollars(
+      getSelectedBills().reduce(
+        (sum: number, b: any) =>
+          sum +
+          (typeof b.subtotal === "number" && typeof b.tax === "number" && b.subtotal + b.tax === b.total
+            ? b.subtotal
+            : exGstFromInc(b.total || 0)),
+        0,
+      ),
+    );
 
   const calculateLabourTotal = () =>
-    getSelectedTimesheets().reduce((sum: number, t: any) => sum + (t.total || 0) / 100, 0);
+    getSelectedTimesheets().reduce((sum: number, t: any) => sum + toNumber(t.total), 0);
 
-  const calculateSubtotal = () =>
-    calculateCostLinesSubtotal() + calculateAllowancesTotal() + calculateBillsTotal() + calculateLabourTotal();
+  const calculateTotals = () =>
+    computeVariationTotals({
+      items: [
+        ...costLines.map((line) => ({
+          totalPrice: dollarsToCents(getCostLineAmountExTax(line)),
+          taxable: line.taxable,
+        })),
+        ...allowanceLines.map((line) => ({
+          totalPrice: dollarsToCents(line.amount),
+          taxable: line.taxable,
+        })),
+      ],
+      bills: getSelectedBills(),
+      timesheets: getSelectedTimesheets(),
+    });
 
-  const calculateGST = () => {
-    const taxableAmount = costLines
-      .filter((item) => item.taxable)
-      .reduce((sum, item) => sum + getCostLineAmountExTax(item), 0);
-    return taxableAmount * 0.1;
-  };
+  const calculateSubtotal = () => centsToDollars(calculateTotals().subtotalCents);
+  const calculateGST = () => centsToDollars(calculateTotals().gstCents);
+  const calculateTotal = () => centsToDollars(calculateTotals().totalCents);
 
-  const calculateTotal = () => calculateSubtotal() + calculateGST();
-
-  const formatCurrency = (amount: number) => {
-    const isWholeNumber = amount % 1 === 0;
-    return new Intl.NumberFormat("en-AU", {
-      style: "currency",
-      currency: "AUD",
-      minimumFractionDigits: isWholeNumber ? 0 : 2,
-      maximumFractionDigits: 2,
-    }).format(amount);
-  };
+  // Canonical AUD formatter (shared/money.ts), fed dollars from the helpers above.
+  const formatCurrency = (amount: number) => formatCents(dollarsToCents(amount));
 
   // ── Save bills/timesheets helper ──────────────────────────────────────────
 
@@ -799,19 +821,16 @@ export default function VariationDetail() {
         ...data,
         approvalDeadline: data.approvalDeadline || undefined,
         daysChanged: data.daysChanged || undefined,
-        subtotal: Math.round(calculateSubtotal() * 100),
-        gstAmount: Math.round(calculateGST() * 100),
-        totalAmount: Math.round(calculateTotal() * 100),
-        paidAmount: 0,
-        balanceAmount: Math.round(calculateTotal() * 100),
+        // subtotal/gstAmount/totalAmount/paidAmount/balanceAmount are
+        // server-maintained — recomputed from items/bills/timesheets on every
+        // write and from invoice payments; never sent from the client.
       };
 
       const newVariation = await apiRequest("/api/variations", "POST", variationData) as Variation;
 
       for (let i = 0; i < costLines.length; i++) {
         const item = costLines[i];
-        const amountExTax = getCostLineAmountExTax(item);
-        const markupFactor = 1 + (item.markupPercent ?? 0) / 100;
+        // unitPrice/totalPrice are derived server-side from the cost inputs.
         await apiRequest(`/api/variations/${newVariation.id}/items`, "POST", {
           variationId: newVariation.id,
           name: item.name || null,
@@ -822,8 +841,6 @@ export default function VariationDetail() {
           quantity: item.quantity,
           unitCostExTax: item.unitCostExTax,
           markupPercent: item.markupPercent ?? null,
-          unitPrice: Math.round(item.unitCostExTax * markupFactor * 100),
-          totalPrice: Math.round(amountExTax * 100),
           taxable: item.taxable,
           sortOrder: i,
           itemType: "cost_line",
@@ -837,9 +854,9 @@ export default function VariationDetail() {
           variationId: newVariation.id,
           description: item.description,
           quantity: 1,
-          unitPrice: Math.round(item.amount * 100),
-          totalPrice: Math.round(item.amount * 100),
-          taxable: false,
+          unitPrice: dollarsToCents(item.amount),
+          totalPrice: dollarsToCents(item.amount),
+          taxable: item.taxable,
           sortOrder: i,
           itemType: "allowance",
         });
@@ -876,11 +893,7 @@ export default function VariationDetail() {
         ...data,
         approvalDeadline: data.approvalDeadline || undefined,
         daysChanged: data.daysChanged || undefined,
-        subtotal: Math.round(calculateSubtotal() * 100),
-        gstAmount: Math.round(calculateGST() * 100),
-        totalAmount: Math.round(calculateTotal() * 100),
-        paidAmount: 0,
-        balanceAmount: Math.round(calculateTotal() * 100),
+        // Money totals + paid/balance are server-maintained; see createMutation.
       };
 
       const updatedVariation = await apiRequest(`/api/variations/${effectiveVariationId}`, "PATCH", variationData) as Variation;
@@ -902,11 +915,9 @@ export default function VariationDetail() {
         await apiRequest(`/api/variation-items/${itemId}`, "DELETE");
       }
 
-      // Save cost lines
+      // Save cost lines (unitPrice/totalPrice derived server-side)
       for (let i = 0; i < costLines.length; i++) {
         const item = costLines[i];
-        const amountExTax = getCostLineAmountExTax(item);
-        const markupFactor = 1 + (item.markupPercent ?? 0) / 100;
         const itemData = {
           variationId: effectiveVariationId,
           name: item.name || null,
@@ -917,8 +928,6 @@ export default function VariationDetail() {
           quantity: item.quantity,
           unitCostExTax: item.unitCostExTax,
           markupPercent: item.markupPercent ?? null,
-          unitPrice: Math.round(item.unitCostExTax * markupFactor * 100),
-          totalPrice: Math.round(amountExTax * 100),
           taxable: item.taxable,
           sortOrder: i,
           itemType: "cost_line",
@@ -938,9 +947,9 @@ export default function VariationDetail() {
           variationId: effectiveVariationId,
           description: item.description,
           quantity: 1,
-          unitPrice: Math.round(item.amount * 100),
-          totalPrice: Math.round(item.amount * 100),
-          taxable: false,
+          unitPrice: dollarsToCents(item.amount),
+          totalPrice: dollarsToCents(item.amount),
+          taxable: item.taxable,
           sortOrder: i,
           itemType: "allowance",
         };
@@ -957,6 +966,7 @@ export default function VariationDetail() {
     onSuccess: (updatedVariation) => {
       queryClient.invalidateQueries({ queryKey: ["/api/variations"] });
       queryClient.invalidateQueries({ queryKey: [`/api/variations/${effectiveVariationId}`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/variations/${effectiveVariationId}/items`] });
       queryClient.invalidateQueries({ queryKey: [`/api/variations/${effectiveVariationId}/bills`] });
       queryClient.invalidateQueries({ queryKey: [`/api/variations/${effectiveVariationId}/timesheets`] });
       toast({ title: "Success", description: "Variation updated successfully" });
@@ -1143,6 +1153,7 @@ export default function VariationDetail() {
           variation={variation as any}
           items={existingCostLines}
           bills={existingVariationBills}
+          labourTotalCents={dollarsToCents(calculateLabourTotal())}
           company={companyInfo}
           project={projects.find((p) => p.id === form.watch("projectId")) as any}
           brandColor={companySettings?.brandColor || "#6d28d9"}
@@ -1815,7 +1826,7 @@ export default function VariationDetail() {
                                 <TableCell className="text-sm text-muted-foreground py-1 px-2">{t.date ? format(new Date(t.date), "d MMM yyyy") : "—"}</TableCell>
                                 <TableCell className="text-sm font-medium py-1 px-2">{getUserName(t.userId)}</TableCell>
                                 <TableCell className="text-right text-sm tabular-nums py-1 px-2">{Number(t.duration).toFixed(1)}</TableCell>
-                                <TableCell className="text-right text-sm font-medium py-1 px-2">{formatCurrency((t.total || 0) / 100)}</TableCell>
+                                <TableCell className="text-right text-sm font-medium py-1 px-2">{formatCurrency(toNumber(t.total))}</TableCell>
                                 <TableCell className="py-1 px-2 w-8">
                                   <button type="button" onClick={() => setSelectedTimesheetIds(prev => prev.filter(id => id !== t.id))} className="text-muted-foreground hover:text-destructive">
                                     <X className="w-3.5 h-3.5" />
@@ -1882,7 +1893,7 @@ export default function VariationDetail() {
                             <TableHeader>
                               <TableRow className="h-6 bg-muted/30">
                                 <TableHead className="text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Description</TableHead>
-                                <TableHead className="w-36 text-right text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Adjustment ($)</TableHead>
+                                <TableHead className="w-36 text-right text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Adjustment ($ ex GST)</TableHead>
                                 <TableHead className="w-8 py-0" />
                               </TableRow>
                             </TableHeader>
@@ -2354,7 +2365,7 @@ export default function VariationDetail() {
                             : <span className="flex items-center gap-1 text-xs"><div className="w-1.5 h-1.5 rounded-full bg-amber flex-shrink-0" />Pending</span>}
                         </TableCell>
                         <TableCell className="text-right text-sm tabular-nums py-1 px-2">{Number(t.duration).toFixed(1)}</TableCell>
-                        <TableCell className="text-right text-sm font-medium py-1 px-2">{formatCurrency((t.total || 0) / 100)}</TableCell>
+                        <TableCell className="text-right text-sm font-medium py-1 px-2">{formatCurrency(toNumber(t.total))}</TableCell>
                       </TableRow>
                     );
                   })}
@@ -2419,9 +2430,13 @@ export default function VariationDetail() {
                       key={item.id}
                       className="flex items-center gap-3 p-3 rounded-md border hover-elevate cursor-pointer"
                       onClick={() => {
+                        // Variance is inc-GST cents (allowance tables are inc-GST);
+                        // adjustment lines are stored ex-GST and taxed like any
+                        // other line, so strip the GST here to keep the client
+                        // total equal to the variance.
                         addAllowanceLine({
                           description: `${item.name} — allowance adjustment`,
-                          amount: varianceCents / 100,
+                          amount: centsToDollars(exGstFromInc(varianceCents)),
                         });
                         setAllowancesModalOpen(false);
                         setAllowancesSearch("");
@@ -2513,6 +2528,7 @@ export default function VariationDetail() {
               variation={variation as any}
               items={existingCostLines}
               bills={existingVariationBills}
+              labourTotalCents={dollarsToCents(calculateLabourTotal())}
               company={companyInfo}
               project={projects.find((p) => p.id === form.watch("projectId")) as any}
               brandColor={companySettings?.brandColor || "#6d28d9"}
@@ -2536,6 +2552,7 @@ export default function VariationDetail() {
           variationId={effectiveVariationId!}
           items={existingCostLines}
           bills={existingVariationBills}
+          labourTotalCents={dollarsToCents(calculateLabourTotal())}
           company={companyInfo}
           project={projects.find((p) => p.id === form.watch("projectId")) as any}
           brandColor={companySettings?.brandColor || "#6d28d9"}

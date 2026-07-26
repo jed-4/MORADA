@@ -39,6 +39,8 @@ interface VariationDocumentProps {
   };
   items: VariationItem[];
   bills?: Bill[];
+  /** On-charged labour total in ex-GST cents (aggregated; timesheet detail stays internal). */
+  labourTotalCents?: number;
   company?: Company | null;
   project?: Project | null;
   brandColor?: string;
@@ -73,10 +75,19 @@ function formatAUD(dollars: number): string {
   }).format(dollars);
 }
 
+// Client-facing unit price in ex-GST dollars: prefer the server-derived
+// marked-up unitPrice; fall back to deriving from cost + markup for unsaved
+// lines. Builder cost and markup are never rendered in the document.
+function getClientUnitPrice(item: any): number {
+  if (item.unitPrice != null) return item.unitPrice / 100;
+  return (item.unitCostExTax ?? 0) * (1 + ((item.markupPercent ?? 0) / 100));
+}
+
 export function VariationDocument({
   variation,
   items,
   bills = [],
+  labourTotalCents = 0,
   company,
   project,
   brandColor = "#3B82F6",
@@ -380,22 +391,17 @@ export function VariationDocument({
                 <Text style={{ fontSize: 8, color: thTextColor, fontFamily: "Helvetica-Bold", width: 50, textAlign: "right" }}>
                   Qty
                 </Text>
-                <Text style={{ fontSize: 8, color: thTextColor, fontFamily: "Helvetica-Bold", width: 65, textAlign: "right" }}>
-                  Unit Cost
+                <Text style={{ fontSize: 8, color: thTextColor, fontFamily: "Helvetica-Bold", width: 75, textAlign: "right" }}>
+                  Unit Price
                 </Text>
-                <Text style={{ fontSize: 8, color: thTextColor, fontFamily: "Helvetica-Bold", width: 45, textAlign: "right" }}>
-                  Markup
-                </Text>
-                <Text style={{ fontSize: 8, color: thTextColor, fontFamily: "Helvetica-Bold", width: 65, textAlign: "right" }}>
+                <Text style={{ fontSize: 8, color: thTextColor, fontFamily: "Helvetica-Bold", width: 75, textAlign: "right" }}>
                   Amt inc. GST
                 </Text>
               </View>
 
               {Object.entries(typeGroups).map(([type, typeItems]) => {
                 const typeTotal = typeItems.reduce((sum, item) => {
-                  const unitCost = item.unitCostExTax ?? (item.unitPrice ?? 0) / 100;
-                  const qty = item.quantity ?? 1;
-                  const exTax = qty * unitCost * (1 + ((item.markupPercent ?? 0) / 100));
+                  const exTax = (item.quantity ?? 1) * getClientUnitPrice(item);
                   return sum + ((item as any).taxable !== false ? exTax * 1.1 : exTax);
                 }, 0);
 
@@ -420,9 +426,9 @@ export function VariationDocument({
                       </Text>
                     </View>
                     {typeItems.map((item, idx) => {
-                      const unitCost = item.unitCostExTax ?? (item.unitPrice ?? 0) / 100;
+                      const unitPrice = getClientUnitPrice(item);
                       const qty = item.quantity ?? 1;
-                      const exTax = qty * unitCost * (1 + ((item.markupPercent ?? 0) / 100));
+                      const exTax = qty * unitPrice;
                       const incTax = (item as any).taxable !== false ? exTax * 1.1 : exTax;
                       return (
                         <View
@@ -452,13 +458,10 @@ export function VariationDocument({
                           <Text style={{ fontSize: 9, color: "#374151", width: 50, textAlign: "right" }}>
                             {qty} {(item as any).unitType || ""}
                           </Text>
-                          <Text style={{ fontSize: 9, color: "#374151", width: 65, textAlign: "right" }}>
-                            {formatAUD(unitCost)}
+                          <Text style={{ fontSize: 9, color: "#374151", width: 75, textAlign: "right" }}>
+                            {formatAUD(unitPrice)}
                           </Text>
-                          <Text style={{ fontSize: 9, color: "#374151", width: 45, textAlign: "right" }}>
-                            {item.markupPercent ? `${item.markupPercent}%` : "—"}
-                          </Text>
-                          <Text style={{ fontSize: 9, color: "#374151", width: 65, textAlign: "right" }}>
+                          <Text style={{ fontSize: 9, color: "#374151", width: 75, textAlign: "right" }}>
                             {formatAUD(incTax)}
                           </Text>
                         </View>
@@ -573,6 +576,37 @@ export function VariationDocument({
                   </View>
                 );
               })}
+            </View>
+          )}
+
+          {/* On-charged site labour (aggregated) */}
+          {labourTotalCents > 0 && (
+            <View style={{ marginBottom: 12 }}>
+              <Text
+                style={{
+                  fontSize: 8,
+                  fontFamily: "Helvetica-Bold",
+                  color: "#9ca3af",
+                  textTransform: "uppercase",
+                  letterSpacing: 0.5,
+                  marginBottom: 6,
+                }}
+              >
+                Site Labour
+              </Text>
+              <View
+                style={{
+                  flexDirection: "row",
+                  justifyContent: "space-between",
+                  paddingHorizontal: 8,
+                  paddingVertical: 4,
+                  borderBottomWidth: 1,
+                  borderBottomColor: "#f3f4f6",
+                }}
+              >
+                <Text style={{ fontSize: 9, color: "#374151" }}>Labour (ex GST)</Text>
+                <Text style={{ fontSize: 9, color: "#374151" }}>{formatAUD(labourTotalCents / 100)}</Text>
+              </View>
             </View>
           )}
 
