@@ -6,7 +6,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { type Task, type FieldCategoryWithOptions } from "@shared/schema";
 import {
-  Plus, Circle, CheckSquare, ChevronDown, ChevronRight, AlertCircle, Filter, ListChecks,
+  Plus, Circle, CheckSquare, ChevronDown, ChevronRight, ChevronLeft, AlertCircle, Filter, ListChecks,
 } from "lucide-react";
 import { WidgetProps } from "@/types/widgets";
 import { useLocation } from "wouter";
@@ -26,7 +26,7 @@ import { cn } from "@/lib/utils";
 type FilterPriority = "all" | string;
 type SortBy = "dueDate" | "priority" | "title" | "status";
 type SortOrder = "asc" | "desc";
-type ViewMode = "list" | "grouped";
+type ViewMode = "list" | "grouped" | "board" | "week";
 type GroupBy = "status" | "priority" | "assignee" | "dueDate";
 
 const PRIORITY_DOT_CLASSES: Record<string, string> = {
@@ -184,6 +184,58 @@ function TaskRow({ task, statusColor, onToggle, onClick }: TaskRowProps) {
   );
 }
 
+interface BoardCardProps {
+  task: Task;
+  onToggle: (task: Task) => void;
+  onClick: (id: string) => void;
+}
+
+function BoardCard({ task, onToggle, onClick }: BoardCardProps) {
+  const completed = isDone(task.status);
+  const { label: dueDateLabel, isOverdue } = formatDueDate(task.dueDate);
+
+  return (
+    <div
+      className={cn(
+        "rounded-md border bg-card px-2 py-1.5 cursor-pointer hover-elevate space-y-1",
+        completed && "opacity-50",
+      )}
+      data-testid={`task-board-card-${task.id}`}
+      onClick={() => onClick(task.id)}
+    >
+      <div className="flex items-start gap-1.5">
+        <button
+          className="flex-shrink-0 mt-0.5"
+          onClick={e => { e.stopPropagation(); onToggle(task); }}
+          aria-label={completed ? "Mark incomplete" : "Mark complete"}
+        >
+          {completed
+            ? <CheckSquare className="h-3.5 w-3.5 text-green-500" />
+            : <Circle className="h-3.5 w-3.5 text-muted-foreground" />}
+        </button>
+        <span className={cn("text-xs leading-snug line-clamp-2 min-w-0", completed && "line-through")}>
+          {task.title}
+        </span>
+      </div>
+      {(dueDateLabel || task.assigneeName) && (
+        <div className="flex items-center justify-between gap-1 pl-5">
+          <span className={cn(
+            "text-[10px]",
+            isOverdue && !completed ? "text-destructive" : "text-muted-foreground",
+          )}>
+            {dueDateLabel}
+          </span>
+          {task.assigneeName && (
+            <Avatar className="h-4 w-4">
+              <AvatarFallback className="text-[8px]">{getInitials(task.assigneeName)}</AvatarFallback>
+            </Avatar>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function TasksWidget({ widget, onUpdate, isConfiguring, onCloseConfig, userId, onSetHeaderActions }: WidgetProps) {
   const [, setLocation] = useLocation();
   const { currentProject } = useProject();
@@ -193,7 +245,11 @@ export default function TasksWidget({ widget, onUpdate, isConfiguring, onCloseCo
 
   // Legacy config values: displayMode "flat" → "list", old "grouped" keeps status grouping
   const rawMode = widget.config?.displayMode as string | undefined;
-  const viewMode: ViewMode = rawMode === "flat" || rawMode === "list" ? "list" : "grouped";
+  const viewMode: ViewMode =
+    rawMode === "flat" || rawMode === "list" ? "list"
+    : rawMode === "board" ? "board"
+    : rawMode === "week" ? "week"
+    : "grouped";
   const groupBy = (widget.config?.groupBy as GroupBy) || "status";
   const maxItems = (widget.config?.maxItems as number) || 8;
   const myTasksOnly = widget.config?.myTasksOnly === true;
@@ -211,6 +267,7 @@ export default function TasksWidget({ widget, onUpdate, isConfiguring, onCloseCo
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [filterOpen, setFilterOpen] = useState(false);
+  const [weekOffset, setWeekOffset] = useState(0);
   const [editingTitle, setEditingTitle] = useState(widget.title);
 
   useEffect(() => { setEditingTitle(widget.title); }, [widget.title]);
@@ -357,33 +414,36 @@ export default function TasksWidget({ widget, onUpdate, isConfiguring, onCloseCo
   interface Section { key: string; label: string; color: string | null; tasks: Task[] }
 
   const groupedSections = useMemo((): Section[] | null => {
-    if (viewMode !== "grouped") return null;
+    if (viewMode !== "grouped" && viewMode !== "board") return null;
 
+    // Board caps per column instead of globally, and keeps empty columns
+    // so the pipeline stays visible.
+    const source = viewMode === "board" ? visibleTasks : cappedTasks;
     let sections: Section[] = [];
     if (groupBy === "status") {
       sections = statusOptions.map(s => ({
         key: s.key,
         label: s.name,
         color: s.color,
-        tasks: cappedTasks.filter(t => t.status === s.key),
+        tasks: source.filter(t => t.status === s.key),
       }));
       const known = new Set(statusOptions.map(s => s.key));
-      const other = cappedTasks.filter(t => !known.has(t.status ?? ""));
+      const other = source.filter(t => !known.has(t.status ?? ""));
       if (other.length) sections.push({ key: "__other__", label: "Other", color: null, tasks: other });
     } else if (groupBy === "priority") {
       sections = priorityOptions.map(p => ({
         key: p.key,
         label: p.name,
         color: p.color || PRIORITY_HEX[p.key] || null,
-        tasks: cappedTasks.filter(t => t.priority === p.key),
+        tasks: source.filter(t => t.priority === p.key),
       }));
       const known = new Set(priorityOptions.map(p => p.key));
-      const none = cappedTasks.filter(t => !known.has(t.priority ?? ""));
+      const none = source.filter(t => !known.has(t.priority ?? ""));
       if (none.length) sections.push({ key: "__none__", label: "No priority", color: null, tasks: none });
     } else if (groupBy === "assignee") {
       const byName = new Map<string, Task[]>();
       const unassigned: Task[] = [];
-      cappedTasks.forEach(t => {
+      source.forEach(t => {
         const name = t.assigneeName?.trim();
         if (!name) { unassigned.push(t); return; }
         if (!byName.has(name)) byName.set(name, []);
@@ -398,12 +458,41 @@ export default function TasksWidget({ widget, onUpdate, isConfiguring, onCloseCo
         key: b.key,
         label: b.label,
         color: b.color,
-        tasks: cappedTasks.filter(t => dueBucketKey(t) === b.key),
+        tasks: source.filter(t => dueBucketKey(t) === b.key),
       }));
     }
 
+    // Assignee columns are derived from tasks, so empty ones can't exist anyway
+    if (viewMode === "board") return sections;
     return sections.filter(s => s.tasks.length > 0);
-  }, [cappedTasks, viewMode, groupBy, statusOptions, priorityOptions]);
+  }, [cappedTasks, visibleTasks, viewMode, groupBy, statusOptions, priorityOptions]);
+
+  // Week view: Monday-start week (AU), offset by weekOffset weeks
+  const weekDays = useMemo(() => {
+    const today = startOfToday();
+    const mondayOffset = (today.getDay() + 6) % 7;
+    const monday = new Date(today);
+    monday.setDate(today.getDate() - mondayOffset + weekOffset * 7);
+    return Array.from({ length: 7 }, (_, i) => {
+      const d = new Date(monday);
+      d.setDate(monday.getDate() + i);
+      return d;
+    });
+  }, [weekOffset]);
+
+  const tasksByDay = useMemo(() => {
+    if (viewMode !== "week") return null;
+    return weekDays.map(day => ({
+      day,
+      tasks: visibleTasks.filter(t => {
+        if (!t.dueDate) return false;
+        const due = new Date(t.dueDate as unknown as string);
+        return due.getFullYear() === day.getFullYear()
+          && due.getMonth() === day.getMonth()
+          && due.getDate() === day.getDate();
+      }),
+    }));
+  }, [viewMode, weekDays, visibleTasks]);
 
   const toggleSection = (key: string) => {
     setCollapsedSections(prev => {
@@ -532,17 +621,21 @@ export default function TasksWidget({ widget, onUpdate, isConfiguring, onCloseCo
           <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">
             View
           </p>
-          <div className="flex gap-2">
-            <button className={pill(viewMode === "list")} onClick={() => updateConfig({ displayMode: "list" })} data-testid="config-view-list">
-              List
-            </button>
-            <button className={pill(viewMode === "grouped")} onClick={() => updateConfig({ displayMode: "grouped" })} data-testid="config-view-grouped">
-              Grouped
-            </button>
+          <div className="flex flex-wrap gap-2">
+            {([
+              { v: "list", l: "List" },
+              { v: "grouped", l: "Grouped" },
+              { v: "board", l: "Board" },
+              { v: "week", l: "Week" },
+            ] as const).map(({ v, l }) => (
+              <button key={v} className={pill(viewMode === v)} onClick={() => updateConfig({ displayMode: v })} data-testid={`config-view-${v}`}>
+                {l}
+              </button>
+            ))}
           </div>
         </section>
 
-        {viewMode === "grouped" && (
+        {(viewMode === "grouped" || viewMode === "board") && (
           <section>
             <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">
               Group by
@@ -673,7 +766,96 @@ export default function TasksWidget({ widget, onUpdate, isConfiguring, onCloseCo
     <>
       <div className="flex flex-col h-full gap-1">
         <div className="flex-1 overflow-auto">
-          {cappedTasks.length === 0 ? (
+          {viewMode === "board" && groupedSections ? (
+            <div className="flex gap-2 h-full overflow-x-auto pb-1">
+              {groupedSections.map(section => (
+                <div key={section.key} className="flex flex-col flex-shrink-0 w-[150px]">
+                  <div className="flex items-center gap-1.5 px-1 pb-1.5 text-xs font-medium text-muted-foreground">
+                    {section.color && (
+                      <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: section.color }} />
+                    )}
+                    <span className="truncate">{section.label}</span>
+                    <span className="ml-auto flex-shrink-0">{section.tasks.length}</span>
+                  </div>
+                  <div className="flex-1 overflow-y-auto space-y-1 px-0.5">
+                    {section.tasks.slice(0, maxItems).map(task => (
+                      <BoardCard
+                        key={task.id}
+                        task={task}
+                        onToggle={t => toggleTaskMutation.mutate(t)}
+                        onClick={id => setSelectedTaskId(id)}
+                      />
+                    ))}
+                    {section.tasks.length > maxItems && (
+                      <button
+                        className="w-full text-[10px] text-muted-foreground hover:text-foreground py-1 text-center"
+                        onClick={() => setLocation(`/projects/${currentProject.id}/tasks`)}
+                      >
+                        +{section.tasks.length - maxItems} more
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : viewMode === "week" && tasksByDay ? (
+            <div className="flex flex-col h-full">
+              <div className="flex items-center justify-between pb-1.5 px-1">
+                <Button size="icon" variant="ghost" className="h-5 w-5" onClick={() => setWeekOffset(o => o - 1)} aria-label="Previous week">
+                  <ChevronLeft className="h-3.5 w-3.5" />
+                </Button>
+                <button
+                  className="text-xs font-medium text-muted-foreground hover:text-foreground"
+                  onClick={() => setWeekOffset(0)}
+                  title="Back to this week"
+                >
+                  {weekDays[0].toLocaleDateString("en-AU", { day: "numeric", month: "short" })}
+                  {" – "}
+                  {weekDays[6].toLocaleDateString("en-AU", { day: "numeric", month: "short" })}
+                </button>
+                <Button size="icon" variant="ghost" className="h-5 w-5" onClick={() => setWeekOffset(o => o + 1)} aria-label="Next week">
+                  <ChevronRight className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+              <div className="flex gap-1.5 flex-1 overflow-x-auto pb-1">
+                {tasksByDay.map(({ day, tasks }) => {
+                  const isToday = day.getTime() === startOfToday().getTime();
+                  return (
+                    <div key={day.toISOString()} className="flex flex-col flex-shrink-0 w-[110px]">
+                      <div className={cn(
+                        "text-[10px] font-medium pb-1 px-1 text-center",
+                        isToday ? "text-primary font-semibold" : "text-muted-foreground",
+                      )}>
+                        {day.toLocaleDateString("en-AU", { weekday: "short", day: "numeric" })}
+                        {tasks.length > 0 && ` · ${tasks.length}`}
+                      </div>
+                      <div className={cn(
+                        "flex-1 overflow-y-auto space-y-1 px-0.5 rounded-md",
+                        isToday && "bg-muted/40",
+                      )}>
+                        {tasks.slice(0, maxItems).map(task => (
+                          <BoardCard
+                            key={task.id}
+                            task={task}
+                            onToggle={t => toggleTaskMutation.mutate(t)}
+                            onClick={id => setSelectedTaskId(id)}
+                          />
+                        ))}
+                        {tasks.length > maxItems && (
+                          <button
+                            className="w-full text-[10px] text-muted-foreground hover:text-foreground py-1 text-center"
+                            onClick={() => setLocation(`/projects/${currentProject.id}/tasks`)}
+                          >
+                            +{tasks.length - maxItems} more
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ) : cappedTasks.length === 0 ? (
             <div className="text-center py-6 text-sm text-muted-foreground">
               {allTasks.length === 0
                 ? "No tasks yet — click + to add one"
@@ -727,7 +909,7 @@ export default function TasksWidget({ widget, onUpdate, isConfiguring, onCloseCo
             </div>
           )}
 
-          {hasMore && (
+          {(viewMode === "list" || viewMode === "grouped") && hasMore && (
             <button
               className="w-full text-xs text-muted-foreground hover:text-foreground py-2 text-center"
               onClick={() => setLocation(`/projects/${currentProject.id}/tasks`)}
