@@ -179,6 +179,8 @@ import { AI_TOOLS } from "./ai/tools";
 import { AI_MODEL, buildSystemPrompt, buildCircuitStartMessage } from "./ai/prompts";
 import { executeTool } from "./ai/executor";
 import { computeBillTotalsCents, billLineExGstCents, clampRoundingCents } from "@shared/billTotals";
+import { computeVariationTotals, computeVariationLinePriceCents } from "@shared/variationTotals";
+import { timesheetTotalExGstCents } from "@shared/money";
 import { matchSupplier } from "@shared/supplierMatcher";
 import {
   fuzzyMatchTimesheetCostCode,
@@ -17386,7 +17388,99 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Variations API Routes
-  app.get("/api/variations", async (req, res) => {
+
+  // Client-settable money/workflow fields are stripped at the validation
+  // boundary: subtotal/gstAmount/totalAmount are recomputed server-side from
+  // the variation's components (see recomputeVariationTotals), paid/balance
+  // are maintained from invoice payments, and portal/signature/approval
+  // stamps are only written by their dedicated flows.
+  const VARIATION_GUARDED_FIELDS = {
+    subtotal: true,
+    gstAmount: true,
+    totalAmount: true,
+    paidAmount: true,
+    balanceAmount: true,
+    portalToken: true,
+    portalSentAt: true,
+    clientSignedName: true,
+    clientSignedDate: true,
+    clientSignedIp: true,
+    clientSignedUserAgent: true,
+    builderSignedName: true,
+    builderSignedDate: true,
+    approvedBy: true,
+    approvedDate: true,
+  } as const;
+  const createVariationSchema = insertVariationSchema.omit(VARIATION_GUARDED_FIELDS);
+  const updateVariationSchema = insertVariationSchema.partial().omit(VARIATION_GUARDED_FIELDS);
+
+  // Shared status-change payload for every door that flips a variation's
+  // status (single PATCH, bulk-status): stamps approval metadata on the
+  // transition INTO approved so approvals are attributable no matter which
+  // UI performed them.
+  const buildVariationStatusUpdates = (
+    prev: any,
+    status: string,
+    actorUserId?: string | null,
+  ): Record<string, any> => {
+    const updates: Record<string, any> = { status };
+    if (status === "approved" && prev?.status !== "approved") {
+      updates.approvedBy = actorUserId ?? null;
+      updates.approvedDate = new Date();
+    }
+    return updates;
+  };
+
+  // Recompute and persist a variation's money totals from its stored
+  // components: line items (ex-GST cents, taxable lines attract 10%), linked
+  // bills (stored ex/tax components), and linked timesheets (ex-GST dollars,
+  // grossed up — on-charged labour is a taxable supply). The server is the
+  // authority on these totals; balanceAmount tracks totalAmount minus the
+  // server-maintained paidAmount.
+  const recomputeVariationTotals = async (variationId: string): Promise<any | undefined> => {
+    const [current, items, bills, timesheets] = await Promise.all([
+      storage.getVariation(variationId),
+      storage.getVariationItems(variationId),
+      storage.getVariationBills(variationId),
+      storage.getVariationTimesheets(variationId),
+    ]);
+    if (!current) return undefined;
+    const totals = computeVariationTotals({ items, bills, timesheets });
+    return storage.updateVariation(variationId, {
+      subtotal: totals.subtotalCents,
+      gstAmount: totals.gstCents,
+      totalAmount: totals.totalCents,
+      balanceAmount: totals.totalCents - ((current as any).paidAmount ?? 0),
+    } as any);
+  };
+
+  // T005: EOT — extend the project end date by daysChanged working days when a
+  // variation transitions into approved. Shared by the single-PATCH and
+  // bulk-status paths so approvals behave the same from either door.
+  const extendScheduleOnVariationApproval = async (
+    prev: any,
+    updated: any,
+  ): Promise<{ days: number; newEndDate: string } | undefined> => {
+    const wasApproved = prev?.status === "approved";
+    const isApproved = updated?.status === "approved";
+    const daysChanged = updated?.daysChanged ?? 0;
+    if (wasApproved || !isApproved || daysChanged <= 0 || !updated?.projectId) return undefined;
+    const project = await storage.getProject(updated.projectId);
+    if (!project || !project.proposedEndDate) return undefined;
+    // Add working days (Mon-Fri) to the current proposedEndDate
+    let date = new Date(project.proposedEndDate);
+    let remaining = daysChanged;
+    while (remaining > 0) {
+      date.setDate(date.getDate() + 1);
+      const day = date.getDay();
+      if (day !== 0 && day !== 6) remaining--;
+    }
+    const newEndDate = date.toISOString().split("T")[0];
+    await storage.updateProject(updated.projectId, { proposedEndDate: newEndDate });
+    return { days: daysChanged, newEndDate };
+  };
+
+  app.get("/api/variations", requireAuth, async (req, res) => {
     try {
       const { projectId, status } = req.query;
       // Tenant scoping: always restrict to the caller's company (previously an
@@ -17469,7 +17563,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/variations/bulk-status", async (req, res) => {
+  app.post("/api/variations/bulk-status", requireAuth, async (req, res) => {
     try {
       const userCompanyId = (req.user as any)?.companyId;
       if (!userCompanyId) {
@@ -17499,7 +17593,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
-      await Promise.all(ids.map((id: string) => storage.updateVariation(id, { status })));
+      const actorUserId = (req.user as any)?.id;
+      await Promise.all(
+        previous.map((prev: any) =>
+          storage.updateVariation(prev.id, buildVariationStatusUpdates(prev, status, actorUserId)),
+        ),
+      );
+      // Same EOT rule as the single PATCH path: approving a variation with
+      // daysChanged extends the project schedule regardless of which door
+      // performed the approval.
+      if (status === "approved") {
+        for (const prev of previous as any[]) {
+          if (prev.status === "approved") continue;
+          try {
+            await extendScheduleOnVariationApproval(prev, { ...prev, status });
+          } catch (err) {
+            console.error("[variation bulk-status] EOT extension failed:", err);
+          }
+        }
+      }
       const APPROVED = new Set(["approved", "released"]);
       const projectsAffected = new Set<string>();
       previous.forEach((prev: any) => {
@@ -17537,15 +17649,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/variations", async (req, res) => {
+  app.post("/api/variations", requireAuth, async (req, res) => {
     try {
-      const validationResult = insertVariationSchema.safeParse(req.body);
+      const validationResult = createVariationSchema.safeParse(req.body);
       if (!validationResult.success) {
-        return res.status(400).json({ 
-          error: "Validation failed", 
-          details: fromZodError(validationResult.error).toString() 
+        return res.status(400).json({
+          error: "Validation failed",
+          details: fromZodError(validationResult.error).toString()
         });
       }
+
+      // The target project must belong to the caller's company.
+      if (!(await enforceProjectCompany(req, res, validationResult.data.projectId, "Project not found"))) return;
 
       // Generate variation number if not provided
       let variationNumber = validationResult.data.variationNumber;
@@ -17569,11 +17684,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/variations/:id", async (req, res) => {
     try {
-      const validationResult = insertVariationSchema.partial().safeParse(req.body);
+      const validationResult = updateVariationSchema.safeParse(req.body);
       if (!validationResult.success) {
-        return res.status(400).json({ 
-          error: "Validation failed", 
-          details: fromZodError(validationResult.error).toString() 
+        return res.status(400).json({
+          error: "Validation failed",
+          details: fromZodError(validationResult.error).toString()
         });
       }
 
@@ -17581,10 +17696,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const prevVariation = await getOwnedVariation(req, res, req.params.id);
       if (!prevVariation) return;
 
-      const variation = await storage.updateVariation(req.params.id, validationResult.data);
+      const updates: Record<string, any> = { ...validationResult.data };
+      if (updates.status && updates.status !== (prevVariation as any).status) {
+        Object.assign(
+          updates,
+          buildVariationStatusUpdates(prevVariation, updates.status, (req.user as any)?.id),
+        );
+      }
+
+      let variation = await storage.updateVariation(req.params.id, updates);
       if (!variation) {
         return res.status(404).json({ error: "Variation not found" });
       }
+
+      // Header money totals are server-derived; refresh them before any
+      // budget recalc reads the row.
+      variation = (await recomputeVariationTotals(req.params.id)) ?? variation;
 
       // Task #257: emit a marker log whenever a variation crosses the approved
       // boundary so downstream consumers (and operators tailing logs) can
@@ -17604,26 +17731,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // T005: EOT — extend project end date when variation is approved and has daysChanged
-      let scheduleExtended: { days: number; newEndDate: string } | undefined;
-      const wasApproved = prevVariation?.status !== "approved" && (variation as any).status === "approved";
-      const daysChanged = (variation as any).daysChanged ?? 0;
-
-      if (wasApproved && daysChanged > 0 && (variation as any).projectId) {
-        const project = await storage.getProject((variation as any).projectId);
-        if (project && project.proposedEndDate) {
-          // Add working days (Mon-Fri) to the current proposedEndDate
-          let date = new Date(project.proposedEndDate);
-          let remaining = daysChanged;
-          while (remaining > 0) {
-            date.setDate(date.getDate() + 1);
-            const day = date.getDay();
-            if (day !== 0 && day !== 6) remaining--;
-          }
-          const newEndDate = date.toISOString().split("T")[0];
-          await storage.updateProject((variation as any).projectId, { proposedEndDate: newEndDate });
-          scheduleExtended = { days: daysChanged, newEndDate };
-        }
-      }
+      const scheduleExtended = await extendScheduleOnVariationApproval(prevVariation, variation);
 
       res.json({ ...variation, scheduleExtended });
     } catch (error) {
@@ -17672,7 +17780,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      const item = await storage.createVariationItem(validationResult.data);
+      // Cost-line client prices are derived server-side from the builder cost
+      // fields (unitCostExTax dollars × markup × qty → ex-GST cents) so a
+      // buggy or hand-crafted client can't store prices that disagree with
+      // the line's own inputs. Allowance adjustment lines set their amount
+      // directly and are stored as sent.
+      const data: Record<string, any> = { ...validationResult.data };
+      if ((data.itemType ?? "cost_line") === "cost_line") {
+        const priced = computeVariationLinePriceCents({
+          quantity: data.quantity ?? 1,
+          unitCostExTax: data.unitCostExTax ?? 0,
+          markupPercent: data.markupPercent ?? null,
+        });
+        data.unitPrice = priced.unitPriceCents;
+        data.totalPrice = priced.totalPriceCents;
+      }
+
+      const item = await storage.createVariationItem(data as any);
+      await recomputeVariationTotals(req.params.id);
       res.status(201).json(item);
     } catch (error) {
       res.status(500).json({ error: "Failed to create variation item" });
@@ -17682,22 +17807,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.patch("/api/variation-items/:id", async (req, res) => {
     try {
       const { variationItems: viTbl } = await import("@shared/schema");
-      const [viRow] = await db.select({ variationId: viTbl.variationId }).from(viTbl).where(eq(viTbl.id, req.params.id));
+      const [viRow] = await db.select().from(viTbl).where(eq(viTbl.id, req.params.id));
       if (!viRow) return res.status(404).json({ error: "Variation item not found" });
       if (!(await getOwnedVariation(req, res, viRow.variationId, "Variation item not found"))) return;
 
       const validationResult = insertVariationItemSchema.partial().safeParse(req.body);
       if (!validationResult.success) {
-        return res.status(400).json({ 
-          error: "Validation failed", 
-          details: fromZodError(validationResult.error).toString() 
+        return res.status(400).json({
+          error: "Validation failed",
+          details: fromZodError(validationResult.error).toString()
         });
       }
 
-      const item = await storage.updateVariationItem(req.params.id, validationResult.data);
+      // Same server-side pricing rule as item create: recompute the stored
+      // client price from the merged line's cost inputs.
+      const data: Record<string, any> = { ...validationResult.data };
+      const merged: Record<string, any> = { ...viRow, ...data };
+      if ((merged.itemType ?? "cost_line") === "cost_line") {
+        const priced = computeVariationLinePriceCents({
+          quantity: merged.quantity ?? 1,
+          unitCostExTax: merged.unitCostExTax ?? 0,
+          markupPercent: merged.markupPercent ?? null,
+        });
+        data.unitPrice = priced.unitPriceCents;
+        data.totalPrice = priced.totalPriceCents;
+      }
+
+      const item = await storage.updateVariationItem(req.params.id, data as any);
       if (!item) {
         return res.status(404).json({ error: "Variation item not found" });
       }
+      await recomputeVariationTotals(viRow.variationId);
       res.json(item);
     } catch (error) {
       res.status(500).json({ error: "Failed to update variation item" });
@@ -17714,6 +17854,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!deleted) {
         return res.status(404).json({ error: "Variation item not found" });
       }
+      await recomputeVariationTotals(viRow.variationId);
       res.status(204).send();
     } catch (error) {
       res.status(500).json({ error: "Failed to delete variation item" });
@@ -17738,11 +17879,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!ownedVariation) return;
       const { billIds } = req.body as { billIds: string[] };
       await storage.deleteVariationBillsByVariationId(req.params.id);
-      const results = [];
-      for (const billId of (billIds || [])) {
-        const vb = await storage.createVariationBill({ variationId: req.params.id, billId });
-        results.push(vb);
-      }
+      const results = await storage.createVariationBills(
+        req.params.id,
+        Array.isArray(billIds) ? billIds : [],
+      );
+      await recomputeVariationTotals(req.params.id);
       res.json(results);
     } catch (error) {
       res.status(500).json({ error: "Failed to update variation bills" });
@@ -17767,11 +17908,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!ownedVariation) return;
       const { timesheetIds } = req.body as { timesheetIds: string[] };
       await storage.deleteVariationTimesheetsByVariationId(req.params.id);
-      const results = [];
-      for (const timesheetId of (timesheetIds || [])) {
-        const vt = await storage.createVariationTimesheet({ variationId: req.params.id, timesheetId });
-        results.push(vt);
-      }
+      const results = await storage.createVariationTimesheets(
+        req.params.id,
+        Array.isArray(timesheetIds) ? timesheetIds : [],
+      );
+      await recomputeVariationTotals(req.params.id);
       res.json(results);
     } catch (error) {
       res.status(500).json({ error: "Failed to update variation timesheets" });
@@ -17843,7 +17984,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       let token = (variation as any).portalToken;
       if (!token) {
-        token = require("crypto").randomUUID();
+        token = randomUUID();
         await storage.updateVariation(req.params.id, { portalToken: token } as any);
       }
 
@@ -17854,73 +17995,174 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Public portal — fetch variation data by token (no auth required)
+  // Public portal — fetch variation data by token (no auth required).
+  //
+  // SECURITY: everything returned here is readable by ANY holder of the
+  // portal link, so the payload is projected down to exactly what the portal
+  // page renders. Builder-internal data (unit costs, markup, cost codes,
+  // hidden lines, timesheet rates, company integration credentials) must
+  // never be added back to this response.
+  const projectPortalVariation = (variation: any) => ({
+    id: variation.id,
+    variationNumber: variation.variationNumber,
+    name: variation.name,
+    introductionText: variation.introductionText,
+    closingText: variation.closingText,
+    approvalDeadline: variation.approvalDeadline,
+    daysChanged: variation.daysChanged,
+    subtotal: variation.subtotal,
+    gstAmount: variation.gstAmount,
+    totalAmount: variation.totalAmount,
+    status: variation.status,
+    rejectionReason: variation.rejectionReason,
+    termsAndConditions: variation.termsAndConditions,
+    attachments: variation.attachments,
+    clientSignedName: variation.clientSignedName,
+    clientSignedDate: variation.clientSignedDate,
+    builderSignedName: variation.builderSignedName,
+    builderSignedDate: variation.builderSignedDate,
+    portalSentAt: variation.portalSentAt,
+    createdAt: variation.createdAt,
+  });
+
   app.get("/api/portal/variation/:token", async (req, res) => {
     try {
       const { token } = req.params;
-      // Find variation by portal token
-      const { db } = await import("./db");
-      const { variations, projects, companies } = await import("@shared/schema");
-      const { eq } = await import("drizzle-orm");
+      const { variations, projects } = await import("@shared/schema");
 
       const [variation] = await db.select().from(variations).where(eq(variations.portalToken, token));
-      if (!variation) return res.status(404).json({ error: "Portal link not found or expired" });
+      if (!variation) return res.status(404).json({ error: "Portal link not found" });
 
-      const [project] = variation.projectId
-        ? await db.select().from(projects).where(eq(projects.id, variation.projectId))
-        : [undefined];
+      const [projectRows, items, bills, timesheets, settings] = await Promise.all([
+        variation.projectId
+          ? db.select().from(projects).where(eq(projects.id, variation.projectId))
+          : Promise.resolve([] as any[]),
+        storage.getVariationItems(variation.id),
+        storage.getVariationBills(variation.id),
+        storage.getVariationTimesheets(variation.id),
+        storage.getCompanySettings().catch(() => undefined),
+      ]);
+      const project: any = projectRows[0];
+      const company = project ? await storage.getCompany(project.companyId) : undefined;
 
-      const company = project
-        ? await storage.getCompany((project as any).companyId)
-        : undefined;
+      // Lines the builder marked "hide from client" are dropped server-side;
+      // remaining lines expose only client-price fields.
+      const publicItems = items
+        .filter((item: any) => item.showInPdf !== false)
+        .map((item: any) => ({
+          id: item.id,
+          name: item.name,
+          description: item.description,
+          quantity: item.quantity,
+          unitType: item.unitType,
+          unitPrice: item.unitPrice,
+          totalPrice: item.totalPrice,
+          taxable: item.taxable,
+          itemType: item.itemType,
+          type: item.type,
+          sortOrder: item.sortOrder,
+        }));
 
-      const items = await storage.getVariationItems(variation.id);
-      const bills = await storage.getVariationBills(variation.id);
-      const timesheets = await storage.getVariationTimesheets(variation.id);
+      const publicBills = bills.map((bill: any) => ({
+        id: bill.id,
+        billNumber: bill.billNumber,
+        supplierName: bill.supplierName ?? null,
+        invoiceDate: bill.billDate,
+        totalAmountCents: bill.total,
+      }));
 
-      res.json({ variation, items, bills, timesheets, project, company });
+      // Timesheet rows (names, hours, rates) stay server-side; the portal
+      // only needs the on-charged labour total.
+      const labourTotalCents = timesheets.reduce(
+        (sum: number, ts: any) => sum + timesheetTotalExGstCents(ts),
+        0,
+      );
+
+      res.json({
+        variation: projectPortalVariation(variation),
+        items: publicItems,
+        bills: publicBills,
+        labourTotalCents,
+        project: project
+          ? {
+              id: project.id,
+              name: project.name,
+              address: project.address,
+              clientName: project.clientName,
+              clientPhone: project.clientPhone,
+              clientEmail: project.clientEmail,
+            }
+          : undefined,
+        company: company
+          ? {
+              id: company.id,
+              name: company.name,
+              abn: company.abn,
+              phone: company.phone,
+              email: company.email,
+              logo: company.logo,
+              brandColor: (settings as any)?.brandColor ?? null,
+            }
+          : undefined,
+      });
     } catch (error) {
       console.error("Error fetching portal variation:", error);
       res.status(500).json({ error: "Failed to fetch portal data" });
     }
   });
 
-  // Public portal — client/builder sign
+  // Public portal — client sign (approve or reject).
+  //
+  // SECURITY: this endpoint is reachable by anyone holding the portal link,
+  // so it can only ever act as the CLIENT signature. It never sets builder
+  // signature fields and never sets status "approved" — a client approval
+  // moves the variation to "pending" for the builder to finalise in-app
+  // (which stamps approvedBy/approvedDate and runs budget/EOT side-effects).
   app.post("/api/portal/variation/:token/sign", async (req, res) => {
     try {
       const { token } = req.params;
-      const { signerType, name, action, rejectionReason } = req.body as {
-        signerType: "client" | "builder";
+      const { name, action, rejectionReason } = req.body as {
         name: string;
         action: "approve" | "reject";
         rejectionReason?: string;
       };
 
-      if (!name) return res.status(400).json({ error: "Name is required" });
+      if (!name || !String(name).trim()) return res.status(400).json({ error: "Name is required" });
+      if (action !== "approve" && action !== "reject") {
+        return res.status(400).json({ error: "Invalid action" });
+      }
 
-      const { db } = await import("./db");
       const { variations } = await import("@shared/schema");
-      const { eq } = await import("drizzle-orm");
-
       const [variation] = await db.select().from(variations).where(eq(variations.portalToken, token));
       if (!variation) return res.status(404).json({ error: "Portal link not found" });
 
-      const now = new Date();
-      const updates: Record<string, any> = {};
-
-      if (signerType === "client") {
-        updates.clientSignedName = name;
-        updates.clientSignedDate = now;
-        updates.status = action === "approve" ? "pending" : "rejected";
-        if (rejectionReason) updates.rejectionReason = rejectionReason;
-      } else {
-        updates.builderSignedName = name;
-        updates.builderSignedDate = now;
-        if (action === "approve") updates.status = "approved";
+      // State guard + idempotency: a variation that is already signed or
+      // finalised cannot be signed again through the public link.
+      if (variation.status === "approved" || variation.status === "rejected") {
+        return res.status(409).json({ error: "This variation has already been finalised." });
+      }
+      if (variation.clientSignedName) {
+        return res.status(409).json({ error: "This variation has already been signed." });
+      }
+      if (variation.approvalDeadline && new Date() > new Date(variation.approvalDeadline)) {
+        return res.status(410).json({
+          error: "The approval deadline for this variation has passed. Please contact your builder for an updated link.",
+        });
       }
 
+      // Audit trail: server timestamp + request origin (trust proxy is set,
+      // so req.ip reflects the real client IP behind the proxy).
+      const updates: Record<string, any> = {
+        clientSignedName: String(name).trim(),
+        clientSignedDate: new Date(),
+        clientSignedIp: req.ip ?? null,
+        clientSignedUserAgent: (req.headers["user-agent"] || "").toString().slice(0, 500) || null,
+        status: action === "approve" ? "pending" : "rejected",
+      };
+      if (action === "reject" && rejectionReason) updates.rejectionReason = rejectionReason;
+
       const updated = await storage.updateVariation(variation.id, updates as any);
-      res.json({ success: true, variation: updated });
+      res.json({ success: true, variation: updated ? projectPortalVariation(updated) : undefined });
     } catch (error) {
       console.error("Error signing variation:", error);
       res.status(500).json({ error: "Failed to sign variation" });
@@ -17947,7 +18189,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Ensure portal token exists
       let token = (variation as any).portalToken;
       if (!token) {
-        token = require("crypto").randomUUID();
+        token = randomUUID();
         await storage.updateVariation(variation.id, { portalToken: token } as any);
       }
 
@@ -19952,8 +20194,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/client-invoices/:id/variations", async (req, res) => {
     try {
-      const ownedInvoice = await getOwnedClientInvoice(req, res, req.params.id);
-      if (!ownedInvoice) return;
+      const invoice = await getOwnedClientInvoice(req, res, req.params.id, "Client invoice not found");
+      if (!invoice) return;
       const validationResult = insertInvoiceVariationSchema.safeParse({
         ...req.body,
         invoiceId: req.params.id
@@ -19967,6 +20209,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // The variation being linked must belong to the caller's company too.
       const variation = await storage.getVariation(validationResult.data.variationId);
       if (!variation || !(await enforceProjectCompany(req, res, (variation as any).projectId, "Variation not found"))) return;
+
+      // The claimed variation must belong to the same project as the invoice.
+      const variation = await storage.getVariation(validationResult.data.variationId);
+      if (!variation || (variation as any).projectId !== (invoice as any).projectId) {
+        return res.status(400).json({ error: "Variation does not belong to this invoice's project" });
+      }
 
       const invoiceVariation = await storage.createInvoiceVariation(validationResult.data);
       res.status(201).json(invoiceVariation);

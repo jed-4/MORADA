@@ -915,11 +915,13 @@ export interface IStorage {
   // Variation-Bill Junction Table
   getVariationBills(variationId: string): Promise<any[]>;
   createVariationBill(data: InsertVariationBill): Promise<VariationBill>;
+  createVariationBills(variationId: string, billIds: string[]): Promise<VariationBill[]>;
   deleteVariationBillsByVariationId(variationId: string): Promise<void>;
 
   // Variation-Timesheet Junction Table
   getVariationTimesheets(variationId: string): Promise<any[]>;
   createVariationTimesheet(data: InsertVariationTimesheet): Promise<VariationTimesheet>;
+  createVariationTimesheets(variationId: string, timesheetIds: string[]): Promise<VariationTimesheet[]>;
   deleteVariationTimesheetsByVariationId(variationId: string): Promise<void>;
 
   // Invoice-Bill Junction Table
@@ -17383,11 +17385,15 @@ export class DbStorage implements IStorage {
           createdAt: schema.variationBills.createdAt,
           billNumber: schema.bills.billNumber,
           supplierId: schema.bills.supplierId,
+          supplierName: schema.contacts.name,
           billDate: schema.bills.billDate,
+          subtotal: schema.bills.subtotal,
+          tax: schema.bills.tax,
           total: schema.bills.total,
         })
         .from(schema.variationBills)
         .innerJoin(schema.bills, eq(schema.variationBills.billId, schema.bills.id))
+        .leftJoin(schema.contacts, eq(schema.bills.supplierId, schema.contacts.id))
         .where(eq(schema.variationBills.variationId, variationId));
       return rows;
     } catch (error) {
@@ -17402,6 +17408,19 @@ export class DbStorage implements IStorage {
       return result[0];
     } catch (error) {
       console.error("Database error in createVariationBill:", error);
+      throw error;
+    }
+  }
+
+  async createVariationBills(variationId: string, billIds: string[]): Promise<VariationBill[]> {
+    if (billIds.length === 0) return [];
+    try {
+      return await db
+        .insert(schema.variationBills)
+        .values(billIds.map((billId) => ({ variationId, billId })))
+        .returning();
+    } catch (error) {
+      console.error("Database error in createVariationBills:", error);
       throw error;
     }
   }
@@ -17448,6 +17467,19 @@ export class DbStorage implements IStorage {
       return result[0];
     } catch (error) {
       console.error("Database error in createVariationTimesheet:", error);
+      throw error;
+    }
+  }
+
+  async createVariationTimesheets(variationId: string, timesheetIds: string[]): Promise<VariationTimesheet[]> {
+    if (timesheetIds.length === 0) return [];
+    try {
+      return await db
+        .insert(schema.variationTimesheets)
+        .values(timesheetIds.map((timesheetId) => ({ variationId, timesheetId })))
+        .returning();
+    } catch (error) {
+      console.error("Database error in createVariationTimesheets:", error);
       throw error;
     }
   }

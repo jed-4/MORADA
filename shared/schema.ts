@@ -2286,6 +2286,8 @@ export const variations = pgTable("variations", {
   portalSentAt: timestamp("portal_sent_at"),
   clientSignedName: text("client_signed_name"),
   clientSignedDate: timestamp("client_signed_date"),
+  clientSignedIp: text("client_signed_ip"), // Audit: request IP captured at portal sign time
+  clientSignedUserAgent: text("client_signed_user_agent"), // Audit: request user-agent at portal sign time
   builderSignedName: text("builder_signed_name"),
   builderSignedDate: timestamp("builder_signed_date"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
