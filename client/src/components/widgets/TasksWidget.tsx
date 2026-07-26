@@ -6,30 +6,28 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { type Task, type FieldCategoryWithOptions } from "@shared/schema";
 import {
-  Plus, Circle, CheckSquare, ChevronDown, ChevronRight, AlertCircle, SlidersHorizontal, Eye, EyeOff,
+  Plus, Circle, CheckSquare, ChevronDown, ChevronRight, AlertCircle, Filter, ListChecks,
 } from "lucide-react";
 import { WidgetProps } from "@/types/widgets";
 import { useLocation } from "wouter";
 import { useProject } from "@/contexts/ProjectContext";
+import { useAuth } from "@/hooks/use-auth";
 import TaskEditModal from "@/components/TaskEditModal";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import {
-  Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
-} from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { Checkbox } from "@/components/ui/checkbox";
 import { useState, useEffect, useMemo } from "react";
 import { cn } from "@/lib/utils";
 
-type FilterPriority = "all" | "low" | "medium" | "high";
+type FilterPriority = "all" | string;
 type SortBy = "dueDate" | "priority" | "title" | "status";
 type SortOrder = "asc" | "desc";
-type DisplayMode = "grouped" | "flat";
+type ViewMode = "list" | "grouped";
+type GroupBy = "status" | "priority" | "assignee" | "dueDate";
 
 const PRIORITY_DOT_CLASSES: Record<string, string> = {
   high: "bg-red-500",
@@ -37,11 +35,50 @@ const PRIORITY_DOT_CLASSES: Record<string, string> = {
   low: "bg-blue-400",
 };
 
+// Fallback header colours (Morada palette) when a field option has no colour
+const PRIORITY_HEX: Record<string, string> = {
+  urgent: "#DA988A",
+  high: "#DA988A",
+  medium: "#D4B670",
+  low: "#70CAD0",
+};
+
+const DUE_BUCKETS = [
+  { key: "overdue", label: "Overdue", color: "#DA988A" },
+  { key: "today", label: "Today", color: "#D4B670" },
+  { key: "tomorrow", label: "Tomorrow", color: "#D4B670" },
+  { key: "week", label: "This week", color: "#70CAD0" },
+  { key: "later", label: "Later", color: "#82C8A2" },
+  { key: "none", label: "No due date", color: null },
+] as const;
+
+function isDone(status: string | null | undefined): boolean {
+  return status === "done" || status === "complete";
+}
+
+function startOfToday(): Date {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+function dueBucketKey(task: Task): string {
+  if (!task.dueDate) return "none";
+  const due = new Date(task.dueDate as unknown as string);
+  due.setHours(0, 0, 0, 0);
+  const today = startOfToday();
+  const diffDays = Math.round((due.getTime() - today.getTime()) / 86400000);
+  if (diffDays < 0) return isDone(task.status) ? "later" : "overdue";
+  if (diffDays === 0) return "today";
+  if (diffDays === 1) return "tomorrow";
+  if (diffDays <= 7) return "week";
+  return "later";
+}
+
 function formatDueDate(dueDate: Date | string | null | undefined): { label: string; isOverdue: boolean } {
   if (!dueDate) return { label: "", isOverdue: false };
   const date = new Date(dueDate as string);
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  const today = startOfToday();
   const tomorrow = new Date(today);
   tomorrow.setDate(tomorrow.getDate() + 1);
   const dateOnly = new Date(date);
@@ -63,20 +100,24 @@ function getInitials(name: string | null | undefined): string {
 
 interface TaskRowProps {
   task: Task;
+  statusColor?: string | null;
   onToggle: (task: Task) => void;
   onClick: (id: string) => void;
 }
 
-function TaskRow({ task, onToggle, onClick }: TaskRowProps) {
-  const isCompleted = task.status === "done" || task.status === "complete";
+function TaskRow({ task, statusColor, onToggle, onClick }: TaskRowProps) {
+  const completed = isDone(task.status);
   const { label: dueDateLabel, isOverdue } = formatDueDate(task.dueDate);
   const priorityDot = task.priority ? PRIORITY_DOT_CLASSES[task.priority] : null;
+  const checklist = (task as any).checklist as Array<{ completed?: boolean }> | undefined;
+  const checklistTotal = Array.isArray(checklist) ? checklist.length : 0;
+  const checklistDone = checklistTotal ? checklist!.filter(c => c?.completed).length : 0;
 
   return (
     <div
       className={cn(
         "flex items-center gap-2 py-1.5 px-2 rounded hover-elevate cursor-pointer",
-        isCompleted && "opacity-50",
+        completed && "opacity-50",
       )}
       data-testid={`task-widget-item-${task.id}`}
       onClick={() => onClick(task.id)}
@@ -84,12 +125,19 @@ function TaskRow({ task, onToggle, onClick }: TaskRowProps) {
       <button
         className="flex-shrink-0"
         onClick={e => { e.stopPropagation(); onToggle(task); }}
-        aria-label={isCompleted ? "Mark incomplete" : "Mark complete"}
+        aria-label={completed ? "Mark incomplete" : "Mark complete"}
       >
-        {isCompleted
+        {completed
           ? <CheckSquare className="h-4 w-4 text-green-500" />
           : <Circle className="h-4 w-4 text-muted-foreground" />}
       </button>
+
+      {statusColor && !completed && (
+        <span
+          className="flex-shrink-0 w-2 h-2 rounded-full"
+          style={{ backgroundColor: statusColor }}
+        />
+      )}
 
       {priorityDot && (
         <Tooltip>
@@ -104,19 +152,25 @@ function TaskRow({ task, onToggle, onClick }: TaskRowProps) {
 
       <div className="flex-1 min-w-0">
         <TaskTooltip content={task.title}>
-          <span className={cn("text-sm truncate block leading-snug", isCompleted && "line-through")}>
+          <span className={cn("text-sm truncate block leading-snug", completed && "line-through")}>
             {task.title}
           </span>
         </TaskTooltip>
       </div>
 
       <div className="flex items-center gap-1.5 flex-shrink-0">
+        {checklistTotal > 0 && (
+          <span className="text-xs text-muted-foreground flex items-center gap-0.5">
+            <ListChecks className="h-3 w-3" />
+            {checklistDone}/{checklistTotal}
+          </span>
+        )}
         {dueDateLabel && (
           <span className={cn(
             "text-xs flex items-center gap-0.5",
-            isOverdue ? "text-destructive" : "text-muted-foreground",
+            isOverdue && !completed ? "text-destructive" : "text-muted-foreground",
           )}>
-            {isOverdue && <AlertCircle className="h-3 w-3" />}
+            {isOverdue && !completed && <AlertCircle className="h-3 w-3" />}
             {dueDateLabel}
           </span>
         )}
@@ -133,44 +187,48 @@ function TaskRow({ task, onToggle, onClick }: TaskRowProps) {
 export default function TasksWidget({ widget, onUpdate, isConfiguring, onCloseConfig, userId, onSetHeaderActions }: WidgetProps) {
   const [, setLocation] = useLocation();
   const { currentProject } = useProject();
+  const { user } = useAuth();
+  // The dashboard doesn't pass userId, so resolve the current user ourselves.
+  const currentUserId = userId || (user as any)?.id;
 
-  const displayMode = (widget.config?.displayMode as DisplayMode) || "grouped";
-  const showSummaryBar = widget.config?.showSummaryBar !== false;
+  // Legacy config values: displayMode "flat" → "list", old "grouped" keeps status grouping
+  const rawMode = widget.config?.displayMode as string | undefined;
+  const viewMode: ViewMode = rawMode === "flat" || rawMode === "list" ? "list" : "grouped";
+  const groupBy = (widget.config?.groupBy as GroupBy) || "status";
   const maxItems = (widget.config?.maxItems as number) || 8;
   const myTasksOnly = widget.config?.myTasksOnly === true;
+  const showCompletedDefault = widget.config?.showCompleted !== false;
   const defaultFilterPriority = (widget.config?.defaultFilterPriority as FilterPriority) || "all";
   const defaultSortBy = (widget.config?.defaultSortBy as SortBy) || "dueDate";
   const defaultSortOrder = (widget.config?.defaultSortOrder as SortOrder) || "asc";
 
-  const [showCompleted, setShowCompleted] = useState(true);
+  // Session-level filter overrides (seeded from persisted config defaults)
+  const [showCompleted, setShowCompleted] = useState(showCompletedDefault);
   const [filterPriority, setFilterPriority] = useState<FilterPriority>(defaultFilterPriority);
   const [sortBy, setSortBy] = useState<SortBy>(defaultSortBy);
   const [sortOrder, setSortOrder] = useState<SortOrder>(defaultSortOrder);
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
   const [filterOpen, setFilterOpen] = useState(false);
-
   const [editingTitle, setEditingTitle] = useState(widget.title);
-  const [configDisplayMode, setConfigDisplayMode] = useState<DisplayMode>(displayMode);
-  const [configShowSummaryBar, setConfigShowSummaryBar] = useState(showSummaryBar);
-  const [configMaxItems, setConfigMaxItems] = useState(maxItems);
-  const [configMyTasksOnly, setConfigMyTasksOnly] = useState(myTasksOnly);
-  const [configFilterPriority, setConfigFilterPriority] = useState<FilterPriority>(defaultFilterPriority);
-  const [configSortBy, setConfigSortBy] = useState<SortBy>(defaultSortBy);
-  const [configSortOrder, setConfigSortOrder] = useState<SortOrder>(defaultSortOrder);
 
-  useEffect(() => {
-    setEditingTitle(widget.title);
-    setConfigDisplayMode((widget.config?.displayMode as DisplayMode) || "grouped");
-    setConfigShowSummaryBar(widget.config?.showSummaryBar !== false);
-    setConfigMaxItems((widget.config?.maxItems as number) || 8);
-    setConfigMyTasksOnly(widget.config?.myTasksOnly === true);
-    setConfigFilterPriority((widget.config?.defaultFilterPriority as FilterPriority) || "all");
-    setConfigSortBy((widget.config?.defaultSortBy as SortBy) || "dueDate");
-    setConfigSortOrder((widget.config?.defaultSortOrder as SortOrder) || "asc");
-  }, [widget.config, widget.title]);
+  useEffect(() => { setEditingTitle(widget.title); }, [widget.title]);
+  useEffect(() => { setShowCompleted(showCompletedDefault); }, [showCompletedDefault]);
+  useEffect(() => { setFilterPriority(defaultFilterPriority); }, [defaultFilterPriority]);
+  useEffect(() => { setSortBy(defaultSortBy); }, [defaultSortBy]);
+  useEffect(() => { setSortOrder(defaultSortOrder); }, [defaultSortOrder]);
 
-  const { data: allTasks = [], isLoading } = useQuery<Task[]>({
+  const updateConfig = (patch: Record<string, unknown>) =>
+    onUpdate?.({ ...widget, config: { ...widget.config, ...patch } });
+
+  const commitTitle = () => {
+    if (editingTitle.trim() && editingTitle !== widget.title) {
+      onUpdate?.({ ...widget, title: editingTitle.trim() });
+    }
+  };
+
+  const { data: allTasks = [], isLoading, isError, refetch } = useQuery<Task[]>({
     queryKey: ["/api/tasks", currentProject?.id],
     queryFn: async () => {
       if (!currentProject?.id) return [];
@@ -181,58 +239,76 @@ export default function TasksWidget({ widget, onUpdate, isConfiguring, onCloseCo
     enabled: !!currentProject?.id,
   });
 
-  // Task statuses live in field categories ("task.status") and tasks store the
-  // option KEY (e.g. "in-progress"), so group/sort by key, not display name.
+  // Task statuses/priorities live in field categories; tasks store the option KEY.
   const { data: fieldCategories = [] } = useQuery<FieldCategoryWithOptions[]>({
     queryKey: ["/api/field-categories"],
     staleTime: 5 * 60 * 1000,
   });
 
-  const sortedStatuses = useMemo(() => {
+  const statusOptions = useMemo(() => {
     const options = fieldCategories.find(cat => cat.key === "task.status")?.options || [];
     return options
       .filter(o => o.isActive !== false)
       .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
   }, [fieldCategories]);
 
+  const priorityOptions = useMemo(() => {
+    const options = fieldCategories.find(cat => cat.key === "task.priority")?.options || [];
+    const active = options
+      .filter(o => o.isActive !== false)
+      .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+    if (active.length > 0) return active.map(o => ({ key: o.key, name: o.name, color: o.color }));
+    return [
+      { key: "high", name: "High", color: PRIORITY_HEX.high },
+      { key: "medium", name: "Medium", color: PRIORITY_HEX.medium },
+      { key: "low", name: "Low", color: PRIORITY_HEX.low },
+    ];
+  }, [fieldCategories]);
+
+  const statusColorByKey = useMemo(() => {
+    const map: Record<string, string | null> = {};
+    statusOptions.forEach(o => { map[o.key] = o.color; });
+    return map;
+  }, [statusOptions]);
+
   const deleteTaskMutation = useMutation({
     mutationFn: async (taskId: string) => { await apiRequest(`/api/tasks/${taskId}`, "DELETE"); },
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/tasks"] }); setSelectedTaskId(null); },
   });
 
+  // Optimistic complete-toggle: flip immediately, roll back on error. The DB is
+  // ~400ms away, so waiting for the round trip makes the checkbox feel broken.
   const toggleTaskMutation = useMutation({
     mutationFn: async (task: Task) => {
-      const newStatus = task.status === "done" || task.status === "complete" ? "todo" : "done";
+      const newStatus = isDone(task.status) ? "todo" : "done";
       return apiRequest(`/api/tasks/${task.id}`, "PATCH", { status: newStatus });
     },
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/tasks", currentProject?.id] }); },
+    onMutate: async (task: Task) => {
+      const key = ["/api/tasks", currentProject?.id];
+      await queryClient.cancelQueries({ queryKey: key });
+      const previous = queryClient.getQueryData<Task[]>(key);
+      queryClient.setQueryData<Task[]>(key, old =>
+        (old || []).map(t =>
+          t.id === task.id ? { ...t, status: isDone(task.status) ? "todo" : "done" } : t,
+        ),
+      );
+      return { previous, key };
+    },
+    onError: (_err, _task, ctx) => {
+      if (ctx?.previous) queryClient.setQueryData(ctx.key, ctx.previous);
+    },
+    onSettled: () => { queryClient.invalidateQueries({ queryKey: ["/api/tasks"] }); },
   });
-
-  const handleSaveConfig = () => {
-    if (onUpdate) {
-      onUpdate({
-        ...widget,
-        title: editingTitle,
-        config: {
-          ...widget.config,
-          displayMode: configDisplayMode,
-          showSummaryBar: configShowSummaryBar,
-          maxItems: configMaxItems,
-          myTasksOnly: configMyTasksOnly,
-          defaultFilterPriority: configFilterPriority,
-          defaultSortBy: configSortBy,
-          defaultSortOrder: configSortOrder,
-        },
-      });
-    }
-    onCloseConfig?.();
-  };
 
   const processedTasks = useMemo(() => {
     let tasks = [...allTasks];
 
-    if (myTasksOnly && userId) {
-      tasks = tasks.filter(t => (t as any).assigneeId === userId);
+    if (myTasksOnly && currentUserId) {
+      tasks = tasks.filter(t => {
+        const single = (t as any).assigneeId === currentUserId;
+        const multi = Array.isArray((t as any).assigneeIds) && (t as any).assigneeIds.includes(currentUserId);
+        return single || multi;
+      });
     }
 
     if (filterPriority !== "all") {
@@ -249,8 +325,9 @@ export default function TasksWidget({ widget, onUpdate, isConfiguring, onCloseCo
           break;
         }
         case "priority": {
-          const po = { high: 0, medium: 1, low: 2 } as Record<string, number>;
-          cmp = (po[a.priority ?? ""] ?? 3) - (po[b.priority ?? ""] ?? 3);
+          const po: Record<string, number> = {};
+          priorityOptions.forEach((p, i) => { po[p.key] = i; });
+          cmp = (po[a.priority ?? ""] ?? 99) - (po[b.priority ?? ""] ?? 99);
           break;
         }
         case "title":
@@ -258,7 +335,7 @@ export default function TasksWidget({ widget, onUpdate, isConfiguring, onCloseCo
           break;
         case "status": {
           const so: Record<string, number> = {};
-          sortedStatuses.forEach((s, i) => { so[s.key] = i; });
+          statusOptions.forEach((s, i) => { so[s.key] = i; });
           cmp = (so[a.status ?? ""] ?? 99) - (so[b.status ?? ""] ?? 99);
           break;
         }
@@ -267,44 +344,66 @@ export default function TasksWidget({ widget, onUpdate, isConfiguring, onCloseCo
     });
 
     return tasks;
-  }, [allTasks, myTasksOnly, userId, filterPriority, sortBy, sortOrder, sortedStatuses]);
-
-  const overdueCount = useMemo(() =>
-    processedTasks.filter(t => {
-      if (t.status === "done" || t.status === "complete") return false;
-      if (!t.dueDate) return false;
-      const d = new Date(t.dueDate as string);
-      d.setHours(0, 0, 0, 0);
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      return d < today;
-    }).length, [processedTasks]);
-
-  const inProgressCount = useMemo(() =>
-    processedTasks.filter(t => t.status === "in-progress" || t.status === "in_progress").length, [processedTasks]);
+  }, [allTasks, myTasksOnly, currentUserId, filterPriority, sortBy, sortOrder, statusOptions, priorityOptions]);
 
   const visibleTasks = useMemo(() => {
     if (showCompleted) return processedTasks;
-    return processedTasks.filter(t => t.status !== "done" && t.status !== "complete");
+    return processedTasks.filter(t => !isDone(t.status));
   }, [processedTasks, showCompleted]);
 
   const cappedTasks = useMemo(() => visibleTasks.slice(0, maxItems), [visibleTasks, maxItems]);
   const hasMore = visibleTasks.length > maxItems;
 
-  const groupedSections = useMemo(() => {
-    if (displayMode !== "grouped") return null;
-    const knownStatuses = sortedStatuses.map(s => s.key);
-    const sections = sortedStatuses.map(s => ({
-      key: s.key,
-      label: s.name,
-      tasks: cappedTasks.filter(t => t.status === s.key),
-    }));
-    const otherTasks = cappedTasks.filter(t => !knownStatuses.includes(t.status ?? ""));
-    if (otherTasks.length > 0) {
-      sections.push({ key: "__other__", label: "Other", tasks: otherTasks });
+  interface Section { key: string; label: string; color: string | null; tasks: Task[] }
+
+  const groupedSections = useMemo((): Section[] | null => {
+    if (viewMode !== "grouped") return null;
+
+    let sections: Section[] = [];
+    if (groupBy === "status") {
+      sections = statusOptions.map(s => ({
+        key: s.key,
+        label: s.name,
+        color: s.color,
+        tasks: cappedTasks.filter(t => t.status === s.key),
+      }));
+      const known = new Set(statusOptions.map(s => s.key));
+      const other = cappedTasks.filter(t => !known.has(t.status ?? ""));
+      if (other.length) sections.push({ key: "__other__", label: "Other", color: null, tasks: other });
+    } else if (groupBy === "priority") {
+      sections = priorityOptions.map(p => ({
+        key: p.key,
+        label: p.name,
+        color: p.color || PRIORITY_HEX[p.key] || null,
+        tasks: cappedTasks.filter(t => t.priority === p.key),
+      }));
+      const known = new Set(priorityOptions.map(p => p.key));
+      const none = cappedTasks.filter(t => !known.has(t.priority ?? ""));
+      if (none.length) sections.push({ key: "__none__", label: "No priority", color: null, tasks: none });
+    } else if (groupBy === "assignee") {
+      const byName = new Map<string, Task[]>();
+      const unassigned: Task[] = [];
+      cappedTasks.forEach(t => {
+        const name = t.assigneeName?.trim();
+        if (!name) { unassigned.push(t); return; }
+        if (!byName.has(name)) byName.set(name, []);
+        byName.get(name)!.push(t);
+      });
+      sections = Array.from(byName.entries())
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([name, tasks]) => ({ key: name, label: name, color: null, tasks }));
+      if (unassigned.length) sections.push({ key: "__unassigned__", label: "Unassigned", color: null, tasks: unassigned });
+    } else {
+      sections = DUE_BUCKETS.map(b => ({
+        key: b.key,
+        label: b.label,
+        color: b.color,
+        tasks: cappedTasks.filter(t => dueBucketKey(t) === b.key),
+      }));
     }
+
     return sections.filter(s => s.tasks.length > 0);
-  }, [cappedTasks, displayMode, sortedStatuses]);
+  }, [cappedTasks, viewMode, groupBy, statusOptions, priorityOptions]);
 
   const toggleSection = (key: string) => {
     setCollapsedSections(prev => {
@@ -314,30 +413,238 @@ export default function TasksWidget({ widget, onUpdate, isConfiguring, onCloseCo
     });
   };
 
+  // Header row: [+ add] [filter] … [⋮ configure menu] (menu is rendered by the card)
   useEffect(() => {
     onSetHeaderActions?.(
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            size="icon"
-            variant="default"
-            className="h-6 w-6"
-            onClick={() => setLocation(currentProject?.id ? `/projects/${currentProject.id}/tasks` : "/tasks")}
-            data-testid="tasks-widget-add"
-            aria-label="Add task"
-          >
-            <Plus className="h-3.5 w-3.5" />
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent side="top">Add task</TooltipContent>
-      </Tooltip>
+      <>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              size="icon"
+              variant="default"
+              className="h-6 w-6"
+              onClick={() => setCreateOpen(true)}
+              data-testid="tasks-widget-add"
+              aria-label="Add task"
+            >
+              <Plus className="h-3.5 w-3.5" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="top">Add task</TooltipContent>
+        </Tooltip>
+        <Popover open={filterOpen} onOpenChange={setFilterOpen}>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <PopoverTrigger asChild>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="h-6 w-6"
+                  aria-label="Filter tasks"
+                  data-testid="tasks-widget-filter"
+                >
+                  <Filter className="h-3.5 w-3.5" />
+                </Button>
+              </PopoverTrigger>
+            </TooltipTrigger>
+            <TooltipContent side="top">Filter</TooltipContent>
+          </Tooltip>
+          <PopoverContent align="end" className="w-56 p-3 space-y-3">
+            <div className="flex items-center justify-between gap-2">
+              <Label className="text-xs font-normal text-muted-foreground">Show completed</Label>
+              <Switch
+                checked={showCompleted}
+                onCheckedChange={setShowCompleted}
+                data-testid="tasks-filter-show-completed"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">Priority</Label>
+              <Select value={filterPriority} onValueChange={v => setFilterPriority(v as FilterPriority)}>
+                <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All priorities</SelectItem>
+                  {priorityOptions.map(p => (
+                    <SelectItem key={p.key} value={p.key}>{p.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">Sort by</Label>
+              <Select value={sortBy} onValueChange={v => setSortBy(v as SortBy)}>
+                <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="dueDate">Due date</SelectItem>
+                  <SelectItem value="priority">Priority</SelectItem>
+                  <SelectItem value="title">Title</SelectItem>
+                  <SelectItem value="status">Status</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">Order</Label>
+              <Select value={sortOrder} onValueChange={v => setSortOrder(v as SortOrder)}>
+                <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="asc">Ascending</SelectItem>
+                  <SelectItem value="desc">Descending</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </PopoverContent>
+        </Popover>
+      </>
     );
-  }, [currentProject?.id]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentProject?.id, filterOpen, showCompleted, filterPriority, sortBy, sortOrder, priorityOptions]);
+
+  // ------------------------------------------------------------------
+  // Inline configuration panel (instant apply, Morada style)
+  // ------------------------------------------------------------------
+  if (isConfiguring) {
+    const pill = (active: boolean) =>
+      cn(
+        "px-3 py-1.5 rounded-md border text-[11px] font-medium",
+        active
+          ? "bg-[hsl(var(--primary))] text-white border-transparent"
+          : "border-border text-muted-foreground hover:border-[hsl(var(--primary))]",
+      );
+
+    return (
+      <div className="flex-1 overflow-y-auto p-1 space-y-5 text-[12px]" data-testid="tasks-widget-config">
+        <section>
+          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+            Widget title
+          </p>
+          <Input
+            value={editingTitle}
+            onChange={e => setEditingTitle(e.target.value)}
+            onBlur={commitTitle}
+            onKeyDown={e => { if (e.key === "Enter") commitTitle(); }}
+            className="h-8 text-xs"
+            placeholder="Widget title"
+            data-testid="config-input-title"
+          />
+        </section>
+
+        <section>
+          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+            View
+          </p>
+          <div className="flex gap-2">
+            <button className={pill(viewMode === "list")} onClick={() => updateConfig({ displayMode: "list" })} data-testid="config-view-list">
+              List
+            </button>
+            <button className={pill(viewMode === "grouped")} onClick={() => updateConfig({ displayMode: "grouped" })} data-testid="config-view-grouped">
+              Grouped
+            </button>
+          </div>
+        </section>
+
+        {viewMode === "grouped" && (
+          <section>
+            <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+              Group by
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {([
+                { v: "status", l: "Status" },
+                { v: "priority", l: "Priority" },
+                { v: "assignee", l: "Assignee" },
+                { v: "dueDate", l: "Due date" },
+              ] as const).map(({ v, l }) => (
+                <button key={v} className={pill(groupBy === v)} onClick={() => updateConfig({ groupBy: v })} data-testid={`config-groupby-${v}`}>
+                  {l}
+                </button>
+              ))}
+            </div>
+          </section>
+        )}
+
+        <section className="space-y-2">
+          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+            Show
+          </p>
+          <div className="flex items-center justify-between gap-2">
+            <Label className="text-xs font-normal">Completed tasks</Label>
+            <Switch
+              checked={showCompletedDefault}
+              onCheckedChange={v => updateConfig({ showCompleted: v })}
+              data-testid="config-show-completed"
+            />
+          </div>
+          <div className="flex items-center justify-between gap-2">
+            <Label className="text-xs font-normal">Only tasks assigned to me</Label>
+            <Switch
+              checked={myTasksOnly}
+              onCheckedChange={v => updateConfig({ myTasksOnly: v })}
+              data-testid="config-my-tasks"
+            />
+          </div>
+        </section>
+
+        <section>
+          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+            Max tasks
+          </p>
+          <Input
+            type="number"
+            min={1}
+            max={50}
+            className="w-24 h-8 text-xs"
+            value={maxItems}
+            onChange={e => {
+              const n = parseInt(e.target.value);
+              if (n >= 1 && n <= 50) updateConfig({ maxItems: n });
+            }}
+            data-testid="config-max-items"
+          />
+        </section>
+
+        <section className="space-y-2">
+          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+            Default sort
+          </p>
+          <Select value={defaultSortBy} onValueChange={v => updateConfig({ defaultSortBy: v })}>
+            <SelectTrigger className="h-8 text-xs" data-testid="config-select-sort-by"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="dueDate">Due date</SelectItem>
+              <SelectItem value="priority">Priority</SelectItem>
+              <SelectItem value="title">Title</SelectItem>
+              <SelectItem value="status">Status</SelectItem>
+            </SelectContent>
+          </Select>
+          <div className="flex gap-2">
+            <button className={pill(defaultSortOrder === "asc")} onClick={() => updateConfig({ defaultSortOrder: "asc" })}>
+              Ascending
+            </button>
+            <button className={pill(defaultSortOrder === "desc")} onClick={() => updateConfig({ defaultSortOrder: "desc" })}>
+              Descending
+            </button>
+          </div>
+        </section>
+
+        <div className="flex justify-end pt-1">
+          <Button size="sm" className="h-7 px-3 text-xs" onClick={() => onCloseConfig?.()} data-testid="button-done-config">
+            Done
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  if (!currentProject) {
+    return (
+      <div className="text-center py-6 text-sm text-muted-foreground">
+        Select a project to view tasks
+      </div>
+    );
+  }
 
   if (isLoading) {
     return (
       <div className="flex flex-col h-full gap-2">
-        <div className="text-sm text-muted-foreground">Loading tasks...</div>
         <div className="space-y-1.5 flex-1">
           {[1, 2, 3].map(i => (
             <div key={i} className="animate-pulse flex items-center gap-2 px-2 py-1.5 rounded border">
@@ -350,105 +657,44 @@ export default function TasksWidget({ widget, onUpdate, isConfiguring, onCloseCo
     );
   }
 
+  if (isError) {
+    return (
+      <div className="flex flex-col items-center gap-2 py-6 text-sm text-muted-foreground">
+        <AlertCircle className="h-4 w-4 text-destructive" />
+        Couldn't load tasks
+        <Button size="sm" variant="outline" className="h-6 px-2 text-xs" onClick={() => refetch()}>
+          Retry
+        </Button>
+      </div>
+    );
+  }
+
   return (
     <>
-      <div className="flex flex-col h-full gap-2">
-        <div className="flex items-center justify-end gap-1">
-          <Popover open={filterOpen} onOpenChange={setFilterOpen}>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <PopoverTrigger asChild>
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    className="h-6 w-6"
-                    aria-label="Filter tasks"
-                    data-testid="tasks-widget-filter"
-                  >
-                    <SlidersHorizontal className="h-3.5 w-3.5" />
-                  </Button>
-                </PopoverTrigger>
-              </TooltipTrigger>
-              <TooltipContent side="top">Filter</TooltipContent>
-            </Tooltip>
-            <PopoverContent align="end" className="w-56 p-3 space-y-3">
-              <div className="flex items-center justify-between gap-2">
-                <Label className="text-xs font-normal text-muted-foreground">Show completed</Label>
-                <Switch
-                  checked={showCompleted}
-                  onCheckedChange={setShowCompleted}
-                  data-testid="tasks-filter-show-completed"
-                />
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">Priority</Label>
-                <Select value={filterPriority} onValueChange={v => setFilterPriority(v as FilterPriority)}>
-                  <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All priorities</SelectItem>
-                    <SelectItem value="high">High</SelectItem>
-                    <SelectItem value="medium">Medium</SelectItem>
-                    <SelectItem value="low">Low</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">Sort by</Label>
-                <Select value={sortBy} onValueChange={v => setSortBy(v as SortBy)}>
-                  <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="dueDate">Due date</SelectItem>
-                    <SelectItem value="priority">Priority</SelectItem>
-                    <SelectItem value="title">Title</SelectItem>
-                    <SelectItem value="status">Status</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">Order</Label>
-                <Select value={sortOrder} onValueChange={v => setSortOrder(v as SortOrder)}>
-                  <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="asc">Ascending</SelectItem>
-                    <SelectItem value="desc">Descending</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </PopoverContent>
-          </Popover>
-        </div>
-
-        {showSummaryBar && (overdueCount > 0 || inProgressCount > 0) && (
-          <p className="text-xs text-muted-foreground leading-none">
-            {[
-              overdueCount > 0 && <span key="ov" className="text-destructive">{overdueCount} overdue</span>,
-              inProgressCount > 0 && <span key="ip">{inProgressCount} in progress</span>,
-            ].filter(Boolean).reduce<React.ReactNode[]>((acc, el, i) => {
-              if (i > 0) acc.push(" · ");
-              acc.push(el);
-              return acc;
-            }, [])}
-          </p>
-        )}
-
+      <div className="flex flex-col h-full gap-1">
         <div className="flex-1 overflow-auto">
           {cappedTasks.length === 0 ? (
             <div className="text-center py-6 text-sm text-muted-foreground">
-              No tasks match the current filters
+              {allTasks.length === 0
+                ? "No tasks yet — click + to add one"
+                : "No tasks match the current filters"}
             </div>
-          ) : displayMode === "grouped" && groupedSections ? (
+          ) : viewMode === "grouped" && groupedSections ? (
             <div className="space-y-1">
               {groupedSections.map(section => {
                 const isCollapsed = collapsedSections.has(section.key);
                 return (
                   <div key={section.key}>
                     <button
-                      className="flex items-center gap-1 w-full text-xs font-medium text-muted-foreground py-1 px-1 hover:text-foreground"
+                      className="flex items-center gap-1.5 w-full text-xs font-medium text-muted-foreground py-1 px-1 hover:text-foreground"
                       onClick={() => toggleSection(section.key)}
                     >
                       {isCollapsed
                         ? <ChevronRight className="h-3 w-3 flex-shrink-0" />
                         : <ChevronDown className="h-3 w-3 flex-shrink-0" />}
+                      {section.color && (
+                        <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: section.color }} />
+                      )}
                       {section.label} · {section.tasks.length}
                     </button>
                     {!isCollapsed && (
@@ -473,6 +719,7 @@ export default function TasksWidget({ widget, onUpdate, isConfiguring, onCloseCo
                 <TaskRow
                   key={task.id}
                   task={task}
+                  statusColor={statusColorByKey[task.status ?? ""] || null}
                   onToggle={t => toggleTaskMutation.mutate(t)}
                   onClick={id => setSelectedTaskId(id)}
                 />
@@ -483,7 +730,7 @@ export default function TasksWidget({ widget, onUpdate, isConfiguring, onCloseCo
           {hasMore && (
             <button
               className="w-full text-xs text-muted-foreground hover:text-foreground py-2 text-center"
-              onClick={() => setLocation(currentProject?.id ? `/projects/${currentProject.id}/tasks` : "/tasks")}
+              onClick={() => setLocation(`/projects/${currentProject.id}/tasks`)}
             >
               Showing {cappedTasks.length} of {visibleTasks.length} · View all →
             </button>
@@ -495,115 +742,16 @@ export default function TasksWidget({ widget, onUpdate, isConfiguring, onCloseCo
           onOpenChange={open => !open && setSelectedTaskId(null)}
           task={allTasks.find(t => t.id === selectedTaskId)}
           taskId={selectedTaskId || undefined}
+          projectId={currentProject.id}
           onDelete={taskId => deleteTaskMutation.mutate(taskId)}
         />
-      </div>
 
-      <Dialog open={isConfiguring} onOpenChange={open => !open && onCloseConfig?.()}>
-        <DialogContent data-testid="tasks-widget-config-dialog">
-          <DialogHeader>
-            <DialogTitle>Configure Tasks Widget</DialogTitle>
-            <DialogDescription>Set display, filters and sorting for this widget</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-2 max-h-[60vh] overflow-y-auto pr-1">
-            <div className="space-y-2">
-              <Label>Widget Name</Label>
-              <Input value={editingTitle} onChange={e => setEditingTitle(e.target.value)} placeholder="Widget title" data-testid="config-input-title" />
-            </div>
-            <div className="space-y-2">
-              <Label>Display Mode</Label>
-              <Select value={configDisplayMode} onValueChange={v => setConfigDisplayMode(v as DisplayMode)}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="grouped">Grouped by status</SelectItem>
-                  <SelectItem value="flat">Flat list</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex items-center gap-2">
-              <Checkbox
-                id="cfg-summary"
-                checked={configShowSummaryBar}
-                onCheckedChange={v => setConfigShowSummaryBar(!!v)}
-              />
-              <Label htmlFor="cfg-summary" className="cursor-pointer font-normal">Show overdue / in-progress summary bar</Label>
-            </div>
-            <div className="flex items-center gap-2">
-              <Checkbox
-                id="cfg-mytasks"
-                checked={configMyTasksOnly}
-                onCheckedChange={v => setConfigMyTasksOnly(!!v)}
-              />
-              <Label htmlFor="cfg-mytasks" className="cursor-pointer font-normal">Show only tasks assigned to me</Label>
-            </div>
-            <div className="space-y-2">
-              <Label>Max tasks to show</Label>
-              <Input
-                type="number"
-                min={1}
-                max={50}
-                className="w-24"
-                value={configMaxItems}
-                onChange={e => setConfigMaxItems(parseInt(e.target.value) || 8)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Default Priority Filter</Label>
-              <Select value={configFilterPriority} onValueChange={v => setConfigFilterPriority(v as FilterPriority)}>
-                <SelectTrigger data-testid="config-select-filter-priority"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Priority</SelectItem>
-                  <SelectItem value="low">Low</SelectItem>
-                  <SelectItem value="medium">Medium</SelectItem>
-                  <SelectItem value="high">High</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>Sort By</Label>
-              <Select value={configSortBy} onValueChange={v => setConfigSortBy(v as SortBy)}>
-                <SelectTrigger data-testid="config-select-sort-by"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="dueDate">Due Date</SelectItem>
-                  <SelectItem value="priority">Priority</SelectItem>
-                  <SelectItem value="title">Title</SelectItem>
-                  <SelectItem value="status">Status</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>Sort Order</Label>
-              <Select value={configSortOrder} onValueChange={v => setConfigSortOrder(v as SortOrder)}>
-                <SelectTrigger data-testid="config-select-sort-order"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="asc">Ascending</SelectItem>
-                  <SelectItem value="desc">Descending</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          <div className="flex justify-end gap-2 pt-2">
-            <Button
-              variant="outline"
-              onClick={() => {
-                setConfigDisplayMode(displayMode);
-                setConfigShowSummaryBar(showSummaryBar);
-                setConfigMaxItems(maxItems);
-                setConfigMyTasksOnly(myTasksOnly);
-                setConfigFilterPriority(defaultFilterPriority);
-                setConfigSortBy(defaultSortBy);
-                setConfigSortOrder(defaultSortOrder);
-                setEditingTitle(widget.title);
-                onCloseConfig?.();
-              }}
-              data-testid="button-cancel-config"
-            >
-              Cancel
-            </Button>
-            <Button onClick={handleSaveConfig} data-testid="button-save-config">Save</Button>
-          </div>
-        </DialogContent>
-      </Dialog>
+        <TaskEditModal
+          open={createOpen}
+          onOpenChange={setCreateOpen}
+          projectId={currentProject.id}
+        />
+      </div>
     </>
   );
 }
