@@ -190,7 +190,7 @@ import {
 import { computeEstimateItemPrice, resolveEstimateStoredPrice } from "@shared/pricing";
 import { z } from "zod";
 import { fromZodError } from "zod-validation-error";
-import { eq, and, asc, desc, or, isNull, isNotNull, sql, min, max, gte, lte, inArray, gt } from "drizzle-orm";
+import { eq, and, asc, desc, or, isNull, isNotNull, sql, min, max, gte, lte, inArray, gt, ne, notExists } from "drizzle-orm";
 import { PasswordUtils } from "./utils/auth";
 import { requireAuth, requireAdmin, requireTeamMember, requireTeamMemberOrClient, requirePermission, requirePlatformStaff, toSafeUser, isAdminRole } from "./middleware/auth";
 import { clientAccessGate } from "./middleware/clientAccess";
@@ -13095,8 +13095,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.json({ selection: existing, created: false });
       }
 
-      // Convert priceIncTax (dollars) to cents, rounded to 2dp first
-      const allowanceCents = Math.round(Number(Number(estimateItem.priceIncTax || 0).toFixed(2)) * 100);
+      // Allowance = the line's pre-margin inc-GST amount. Recompute via
+      // resolveEstimateStoredPrice rather than trusting the priceIncTax cache
+      // (stale for priced lines; only fixed-price lines trust the typed value).
+      const { priceIncTax } = resolveEstimateStoredPrice({
+        unitCostExTax: estimateItem.unitCostExTax,
+        quantity: estimateItem.quantity,
+        markupPercent: estimateItem.markupPercent,
+        projectMarkupPercent: (estimate as any).projectMarkupPercent,
+        taxRate: (estimate as any).taxRate,
+        wastagePercent: (estimateItem as any).wastagePercent,
+        existingPriceIncTax: estimateItem.priceIncTax,
+      });
+      const allowanceCents = Math.round(priceIncTax * 100);
 
       const selectionData = {
         projectId: estimate.projectId,
@@ -20975,6 +20986,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!validationResult.success) {
         return res.status(400).json({ error: "Validation failed" });
       }
+      // The linked option must belong to the invoice's own project
+      const option = await storage.getSelectionOption(validationResult.data.selectionOptionId);
+      const optionSelection = option ? await storage.getSelection(option.selectionId) : undefined;
+      if (!optionSelection || optionSelection.projectId !== (ownedInvoice as any).projectId) {
+        return res.status(404).json({ error: "Selection option not found" });
+      }
+      // Block double-billing: the option must not already sit on a live invoice
+      const [existingLink] = await db.select({ id: schema.invoiceSelections.id })
+        .from(schema.invoiceSelections)
+        .innerJoin(schema.clientInvoices, eq(schema.invoiceSelections.invoiceId, schema.clientInvoices.id))
+        .where(and(
+          eq(schema.invoiceSelections.selectionOptionId, validationResult.data.selectionOptionId),
+          ne(schema.clientInvoices.status, "void"),
+        ))
+        .limit(1);
+      if (existingLink) {
+        return res.status(409).json({ error: "This selection option is already on an invoice" });
+      }
       const row = await storage.createInvoiceSelection(validationResult.data);
       res.status(201).json(row);
     } catch (error) {
@@ -21082,7 +21111,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
           and(
             eq(schema.selections.projectId, projectId),
             eq(schema.selectionOptions.isSelectedByClient, true),
-            gt(schema.selectionOptions.totalCost, 0)
+            gt(schema.selectionOptions.totalCost, 0),
+            // Exclude options already on a live (non-void) invoice so the
+            // same approved option can't be billed twice
+            notExists(
+              db.select({ one: sql`1` }).from(schema.invoiceSelections)
+                .innerJoin(schema.clientInvoices, eq(schema.invoiceSelections.invoiceId, schema.clientInvoices.id))
+                .where(and(
+                  eq(schema.invoiceSelections.selectionOptionId, schema.selectionOptions.id),
+                  ne(schema.clientInvoices.status, "void"),
+                ))
+            )
           )
         );
       res.json(rows);
@@ -30590,33 +30629,39 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // ─── Selection Template Apply / Save-as-Template ────────────────────────────
 
+  // Batched: builds all rows up front (ids generated locally) and does at most
+  // 3 inserts, instead of 1 insert per selection/option/attachment — a large
+  // template was minutes of serial round trips against a ~400ms-RTT database.
   async function applyTemplateItems(
     items: any[],
     projectId: string,
     selectionType: string,
-    storage: any
+    _storage: any
   ): Promise<string[]> {
-    const selectionIds: string[] = [];
-    for (const item of items) {
-      const selection = await storage.createSelection({
-        projectId,
-        name: item.itemName,
-        description: item.description || null,
-        category: item.categoryName || null,
-        room: item.room || null,
-        selectionType: selectionType || "selection",
-        status: "draft",
-        allowance: item.budgetAmount || null,
-        clientCanSeePrice: item.clientCanSeePrice ?? true,
-        clientCanChange: item.clientCanChange ?? true,
-        deadline: item.deadline || null,
-        sortOrder: item.sortOrder ?? 0,
-        notes: item.notes || null,
-      });
-      selectionIds.push(selection.id);
+    const selectionRows = items.map((item) => ({
+      id: randomUUID(),
+      projectId,
+      name: item.itemName,
+      description: item.description || null,
+      category: item.categoryName || null,
+      room: item.room || null,
+      selectionType: selectionType || "selection",
+      status: "draft",
+      allowance: item.budgetAmount || null,
+      clientCanSeePrice: item.clientCanSeePrice ?? true,
+      clientCanChange: item.clientCanChange ?? true,
+      deadline: item.deadline ? new Date(item.deadline) : null,
+      sortOrder: item.sortOrder ?? 0,
+      notes: item.notes || null,
+    }));
+    const optionRows: any[] = [];
+    const attachmentRows: any[] = [];
+    items.forEach((item, i) => {
       for (const opt of (item.options || [])) {
-        const option = await storage.createSelectionOption({
-          selectionId: selection.id,
+        const optionId = randomUUID();
+        optionRows.push({
+          id: optionId,
+          selectionId: selectionRows[i].id,
           name: opt.name,
           brand: opt.brand || null,
           sku: opt.sku || null,
@@ -30635,20 +30680,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
           specifications: opt.specifications || null,
         });
         const imageUrls: string[] = opt.imageUrls || (opt.imageUrl ? [opt.imageUrl] : []);
-        for (let idx = 0; idx < imageUrls.length; idx++) {
-          const filePath = imageUrls[idx];
-          await storage.createOptionAttachment({
-            optionId: option.id,
+        imageUrls.forEach((filePath, idx) => {
+          attachmentRows.push({
+            optionId,
             fileName: filePath.split("/").pop() || "image.jpg",
             filePath,
             fileType: "image",
             mimeType: "image/jpeg",
             sortOrder: idx,
           });
-        }
+        });
       }
-    }
-    return selectionIds;
+    });
+    if (selectionRows.length > 0) await db.insert(schema.selections).values(selectionRows as any);
+    if (optionRows.length > 0) await db.insert(schema.selectionOptions).values(optionRows);
+    if (attachmentRows.length > 0) await db.insert(schema.optionAttachments).values(attachmentRows);
+    return selectionRows.map((r) => r.id);
   }
 
   app.post("/api/selection-templates/:id/apply", requireAuth, requireTeamMember, async (req, res) => {
@@ -30686,9 +30733,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
           sortOrder: maxOrder + 1,
           notes: null,
         } as any);
-        for (let idx = 0; idx < items.length; idx++) {
-          const opt = items[idx];
-          const option = await storage.createSelectionOption({
+        // Batched inserts — see applyTemplateItems
+        const optionRows: any[] = [];
+        const attachmentRows: any[] = [];
+        items.forEach((opt: any, idx: number) => {
+          const optionId = randomUUID();
+          optionRows.push({
+            id: optionId,
             selectionId: selection.id,
             name: opt.name,
             brand: opt.brand || null,
@@ -30708,18 +30759,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
             specifications: opt.specifications || null,
           });
           const imageUrls: string[] = opt.imageUrls || (opt.imageUrl ? [opt.imageUrl] : []);
-          for (let imgIdx = 0; imgIdx < imageUrls.length; imgIdx++) {
-            const filePath = imageUrls[imgIdx];
-            await storage.createOptionAttachment({
-              optionId: option.id,
+          imageUrls.forEach((filePath: string, imgIdx: number) => {
+            attachmentRows.push({
+              optionId,
               fileName: filePath.split("/").pop() || "image.jpg",
               filePath,
               fileType: "image",
               mimeType: "image/jpeg",
               sortOrder: imgIdx,
             });
-          }
-        }
+          });
+        });
+        if (optionRows.length > 0) await db.insert(schema.selectionOptions).values(optionRows);
+        if (attachmentRows.length > 0) await db.insert(schema.optionAttachments).values(attachmentRows);
         res.json({ created: 1, selectionIds: [selection.id] });
       }
     } catch (error: any) {
@@ -30760,12 +30812,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const project = await storage.getProject(projectId);
       if (!project || project.companyId !== user.companyId) return res.status(403).json({ error: "Project not found or access denied" });
       const selectionsWithOptions = await storage.getSelectionsWithOptions(projectId);
-      const templateData = await Promise.all(
-        selectionsWithOptions.map(async (sel: any) => {
-          const optionsWithImages = await Promise.all(
-            (sel.options || []).map(async (opt: any) => {
-              const attachments = await storage.getOptionAttachments(opt.id);
-              return {
+      // getSelectionsWithOptions already includes each option's attachments —
+      // no per-option re-fetch
+      const templateData = selectionsWithOptions.map((sel: any) => {
+          const optionsWithImages = (sel.options || []).map((opt: any) => ({
                 id: crypto.randomUUID(),
                 name: opt.name, brand: opt.brand, sku: opt.sku,
                 description: opt.description, category: opt.category,
@@ -30774,10 +30824,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 markupPercent: opt.markupPercent, totalCost: opt.totalCost,
                 url: opt.url, visibleToClient: opt.visibleToClient,
                 gstInclusive: opt.gstInclusive, sortOrder: opt.sortOrder,
-                imageUrls: attachments.map((a: any) => a.filePath),
-              };
-            })
-          );
+                imageUrls: (opt.attachments || []).map((a: any) => a.filePath),
+          }));
           return {
             id: crypto.randomUUID(),
             itemName: sel.name,
@@ -30792,8 +30840,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             sortOrder: sel.sortOrder ?? 0,
             options: optionsWithImages,
           };
-        })
-      );
+      });
       const template = await storage.createSelectionTemplate({
         companyId: user.companyId,
         name,
