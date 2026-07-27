@@ -28,6 +28,7 @@ interface MetricConfig {
   displayStyle: DisplayStyle;
   compareToId?: MetricId;
   tone?: Tone;
+  cardWidth?: "tile" | "full";
 }
 
 const defaultMetricConfigs: MetricConfig[] = [
@@ -277,26 +278,40 @@ export default function MetricsWidget({ widget, onUpdate, isConfiguring, onClose
                 </div>
 
                 {CARD_STYLES.includes(config.displayStyle) && (
-                  <Select
-                    value={config.tone || "auto"}
-                    onValueChange={val => updateDraftConfig(index, { tone: val as Tone })}
-                  >
-                    <SelectTrigger className="h-7 text-xs">
-                      <SelectValue placeholder="Card colour" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {TONE_OPTIONS.map(t => (
-                        <SelectItem key={t.value} value={t.value} className="text-xs">
-                          <span className="flex items-center gap-1.5">
-                            {t.value !== "none" && t.value !== "auto" && (
-                              <span className="w-2 h-2 rounded-full" style={{ backgroundColor: FAMILIES[t.value as ToneKey].solid }} />
-                            )}
-                            {t.label}
-                          </span>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <div className="flex gap-1.5">
+                    <Select
+                      value={config.tone || "auto"}
+                      onValueChange={val => updateDraftConfig(index, { tone: val as Tone })}
+                    >
+                      <SelectTrigger className="h-7 text-xs flex-1">
+                        <SelectValue placeholder="Card colour" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {TONE_OPTIONS.map(t => (
+                          <SelectItem key={t.value} value={t.value} className="text-xs">
+                            <span className="flex items-center gap-1.5">
+                              {t.value !== "none" && t.value !== "auto" && (
+                                <span className="w-2 h-2 rounded-full" style={{ backgroundColor: FAMILIES[t.value as ToneKey].solid }} />
+                              )}
+                              {t.label}
+                            </span>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Select
+                      value={config.cardWidth || "tile"}
+                      onValueChange={val => updateDraftConfig(index, { cardWidth: val as "tile" | "full" })}
+                    >
+                      <SelectTrigger className="h-7 text-xs w-28">
+                        <SelectValue placeholder="Width" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="tile" className="text-xs">Tile</SelectItem>
+                        <SelectItem value="full" className="text-xs">Full row</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
                 )}
 
                 {config.displayStyle === "comparison" && (
@@ -558,7 +573,14 @@ export default function MetricsWidget({ widget, onUpdate, isConfiguring, onClose
               className="grid gap-2"
               style={{ gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))" }}
             >
-              {run.items.map(({ config, index }) => renderMetric(config, index))}
+              {run.items.map(({ config, index }) => (
+                <div
+                  key={index}
+                  style={config.cardWidth === "full" ? { gridColumn: "1 / -1" } : undefined}
+                >
+                  {renderMetric(config, index)}
+                </div>
+              ))}
             </div>
           ) : (
             <div key={runIndex} className="border-t-2 border-foreground pt-1 px-0.5">
