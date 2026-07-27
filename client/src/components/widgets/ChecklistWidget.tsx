@@ -13,19 +13,17 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Checkbox } from "@/components/ui/checkbox";
 import { 
-  ListChecks, 
-  Plus, 
-  ChevronRight, 
+  ChevronRight,
   ChevronDown,
-  Filter,
   X,
   Check,
   Circle,
   Calendar,
-  User,
   ExternalLink,
   CheckCircle2,
-  EyeOff
+  EyeOff,
+  ArrowRight,
+  AlertCircle
 } from "lucide-react";
 import { WidgetProps } from "@/types/widgets";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -65,7 +63,7 @@ function saveCollapsedState(projectId: string, checklists: string[], groups: str
   } catch {}
 }
 
-export default function ChecklistWidget({ widget, onUpdate, isConfiguring, onCloseConfig }: WidgetProps) {
+export default function ChecklistWidget({ widget, onUpdate, isConfiguring, onCloseConfig, onSetHeaderActions }: WidgetProps) {
   const { user: currentUser } = useAuth();
   const maxChecklists = widget.config?.maxChecklists || 10;
   const wrapText = widget.config?.wrapText || false;
@@ -105,7 +103,7 @@ export default function ChecklistWidget({ widget, onUpdate, isConfiguring, onClo
   }, [currentProject?.id]);
   const [, setLocation] = useLocation();
   
-  const { data: checklists = [], isLoading } = useQuery<ChecklistInstanceWithCounts[]>({
+  const { data: checklists = [], isLoading, isError, refetch } = useQuery<ChecklistInstanceWithCounts[]>({
     queryKey: ["/api/checklist-instances", currentProject?.id],
     queryFn: async () => {
       if (!currentProject?.id) return [];
@@ -208,6 +206,108 @@ export default function ChecklistWidget({ widget, onUpdate, isConfiguring, onClo
       .slice(0, 2);
   };
 
+  const allExpanded = displayChecklists.length > 0 && displayChecklists.every(c => expandedChecklists.has(c.id));
+
+  const toggleAll = () => {
+    if (allExpanded) {
+      setExpandedChecklists(new Set());
+      if (currentProject?.id) {
+        saveCollapsedState(currentProject.id, [], Array.from(expandedGroups));
+      }
+    } else {
+      const allIds = new Set(displayChecklists.map(c => c.id));
+      setExpandedChecklists(allIds);
+      if (currentProject?.id) {
+        saveCollapsedState(currentProject.id, Array.from(allIds), Array.from(expandedGroups));
+      }
+    }
+  };
+
+  const anyHideActive = hideCompletedGroups || hideCompletedChecklists || hideCompletedItems;
+  const stageHide = (key: string, value: boolean) => {
+    onUpdate?.({ ...widget, config: { ...widget.config, [key]: value } });
+  };
+
+  // Header row: hide-completed menu, expand/collapse all, hover arrow → checklists page
+  useEffect(() => {
+    onSetHeaderActions?.(
+      currentProject ? (
+        <>
+          <Popover open={hideMenuOpen} onOpenChange={setHideMenuOpen}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <PopoverTrigger asChild>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className={`h-6 w-6 ${anyHideActive ? "text-primary" : ""}`}
+                    data-testid="checklist-widget-toggle-hide-completed"
+                    aria-label="Hide completed"
+                  >
+                    {anyHideActive ? <EyeOff className="h-3.5 w-3.5" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
+                  </Button>
+                </PopoverTrigger>
+              </TooltipTrigger>
+              <TooltipContent side="top">Hide completed</TooltipContent>
+            </Tooltip>
+            <PopoverContent className="w-48 p-2" align="end">
+              <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+                Hide completed
+              </p>
+              <div className="space-y-1">
+                {([
+                  { key: "hideCompletedGroups", label: "Groups", value: hideCompletedGroups, set: setHideCompletedGroups },
+                  { key: "hideCompletedChecklists", label: "Checklists", value: hideCompletedChecklists, set: setHideCompletedChecklists },
+                  { key: "hideCompletedItems", label: "Items", value: hideCompletedItems, set: setHideCompletedItems },
+                ] as const).map(opt => (
+                  <div
+                    key={opt.key}
+                    className="flex items-center gap-2 py-1 px-1 rounded hover-elevate cursor-pointer"
+                    onClick={() => { opt.set(!opt.value); stageHide(opt.key, !opt.value); }}
+                  >
+                    <Checkbox checked={opt.value} className="h-3.5 w-3.5 pointer-events-none" />
+                    <span className="text-xs">{opt.label}</span>
+                  </div>
+                ))}
+              </div>
+            </PopoverContent>
+          </Popover>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                size="icon"
+                variant="ghost"
+                className="h-6 w-6"
+                onClick={toggleAll}
+                data-testid="checklist-widget-toggle-all"
+                aria-label={allExpanded ? "Collapse all" : "Expand all"}
+              >
+                {allExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="top">{allExpanded ? "Collapse all" : "Expand all"}</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                size="icon"
+                variant="ghost"
+                className="h-6 w-6 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity"
+                onClick={() => setLocation(`/projects/${currentProject.id}/checklists`)}
+                data-testid="checklist-widget-view-all"
+                aria-label="Open checklists"
+              >
+                <ArrowRight className="h-3.5 w-3.5" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="top">All checklists</TooltipContent>
+          </Tooltip>
+        </>
+      ) : null,
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentProject?.id, hideMenuOpen, hideCompletedGroups, hideCompletedChecklists, hideCompletedItems, allExpanded, displayChecklists, expandedGroups]);
+
   if (!currentProject) {
     return (
       <div className="text-center py-4 text-sm text-muted-foreground">
@@ -215,7 +315,7 @@ export default function ChecklistWidget({ widget, onUpdate, isConfiguring, onClo
       </div>
     );
   }
-  
+
   if (isConfiguring) {
     const handleSaveConfig = () => {
       if (onUpdate) {
@@ -245,107 +345,98 @@ export default function ChecklistWidget({ widget, onUpdate, isConfiguring, onClo
     };
     
     return (
-      <div className="space-y-3 p-2">
-        <h4 className="text-sm font-medium">Configure Checklists</h4>
-        
-        <div className="space-y-2">
-          <Label className="text-xs">Widget Name</Label>
-          <Input 
+      <div className="flex-1 overflow-y-auto p-1 space-y-5 text-[12px]" data-testid="checklist-widget-config">
+        <section>
+          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+            Widget title
+          </p>
+          <Input
             value={editingTitle}
             onChange={(e) => setEditingTitle(e.target.value)}
-            className="h-7 text-xs"
+            className="h-8 text-xs"
             placeholder="Widget title"
           />
-        </div>
+        </section>
 
-        <div className="space-y-2">
-          <Label className="text-xs">Status Filter</Label>
+        <section className="space-y-2">
+          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+            Filters
+          </p>
           <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as StatusFilter)}>
-            <SelectTrigger className="h-7 text-xs" data-testid="checklist-config-status-filter">
+            <SelectTrigger className="h-8 text-xs" data-testid="checklist-config-status-filter">
               <SelectValue placeholder="Status" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All Status</SelectItem>
+              <SelectItem value="all">All statuses</SelectItem>
               <SelectItem value="actionable">Actionable</SelectItem>
               <SelectItem value="active">Upcoming</SelectItem>
               <SelectItem value="in_progress">Action</SelectItem>
               <SelectItem value="completed">Done</SelectItem>
             </SelectContent>
           </Select>
-        </div>
-
-        <div className="space-y-2">
-          <Label className="text-xs">Assignee Filter</Label>
           <Select value={assigneeFilter} onValueChange={setAssigneeFilter}>
-            <SelectTrigger className="h-7 text-xs" data-testid="checklist-config-assignee-filter">
+            <SelectTrigger className="h-8 text-xs" data-testid="checklist-config-assignee-filter">
               <SelectValue placeholder="Assignee" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All Assignees</SelectItem>
+              <SelectItem value="all">All assignees</SelectItem>
               {uniqueAssignees.map(a => (
                 <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>
               ))}
             </SelectContent>
           </Select>
-        </div>
-        
-        <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <Label className="text-xs">Limit Checklists Shown</Label>
+        </section>
+
+        <section className="space-y-2">
+          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+            Display
+          </p>
+          <div className="flex items-center justify-between gap-2">
+            <Label className="text-xs font-normal">Limit checklists shown</Label>
             <Switch
               checked={configMaxChecklists > 0}
               onCheckedChange={(checked) => setConfigMaxChecklists(checked ? 10 : 0)}
             />
           </div>
           {configMaxChecklists > 0 && (
-            <Input 
+            <Input
               type="number"
               min={1}
               max={50}
               value={configMaxChecklists}
               onChange={(e) => setConfigMaxChecklists(parseInt(e.target.value) || 10)}
-              className="h-7 text-xs w-20"
+              className="h-8 text-xs w-20"
             />
           )}
-        </div>
+          <div className="flex items-center justify-between gap-2">
+            <Label className="text-xs font-normal">Wrap long text</Label>
+            <Switch checked={configWrapText} onCheckedChange={setConfigWrapText} />
+          </div>
+        </section>
 
-        <div className="flex items-center justify-between">
-          <Label className="text-xs">Wrap Long Text</Label>
-          <Switch 
-            checked={configWrapText}
-            onCheckedChange={setConfigWrapText}
-          />
-        </div>
+        <section className="space-y-2">
+          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+            Hide completed
+          </p>
+          <div className="flex items-center justify-between gap-2">
+            <Label className="text-xs font-normal">Items</Label>
+            <Switch checked={hideCompletedItems} onCheckedChange={setHideCompletedItems} />
+          </div>
+          <div className="flex items-center justify-between gap-2">
+            <Label className="text-xs font-normal">Checklists</Label>
+            <Switch checked={hideCompletedChecklists} onCheckedChange={setHideCompletedChecklists} />
+          </div>
+          <div className="flex items-center justify-between gap-2">
+            <Label className="text-xs font-normal">Groups</Label>
+            <Switch checked={hideCompletedGroups} onCheckedChange={setHideCompletedGroups} />
+          </div>
+        </section>
 
-        <div className="flex items-center justify-between">
-          <Label className="text-xs">Hide Completed Items</Label>
-          <Switch 
-            checked={hideCompletedItems}
-            onCheckedChange={setHideCompletedItems}
-          />
-        </div>
-
-        <div className="flex items-center justify-between">
-          <Label className="text-xs">Hide Completed Checklists</Label>
-          <Switch 
-            checked={hideCompletedChecklists}
-            onCheckedChange={setHideCompletedChecklists}
-          />
-        </div>
-
-        <div className="flex items-center justify-between">
-          <Label className="text-xs">Hide Completed Groups</Label>
-          <Switch 
-            checked={hideCompletedGroups}
-            onCheckedChange={setHideCompletedGroups}
-          />
-        </div>
-        
-        <div className="flex justify-end gap-2 pt-2">
-          <Button size="sm" variant="outline" onClick={handleCancelConfig} className="h-6 px-2 text-xs">
+        <div className="flex justify-end gap-2 pt-1">
+          <Button size="sm" variant="outline" onClick={handleCancelConfig} className="h-7 px-3 text-xs">
             Cancel
           </Button>
-          <Button size="sm" onClick={handleSaveConfig} className="h-6 px-2 text-xs">
+          <Button size="sm" onClick={handleSaveConfig} className="h-7 px-3 text-xs">
             Save
           </Button>
         </div>
@@ -353,155 +444,8 @@ export default function ChecklistWidget({ widget, onUpdate, isConfiguring, onClo
     );
   }
 
-  const allExpanded = displayChecklists.length > 0 && displayChecklists.every(c => expandedChecklists.has(c.id));
-  
-  const toggleAll = () => {
-    if (allExpanded) {
-      setExpandedChecklists(new Set());
-      if (currentProject?.id) {
-        saveCollapsedState(currentProject.id, [], Array.from(expandedGroups));
-      }
-    } else {
-      const allIds = new Set(displayChecklists.map(c => c.id));
-      setExpandedChecklists(allIds);
-      if (currentProject?.id) {
-        saveCollapsedState(currentProject.id, Array.from(allIds), Array.from(expandedGroups));
-      }
-    }
-  };
-
   return (
-    <div className="space-y-1 relative">
-      <div className="absolute -top-7 right-6 flex items-center gap-0.5">
-        <Popover open={hideMenuOpen} onOpenChange={setHideMenuOpen}>
-          <PopoverTrigger asChild>
-            <Button 
-              size="icon" 
-              variant="ghost"
-              className={`h-5 w-5 ${(hideCompletedGroups || hideCompletedChecklists || hideCompletedItems) ? 'text-primary' : ''}`}
-              data-testid="checklist-widget-toggle-hide-completed"
-            >
-              {(hideCompletedGroups || hideCompletedChecklists || hideCompletedItems) ? (
-                <EyeOff className="h-3 w-3" />
-              ) : (
-                <CheckCircle2 className="h-3 w-3" />
-              )}
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent className="w-48 p-2" align="end">
-            <div className="space-y-2">
-              <p className="text-xs font-medium text-muted-foreground mb-2">Hide Completed</p>
-              <div 
-                className="flex items-center gap-2 py-1 px-1 rounded hover-elevate cursor-pointer"
-                onClick={() => {
-                  const newValue = !hideCompletedGroups;
-                  setHideCompletedGroups(newValue);
-                  if (onUpdate) {
-                    onUpdate({
-                      ...widget,
-                      config: { ...widget.config, hideCompletedGroups: newValue }
-                    });
-                  }
-                }}
-              >
-                <Checkbox 
-                  checked={hideCompletedGroups} 
-                  onCheckedChange={(checked) => {
-                    setHideCompletedGroups(!!checked);
-                    if (onUpdate) {
-                      onUpdate({
-                        ...widget,
-                        config: { ...widget.config, hideCompletedGroups: !!checked }
-                      });
-                    }
-                  }}
-                  className="h-3.5 w-3.5"
-                />
-                <span className="text-xs">Groups</span>
-              </div>
-              <div 
-                className="flex items-center gap-2 py-1 px-1 rounded hover-elevate cursor-pointer"
-                onClick={() => {
-                  const newValue = !hideCompletedChecklists;
-                  setHideCompletedChecklists(newValue);
-                  if (onUpdate) {
-                    onUpdate({
-                      ...widget,
-                      config: { ...widget.config, hideCompletedChecklists: newValue }
-                    });
-                  }
-                }}
-              >
-                <Checkbox 
-                  checked={hideCompletedChecklists} 
-                  onCheckedChange={(checked) => {
-                    setHideCompletedChecklists(!!checked);
-                    if (onUpdate) {
-                      onUpdate({
-                        ...widget,
-                        config: { ...widget.config, hideCompletedChecklists: !!checked }
-                      });
-                    }
-                  }}
-                  className="h-3.5 w-3.5"
-                />
-                <span className="text-xs">Checklists</span>
-              </div>
-              <div 
-                className="flex items-center gap-2 py-1 px-1 rounded hover-elevate cursor-pointer"
-                onClick={() => {
-                  const newValue = !hideCompletedItems;
-                  setHideCompletedItems(newValue);
-                  if (onUpdate) {
-                    onUpdate({
-                      ...widget,
-                      config: { ...widget.config, hideCompletedItems: newValue }
-                    });
-                  }
-                }}
-              >
-                <Checkbox 
-                  checked={hideCompletedItems} 
-                  onCheckedChange={(checked) => {
-                    setHideCompletedItems(!!checked);
-                    if (onUpdate) {
-                      onUpdate({
-                        ...widget,
-                        config: { ...widget.config, hideCompletedItems: !!checked }
-                      });
-                    }
-                  }}
-                  className="h-3.5 w-3.5"
-                />
-                <span className="text-xs">Items</span>
-              </div>
-            </div>
-          </PopoverContent>
-        </Popover>
-        <Button 
-          size="icon" 
-          variant="ghost"
-          className="h-5 w-5"
-          onClick={toggleAll}
-          data-testid="checklist-widget-toggle-all"
-        >
-          {allExpanded ? (
-            <ChevronDown className="h-3 w-3" />
-          ) : (
-            <ChevronRight className="h-3 w-3" />
-          )}
-        </Button>
-        <Button 
-          size="icon" 
-          variant="ghost"
-          className="h-5 w-5"
-          onClick={() => setLocation(`/projects/${currentProject.id}/checklists`)}
-          data-testid="checklist-widget-view-all"
-        >
-          <ExternalLink className="h-3 w-3" />
-        </Button>
-      </div>
-      
+    <div className="space-y-1">
       <div className="space-y-1">
         {isLoading ? (
           <div className="space-y-1">
@@ -516,6 +460,14 @@ export default function ChecklistWidget({ widget, onUpdate, isConfiguring, onClo
                 </div>
               </div>
             ))}
+          </div>
+        ) : isError ? (
+          <div className="flex flex-col items-center gap-2 py-6 text-sm text-muted-foreground">
+            <AlertCircle className="h-4 w-4 text-destructive" />
+            Couldn't load checklists
+            <Button size="sm" variant="outline" className="h-6 px-2 text-xs" onClick={() => refetch()}>
+              Retry
+            </Button>
           </div>
         ) : displayChecklists.length === 0 ? (
           <div className="text-center py-4 text-xs text-muted-foreground">
@@ -580,7 +532,7 @@ function ChecklistAccordionItem({
     ? Math.round((checklist.completedCount / checklist.totalCount) * 100) 
     : 0;
 
-  const { data: groups = [], isLoading: groupsLoading } = useQuery<ChecklistGroupWithItems[]>({
+  const { data: groups = [], isLoading: groupsLoading, isError: groupsError, refetch: refetchGroups } = useQuery<ChecklistGroupWithItems[]>({
     queryKey: ["/api/checklist-instances", checklist.id, "groups"],
     queryFn: async () => {
       const response = await fetch(`/api/checklist-instances/${checklist.id}/groups`, {
@@ -670,9 +622,13 @@ function ChecklistAccordionItem({
               <div className="text-data text-muted-foreground text-center py-1 animate-pulse">
                 Loading…
               </div>
+            ) : groupsError ? (
+              <button className="w-full text-data text-muted-foreground hover:text-foreground text-center py-1" onClick={() => refetchGroups()}>
+                Couldn't load — tap to retry
+              </button>
             ) : groups.length === 0 ? (
               <div className="text-data text-muted-foreground text-center py-1">
-                No checklists in this group
+                No groups in this checklist
               </div>
             ) : (
               [...groups]
@@ -729,7 +685,7 @@ function ChecklistGroupItem({
 }) {
   const [, setLocation] = useLocation();
 
-  const { data: items = [], isLoading: itemsLoading } = useQuery<ChecklistInstanceItem[]>({
+  const { data: items = [], isLoading: itemsLoading, isError: itemsError, refetch: refetchItems } = useQuery<ChecklistInstanceItem[]>({
     queryKey: ["/api/checklist-instance-groups", group.id, "items"],
     queryFn: async () => {
       const response = await fetch(`/api/checklist-instance-groups/${group.id}/items`, {
@@ -746,15 +702,54 @@ function ChecklistGroupItem({
   const totalCount = items.length;
   const progressPercent = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
 
+  // Optimistic toggle: tick flips instantly and progress counts follow;
+  // the ~400ms Neon round trip settles in the background.
   const updateItemMutation = useMutation({
     mutationFn: async ({ itemId, data }: { itemId: string; data: Record<string, any> }) => {
       return apiRequest(`/api/checklist-instance-items/${itemId}`, "PATCH", data);
     },
-    onSuccess: () => {
+    onMutate: async ({ itemId, data }) => {
+      const itemsKey = ["/api/checklist-instance-groups", group.id, "items"];
+      const groupsKey = ["/api/checklist-instances", checklistId, "groups"];
+      const instancesKey = ["/api/checklist-instances", projectId];
+      await queryClient.cancelQueries({ queryKey: itemsKey });
+      const prevItems = queryClient.getQueryData<ChecklistInstanceItem[]>(itemsKey);
+      const prevGroups = queryClient.getQueryData<ChecklistGroupWithItems[]>(groupsKey);
+      const prevInstances = queryClient.getQueryData<ChecklistInstanceWithCounts[]>(instancesKey);
+
+      const oldItem = prevItems?.find(i => i.id === itemId);
+      const wasDone = oldItem?.status === "completed" || oldItem?.status === "na";
+      const isDone = data.status === "completed" || data.status === "na";
+      const delta = isDone === wasDone ? 0 : isDone ? 1 : -1;
+
+      queryClient.setQueryData<ChecklistInstanceItem[]>(itemsKey, old =>
+        (old || []).map(i => (i.id === itemId ? { ...i, ...data } : i)),
+      );
+      if (delta !== 0) {
+        queryClient.setQueryData<ChecklistGroupWithItems[]>(groupsKey, old =>
+          old?.map(g => g.id === group.id && g.completedCount != null
+            ? { ...g, completedCount: g.completedCount + delta }
+            : g),
+        );
+        queryClient.setQueryData<ChecklistInstanceWithCounts[]>(instancesKey, old =>
+          old?.map(c => c.id === checklistId
+            ? { ...c, completedCount: c.completedCount + delta }
+            : c),
+        );
+      }
+      return { prevItems, prevGroups, prevInstances, itemsKey, groupsKey, instancesKey };
+    },
+    onError: (_err, _vars, ctx) => {
+      if (!ctx) return;
+      if (ctx.prevItems) queryClient.setQueryData(ctx.itemsKey, ctx.prevItems);
+      if (ctx.prevGroups) queryClient.setQueryData(ctx.groupsKey, ctx.prevGroups);
+      if (ctx.prevInstances) queryClient.setQueryData(ctx.instancesKey, ctx.prevInstances);
+    },
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/checklist-instance-groups", group.id, "items"] });
       queryClient.invalidateQueries({ queryKey: ["/api/checklist-instances", checklistId, "groups"] });
       queryClient.invalidateQueries({ queryKey: ["/api/checklist-instances"] });
-      queryClient.invalidateQueries({ 
+      queryClient.invalidateQueries({
         predicate: (query) => Array.isArray(query.queryKey) && query.queryKey[0] === "/api/checklist-items"
       });
     },
@@ -830,6 +825,10 @@ function ChecklistGroupItem({
         <div className="ml-4 pl-2 border-l border-muted space-y-0.5 py-1">
           {itemsLoading ? (
             <div className="text-xs text-muted-foreground py-1 animate-pulse">Loading…</div>
+          ) : itemsError ? (
+            <button className="text-xs text-muted-foreground hover:text-foreground py-1" onClick={() => refetchItems()}>
+              Couldn't load — tap to retry
+            </button>
           ) : items.length === 0 ? (
             <div className="text-xs text-muted-foreground py-1">No items</div>
           ) : (
@@ -844,7 +843,6 @@ function ChecklistGroupItem({
                 <button
                   onClick={() => toggleItemComplete(item)}
                   className="flex-shrink-0 hover:scale-110 transition-transform"
-                  disabled={updateItemMutation.isPending}
                   data-testid={`checklist-item-toggle-${item.id}`}
                 >
                   {item.status === "completed" ? (
