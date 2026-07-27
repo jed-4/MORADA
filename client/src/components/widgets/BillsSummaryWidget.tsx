@@ -32,6 +32,7 @@ export default function BillsSummaryWidget({ widget, onUpdate, isConfiguring, on
 
   const isRowVisible = (configKey: string) => widget.config?.[configKey] !== false;
   const showOverdueAlert = widget.config?.showOverdueAlert !== false;
+  const showCounts = widget.config?.showCounts !== false;
 
   // Config edits stage into a draft and persist on Save
   const [draft, setDraft] = useState<{ title: string; config: Record<string, unknown> } | null>(null);
@@ -109,6 +110,14 @@ export default function BillsSummaryWidget({ widget, onUpdate, isConfiguring, on
             </div>
           ))}
           <div className="flex items-center justify-between gap-2 pt-1 border-t">
+            <Label className="text-xs font-normal">Status counts</Label>
+            <Switch
+              checked={cfg.showCounts !== false}
+              onCheckedChange={v => stage("showCounts", !!v)}
+              data-testid="switch-bills-counts"
+            />
+          </div>
+          <div className="flex items-center justify-between gap-2">
             <Label className="text-xs font-normal">Overdue alert</Label>
             <Switch
               checked={cfg.showOverdueAlert !== false}
@@ -149,7 +158,7 @@ export default function BillsSummaryWidget({ widget, onUpdate, isConfiguring, on
       <LedgerRow
         key="paid"
         label="Paid"
-        count={metrics.paidBills}
+        count={showCounts ? metrics.paidBills : undefined}
         value={formatCurrency(metrics.paidBillsIncGst)}
         valueStyle={SAGE_TEXT}
         dot={DOT.sage}
@@ -160,7 +169,7 @@ export default function BillsSummaryWidget({ widget, onUpdate, isConfiguring, on
       <LedgerRow
         key="pending"
         label="Pending"
-        count={metrics.pendingBills}
+        count={showCounts ? metrics.pendingBills : undefined}
         value={formatCurrency(metrics.pendingBillsAmount)}
         valueStyle={AMBER_TEXT}
         dot={DOT.amber}
@@ -171,7 +180,7 @@ export default function BillsSummaryWidget({ widget, onUpdate, isConfiguring, on
       <LedgerRow
         key="approved"
         label="Approved"
-        count={metrics.approvedBills}
+        count={showCounts ? metrics.approvedBills : undefined}
         value={formatCurrency(metrics.approvedBillsAmount)}
         valueStyle={TEAL_TEXT}
         dot={DOT.teal}
@@ -182,7 +191,7 @@ export default function BillsSummaryWidget({ widget, onUpdate, isConfiguring, on
       <LedgerRow
         key="overdue"
         label="Overdue"
-        count={metrics.overdueBills}
+        count={showCounts ? metrics.overdueBills : undefined}
         value={formatCurrency(metrics.overdueBillsAmount)}
         valueStyle={CORAL_TEXT}
         dot={DOT.coral}
