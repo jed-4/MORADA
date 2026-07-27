@@ -81,7 +81,7 @@ export async function assertSafeUrl(rawUrl: string): Promise<URL> {
   return url;
 }
 
-async function fetchWithLimits(url: URL, accept: string, maxBytes: number): Promise<Response> {
+async function fetchWithLimits(url: URL, accept: string, maxBytes: number, rejectOversize: boolean): Promise<Response> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
   try {
@@ -91,14 +91,17 @@ async function fetchWithLimits(url: URL, accept: string, maxBytes: number): Prom
       headers: { "User-Agent": USER_AGENT, Accept: accept },
     });
     const len = Number(res.headers.get("content-length") || 0);
-    if (len > maxBytes) throw new Error("Response too large");
+    if (rejectOversize && len > maxBytes) throw new Error("Response too large");
     return res;
   } finally {
     clearTimeout(timer);
   }
 }
 
-async function readBodyCapped(res: Response, maxBytes: number): Promise<Buffer> {
+// Reads the body up to maxBytes. Over the cap: truncates when `truncate`
+// (fine for HTML — og/JSON-LD tags live in <head>), throws otherwise (images
+// must be complete).
+async function readBodyCapped(res: Response, maxBytes: number, truncate = false): Promise<Buffer> {
   const reader = res.body?.getReader();
   if (!reader) return Buffer.from(await res.arrayBuffer());
   const chunks: Uint8Array[] = [];
@@ -109,6 +112,10 @@ async function readBodyCapped(res: Response, maxBytes: number): Promise<Buffer> 
     total += value.byteLength;
     if (total > maxBytes) {
       await reader.cancel().catch(() => {});
+      if (truncate) {
+        chunks.push(value);
+        break;
+      }
       throw new Error("Response too large");
     }
     chunks.push(value);
@@ -190,10 +197,17 @@ function toAbsolute(src: string, base: URL): string | null {
 
 function collectImages(product: any | null, html: string, base: URL): string[] {
   const out: string[] = [];
+  const seenPaths = new Set<string>();
   const push = (src: unknown) => {
     if (typeof src !== "string" || !src) return;
     const abs = toAbsolute(decodeEntities(src), base);
-    if (abs && !out.includes(abs)) out.push(abs);
+    if (!abs) return;
+    // Dedupe by origin+path so the same photo at different resize params
+    // (?width=…) isn't staged twice
+    const key = abs.split(/[?#]/)[0];
+    if (seenPaths.has(key)) return;
+    seenPaths.add(key);
+    out.push(abs);
   };
   if (product) {
     const img = product.image;
@@ -216,11 +230,11 @@ function collectImages(product: any | null, html: string, base: URL): string[] {
 
 export async function scrapeProductUrl(rawUrl: string): Promise<ScrapedProduct> {
   const url = await assertSafeUrl(rawUrl);
-  const res = await fetchWithLimits(url, "text/html,application/xhtml+xml", MAX_HTML_BYTES);
+  const res = await fetchWithLimits(url, "text/html,application/xhtml+xml", MAX_HTML_BYTES, false);
   if (!res.ok) throw new Error(`Page returned ${res.status}`);
   const contentType = res.headers.get("content-type") || "";
   if (!contentType.includes("html")) throw new Error("URL is not an HTML page");
-  const html = (await readBodyCapped(res, MAX_HTML_BYTES)).toString("utf-8");
+  const html = (await readBodyCapped(res, MAX_HTML_BYTES, true)).toString("utf-8");
 
   const jsonLd = extractJsonLdProducts(html)[0] ?? null;
   const offer = firstOffer(jsonLd);
@@ -273,7 +287,7 @@ export async function scrapeProductUrl(rawUrl: string): Promise<ScrapedProduct> 
 
 export async function downloadImage(rawUrl: string): Promise<{ buffer: Buffer; mimeType: string; fileName: string }> {
   const url = await assertSafeUrl(rawUrl);
-  const res = await fetchWithLimits(url, "image/*", MAX_IMAGE_BYTES);
+  const res = await fetchWithLimits(url, "image/*", MAX_IMAGE_BYTES, true);
   if (!res.ok) throw new Error(`Image returned ${res.status}`);
   const mimeType = (res.headers.get("content-type") || "image/jpeg").split(";")[0].trim();
   if (!mimeType.startsWith("image/")) throw new Error("URL is not an image");
