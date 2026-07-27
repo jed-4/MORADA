@@ -27,6 +27,7 @@ interface MetricConfig {
   metricId: MetricId;
   displayStyle: DisplayStyle;
   compareToId?: MetricId;
+  tone?: Tone;
 }
 
 const defaultMetricConfigs: MetricConfig[] = [
@@ -38,25 +39,57 @@ const defaultMetricConfigs: MetricConfig[] = [
 
 const CARD_STYLES: DisplayStyle[] = ["number", "comparison", "progress"];
 
-// Morada section accents by metric family (see index.css / CLAUDE.md)
-const CATEGORY_ACCENT: Record<string, string> = {
-  contract: "hsl(var(--primary))",
-  progress: "hsl(var(--primary))",
-  costs: "hsl(var(--amber))",
-  billing: "hsl(var(--teal))",
-  margins: "hsl(var(--sage))",
-  counts: "hsl(var(--muted-foreground))",
+// Morada colour families (see index.css / CLAUDE.md): wash fill for the card,
+// solid for bars, and a darker label shade that reads on the wash.
+type ToneKey = "lavender" | "amber" | "teal" | "sage" | "coral" | "grey";
+type Tone = "auto" | "none" | ToneKey;
+
+interface ToneFamily { wash: string; solid: string; label: string }
+const FAMILIES: Record<ToneKey, ToneFamily> = {
+  lavender: { wash: "hsl(var(--primary-light))", solid: "hsl(var(--primary))", label: "hsl(261 25% 45%)" },
+  amber: { wash: "hsl(var(--amber-light))", solid: "hsl(var(--amber))", label: "hsl(42 45% 35%)" },
+  teal: { wash: "hsl(var(--teal-light))", solid: "hsl(var(--teal))", label: "hsl(184 45% 30%)" },
+  sage: { wash: "hsl(var(--sage-light))", solid: "hsl(var(--sage))", label: "hsl(147 35% 33%)" },
+  coral: { wash: "hsl(var(--coral-light))", solid: "hsl(var(--coral))", label: "hsl(11 45% 42%)" },
+  grey: { wash: "hsl(var(--muted))", solid: "hsl(var(--muted-foreground))", label: "hsl(var(--muted-foreground))" },
 };
-const accentFor = (category: string) => CATEGORY_ACCENT[category] ?? "hsl(var(--primary))";
+
+const CATEGORY_FAMILY: Record<string, ToneKey> = {
+  contract: "lavender",
+  progress: "lavender",
+  costs: "amber",
+  billing: "teal",
+  margins: "sage",
+  counts: "grey",
+};
+
+// null = frameless tile (no card)
+function resolveFamily(tone: Tone | undefined, category: string): ToneFamily | null {
+  if (tone === "none") return null;
+  if (tone && tone !== "auto" && FAMILIES[tone as ToneKey]) return FAMILIES[tone as ToneKey];
+  return FAMILIES[CATEGORY_FAMILY[category] ?? "lavender"];
+}
+
+const TONE_OPTIONS: Array<{ value: Tone; label: string }> = [
+  { value: "auto", label: "Auto colour" },
+  { value: "none", label: "No card" },
+  { value: "lavender", label: "Lavender" },
+  { value: "amber", label: "Amber" },
+  { value: "teal", label: "Teal" },
+  { value: "sage", label: "Sage" },
+  { value: "coral", label: "Coral" },
+];
 
 const CORAL = "hsl(var(--coral))";
-const CHIP_GOOD = { backgroundColor: "hsl(var(--sage-light))", color: "hsl(147 39% 30%)" };
-const CHIP_BAD = { backgroundColor: "hsl(var(--coral-light))", color: "hsl(11 52% 42%)" };
-const CHIP_NEUTRAL = { backgroundColor: "hsl(var(--muted))", color: "hsl(var(--muted-foreground))" };
+const GOOD_TEXT = "hsl(147 39% 30%)";
+const BAD_TEXT = "hsl(11 52% 42%)";
 
-function AccentBar({ pct, color, className }: { pct: number; color: string; className?: string }) {
+function AccentBar({ pct, color, track, className }: { pct: number; color: string; track?: string; className?: string }) {
   return (
-    <div className={cn("h-1.5 rounded-full bg-muted overflow-hidden", className)}>
+    <div
+      className={cn("h-1.5 rounded-full overflow-hidden", !track && "bg-muted", className)}
+      style={track ? { backgroundColor: track } : undefined}
+    >
       <div
         className="h-full rounded-full transition-all"
         style={{ width: `${Math.min(100, Math.max(0, pct))}%`, backgroundColor: color }}
@@ -237,11 +270,34 @@ export default function MetricsWidget({ widget, onUpdate, isConfiguring, onClose
                       <SelectItem value="number" className="text-xs">Number</SelectItem>
                       <SelectItem value="comparison" className="text-xs">Compare</SelectItem>
                       <SelectItem value="progress" className="text-xs">Progress</SelectItem>
-                      <SelectItem value="compact" className="text-xs">Compact</SelectItem>
-                      <SelectItem value="ultra-compact" className="text-xs">Ultra compact</SelectItem>
+                      <SelectItem value="compact" className="text-xs">Ledger row</SelectItem>
+                      <SelectItem value="ultra-compact" className="text-xs">Ledger row (small)</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
+
+                {CARD_STYLES.includes(config.displayStyle) && (
+                  <Select
+                    value={config.tone || "auto"}
+                    onValueChange={val => updateDraftConfig(index, { tone: val as Tone })}
+                  >
+                    <SelectTrigger className="h-7 text-xs">
+                      <SelectValue placeholder="Card colour" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {TONE_OPTIONS.map(t => (
+                        <SelectItem key={t.value} value={t.value} className="text-xs">
+                          <span className="flex items-center gap-1.5">
+                            {t.value !== "none" && t.value !== "auto" && (
+                              <span className="w-2 h-2 rounded-full" style={{ backgroundColor: FAMILIES[t.value as ToneKey].solid }} />
+                            )}
+                            {t.label}
+                          </span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
 
                 {config.displayStyle === "comparison" && (
                   <Select
@@ -287,7 +343,7 @@ export default function MetricsWidget({ widget, onUpdate, isConfiguring, onClose
         style={{ gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))" }}
       >
         {[1, 2, 3, 4].map(i => (
-          <div key={i} className="animate-pulse p-3 pl-4 border rounded-lg bg-card space-y-2">
+          <div key={i} className="animate-pulse p-3 rounded-[10px] bg-muted/60 space-y-2">
             <div className="h-2.5 bg-muted rounded w-2/3"></div>
             <div className="h-6 bg-muted rounded w-1/2"></div>
           </div>
@@ -315,26 +371,38 @@ export default function MetricsWidget({ widget, onUpdate, isConfiguring, onClose
 
     switch (config.displayStyle) {
       case "number": {
-        const accent = accentFor(def.category);
+        const family = resolveFamily(config.tone, def.category);
         const isNegative = def.type === "currency" && value < 0;
         return (
-          <div key={index} className="relative overflow-hidden p-3 pl-4 border rounded-lg bg-card space-y-1" data-testid={`metric-${config.metricId}`}>
-            <span className="absolute inset-y-0 left-0 w-[3px]" style={{ backgroundColor: accent }} />
-            <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground block truncate">
+          <div
+            key={index}
+            className={cn("p-3 space-y-1", family && "rounded-[10px]")}
+            style={family ? { backgroundColor: family.wash } : undefined}
+            data-testid={`metric-${config.metricId}`}
+          >
+            <span
+              className="text-[10px] font-medium uppercase tracking-wide block truncate"
+              style={{ color: family ? family.label : "hsl(var(--muted-foreground))" }}
+            >
               {def.name}
             </span>
-            <div className={cn("text-xl font-semibold tabular-nums leading-tight")} style={isNegative ? { color: CORAL } : undefined}>
+            <div className="text-xl font-semibold tabular-nums leading-tight" style={isNegative ? { color: CORAL } : undefined}>
               {formattedValue}
             </div>
             {def.type === "percentage" && (
-              <AccentBar pct={value} color={value > 100 ? CORAL : accent} />
+              <AccentBar
+                pct={value}
+                color={value > 100 ? CORAL : (family ? family.solid : "hsl(var(--primary))")}
+                track={family ? "rgba(255,255,255,0.55)" : undefined}
+              />
             )}
           </div>
         );
       }
 
       case "comparison": {
-        const accent = accentFor(def.category);
+        const family = resolveFamily(config.tone, def.category);
+        const labelColor = family ? family.label : "hsl(var(--muted-foreground))";
         const hasTarget = !!config.compareToId;
         const compareValue = hasTarget ? getMetricValue(config.compareToId!) : 0;
         const compareDef = hasTarget ? getMetricDef(config.compareToId!) : null;
@@ -344,13 +412,23 @@ export default function MetricsWidget({ widget, onUpdate, isConfiguring, onClose
         const overIsBad = def.category === "costs";
         const isBad = isOver && overIsBad;
         const isGood = (isOver && !overIsBad) || (!isOver && overIsBad);
-        const chipStyle = isBad ? CHIP_BAD : isGood ? CHIP_GOOD : CHIP_NEUTRAL;
+        const chipStyle = {
+          backgroundColor: family ? "rgba(255,255,255,0.65)"
+            : isBad ? "hsl(var(--coral-light))"
+            : isGood ? "hsl(var(--sage-light))"
+            : "hsl(var(--muted))",
+          color: isBad ? BAD_TEXT : isGood ? GOOD_TEXT : "hsl(var(--muted-foreground))",
+        };
 
         if (!hasTarget || !compareDef) {
           return (
-            <div key={index} className="relative overflow-hidden p-3 pl-4 border rounded-lg bg-card space-y-1" data-testid={`metric-${config.metricId}`}>
-              <span className="absolute inset-y-0 left-0 w-[3px]" style={{ backgroundColor: accent }} />
-              <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground block truncate">
+            <div
+              key={index}
+              className={cn("p-3 space-y-1", family && "rounded-[10px]")}
+              style={family ? { backgroundColor: family.wash } : undefined}
+              data-testid={`metric-${config.metricId}`}
+            >
+              <span className="text-[10px] font-medium uppercase tracking-wide block truncate" style={{ color: labelColor }}>
                 {def.name}
               </span>
               <div className="text-xl font-semibold tabular-nums leading-tight">{formattedValue}</div>
@@ -360,10 +438,14 @@ export default function MetricsWidget({ widget, onUpdate, isConfiguring, onClose
         }
 
         return (
-          <div key={index} className="relative overflow-hidden p-3 pl-4 border rounded-lg bg-card space-y-1.5" data-testid={`metric-${config.metricId}`}>
-            <span className="absolute inset-y-0 left-0 w-[3px]" style={{ backgroundColor: accent }} />
+          <div
+            key={index}
+            className={cn("p-3 space-y-1.5", family && "rounded-[10px]")}
+            style={family ? { backgroundColor: family.wash } : undefined}
+            data-testid={`metric-${config.metricId}`}
+          >
             <div className="flex items-start justify-between gap-1">
-              <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground truncate">
+              <span className="text-[10px] font-medium uppercase tracking-wide truncate" style={{ color: labelColor }}>
                 {def.name}
               </span>
               <span
@@ -382,49 +464,70 @@ export default function MetricsWidget({ widget, onUpdate, isConfiguring, onClose
                 / {formatValue(config.compareToId!, compareValue)}
               </span>
             </div>
-            <AccentBar pct={percentage} color={isBad ? CORAL : accent} />
+            <AccentBar
+              pct={percentage}
+              color={isBad ? CORAL : (family ? family.solid : "hsl(var(--primary))")}
+              track={family ? "rgba(255,255,255,0.55)" : undefined}
+            />
           </div>
         );
       }
 
       case "progress": {
-        const accent = accentFor(def.category);
+        const family = resolveFamily(config.tone, def.category);
         const progressValue = def.type === "percentage" ? value : 0;
         return (
-          <div key={index} className="relative overflow-hidden p-3 pl-4 border rounded-lg bg-card space-y-2" data-testid={`metric-${config.metricId}`}>
-            <span className="absolute inset-y-0 left-0 w-[3px]" style={{ backgroundColor: accent }} />
+          <div
+            key={index}
+            className={cn("p-3 space-y-2", family && "rounded-[10px]")}
+            style={family ? { backgroundColor: family.wash } : undefined}
+            data-testid={`metric-${config.metricId}`}
+          >
             <div className="flex items-center justify-between gap-1">
-              <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground truncate">
+              <span
+                className="text-[10px] font-medium uppercase tracking-wide truncate"
+                style={{ color: family ? family.label : "hsl(var(--muted-foreground))" }}
+              >
                 {def.name}
               </span>
               <span className="text-sm font-semibold tabular-nums">{formattedValue}</span>
             </div>
-            <AccentBar pct={progressValue} color={progressValue > 100 ? CORAL : accent} className="h-2" />
+            <AccentBar
+              pct={progressValue}
+              color={progressValue > 100 ? CORAL : (family ? family.solid : "hsl(var(--primary))")}
+              track={family ? "rgba(255,255,255,0.55)" : undefined}
+              className="h-2"
+            />
           </div>
         );
       }
 
-      case "compact":
+      // Ledger rows: dotted leader between label and value, like an estimate document
+      case "compact": {
+        const isNegative = def.type === "currency" && value < 0;
         return (
-          <div key={index} className="flex items-center justify-between gap-2 py-1.5 border-b border-border/60 last:border-0" data-testid={`metric-${config.metricId}`}>
-            <span className="flex items-center gap-1.5 text-xs text-muted-foreground min-w-0">
-              <span
-                className="w-1.5 h-1.5 rounded-full flex-shrink-0"
-                style={{ backgroundColor: accentFor(def.category) }}
-              />
-              <span className="truncate">{def.name}</span>
+          <div key={index} className="flex items-baseline gap-2 py-[5px]" data-testid={`metric-${config.metricId}`}>
+            <span className="text-xs text-foreground flex-shrink-0">{def.name}</span>
+            <span className="flex-1 border-b border-dotted border-[hsl(var(--border))] -translate-y-[3px]" style={{ borderBottomColor: "hsl(48 8% 78%)" }} />
+            <span className="text-[13px] font-medium tabular-nums flex-shrink-0" style={isNegative ? { color: CORAL } : undefined}>
+              {formattedValue}
             </span>
-            <span className="text-xs font-medium tabular-nums flex-shrink-0">{formattedValue}</span>
           </div>
         );
+      }
 
-      case "ultra-compact":
+      case "ultra-compact": {
+        const isNegative = def.type === "currency" && value < 0;
         return (
-          <div key={index} className="flex items-center justify-between py-0.5" data-testid={`metric-${config.metricId}`}>
-            <span className="text-data text-muted-foreground truncate">{def.name}</span>
-            <span className="text-data font-medium ml-1">{formattedValue}</span>
+          <div key={index} className="flex items-baseline gap-2 py-[3px]" data-testid={`metric-${config.metricId}`}>
+            <span className="text-[11px] text-muted-foreground flex-shrink-0">{def.name}</span>
+            <span className="flex-1 border-b border-dotted -translate-y-[2px]" style={{ borderBottomColor: "hsl(48 8% 82%)" }} />
+            <span className="text-xs font-medium tabular-nums flex-shrink-0" style={isNegative ? { color: CORAL } : undefined}>
+              {formattedValue}
+            </span>
           </div>
         );
+      }
 
       default:
         return null;
@@ -452,7 +555,7 @@ export default function MetricsWidget({ widget, onUpdate, isConfiguring, onClose
         )}
 
         {rowConfigs.length > 0 && (
-          <div>
+          <div className="border-t-2 border-foreground pt-1 px-0.5">
             {rowConfigs.map(({ config, index }) => renderMetric(config, index))}
           </div>
         )}
@@ -488,21 +591,27 @@ export default function MetricsWidget({ widget, onUpdate, isConfiguring, onClose
             {metricGroups.map(group => {
               const defs = metricDefinitions.filter(d => d.group === group);
               if (defs.length === 0) return null;
-              const groupAccent = accentFor(defs[0].category);
+              const groupFamily = FAMILIES[CATEGORY_FAMILY[defs[0].category] ?? "lavender"];
               return (
-                <div key={group} className="space-y-2">
-                  <h4 className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                    <span className="w-2 h-2 rounded-full" style={{ backgroundColor: groupAccent }} />
+                <div key={group} className="space-y-1">
+                  <h4 className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground pb-1 border-b-2 border-foreground">
+                    <span className="w-2 h-2 rounded-full" style={{ backgroundColor: groupFamily.solid }} />
                     {group}
                   </h4>
-                  <div className="grid grid-cols-2 gap-2">
-                    {defs.map(def => (
-                      <div key={def.id} className="relative overflow-hidden p-2 pl-3 border rounded-md bg-card">
-                        <span className="absolute inset-y-0 left-0 w-[3px]" style={{ backgroundColor: accentFor(def.category) }} />
-                        <div className="text-xs text-muted-foreground truncate">{def.name}</div>
-                        <div className="text-sm font-medium tabular-nums">{formatValue(def.id, getMetricValue(def.id))}</div>
-                      </div>
-                    ))}
+                  <div>
+                    {defs.map(def => {
+                      const v = getMetricValue(def.id);
+                      const neg = def.type === "currency" && v < 0;
+                      return (
+                        <div key={def.id} className="flex items-baseline gap-2 py-[5px]">
+                          <span className="text-xs text-foreground flex-shrink-0">{def.name}</span>
+                          <span className="flex-1 border-b border-dotted -translate-y-[3px]" style={{ borderBottomColor: "hsl(48 8% 78%)" }} />
+                          <span className="text-[13px] font-medium tabular-nums flex-shrink-0" style={neg ? { color: CORAL } : undefined}>
+                            {formatValue(def.id, v)}
+                          </span>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               );
