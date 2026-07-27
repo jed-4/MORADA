@@ -12,6 +12,7 @@ import { Plus, Clock, Search, Calendar as CalendarIcon, X, CalendarRange, Downlo
 import { formatCents, timesheetHours, timesheetTotalExGstCents } from "@shared/money";
 import { Button } from "@/components/ui/button";
 import { BulkActionBar } from "@/components/BulkActionBar";
+import { EmptyState } from "@/components/EmptyState";
 import * as XLSX from "xlsx";
 import { Input } from "@/components/ui/input";
 import {
@@ -1884,8 +1885,23 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
                 <TableBody>
                   {weeklySummary.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={9} className="h-20 text-center text-sm text-muted-foreground">
-                        No timesheets for this week
+                      <TableCell colSpan={9}>
+                        <EmptyState
+                          icon={Clock}
+                          title="No timesheets for this week"
+                          description="Log hours against a project and they'll appear here."
+                          action={{
+                            label: "Add Timesheet",
+                            onClick: () => {
+                              setSelectedTimesheet(undefined);
+                              setIsDialogOpen(true);
+                            },
+                            icon: Plus,
+                            "data-testid": "button-add-first-timesheet-week",
+                          }}
+                          variant="inline"
+                          data-testid="empty-state-timesheets-week"
+                        />
                       </TableCell>
                     </TableRow>
                   ) : (
@@ -2423,22 +2439,31 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
             );
           })()
         ) : filteredTimesheets.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full gap-3">
-            <Clock className="w-10 h-10 text-muted-foreground/40" />
-            <div className="text-sm text-muted-foreground">No timesheets found</div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                setSelectedTimesheet(undefined);
-                setIsDialogOpen(true);
-              }}
-              className="gap-1.5"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              Add Timesheet
-            </Button>
-          </div>
+          <EmptyState
+            icon={Clock}
+            title={timesheets.length === 0 ? "No timesheets yet" : "No timesheets found"}
+            description={
+              timesheets.length === 0
+                ? "Track your team's hours against projects. Logged time flows through to job costs and payroll."
+                : "Try adjusting your search or filter criteria."
+            }
+            action={
+              timesheets.length === 0
+                ? {
+                    label: "Add Your First Timesheet",
+                    onClick: () => {
+                      setSelectedTimesheet(undefined);
+                      setIsDialogOpen(true);
+                    },
+                    icon: Plus,
+                    "data-testid": "button-add-first-timesheet",
+                  }
+                : undefined
+            }
+            variant="inline"
+            className="h-full"
+            data-testid="empty-state-timesheets"
+          />
         ) : (
           <DataTable
             storageKey={TABLE_STORAGE_KEY}

@@ -2,7 +2,8 @@ import { useState, useEffect, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
-import { Plus, LayoutGrid, List, Eye, Layers, Edit3, Columns3, EyeOff, BookOpen, User } from "lucide-react";
+import { Plus, LayoutGrid, List, Eye, Layers, Edit3, Columns3, EyeOff, BookOpen, User, FolderOpen } from "lucide-react";
+import { EmptyState } from "@/components/EmptyState";
 import { type Project, type FieldOption } from "@shared/schema";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { ProjectBoard, type ViewPreferences } from "@/components/ProjectBoard";
@@ -508,9 +509,28 @@ export default function BusinessProjects() {
 
       {/* Content - Full Height */}
       <div className="flex-1 overflow-hidden">
+        {!isLoading && activeProjects.length === 0 ? (
+          <div className="h-full p-6">
+            <EmptyState
+              icon={FolderOpen}
+              title="No projects yet"
+              description="Projects hold everything for a job — estimates, schedule, bills, timesheets and more. Create your first one to get started."
+              action={{
+                label: "Create Your First Project",
+                onClick: () => setIsCreateProjectOpen(true),
+                icon: Plus,
+                "data-testid": "button-create-first-project",
+              }}
+              variant="card"
+              className="h-full"
+              data-testid="empty-state-projects"
+            />
+          </div>
+        ) : (
+          <>
         {activeTab === "board" && (
           <div className="h-full p-6">
-            <ProjectBoard 
+            <ProjectBoard
               projects={activeProjects} 
               isLoading={isLoading}
               cardFieldsDialogOpen={cardFieldsDialogOpen}
@@ -541,6 +561,8 @@ export default function BusinessProjects() {
               </div>
             )}
           </div>
+        )}
+          </>
         )}
       </div>
 
