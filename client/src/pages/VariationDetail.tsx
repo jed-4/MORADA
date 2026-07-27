@@ -250,6 +250,10 @@ export default function VariationDetail() {
     enabled: isEditMode,
   });
 
+  // Approved variations are immutable (server-enforced): the editor renders
+  // read-only and the only available action is Reject.
+  const isLocked = isEditMode && variation?.status === "approved";
+
   const { data: existingCostLines = [] } = useQuery<VariationItem[]>({
     queryKey: [`/api/variations/${effectiveVariationId}/items`],
     enabled: isEditMode,
@@ -1355,6 +1359,18 @@ export default function VariationDetail() {
                 <span>Send for Approval</span>
               </button>
             )}
+            {isLocked && (
+              <button
+                type="button"
+                onClick={() => setRejectDialogOpen(true)}
+                disabled={rejectMutation.isPending}
+                className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
+                data-testid="button-reject-approved"
+              >
+                <X className="w-3 h-3" />
+                <span>Reject</span>
+              </button>
+            )}
             {isEditMode && variation?.status === "pending" && (
               <>
                 <button
@@ -1379,6 +1395,7 @@ export default function VariationDetail() {
                 </button>
               </>
             )}
+            {!isLocked && (
             <button
               type="button"
               onClick={form.handleSubmit(onSubmit)}
@@ -1393,8 +1410,19 @@ export default function VariationDetail() {
               )}
               <span>{isEditMode ? "Save Changes" : "Create Variation"}</span>
             </button>
+            )}
           </div>
         </div>
+
+        {/* Approved-lock banner */}
+        {isLocked && (
+          <div className="bg-sage/15 border-y border-sage/30 px-4 py-1.5 flex items-center gap-2 text-xs" data-testid="banner-locked">
+            <Check className="w-3.5 h-3.5 text-sage" />
+            <span className="text-muted-foreground">
+              This variation is approved and locked. To make changes, reject it first — the rejection reason is kept on record.
+            </span>
+          </div>
+        )}
 
         {/* Row 2 — Live financial summary strip */}
         <div className="bg-primary/10 flex items-center px-4 py-2 gap-5 text-xs">
@@ -1419,7 +1447,10 @@ export default function VariationDetail() {
       <div className="flex-1 overflow-auto">
         <div className="max-w-6xl mx-auto px-3 py-3">
           <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-3">
+            <form onSubmit={form.handleSubmit(onSubmit)}>
+            {/* fieldset[disabled] is what makes the approved lock airtight in
+                the UI: every native input/select/button inside is disabled. */}
+            <fieldset disabled={isLocked} className="space-y-3 min-w-0">
 
                 {/* ── General Info ── */}
                 <div className="rounded-lg border border-border bg-card overflow-hidden">
@@ -2234,6 +2265,7 @@ export default function VariationDetail() {
                   </div>
                 )}
 
+            </fieldset>
               </form>
             </Form>
         </div>

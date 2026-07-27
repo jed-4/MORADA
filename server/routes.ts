@@ -17430,6 +17430,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
     return updates;
   };
 
+  // Once approved, a variation is immutable: the ONLY permitted change is a
+  // rejection (with a reason). Editing again means reject → edit → re-approve,
+  // which keeps an audit trail instead of silently rewriting contract value.
+  const APPROVED_VARIATION_LOCK_MESSAGE =
+    "Approved variations are locked. Reject the variation to make changes.";
+
+  // Invoice claims pin a variation: while a client invoice claims part of its
+  // value it can be neither rejected out of the contract nor deleted.
+  const getVariationInvoiceClaimCount = async (variationId: string): Promise<number> => {
+    const { invoiceVariations: ivTbl } = await import("@shared/schema");
+    const rows = await db.select({ id: ivTbl.id }).from(ivTbl).where(eq(ivTbl.variationId, variationId));
+    return rows.length;
+  };
+
   // Recompute and persist a variation's money totals from its stored
   // components: line items (ex-GST cents, taxable lines attract 10%), linked
   // bills (stored ex/tax components), and linked timesheets (ex-GST dollars,
@@ -17580,6 +17594,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // transitions for the contract-metrics derivation.
       const previous = await Promise.all(ids.map((id: string) => storage.getVariation(id)));
 
+      // Approved lock: bulk actions never touch approved variations — a
+      // rejection must go through the variation page so a reason is captured.
+      const lockedIdx = previous.findIndex((v: any) => v?.status === "approved" && v.status !== status);
+      if (lockedIdx !== -1) {
+        return res.status(409).json({
+          error: "Selection includes approved variations, which are locked. Reject them individually from the variation page.",
+        });
+      }
+
       // Per-record company ownership (via each variation's project) — reject
       // mixed/foreign IDs before writing anything, mirroring PO bulk-status.
       const projectIds = Array.from(new Set(previous.map((v: any) => v?.projectId).filter(Boolean)));
@@ -17661,28 +17684,54 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // The target project must belong to the caller's company.
       if (!(await enforceProjectCompany(req, res, validationResult.data.projectId, "Project not found"))) return;
 
-      // Generate variation number if not provided
-      let variationNumber = validationResult.data.variationNumber;
-      if (!variationNumber || variationNumber === "Auto-generated") {
-        const projectId = validationResult.data.projectId;
-        const existingVariations = await storage.getVariations(projectId);
-        const projectPrefix = Math.floor(1000 + Math.random() * 9000); // Random 4-digit number
-        const variationCount = existingVariations.length + 1;
-        variationNumber = `${projectPrefix}-VO-${String(variationCount).padStart(3, '0')}`;
-      }
+      // Generate variation number if not provided. Numbering comes from
+      // Settings (variationPrefix/variationStartNumber — previously dead
+      // config while the generator used a random prefix) with a per-project
+      // sequence of max-existing-suffix + 1, so deleting a variation never
+      // reuses its number the way the old count-based scheme did.
+      const providedNumber = validationResult.data.variationNumber;
+      const autoNumber = !providedNumber || providedNumber === "Auto-generated";
+      const generateVariationNumber = async (bump: number): Promise<string> => {
+        const config = await storage.getSystemConfiguration().catch(() => undefined);
+        const prefix = (config as any)?.variationPrefix || "VAR-";
+        const startNumber = (config as any)?.variationStartNumber ?? 1;
+        const existingVariations = await storage.getVariations(validationResult.data.projectId);
+        let maxSeen = 0;
+        for (const v of existingVariations) {
+          const m = /(\d+)\s*$/.exec((v as any).variationNumber || "");
+          if (m) maxSeen = Math.max(maxSeen, parseInt(m[1], 10));
+        }
+        const seq = Math.max(startNumber, maxSeen + 1) + bump;
+        return `${prefix}${String(seq).padStart(3, "0")}`;
+      };
 
       // Money totals start at zero — recomputeVariationTotals fills them as
       // items/bills/timesheets are attached (guarded fields are stripped from
       // the create schema, so they can't come from the client).
-      const variation = await storage.createVariation({
+      const baseData = {
         ...validationResult.data,
-        variationNumber,
         subtotal: 0,
         gstAmount: 0,
         totalAmount: 0,
         paidAmount: 0,
         balanceAmount: 0,
-      });
+      };
+      let variation;
+      for (let attempt = 0; ; attempt++) {
+        const variationNumber = autoNumber ? await generateVariationNumber(attempt) : providedNumber;
+        try {
+          variation = await storage.createVariation({ ...baseData, variationNumber });
+          break;
+        } catch (err: any) {
+          // Unique (project_id, variation_number) index: a concurrent create
+          // can win the race — regenerate with the next number and retry.
+          if (err?.code === "23505" && autoNumber && attempt < 2) continue;
+          if (err?.code === "23505") {
+            return res.status(409).json({ error: `Variation number ${variationNumber} is already in use on this project` });
+          }
+          throw err;
+        }
+      }
       res.status(201).json(variation);
     } catch (error) {
       res.status(500).json({ error: "Failed to create variation" });
@@ -17702,6 +17751,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // T005: Get pre-update variation to detect status transition (company-scoped)
       const prevVariation = await getOwnedVariation(req, res, req.params.id);
       if (!prevVariation) return;
+
+      // Approved lock: the only permitted PATCHes are a rejection (status +
+      // reason) or the builder's list-view "seen" toggle. Everything else —
+      // field edits, moving back to draft/pending, re-approving — is blocked.
+      if ((prevVariation as any).status === "approved") {
+        const keys = Object.keys(validationResult.data);
+        const allowedKeys = new Set(["status", "rejectionReason", "isSeen"]);
+        const withinAllowed = keys.every((k) => allowedKeys.has(k));
+        const wantsStatusChange = validationResult.data.status !== undefined
+          && validationResult.data.status !== "approved";
+        if (!withinAllowed || (wantsStatusChange && validationResult.data.status !== "rejected")) {
+          return res.status(409).json({ error: APPROVED_VARIATION_LOCK_MESSAGE });
+        }
+        if (validationResult.data.status === "rejected") {
+          if (!validationResult.data.rejectionReason?.trim()) {
+            return res.status(400).json({ error: "A rejection reason is required to reject an approved variation" });
+          }
+          if ((await getVariationInvoiceClaimCount(req.params.id)) > 0) {
+            return res.status(409).json({
+              error: "This variation is claimed on a client invoice. Remove the claim from the invoice before rejecting it.",
+            });
+          }
+        }
+      }
 
       const updates: Record<string, any> = { ...validationResult.data };
       if (updates.status && updates.status !== (prevVariation as any).status) {
@@ -17750,6 +17823,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const owned = await getOwnedVariation(req, res, req.params.id);
       if (!owned) return;
+      if ((owned as any).status === "approved") {
+        return res.status(409).json({
+          error: "Approved variations cannot be deleted. Reject the variation first.",
+        });
+      }
+      if ((await getVariationInvoiceClaimCount(req.params.id)) > 0) {
+        return res.status(409).json({
+          error: "This variation is claimed on a client invoice. Remove the claim from the invoice before deleting it.",
+        });
+      }
       const deleted = await storage.deleteVariation(req.params.id);
       if (!deleted) {
         return res.status(404).json({ error: "Variation not found" });
@@ -17776,6 +17859,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const ownedVariation = await getOwnedVariation(req, res, req.params.id);
       if (!ownedVariation) return;
+      if ((ownedVariation as any).status === "approved") {
+        return res.status(409).json({ error: APPROVED_VARIATION_LOCK_MESSAGE });
+      }
       const validationResult = insertVariationItemSchema.safeParse({
         ...req.body,
         variationId: req.params.id
@@ -17818,7 +17904,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { variationItems: viTbl } = await import("@shared/schema");
       const [viRow] = await db.select().from(viTbl).where(eq(viTbl.id, req.params.id));
       if (!viRow) return res.status(404).json({ error: "Variation item not found" });
-      if (!(await getOwnedVariation(req, res, viRow.variationId, "Variation item not found"))) return;
+      const parentVariation = await getOwnedVariation(req, res, viRow.variationId, "Variation item not found");
+      if (!parentVariation) return;
+      if ((parentVariation as any).status === "approved") {
+        return res.status(409).json({ error: APPROVED_VARIATION_LOCK_MESSAGE });
+      }
 
       const validationResult = insertVariationItemSchema.partial().safeParse(req.body);
       if (!validationResult.success) {
@@ -17859,7 +17949,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { variationItems: viTbl } = await import("@shared/schema");
       const [viRow] = await db.select({ variationId: viTbl.variationId }).from(viTbl).where(eq(viTbl.id, req.params.id));
       if (!viRow) return res.status(404).json({ error: "Variation item not found" });
-      if (!(await getOwnedVariation(req, res, viRow.variationId, "Variation item not found"))) return;
+      const parentVariation = await getOwnedVariation(req, res, viRow.variationId, "Variation item not found");
+      if (!parentVariation) return;
+      if ((parentVariation as any).status === "approved") {
+        return res.status(409).json({ error: APPROVED_VARIATION_LOCK_MESSAGE });
+      }
       const deleted = await storage.deleteVariationItem(req.params.id);
       if (!deleted) {
         return res.status(404).json({ error: "Variation item not found" });
@@ -17887,6 +17981,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const ownedVariation = await getOwnedVariation(req, res, req.params.id);
       if (!ownedVariation) return;
+      if ((ownedVariation as any).status === "approved") {
+        return res.status(409).json({ error: APPROVED_VARIATION_LOCK_MESSAGE });
+      }
       const { billIds } = req.body as { billIds: string[] };
       await storage.deleteVariationBillsByVariationId(req.params.id);
       const results = await storage.createVariationBills(
@@ -17916,6 +18013,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const ownedVariation = await getOwnedVariation(req, res, req.params.id);
       if (!ownedVariation) return;
+      if ((ownedVariation as any).status === "approved") {
+        return res.status(409).json({ error: APPROVED_VARIATION_LOCK_MESSAGE });
+      }
       const { timesheetIds } = req.body as { timesheetIds: string[] };
       await storage.deleteVariationTimesheetsByVariationId(req.params.id);
       const results = await storage.createVariationTimesheets(
