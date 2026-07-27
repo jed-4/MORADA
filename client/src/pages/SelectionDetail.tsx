@@ -1062,6 +1062,13 @@ export default function SelectionDetail() {
     }
   };
 
+  // Approval follows the permission system rather than admin-ness, so any role
+  // granted projects.selections:approve — including a client — can approve.
+  // NOTE: must be called before the early returns below — as a hook, calling
+  // it after them crashed the page on any cold/direct load ("Rendered more
+  // hooks than during the previous render").
+  const canApproveSelections = usePermission("projects.selections", "approve");
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -1104,9 +1111,6 @@ export default function SelectionDetail() {
   const allowanceAmount = Number(selection.allowance) || 0;
 
   const isAdminUser = !!user?.isAdminLike;
-  // Approval follows the permission system rather than admin-ness, so any role
-  // granted projects.selections:approve — including a client — can approve.
-  const canApproveSelections = usePermission("projects.selections", "approve");
   const isOverAllowance = allowanceAmount > 0 && selectedPrice > allowanceAmount;
 
   return (
