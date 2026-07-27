@@ -172,7 +172,7 @@ export default function ScheduleWidget({ widget, onUpdate, isConfiguring, onClos
             <Button
               size="icon"
               variant="ghost"
-              className="h-6 w-6"
+              className="h-6 w-6 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity"
               onClick={() => navigate(`/projects/${currentProject.id}/schedule`)}
               data-testid="schedule-widget-open-full"
               aria-label="Open full schedule"
@@ -539,19 +539,19 @@ export default function ScheduleWidget({ widget, onUpdate, isConfiguring, onClos
 
   // Shared ‹ Today › header for day/week/month views
   const renderNavHeader = (label: React.ReactNode) => (
-    <div className="flex items-center justify-between px-3 py-1.5 border-b bg-muted/30 gap-2 flex-shrink-0">
-      <div className="flex items-center gap-0.5">
-        <Button size="icon" variant="ghost" className="h-5 w-5" onClick={navigatePrev} aria-label="Previous" data-testid="schedule-nav-prev">
-          <ChevronLeft className="h-3.5 w-3.5" />
+    <div className="flex items-center justify-between px-2 py-0.5 border-b bg-muted/30 gap-2 flex-shrink-0">
+      <div className="flex items-center gap-0">
+        <Button size="icon" variant="ghost" className="h-4 w-4" onClick={navigatePrev} aria-label="Previous" data-testid="schedule-nav-prev">
+          <ChevronLeft className="h-3 w-3" />
         </Button>
-        <Button size="sm" variant="ghost" className="h-5 px-1.5 text-[11px]" onClick={goToToday} data-testid="schedule-nav-today">
+        <Button size="sm" variant="ghost" className="h-4 px-1 text-[10px]" onClick={goToToday} data-testid="schedule-nav-today">
           Today
         </Button>
-        <Button size="icon" variant="ghost" className="h-5 w-5" onClick={navigateNext} aria-label="Next" data-testid="schedule-nav-next">
-          <ChevronRight className="h-3.5 w-3.5" />
+        <Button size="icon" variant="ghost" className="h-4 w-4" onClick={navigateNext} aria-label="Next" data-testid="schedule-nav-next">
+          <ChevronRight className="h-3 w-3" />
         </Button>
       </div>
-      <div className="flex items-center gap-2">{label}</div>
+      <div className="flex items-center gap-1.5 text-[11px]">{label}</div>
     </div>
   );
 
