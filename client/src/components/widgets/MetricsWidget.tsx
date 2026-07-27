@@ -534,30 +534,37 @@ export default function MetricsWidget({ widget, onUpdate, isConfiguring, onClose
     }
   };
 
-  // Cards flow in a responsive grid; compact rows stack in a list below
-  const cardConfigs = metricConfigs
-    .map((config, index) => ({ config, index }))
-    .filter(({ config }) => CARD_STYLES.includes(config.displayStyle));
-  const rowConfigs = metricConfigs
-    .map((config, index) => ({ config, index }))
-    .filter(({ config }) => !CARD_STYLES.includes(config.displayStyle));
+  // Render in the exact configured order: consecutive card-style metrics
+  // group into a grid run, consecutive ledger rows into a ruled block.
+  type Run = { kind: "cards" | "rows"; items: Array<{ config: MetricConfig; index: number }> };
+  const runs: Run[] = [];
+  metricConfigs.forEach((config, index) => {
+    const kind = CARD_STYLES.includes(config.displayStyle) ? "cards" : "rows";
+    const last = runs[runs.length - 1];
+    if (last && last.kind === kind) {
+      last.items.push({ config, index });
+    } else {
+      runs.push({ kind, items: [{ config, index }] });
+    }
+  });
 
   return (
     <>
       <div className="space-y-2">
-        {cardConfigs.length > 0 && (
-          <div
-            className="grid gap-2"
-            style={{ gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))" }}
-          >
-            {cardConfigs.map(({ config, index }) => renderMetric(config, index))}
-          </div>
-        )}
-
-        {rowConfigs.length > 0 && (
-          <div className="border-t-2 border-foreground pt-1 px-0.5">
-            {rowConfigs.map(({ config, index }) => renderMetric(config, index))}
-          </div>
+        {runs.map((run, runIndex) =>
+          run.kind === "cards" ? (
+            <div
+              key={runIndex}
+              className="grid gap-2"
+              style={{ gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))" }}
+            >
+              {run.items.map(({ config, index }) => renderMetric(config, index))}
+            </div>
+          ) : (
+            <div key={runIndex} className="border-t-2 border-foreground pt-1 px-0.5">
+              {run.items.map(({ config, index }) => renderMetric(config, index))}
+            </div>
+          ),
         )}
 
         {metricConfigs.length === 0 && (
