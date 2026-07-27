@@ -13916,7 +13916,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       for (const u of urls.slice(0, 6)) {
         try {
           const { buffer, mimeType, fileName } = await downloadImage(u);
-          const objectPath = await objectStorage.uploadObjectEntity(buffer, mimeType, "selections");
+          const objectPath = await objectStorage.uploadObjectEntity(
+            buffer,
+            mimeType,
+            req.user?.companyId ?? req.user?.dbUser?.companyId,
+          );
           created.push(await storage.createOptionAttachment({
             optionId: req.params.id,
             fileName,
@@ -15748,7 +15752,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Stored paths may be raw /objects/... or company-scoped
       // /objects/company/<id>/objects/... — normalise to the raw form.
-      const normalisedPath = (attachment.filePath || "").replace(/^\/objects\/company\/[^/]+\/objects\//, "/objects/");
+      // Stored paths are /objects/company/<cid>/uploads/<id> (or legacy raw
+      // /objects/uploads/<id>) — strip the company segment for the storage
+      // lookup, which uses the raw form
+      const normalisedPath = (attachment.filePath || "").replace(/^\/objects\/company\/[^/]+\//, "/objects/");
       const objectFile = await objectStorageService.getObjectEntityFile(normalisedPath);
       await objectStorageService.downloadObject(objectFile, res);
     } catch (error: any) {
@@ -15971,7 +15978,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: "Not found" });
       }
 
-      const normalisedPath = (attachment.filePath || "").replace(/^\/objects\/company\/[^/]+\/objects\//, "/objects/");
+      // Stored paths are /objects/company/<cid>/uploads/<id> (or legacy raw
+      // /objects/uploads/<id>) — strip the company segment for the storage
+      // lookup, which uses the raw form
+      const normalisedPath = (attachment.filePath || "").replace(/^\/objects\/company\/[^/]+\//, "/objects/");
       const objectFile = await objectStorageService.getObjectEntityFile(normalisedPath);
       await objectStorageService.downloadObject(objectFile, res);
     } catch (error: any) {
