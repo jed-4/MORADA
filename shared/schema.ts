@@ -45,7 +45,8 @@ export const companies = pgTable("companies", {
 
   // Trial / plan / billing tracking.
   // chosenPlan = tier picked at signup; plan = effective tier for gating
-  // (always 'builder' during trial, switches to chosenPlan at expiry);
+  // (during trial: 'subbie' for Subbie signups, 'studio' for everyone else;
+  // switches to chosenPlan at expiry/subscription);
   // planStatus = trialing | active | expired | cancelled (legacy: 'trial').
   trialEndsAt: timestamp("trial_ends_at"),
   planStatus: varchar("plan_status").default("trial"),

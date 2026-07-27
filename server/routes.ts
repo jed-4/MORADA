@@ -1397,9 +1397,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         : null;
       const trialEndsAt = existingTrialEndsAt ?? new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
       const nextStatus = (company as any).planStatus === 'active' ? 'active' : 'trialing';
+      // Effective tier during the trial: Subbie signups trial Subbie (it's a
+      // genuinely different, mobile-first product), everyone else trials
+      // Studio so they experience full value before choosing. An active
+      // subscription keeps its current plan — plan changes for subscribers go
+      // through Stripe, not this endpoint.
+      const trialPlan = planKey === 'subbie' ? 'subbie' : 'studio';
+      const nextPlan = nextStatus === 'active' ? (company as any).plan : trialPlan;
       await storage.updateCompany(companyId, {
         chosenPlan: planKey,
-        plan: 'builder',
+        plan: nextPlan,
         planStatus: nextStatus,
         billingCycle: cycle,
         trialEndsAt,
@@ -10135,6 +10142,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const updated = await storage.updateCompany(company.id, {
             planStatus: 'trialing',
             trialEndsAt,
+            // Trial on Studio limits until the plan step records a choice
+            // (select-plan maps Subbie signups back down to Subbie).
+            plan: 'studio',
           } as any);
           if (updated) created = updated;
         }
