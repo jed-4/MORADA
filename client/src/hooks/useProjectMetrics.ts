@@ -51,12 +51,17 @@ export interface ProjectMetricsData extends ContractMetrics {
   wip: number;
   wipAA: number;
   
-  // Bills Summary
+  // Bills Summary (counts + inc-GST dollar amounts)
   totalBills: number;
   paidBills: number;
   pendingBills: number;
   approvedBills: number;
   overdueBills: number;
+  totalBillsAmount: number;
+  paidBillsIncGst: number;
+  pendingBillsAmount: number;
+  approvedBillsAmount: number;
+  overdueBillsAmount: number;
   
   // Variations Summary
   totalVariations: number;
@@ -277,6 +282,11 @@ export function useProjectMetrics() {
       pendingBills: 0,
       approvedBills: 0,
       overdueBills: 0,
+      totalBillsAmount: 0,
+      paidBillsIncGst: 0,
+      pendingBillsAmount: 0,
+      approvedBillsAmount: 0,
+      overdueBillsAmount: 0,
       totalVariations: 0,
       approvedVariations: 0,
       pendingVariations: 0,
@@ -418,6 +428,14 @@ export function useProjectMetrics() {
       return new Date(b.dueDate) < now;
     });
 
+    // Bills widget amounts — inc GST (what the supplier invoices actually say)
+    const billIncGst = (b: Bill) => (b.total || 0);
+    const totalBillsAmount = bills.reduce((sum, b) => sum + billIncGst(b), 0) / 100;
+    const paidBillsIncGst = paidBillsList.reduce((sum, b) => sum + billIncGst(b), 0) / 100;
+    const pendingBillsAmount = pendingBillsList.reduce((sum, b) => sum + billIncGst(b), 0) / 100;
+    const approvedBillsAmount = approvedBillsList.reduce((sum, b) => sum + billIncGst(b), 0) / 100;
+    const overdueBillsAmount = overdueBillsList.reduce((sum, b) => sum + billIncGst(b), 0) / 100;
+
     // Actual Costs — ex GST so they compare like-for-like with estimate costs:
     // paid bills at their ex-GST subtotal + approved timesheet labour (wages
     // carry no GST, so timesheet totals are already ex GST).
@@ -541,6 +559,11 @@ export function useProjectMetrics() {
       pendingBills: pendingBillsList.length,
       approvedBills: approvedBillsList.length,
       overdueBills: overdueBillsList.length,
+      totalBillsAmount,
+      paidBillsIncGst,
+      pendingBillsAmount,
+      approvedBillsAmount,
+      overdueBillsAmount,
       totalVariations: variations.length,
       approvedVariations: approvedVariationsList.length,
       pendingVariations: pendingVariationsList.length,
