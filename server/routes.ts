@@ -9813,7 +9813,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         base64Body = dataUrlMatch[2];
       }
       const buffer = Buffer.from(base64Body, "base64");
-      const objectPath = await objectStorage.uploadObjectEntity(buffer, resolvedMime, "templates");
+      // Third arg must be the company id (baked into the served URL) — the
+      // old "templates" label made the serving route 404 every image
+      const objectPath = await objectStorage.uploadObjectEntity(buffer, resolvedMime, req.user?.companyId ?? req.user?.dbUser?.companyId);
       res.json({ url: objectPath });
     } catch (error: any) {
       res.status(500).json({ error: error?.message || "Failed to upload image" });
@@ -13592,7 +13594,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         base64Body = dataUrlMatch[2];
       }
       const buffer = Buffer.from(base64Body, "base64");
-      const objectPath = await objectStorage.uploadObjectEntity(buffer, resolvedMime, "selections");
+      // Third arg is the COMPANY ID baked into the served URL — passing a
+      // folder-style label here ("selections") made every stored path fail
+      // the company check on the serving route, so no image ever rendered.
+      const companyId = req.user?.companyId ?? req.user?.dbUser?.companyId;
+      const objectPath = await objectStorage.uploadObjectEntity(buffer, resolvedMime, companyId);
       const existingAttachments = await storage.getOptionAttachments(req.params.id);
       const sortOrder = existingAttachments.length;
       const attachment = await storage.createOptionAttachment({
@@ -13910,7 +13916,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       for (const u of urls.slice(0, 6)) {
         try {
           const { buffer, mimeType, fileName } = await downloadImage(u);
-          const objectPath = await objectStorage.uploadObjectEntity(buffer, mimeType, "selections");
+          const objectPath = await objectStorage.uploadObjectEntity(
+            buffer,
+            mimeType,
+            req.user?.companyId ?? req.user?.dbUser?.companyId,
+          );
           created.push(await storage.createOptionAttachment({
             optionId: req.params.id,
             fileName,
@@ -15742,7 +15752,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Stored paths may be raw /objects/... or company-scoped
       // /objects/company/<id>/objects/... — normalise to the raw form.
-      const normalisedPath = (attachment.filePath || "").replace(/^\/objects\/company\/[^/]+\/objects\//, "/objects/");
+      // Stored paths are /objects/company/<cid>/uploads/<id> (or legacy raw
+      // /objects/uploads/<id>) — strip the company segment for the storage
+      // lookup, which uses the raw form
+      const normalisedPath = (attachment.filePath || "").replace(/^\/objects\/company\/[^/]+\//, "/objects/");
       const objectFile = await objectStorageService.getObjectEntityFile(normalisedPath);
       await objectStorageService.downloadObject(objectFile, res);
     } catch (error: any) {
@@ -15965,7 +15978,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: "Not found" });
       }
 
-      const normalisedPath = (attachment.filePath || "").replace(/^\/objects\/company\/[^/]+\/objects\//, "/objects/");
+      // Stored paths are /objects/company/<cid>/uploads/<id> (or legacy raw
+      // /objects/uploads/<id>) — strip the company segment for the storage
+      // lookup, which uses the raw form
+      const normalisedPath = (attachment.filePath || "").replace(/^\/objects\/company\/[^/]+\//, "/objects/");
       const objectFile = await objectStorageService.getObjectEntityFile(normalisedPath);
       await objectStorageService.downloadObject(objectFile, res);
     } catch (error: any) {
