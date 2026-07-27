@@ -13597,7 +13597,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Third arg is the COMPANY ID baked into the served URL — passing a
       // folder-style label here ("selections") made every stored path fail
       // the company check on the serving route, so no image ever rendered.
-      const companyId = req.user?.companyId ?? req.user?.dbUser?.companyId;
+      const companyId = (req.user as any)?.companyId ?? (req.user as any)?.dbUser?.companyId;
       const objectPath = await objectStorage.uploadObjectEntity(buffer, resolvedMime, companyId);
       const existingAttachments = await storage.getOptionAttachments(req.params.id);
       const sortOrder = existingAttachments.length;
