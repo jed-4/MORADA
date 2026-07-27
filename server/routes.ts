@@ -9809,7 +9809,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         base64Body = dataUrlMatch[2];
       }
       const buffer = Buffer.from(base64Body, "base64");
-      const objectPath = await objectStorage.uploadObjectEntity(buffer, resolvedMime, "templates");
+      // Third arg must be the company id (baked into the served URL) — the
+      // old "templates" label made the serving route 404 every image
+      const objectPath = await objectStorage.uploadObjectEntity(buffer, resolvedMime, req.user?.companyId ?? req.user?.dbUser?.companyId);
       res.json({ url: objectPath });
     } catch (error: any) {
       res.status(500).json({ error: error?.message || "Failed to upload image" });
@@ -13553,7 +13555,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         base64Body = dataUrlMatch[2];
       }
       const buffer = Buffer.from(base64Body, "base64");
-      const objectPath = await objectStorage.uploadObjectEntity(buffer, resolvedMime, "selections");
+      // Third arg is the COMPANY ID baked into the served URL — passing a
+      // folder-style label here ("selections") made every stored path fail
+      // the company check on the serving route, so no image ever rendered.
+      const companyId = (req.user as any)?.companyId ?? (req.user as any)?.dbUser?.companyId;
+      const objectPath = await objectStorage.uploadObjectEntity(buffer, resolvedMime, companyId);
       const existingAttachments = await storage.getOptionAttachments(req.params.id);
       const sortOrder = existingAttachments.length;
       const attachment = await storage.createOptionAttachment({
