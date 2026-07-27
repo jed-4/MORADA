@@ -33,6 +33,7 @@ import {
   PieChart,
   Gauge,
   GitBranch,
+  Rocket,
 } from "lucide-react";
 import { WidgetDefinition } from "@/types/widgets";
 
@@ -64,6 +65,7 @@ import PersonalTasksWidget from "@/components/user-workspace/widgets/PersonalTas
 import PersonalMetricsWidget from "@/components/user-workspace/widgets/PersonalMetricsWidget";
 import CrossProjectDeadlinesWidget from "@/components/user-workspace/widgets/CrossProjectDeadlinesWidget";
 import PersonalQuickActionsWidget from "@/components/user-workspace/widgets/PersonalQuickActionsWidget";
+import GettingStartedWidget from "@/components/user-workspace/widgets/GettingStartedWidget";
 import PersonalRemindersWidget from "@/components/user-workspace/widgets/PersonalRemindersWidget";
 import MyDayWidget from "@/components/user-workspace/widgets/MyDayWidget";
 import PersonalActivityWidget from "@/components/user-workspace/widgets/PersonalActivityWidget";
@@ -337,6 +339,18 @@ export const projectWidgetRegistry: Record<string, WidgetDefinition> = {
 // ---------------------------------------------------------------------------
 
 export const personalWidgetRegistry: Record<string, WidgetDefinition> = {
+  gettingStarted: {
+    type: "gettingStarted",
+    name: "Getting Started",
+    description: "First-run checklist: create a project, add a contact, build an estimate, invite your team",
+    icon: Rocket,
+    component: GettingStartedWidget,
+    defaultSize: "sm",
+    configurable: false,
+    accent: "purple",
+    defaultColumns: 3,
+    defaultRowSpan: 3,
+  },
   personalTasks: {
     type: "personalTasks",
     name: "My Tasks",

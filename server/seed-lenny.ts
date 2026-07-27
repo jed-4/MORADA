@@ -1683,3 +1683,63 @@ export async function seedLennyDemo(companyId: string, userId: string) {
     };
   });
 }
+
+// Everything the demo creates that we remove on "Clear demo data". Cost codes,
+// payment-terms options and the site-diary template are deliberately KEPT —
+// they're genuinely useful defaults, not sample content.
+export const DEMO_PROJECT_NAMES = [
+  SENTINEL_PROJECT_NAME,
+  "Dame Edna's Penthouse Makeover",
+  "Dundee's Walkabout Creek Pub Reno",
+];
+
+export const DEMO_CONTACT_NAMES = [
+  "Steve & Terri Irwin",
+  "Dame Edna Everage",
+  "Mick & Linda Dundee",
+  "Paul Hogan's Plumbing Co",
+  "Kylie Minogue Kitchens & Bathrooms",
+  "Keith Urban Underfloor Heating",
+  "Hugh Jackman Joinery & Cabinetry",
+  "Mr Squiggle Glass & Aluminium",
+  "Bluey's Building Supplies Pty Ltd",
+  "Alf Stewart Plumbing & Drainage",
+  "Chopper Read's Concrete & Intimidation",
+  "Russell Coight's Handyman Services",
+  "Chris Hemsworth Electrical Services",
+  "Captain Feathersword Excavations Pty Ltd",
+];
+
+const DEMO_TEAM_NAMES = ["Site Crew", "Finishing Crew"];
+
+/**
+ * Remove the demo dataset from a company. Safe to call repeatedly. Most child
+ * rows cascade from the demo projects; the exceptions are handled explicitly:
+ * bills/timesheets (project FK is "set null" — they'd be orphaned, not
+ * deleted), estimates/rfqs/rfis (plain FK — project delete would violate it),
+ * and notes (projectId is an untyped text column with no FK at all).
+ */
+export async function clearLennyDemo(companyId: string) {
+  return await db.transaction(async (tx) => {
+    const demoProjects = await tx
+      .select({ id: projects.id })
+      .from(projects)
+      .where(and(eq(projects.companyId, companyId), inArray(projects.name, DEMO_PROJECT_NAMES)));
+    const projectIds = demoProjects.map((p) => p.id);
+
+    if (projectIds.length > 0) {
+      await tx.delete(bills).where(and(eq(bills.companyId, companyId), inArray(bills.projectId, projectIds)));
+      await tx.delete(timesheets).where(inArray(timesheets.projectId, projectIds));
+      await tx.delete(estimates).where(inArray(estimates.projectId, projectIds));
+      await tx.delete(rfqs).where(inArray(rfqs.projectId, projectIds));
+      await tx.delete(rfis).where(inArray(rfis.projectId, projectIds));
+      await tx.delete(notes).where(and(eq(notes.companyId, companyId), inArray(notes.projectId, projectIds)));
+      await tx.delete(projects).where(inArray(projects.id, projectIds));
+    }
+
+    await tx.delete(contacts).where(and(eq(contacts.companyId, companyId), inArray(contacts.name, DEMO_CONTACT_NAMES)));
+    await tx.delete(teams).where(and(eq(teams.companyId, companyId), inArray(teams.name, DEMO_TEAM_NAMES)));
+
+    return { cleared: projectIds.length > 0, projects: projectIds.length };
+  });
+}

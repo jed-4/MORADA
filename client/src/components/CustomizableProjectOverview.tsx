@@ -824,15 +824,23 @@ export default function CustomizableProjectOverview() {
     );
   }
 
-  // Show loading state if no project is selected
+  // No project selected yet — guide the user instead of dead-ending.
   if (!currentProject) {
     return (
       <div className="flex flex-col flex-1 min-h-0" data-testid="customizable-project-overview">
-        <div className="flex-1 flex items-center justify-center text-muted-foreground">
-          <div className="text-center">
-            <h2 className="text-xl font-medium mb-2">No Project Selected</h2>
-            <p>Please select a project from the dropdown to view its dashboard.</p>
-          </div>
+        <div className="flex-1 flex items-center justify-center">
+          <EmptyState
+            icon={FolderOpen}
+            title="No project selected"
+            description="Pick a project from the dropdown above to see its dashboard, or head to Projects to create one."
+            action={{
+              label: "Go to Projects",
+              onClick: () => navigate("/business/projects"),
+              "data-testid": "button-go-to-projects",
+            }}
+            variant="inline"
+            data-testid="empty-state-no-project"
+          />
         </div>
       </div>
     );

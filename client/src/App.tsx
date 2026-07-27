@@ -8,6 +8,7 @@ import { SidebarProvider } from "@/components/ui/sidebar";
 import { ThemeProvider, useTheme } from "@/contexts/ThemeContext";
 import { ProjectProvider } from "@/contexts/ProjectContext";
 import Header from "@/components/Header";
+import { DemoDataBanner } from "@/components/DemoDataBanner";
 import { SidebarNav } from "@/components/SidebarNav";
 import { ClientRouteGuard } from "@/components/ClientRouteGuard";
 import { useState, useEffect, lazy, Suspense } from "react";
@@ -547,7 +548,10 @@ function AuthWrapper() {
             )}
             {/* Header in its own floating bar */}
             <Header />
-            
+
+            {/* Sample-data notice while the signup demo dataset is present */}
+            <DemoDataBanner />
+
             {/* Sidebar and main content below header */}
             <div className="flex flex-1 overflow-hidden gap-2">
               <SidebarNav />

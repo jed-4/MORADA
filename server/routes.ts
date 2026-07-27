@@ -10167,6 +10167,42 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Demo data: whether the sample dataset (seeded at signup) is still present.
+  // Drives the first-run "this is sample data" banner.
+  app.get('/api/demo-data/status', requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      const companyId = req.user?.companyId;
+      if (!companyId) return res.json({ seeded: false });
+      const { isDemoSeeded, DEMO_PROJECT_NAMES, DEMO_CONTACT_NAMES } = await import("./seed-lenny");
+      // Names let the client tell real data apart from sample data (e.g. the
+      // getting-started checklist only ticks "create a project" for a real one).
+      res.json({
+        seeded: await isDemoSeeded(companyId),
+        demoProjectNames: DEMO_PROJECT_NAMES,
+        demoContactNames: DEMO_CONTACT_NAMES,
+      });
+    } catch (error) {
+      console.error("[demo] status check failed:", error);
+      res.json({ seeded: false });
+    }
+  });
+
+  // Demo data: remove the sample dataset once the user is ready to work with
+  // real data. Keeps the useful defaults (cost codes, payment terms).
+  app.post('/api/demo-data/clear', requireAuth, requireTeamMember, requirePermission("admin.company", "delete"), async (req: any, res) => {
+    try {
+      const companyId = req.user?.companyId;
+      if (!companyId) return res.status(401).json({ message: "No company context" });
+      const { clearLennyDemo } = await import("./seed-lenny");
+      const result = await clearLennyDemo(companyId);
+      console.log(`[demo] cleared demo data for company ${companyId}:`, JSON.stringify(result));
+      res.json(result);
+    } catch (error) {
+      console.error("[demo] clear failed:", error);
+      res.status(500).json({ message: "Failed to clear demo data" });
+    }
+  });
+
   // Check if current user can approve bills
   app.get("/api/user/can-approve-bills", async (req, res) => {
     try {
