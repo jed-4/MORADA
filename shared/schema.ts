@@ -103,6 +103,11 @@ export const users = pgTable("users", {
   // Authentication fields
   passwordHash: text("password_hash"), // For email/password login (bcrypt)
   googleId: varchar("google_id").unique(), // For Google OAuth login
+
+  // Terms of Service acceptance — proof of agreement at registration.
+  // Null on accounts created before this was recorded (or via invite/OAuth).
+  termsAcceptedAt: timestamp("terms_accepted_at"),
+  termsVersion: text("terms_version"),
   
   // Application fields
   phone: text("phone"),

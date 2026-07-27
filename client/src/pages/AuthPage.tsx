@@ -136,6 +136,7 @@ export default function AuthPage() {
           password: values.password,
           firstName: values.firstName,
           lastName: values.lastName,
+          agreeToTerms: values.agreeToTerms,
         }),
       });
 

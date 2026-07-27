@@ -9,6 +9,10 @@ import * as signature from 'cookie-signature';
 
 const SALT_ROUNDS = 12;
 
+// Bump when the Terms of Service / Privacy Policy materially change so
+// users.terms_version records which version each account accepted.
+const TERMS_VERSION = '2026-07-27';
+
 function generateOAuthState(): string {
   const array = new Uint8Array(32);
   crypto.getRandomValues(array);
@@ -81,10 +85,14 @@ export async function setupAuth(app: Express) {
   // Email/password registration
   app.post('/api/auth/register', async (req: Request, res: Response) => {
     try {
-      const { email, password, firstName, lastName } = req.body;
+      const { email, password, firstName, lastName, agreeToTerms } = req.body;
 
       if (!email || !password) {
         return res.status(400).json({ message: 'Email and password are required' });
+      }
+
+      if (agreeToTerms !== true) {
+        return res.status(400).json({ message: 'You must agree to the Terms of Service and Privacy Policy to create an account' });
       }
 
       const passwordValidation = PasswordUtils.validatePasswordStrength(password);
@@ -105,6 +113,8 @@ export async function setupAuth(app: Express) {
         passwordHash,
         firstName: firstName || null,
         lastName: lastName || null,
+        termsAcceptedAt: new Date(),
+        termsVersion: TERMS_VERSION,
       });
 
       // Set session
