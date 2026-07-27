@@ -427,6 +427,26 @@ app.use((req, res, next) => {
     const { startXeroReconcileScheduler } = await import("./services/xeroReconcileScheduler");
     startXeroReconcileScheduler();
 
+    // Billing config audit: billing fails soft (no Stripe = no paywall), so
+    // surface misconfiguration loudly at boot — console always, Sentry in
+    // production — instead of discovering it when a customer's checkout fails.
+    try {
+      const { auditBillingConfig } = await import("./config/plans");
+      const audit = auditBillingConfig();
+      for (const note of audit.notes) log(`[billing-config] ${note}`);
+      for (const problem of audit.problems) {
+        console.warn(`[billing-config] WARNING: ${problem}`);
+      }
+      if (audit.problems.length > 0 && sentryEnabled && process.env.NODE_ENV === "production") {
+        Sentry.captureMessage(
+          `[billing-config] ${audit.problems.length} billing configuration problem(s) at boot`,
+          { level: "warning", extra: { problems: audit.problems } },
+        );
+      }
+    } catch (err) {
+      console.error("[billing-config] audit failed (non-fatal):", err);
+    }
+
     // Trial-expiry sweep: flip lapsed 'trialing' companies to 'expired'.
     // Runs once on boot and hourly thereafter. Guarded so a failure never
     // takes down startup.

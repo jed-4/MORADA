@@ -212,3 +212,50 @@ export function foundingStudioCouponId(): string | null {
 export function isFoundingProgrammeConfigured(): boolean {
   return FOUNDING_MEMBER_LIMIT > 0 && !!foundingStudioCouponId();
 }
+
+// ---- Boot-time config audit ----
+// Billing fails soft everywhere (no Stripe key = no paywall, placeholder
+// price IDs = checkout errors at trial end), so misconfiguration is silent
+// until a customer hits it. This audit makes the state loud at startup.
+export function auditBillingConfig(): {
+  stripeConfigured: boolean;
+  problems: string[];
+  notes: string[];
+} {
+  const problems: string[] = [];
+  const notes: string[] = [];
+  const stripeConfigured = !!process.env.STRIPE_SECRET_KEY;
+
+  if (!stripeConfigured) {
+    problems.push(
+      "STRIPE_SECRET_KEY is not set — billing is disabled and NO company will ever hit the paywall",
+    );
+  } else {
+    if (!process.env.STRIPE_WEBHOOK_SECRET) {
+      problems.push(
+        "STRIPE_WEBHOOK_SECRET is not set — subscription/payment webhooks will be ignored, so plan status will never update after checkout",
+      );
+    }
+    const missingPriceVars = PLAN_KEYS.flatMap((plan) =>
+      ["MONTHLY", "ANNUAL"].flatMap((cycle) => {
+        const envName = `STRIPE_PRICE_${plan.toUpperCase()}_${cycle}`;
+        return process.env[envName] ? [] : [envName];
+      }),
+    );
+    if (missingPriceVars.length > 0) {
+      problems.push(
+        `${missingPriceVars.length}/8 Stripe price env vars unset (placeholder IDs in use — checkout WILL fail at trial end): ${missingPriceVars.join(", ")}`,
+      );
+    }
+    notes.push(
+      isFoundingProgrammeConfigured()
+        ? `founding member programme is ON (limit ${FOUNDING_MEMBER_LIMIT})`
+        : "founding member programme is OFF (set STRIPE_FOUNDING_STUDIO_COUPON_ID to enable)",
+    );
+    if (!process.env.STRIPE_REFEREE_COUPON_ID) {
+      notes.push("STRIPE_REFEREE_COUPON_ID unset — referral signup discount disabled");
+    }
+  }
+
+  return { stripeConfigured, problems, notes };
+}
