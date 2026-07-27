@@ -1,11 +1,10 @@
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
-import { FileText, Plus, ChevronLeft, AlertCircle, Trash2, ExternalLink } from "lucide-react";
+import { FileText, Plus, ChevronLeft, AlertCircle, Trash2, ExternalLink, ArrowRight } from "lucide-react";
 import { useState, useEffect } from "react";
 import { WidgetProps } from "@/types/widgets";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -15,6 +14,16 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useLocation } from "wouter";
 import { cn } from "@/lib/utils";
+import NotionEditor from "@/components/NotionEditor";
+
+// Legacy notes only have plain-text content; lift it into simple paragraphs
+function plainToHtml(text: string): string {
+  const escaped = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  return escaped
+    .split("\n")
+    .map(line => `<p>${line || "<br>"}</p>`)
+    .join("");
+}
 
 type Visibility = "team_only" | "everyone" | "project_team" | "private";
 
@@ -42,7 +51,13 @@ function deriveTitle(title: string, content: string): string {
 function displayTitle(note: Note): string {
   const t = note.title?.trim();
   if (t && t !== "Project Note") return t;
-  return note.content?.trim().split("\n")[0]?.slice(0, 60) || "Untitled";
+  const body = note.contentText || note.content || "";
+  return body.trim().split("\n")[0]?.slice(0, 60) || "Untitled";
+}
+
+function previewLine(note: Note): string {
+  const body = (note.contentText || note.content || "").trim();
+  return body.split("\n")[0] || "";
 }
 
 const VISIBILITY_LABELS: Record<string, string> = {
@@ -115,7 +130,8 @@ export default function NotesWidget({ widget, onUpdate, isConfiguring, onCloseCo
 
   // Editor state (lives while drawer shows a single note)
   const [formTitle, setFormTitle] = useState("");
-  const [formContent, setFormContent] = useState("");
+  const [formHtml, setFormHtml] = useState("");
+  const [formText, setFormText] = useState("");
   const [formEmoji, setFormEmoji] = useState("");
   const [formVisibility, setFormVisibility] = useState<Visibility>("team_only");
 
@@ -150,7 +166,8 @@ export default function NotesWidget({ widget, onUpdate, isConfiguring, onCloseCo
 
   const openNote = (note: Note) => {
     setFormTitle(note.title === "Project Note" ? "" : (note.title || ""));
-    setFormContent(note.content || "");
+    setFormHtml(note.contentHtml || (note.content ? plainToHtml(note.content) : ""));
+    setFormText(note.contentText || note.content || "");
     setFormEmoji(noteIcon(note) || "");
     setFormVisibility((note.visibility as Visibility) || "team_only");
     setDrawerNoteId(note.id);
@@ -159,7 +176,8 @@ export default function NotesWidget({ widget, onUpdate, isConfiguring, onCloseCo
 
   const openNewNote = () => {
     setFormTitle("");
-    setFormContent("");
+    setFormHtml("");
+    setFormText("");
     setFormEmoji("");
     setFormVisibility("team_only");
     setDrawerNoteId("new");
@@ -176,8 +194,10 @@ export default function NotesWidget({ widget, onUpdate, isConfiguring, onCloseCo
   const createNoteMutation = useMutation({
     mutationFn: async () => {
       return await apiRequest("/api/notes", "POST", {
-        title: deriveTitle(formTitle, formContent),
-        content: formContent,
+        title: deriveTitle(formTitle, formText),
+        content: formText,
+        contentHtml: formHtml,
+        contentText: formText,
         visibility: formVisibility,
         projectId: currentProject?.id,
         type: "note",
@@ -196,8 +216,10 @@ export default function NotesWidget({ widget, onUpdate, isConfiguring, onCloseCo
   const updateNoteMutation = useMutation({
     mutationFn: async (note: Note) => {
       return await apiRequest(`/api/notes/${note.id}`, "PATCH", {
-        title: deriveTitle(formTitle, formContent),
-        content: formContent,
+        title: deriveTitle(formTitle, formText),
+        content: formText,
+        contentHtml: formHtml,
+        contentText: formText,
         visibility: formVisibility,
         customFields: { ...((note.customFields as Record<string, unknown>) || {}), icon: formEmoji || undefined },
       });
@@ -226,29 +248,46 @@ export default function NotesWidget({ widget, onUpdate, isConfiguring, onCloseCo
 
   const savePending = createNoteMutation.isPending || updateNoteMutation.isPending;
   const handleSaveNote = () => {
-    if (!formContent.trim() && !formTitle.trim()) return;
+    if (!formText.trim() && !formTitle.trim()) return;
     if (drawerNoteId === "new") createNoteMutation.mutate();
     else if (activeNote) updateNoteMutation.mutate(activeNote);
   };
 
-  // Header row: + opens the drawer straight into a new note
+  // Header row: + opens the drawer on a new note; hover arrow opens all notes
   useEffect(() => {
     onSetHeaderActions?.(
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            size="icon"
-            variant="default"
-            className="h-6 w-6"
-            onClick={openNewNote}
-            data-testid="notes-widget-add"
-            aria-label="Add note"
-          >
-            <Plus className="h-3.5 w-3.5" />
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent side="top">Add note</TooltipContent>
-      </Tooltip>
+      <>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              size="icon"
+              variant="default"
+              className="h-6 w-6"
+              onClick={openNewNote}
+              data-testid="notes-widget-add"
+              aria-label="Add note"
+            >
+              <Plus className="h-3.5 w-3.5" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="top">Add note</TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-6 w-6 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity"
+              onClick={openList}
+              data-testid="notes-widget-open-all"
+              aria-label="View all notes"
+            >
+              <ArrowRight className="h-3.5 w-3.5" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="top">All notes</TooltipContent>
+        </Tooltip>
+      </>
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentProject?.id]);
@@ -373,15 +412,6 @@ export default function NotesWidget({ widget, onUpdate, isConfiguring, onCloseCo
           </div>
         )}
 
-        {!isLoading && notes.length > 0 && (
-          <button
-            className="w-full text-xs text-muted-foreground hover:text-foreground py-1.5 text-center"
-            onClick={openList}
-            data-testid="notes-widget-view-all"
-          >
-            {notes.length > maxNotes ? `View all ${notes.length} notes` : "Open notes"}
-          </button>
-        )}
       </div>
 
       {/* Right-hand drawer: list of all notes, or a single note as a mini page */}
@@ -426,8 +456,8 @@ export default function NotesWidget({ widget, onUpdate, isConfiguring, onCloseCo
                       </span>
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium truncate">{displayTitle(note)}</p>
-                        {note.content?.trim() && note.content.trim() !== displayTitle(note) && (
-                          <p className="text-xs text-muted-foreground truncate">{note.content.trim().split("\n")[0]}</p>
+                        {previewLine(note) && previewLine(note) !== displayTitle(note) && (
+                          <p className="text-xs text-muted-foreground truncate">{previewLine(note)}</p>
                         )}
                       </div>
                       <span className="flex-shrink-0 text-[11px] text-muted-foreground pt-0.5">{noteDate(note)}</span>
@@ -461,7 +491,7 @@ export default function NotesWidget({ widget, onUpdate, isConfiguring, onCloseCo
                     size="sm"
                     className="h-7 text-xs"
                     onClick={handleSaveNote}
-                    disabled={savePending || (!formContent.trim() && !formTitle.trim())}
+                    disabled={savePending || (!formText.trim() && !formTitle.trim())}
                     data-testid="note-drawer-save"
                   >
                     {savePending ? "Saving..." : "Save"}
@@ -479,13 +509,14 @@ export default function NotesWidget({ widget, onUpdate, isConfiguring, onCloseCo
                   className="mt-2 w-full bg-transparent border-none outline-none text-xl font-semibold placeholder:text-muted-foreground/50"
                   data-testid="note-drawer-title"
                 />
-                <Textarea
-                  value={formContent}
-                  onChange={e => setFormContent(e.target.value)}
-                  placeholder="Write your note..."
-                  className="mt-2 flex-1 min-h-[220px] resize-none border-none shadow-none focus-visible:ring-0 p-0 text-sm leading-relaxed"
-                  data-testid="note-drawer-content"
-                />
+                <div className="mt-2 flex-1 min-h-[220px]" data-testid="note-drawer-content">
+                  <NotionEditor
+                    key={drawerNoteId ?? "new"}
+                    content={formHtml}
+                    onChange={(html, text) => { setFormHtml(html); setFormText(text); }}
+                    placeholder="Write your note, or press '/' for commands…"
+                  />
+                </div>
                 <div className="flex items-center justify-between pt-3 mt-2 border-t">
                   <Select value={formVisibility} onValueChange={(v: any) => setFormVisibility(v)}>
                     <SelectTrigger className="h-7 text-xs w-36 border-none shadow-none px-1 text-muted-foreground" data-testid="note-drawer-visibility">
