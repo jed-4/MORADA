@@ -144,11 +144,6 @@ export default function BillsSummaryWidget({ widget, onUpdate, isConfiguring, on
     );
   }
 
-  // Amount-based paid progress (was previously a count-based percentage)
-  const paidPct = metrics.totalBillsAmount > 0
-    ? (metrics.paidBillsIncGst / metrics.totalBillsAmount) * 100
-    : 0;
-
   const rows: Record<RowKey, JSX.Element> = {
     paid: (
       <LedgerRow
@@ -215,17 +210,6 @@ export default function BillsSummaryWidget({ widget, onUpdate, isConfiguring, on
         </span>
         <div className="text-xl font-semibold tabular-nums leading-tight" data-testid="bills-total-paid">
           {formatCurrency(metrics.paidBillsIncGst)}
-        </div>
-        <div className="flex items-center gap-2 mt-1.5">
-          <div className="h-1.5 rounded-full overflow-hidden flex-1" style={{ backgroundColor: "rgba(255,255,255,0.55)" }}>
-            <div
-              className="h-full rounded-full"
-              style={{ width: `${Math.min(100, paidPct)}%`, backgroundColor: "hsl(var(--amber))" }}
-            />
-          </div>
-          <span className="text-[10px] text-muted-foreground tabular-nums">
-            {paidPct.toFixed(0)}% of {formatCurrency(metrics.totalBillsAmount)}
-          </span>
         </div>
       </div>
 
