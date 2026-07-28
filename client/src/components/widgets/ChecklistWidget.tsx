@@ -560,8 +560,8 @@ function ChecklistAccordionItem({
     <Collapsible open={isExpanded} onOpenChange={onToggle}>
       <div className="border rounded-md overflow-hidden">
         <CollapsibleTrigger asChild>
-          <div 
-            className="flex items-center gap-2 py-1.5 px-2 hover-elevate cursor-pointer pt-[0px] pb-[0px]"
+          <div
+            className="group/inst flex items-center gap-2 py-1.5 px-2 hover-elevate cursor-pointer pt-[0px] pb-[0px]"
             data-testid={`checklist-widget-item-${checklist.id}`}
           >
             {isExpanded ? (
@@ -615,7 +615,7 @@ function ChecklistAccordionItem({
             <Button
               size="sm"
               variant="ghost"
-              className="h-5 w-5 p-0 flex-shrink-0"
+              className="h-5 w-5 p-0 flex-shrink-0 opacity-0 group-hover/inst:opacity-100 focus-visible:opacity-100 transition-opacity"
               onClick={(e) => {
                 e.stopPropagation();
                 setLocation(`/projects/${projectId}/checklists/${checklist.id}`);
@@ -639,7 +639,7 @@ function ChecklistAccordionItem({
               </button>
             ) : groups.length === 0 ? (
               <div className="text-data text-muted-foreground text-center py-1">
-                No groups in this checklist
+                No checklists in this group
               </div>
             ) : (
               [...groups]
@@ -695,6 +695,25 @@ function ChecklistGroupItem({
   currentUser?: { id: string; name?: string | null } | null;
 }) {
   const [, setLocation] = useLocation();
+  const [dateOpen, setDateOpen] = useState(false);
+
+  const dueDateMutation = useMutation({
+    mutationFn: async (dueDate: string | null) =>
+      apiRequest(`/api/checklist-instance-groups/${group.id}`, "PATCH", { dueDate }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/checklist-instances", checklistId, "groups"] });
+      setDateOpen(false);
+    },
+  });
+
+  const dueOverdue = (() => {
+    if (!group.dueDate || group.status === "completed") return false;
+    const due = new Date(group.dueDate);
+    due.setHours(0, 0, 0, 0);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return due < today;
+  })();
 
   const { data: items = [], isLoading: itemsLoading, isError: itemsError, refetch: refetchItems } = useQuery<ChecklistInstanceItem[]>({
     queryKey: ["/api/checklist-instance-groups", group.id, "items"],
@@ -783,8 +802,8 @@ function ChecklistGroupItem({
   return (
     <Collapsible open={isExpanded} onOpenChange={onToggle}>
       <CollapsibleTrigger asChild>
-        <div 
-          className="flex items-center gap-1 py-0.5 px-1 rounded hover-elevate cursor-pointer"
+        <div
+          className="group/chk flex items-center gap-1 py-0.5 px-1 rounded hover-elevate cursor-pointer"
           data-testid={`checklist-group-${group.id}`}
         >
           {isExpanded ? (
@@ -805,6 +824,44 @@ function ChecklistGroupItem({
             label={getStatusLabel(group.status)}
             className="text-2xs px-0.5 h-3 flex-shrink-0 no-default-hover-elevate no-default-active-elevate"
           />
+
+          <Popover open={dateOpen} onOpenChange={setDateOpen}>
+            <PopoverTrigger asChild>
+              <button
+                onClick={(e) => e.stopPropagation()}
+                className={`flex items-center gap-0.5 text-data flex-shrink-0 rounded px-0.5 hover:bg-muted ${
+                  group.dueDate
+                    ? (dueOverdue ? "" : "text-muted-foreground")
+                    : "opacity-0 group-hover/chk:opacity-100 text-muted-foreground transition-opacity"
+                }`}
+                style={dueOverdue ? { color: "hsl(11 52% 45%)" } : undefined}
+                aria-label="Set due date"
+                data-testid={`checklist-group-due-${group.id}`}
+              >
+                <Calendar className="h-2.5 w-2.5" />
+                {group.dueDate ? format(new Date(group.dueDate), "MMM d") : null}
+              </button>
+            </PopoverTrigger>
+            <PopoverContent className="w-auto p-2" align="end" onClick={(e) => e.stopPropagation()}>
+              <input
+                type="date"
+                className="h-7 rounded-md border border-border bg-background px-2 text-xs"
+                value={group.dueDate ? format(new Date(group.dueDate), "yyyy-MM-dd") : ""}
+                onChange={(e) => {
+                  if (e.target.value) dueDateMutation.mutate(new Date(e.target.value).toISOString());
+                }}
+                data-testid={`checklist-group-due-input-${group.id}`}
+              />
+              {group.dueDate && (
+                <button
+                  className="block w-full mt-1.5 text-[11px] text-muted-foreground hover:text-foreground text-center"
+                  onClick={() => dueDateMutation.mutate(null)}
+                >
+                  Clear due date
+                </button>
+              )}
+            </PopoverContent>
+          </Popover>
 
           {group.assigneeName && (
             <Tooltip>
