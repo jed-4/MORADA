@@ -400,6 +400,40 @@ export default function SelectionDetail() {
     },
   });
 
+  // Send-to-client: emails the portal link and stamps portalSentAt
+  const [sendDialogOpen, setSendDialogOpen] = useState(false);
+  const [sendTo, setSendTo] = useState("");
+  const [sendMessage, setSendMessage] = useState("");
+
+  const { data: clientContact } = useQuery<any>({
+    queryKey: ["/api/contacts", (currentProject as any)?.clientId],
+    enabled: sendDialogOpen && !!(currentProject as any)?.clientId,
+  });
+
+  useEffect(() => {
+    if (sendDialogOpen && !sendTo && clientContact?.email) {
+      setSendTo(clientContact.email);
+    }
+  }, [sendDialogOpen, clientContact?.email]);
+
+  const sendPortalMutation = useMutation({
+    mutationFn: async () =>
+      await apiRequest(`/api/selections/${id}/send-portal`, "POST", {
+        to: sendTo.trim(),
+        message: sendMessage.trim() || undefined,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/selections", id] });
+      setSendDialogOpen(false);
+      setSendMessage("");
+      toast({ title: "Sent to client", description: `Portal link emailed to ${sendTo.trim()}.` });
+    },
+    onError: (err: any) => {
+      const msg = err?.message?.replace(/^\d+:\s*/, "") ?? "Failed to send.";
+      toast({ title: "Send failed", description: msg, variant: "destructive" });
+    },
+  });
+
   const handleCopyPortalLink = () => {
     if (!selection?.portalToken) return;
     const url = `${window.location.origin}/portal/selections/${selection.portalToken}`;
@@ -1151,6 +1185,10 @@ export default function SelectionDetail() {
               <DropdownMenuItem onClick={() => setIsEditingDetails(true)}>
                 <Settings className="w-4 h-4 mr-2" />
                 Edit Details
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setSendDialogOpen(true)} data-testid="menu-send-to-client">
+                <Send className="w-4 h-4 mr-2" />
+                Send to Client
               </DropdownMenuItem>
               <DropdownMenuItem onClick={handleCopyPortalLink}>
                 <LinkIcon className="w-4 h-4 mr-2" />
@@ -3235,6 +3273,63 @@ export default function SelectionDetail() {
               <Button type="submit" disabled={!importUrl.trim() || scrapeUrlMutation.isPending} data-testid="button-import-url">
                 {scrapeUrlMutation.isPending && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
                 {scrapeUrlMutation.isPending ? "Reading page…" : "Import"}
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Send to Client */}
+      <Dialog open={sendDialogOpen} onOpenChange={(open) => { setSendDialogOpen(open); if (!open) setSendTo(""); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Send className="w-4 h-4" />
+              Send to client
+            </DialogTitle>
+            <DialogDescription>
+              Emails a link to the client portal where they can review the options and make their choice.
+            </DialogDescription>
+          </DialogHeader>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (sendTo.trim()) sendPortalMutation.mutate();
+            }}
+            className="space-y-3"
+          >
+            <div>
+              <label className="text-xs font-medium text-muted-foreground block mb-1">Client email</label>
+              <Input
+                type="email"
+                required
+                placeholder="client@example.com"
+                value={sendTo}
+                onChange={(e) => setSendTo(e.target.value)}
+                data-testid="input-send-to"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground block mb-1">Message (optional)</label>
+              <Textarea
+                placeholder="A note to include in the email…"
+                value={sendMessage}
+                onChange={(e) => setSendMessage(e.target.value)}
+                className="min-h-[70px] text-sm"
+              />
+            </div>
+            {(selection as any)?.portalSentAt && (
+              <p className="text-xs text-muted-foreground">
+                Last sent {format(new Date((selection as any).portalSentAt), "d MMM yyyy, h:mm a")}
+              </p>
+            )}
+            <div className="flex justify-end gap-2 pt-1">
+              <Button type="button" variant="outline" onClick={() => setSendDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={!sendTo.trim() || sendPortalMutation.isPending} data-testid="button-send-portal">
+                {sendPortalMutation.isPending && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
+                Send link
               </Button>
             </div>
           </form>
