@@ -1230,7 +1230,7 @@ async function generateSelectionPdf(
   const totalVariance = totalSelected - totalAllowance;
 
   const roomBlocks: string[] = [];
-  for (const [room, roomSelections] of rooms) {
+  for (const [room, roomSelections] of Array.from(rooms.entries())) {
     const selectionBlocks: string[] = [];
     for (const sel of roomSelections) {
       const chosen = sel.options?.find((o: any) => o.isSelectedByClient);
@@ -1342,7 +1342,9 @@ async function generateSelectionPdf(
   });
   try {
     const page = await browser.newPage();
-    await page.setContent(html, { waitUntil: "networkidle0" });
+    // Images are inlined data URIs, so "load" is sufficient (and
+    // "networkidle0" isn't in this puppeteer version's setContent types)
+    await page.setContent(html, { waitUntil: "load" });
     const pdf = await page.pdf({ format: "A4", printBackground: true, margin: { top: "12mm", bottom: "14mm", left: "10mm", right: "10mm" } });
     return Buffer.from(pdf);
   } finally {
