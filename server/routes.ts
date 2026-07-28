@@ -1146,70 +1146,192 @@ async function reconcileBillsWithXero(
 export { reconcileBillsWithXero };
 export type { ReconcileReport };
 
-// ── PDF helper — generates a Selections Schedule PDF via puppeteer ────────────
-async function generateSelectionPdf(selections: any[], projectName?: string): Promise<Buffer> {
+// Client price for a selection option in cents INC GST. Derived from
+// unitCost/gstInclusive/markupPercent — NEVER from totalCost, whose GST-ness
+// is unreliable (see syncSelectionCostingToAllowance). Returns null when the
+// option has no cost entered.
+function selectionOptionClientPriceCents(opt: any): number | null {
+  const rawUnit = opt?.unitCost;
+  if (rawUnit == null) return null;
+  const qty = Number(opt.quantity) || 1;
+  const markup = Number(opt.markupPercent) || 0;
+  const unitEx = opt.gstInclusive ? exGstFromInc(rawUnit) : rawUnit;
+  const totalEx = Math.round(unitEx * qty * (1 + markup / 100));
+  return incGstFromEx(totalEx);
+}
+
+// Inline an object-storage image as a data URI so it renders inside
+// Puppeteer's about:blank page (relative /objects paths never resolved there,
+// so PDFs have historically been image-less). Cached per render; oversized or
+// missing files degrade to no image.
+async function objectPathToDataUri(
+  filePath: string | null | undefined,
+  cache: Map<string, string | null>,
+): Promise<string | null> {
+  if (!filePath) return null;
+  if (cache.has(filePath)) return cache.get(filePath)!;
+  let result: string | null = null;
+  try {
+    const { ObjectStorageService } = await import("./replit_integrations/object_storage/objectStorage");
+    const svc = new ObjectStorageService();
+    const normalised = filePath.replace(/^\/objects\/company\/[^/]+\//, "/objects/");
+    const file = await svc.getObjectEntityFile(normalised);
+    const [meta] = await file.getMetadata();
+    const size = Number(meta.size || 0);
+    if (size > 0 && size <= 4 * 1024 * 1024) {
+      const [buf] = await file.download();
+      result = `data:${meta.contentType || "image/jpeg"};base64,${buf.toString("base64")}`;
+    }
+  } catch {
+    result = null;
+  }
+  cache.set(filePath, result);
+  return result;
+}
+
+function escapeHtml(s: unknown): string {
+  return String(s ?? "")
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+
+// ── PDF helper — branded, image-forward Selections Schedule via puppeteer ────
+// Morada design tokens: lavender #A890D4 accent, ink #2C2825, sage #82C8A2
+// (under allowance / selected), coral #DA988A (over allowance).
+async function generateSelectionPdf(
+  selections: any[],
+  opts: { projectName?: string; companyName?: string; companyLogoDataUri?: string | null } = {},
+): Promise<Buffer> {
   const puppeteer = await import("puppeteer");
-  const formatCents = (c: number | null | undefined) =>
+  const fmt = (c: number | null | undefined) =>
     c == null ? "—" : `$${(c / 100).toLocaleString("en-AU", { minimumFractionDigits: 2 })}`;
+  const imageCache = new Map<string, string | null>();
 
-  const selectionRows = selections.map((sel: any) => {
-    const selectedOpt = sel.options?.find((o: any) => o.isSelectedByClient);
-    const optionRows = (sel.options || []).map((o: any) => {
-      const isSelected = o.isSelectedByClient;
-      const firstImg = (o.attachments || [])[0];
-      return `
-        <tr style="background:${isSelected ? "#f0f9f0" : "white"}">
-          <td style="padding:6px;border:1px solid #e2e8f0">
-            ${firstImg ? `<img src="${firstImg.filePath}" style="width:40px;height:40px;object-fit:cover;border-radius:4px" />` : ""}
-          </td>
-          <td style="padding:6px;border:1px solid #e2e8f0">${isSelected ? "✓" : ""}</td>
-          <td style="padding:6px;border:1px solid #e2e8f0"><b>${o.name}</b>${o.brand ? `<br/><span style="color:#64748b;font-size:11px">${o.brand}${o.sku ? ` · ${o.sku}` : ""}</span>` : ""}</td>
-          <td style="padding:6px;border:1px solid #e2e8f0;text-align:right">${formatCents(o.totalCost)}</td>
-        </tr>`;
-    }).join("");
+  // Group by room, preserving incoming order
+  const rooms = new Map<string, any[]>();
+  for (const sel of selections) {
+    const room = sel.room?.trim() || "General";
+    if (!rooms.has(room)) rooms.set(room, []);
+    rooms.get(room)!.push(sel);
+  }
 
-    const allowance = sel.allowance ? formatCents(sel.allowance) : "—";
-    const actual = selectedOpt ? formatCents(selectedOpt.totalCost) : "—";
-    const variance = sel.allowance && selectedOpt?.totalCost
-      ? formatCents(selectedOpt.totalCost - sel.allowance) : "—";
+  // Budget summary across selections that carry an allowance
+  let totalAllowance = 0, totalSelected = 0;
+  for (const sel of selections) {
+    const chosen = sel.options?.find((o: any) => o.isSelectedByClient);
+    const price = chosen ? selectionOptionClientPriceCents(chosen) : null;
+    if (sel.allowance) {
+      totalAllowance += sel.allowance;
+      if (price != null) totalSelected += price;
+    }
+  }
+  const totalVariance = totalSelected - totalAllowance;
 
-    const approvedRow = sel.options?.find((o: any) => o.approvedAt);
-    const approvalText = approvedRow
-      ? `Approved by ${approvedRow.approvedBy || "Admin"} on ${new Date(approvedRow.approvedAt).toLocaleDateString("en-AU")}`
-      : "";
+  const roomBlocks: string[] = [];
+  for (const [room, roomSelections] of rooms) {
+    const selectionBlocks: string[] = [];
+    for (const sel of roomSelections) {
+      const chosen = sel.options?.find((o: any) => o.isSelectedByClient);
+      const chosenPrice = chosen ? selectionOptionClientPriceCents(chosen) : null;
+      const varianceCents = sel.allowance && chosenPrice != null ? chosenPrice - sel.allowance : null;
 
-    return `
-      <div style="page-break-inside:avoid;margin-bottom:24px">
-        <h3 style="margin:0 0 4px;font-size:14px;color:#1e293b">${sel.name}</h3>
-        <div style="font-size:11px;color:#64748b;margin-bottom:8px">${[sel.category, sel.room].filter(Boolean).join(" · ")}</div>
-        <div style="display:flex;gap:20px;font-size:11px;margin-bottom:8px">
-          <span>Allowance: <b>${allowance}</b></span>
-          <span>Selected: <b>${actual}</b></span>
-          <span>Variance: <b>${variance}</b></span>
-          ${sel.deadline ? `<span>Deadline: <b>${new Date(sel.deadline).toLocaleDateString("en-AU")}</b></span>` : ""}
-        </div>
-        <table style="width:100%;border-collapse:collapse;font-size:12px">
-          <thead>
-            <tr style="background:#f8fafc">
-              <th style="padding:6px;border:1px solid #e2e8f0;width:50px">Img</th>
-              <th style="padding:6px;border:1px solid #e2e8f0;width:30px">✓</th>
-              <th style="padding:6px;border:1px solid #e2e8f0;text-align:left">Product</th>
-              <th style="padding:6px;border:1px solid #e2e8f0;text-align:right">Price</th>
-            </tr>
-          </thead>
-          <tbody>${optionRows}</tbody>
-        </table>
-        ${approvalText ? `<div style="font-size:11px;color:#64748b;margin-top:6px">${approvalText}</div>` : ""}
-      </div>`;
-  }).join("");
+      const optionCards: string[] = [];
+      for (const o of sel.options || []) {
+        const price = selectionOptionClientPriceCents(o);
+        const isSelected = !!o.isSelectedByClient;
+        const isApproved = !!o.approvedAt;
+        const firstImage = (o.attachments || []).find((a: any) =>
+          a.fileType === "image" || /\.(jpe?g|png|gif|webp|avif)$/i.test(a.fileName || ""));
+        const imgUri = await objectPathToDataUri(firstImage?.filePath, imageCache);
+        const focal = firstImage ? `${firstImage.thumbnailX ?? 50}% ${firstImage.thumbnailY ?? 50}%` : "50% 50%";
+        optionCards.push(`
+          <td style="width:${Math.max(25, Math.floor(100 / Math.max(sel.options.length, 1)))}%;vertical-align:top;padding:0 6px 0 0">
+            <div style="border:1.5px solid ${isSelected ? "#82C8A2" : "#EAEAE8"};border-radius:8px;overflow:hidden;background:${isSelected ? "#F4FBF7" : "#fff"}">
+              <div style="height:96px;background:#F5F4F0;text-align:center;overflow:hidden">
+                ${imgUri
+                  ? `<img src="${imgUri}" style="width:100%;height:96px;object-fit:cover;object-position:${focal}"/>`
+                  : `<div style="padding-top:40px;color:#B9B4AE;font-size:10px">no image</div>`}
+              </div>
+              <div style="padding:7px 8px 8px">
+                <div style="font-size:10.5px;font-weight:700;color:#2C2825;line-height:1.25">${escapeHtml(o.name)}</div>
+                ${o.brand || o.sku ? `<div style="font-size:9px;color:#6B6560;margin-top:1px">${escapeHtml([o.brand, o.sku].filter(Boolean).join(" · "))}</div>` : ""}
+                <div style="margin-top:5px;font-size:10px">
+                  ${price != null ? `<b>${fmt(price)}</b> <span style="color:#6B6560;font-size:8.5px">inc GST</span>` : `<span style="color:#6B6560">POA</span>`}
+                </div>
+                ${isApproved
+                  ? `<div style="display:inline-block;margin-top:4px;background:#E0F5E9;color:#3E7A58;border-radius:99px;padding:1px 7px;font-size:8.5px;font-weight:700">APPROVED</div>`
+                  : isSelected
+                    ? `<div style="display:inline-block;margin-top:4px;background:#F2EEF9;color:#7A5FA8;border-radius:99px;padding:1px 7px;font-size:8.5px;font-weight:700">CLIENT CHOICE</div>`
+                    : ""}
+              </div>
+            </div>
+          </td>`);
+      }
 
+      const approvedRow = sel.options?.find((o: any) => o.approvedAt);
+      selectionBlocks.push(`
+        <div style="page-break-inside:avoid;margin:0 0 18px;border:1px solid #EAEAE8;border-left:3px solid #A890D4;border-radius:8px;padding:12px 14px;background:#fff">
+          <table style="width:100%;border-collapse:collapse"><tr>
+            <td style="vertical-align:top">
+              <div style="font-size:13px;font-weight:700;color:#2C2825">${escapeHtml(sel.name)}</div>
+              <div style="font-size:9.5px;color:#6B6560;margin-top:1px">
+                ${escapeHtml([sel.category, sel.deadline ? `Due ${new Date(sel.deadline).toLocaleDateString("en-AU")}` : null].filter(Boolean).join(" · "))}
+              </div>
+            </td>
+            <td style="vertical-align:top;text-align:right;font-size:9.5px;color:#6B6560;white-space:nowrap">
+              ${sel.allowance ? `Allowance <b style="color:#2C2825">${fmt(sel.allowance)}</b>` : ""}
+              ${chosenPrice != null ? ` &nbsp; Selected <b style="color:#2C2825">${fmt(chosenPrice)}</b>` : ""}
+              ${varianceCents != null ? ` &nbsp; <b style="color:${varianceCents > 0 ? "#B4685A" : "#3E7A58"}">${varianceCents > 0 ? "+" : ""}${fmt(varianceCents)}</b>` : ""}
+            </td>
+          </tr></table>
+          <table style="width:100%;border-collapse:collapse;margin-top:9px"><tr>${optionCards.join("")}</tr></table>
+          ${approvedRow ? `<div style="font-size:9px;color:#6B6560;margin-top:7px">Approved by ${escapeHtml(approvedRow.approvedBy || "Admin")} on ${new Date(approvedRow.approvedAt).toLocaleDateString("en-AU")}</div>` : ""}
+        </div>`);
+    }
+    roomBlocks.push(`
+      <div style="margin-bottom:6px">
+        <div style="font-size:11px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#7A5FA8;margin:14px 0 8px">${escapeHtml(room)}</div>
+        ${selectionBlocks.join("")}
+      </div>`);
+  }
+
+  const hasBudget = totalAllowance > 0;
   const html = `<!DOCTYPE html><html><head><meta charset="utf-8"/>
-    <style>body{font-family:Arial,sans-serif;color:#1e293b;padding:24px;max-width:800px;margin:auto}
-    h1{font-size:20px;margin-bottom:4px}h2{font-size:15px;color:#64748b;margin:0 0 20px}</style>
+    <style>
+      body{font-family:Helvetica,Arial,sans-serif;color:#2C2825;margin:0;padding:26px 30px;background:#FAFAF8}
+      *{box-sizing:border-box}
+    </style>
   </head><body>
-    <h1>Selections Schedule${projectName ? ` — ${projectName}` : ""}</h1>
-    <h2>Generated ${new Date().toLocaleDateString("en-AU", { day: "numeric", month: "long", year: "numeric" })} · ${selections.length} selection(s)</h2>
-    ${selectionRows}
+    <table style="width:100%;border-collapse:collapse;margin-bottom:4px"><tr>
+      <td style="vertical-align:middle">
+        <div style="font-size:21px;font-weight:800;color:#2C2825">Selections Schedule</div>
+        ${opts.projectName ? `<div style="font-size:12px;color:#6B6560;margin-top:2px">${escapeHtml(opts.projectName)}</div>` : ""}
+      </td>
+      <td style="vertical-align:middle;text-align:right">
+        ${opts.companyLogoDataUri
+          ? `<img src="${opts.companyLogoDataUri}" style="max-height:44px;max-width:170px;object-fit:contain"/>`
+          : opts.companyName ? `<div style="font-size:14px;font-weight:700;color:#7A5FA8">${escapeHtml(opts.companyName)}</div>` : ""}
+      </td>
+    </tr></table>
+    <div style="font-size:9.5px;color:#6B6560;margin-bottom:14px">
+      Generated ${new Date().toLocaleDateString("en-AU", { day: "numeric", month: "long", year: "numeric" })} · ${selections.length} selection${selections.length === 1 ? "" : "s"} · All prices inc GST
+    </div>
+    ${hasBudget ? `
+    <table style="width:100%;border-collapse:separate;border-spacing:8px 0;margin:0 -8px 8px"><tr>
+      <td style="width:33%;background:#fff;border:1px solid #EAEAE8;border-radius:8px;padding:9px 12px">
+        <div style="font-size:8.5px;letter-spacing:0.08em;text-transform:uppercase;color:#6B6560">Total allowance</div>
+        <div style="font-size:15px;font-weight:800;margin-top:1px">${fmt(totalAllowance)}</div>
+      </td>
+      <td style="width:33%;background:#fff;border:1px solid #EAEAE8;border-radius:8px;padding:9px 12px">
+        <div style="font-size:8.5px;letter-spacing:0.08em;text-transform:uppercase;color:#6B6560">Total selected</div>
+        <div style="font-size:15px;font-weight:800;margin-top:1px">${fmt(totalSelected)}</div>
+      </td>
+      <td style="width:33%;background:${totalVariance > 0 ? "#F7E5E2" : "#E0F5E9"};border:1px solid #EAEAE8;border-radius:8px;padding:9px 12px">
+        <div style="font-size:8.5px;letter-spacing:0.08em;text-transform:uppercase;color:#6B6560">Variance</div>
+        <div style="font-size:15px;font-weight:800;margin-top:1px;color:${totalVariance > 0 ? "#B4685A" : "#3E7A58"}">${totalVariance > 0 ? "+" : ""}${fmt(totalVariance)}</div>
+      </td>
+    </tr></table>` : ""}
+    ${roomBlocks.join("")}
   </body></html>`;
 
   const browser = await puppeteer.default.launch({
@@ -1219,7 +1341,7 @@ async function generateSelectionPdf(selections: any[], projectName?: string): Pr
   try {
     const page = await browser.newPage();
     await page.setContent(html, { waitUntil: "networkidle0" });
-    const pdf = await page.pdf({ format: "A4", margin: { top: "20mm", bottom: "20mm", left: "20mm", right: "20mm" } });
+    const pdf = await page.pdf({ format: "A4", printBackground: true, margin: { top: "12mm", bottom: "14mm", left: "10mm", right: "10mm" } });
     return Buffer.from(pdf);
   } finally {
     await browser.close();
@@ -13765,6 +13887,68 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Email the portal link to the client and stamp portalSentAt
+  app.post("/api/selections/:id/send-portal", requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      const selection = await storage.getSelection(req.params.id);
+      if (!selection) return res.status(404).json({ error: "Selection not found" });
+      if (!(await enforceProjectCompany(req, res, selection.projectId, "Selection not found"))) return;
+
+      const { to, message } = req.body ?? {};
+      if (!to || typeof to !== "string" || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to.trim())) {
+        return res.status(400).json({ error: "A valid recipient email is required" });
+      }
+
+      let token = selection.portalToken;
+      if (!token) {
+        token = randomBytes(24).toString("hex");
+        await storage.updateSelection(selection.id, { portalToken: token } as any);
+      }
+      const host = req.headers.origin || `${req.protocol}://${req.headers.host}`;
+      const url = `${host}/portal/selections/${token}`;
+
+      const [project, company] = await Promise.all([
+        storage.getProject(selection.projectId),
+        storage.getCompany(req.user.companyId),
+      ]);
+      const fromName = company?.name || "Morada";
+      const optionCount = (await storage.getSelectionOptions(selection.id)).filter((o: any) => o.visibleToClient !== false).length;
+
+      const html = `
+        <div style="font-family:Helvetica,Arial,sans-serif;max-width:560px;margin:auto;color:#2C2825">
+          <div style="padding:22px 26px;border:1px solid #EAEAE8;border-radius:12px;background:#FAFAF8">
+            <div style="font-size:13px;color:#7A5FA8;font-weight:700;margin-bottom:14px">${escapeHtml(fromName)}</div>
+            <div style="font-size:19px;font-weight:800;margin-bottom:6px">Your selection is ready to review</div>
+            <div style="font-size:13.5px;color:#6B6560;line-height:1.5;margin-bottom:4px">
+              <b style="color:#2C2825">${escapeHtml(selection.name)}</b>${project?.name ? ` — ${escapeHtml(project.name)}` : ""}
+            </div>
+            <div style="font-size:13px;color:#6B6560;margin-bottom:18px">${optionCount} option${optionCount === 1 ? "" : "s"} to choose from${selection.deadline ? ` · please respond by ${new Date(selection.deadline).toLocaleDateString("en-AU")}` : ""}.</div>
+            ${message && typeof message === "string" && message.trim()
+              ? `<div style="font-size:13.5px;line-height:1.55;background:#fff;border:1px solid #EAEAE8;border-radius:8px;padding:12px 14px;margin-bottom:18px;white-space:pre-wrap">${escapeHtml(message.trim().slice(0, 2000))}</div>`
+              : ""}
+            <a href="${url}" style="display:inline-block;background:#A890D4;color:#fff;text-decoration:none;font-weight:700;font-size:14px;padding:11px 22px;border-radius:8px">View &amp; choose</a>
+            <div style="font-size:11px;color:#6B6560;margin-top:16px">Or copy this link: <a href="${url}" style="color:#7A5FA8">${url}</a></div>
+          </div>
+        </div>`;
+
+      await sendGenericEmail({
+        to: to.trim(),
+        subject: `Selection ready for your review — ${selection.name}`,
+        html,
+        from: `${fromName} via Morada <noreply@moradaco.com.au>`,
+        replyTo: req.user.email,
+        userId: req.user.id,
+      });
+
+      const sentAt = new Date();
+      await storage.updateSelection(selection.id, { portalSentAt: sentAt } as any);
+      res.json({ success: true, url, sentAt });
+    } catch (error) {
+      console.error("Error sending selection portal link:", error);
+      res.status(500).json({ error: "Failed to send portal link" });
+    }
+  });
+
   // ── Product Library Routes ─────────────────────────────────────────────────
   app.get("/api/products", requireAuth, requireTeamMember, async (req: any, res) => {
     try {
@@ -14075,7 +14259,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const selection = await storage.getSelectionWithOptions(req.params.id);
       if (!selection) return res.status(404).json({ error: "Selection not found" });
       if (!(await enforceProjectCompany(req, res, selection.projectId, "Selection not found"))) return;
-      const pdfBuffer = await generateSelectionPdf([selection]);
+      const [project, company] = await Promise.all([
+        storage.getProject(selection.projectId),
+        storage.getCompany(req.user!.companyId!),
+      ]);
+      const pdfBuffer = await generateSelectionPdf([selection], {
+        projectName: project?.name,
+        companyName: company?.name,
+        companyLogoDataUri: await objectPathToDataUri((company as any)?.logoUrl, new Map()),
+      });
       res.set("Content-Type", "application/pdf");
       res.set("Content-Disposition", `attachment; filename="${selection.name.replace(/[^a-z0-9]/gi, "_")}.pdf"`);
       res.send(pdfBuffer);
@@ -14090,8 +14282,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!(await enforceProjectCompany(req, res, req.params.projectId, "Project not found"))) return;
       const selections = (await storage.getSelectionsWithOptions(req.params.projectId))
         .sort((a: any, b: any) => String(a.name).localeCompare(String(b.name)));
-      const project = await storage.getProject(req.params.projectId);
-      const pdfBuffer = await generateSelectionPdf(selections, project?.name);
+      const [project, company] = await Promise.all([
+        storage.getProject(req.params.projectId),
+        storage.getCompany(req.user!.companyId!),
+      ]);
+      const pdfBuffer = await generateSelectionPdf(selections, {
+        projectName: project?.name,
+        companyName: company?.name,
+        companyLogoDataUri: await objectPathToDataUri((company as any)?.logoUrl, new Map()),
+      });
       res.set("Content-Type", "application/pdf");
       const fname = (project?.name ?? "selections").replace(/[^a-z0-9]/gi, "_");
       res.set("Content-Disposition", `attachment; filename="${fname}_schedule.pdf"`);
@@ -15629,20 +15828,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Public Selection Portal (no auth required - clients access via token link)
-  // Client price for a selection option in cents INC GST. Derived from
-  // unitCost/gstInclusive/markupPercent — NEVER from totalCost, whose GST-ness
-  // is unreliable (see syncSelectionCostingToAllowance). Returns null when the
-  // option has no cost entered.
-  function selectionOptionClientPriceCents(opt: any): number | null {
-    const rawUnit = opt?.unitCost;
-    if (rawUnit == null) return null;
-    const qty = Number(opt.quantity) || 1;
-    const markup = Number(opt.markupPercent) || 0;
-    const unitEx = opt.gstInclusive ? exGstFromInc(rawUnit) : rawUnit;
-    const totalEx = Math.round(unitEx * qty * (1 + markup / 100));
-    return incGstFromEx(totalEx);
-  }
-
   // A selection is closed to further client changes once an option is approved
   // (locked) or the selection has moved into procurement.
   function isSelectionLockedForClient(sel: any, options: any[]): boolean {
@@ -15790,6 +15975,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (prevClientSelection && (sel as any).clientCanChange === false) {
         return res.status(403).json({ error: "Your choice has been submitted and can no longer be changed. Please contact your builder." });
       }
+      const prevChosen = allOptions.find(o => o.isSelectedByClient);
       if (prevClientSelection) await storage.deleteClientSelection(prevClientSelection.id);
 
       // Move the client's choice: clear any current choice, set the new one
@@ -15813,6 +15999,45 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // A choice moves a still-draft selection into pending review
       if ((sel as any).status === "draft") {
         await storage.updateSelection(sel.id, { status: "pending" } as any);
+      }
+
+      // Timestamped decision log + builder notification. Non-fatal — the
+      // client's choice is already saved.
+      try {
+        const clientName = typeof req.body?.clientName === "string" && req.body.clientName.trim()
+          ? req.body.clientName.trim().slice(0, 100) : "Client";
+        const priceCents = selectionOptionClientPriceCents(option);
+        const priceText = priceCents != null && (sel as any).clientCanSeePrice
+          ? ` ($${(priceCents / 100).toLocaleString("en-AU", { minimumFractionDigits: 2 })} inc GST)` : "";
+        const changeText = prevChosen && prevChosen.id !== optionId
+          ? ` — changed from “${prevChosen.name}”` : "";
+        await storage.createSelectionComment({
+          selectionId: sel.id,
+          content: `${clientName} chose “${option.name}”${priceText}${changeText}`,
+          attachmentUrls: [],
+          attachmentFileNames: [],
+          createdById: null,
+          createdByName: "Decision log",
+          isClientComment: false,
+        });
+
+        if ((sel as any).createdBy) {
+          const notification = await storage.createNotification({
+            userId: (sel as any).createdBy,
+            companyId: (await storage.getProject(sel.projectId))?.companyId!,
+            type: "selection_client_choice",
+            title: "Client made a selection",
+            message: `${clientName} chose “${option.name}” on ${(sel as any).name}${changeText ? " (changed)" : ""}`,
+            link: `/projects/${sel.projectId}/selections/${sel.id}`,
+            entityType: "selection",
+            entityId: sel.id,
+            isRead: false,
+            createdByUserId: null,
+          });
+          emitNotification((sel as any).createdBy, notification);
+        }
+      } catch (_logErr) {
+        // Non-fatal
       }
 
       // Maintain the auto-generated draft over-allowance variation for this
@@ -15895,6 +16120,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
         createdByName: (typeof clientName === "string" && clientName.trim() ? clientName.trim().slice(0, 100) : "Client"),
         isClientComment: true,
       });
+
+      // Notify the builder of client comments (non-fatal)
+      try {
+        if ((sel as any).createdBy) {
+          const notification = await storage.createNotification({
+            userId: (sel as any).createdBy,
+            companyId: (await storage.getProject(sel.projectId))?.companyId!,
+            type: "selection_client_comment",
+            title: "Client commented on a selection",
+            message: `${comment.createdByName}: ${content.trim().slice(0, 120)}${content.trim().length > 120 ? "…" : ""} — ${(sel as any).name}`,
+            link: `/projects/${sel.projectId}/selections/${sel.id}`,
+            entityType: "selection",
+            entityId: sel.id,
+            isRead: false,
+            createdByUserId: null,
+          });
+          emitNotification((sel as any).createdBy, notification);
+        }
+      } catch (_notifErr) {
+        // Non-fatal
+      }
+
       res.status(201).json(comment);
     } catch (error) {
       res.status(500).json({ error: "Failed to post comment" });
