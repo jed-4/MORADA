@@ -49,6 +49,11 @@ type StatusFilter = "all" | "active" | "in_progress" | "completed" | "actionable
 
 const COLLAPSED_STATE_KEY = "checklist-widget-collapsed";
 
+// Stable fallback: a literal [] default in the query destructure creates a
+// new array identity every render while the query loads, which re-fires the
+// header-actions effect and loops the dashboard into "maximum update depth".
+const EMPTY_CHECKLISTS: ChecklistInstanceWithCounts[] = [];
+
 function getStoredCollapsedState(projectId: string): { checklists: string[]; groups: string[] } {
   try {
     const stored = localStorage.getItem(`${COLLAPSED_STATE_KEY}-${projectId}`);
@@ -103,7 +108,7 @@ export default function ChecklistWidget({ widget, onUpdate, isConfiguring, onClo
   }, [currentProject?.id]);
   const [, setLocation] = useLocation();
   
-  const { data: checklists = [], isLoading, isError, refetch } = useQuery<ChecklistInstanceWithCounts[]>({
+  const { data: checklists = EMPTY_CHECKLISTS, isLoading, isError, refetch } = useQuery<ChecklistInstanceWithCounts[]>({
     queryKey: ["/api/checklist-instances", currentProject?.id],
     queryFn: async () => {
       if (!currentProject?.id) return [];
@@ -144,7 +149,13 @@ export default function ChecklistWidget({ widget, onUpdate, isConfiguring, onClo
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [checklists, statusFilter, assigneeFilter, hideCompletedGroups]);
 
-  const displayChecklists = maxChecklists > 0 ? filteredChecklists.slice(0, maxChecklists) : filteredChecklists;
+  // Memoized so the header-actions effect (which depends on it) doesn't
+  // fire on every render — a fresh array identity each render caused an
+  // infinite update loop with the parent's header-actions state.
+  const displayChecklists = useMemo(
+    () => (maxChecklists > 0 ? filteredChecklists.slice(0, maxChecklists) : filteredChecklists),
+    [filteredChecklists, maxChecklists],
+  );
 
 
   const toggleChecklist = (id: string) => {

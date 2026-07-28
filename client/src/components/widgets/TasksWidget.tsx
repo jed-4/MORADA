@@ -43,6 +43,12 @@ const PRIORITY_HEX: Record<string, string> = {
   low: "#70CAD0",
 };
 
+// Stable fallbacks: literal [] defaults mint a new identity every render
+// while queries load, which would re-fire the header-actions effect via
+// priorityOptions and loop the dashboard.
+const EMPTY_TASKS: Task[] = [];
+const EMPTY_CATEGORIES: FieldCategoryWithOptions[] = [];
+
 const DUE_BUCKETS = [
   { key: "overdue", label: "Overdue", color: "#DA988A" },
   { key: "today", label: "Today", color: "#D4B670" },
@@ -290,7 +296,7 @@ export default function TasksWidget({ widget, onUpdate, isConfiguring, onCloseCo
   const [draft, setDraft] = useState<Record<string, unknown> | null>(null);
   useEffect(() => { if (!isConfiguring) setDraft(null); }, [isConfiguring]);
 
-  const { data: allTasks = [], isLoading, isError, refetch } = useQuery<Task[]>({
+  const { data: allTasks = EMPTY_TASKS, isLoading, isError, refetch } = useQuery<Task[]>({
     queryKey: ["/api/tasks", currentProject?.id],
     queryFn: async () => {
       if (!currentProject?.id) return [];
@@ -302,7 +308,7 @@ export default function TasksWidget({ widget, onUpdate, isConfiguring, onCloseCo
   });
 
   // Task statuses/priorities live in field categories; tasks store the option KEY.
-  const { data: fieldCategories = [] } = useQuery<FieldCategoryWithOptions[]>({
+  const { data: fieldCategories = EMPTY_CATEGORIES } = useQuery<FieldCategoryWithOptions[]>({
     queryKey: ["/api/field-categories"],
     staleTime: 5 * 60 * 1000,
   });
