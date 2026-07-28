@@ -3212,6 +3212,7 @@ export const checklistInstanceGroups = pgTable("checklist_instance_groups", {
   priority: text("priority").default("low"), // "low" | "medium" | "high" | "urgent"
   assigneeId: varchar("assignee_id").references(() => users.id, { onDelete: "set null" }),
   assigneeName: text("assignee_name"),
+  dueDate: timestamp("due_date"),
   linkedTaskId: varchar("linked_task_id"),
   linkedScheduleItemId: varchar("linked_schedule_item_id"),
   completedAt: timestamp("completed_at"),
@@ -3231,6 +3232,7 @@ export const insertChecklistInstanceGroupSchema = createInsertSchema(checklistIn
   priority: z.enum(["low", "medium", "high", "urgent"]).default("low"),
   assigneeId: z.string().nullish(),
   assigneeName: z.string().nullish(),
+  dueDate: z.coerce.date().optional().nullable(),
   linkedTaskId: z.string().nullish(),
   linkedScheduleItemId: z.string().nullish(),
   completedAt: z.coerce.date().nullish(),
