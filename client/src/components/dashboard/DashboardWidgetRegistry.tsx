@@ -33,6 +33,7 @@ import {
   PieChart,
   Gauge,
   GitBranch,
+  MessageSquare,
 } from "lucide-react";
 import { WidgetDefinition } from "@/types/widgets";
 
@@ -43,6 +44,7 @@ import NotesWidget from "@/components/widgets/NotesWidget";
 import ScheduleWidget from "@/components/widgets/ScheduleWidget";
 import ActivityWidget from "@/components/widgets/ActivityWidget";
 import ChecklistWidget from "@/components/widgets/ChecklistWidget";
+import MessagesWidget from "@/components/widgets/MessagesWidget";
 import BillsSummaryWidget from "@/components/widgets/BillsSummaryWidget";
 import VariationsSummaryWidget from "@/components/widgets/VariationsSummaryWidget";
 import InvoicesSummaryWidget from "@/components/widgets/InvoicesSummaryWidget";
@@ -142,7 +144,16 @@ export const projectWidgetRegistry: Record<string, WidgetDefinition> = {
     icon: Activity,
     component: ActivityWidget,
     defaultSize: "md",
-    configurable: false,
+    configurable: true,
+  },
+  messages: {
+    type: "messages",
+    name: "Messages",
+    description: "Follow and reply to a project chat",
+    icon: MessageSquare,
+    component: MessagesWidget,
+    defaultSize: "md",
+    configurable: true,
   },
   checklist: {
     type: "checklist",
