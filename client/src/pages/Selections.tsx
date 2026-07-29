@@ -91,135 +91,25 @@ import {
   Link as LinkIcon,
 } from "lucide-react";
 import { format, differenceInCalendarDays } from "date-fns";
+import {
+  type DerivedStatus,
+  getDerivedStatus,
+  getSelectedOption,
+  getActualCents,
+  formatMoneyCents,
+  formatVarianceCents,
+  ProgressStrip,
+} from "@/components/selections/selectionHelpers";
+import {
+  SortableSelectionRow,
+  type SelectionColumnVisibility,
+} from "@/components/selections/SelectionRow";
+import { SelectionCard } from "@/components/selections/SelectionCard";
+import { SelectionDrawer } from "@/components/selections/SelectionDrawer";
 
 // ───────────────────────────────────────────────────────────────────────
 // Helpers
 // ───────────────────────────────────────────────────────────────────────
-
-type DerivedStatus = "open" | "submitted" | "approved" | "overdue" | "ordered" | "received";
-
-const CATEGORY_DOT_COLOURS: Record<string, string> = {
-  Tiles: "#7C5CBF",
-  Cladding: "#B5813B",
-  Flooring: "#4A7A9B",
-  Lighting: "#9B7A4A",
-  Appliances: "#5C7A5C",
-  Fixtures: "#C46B5A",
-  Joinery: "#8B6B4A",
-  Plumbing: "#4A8B7A",
-};
-
-function getCategoryColour(category?: string | null): string {
-  if (!category) return "#94a3b8"; // neutral slate
-  return CATEGORY_DOT_COLOURS[category] ?? "#94a3b8";
-}
-
-function getDerivedStatus(sel: SelectionWithOptions): DerivedStatus {
-  if ((sel as any).status === "received") return "received";
-  if ((sel as any).status === "ordered") return "ordered";
-  if (sel.status === "approved" || sel.status === "completed") return "approved";
-  const isPastDue = sel.deadline && new Date(sel.deadline).getTime() < Date.now();
-  if (isPastDue) return "overdue";
-  if (sel.options?.some((o) => o.isSelectedByClient)) return "submitted";
-  return "open";
-}
-
-function getSelectedOption(sel: SelectionWithOptions): SelectionOption | undefined {
-  return sel.options?.find((o) => o.isSelectedByClient);
-}
-
-function getActualCents(sel: SelectionWithOptions): number | null {
-  const sel0 = getSelectedOption(sel);
-  return sel0?.totalCost ?? null;
-}
-
-function formatMoneyCents(cents: number | null | undefined): string {
-  if (cents === null || cents === undefined) return "—";
-  return `$${(cents / 100).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
-}
-
-function formatVarianceCents(cents: number | null): { text: string; tone: "under" | "over" | "none" } {
-  if (cents === null || cents === 0) return { text: cents === 0 ? "$0" : "—", tone: "none" };
-  const sign = cents > 0 ? "+" : "−";
-  return {
-    text: `${sign}$${Math.abs(cents / 100).toLocaleString(undefined, { maximumFractionDigits: 0 })}`,
-    tone: cents > 0 ? "over" : "under",
-  };
-}
-
-// Relative deadline: "Overdue 3d" / "Due today" / "5d left" / date. Decided
-// selections show "Done" — the date stops mattering once the choice is made.
-function getDeadlineMeta(deadline: Date | null | undefined, derived: DerivedStatus) {
-  if (derived === "approved" || derived === "ordered" || derived === "received") {
-    return { text: "Done", className: "text-muted-foreground/50" };
-  }
-  if (!deadline) return { text: "—", className: "text-muted-foreground/40" };
-  const date = new Date(deadline);
-  const days = differenceInCalendarDays(date, new Date());
-  if (days < 0) return { text: `Overdue ${Math.abs(days)}d`, className: "font-semibold text-[hsl(var(--coral))]" };
-  if (days === 0) return { text: "Due today", className: "font-semibold text-[hsl(var(--amber))]" };
-  if (days <= 7) return { text: `${days}d left`, className: "font-semibold text-[hsl(var(--amber))]" };
-  return { text: format(date, "dd MMM"), className: "text-muted-foreground" };
-}
-
-// A selection is "decided" once the client has chosen (or beyond)
-function isDecided(derived: DerivedStatus): boolean {
-  return derived === "submitted" || derived === "approved" || derived === "ordered" || derived === "received";
-}
-
-const STATUS_CHIP_CLASS: Record<DerivedStatus, string> = {
-  open: "bg-primary/10 text-primary border-primary/30",
-  submitted: "bg-[hsl(var(--amber-bg))] text-[hsl(var(--amber))] border-[hsl(var(--amber))]/30",
-  approved: "bg-[hsl(var(--sage-bg))] text-[hsl(var(--sage))] border-[hsl(var(--sage))]/30",
-  overdue: "bg-[hsl(var(--coral-bg))] text-[hsl(var(--coral))] border-[hsl(var(--coral))]/30",
-  ordered: "bg-[#4a90d4]/10 text-[#4a90d4] border-[#4a90d4]/30",
-  received: "bg-[#68b088]/10 text-[#68b088] border-[#68b088]/30",
-};
-
-const STATUS_LABEL: Record<DerivedStatus, string> = {
-  open: "Open",
-  submitted: "Submitted",
-  approved: "Approved",
-  overdue: "Overdue",
-  ordered: "Ordered",
-  received: "Received",
-};
-
-// ───────────────────────────────────────────────────────────────────────
-// Sub-components
-// ───────────────────────────────────────────────────────────────────────
-
-interface SelectionThumbnailProps {
-  category?: string | null;
-  attachment?: OptionAttachment;
-  size?: number;
-}
-
-function SelectionThumbnail({ category, attachment, size = 32 }: SelectionThumbnailProps) {
-  const colour = getCategoryColour(category);
-  const isImage = attachment && attachment.fileType?.toLowerCase() === "image";
-  return (
-    <div
-      className="rounded-md overflow-hidden flex items-center justify-center shrink-0"
-      style={{
-        width: size,
-        height: size,
-        backgroundColor: `${colour}26`, // ~15% alpha
-      }}
-    >
-      {isImage && attachment?.filePath ? (
-        <img
-          src={attachment.filePath}
-          alt=""
-          className="w-full h-full object-cover"
-          style={{ objectPosition: `${attachment.thumbnailX ?? 50}% ${attachment.thumbnailY ?? 50}%` }}
-        />
-      ) : (
-        <ImageIcon className="text-muted-foreground/60" style={{ width: size * 0.4, height: size * 0.4 }} />
-      )}
-    </div>
-  );
-}
 
 interface StatCardProps {
   value: number | string;
@@ -253,638 +143,6 @@ function StatCard({ value, label, variant, active = false, onClick, testId }: St
   );
 }
 
-// Image stack for a row/card: the chosen option's photo, or up to three
-// overlapping option thumbnails when nothing is chosen yet.
-function OptionThumbStack({ selection, size = 48 }: { selection: SelectionWithOptions; size?: number }) {
-  const chosen = getSelectedOption(selection);
-  const chosenImg = ((chosen as any)?.attachments as OptionAttachment[] | undefined)?.find((a) => a.fileType?.toLowerCase() === "image");
-  if (chosenImg) {
-    return <SelectionThumbnail category={selection.category} attachment={chosenImg} size={size} />;
-  }
-  const imgs = (selection.options ?? [])
-    .map((o) => ((o as any).attachments as OptionAttachment[] | undefined)?.find((a) => a.fileType?.toLowerCase() === "image"))
-    .filter(Boolean)
-    .slice(0, 3) as OptionAttachment[];
-  if (imgs.length <= 1) {
-    return <SelectionThumbnail category={selection.category} attachment={imgs[0] ?? ((selection.options?.[0] as any)?.attachments as OptionAttachment[] | undefined)?.[0]} size={size} />;
-  }
-  const offset = Math.round(size * 0.28);
-  return (
-    <div className="relative shrink-0" style={{ width: size + offset * (imgs.length - 1), height: size }}>
-      {imgs.map((att, i) => (
-        <div
-          key={att.id}
-          className="absolute top-0 rounded-md overflow-hidden ring-2 ring-background"
-          style={{ left: i * offset, zIndex: imgs.length - i, width: size, height: size }}
-        >
-          <img
-            src={att.filePath}
-            alt=""
-            className="w-full h-full object-cover"
-            style={{ objectPosition: `${att.thumbnailX ?? 50}% ${att.thumbnailY ?? 50}%` }}
-          />
-        </div>
-      ))}
-    </div>
-  );
-}
-
-// Merged budget cell: actual over allowance, variance chip, thin progress bar
-function BudgetCell({ selection, align = "right" }: { selection: SelectionWithOptions; align?: "right" | "left" }) {
-  const actual = getActualCents(selection);
-  const allowance = selection.allowance ?? null;
-  const variance = actual !== null && allowance !== null ? actual - allowance : null;
-  const varianceMeta = formatVarianceCents(variance);
-  const pct = actual !== null && allowance ? Math.min((actual / allowance) * 100, 100) : null;
-  const over = variance !== null && variance > 0;
-
-  if (actual === null && allowance === null) {
-    return <div className={`text-[11px] text-muted-foreground/40 ${align === "right" ? "text-right" : ""}`}>—</div>;
-  }
-  return (
-    <div className={`min-w-0 ${align === "right" ? "text-right" : ""}`}>
-      <div className={`flex items-baseline gap-1.5 ${align === "right" ? "justify-end" : ""}`}>
-        <span className="text-[12.5px] font-semibold tabular-nums text-foreground">{formatMoneyCents(actual)}</span>
-        {allowance !== null && (
-          <span className="text-[10px] tabular-nums text-muted-foreground/60">/ {formatMoneyCents(allowance)}</span>
-        )}
-        {varianceMeta.tone !== "none" && (
-          <span
-            className={`rounded-full px-1.5 py-px text-[9.5px] font-semibold tabular-nums ${
-              varianceMeta.tone === "over"
-                ? "bg-[hsl(var(--coral))]/15 text-[hsl(var(--coral))]"
-                : "bg-[hsl(var(--sage))]/15 text-[hsl(var(--sage))]"
-            }`}
-          >
-            {varianceMeta.text}
-          </span>
-        )}
-      </div>
-      {pct !== null && (
-        <div className="mt-1 h-[3px] rounded-full bg-muted overflow-hidden">
-          <div
-            className="h-full rounded-full"
-            style={{
-              width: `${pct}%`,
-              backgroundColor: over ? "hsl(var(--coral))" : "hsl(var(--sage))",
-            }}
-          />
-        </div>
-      )}
-    </div>
-  );
-}
-
-// Decision pipeline: "7 of 12 decided" + segmented progress bar
-function ProgressStrip({ selections }: { selections: SelectionWithOptions[] }) {
-  const total = selections.length;
-  if (total === 0) return null;
-  let decided = 0, open = 0, overdue = 0;
-  for (const sel of selections) {
-    const d = getDerivedStatus(sel);
-    if (isDecided(d)) decided++;
-    else if (d === "overdue") overdue++;
-    else open++;
-  }
-  const seg = (n: number) => `${(n / total) * 100}%`;
-  return (
-    <div className="min-w-[180px]" data-testid="progress-strip">
-      <div className="flex items-baseline justify-between gap-2 mb-1">
-        <span className="text-[11px] font-semibold text-foreground">
-          {decided} of {total} decided
-        </span>
-        <span className="text-[9.5px] text-muted-foreground">
-          {open > 0 && `${open} awaiting`}{open > 0 && overdue > 0 && " · "}
-          {overdue > 0 && <span className="text-[hsl(var(--coral))] font-medium">{overdue} overdue</span>}
-        </span>
-      </div>
-      <div className="flex h-1.5 rounded-full overflow-hidden bg-muted">
-        {decided > 0 && <div style={{ width: seg(decided), backgroundColor: "hsl(var(--sage))" }} />}
-        {open > 0 && <div style={{ width: seg(open), backgroundColor: "hsl(var(--primary) / 0.45)" }} />}
-        {overdue > 0 && <div style={{ width: seg(overdue), backgroundColor: "hsl(var(--coral))" }} />}
-      </div>
-    </div>
-  );
-}
-
-interface SelectionRowProps {
-  selection: SelectionWithOptions;
-  gridTemplate: string;
-  onOpenDrawer: (id: string) => void;
-  onEdit: (id: string) => void;
-  onDelete: (id: string) => void;
-  onDuplicate: (id: string) => void;
-  isChecked: boolean;
-  onCheck: (id: string, checked: boolean) => void;
-  projectId: string;
-  dragHandleProps?: React.HTMLAttributes<HTMLDivElement>;
-  isDraggable?: boolean;
-}
-
-function SelectionRow({
-  selection,
-  gridTemplate,
-  onOpenDrawer,
-  onEdit,
-  onDelete,
-  onDuplicate,
-  isChecked,
-  onCheck,
-  projectId,
-  dragHandleProps,
-  isDraggable = false,
-}: SelectionRowProps) {
-  const derived = getDerivedStatus(selection);
-  const selectedOption = getSelectedOption(selection);
-  const deadlineMeta = getDeadlineMeta(selection.deadline, derived);
-  const purchaseOrderId = (selection as any).purchaseOrderId ?? null;
-  const optionCount = selection.options?.length ?? 0;
-
-  return (
-    <div
-      className={`group grid gap-3 items-center h-16 px-3 border-b border-border/70 cursor-pointer transition-colors ${
-        isChecked ? "bg-primary/5" : "hover:bg-muted/40"
-      }`}
-      style={{ gridTemplateColumns: gridTemplate }}
-      onClick={() => onOpenDrawer(selection.id)}
-      data-testid={`row-selection-${selection.id}`}
-    >
-      {/* Drag handle */}
-      <div
-        className={`flex items-center justify-center flex-shrink-0 ${isDraggable ? "cursor-grab opacity-0 group-hover:opacity-100" : "opacity-0 pointer-events-none"}`}
-        onClick={(e) => e.stopPropagation()}
-        {...(isDraggable ? dragHandleProps : {})}
-      >
-        <GripVertical className="w-3.5 h-3.5 text-muted-foreground" />
-      </div>
-
-      {/* Image-led thumbnail */}
-      <div className="flex items-center overflow-hidden">
-        <OptionThumbStack selection={selection} size={48} />
-      </div>
-
-      {/* Name + meta (chosen option / options ready, category dot, room) */}
-      <div className="min-w-0">
-        <a
-          href={`/selections/${selection.id}`}
-          onClick={(e) => { e.stopPropagation(); e.preventDefault(); onEdit(selection.id); }}
-          className="text-[13px] font-medium text-foreground truncate hover:underline block leading-tight"
-          data-testid={`text-name-${selection.id}`}
-        >
-          {selection.name}
-        </a>
-        <div className="mt-0.5 flex items-center gap-1.5 text-[10.5px] text-muted-foreground truncate">
-          {selection.category && (
-            <span className="inline-flex items-center gap-1 shrink-0">
-              <span
-                className="rounded-full"
-                style={{ width: 6, height: 6, backgroundColor: getCategoryColour(selection.category) }}
-              />
-              {selection.category}
-            </span>
-          )}
-          {selection.category && selection.room && <span className="text-muted-foreground/40">·</span>}
-          {selection.room && <span className="shrink-0">{selection.room}</span>}
-          {(selection.category || selection.room) && (selectedOption || optionCount > 0) && (
-            <span className="text-muted-foreground/40">·</span>
-          )}
-          {selectedOption ? (
-            <span className="truncate text-muted-foreground/70">{selectedOption.name}</span>
-          ) : optionCount > 0 ? (
-            <span className="truncate text-muted-foreground/70">
-              {optionCount} option{optionCount === 1 ? "" : "s"} ready
-            </span>
-          ) : null}
-        </div>
-      </div>
-
-      {/* Status pill (+ PO link when ordered) */}
-      <div className="min-w-0 flex items-center gap-1.5">
-        <span
-          className={`inline-block rounded-full px-2.5 py-1 text-[10px] font-semibold border ${STATUS_CHIP_CLASS[derived]}`}
-          data-testid={`badge-status-${selection.id}`}
-        >
-          {STATUS_LABEL[derived]}
-        </span>
-        {purchaseOrderId && (
-          <a
-            href={`/projects/${projectId}/purchase-orders/${purchaseOrderId}`}
-            onClick={(e) => e.stopPropagation()}
-            className="inline-flex items-center gap-0.5 text-[10px] font-medium text-[#4a90d4] hover:underline shrink-0"
-            data-testid={`chip-po-${selection.id}`}
-          >
-            <ExternalLink className="w-3 h-3" />
-            PO
-          </a>
-        )}
-      </div>
-
-      {/* Merged budget cell */}
-      <BudgetCell selection={selection} />
-
-      {/* Relative deadline */}
-      <div className={`text-[11px] truncate text-right ${deadlineMeta.className}`}>{deadlineMeta.text}</div>
-
-      {/* Actions — sticky right per the app table standard */}
-      <div
-        onClick={(e) => e.stopPropagation()}
-        className="flex items-center justify-center sticky right-0 h-full bg-gradient-to-l from-background via-background/95 to-transparent"
-      >
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button
-              className="h-6 w-6 rounded-md hover-elevate active-elevate-2 flex items-center justify-center text-muted-foreground hover:text-foreground"
-              data-testid={`button-actions-${selection.id}`}
-            >
-              <MoreVertical className="h-3 w-3" />
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={() => onOpenDrawer(selection.id)}>
-              <Eye className="w-4 h-4 mr-2" />
-              Quick View
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => onEdit(selection.id)}>
-              <Edit3 className="w-4 h-4 mr-2" />
-              Open
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => onDuplicate(selection.id)} data-testid={`button-duplicate-${selection.id}`}>
-              <Copy className="w-4 h-4 mr-2" />
-              Duplicate
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => onDelete(selection.id)} className="text-destructive">
-              <Trash2 className="w-4 h-4 mr-2" />
-              Delete
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
-    </div>
-  );
-}
-
-// Gallery card for the Cards view — image mosaic, status, budget
-function SelectionCard({
-  selection,
-  onOpenDrawer,
-  onEdit,
-  onDelete,
-  onDuplicate,
-  projectId,
-}: {
-  selection: SelectionWithOptions;
-  onOpenDrawer: (id: string) => void;
-  onEdit: (id: string) => void;
-  onDelete: (id: string) => void;
-  onDuplicate: (id: string) => void;
-  projectId: string;
-}) {
-  const derived = getDerivedStatus(selection);
-  const deadlineMeta = getDeadlineMeta(selection.deadline, derived);
-  const chosen = getSelectedOption(selection);
-  const optionCount = selection.options?.length ?? 0;
-  const images = (chosen
-    ? [((chosen as any).attachments as OptionAttachment[] | undefined)?.find((a) => a.fileType?.toLowerCase() === "image")]
-    : (selection.options ?? []).map((o) => ((o as any).attachments as OptionAttachment[] | undefined)?.find((a) => a.fileType?.toLowerCase() === "image"))
-  ).filter(Boolean).slice(0, 3) as OptionAttachment[];
-
-  return (
-    <div
-      className="group bg-card rounded-xl border border-border/80 overflow-hidden cursor-pointer hover-elevate transition-shadow"
-      onClick={() => onOpenDrawer(selection.id)}
-      data-testid={`card-selection-${selection.id}`}
-    >
-      {/* Image mosaic */}
-      <div className="relative h-36 bg-muted/60 overflow-hidden">
-        {images.length === 0 ? (
-          <div
-            className="w-full h-full flex items-center justify-center"
-            style={{ backgroundColor: `${getCategoryColour(selection.category)}1f` }}
-          >
-            <ImageIcon className="w-8 h-8 text-muted-foreground/30" />
-          </div>
-        ) : images.length === 1 ? (
-          <img
-            src={images[0].filePath}
-            alt=""
-            className="w-full h-full object-cover"
-            style={{ objectPosition: `${images[0].thumbnailX ?? 50}% ${images[0].thumbnailY ?? 50}%` }}
-            loading="lazy"
-          />
-        ) : (
-          <div className="grid grid-cols-3 gap-px h-full">
-            {images.map((att, i) => (
-              <img
-                key={att.id}
-                src={att.filePath}
-                alt=""
-                className={cn("w-full h-full object-cover", i === 0 && images.length === 2 && "col-span-2")}
-                style={{ objectPosition: `${att.thumbnailX ?? 50}% ${att.thumbnailY ?? 50}%` }}
-                loading="lazy"
-              />
-            ))}
-          </div>
-        )}
-        <span
-          className={`absolute top-2 left-2 rounded-full px-2 py-0.5 text-[9.5px] font-semibold border backdrop-blur-sm ${STATUS_CHIP_CLASS[derived]}`}
-        >
-          {STATUS_LABEL[derived]}
-        </span>
-        {optionCount > 0 && !chosen && (
-          <span className="absolute bottom-2 right-2 rounded-full bg-black/55 text-white text-[9.5px] px-2 py-0.5">
-            {optionCount} option{optionCount === 1 ? "" : "s"}
-          </span>
-        )}
-        {/* Hover actions */}
-        <div
-          className="absolute top-1.5 right-1.5 opacity-0 group-hover:opacity-100 transition-opacity"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button className="h-6 w-6 rounded-md bg-black/45 text-white flex items-center justify-center">
-                <MoreVertical className="h-3 w-3" />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={() => onEdit(selection.id)}>
-                <Edit3 className="w-4 h-4 mr-2" /> Open
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => onDuplicate(selection.id)}>
-                <Copy className="w-4 h-4 mr-2" /> Duplicate
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => onDelete(selection.id)} className="text-destructive">
-                <Trash2 className="w-4 h-4 mr-2" /> Delete
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-      </div>
-
-      {/* Body */}
-      <div className="p-3">
-        <div className="text-[12.5px] font-medium leading-snug truncate">{selection.name}</div>
-        <div className="mt-0.5 flex items-center gap-1.5 text-[10px] text-muted-foreground truncate">
-          {selection.category && (
-            <span className="inline-flex items-center gap-1">
-              <span className="rounded-full" style={{ width: 5, height: 5, backgroundColor: getCategoryColour(selection.category) }} />
-              {selection.category}
-            </span>
-          )}
-          {selection.category && selection.room && <span className="text-muted-foreground/40">·</span>}
-          {selection.room && <span>{selection.room}</span>}
-          <span className={cn("ml-auto shrink-0", deadlineMeta.className)}>{deadlineMeta.text}</span>
-        </div>
-        <div className="mt-2">
-          <BudgetCell selection={selection} align="left" />
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// Quick-view drawer: options gallery, budget, actions, comments — without
-// leaving the list. Replaces the old inline expand panel (whose Comment and
-// Attach buttons were dead).
-function SelectionDrawer({
-  selection,
-  open,
-  onClose,
-  onEdit,
-  onSelectOption,
-  selectPending,
-  projectId,
-}: {
-  selection: SelectionWithOptions | null;
-  open: boolean;
-  onClose: () => void;
-  onEdit: (id: string) => void;
-  onSelectOption: (selectionId: string, optionId: string) => void;
-  selectPending: boolean;
-  projectId: string;
-}) {
-  const { toast } = useToast();
-  const [commentText, setCommentText] = useState("");
-  const [sendOpen, setSendOpen] = useState(false);
-  const [sendTo, setSendTo] = useState("");
-  const [linkCopied, setLinkCopied] = useState(false);
-  const selId = selection?.id;
-
-  const { data: comments = [] } = useQuery<any[]>({
-    queryKey: ["/api/selections", selId, "comments"],
-    queryFn: () => apiRequest(`/api/selections/${selId}/comments`, "GET"),
-    enabled: open && !!selId,
-  });
-
-  const postCommentMutation = useMutation({
-    mutationFn: async () => apiRequest(`/api/selections/${selId}/comments`, "POST", { content: commentText.trim() }),
-    onSuccess: () => {
-      setCommentText("");
-      queryClient.invalidateQueries({ queryKey: ["/api/selections", selId, "comments"] });
-    },
-  });
-
-  const sendPortalMutation = useMutation({
-    mutationFn: async () => apiRequest(`/api/selections/${selId}/send-portal`, "POST", { to: sendTo.trim() }),
-    onSuccess: () => {
-      setSendOpen(false);
-      queryClient.invalidateQueries({ queryKey: ["/api/selections/with-options"] });
-      toast({ title: "Sent to client", description: `Portal link emailed to ${sendTo.trim()}.` });
-    },
-    onError: (err: any) => {
-      toast({ title: "Send failed", description: err?.message?.replace(/^\d+:\s*/, "") ?? "Failed to send.", variant: "destructive" });
-    },
-  });
-
-  const copyPortalLink = async () => {
-    if (!selection) return;
-    let token = (selection as any).portalToken;
-    if (!token) {
-      const fresh: any = await apiRequest(`/api/selections/${selection.id}`, "GET");
-      token = fresh?.portalToken;
-    }
-    if (!token) return;
-    navigator.clipboard.writeText(`${window.location.origin}/portal/selections/${token}`).then(() => {
-      setLinkCopied(true);
-      setTimeout(() => setLinkCopied(false), 2000);
-    });
-  };
-
-  if (!selection) return null;
-  const derived = getDerivedStatus(selection);
-  const chosen = getSelectedOption(selection);
-  const isLockedForChange = derived === "ordered" || derived === "received";
-
-  return (
-    <Sheet open={open} onOpenChange={(o) => { if (!o) { onClose(); setSendOpen(false); setSendTo(""); } }}>
-      <SheetContent side="right" className="w-full sm:max-w-md overflow-y-auto p-0">
-        <SheetHeader className="px-4 pt-4 pb-3 border-b border-border sticky top-0 bg-background z-10">
-          <div className="flex items-start justify-between gap-2 pr-6">
-            <div className="min-w-0">
-              <SheetTitle className="text-[15px] leading-snug truncate">{selection.name}</SheetTitle>
-              <div className="mt-1 flex items-center gap-1.5 text-[10.5px] text-muted-foreground">
-                <span className={`rounded-full px-2 py-0.5 font-semibold border text-[9.5px] ${STATUS_CHIP_CLASS[derived]}`}>
-                  {STATUS_LABEL[derived]}
-                </span>
-                {[selection.category, selection.room].filter(Boolean).join(" · ")}
-              </div>
-            </div>
-            <Button size="sm" variant="outline" className="h-7 text-xs shrink-0" onClick={() => onEdit(selection.id)}>
-              Open
-            </Button>
-          </div>
-          {/* Quick actions */}
-          <div className="flex items-center gap-1.5 pt-2">
-            <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setSendOpen((v) => !v)} data-testid="drawer-send-client">
-              <Send className="w-3 h-3 mr-1" /> Send to client
-            </Button>
-            <Button size="sm" variant="outline" className="h-7 text-xs" onClick={copyPortalLink}>
-              <LinkIcon className="w-3 h-3 mr-1" /> {linkCopied ? "Copied!" : "Copy link"}
-            </Button>
-            <Button
-              size="sm" variant="outline" className="h-7 text-xs"
-              onClick={() => window.open(`/api/selections/${selection.id}/pdf`, "_blank")}
-            >
-              <FileText className="w-3 h-3 mr-1" /> PDF
-            </Button>
-          </div>
-          {sendOpen && (
-            <form
-              className="flex items-center gap-1.5 pt-1"
-              onSubmit={(e) => { e.preventDefault(); if (sendTo.trim()) sendPortalMutation.mutate(); }}
-            >
-              <Input
-                type="email"
-                autoFocus
-                required
-                placeholder="client@example.com"
-                value={sendTo}
-                onChange={(e) => setSendTo(e.target.value)}
-                className="h-7 text-xs"
-              />
-              <Button type="submit" size="sm" className="h-7 text-xs shrink-0" disabled={!sendTo.trim() || sendPortalMutation.isPending}>
-                {sendPortalMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : "Send"}
-              </Button>
-            </form>
-          )}
-        </SheetHeader>
-
-        <div className="px-4 py-3 space-y-4">
-          {/* Budget */}
-          <BudgetCell selection={selection} align="left" />
-
-          {/* Options gallery */}
-          <div className="space-y-1.5">
-            <div className="text-[10px] uppercase tracking-wide font-semibold text-muted-foreground">
-              Options ({selection.options?.length ?? 0})
-            </div>
-            {(selection.options ?? []).map((o) => {
-              const img = ((o as any).attachments as OptionAttachment[] | undefined)?.find((a) => a.fileType?.toLowerCase() === "image");
-              const isChosen = o.isSelectedByClient;
-              const isApproved = !!o.approvedAt;
-              return (
-                <div
-                  key={o.id}
-                  className={cn(
-                    "flex items-center gap-2.5 rounded-lg border p-2",
-                    isChosen ? "border-[hsl(var(--sage))]/60 bg-[hsl(var(--sage))]/5" : "border-border/70",
-                  )}
-                >
-                  <SelectionThumbnail category={selection.category} attachment={img} size={40} />
-                  <div className="flex-1 min-w-0">
-                    <div className="text-[11.5px] font-medium truncate">{o.name}</div>
-                    <div className="text-[10px] text-muted-foreground truncate">
-                      {[o.brand, o.totalCost != null ? formatMoneyCents(o.totalCost) : null].filter(Boolean).join(" · ")}
-                    </div>
-                  </div>
-                  {isApproved ? (
-                    <span className="text-[9.5px] font-semibold text-[hsl(var(--sage))] shrink-0">Approved</span>
-                  ) : isChosen ? (
-                    <span className="text-[9.5px] font-semibold text-primary shrink-0">Selected</span>
-                  ) : !isLockedForChange ? (
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="h-6 text-[10px] shrink-0"
-                      disabled={selectPending}
-                      onClick={() => onSelectOption(selection.id, o.id)}
-                    >
-                      Select
-                    </Button>
-                  ) : null}
-                </div>
-              );
-            })}
-            {(selection.options ?? []).length === 0 && (
-              <div className="text-[11px] text-muted-foreground border border-dashed rounded-lg p-3 text-center">
-                No options yet — open the selection to add products.
-              </div>
-            )}
-          </div>
-
-          {/* Comments */}
-          <div className="space-y-1.5">
-            <div className="text-[10px] uppercase tracking-wide font-semibold text-muted-foreground">
-              Comments ({comments.length})
-            </div>
-            <div className="space-y-1.5 max-h-48 overflow-y-auto">
-              {comments.map((c: any) => (
-                <div key={c.id} className="rounded-lg bg-muted/50 px-2.5 py-1.5">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-[10px] font-semibold">{c.isClientComment ? `${c.createdByName} (client)` : c.createdByName}</span>
-                    <span className="text-[9px] text-muted-foreground">{format(new Date(c.createdAt), "d MMM, h:mm a")}</span>
-                  </div>
-                  <div className="text-[11px] whitespace-pre-wrap">{c.content}</div>
-                </div>
-              ))}
-            </div>
-            <form
-              className="flex items-end gap-1.5"
-              onSubmit={(e) => { e.preventDefault(); if (commentText.trim()) postCommentMutation.mutate(); }}
-            >
-              <Textarea
-                placeholder="Write a comment…"
-                value={commentText}
-                onChange={(e) => setCommentText(e.target.value)}
-                className="min-h-[52px] text-xs resize-none"
-              />
-              <Button type="submit" size="icon" className="h-8 w-8 shrink-0" disabled={!commentText.trim() || postCommentMutation.isPending}>
-                {postCommentMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
-              </Button>
-            </form>
-          </div>
-        </div>
-      </SheetContent>
-    </Sheet>
-  );
-}
-
-function SortableSelectionRow(props: SelectionRowProps) {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id: props.selection.id });
-
-  const style: React.CSSProperties = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : 1,
-    position: "relative",
-    zIndex: isDragging ? 10 : undefined,
-  };
-
-  return (
-    <div ref={setNodeRef} style={style}>
-      <SelectionRow {...props} dragHandleProps={{ ...attributes, ...listeners }} />
-    </div>
-  );
-}
 
 // ───────────────────────────────────────────────────────────────────────
 // Main page
@@ -913,38 +171,85 @@ export default function Selections() {
   }, [viewMode]);
   // Quick-view drawer (replaces the old inline expand panel)
   const [drawerId, setDrawerId] = useState<string | null>(null);
-  // Saved column widths per the app table standard (status/budget/deadline are
-  // resizable via the header dividers; name is the filler column)
-  const [columnWidths, setColumnWidths] = useState<{ status: number; budget: number; deadline: number }>(() => {
+
+  // Column sorting: click a header to cycle asc → desc → off (manual order)
+  type SortKey = "name" | "category" | "location" | "status" | "budget" | "due";
+  const [sortBy, setSortBy] = useState<SortKey | null>(null);
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+  const cycleSort = (key: SortKey) => {
+    if (sortBy !== key) { setSortBy(key); setSortDir("asc"); }
+    else if (sortDir === "asc") setSortDir("desc");
+    else setSortBy(null);
+  };
+
+  // Optional columns so wide monitors aren't bare (persisted)
+  const [visibleColumns, setVisibleColumns] = useState<SelectionColumnVisibility>(() => {
+    try {
+      const stored = JSON.parse(localStorage.getItem("selections-columns") || "null");
+      if (stored && typeof stored.category === "boolean") return stored;
+    } catch { /* corrupted — fall through */ }
+    return { category: true, location: true, options: false };
+  });
+  useEffect(() => {
+    localStorage.setItem("selections-columns", JSON.stringify(visibleColumns));
+  }, [visibleColumns]);
+
+  // Saved column widths per the app table standard (resizable via the header
+  // dividers; name is the filler column)
+  type WidthKey = "category" | "location" | "status" | "budget" | "deadline";
+  const [columnWidths, setColumnWidths] = useState<Record<WidthKey, number>>(() => {
+    const defaults: Record<WidthKey, number> = { category: 110, location: 120, status: 120, budget: 200, deadline: 90 };
     try {
       const stored = JSON.parse(localStorage.getItem("selections-column-widths") || "null");
-      if (stored && typeof stored.status === "number") return stored;
-    } catch { /* corrupted — fall through to defaults */ }
-    return { status: 130, budget: 210, deadline: 90 };
+      if (stored && typeof stored.status === "number") return { ...defaults, ...stored };
+    } catch { /* corrupted — fall through */ }
+    return defaults;
   });
   useEffect(() => {
     localStorage.setItem("selections-column-widths", JSON.stringify(columnWidths));
   }, [columnWidths]);
-  const gridTemplate = `16px 64px minmax(200px,1fr) ${columnWidths.status}px ${columnWidths.budget}px ${columnWidths.deadline}px 36px`;
+  const gridTemplate = [
+    "16px",
+    "64px",
+    "minmax(200px,1fr)",
+    visibleColumns.category ? `${columnWidths.category}px` : null,
+    visibleColumns.location ? `${columnWidths.location}px` : null,
+    `${columnWidths.status}px`,
+    visibleColumns.options ? "60px" : null,
+    `${columnWidths.budget}px`,
+    `${columnWidths.deadline}px`,
+    "64px",
+  ].filter(Boolean).join(" ");
 
-  const resizeRef = useRef<{ key: "status" | "budget" | "deadline"; startX: number; startW: number } | null>(null);
-  const startColumnResize = (key: "status" | "budget" | "deadline") => (e: React.MouseEvent) => {
+  // Pointer-capture based resize — survives fast drags and doesn't fight text
+  // selection (the previous mousemove version was unreliable)
+  const resizeRef = useRef<{ key: WidthKey; startX: number; startW: number } | null>(null);
+  const startColumnResize = (key: WidthKey) => (e: React.PointerEvent<HTMLDivElement>) => {
     e.preventDefault();
     e.stopPropagation();
+    const handle = e.currentTarget;
+    handle.setPointerCapture(e.pointerId);
     resizeRef.current = { key, startX: e.clientX, startW: columnWidths[key] };
-    const onMove = (ev: MouseEvent) => {
+    document.body.style.userSelect = "none";
+    document.body.style.cursor = "col-resize";
+    const onMove = (ev: PointerEvent) => {
       const r = resizeRef.current;
       if (!r) return;
-      const next = Math.max(70, Math.min(360, r.startW + (ev.clientX - r.startX)));
+      const next = Math.max(60, Math.min(400, r.startW + (ev.clientX - r.startX)));
       setColumnWidths((prev) => ({ ...prev, [r.key]: next }));
     };
-    const onUp = () => {
+    const onUp = (ev: PointerEvent) => {
       resizeRef.current = null;
-      document.removeEventListener("mousemove", onMove);
-      document.removeEventListener("mouseup", onUp);
+      document.body.style.userSelect = "";
+      document.body.style.cursor = "";
+      try { handle.releasePointerCapture(ev.pointerId); } catch { /* already released */ }
+      handle.removeEventListener("pointermove", onMove);
+      handle.removeEventListener("pointerup", onUp);
+      handle.removeEventListener("pointercancel", onUp);
     };
-    document.addEventListener("mousemove", onMove);
-    document.addEventListener("mouseup", onUp);
+    handle.addEventListener("pointermove", onMove);
+    handle.addEventListener("pointerup", onUp);
+    handle.addEventListener("pointercancel", onUp);
   };
   const [expandedTemplateIds, setExpandedTemplateIds] = useState<Set<string>>(new Set());
   const [expandedGroupIds, setExpandedGroupIds] = useState<Set<string>>(new Set());
@@ -1037,7 +342,7 @@ export default function Selections() {
     },
   });
 
-  const isDraggable = !searchTerm && !categoryFilter && statusTab === "all";
+  const isDraggable = !searchTerm && !categoryFilter && statusTab === "all" && !sortBy;
 
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
@@ -1204,6 +509,36 @@ export default function Selections() {
     });
   }, [selectionsWithOptions, orderedIds, statusTab, categoryFilter, searchTerm]);
 
+  // Header sort — applied on top of the manual drag order when active
+  const STATUS_SORT_ORDER: Record<DerivedStatus, number> = {
+    overdue: 0, open: 1, submitted: 2, approved: 3, ordered: 4, received: 5,
+  };
+  const sorted = useMemo(() => {
+    if (!sortBy) return filtered;
+    const dir = sortDir === "asc" ? 1 : -1;
+    const val = (sel: (typeof filtered)[number]): string | number => {
+      switch (sortBy) {
+        case "name": return sel.name.toLowerCase();
+        case "category": return (sel.category ?? "").toLowerCase();
+        case "location": return (sel.room ?? "").toLowerCase();
+        case "status": return STATUS_SORT_ORDER[getDerivedStatus(sel)];
+        case "budget": return getActualCents(sel) ?? sel.allowance ?? -1;
+        case "due": {
+          // Decided items sort last; missing deadlines just before them
+          const d = getDerivedStatus(sel);
+          if (d === "approved" || d === "ordered" || d === "received") return Number.MAX_SAFE_INTEGER;
+          return sel.deadline ? new Date(sel.deadline).getTime() : Number.MAX_SAFE_INTEGER - 1;
+        }
+      }
+    };
+    return [...filtered].sort((a, b) => {
+      const av = val(a), bv = val(b);
+      if (av < bv) return -1 * dir;
+      if (av > bv) return 1 * dir;
+      return 0;
+    });
+  }, [filtered, sortBy, sortDir]);
+
   // Approved spend
   const approvedSpend = useMemo(() => {
     return selectionsWithOptions.reduce((sum, sel) => {
@@ -1305,8 +640,8 @@ export default function Selections() {
   const groupedFiltered = useMemo(() => {
     if (groupBy === "none") return null;
     const key = groupBy === "category" ? "category" : "room";
-    const groups = new Map<string, typeof filtered>();
-    for (const sel of filtered) {
+    const groups = new Map<string, typeof sorted>();
+    for (const sel of sorted) {
       const g = (sel as any)[key] || "Uncategorised";
       if (!groups.has(g)) groups.set(g, []);
       groups.get(g)!.push(sel);
@@ -1564,6 +899,40 @@ export default function Selections() {
                 <LayoutGrid className="w-3 h-3" />
               </button>
             </div>
+            {/* Column visibility (list view) */}
+            {viewMode === "list" && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    className="h-6 w-6 flex items-center justify-center border border-border/50 rounded-md hover-elevate active-elevate-2 text-muted-foreground"
+                    data-testid="button-columns"
+                    aria-label="Columns"
+                  >
+                    <ChevronsUpDown className="w-3.5 h-3.5 rotate-90" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuCheckboxItem
+                    checked={visibleColumns.category}
+                    onCheckedChange={(v) => setVisibleColumns((p) => ({ ...p, category: !!v }))}
+                  >
+                    Category
+                  </DropdownMenuCheckboxItem>
+                  <DropdownMenuCheckboxItem
+                    checked={visibleColumns.location}
+                    onCheckedChange={(v) => setVisibleColumns((p) => ({ ...p, location: !!v }))}
+                  >
+                    Location
+                  </DropdownMenuCheckboxItem>
+                  <DropdownMenuCheckboxItem
+                    checked={visibleColumns.options}
+                    onCheckedChange={(v) => setVisibleColumns((p) => ({ ...p, options: !!v }))}
+                  >
+                    Options count
+                  </DropdownMenuCheckboxItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
             {/* Group-by dropdown */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -1703,43 +1072,61 @@ export default function Selections() {
 
       {/* Table */}
       <div className="flex-1 overflow-auto">
-        {/* Table header — hidden in cards view; status/budget/deadline are
-            resizable via the divider handles (widths persisted) */}
-        {viewMode === "list" && (
-          <div
-            className="grid gap-3 items-center bg-muted border-b border-border h-[34px] px-3 text-[10px] uppercase tracking-wider font-semibold text-muted-foreground sticky top-0 z-10"
-            style={{ gridTemplateColumns: gridTemplate }}
-          >
-            <div></div>
-            <div></div>
-            <div>Selection</div>
-            <div className="relative flex items-center h-full">
-              Status
-              <div
-                className="absolute right-0 top-0 h-full w-1.5 cursor-col-resize hover:bg-primary/30"
-                onMouseDown={startColumnResize("status")}
-                data-testid="resize-status"
-              />
+        {/* Table header — hidden in cards view. Click a label to sort
+            (asc → desc → off); drag the divider after a label to resize
+            (widths persisted). */}
+        {viewMode === "list" && (() => {
+          const SortArrow = ({ col }: { col: typeof sortBy }) =>
+            sortBy === col ? (
+              <span className="text-primary">{sortDir === "asc" ? "↑" : "↓"}</span>
+            ) : null;
+          const HeaderCell = ({
+            label, sortKey, widthKey, align = "left",
+          }: {
+            label: string;
+            sortKey: NonNullable<typeof sortBy>;
+            widthKey?: "category" | "location" | "status" | "budget" | "deadline";
+            align?: "left" | "right";
+          }) => (
+            <div className={cn("relative flex items-center h-full min-w-0", align === "right" && "justify-end")}>
+              <button
+                type="button"
+                onClick={() => cycleSort(sortKey)}
+                className="flex items-center gap-1 uppercase tracking-wider font-semibold hover:text-foreground truncate"
+                data-testid={`sort-${sortKey}`}
+              >
+                {label}
+                <SortArrow col={sortKey} />
+              </button>
+              {widthKey && (
+                <div
+                  className="absolute -right-2 top-0 h-full w-3 cursor-col-resize flex items-center justify-center group/handle touch-none"
+                  onPointerDown={startColumnResize(widthKey)}
+                  data-testid={`resize-${widthKey}`}
+                >
+                  <div className="h-4 w-px bg-border group-hover/handle:bg-primary group-hover/handle:w-0.5" />
+                </div>
+              )}
             </div>
-            <div className="relative flex items-center justify-end h-full">
-              Budget
-              <div
-                className="absolute right-0 top-0 h-full w-1.5 cursor-col-resize hover:bg-primary/30"
-                onMouseDown={startColumnResize("budget")}
-                data-testid="resize-budget"
-              />
+          );
+          return (
+            <div
+              className="grid gap-3 items-center bg-muted border-b border-border h-[34px] px-3 text-[10px] text-muted-foreground sticky top-0 z-10"
+              style={{ gridTemplateColumns: gridTemplate }}
+            >
+              <div></div>
+              <div></div>
+              <HeaderCell label="Selection" sortKey="name" />
+              {visibleColumns.category && <HeaderCell label="Category" sortKey="category" widthKey="category" />}
+              {visibleColumns.location && <HeaderCell label="Location" sortKey="location" widthKey="location" />}
+              <HeaderCell label="Status" sortKey="status" widthKey="status" />
+              {visibleColumns.options && <div className="text-center uppercase tracking-wider font-semibold">Opts</div>}
+              <HeaderCell label="Budget" sortKey="budget" widthKey="budget" align="right" />
+              <HeaderCell label="Due" sortKey="due" widthKey="deadline" align="right" />
+              <div></div>
             </div>
-            <div className="relative flex items-center justify-end h-full">
-              Due
-              <div
-                className="absolute right-0 top-0 h-full w-1.5 cursor-col-resize hover:bg-primary/30"
-                onMouseDown={startColumnResize("deadline")}
-                data-testid="resize-deadline"
-              />
-            </div>
-            <div></div>
-          </div>
-        )}
+          );
+        })()}
 
         {/* Body — DndContext always mounted so hook count stays stable */}
         <DndContext
@@ -1749,7 +1136,7 @@ export default function Selections() {
         >
           {isLoading ? (
             <div className="px-3 py-12 text-center text-sm text-muted-foreground">Loading selections…</div>
-          ) : filtered.length === 0 ? (
+          ) : sorted.length === 0 ? (
             <div className="text-center py-12">
               <Package className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
               <h3 className="text-base font-medium mb-2">No selections found</h3>
@@ -1812,12 +1199,12 @@ export default function Selections() {
                             key={sel.id}
                             selection={sel}
                             gridTemplate={gridTemplate}
+                            columns={visibleColumns}
                             onOpenDrawer={setDrawerId}
                             onEdit={handleEdit}
                             onDelete={handleDelete}
                             onDuplicate={handleDuplicate}
                             isChecked={checkedIds.has(sel.id)}
-                            onCheck={handleCheck}
                             projectId={projectId!}
                             isDraggable={isDraggable}
                           />
@@ -1832,7 +1219,7 @@ export default function Selections() {
             /* Flat rendering — cards grid or sortable rows */
             viewMode === "cards" ? (
               <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3 px-3 py-3">
-                {filtered.map((sel) => (
+                {sorted.map((sel) => (
                   <SelectionCard
                     key={sel.id}
                     selection={sel}
@@ -1846,21 +1233,21 @@ export default function Selections() {
               </div>
             ) : (
             <SortableContext
-              items={filtered.map((s) => s.id)}
+              items={sorted.map((s) => s.id)}
               strategy={verticalListSortingStrategy}
             >
               <div>
-                {filtered.map((sel) => (
+                {sorted.map((sel) => (
                   <SortableSelectionRow
                     key={sel.id}
                     selection={sel}
                     gridTemplate={gridTemplate}
+                    columns={visibleColumns}
                     onOpenDrawer={setDrawerId}
                     onEdit={handleEdit}
                     onDelete={handleDelete}
                     onDuplicate={handleDuplicate}
                     isChecked={checkedIds.has(sel.id)}
-                    onCheck={handleCheck}
                     projectId={projectId!}
                     isDraggable={isDraggable}
                   />
