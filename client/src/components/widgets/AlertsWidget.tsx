@@ -11,7 +11,6 @@ import {
 import { WidgetProps } from "@/types/widgets";
 import { useProject } from "@/contexts/ProjectContext";
 import { useProjectMetrics } from "@/hooks/useProjectMetrics";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -32,11 +31,11 @@ export default function AlertsWidget({ widget, onUpdate, isConfiguring, onCloseC
   useEffect(() => {
     setEditingTitle(widget.title);
   }, [widget.title]);
-  const { metrics, isLoading: metricsLoading, formatCurrency } = useProjectMetrics();
+  const { metrics, isLoading: metricsLoading, isError: metricsError, formatCurrency } = useProjectMetrics();
 
   // Fetch tasks to check for overdue. Keyed under ["/api/tasks"] so the
   // app-wide task-mutation invalidations refresh this widget too.
-  const { data: tasks = [], isLoading: tasksLoading } = useQuery<any[]>({
+  const { data: tasks = [], isLoading: tasksLoading, isError: tasksError, refetch: refetchTasks } = useQuery<any[]>({
     queryKey: ["/api/tasks", currentProject?.id],
     queryFn: async () => {
       if (!currentProject) return [];
@@ -55,7 +54,47 @@ export default function AlertsWidget({ widget, onUpdate, isConfiguring, onCloseC
     );
   }
 
-  if ((metricsLoading || tasksLoading) && !isConfiguring) {
+  // Configuration mode (before loading so the panel can open any time)
+  if (isConfiguring) {
+    const handleSaveConfig = () => {
+      if (onUpdate) {
+        onUpdate({ ...widget, title: editingTitle });
+      }
+      onCloseConfig?.();
+    };
+
+    const handleCancelConfig = () => {
+      setEditingTitle(widget.title);
+      onCloseConfig?.();
+    };
+
+    return (
+      <div className="flex-1 overflow-y-auto p-1 space-y-5 text-[12px]" data-testid="alerts-widget-config">
+        <section>
+          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+            Widget title
+          </p>
+          <Input
+            value={editingTitle}
+            onChange={(e) => setEditingTitle(e.target.value)}
+            className="h-8 text-xs"
+            placeholder="Widget title"
+          />
+        </section>
+
+        <div className="flex justify-end gap-2 pt-1">
+          <Button size="sm" variant="outline" onClick={handleCancelConfig} className="h-7 px-3 text-xs">
+            Cancel
+          </Button>
+          <Button size="sm" onClick={handleSaveConfig} className="h-7 px-3 text-xs">
+            Save
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  if (metricsLoading || tasksLoading) {
     return (
       <div className="space-y-2 animate-pulse">
         {[1, 2, 3].map(i => (
@@ -65,42 +104,14 @@ export default function AlertsWidget({ widget, onUpdate, isConfiguring, onCloseC
     );
   }
 
-  // Configuration mode
-  if (isConfiguring) {
-    const handleSaveConfig = () => {
-      if (onUpdate) {
-        onUpdate({ ...widget, title: editingTitle });
-      }
-      onCloseConfig?.();
-    };
-    
-    const handleCancelConfig = () => {
-      setEditingTitle(widget.title);
-      onCloseConfig?.();
-    };
-    
+  if (metricsError || tasksError) {
     return (
-      <div className="space-y-3 p-2">
-        <h4 className="text-sm font-medium">Configure Alerts</h4>
-        
-        <div className="space-y-2">
-          <Label className="text-xs">Widget Name</Label>
-          <Input 
-            value={editingTitle}
-            onChange={(e) => setEditingTitle(e.target.value)}
-            className="h-7 text-xs"
-            placeholder="Widget title"
-          />
-        </div>
-        
-        <div className="flex justify-end gap-2 pt-2">
-          <Button size="sm" variant="outline" onClick={handleCancelConfig} className="h-6 px-2 text-xs">
-            Cancel
-          </Button>
-          <Button size="sm" onClick={handleSaveConfig} className="h-6 px-2 text-xs">
-            Save
-          </Button>
-        </div>
+      <div className="flex flex-col items-center gap-2 py-6 text-sm text-muted-foreground">
+        <AlertTriangle className="h-4 w-4 text-destructive" />
+        Couldn't check for alerts
+        <Button size="sm" variant="outline" className="h-6 px-2 text-xs" onClick={() => refetchTasks()}>
+          Retry
+        </Button>
       </div>
     );
   }
@@ -192,33 +203,23 @@ export default function AlertsWidget({ widget, onUpdate, isConfiguring, onCloseC
     });
   }
 
-  const getAlertStyle = (type: Alert["type"]) => {
+  // Morada wash tones per alert severity
+  const alertTone = (type: Alert["type"]): { bg: string; text: string; icon: string } => {
     switch (type) {
       case "error":
-        return "bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-800 text-status-danger dark:text-red-300";
+        return { bg: "hsl(var(--coral-light))", text: "hsl(11 52% 38%)", icon: "hsl(var(--coral))" };
       case "warning":
-        return "bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-300";
+        return { bg: "hsl(var(--amber-light))", text: "hsl(42 45% 30%)", icon: "hsl(var(--amber))" };
       case "info":
-        return "bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800 text-status-info dark:text-blue-300";
-    }
-  };
-
-  const getIconStyle = (type: Alert["type"]) => {
-    switch (type) {
-      case "error":
-        return "text-red-500";
-      case "warning":
-        return "text-amber-500";
-      case "info":
-        return "text-blue-500";
+        return { bg: "hsl(var(--primary-light))", text: "hsl(261 25% 45%)", icon: "hsl(var(--primary))" };
     }
   };
 
   if (alerts.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-6 text-center">
-        <CheckCircle className="h-8 w-8 text-green-500 mb-2" />
-        <p className="text-sm font-medium text-status-success dark:text-green-300">All Clear</p>
+        <CheckCircle className="h-8 w-8 mb-2" style={{ color: "hsl(var(--sage))" }} />
+        <p className="text-sm font-medium">All clear</p>
         <p className="text-xs text-muted-foreground">No alerts at this time</p>
       </div>
     );
@@ -226,23 +227,23 @@ export default function AlertsWidget({ widget, onUpdate, isConfiguring, onCloseC
 
   return (
     <div className="space-y-2">
-      {alerts.map(alert => (
-        <div 
-          key={alert.id}
-          className={`flex items-start gap-2 p-2.5 rounded-md border ${getAlertStyle(alert.type)}`}
-          data-testid={`alert-${alert.id}`}
-        >
-          <alert.icon className={`h-4 w-4 mt-0.5 flex-shrink-0 ${getIconStyle(alert.type)}`} />
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2">
-              <Badge variant="outline" className="text-data px-1 py-0 h-4">
-                {alert.category}
-              </Badge>
+      {alerts.map(alert => {
+        const tone = alertTone(alert.type);
+        return (
+          <div
+            key={alert.id}
+            className="flex items-start gap-2 p-2.5 rounded-md"
+            style={{ backgroundColor: tone.bg, color: tone.text }}
+            data-testid={`alert-${alert.id}`}
+          >
+            <alert.icon className="h-4 w-4 mt-0.5 flex-shrink-0" style={{ color: tone.icon }} />
+            <div className="flex-1 min-w-0">
+              <p className="text-[10px] font-semibold uppercase tracking-wide opacity-80">{alert.category}</p>
+              <p className="text-xs mt-0.5">{alert.message}</p>
             </div>
-            <p className="text-xs mt-0.5">{alert.message}</p>
           </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }

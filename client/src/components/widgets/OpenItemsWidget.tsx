@@ -134,7 +134,7 @@ export default function OpenItemsWidget({ widget }: WidgetProps) {
   }
 
   return (
-    <div className="grid grid-cols-2 gap-2 p-3" data-testid="widget-open-items">
+    <div className="grid grid-cols-2 gap-2" data-testid="widget-open-items">
       {tiles.map((t) => {
         const Icon = t.icon;
         return (
