@@ -27,17 +27,18 @@ interface QuickAction {
   color?: string;
 }
 
+// Quiet monochrome tiles — colour is reserved for data elsewhere on the dashboard
 const defaultActions: QuickAction[] = [
-  { id: "add-task", label: "Tasks", icon: Plus, getPath: (id) => `/projects/${id}/tasks`, color: "text-blue-500" },
-  { id: "add-bill", label: "Add Bill", icon: Receipt, getPath: () => "/bills/new", color: "text-green-500" },
-  { id: "add-variation", label: "Add Variation", icon: FileEdit, getPath: (id) => `/projects/${id}/variations/new`, color: "text-purple-500" },
-  { id: "create-invoice", label: "Create Invoice", icon: FileText, getPath: (id) => `/projects/${id}/client-invoices/new`, color: "text-amber-500" },
-  { id: "schedule-meeting", label: "Schedule", icon: Calendar, getPath: () => "/my-calendar", color: "text-red-500" },
-  { id: "view-contacts", label: "Contacts", icon: Users, getPath: () => "/contacts", color: "text-indigo-500" },
-  { id: "view-checklists", label: "Checklists", icon: ClipboardList, getPath: (id) => `/projects/${id}/checklists`, color: "text-teal-500" },
-  { id: "site-diary", label: "Site Diary", icon: Camera, getPath: (id) => `/projects/${id}/site-diary`, color: "text-orange-500" },
-  { id: "messages", label: "Messages", icon: MessageSquare, getPath: (id) => `/projects/${id}/messages`, color: "text-pink-500" },
-  { id: "files", label: "Files", icon: FolderOpen, getPath: (id) => `/projects/${id}/files`, color: "text-cyan-500" },
+  { id: "add-task", label: "Tasks", icon: Plus, getPath: (id) => `/projects/${id}/tasks` },
+  { id: "add-bill", label: "Add Bill", icon: Receipt, getPath: () => "/bills/new" },
+  { id: "add-variation", label: "Add Variation", icon: FileEdit, getPath: (id) => `/projects/${id}/variations/new` },
+  { id: "create-invoice", label: "Create Invoice", icon: FileText, getPath: (id) => `/projects/${id}/client-invoices/new` },
+  { id: "schedule-meeting", label: "Schedule", icon: Calendar, getPath: () => "/my-calendar" },
+  { id: "view-contacts", label: "Contacts", icon: Users, getPath: () => "/contacts" },
+  { id: "view-checklists", label: "Checklists", icon: ClipboardList, getPath: (id) => `/projects/${id}/checklists` },
+  { id: "site-diary", label: "Site Diary", icon: Camera, getPath: (id) => `/projects/${id}/site-diary` },
+  { id: "messages", label: "Messages", icon: MessageSquare, getPath: (id) => `/projects/${id}/messages` },
+  { id: "files", label: "Files", icon: FolderOpen, getPath: (id) => `/projects/${id}/files` },
 ];
 
 export default function QuickActionsWidget({ widget, onUpdate, isConfiguring, onCloseConfig }: WidgetProps) {
@@ -91,21 +92,23 @@ export default function QuickActionsWidget({ widget, onUpdate, isConfiguring, on
     };
     
     return (
-      <div className="space-y-3 p-2">
-        <h4 className="text-sm font-medium">Configure Quick Actions</h4>
-        
-        <div className="space-y-2">
-          <Label className="text-xs">Widget Name</Label>
-          <Input 
+      <div className="flex-1 overflow-y-auto p-1 space-y-5 text-[12px]" data-testid="quick-actions-config">
+        <section>
+          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+            Widget title
+          </p>
+          <Input
             value={editingTitle}
             onChange={(e) => setEditingTitle(e.target.value)}
-            className="h-7 text-xs"
+            className="h-8 text-xs"
             placeholder="Widget title"
           />
-        </div>
-        
-        <div className="space-y-2">
-          <Label className="text-xs">Select Actions</Label>
+        </section>
+
+        <section>
+          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+            Actions
+          </p>
           <div className="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto">
             {defaultActions.map(action => (
               <button
@@ -113,23 +116,23 @@ export default function QuickActionsWidget({ widget, onUpdate, isConfiguring, on
                 onClick={() => toggleAction(action.id)}
                 className={`flex items-center gap-2 p-2 border rounded-md text-xs transition-colors ${
                   configEnabledActions.includes(action.id)
-                    ? 'bg-primary/20 border-primary'
-                    : 'hover-elevate'
+                    ? 'bg-[hsl(var(--primary-light))] border-[hsl(var(--primary))]'
+                    : 'border-border text-muted-foreground hover-elevate'
                 }`}
                 data-testid={`toggle-action-${action.id}`}
               >
-                <action.icon className={`h-3.5 w-3.5 ${action.color || ''}`} />
+                <action.icon className="h-3.5 w-3.5" />
                 <span>{action.label}</span>
               </button>
             ))}
           </div>
-        </div>
-        
-        <div className="flex justify-end gap-2 pt-2">
-          <Button size="sm" variant="outline" onClick={handleCancelConfig} className="h-6 px-2 text-xs">
+        </section>
+
+        <div className="flex justify-end gap-2 pt-1">
+          <Button size="sm" variant="outline" onClick={handleCancelConfig} className="h-7 px-3 text-xs">
             Cancel
           </Button>
-          <Button size="sm" onClick={handleSaveConfig} className="h-6 px-2 text-xs">
+          <Button size="sm" onClick={handleSaveConfig} className="h-7 px-3 text-xs">
             Save
           </Button>
         </div>
@@ -147,10 +150,10 @@ export default function QuickActionsWidget({ widget, onUpdate, isConfiguring, on
         <button
           key={action.id}
           onClick={() => handleActionClick(action)}
-          className="flex flex-col items-center justify-center p-3 border rounded-md hover-elevate active-elevate-2 transition-all"
+          className="group flex flex-col items-center justify-center p-3 border border-border rounded-md hover-elevate active-elevate-2 transition-all"
           data-testid={`quick-action-${action.id}`}
         >
-          <action.icon className={`h-5 w-5 mb-1 ${action.color || 'text-muted-foreground'}`} />
+          <action.icon className="h-5 w-5 mb-1 text-muted-foreground group-hover:text-[hsl(var(--primary))] transition-colors" />
           <span className="text-xs text-center">{action.label}</span>
         </button>
       ))}
