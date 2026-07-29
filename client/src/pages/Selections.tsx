@@ -49,6 +49,13 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
+import { Textarea } from "@/components/ui/textarea";
+import {
   Package,
   Plus,
   Search,
@@ -78,6 +85,10 @@ import {
   BookCopy,
   CheckSquare,
   Filter,
+  LayoutGrid,
+  LayoutList,
+  Send,
+  Link as LinkIcon,
 } from "lucide-react";
 import { format, differenceInCalendarDays } from "date-fns";
 
@@ -136,14 +147,24 @@ function formatVarianceCents(cents: number | null): { text: string; tone: "under
   };
 }
 
+// Relative deadline: "Overdue 3d" / "Due today" / "5d left" / date. Decided
+// selections show "Done" — the date stops mattering once the choice is made.
 function getDeadlineMeta(deadline: Date | null | undefined, derived: DerivedStatus) {
+  if (derived === "approved" || derived === "ordered" || derived === "received") {
+    return { text: "Done", className: "text-muted-foreground/50" };
+  }
   if (!deadline) return { text: "—", className: "text-muted-foreground/40" };
   const date = new Date(deadline);
-  if (derived === "approved") return { text: "Done", className: "text-muted-foreground/50" };
   const days = differenceInCalendarDays(date, new Date());
-  if (days < 0) return { text: format(date, "dd MMM"), className: "font-semibold text-[hsl(var(--coral))]" };
-  if (days <= 7) return { text: format(date, "dd MMM"), className: "font-semibold text-[hsl(var(--amber))]" };
-  return { text: format(date, "dd MMM yyyy"), className: "text-muted-foreground" };
+  if (days < 0) return { text: `Overdue ${Math.abs(days)}d`, className: "font-semibold text-[hsl(var(--coral))]" };
+  if (days === 0) return { text: "Due today", className: "font-semibold text-[hsl(var(--amber))]" };
+  if (days <= 7) return { text: `${days}d left`, className: "font-semibold text-[hsl(var(--amber))]" };
+  return { text: format(date, "dd MMM"), className: "text-muted-foreground" };
+}
+
+// A selection is "decided" once the client has chosen (or beyond)
+function isDecided(derived: DerivedStatus): boolean {
+  return derived === "submitted" || derived === "approved" || derived === "ordered" || derived === "received";
 }
 
 const STATUS_CHIP_CLASS: Record<DerivedStatus, string> = {
@@ -232,15 +253,127 @@ function StatCard({ value, label, variant, active = false, onClick, testId }: St
   );
 }
 
+// Image stack for a row/card: the chosen option's photo, or up to three
+// overlapping option thumbnails when nothing is chosen yet.
+function OptionThumbStack({ selection, size = 48 }: { selection: SelectionWithOptions; size?: number }) {
+  const chosen = getSelectedOption(selection);
+  const chosenImg = ((chosen as any)?.attachments as OptionAttachment[] | undefined)?.find((a) => a.fileType?.toLowerCase() === "image");
+  if (chosenImg) {
+    return <SelectionThumbnail category={selection.category} attachment={chosenImg} size={size} />;
+  }
+  const imgs = (selection.options ?? [])
+    .map((o) => ((o as any).attachments as OptionAttachment[] | undefined)?.find((a) => a.fileType?.toLowerCase() === "image"))
+    .filter(Boolean)
+    .slice(0, 3) as OptionAttachment[];
+  if (imgs.length <= 1) {
+    return <SelectionThumbnail category={selection.category} attachment={imgs[0] ?? ((selection.options?.[0] as any)?.attachments as OptionAttachment[] | undefined)?.[0]} size={size} />;
+  }
+  const offset = Math.round(size * 0.28);
+  return (
+    <div className="relative shrink-0" style={{ width: size + offset * (imgs.length - 1), height: size }}>
+      {imgs.map((att, i) => (
+        <div
+          key={att.id}
+          className="absolute top-0 rounded-md overflow-hidden ring-2 ring-background"
+          style={{ left: i * offset, zIndex: imgs.length - i, width: size, height: size }}
+        >
+          <img
+            src={att.filePath}
+            alt=""
+            className="w-full h-full object-cover"
+            style={{ objectPosition: `${att.thumbnailX ?? 50}% ${att.thumbnailY ?? 50}%` }}
+          />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// Merged budget cell: actual over allowance, variance chip, thin progress bar
+function BudgetCell({ selection, align = "right" }: { selection: SelectionWithOptions; align?: "right" | "left" }) {
+  const actual = getActualCents(selection);
+  const allowance = selection.allowance ?? null;
+  const variance = actual !== null && allowance !== null ? actual - allowance : null;
+  const varianceMeta = formatVarianceCents(variance);
+  const pct = actual !== null && allowance ? Math.min((actual / allowance) * 100, 100) : null;
+  const over = variance !== null && variance > 0;
+
+  if (actual === null && allowance === null) {
+    return <div className={`text-[11px] text-muted-foreground/40 ${align === "right" ? "text-right" : ""}`}>—</div>;
+  }
+  return (
+    <div className={`min-w-0 ${align === "right" ? "text-right" : ""}`}>
+      <div className={`flex items-baseline gap-1.5 ${align === "right" ? "justify-end" : ""}`}>
+        <span className="text-[12.5px] font-semibold tabular-nums text-foreground">{formatMoneyCents(actual)}</span>
+        {allowance !== null && (
+          <span className="text-[10px] tabular-nums text-muted-foreground/60">/ {formatMoneyCents(allowance)}</span>
+        )}
+        {varianceMeta.tone !== "none" && (
+          <span
+            className={`rounded-full px-1.5 py-px text-[9.5px] font-semibold tabular-nums ${
+              varianceMeta.tone === "over"
+                ? "bg-[hsl(var(--coral))]/15 text-[hsl(var(--coral))]"
+                : "bg-[hsl(var(--sage))]/15 text-[hsl(var(--sage))]"
+            }`}
+          >
+            {varianceMeta.text}
+          </span>
+        )}
+      </div>
+      {pct !== null && (
+        <div className="mt-1 h-[3px] rounded-full bg-muted overflow-hidden">
+          <div
+            className="h-full rounded-full"
+            style={{
+              width: `${pct}%`,
+              backgroundColor: over ? "hsl(var(--coral))" : "hsl(var(--sage))",
+            }}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Decision pipeline: "7 of 12 decided" + segmented progress bar
+function ProgressStrip({ selections }: { selections: SelectionWithOptions[] }) {
+  const total = selections.length;
+  if (total === 0) return null;
+  let decided = 0, open = 0, overdue = 0;
+  for (const sel of selections) {
+    const d = getDerivedStatus(sel);
+    if (isDecided(d)) decided++;
+    else if (d === "overdue") overdue++;
+    else open++;
+  }
+  const seg = (n: number) => `${(n / total) * 100}%`;
+  return (
+    <div className="min-w-[180px]" data-testid="progress-strip">
+      <div className="flex items-baseline justify-between gap-2 mb-1">
+        <span className="text-[11px] font-semibold text-foreground">
+          {decided} of {total} decided
+        </span>
+        <span className="text-[9.5px] text-muted-foreground">
+          {open > 0 && `${open} awaiting`}{open > 0 && overdue > 0 && " · "}
+          {overdue > 0 && <span className="text-[hsl(var(--coral))] font-medium">{overdue} overdue</span>}
+        </span>
+      </div>
+      <div className="flex h-1.5 rounded-full overflow-hidden bg-muted">
+        {decided > 0 && <div style={{ width: seg(decided), backgroundColor: "hsl(var(--sage))" }} />}
+        {open > 0 && <div style={{ width: seg(open), backgroundColor: "hsl(var(--primary) / 0.45)" }} />}
+        {overdue > 0 && <div style={{ width: seg(overdue), backgroundColor: "hsl(var(--coral))" }} />}
+      </div>
+    </div>
+  );
+}
+
 interface SelectionRowProps {
   selection: SelectionWithOptions;
-  expanded: boolean;
-  onToggleExpand: () => void;
-  onSelectOption: (selectionId: string, optionId: string) => void;
+  gridTemplate: string;
+  onOpenDrawer: (id: string) => void;
   onEdit: (id: string) => void;
   onDelete: (id: string) => void;
   onDuplicate: (id: string) => void;
-  isPending: boolean;
   isChecked: boolean;
   onCheck: (id: string, checked: boolean) => void;
   projectId: string;
@@ -250,13 +383,11 @@ interface SelectionRowProps {
 
 function SelectionRow({
   selection,
-  expanded,
-  onToggleExpand,
-  onSelectOption,
+  gridTemplate,
+  onOpenDrawer,
   onEdit,
   onDelete,
   onDuplicate,
-  isPending,
   isChecked,
   onCheck,
   projectId,
@@ -265,340 +396,468 @@ function SelectionRow({
 }: SelectionRowProps) {
   const derived = getDerivedStatus(selection);
   const selectedOption = getSelectedOption(selection);
-  const actual = getActualCents(selection);
-  const allowance = selection.allowance ?? null;
-  const variance = actual !== null && allowance !== null ? actual - allowance : null;
-  const varianceMeta = formatVarianceCents(variance);
   const deadlineMeta = getDeadlineMeta(selection.deadline, derived);
-
-  const isOrderedOrReceived = derived === "ordered" || derived === "received";
-  const isCheckable = derived === "approved" && !!selection.clientSelection;
-
-  // Use first attachment of the selected option for the row thumbnail
-  const rowThumb = selectedOption?.attachments?.[0] ?? selection.options?.[0]?.attachments?.[0];
-
-  const poNumber = (selection as any).purchaseOrderId ? (selection as any).poNumber : null;
   const purchaseOrderId = (selection as any).purchaseOrderId ?? null;
+  const optionCount = selection.options?.length ?? 0;
 
   return (
-    <>
+    <div
+      className={`group grid gap-3 items-center h-16 px-3 border-b border-border/70 cursor-pointer transition-colors ${
+        isChecked ? "bg-primary/5" : "hover:bg-muted/40"
+      }`}
+      style={{ gridTemplateColumns: gridTemplate }}
+      onClick={() => onOpenDrawer(selection.id)}
+      data-testid={`row-selection-${selection.id}`}
+    >
+      {/* Drag handle */}
       <div
-        className={`group grid grid-cols-[16px_32px_40px_minmax(160px,1fr)_120px_120px_100px_100px_100px_100px_110px_90px_32px] gap-3 items-center h-12 px-3 border-b border-border cursor-pointer ${
-          isChecked ? "bg-primary/5" : "hover:bg-muted/30"
-        }`}
-        onClick={() => onEdit(selection.id)}
-        data-testid={`row-selection-${selection.id}`}
+        className={`flex items-center justify-center flex-shrink-0 ${isDraggable ? "cursor-grab opacity-0 group-hover:opacity-100" : "opacity-0 pointer-events-none"}`}
+        onClick={(e) => e.stopPropagation()}
+        {...(isDraggable ? dragHandleProps : {})}
       >
-        {/* Drag handle */}
-        <div
-          className={`flex items-center justify-center flex-shrink-0 ${isDraggable ? "cursor-grab opacity-0 group-hover:opacity-100" : "opacity-0 pointer-events-none"}`}
-          onClick={(e) => e.stopPropagation()}
-          {...(isDraggable ? dragHandleProps : {})}
+        <GripVertical className="w-3.5 h-3.5 text-muted-foreground" />
+      </div>
+
+      {/* Image-led thumbnail */}
+      <div className="flex items-center overflow-hidden">
+        <OptionThumbStack selection={selection} size={48} />
+      </div>
+
+      {/* Name + meta (chosen option / options ready, category dot, room) */}
+      <div className="min-w-0">
+        <a
+          href={`/selections/${selection.id}`}
+          onClick={(e) => { e.stopPropagation(); e.preventDefault(); onEdit(selection.id); }}
+          className="text-[13px] font-medium text-foreground truncate hover:underline block leading-tight"
+          data-testid={`text-name-${selection.id}`}
         >
-          <GripVertical className="w-3.5 h-3.5 text-muted-foreground" />
-        </div>
-
-        {/* Second column: expand/collapse chevron */}
-        <div
-          className="flex items-center justify-center flex-shrink-0"
-          onClick={(e) => { e.stopPropagation(); onToggleExpand(); }}
-        >
-          <ChevronRight
-            className={`w-3.5 h-3.5 text-muted-foreground transition-transform duration-150 ${expanded ? "rotate-90" : ""}`}
-          />
-        </div>
-
-        {/* Thumbnail */}
-        <SelectionThumbnail category={selection.category} attachment={rowThumb} size={32} />
-
-        {/* Selection name + sub-label */}
-        <div className="min-w-0">
-          <a
-            href={`/selections/${selection.id}`}
-            onClick={(e) => { e.stopPropagation(); e.preventDefault(); onEdit(selection.id); }}
-            className="text-[12px] font-medium text-foreground truncate hover:underline block"
-            data-testid={`text-name-${selection.id}`}
-          >
-            {selection.name}
-          </a>
-          {selectedOption ? (
-            <div className="text-[10px] text-muted-foreground/60 truncate">{selectedOption.name}</div>
-          ) : selection.description ? (
-            <div className="text-[10px] text-muted-foreground/60 truncate">{selection.description}</div>
-          ) : null}
-        </div>
-
-        {/* Category */}
-        <div className="flex items-center gap-1.5 min-w-0">
+          {selection.name}
+        </a>
+        <div className="mt-0.5 flex items-center gap-1.5 text-[10.5px] text-muted-foreground truncate">
           {selection.category && (
-            <>
+            <span className="inline-flex items-center gap-1 shrink-0">
               <span
-                className="rounded-full shrink-0"
-                style={{ width: 7, height: 7, backgroundColor: getCategoryColour(selection.category) }}
+                className="rounded-full"
+                style={{ width: 6, height: 6, backgroundColor: getCategoryColour(selection.category) }}
               />
-              <span className="text-[11px] text-muted-foreground truncate">{selection.category}</span>
-            </>
-          )}
-        </div>
-
-        {/* Location */}
-        <div className="text-[11px] text-muted-foreground truncate">{selection.room || ""}</div>
-
-        {/* Status */}
-        <div className="min-w-0">
-          <span
-            className={`inline-block rounded px-2 py-1 text-[10px] font-medium border ${STATUS_CHIP_CLASS[derived]}`}
-            data-testid={`badge-status-${selection.id}`}
-          >
-            {STATUS_LABEL[derived]}
-          </span>
-        </div>
-
-        {/* Allowance */}
-        <div className="text-[12px] text-muted-foreground tabular-nums text-right">
-          {formatMoneyCents(allowance)}
-        </div>
-
-        {/* Actual */}
-        <div
-          className={`text-[12px] tabular-nums text-right ${actual === null ? "text-muted-foreground/50" : "text-foreground"}`}
-          data-testid={`text-actual-${selection.id}`}
-        >
-          {formatMoneyCents(actual)}
-        </div>
-
-        {/* Variance */}
-        <div
-          className={`text-[12px] font-semibold tabular-nums text-right ${
-            varianceMeta.tone === "under"
-              ? "text-[hsl(var(--sage))]"
-              : varianceMeta.tone === "over"
-                ? "text-[hsl(var(--coral))]"
-                : "text-muted-foreground/40"
-          }`}
-        >
-          {varianceMeta.text}
-        </div>
-
-        {/* Deadline / PO chip for ordered+received */}
-        <div className="min-w-0">
-          {isOrderedOrReceived && purchaseOrderId ? (
-            <a
-              href={`/projects/${projectId}/purchase-orders/${purchaseOrderId}`}
-              onClick={(e) => e.stopPropagation()}
-              className="inline-flex items-center gap-1 text-[10px] font-medium text-[#4a90d4] hover:underline truncate"
-              data-testid={`chip-po-${selection.id}`}
-            >
-              <ExternalLink className="w-3 h-3 shrink-0" />
-              <span className="truncate">View PO</span>
-            </a>
-          ) : (
-            <span className={`text-[11px] truncate ${deadlineMeta.className}`}>{deadlineMeta.text}</span>
-          )}
-        </div>
-
-        {/* Options count badge (only when collapsed) */}
-        <div className="flex justify-center">
-          {!expanded && selection.options && selection.options.length > 0 && (
-            <span className="bg-muted/40 text-muted-foreground rounded-full text-[10px] font-medium px-2 py-0.5">
-              {selection.options.length} options
+              {selection.category}
             </span>
           )}
+          {selection.category && selection.room && <span className="text-muted-foreground/40">·</span>}
+          {selection.room && <span className="shrink-0">{selection.room}</span>}
+          {(selection.category || selection.room) && (selectedOption || optionCount > 0) && (
+            <span className="text-muted-foreground/40">·</span>
+          )}
+          {selectedOption ? (
+            <span className="truncate text-muted-foreground/70">{selectedOption.name}</span>
+          ) : optionCount > 0 ? (
+            <span className="truncate text-muted-foreground/70">
+              {optionCount} option{optionCount === 1 ? "" : "s"} ready
+            </span>
+          ) : null}
         </div>
+      </div>
 
-        {/* Actions */}
-        <div onClick={(e) => e.stopPropagation()} className="flex items-center justify-center">
+      {/* Status pill (+ PO link when ordered) */}
+      <div className="min-w-0 flex items-center gap-1.5">
+        <span
+          className={`inline-block rounded-full px-2.5 py-1 text-[10px] font-semibold border ${STATUS_CHIP_CLASS[derived]}`}
+          data-testid={`badge-status-${selection.id}`}
+        >
+          {STATUS_LABEL[derived]}
+        </span>
+        {purchaseOrderId && (
+          <a
+            href={`/projects/${projectId}/purchase-orders/${purchaseOrderId}`}
+            onClick={(e) => e.stopPropagation()}
+            className="inline-flex items-center gap-0.5 text-[10px] font-medium text-[#4a90d4] hover:underline shrink-0"
+            data-testid={`chip-po-${selection.id}`}
+          >
+            <ExternalLink className="w-3 h-3" />
+            PO
+          </a>
+        )}
+      </div>
+
+      {/* Merged budget cell */}
+      <BudgetCell selection={selection} />
+
+      {/* Relative deadline */}
+      <div className={`text-[11px] truncate text-right ${deadlineMeta.className}`}>{deadlineMeta.text}</div>
+
+      {/* Actions — sticky right per the app table standard */}
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="flex items-center justify-center sticky right-0 h-full bg-gradient-to-l from-background via-background/95 to-transparent"
+      >
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              className="h-6 w-6 rounded-md hover-elevate active-elevate-2 flex items-center justify-center text-muted-foreground hover:text-foreground"
+              data-testid={`button-actions-${selection.id}`}
+            >
+              <MoreVertical className="h-3 w-3" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onClick={() => onOpenDrawer(selection.id)}>
+              <Eye className="w-4 h-4 mr-2" />
+              Quick View
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => onEdit(selection.id)}>
+              <Edit3 className="w-4 h-4 mr-2" />
+              Open
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => onDuplicate(selection.id)} data-testid={`button-duplicate-${selection.id}`}>
+              <Copy className="w-4 h-4 mr-2" />
+              Duplicate
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={() => onDelete(selection.id)} className="text-destructive">
+              <Trash2 className="w-4 h-4 mr-2" />
+              Delete
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+    </div>
+  );
+}
+
+// Gallery card for the Cards view — image mosaic, status, budget
+function SelectionCard({
+  selection,
+  onOpenDrawer,
+  onEdit,
+  onDelete,
+  onDuplicate,
+  projectId,
+}: {
+  selection: SelectionWithOptions;
+  onOpenDrawer: (id: string) => void;
+  onEdit: (id: string) => void;
+  onDelete: (id: string) => void;
+  onDuplicate: (id: string) => void;
+  projectId: string;
+}) {
+  const derived = getDerivedStatus(selection);
+  const deadlineMeta = getDeadlineMeta(selection.deadline, derived);
+  const chosen = getSelectedOption(selection);
+  const optionCount = selection.options?.length ?? 0;
+  const images = (chosen
+    ? [((chosen as any).attachments as OptionAttachment[] | undefined)?.find((a) => a.fileType?.toLowerCase() === "image")]
+    : (selection.options ?? []).map((o) => ((o as any).attachments as OptionAttachment[] | undefined)?.find((a) => a.fileType?.toLowerCase() === "image"))
+  ).filter(Boolean).slice(0, 3) as OptionAttachment[];
+
+  return (
+    <div
+      className="group bg-card rounded-xl border border-border/80 overflow-hidden cursor-pointer hover-elevate transition-shadow"
+      onClick={() => onOpenDrawer(selection.id)}
+      data-testid={`card-selection-${selection.id}`}
+    >
+      {/* Image mosaic */}
+      <div className="relative h-36 bg-muted/60 overflow-hidden">
+        {images.length === 0 ? (
+          <div
+            className="w-full h-full flex items-center justify-center"
+            style={{ backgroundColor: `${getCategoryColour(selection.category)}1f` }}
+          >
+            <ImageIcon className="w-8 h-8 text-muted-foreground/30" />
+          </div>
+        ) : images.length === 1 ? (
+          <img
+            src={images[0].filePath}
+            alt=""
+            className="w-full h-full object-cover"
+            style={{ objectPosition: `${images[0].thumbnailX ?? 50}% ${images[0].thumbnailY ?? 50}%` }}
+            loading="lazy"
+          />
+        ) : (
+          <div className="grid grid-cols-3 gap-px h-full">
+            {images.map((att, i) => (
+              <img
+                key={att.id}
+                src={att.filePath}
+                alt=""
+                className={cn("w-full h-full object-cover", i === 0 && images.length === 2 && "col-span-2")}
+                style={{ objectPosition: `${att.thumbnailX ?? 50}% ${att.thumbnailY ?? 50}%` }}
+                loading="lazy"
+              />
+            ))}
+          </div>
+        )}
+        <span
+          className={`absolute top-2 left-2 rounded-full px-2 py-0.5 text-[9.5px] font-semibold border backdrop-blur-sm ${STATUS_CHIP_CLASS[derived]}`}
+        >
+          {STATUS_LABEL[derived]}
+        </span>
+        {optionCount > 0 && !chosen && (
+          <span className="absolute bottom-2 right-2 rounded-full bg-black/55 text-white text-[9.5px] px-2 py-0.5">
+            {optionCount} option{optionCount === 1 ? "" : "s"}
+          </span>
+        )}
+        {/* Hover actions */}
+        <div
+          className="absolute top-1.5 right-1.5 opacity-0 group-hover:opacity-100 transition-opacity"
+          onClick={(e) => e.stopPropagation()}
+        >
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <button
-                className="h-6 w-6 rounded-md hover-elevate active-elevate-2 flex items-center justify-center text-muted-foreground hover:text-foreground"
-                data-testid={`button-actions-${selection.id}`}
-              >
+              <button className="h-6 w-6 rounded-md bg-black/45 text-white flex items-center justify-center">
                 <MoreVertical className="h-3 w-3" />
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuItem onClick={() => onEdit(selection.id)}>
-                <Eye className="w-4 h-4 mr-2" />
-                View Details
+                <Edit3 className="w-4 h-4 mr-2" /> Open
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => onEdit(selection.id)}>
-                <Edit3 className="w-4 h-4 mr-2" />
-                Edit
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => onDuplicate(selection.id)} data-testid={`button-duplicate-${selection.id}`}>
-                <Copy className="w-4 h-4 mr-2" />
-                Duplicate
+              <DropdownMenuItem onClick={() => onDuplicate(selection.id)}>
+                <Copy className="w-4 h-4 mr-2" /> Duplicate
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={() => onDelete(selection.id)} className="text-destructive">
-                <Trash2 className="w-4 h-4 mr-2" />
-                Delete
+                <Trash2 className="w-4 h-4 mr-2" /> Delete
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
       </div>
 
-    </>
+      {/* Body */}
+      <div className="p-3">
+        <div className="text-[12.5px] font-medium leading-snug truncate">{selection.name}</div>
+        <div className="mt-0.5 flex items-center gap-1.5 text-[10px] text-muted-foreground truncate">
+          {selection.category && (
+            <span className="inline-flex items-center gap-1">
+              <span className="rounded-full" style={{ width: 5, height: 5, backgroundColor: getCategoryColour(selection.category) }} />
+              {selection.category}
+            </span>
+          )}
+          {selection.category && selection.room && <span className="text-muted-foreground/40">·</span>}
+          {selection.room && <span>{selection.room}</span>}
+          <span className={cn("ml-auto shrink-0", deadlineMeta.className)}>{deadlineMeta.text}</span>
+        </div>
+        <div className="mt-2">
+          <BudgetCell selection={selection} align="left" />
+        </div>
+      </div>
+    </div>
   );
 }
 
-interface OptionsPanelProps {
-  selection: SelectionWithOptions;
-  onSelectOption: (optionId: string) => void;
-  isPending: boolean;
-}
+// Quick-view drawer: options gallery, budget, actions, comments — without
+// leaving the list. Replaces the old inline expand panel (whose Comment and
+// Attach buttons were dead).
+function SelectionDrawer({
+  selection,
+  open,
+  onClose,
+  onEdit,
+  onSelectOption,
+  selectPending,
+  projectId,
+}: {
+  selection: SelectionWithOptions | null;
+  open: boolean;
+  onClose: () => void;
+  onEdit: (id: string) => void;
+  onSelectOption: (selectionId: string, optionId: string) => void;
+  selectPending: boolean;
+  projectId: string;
+}) {
+  const { toast } = useToast();
+  const [commentText, setCommentText] = useState("");
+  const [sendOpen, setSendOpen] = useState(false);
+  const [sendTo, setSendTo] = useState("");
+  const [linkCopied, setLinkCopied] = useState(false);
+  const selId = selection?.id;
 
-function OptionsPanel({ selection, onSelectOption, isPending }: OptionsPanelProps) {
-  const allowance = selection.allowance ?? null;
-  const options = selection.options ?? [];
+  const { data: comments = [] } = useQuery<any[]>({
+    queryKey: ["/api/selections", selId, "comments"],
+    queryFn: () => apiRequest(`/api/selections/${selId}/comments`, "GET"),
+    enabled: open && !!selId,
+  });
+
+  const postCommentMutation = useMutation({
+    mutationFn: async () => apiRequest(`/api/selections/${selId}/comments`, "POST", { content: commentText.trim() }),
+    onSuccess: () => {
+      setCommentText("");
+      queryClient.invalidateQueries({ queryKey: ["/api/selections", selId, "comments"] });
+    },
+  });
+
+  const sendPortalMutation = useMutation({
+    mutationFn: async () => apiRequest(`/api/selections/${selId}/send-portal`, "POST", { to: sendTo.trim() }),
+    onSuccess: () => {
+      setSendOpen(false);
+      queryClient.invalidateQueries({ queryKey: ["/api/selections/with-options"] });
+      toast({ title: "Sent to client", description: `Portal link emailed to ${sendTo.trim()}.` });
+    },
+    onError: (err: any) => {
+      toast({ title: "Send failed", description: err?.message?.replace(/^\d+:\s*/, "") ?? "Failed to send.", variant: "destructive" });
+    },
+  });
+
+  const copyPortalLink = async () => {
+    if (!selection) return;
+    let token = (selection as any).portalToken;
+    if (!token) {
+      const fresh: any = await apiRequest(`/api/selections/${selection.id}`, "GET");
+      token = fresh?.portalToken;
+    }
+    if (!token) return;
+    navigator.clipboard.writeText(`${window.location.origin}/portal/selections/${token}`).then(() => {
+      setLinkCopied(true);
+      setTimeout(() => setLinkCopied(false), 2000);
+    });
+  };
+
+  if (!selection) return null;
+  const derived = getDerivedStatus(selection);
+  const chosen = getSelectedOption(selection);
+  const isLockedForChange = derived === "ordered" || derived === "received";
 
   return (
-    <div className="relative border-b border-border bg-muted/20" data-testid={`panel-options-${selection.id}`}>
-      {/* Left accent bar */}
-      <div aria-hidden="true" className="absolute top-0 left-0 bottom-0 w-[3px] bg-primary" />
-
-      <div className="pl-4">
-        {/* Sub-column header row */}
-        <div className="grid grid-cols-[18px_40px_minmax(160px,1.5fr)_minmax(140px,1fr)_120px_120px_140px] gap-3 items-center h-6 border-b border-border/60 px-3 text-[9px] uppercase tracking-wider font-semibold text-muted-foreground/60">
-          <div></div>
-          <div></div>
-          <div>Option</div>
-          <div>Specifications</div>
-          <div className="text-right">Price</div>
-          <div className="text-right">Vs Allowance</div>
-          <div></div>
-        </div>
-
-        {options.length === 0 ? (
-          <div className="px-3 py-4 text-[11px] text-muted-foreground/60 text-center">
-            No options yet. Add an option below to begin.
+    <Sheet open={open} onOpenChange={(o) => { if (!o) { onClose(); setSendOpen(false); setSendTo(""); } }}>
+      <SheetContent side="right" className="w-full sm:max-w-md overflow-y-auto p-0">
+        <SheetHeader className="px-4 pt-4 pb-3 border-b border-border sticky top-0 bg-background z-10">
+          <div className="flex items-start justify-between gap-2 pr-6">
+            <div className="min-w-0">
+              <SheetTitle className="text-[15px] leading-snug truncate">{selection.name}</SheetTitle>
+              <div className="mt-1 flex items-center gap-1.5 text-[10.5px] text-muted-foreground">
+                <span className={`rounded-full px-2 py-0.5 font-semibold border text-[9.5px] ${STATUS_CHIP_CLASS[derived]}`}>
+                  {STATUS_LABEL[derived]}
+                </span>
+                {[selection.category, selection.room].filter(Boolean).join(" · ")}
+              </div>
+            </div>
+            <Button size="sm" variant="outline" className="h-7 text-xs shrink-0" onClick={() => onEdit(selection.id)}>
+              Open
+            </Button>
           </div>
-        ) : (
-          options.map((option) => {
-            const isSelected = !!option.isSelectedByClient;
-            const price = option.totalCost ?? null;
-            const variance = price !== null && allowance !== null ? price - allowance : null;
-            const varMeta = formatVarianceCents(variance);
-            const optThumb = option.attachments?.[0];
-            const specsParts: string[] = [];
-            if (option.brand) specsParts.push(option.brand);
-            if (option.sku) specsParts.push(`SKU ${option.sku}`);
-            if (option.unitType && option.quantity)
-              specsParts.push(`${option.quantity} ${option.unitType}`);
-            const specsText = specsParts.join(" · ") || (option.description ?? "—");
+          {/* Quick actions */}
+          <div className="flex items-center gap-1.5 pt-2">
+            <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setSendOpen((v) => !v)} data-testid="drawer-send-client">
+              <Send className="w-3 h-3 mr-1" /> Send to client
+            </Button>
+            <Button size="sm" variant="outline" className="h-7 text-xs" onClick={copyPortalLink}>
+              <LinkIcon className="w-3 h-3 mr-1" /> {linkCopied ? "Copied!" : "Copy link"}
+            </Button>
+            <Button
+              size="sm" variant="outline" className="h-7 text-xs"
+              onClick={() => window.open(`/api/selections/${selection.id}/pdf`, "_blank")}
+            >
+              <FileText className="w-3 h-3 mr-1" /> PDF
+            </Button>
+          </div>
+          {sendOpen && (
+            <form
+              className="flex items-center gap-1.5 pt-1"
+              onSubmit={(e) => { e.preventDefault(); if (sendTo.trim()) sendPortalMutation.mutate(); }}
+            >
+              <Input
+                type="email"
+                autoFocus
+                required
+                placeholder="client@example.com"
+                value={sendTo}
+                onChange={(e) => setSendTo(e.target.value)}
+                className="h-7 text-xs"
+              />
+              <Button type="submit" size="sm" className="h-7 text-xs shrink-0" disabled={!sendTo.trim() || sendPortalMutation.isPending}>
+                {sendPortalMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : "Send"}
+              </Button>
+            </form>
+          )}
+        </SheetHeader>
 
-            return (
-              <div
-                key={option.id}
-                className="grid grid-cols-[18px_40px_minmax(160px,1.5fr)_minmax(140px,1fr)_120px_120px_140px] gap-3 items-center h-[52px] border-b border-border/60 last:border-0 px-3"
-                data-testid={`row-option-${option.id}`}
-              >
-                {/* Radio */}
-                <button
-                  type="button"
-                  onClick={() => !isSelected && !isPending && onSelectOption(option.id)}
-                  disabled={isPending}
-                  className={`w-[18px] h-[18px] rounded-full flex items-center justify-center border-2 transition-colors ${
-                    isSelected
-                      ? "bg-primary border-primary"
-                      : "bg-transparent border-border hover:border-primary"
-                  }`}
-                  aria-label={isSelected ? "Selected option" : "Select this option"}
-                  data-testid={`radio-option-${option.id}`}
-                >
-                  {isSelected && <span className="w-1.5 h-1.5 rounded-full bg-white" />}
-                </button>
+        <div className="px-4 py-3 space-y-4">
+          {/* Budget */}
+          <BudgetCell selection={selection} align="left" />
 
-                {/* Thumbnail */}
-                <SelectionThumbnail category={option.category ?? selection.category} attachment={optThumb} size={36} />
-
-                {/* Option name + supplier */}
-                <div className="min-w-0">
-                  <div
-                    className={`text-[12px] font-medium truncate ${isSelected ? "text-foreground" : "text-muted-foreground"}`}
-                  >
-                    {option.name}
-                  </div>
-                  {option.brand && (
-                    <div className="text-[10px] text-muted-foreground/60 truncate">{option.brand}</div>
+          {/* Options gallery */}
+          <div className="space-y-1.5">
+            <div className="text-[10px] uppercase tracking-wide font-semibold text-muted-foreground">
+              Options ({selection.options?.length ?? 0})
+            </div>
+            {(selection.options ?? []).map((o) => {
+              const img = ((o as any).attachments as OptionAttachment[] | undefined)?.find((a) => a.fileType?.toLowerCase() === "image");
+              const isChosen = o.isSelectedByClient;
+              const isApproved = !!o.approvedAt;
+              return (
+                <div
+                  key={o.id}
+                  className={cn(
+                    "flex items-center gap-2.5 rounded-lg border p-2",
+                    isChosen ? "border-[hsl(var(--sage))]/60 bg-[hsl(var(--sage))]/5" : "border-border/70",
                   )}
-                </div>
-
-                {/* Specs */}
-                <div className="text-[11px] text-muted-foreground truncate">{specsText}</div>
-
-                {/* Price */}
-                <div
-                  className={`text-[12px] tabular-nums text-right ${
-                    isSelected ? "font-semibold text-foreground" : "text-muted-foreground"
-                  }`}
                 >
-                  {formatMoneyCents(price)}
-                </div>
-
-                {/* Variance vs allowance */}
-                <div
-                  className={`text-[11px] font-semibold tabular-nums text-right ${
-                    varMeta.tone === "under"
-                      ? "text-[hsl(var(--sage))]"
-                      : varMeta.tone === "over"
-                        ? "text-[hsl(var(--coral))]"
-                        : "text-muted-foreground/40"
-                  }`}
-                >
-                  {varMeta.text}
-                </div>
-
-                {/* Right side: Selected pill or Select button + comment/attach */}
-                <div className="flex items-center justify-end gap-1.5">
-                  <button
-                    type="button"
-                    className="text-muted-foreground/50 hover:text-muted-foreground p-1 rounded hover-elevate"
-                    aria-label="Comment"
-                  >
-                    <MessageSquare className="w-3 h-3" />
-                  </button>
-                  <button
-                    type="button"
-                    className="text-muted-foreground/50 hover:text-muted-foreground p-1 rounded hover-elevate"
-                    aria-label="Attach"
-                  >
-                    <Paperclip className="w-3 h-3" />
-                  </button>
-                  {isSelected ? (
-                    <span className="bg-primary/10 text-primary rounded px-2 py-1 text-[10px] font-medium inline-flex items-center gap-1">
-                      Selected
-                      <Check className="w-3 h-3" />
-                    </span>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => !isPending && onSelectOption(option.id)}
-                      disabled={isPending}
-                      className="border border-border rounded px-3 py-1 text-[11px] text-muted-foreground hover:border-primary hover:text-primary disabled:opacity-50"
-                      data-testid={`button-select-${option.id}`}
+                  <SelectionThumbnail category={selection.category} attachment={img} size={40} />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[11.5px] font-medium truncate">{o.name}</div>
+                    <div className="text-[10px] text-muted-foreground truncate">
+                      {[o.brand, o.totalCost != null ? formatMoneyCents(o.totalCost) : null].filter(Boolean).join(" · ")}
+                    </div>
+                  </div>
+                  {isApproved ? (
+                    <span className="text-[9.5px] font-semibold text-[hsl(var(--sage))] shrink-0">Approved</span>
+                  ) : isChosen ? (
+                    <span className="text-[9.5px] font-semibold text-primary shrink-0">Selected</span>
+                  ) : !isLockedForChange ? (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-6 text-[10px] shrink-0"
+                      disabled={selectPending}
+                      onClick={() => onSelectOption(selection.id, o.id)}
                     >
                       Select
-                    </button>
-                  )}
+                    </Button>
+                  ) : null}
                 </div>
+              );
+            })}
+            {(selection.options ?? []).length === 0 && (
+              <div className="text-[11px] text-muted-foreground border border-dashed rounded-lg p-3 text-center">
+                No options yet — open the selection to add products.
               </div>
-            );
-          })
-        )}
+            )}
+          </div>
 
-        {/* Add option ghost row */}
-        <button
-          type="button"
-          className="w-full h-9 flex items-center text-[11px] text-muted-foreground/50 hover:text-muted-foreground hover:bg-muted/10 px-3"
-          data-testid={`button-add-option-${selection.id}`}
-        >
-          <span className="pl-[136px]">+ Add option</span>
-        </button>
-      </div>
-    </div>
+          {/* Comments */}
+          <div className="space-y-1.5">
+            <div className="text-[10px] uppercase tracking-wide font-semibold text-muted-foreground">
+              Comments ({comments.length})
+            </div>
+            <div className="space-y-1.5 max-h-48 overflow-y-auto">
+              {comments.map((c: any) => (
+                <div key={c.id} className="rounded-lg bg-muted/50 px-2.5 py-1.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[10px] font-semibold">{c.isClientComment ? `${c.createdByName} (client)` : c.createdByName}</span>
+                    <span className="text-[9px] text-muted-foreground">{format(new Date(c.createdAt), "d MMM, h:mm a")}</span>
+                  </div>
+                  <div className="text-[11px] whitespace-pre-wrap">{c.content}</div>
+                </div>
+              ))}
+            </div>
+            <form
+              className="flex items-end gap-1.5"
+              onSubmit={(e) => { e.preventDefault(); if (commentText.trim()) postCommentMutation.mutate(); }}
+            >
+              <Textarea
+                placeholder="Write a comment…"
+                value={commentText}
+                onChange={(e) => setCommentText(e.target.value)}
+                className="min-h-[52px] text-xs resize-none"
+              />
+              <Button type="submit" size="icon" className="h-8 w-8 shrink-0" disabled={!commentText.trim() || postCommentMutation.isPending}>
+                {postCommentMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+              </Button>
+            </form>
+          </div>
+        </div>
+      </SheetContent>
+    </Sheet>
   );
 }
 
@@ -635,7 +894,6 @@ export default function Selections() {
   const [searchTerm, setSearchTerm] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string>("");
   const [statusTab, setStatusTab] = useState<"all" | DerivedStatus>("all");
-  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
   const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set());
   const [showCreatePOModal, setShowCreatePOModal] = useState(false);
   const [createPOSupplierId, setCreatePOSupplierId] = useState<string>("");
@@ -646,6 +904,48 @@ export default function Selections() {
   const [groupBy, setGroupBy] = useState<"none" | "category" | "location">(() => {
     return (localStorage.getItem("selections-group-by") as "none" | "category" | "location") || "none";
   });
+  // List/Cards toggle — persisted like the detail page's grid/table toggle
+  const [viewMode, setViewMode] = useState<"list" | "cards">(() => {
+    return (localStorage.getItem("selections-view-mode") as "list" | "cards") || "list";
+  });
+  useEffect(() => {
+    localStorage.setItem("selections-view-mode", viewMode);
+  }, [viewMode]);
+  // Quick-view drawer (replaces the old inline expand panel)
+  const [drawerId, setDrawerId] = useState<string | null>(null);
+  // Saved column widths per the app table standard (status/budget/deadline are
+  // resizable via the header dividers; name is the filler column)
+  const [columnWidths, setColumnWidths] = useState<{ status: number; budget: number; deadline: number }>(() => {
+    try {
+      const stored = JSON.parse(localStorage.getItem("selections-column-widths") || "null");
+      if (stored && typeof stored.status === "number") return stored;
+    } catch { /* corrupted — fall through to defaults */ }
+    return { status: 130, budget: 210, deadline: 90 };
+  });
+  useEffect(() => {
+    localStorage.setItem("selections-column-widths", JSON.stringify(columnWidths));
+  }, [columnWidths]);
+  const gridTemplate = `16px 64px minmax(200px,1fr) ${columnWidths.status}px ${columnWidths.budget}px ${columnWidths.deadline}px 36px`;
+
+  const resizeRef = useRef<{ key: "status" | "budget" | "deadline"; startX: number; startW: number } | null>(null);
+  const startColumnResize = (key: "status" | "budget" | "deadline") => (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    resizeRef.current = { key, startX: e.clientX, startW: columnWidths[key] };
+    const onMove = (ev: MouseEvent) => {
+      const r = resizeRef.current;
+      if (!r) return;
+      const next = Math.max(70, Math.min(360, r.startW + (ev.clientX - r.startX)));
+      setColumnWidths((prev) => ({ ...prev, [r.key]: next }));
+    };
+    const onUp = () => {
+      resizeRef.current = null;
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+    };
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+  };
   const [expandedTemplateIds, setExpandedTemplateIds] = useState<Set<string>>(new Set());
   const [expandedGroupIds, setExpandedGroupIds] = useState<Set<string>>(new Set());
   const [templateSearch, setTemplateSearch] = useState("");
@@ -917,20 +1217,6 @@ export default function Selections() {
   }, [selectionsWithOptions]);
 
   // Handlers
-  const toggleExpand = (id: string) => {
-    setExpandedRows((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
-
-  const toggleAllExpanded = () => {
-    const allExpanded = filtered.every((s) => expandedRows.has(s.id));
-    setExpandedRows(allExpanded ? new Set() : new Set(filtered.map((s) => s.id)));
-  };
-
   const handleAddSelection = () => {
     if (!projectId) return;
     createSelectionMutation.mutate({
@@ -1126,8 +1412,10 @@ export default function Selections() {
             />
           </div>
 
-          {/* Right: budget summary */}
+          {/* Right: decision progress + budget summary */}
           <div className="rounded-lg border border-border bg-card px-4 py-2 flex items-center gap-6">
+            <ProgressStrip selections={selectionsWithOptions} />
+            <div className="w-px self-stretch bg-border/70" />
             <div>
               <div className="text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">Allowance</div>
               <div className="text-[13px] font-bold text-foreground tabular-nums" data-testid="text-total-allowance">
@@ -1251,6 +1539,31 @@ export default function Selections() {
 
           {/* Right side */}
           <div className="ml-auto flex items-center gap-1 flex-shrink-0">
+            {/* List / Cards toggle */}
+            <div className="flex items-center rounded-md border border-border/50 p-px mr-1">
+              <button
+                onClick={() => setViewMode("list")}
+                className={cn(
+                  "h-5 w-6 flex items-center justify-center rounded",
+                  viewMode === "list" ? "bg-primary/15 text-primary" : "text-muted-foreground",
+                )}
+                data-testid="button-view-list"
+                aria-label="List view"
+              >
+                <LayoutList className="w-3 h-3" />
+              </button>
+              <button
+                onClick={() => setViewMode("cards")}
+                className={cn(
+                  "h-5 w-6 flex items-center justify-center rounded",
+                  viewMode === "cards" ? "bg-primary/15 text-primary" : "text-muted-foreground",
+                )}
+                data-testid="button-view-cards"
+                aria-label="Cards view"
+              >
+                <LayoutGrid className="w-3 h-3" />
+              </button>
+            </div>
             {/* Group-by dropdown */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -1390,32 +1703,43 @@ export default function Selections() {
 
       {/* Table */}
       <div className="flex-1 overflow-auto">
-        {/* Table header */}
-        <div className="grid grid-cols-[16px_32px_40px_minmax(160px,1fr)_120px_120px_100px_100px_100px_100px_110px_90px_32px] gap-3 items-center bg-muted border-b border-border h-[34px] px-3 text-[10px] uppercase tracking-wider font-semibold text-muted-foreground sticky top-0 z-10">
-          <div></div>
-          <div className="flex items-center justify-center">
-            <button
-              type="button"
-              onClick={toggleAllExpanded}
-              className="flex items-center justify-center h-5 w-5 text-muted-foreground hover:text-foreground transition-colors"
-              data-testid="button-expand-all"
-              aria-label={filtered.every(s => expandedRows.has(s.id)) ? "Collapse all" : "Expand all"}
-            >
-              <ChevronsUpDown className="w-3.5 h-3.5" />
-            </button>
+        {/* Table header — hidden in cards view; status/budget/deadline are
+            resizable via the divider handles (widths persisted) */}
+        {viewMode === "list" && (
+          <div
+            className="grid gap-3 items-center bg-muted border-b border-border h-[34px] px-3 text-[10px] uppercase tracking-wider font-semibold text-muted-foreground sticky top-0 z-10"
+            style={{ gridTemplateColumns: gridTemplate }}
+          >
+            <div></div>
+            <div></div>
+            <div>Selection</div>
+            <div className="relative flex items-center h-full">
+              Status
+              <div
+                className="absolute right-0 top-0 h-full w-1.5 cursor-col-resize hover:bg-primary/30"
+                onMouseDown={startColumnResize("status")}
+                data-testid="resize-status"
+              />
+            </div>
+            <div className="relative flex items-center justify-end h-full">
+              Budget
+              <div
+                className="absolute right-0 top-0 h-full w-1.5 cursor-col-resize hover:bg-primary/30"
+                onMouseDown={startColumnResize("budget")}
+                data-testid="resize-budget"
+              />
+            </div>
+            <div className="relative flex items-center justify-end h-full">
+              Due
+              <div
+                className="absolute right-0 top-0 h-full w-1.5 cursor-col-resize hover:bg-primary/30"
+                onMouseDown={startColumnResize("deadline")}
+                data-testid="resize-deadline"
+              />
+            </div>
+            <div></div>
           </div>
-          <div></div>
-          <div>Selection</div>
-          <div>Category</div>
-          <div>Location</div>
-          <div>Status</div>
-          <div className="text-right">Allowance</div>
-          <div className="text-right">Actual</div>
-          <div className="text-right">Variance</div>
-          <div>Deadline</div>
-          <div className="text-center">Options</div>
-          <div></div>
-        </div>
+        )}
 
         {/* Body — DndContext always mounted so hook count stays stable */}
         <DndContext
@@ -1463,85 +1787,87 @@ export default function Selections() {
                         <span className="text-[9px] text-muted-foreground/40 bg-muted/50 rounded px-1 py-px ml-0.5">{groupItems.length}</span>
                       </button>
                     </div>
-                    {/* Group items with sortable context */}
-                    {isOpen && (
+                    {/* Group items — cards grid or sortable rows */}
+                    {isOpen && (viewMode === "cards" ? (
+                      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3 px-3 py-3">
+                        {groupItems.map((sel) => (
+                          <SelectionCard
+                            key={sel.id}
+                            selection={sel}
+                            onOpenDrawer={setDrawerId}
+                            onEdit={handleEdit}
+                            onDelete={handleDelete}
+                            onDuplicate={handleDuplicate}
+                            projectId={projectId!}
+                          />
+                        ))}
+                      </div>
+                    ) : (
                       <SortableContext
                         items={groupItems.map((s) => s.id)}
                         strategy={verticalListSortingStrategy}
                       >
                         {groupItems.map((sel) => (
-                          <div key={sel.id}>
-                            <SortableSelectionRow
-                              selection={sel}
-                              expanded={expandedRows.has(sel.id)}
-                              onToggleExpand={() => toggleExpand(sel.id)}
-                              onSelectOption={(selectionId, optionId) =>
-                                selectOptionMutation.mutate({ selectionId, optionId })
-                              }
-                              onEdit={handleEdit}
-                              onDelete={handleDelete}
-                              onDuplicate={handleDuplicate}
-                              isPending={selectOptionMutation.isPending}
-                              isChecked={checkedIds.has(sel.id)}
-                              onCheck={handleCheck}
-                              projectId={projectId!}
-                              isDraggable={isDraggable}
-                            />
-                            {expandedRows.has(sel.id) && (
-                              <OptionsPanel
-                                selection={sel}
-                                onSelectOption={(optionId) =>
-                                  selectOptionMutation.mutate({ selectionId: sel.id, optionId })
-                                }
-                                isPending={selectOptionMutation.isPending}
-                              />
-                            )}
-                          </div>
+                          <SortableSelectionRow
+                            key={sel.id}
+                            selection={sel}
+                            gridTemplate={gridTemplate}
+                            onOpenDrawer={setDrawerId}
+                            onEdit={handleEdit}
+                            onDelete={handleDelete}
+                            onDuplicate={handleDuplicate}
+                            isChecked={checkedIds.has(sel.id)}
+                            onCheck={handleCheck}
+                            projectId={projectId!}
+                            isDraggable={isDraggable}
+                          />
                         ))}
                       </SortableContext>
-                    )}
+                    ))}
                   </div>
                 );
               })}
             </div>
           ) : (
-            /* Flat rendering */
+            /* Flat rendering — cards grid or sortable rows */
+            viewMode === "cards" ? (
+              <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3 px-3 py-3">
+                {filtered.map((sel) => (
+                  <SelectionCard
+                    key={sel.id}
+                    selection={sel}
+                    onOpenDrawer={setDrawerId}
+                    onEdit={handleEdit}
+                    onDelete={handleDelete}
+                    onDuplicate={handleDuplicate}
+                    projectId={projectId!}
+                  />
+                ))}
+              </div>
+            ) : (
             <SortableContext
               items={filtered.map((s) => s.id)}
               strategy={verticalListSortingStrategy}
             >
               <div>
                 {filtered.map((sel) => (
-                  <div key={sel.id}>
-                    <SortableSelectionRow
-                      selection={sel}
-                      expanded={expandedRows.has(sel.id)}
-                      onToggleExpand={() => toggleExpand(sel.id)}
-                      onSelectOption={(selectionId, optionId) =>
-                        selectOptionMutation.mutate({ selectionId, optionId })
-                      }
-                      onEdit={handleEdit}
-                      onDelete={handleDelete}
-                      onDuplicate={handleDuplicate}
-                      isPending={selectOptionMutation.isPending}
-                      isChecked={checkedIds.has(sel.id)}
-                      onCheck={handleCheck}
-                      projectId={projectId!}
-                      isDraggable={isDraggable}
-                    />
-                    {expandedRows.has(sel.id) && (
-                      <OptionsPanel
-                        selection={sel}
-                        onSelectOption={(optionId) =>
-                          selectOptionMutation.mutate({ selectionId: sel.id, optionId })
-                        }
-                        isPending={selectOptionMutation.isPending}
-                      />
-                    )}
-                  </div>
+                  <SortableSelectionRow
+                    key={sel.id}
+                    selection={sel}
+                    gridTemplate={gridTemplate}
+                    onOpenDrawer={setDrawerId}
+                    onEdit={handleEdit}
+                    onDelete={handleDelete}
+                    onDuplicate={handleDuplicate}
+                    isChecked={checkedIds.has(sel.id)}
+                    onCheck={handleCheck}
+                    projectId={projectId!}
+                    isDraggable={isDraggable}
+                  />
                 ))}
               </div>
             </SortableContext>
+            )
           )}
         </DndContext>
       </div>
@@ -1837,6 +2163,16 @@ export default function Selections() {
         </div>
       )}
 
+      {/* Quick-view drawer */}
+      <SelectionDrawer
+        selection={selectionsWithOptions.find((s) => s.id === drawerId) ?? null}
+        open={!!drawerId}
+        onClose={() => setDrawerId(null)}
+        onEdit={handleEdit}
+        onSelectOption={(selectionId, optionId) => selectOptionMutation.mutate({ selectionId, optionId })}
+        selectPending={selectOptionMutation.isPending}
+        projectId={projectId ?? ""}
+      />
     </div>
   );
 }
