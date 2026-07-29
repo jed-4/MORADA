@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   FileText,
   DollarSign,
@@ -21,13 +22,17 @@ import {
   MessageSquare,
   Briefcase,
   BookOpen,
+  ArrowRight,
+  AlertCircle,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { stripActivityActor } from "@/lib/formatters";
+import { useLocation } from "wouter";
 
-export default function ActivityWidget({ widget, onUpdate, isConfiguring, onCloseConfig }: WidgetProps) {
+export default function ActivityWidget({ widget, onUpdate, isConfiguring, onCloseConfig, onSetHeaderActions }: WidgetProps) {
   const { currentProject } = useProject();
   const { toast } = useToast();
+  const [, navigate] = useLocation();
   const [editingTitle, setEditingTitle] = useState(widget.title);
   const [configMaxItems, setConfigMaxItems] = useState(widget.config?.maxItems || 20);
   const [expandedGroups, setExpandedGroups] = useState<Set<number>>(new Set());
@@ -41,7 +46,7 @@ export default function ActivityWidget({ widget, onUpdate, isConfiguring, onClos
 
   const maxItemsConfig = widget.config?.maxItems || 20;
 
-  const { data: activities = [], isLoading } = useQuery<Activity[]>({
+  const { data: activities = [], isLoading, isError, refetch } = useQuery<Activity[]>({
     queryKey: ["/api/activities", currentProject?.id, maxItemsConfig],
     queryFn: async () => {
       if (!currentProject?.id) return [];
@@ -192,59 +197,114 @@ export default function ActivityWidget({ widget, onUpdate, isConfiguring, onClos
     }
   };
 
+  // Header row: + note button, hover arrow to the Activity tab
+  useEffect(() => {
+    onSetHeaderActions?.(
+      currentProject ? (
+        <>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                size="icon"
+                variant="default"
+                className="h-6 w-6"
+                onClick={() => setIsAddingNote(prev => !prev)}
+                data-testid="button-add-activity-note"
+                aria-label="Add note"
+              >
+                <Plus className="h-3.5 w-3.5" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="top">Add note</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                size="icon"
+                variant="ghost"
+                className="h-6 w-6 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity"
+                onClick={() => navigate(`/projects/${currentProject.id}/activity`)}
+                data-testid="activity-widget-open-full"
+                aria-label="Open activity"
+              >
+                <ArrowRight className="h-3.5 w-3.5" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="top">All activity</TooltipContent>
+          </Tooltip>
+        </>
+      ) : null,
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentProject?.id]);
+
   // Configuration mode
   if (isConfiguring) {
     const handleSaveConfig = () => {
       if (onUpdate) {
-        onUpdate({ 
-          ...widget, 
+        onUpdate({
+          ...widget,
           title: editingTitle,
           config: { ...widget.config, maxItems: configMaxItems }
         });
       }
       onCloseConfig?.();
     };
-    
+
     const handleCancelConfig = () => {
       setEditingTitle(widget.title);
       setConfigMaxItems(widget.config?.maxItems || 20);
       onCloseConfig?.();
     };
-    
+
     return (
-      <div className="space-y-3 p-2">
-        <h4 className="text-sm font-medium">Configure Activity Feed</h4>
-        
-        <div className="space-y-2">
-          <Label className="text-xs">Widget Name</Label>
-          <Input 
+      <div className="flex-1 overflow-y-auto p-1 space-y-5 text-[12px]" data-testid="activity-widget-config">
+        <section>
+          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+            Widget title
+          </p>
+          <Input
             value={editingTitle}
             onChange={(e) => setEditingTitle(e.target.value)}
-            className="h-7 text-xs"
+            className="h-8 text-xs"
             placeholder="Widget title"
           />
-        </div>
-        
-        <div className="space-y-2">
-          <Label className="text-xs">Max Items to Show</Label>
-          <Input 
+        </section>
+
+        <section>
+          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+            Max items to show
+          </p>
+          <Input
             type="number"
             min={5}
             max={50}
             value={configMaxItems}
             onChange={(e) => setConfigMaxItems(parseInt(e.target.value) || 20)}
-            className="h-7 text-xs w-20"
+            className="h-8 text-xs w-20"
           />
-        </div>
-        
-        <div className="flex justify-end gap-2 pt-2">
-          <Button size="sm" variant="outline" onClick={handleCancelConfig} className="h-6 px-2 text-xs">
+        </section>
+
+        <div className="flex justify-end gap-2 pt-1">
+          <Button size="sm" variant="outline" onClick={handleCancelConfig} className="h-7 px-3 text-xs">
             Cancel
           </Button>
-          <Button size="sm" onClick={handleSaveConfig} className="h-6 px-2 text-xs">
+          <Button size="sm" onClick={handleSaveConfig} className="h-7 px-3 text-xs">
             Save
           </Button>
         </div>
+      </div>
+    );
+  }
+
+  if (isError) {
+    return (
+      <div className="flex flex-col items-center gap-2 py-6 text-sm text-muted-foreground">
+        <AlertCircle className="h-4 w-4 text-destructive" />
+        Couldn't load activity
+        <Button size="sm" variant="outline" className="h-6 px-2 text-xs" onClick={() => refetch()}>
+          Retry
+        </Button>
       </div>
     );
   }
@@ -273,22 +333,6 @@ export default function ActivityWidget({ widget, onUpdate, isConfiguring, onClos
   if (filteredActivities.length === 0) {
     return (
       <div className="flex flex-col h-full">
-        <div className="flex items-center justify-between mb-3">
-          <div className="text-sm font-semibold">0 recent activities</div>
-          {!isAddingNote && (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="h-6 px-2 text-xs"
-              onClick={() => setIsAddingNote(true)}
-              data-testid="button-add-activity-note-empty"
-            >
-              <Plus className="h-3 w-3 mr-1" />
-              Add Note
-            </Button>
-          )}
-        </div>
-
         {isAddingNote && (
           <div className="mb-3 p-2 border rounded-md bg-muted/30 space-y-2">
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -331,6 +375,9 @@ export default function ActivityWidget({ widget, onUpdate, isConfiguring, onClos
           <Clock className="h-8 w-8 text-muted-foreground mb-2" />
           <p className="text-sm text-muted-foreground">
             No recent activity on this project
+          </p>
+          <p className="text-xs text-muted-foreground mt-1">
+            Click + to add a note
           </p>
         </div>
       </div>
@@ -401,24 +448,6 @@ export default function ActivityWidget({ widget, onUpdate, isConfiguring, onClos
 
   return (
     <div className="flex flex-col h-full">
-      <div className="flex items-center justify-between mb-3">
-        <div className="text-sm font-semibold">
-          {filteredActivities.length} recent activit{filteredActivities.length === 1 ? "y" : "ies"}
-        </div>
-        {!isAddingNote && (
-          <Button
-            size="sm"
-            variant="ghost"
-            className="h-6 px-2 text-xs"
-            onClick={() => setIsAddingNote(true)}
-            data-testid="button-add-activity-note"
-          >
-            <Plus className="h-3 w-3 mr-1" />
-            Add Note
-          </Button>
-        )}
-      </div>
-
       {isAddingNote && (
         <div className="mb-3 p-2 border rounded-md bg-muted/30 space-y-2">
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
