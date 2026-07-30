@@ -38,6 +38,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { CreatableFieldSelect } from "@/components/ui/creatable-field-select";
+import { Label } from "@/components/ui/label";
 import {
   Dialog,
   DialogContent,
@@ -66,6 +67,7 @@ import {
 } from "@/components/ui/accordion";
 import {
   ChevronLeft,
+  HardHat,
   Plus,
   Search,
   MoreVertical,
@@ -251,6 +253,7 @@ export default function SelectionDetail() {
   const [optionSpecifications, setOptionSpecifications] = useState<Record<string, any>>({});
   const [specsOpen, setSpecsOpen] = useState(false);
   const [notesOpen, setNotesOpen] = useState(false);
+  const [descOpen, setDescOpen] = useState(false);
   const [specPickerOpen, setSpecPickerOpen] = useState(false);
   const [detailSpecImageUrlInput, setDetailSpecImageUrlInput] = useState("");
   const [optionsSearchExpanded, setOptionsSearchExpanded] = useState(false);
@@ -267,6 +270,7 @@ export default function SelectionDetail() {
   const [uploadingImage, setUploadingImage] = useState(false);
   const [commentText, setCommentText] = useState("");
   const [commentsExpanded, setCommentsExpanded] = useState(false);
+  const [notesPanelExpanded, setNotesPanelExpanded] = useState(false);
   const [showQrModal, setShowQrModal] = useState(false);
   const [portalLinkCopied, setPortalLinkCopied] = useState(false);
 
@@ -702,7 +706,7 @@ export default function SelectionDetail() {
       if (scraped?.name) optionForm.setValue("name", scraped.name);
       if (scraped?.brand) optionForm.setValue("brand", scraped.brand);
       if (scraped?.sku) optionForm.setValue("sku", scraped.sku);
-      if (scraped?.description) optionForm.setValue("description", scraped.description);
+      if (scraped?.description) { optionForm.setValue("description", scraped.description); setDescOpen(true); }
       if (scraped?.url) optionForm.setValue("url", scraped.url);
       if (scraped?.priceCents) {
         // AU retail pages list inc-GST prices
@@ -939,6 +943,7 @@ export default function SelectionDetail() {
     setOptionSpecifications((option as any).specifications || {});
     setSpecsOpen(!!(((option as any).specifications) && Object.keys((option as any).specifications).length > 0));
     setNotesOpen(!!((option as any).notes));
+    setDescOpen(!!option.description);
     setGstInclusive(option.gstInclusive || false);
     setUnitCostDisplayStr(option.unitCost ? (option.unitCost / 100).toFixed(2) : "");
     setTotalCostDisplayStr(option.totalCost ? (option.totalCost / 100).toFixed(2) : "");
@@ -981,6 +986,7 @@ export default function SelectionDetail() {
     setOptionSpecifications({});
     setSpecsOpen(false);
     setNotesOpen(false);
+    setDescOpen(false);
     setGstInclusive(false);
     setUnitCostDisplayStr("");
     setTotalCostDisplayStr("");
@@ -1273,25 +1279,6 @@ export default function SelectionDetail() {
                     <div className="text-sm text-foreground">{selection.description}</div>
                   </div>
                 )}
-
-                {/* Notes to trades */}
-                <div className="w-full mt-1">
-                  <div className="text-data text-muted-foreground uppercase tracking-wide mb-1">Notes to Trades</div>
-                  {localNotes && (
-                    <p className="mb-1.5 text-xs px-2 py-1 rounded-md bg-status-warning-bg text-status-warning border border-status-warning/30">
-                      Visible to your internal team only — not the client.
-                    </p>
-                  )}
-                  <Textarea
-                    value={localNotes}
-                    onChange={(e) => setLocalNotes(e.target.value)}
-                    onBlur={(e) => handleSaveNotes(e.target.value)}
-                    placeholder="Instructions, warnings, or notes for your trades team…"
-                    rows={2}
-                    className="text-sm resize-none"
-                    data-testid="input-selection-notes"
-                  />
-                </div>
 
                 {/* Estimate link */}
                 {selection.estimateItemId && (
@@ -2277,6 +2264,36 @@ export default function SelectionDetail() {
             </div>
           )}
 
+          {/* Notes to trades — collapsible, above comments */}
+          <div className="surface-panel" data-testid="selection-trades-notes">
+            <button
+              type="button"
+              onClick={() => setNotesPanelExpanded((v) => !v)}
+              className="w-full flex items-center gap-2 p-3 hover-elevate rounded-t-md text-left"
+            >
+              <HardHat className="w-3.5 h-3.5 text-muted-foreground" />
+              <span className="text-data text-muted-foreground uppercase tracking-wide">Notes to Trades</span>
+              {!!localNotes && <Badge variant="secondary" className="text-xs">set</Badge>}
+              <ChevronDown className={cn("w-3.5 h-3.5 text-muted-foreground ml-auto transition-transform duration-150", notesPanelExpanded && "rotate-180")} />
+            </button>
+            {notesPanelExpanded && (
+              <div className="px-3 pb-3 space-y-1.5">
+                <p className="text-xs px-2 py-1 rounded-md bg-status-warning-bg text-status-warning border border-status-warning/30">
+                  Visible to your internal team only — not the client.
+                </p>
+                <Textarea
+                  value={localNotes}
+                  onChange={(e) => setLocalNotes(e.target.value)}
+                  onBlur={(e) => handleSaveNotes(e.target.value)}
+                  placeholder="Instructions, warnings, or notes for your trades team…"
+                  rows={3}
+                  className="text-sm resize-none"
+                  data-testid="input-selection-notes"
+                />
+              </div>
+            )}
+          </div>
+
           {/* Comments */}
           <div className="surface-panel" data-testid="selection-comments">
             <button
@@ -2373,7 +2390,7 @@ export default function SelectionDetail() {
         onOpenChange={handleDialogChange}
       >
         <DialogContent
-          className="sm:max-w-[700px] max-h-[95vh] flex flex-col"
+          className="sm:max-w-[960px] max-h-[95vh] flex flex-col"
           onPaste={(e) => {
             const files = Array.from(e.clipboardData?.files ?? []).filter((f) => f.type.startsWith("image/"));
             if (files.length > 0) {
@@ -2396,7 +2413,10 @@ export default function SelectionDetail() {
 
           <div className="flex-1 overflow-y-auto">
             <Form {...optionForm}>
-              <form onSubmit={optionForm.handleSubmit(onOptionSubmit)} className="space-y-4 pr-2">
+              <form onSubmit={optionForm.handleSubmit(onOptionSubmit)} className="pr-2">
+                <div className="md:grid md:grid-cols-[minmax(0,1fr)_300px] md:gap-x-6">
+                {/* Fields pane — identity and price above the fold */}
+                <div className="space-y-4 min-w-0">
 
                 {/* Row 1: Name (full width) */}
                 <FormField
@@ -2460,27 +2480,41 @@ export default function SelectionDetail() {
                   />
                 </div>
 
-                {/* Row 3: Description (full width) */}
-                <FormField
-                  control={optionForm.control}
-                  name="description"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Description</FormLabel>
-                      <FormControl>
-                        <Textarea
-                          placeholder="Describe this option..."
-                          rows={2}
-                          {...field}
-                          value={field.value || ""}
-                          data-testid="input-option-description"
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
+                {/* Key details — the facts trades and clients scan for (stored in
+                    specifications; colour/finish/dims promoted per site-team request) */}
+                <div className="space-y-2">
+                  <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Key details</div>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                    <div className="space-y-1">
+                      <Label className="text-xs">Colour</Label>
+                      <Input className="h-8 text-xs" placeholder="e.g. Matte White"
+                        value={optionSpecifications.colour ?? ""}
+                        onChange={(e) => setOptionSpecifications((sp) => ({ ...sp, colour: e.target.value || undefined }))}
+                        data-testid="input-key-colour" />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Finish</Label>
+                      <Input className="h-8 text-xs" placeholder="e.g. Brushed Nickel"
+                        value={optionSpecifications.finish ?? ""}
+                        onChange={(e) => setOptionSpecifications((sp) => ({ ...sp, finish: e.target.value || undefined }))}
+                        data-testid="input-key-finish" />
+                    </div>
+                    {([
+                      ["length", "Length (mm)"],
+                      ["width", "Width (mm)"],
+                      ["height", "Height (mm)"],
+                      ["depth", "Depth (mm)"],
+                    ] as const).map(([key, label]) => (
+                      <div key={key} className="space-y-1">
+                        <Label className="text-xs">{label}</Label>
+                        <Input type="number" min="0" className="h-8 text-xs"
+                          value={optionSpecifications[key] ?? ""}
+                          onChange={(e) => setOptionSpecifications((sp) => ({ ...sp, [key]: e.target.value ? parseFloat(e.target.value) : undefined }))}
+                          data-testid={`input-key-${key}`} />
+                      </div>
+                    ))}
+                  </div>
+                </div>
 
                 <Separator />
 
@@ -2718,8 +2752,225 @@ export default function SelectionDetail() {
                   )}
                 />
 
-                <Separator />
+                {/* Description — collapsible; the why, below the facts */}
+                <FormField
+                  control={optionForm.control}
+                  name="description"
+                  render={({ field }) => (
+                    <div className="border rounded-md overflow-hidden">
+                      <button
+                        type="button"
+                        className="w-full flex items-center justify-between px-3 py-2 text-sm font-medium hover-elevate bg-muted/40 text-left"
+                        onClick={() => setDescOpen((o) => !o)}
+                      >
+                        <span className="flex items-center gap-2">
+                          {descOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                          Description
+                          {field.value && <span className="inline-block w-1.5 h-1.5 rounded-full bg-primary" />}
+                        </span>
+                      </button>
+                      {descOpen && (
+                        <div className="p-3 border-t">
+                          <FormControl>
+                            <Textarea
+                              placeholder="Describe this option..."
+                              rows={3}
+                              {...field}
+                              value={field.value || ""}
+                              data-testid="input-option-description"
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </div>
+                      )}
+                    </div>
+                  )}
+                />
 
+                {/* Specifications */}
+                {(() => {
+                  const FINISH_OPTS = ["Chrome", "Brushed Nickel", "Matte Black", "Brushed Gold", "Brushed Brass", "White", "Black", "Powder Coat", "Custom"];
+                  const MATERIAL_OPTS = ["Brass", "Stainless Steel", "Ceramic", "Porcelain", "Timber", "Glass", "Acrylic", "Custom"];
+                  const EXTRA_FIELDS = [
+                    { key: "diameter", label: "Diameter (mm)", type: "number" },
+                    { key: "weight", label: "Weight (kg)", type: "number" },
+                    { key: "colour", label: "Colour", type: "text" },
+                    { key: "colourCode", label: "Colour code", type: "text" },
+                    { key: "flowRate", label: "Flow rate (L/min)", type: "number" },
+                    { key: "spoutHeight", label: "Spout height (mm)", type: "number" },
+                    { key: "spoutReach", label: "Spout reach (mm)", type: "number" },
+                    { key: "mountingType", label: "Mounting type", type: "text" },
+                    { key: "welsRating", label: "WELS rating (1–6)", type: "number" },
+                    { key: "thickness", label: "Thickness (mm)", type: "number" },
+                    { key: "slipRatingP", label: "Slip rating — Wet", type: "text" },
+                    { key: "slipRatingR", label: "Slip rating — Oil", type: "text" },
+                    { key: "wattage", label: "Wattage (W)", type: "number" },
+                    { key: "lumens", label: "Lumens (lm)", type: "number" },
+                    { key: "colourTemp", label: "Colour temperature (K)", type: "number" },
+                    { key: "ipRating", label: "IP rating", type: "text" },
+                    { key: "dimmable", label: "Dimmable", type: "boolean" },
+                    { key: "energyRating", label: "Energy rating (1–10)", type: "number" },
+                    { key: "warranty", label: "Warranty (years)", type: "number" },
+                    { key: "leadTime", label: "Lead time (weeks)", type: "number" },
+                    { key: "fireRating", label: "Fire rating", type: "text" },
+                  ];
+                  const setSpec = (key: string, value: any) => setOptionSpecifications(s => ({ ...s, [key]: value }));
+                  const removeSpec = (key: string) => setOptionSpecifications(s => { const n = { ...s }; delete n[key]; return n; });
+                  const activeCount = Object.keys(optionSpecifications).filter(k => k !== 'custom' && optionSpecifications[k] !== undefined && optionSpecifications[k] !== "").length;
+                  return (
+                    <div className="border rounded-md overflow-hidden">
+                      <button
+                        type="button"
+                        className="w-full flex items-center justify-between px-3 py-2 text-sm font-medium hover-elevate bg-muted/40 text-left"
+                        onClick={() => setSpecsOpen(o => !o)}
+                      >
+                        <span className="flex items-center gap-2">
+                          {specsOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                          Product Specifications
+                          {activeCount > 0 && (
+                            <Badge variant="secondary" className="h-4 text-[10px]">{activeCount} set</Badge>
+                          )}
+                        </span>
+                      </button>
+                      {specsOpen && (
+                        <div className="p-3 space-y-3 border-t">
+                          <div className="space-y-1">
+                            <Label className="text-xs">Material</Label>
+                            <Select value={optionSpecifications.material ?? ""} onValueChange={v => setSpec("material", v || undefined)}>
+                              <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Select..." /></SelectTrigger>
+                              <SelectContent>{MATERIAL_OPTS.map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}</SelectContent>
+                            </Select>
+                          </div>
+                          {EXTRA_FIELDS.filter(f => {
+                            const v = optionSpecifications[f.key];
+                            return v !== undefined && v !== "" && v !== null;
+                          }).map(f => (
+                            <div key={f.key} className="flex items-center gap-2">
+                              <Label className="text-xs w-40 shrink-0">{f.label}</Label>
+                              {f.type === "boolean" ? (
+                                <Switch checked={!!optionSpecifications[f.key]} onCheckedChange={checked => setSpec(f.key, checked)} />
+                              ) : (
+                                <div className="flex-1 flex items-center gap-1">
+                                  <Input type={f.type === "number" ? "number" : "text"} min="0" className="h-8 text-xs flex-1"
+                                    value={optionSpecifications[f.key] ?? ""}
+                                    onChange={e => setSpec(f.key, f.type === "number" ? (e.target.value ? parseFloat(e.target.value) : undefined) : e.target.value || undefined)} />
+                                  <button type="button" className="p-1 text-muted-foreground hover:text-foreground" onClick={() => removeSpec(f.key)}>
+                                    <X className="h-3.5 w-3.5" />
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                          {((optionSpecifications.custom || []) as { label: string; value: string }[]).map((c, idx) => (
+                            <div key={idx} className="flex items-center gap-2">
+                              <Input className="h-8 text-xs w-28 shrink-0" placeholder="Label" value={c.label}
+                                onChange={e => {
+                                  const custom = [...((optionSpecifications.custom || []) as {label:string;value:string}[])];
+                                  custom[idx] = { ...custom[idx], label: e.target.value };
+                                  setSpec("custom", custom);
+                                }} />
+                              <Input className="h-8 text-xs flex-1" placeholder="Value" value={c.value}
+                                onChange={e => {
+                                  const custom = [...((optionSpecifications.custom || []) as {label:string;value:string}[])];
+                                  custom[idx] = { ...custom[idx], value: e.target.value };
+                                  setSpec("custom", custom);
+                                }} />
+                              <button type="button" className="p-1 text-muted-foreground hover:text-foreground shrink-0"
+                                onClick={() => {
+                                  const custom = [...((optionSpecifications.custom || []) as {label:string;value:string}[])];
+                                  custom.splice(idx, 1);
+                                  setSpec("custom", custom);
+                                }}>
+                                <X className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+                          ))}
+                          <div className="relative">
+                            <button type="button"
+                              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground border border-dashed rounded-md px-2 py-1"
+                              onClick={() => setSpecPickerOpen(o => !o)}>
+                              <Plus className="h-3 w-3" />
+                              Add detail
+                            </button>
+                            {specPickerOpen && (
+                              <div className="absolute bottom-full mb-1 left-0 z-50 bg-popover border rounded-md shadow-md p-2 min-w-52 max-h-64 overflow-y-auto">
+                                {EXTRA_FIELDS.filter(f => {
+                                  const v = optionSpecifications[f.key];
+                                  return v === undefined || v === "" || v === null;
+                                }).map(f => (
+                                  <button key={f.key} type="button"
+                                    className="w-full text-left text-xs px-2 py-1 rounded hover:bg-accent"
+                                    onClick={() => {
+                                      setSpec(f.key, f.type === "boolean" ? false : f.type === "number" ? undefined : "");
+                                      setSpecPickerOpen(false);
+                                    }}>
+                                    {f.label}
+                                  </button>
+                                ))}
+                                <div className="border-t pt-1 mt-1">
+                                  <button type="button"
+                                    className="w-full text-left text-xs px-2 py-1 rounded hover:bg-accent text-muted-foreground"
+                                    onClick={() => {
+                                      const custom = [...((optionSpecifications.custom || []) as {label:string;value:string}[]), { label: "", value: "" }];
+                                      setSpec("custom", custom);
+                                      setSpecPickerOpen(false);
+                                    }}>
+                                    + Custom field
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+
+                {/* Notes to trades — collapsible */}
+                <FormField
+                  control={optionForm.control}
+                  name="notes"
+                  render={({ field }) => (
+                    <div className="border rounded-md overflow-hidden">
+                      <button
+                        type="button"
+                        className="w-full flex items-center justify-between px-3 py-2 text-sm font-medium hover-elevate bg-muted/40 text-left"
+                        onClick={() => setNotesOpen(o => !o)}
+                      >
+                        <span className="flex items-center gap-2">
+                          {notesOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                          Notes to trades
+                          {field.value && <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber" />}
+                        </span>
+                      </button>
+                      {notesOpen && (
+                        <div className="p-3 space-y-2 border-t">
+                          <FormControl>
+                            <Textarea
+                              placeholder="Instructions, warnings, or notes for your trades team…"
+                              rows={3}
+                              {...field}
+                              value={field.value || ""}
+                              data-testid="input-option-notes"
+                            />
+                          </FormControl>
+                          {field.value && (
+                            <p className="text-xs px-2 py-1 rounded-md bg-status-warning-bg text-status-warning border border-status-warning/30">
+                              Visible to your internal team only — not the client.
+                            </p>
+                          )}
+                          <FormMessage />
+                        </div>
+                      )}
+                    </div>
+                  )}
+                />
+
+                </div>
+
+                {/* Media pane — images and documents */}
+                <div className="space-y-4 mt-6 md:mt-0">
                 {/* Images (drop zone: drag files from Finder/browser or paste) */}
                 <div
                   className="space-y-2"
@@ -2940,209 +3191,10 @@ export default function SelectionDetail() {
                     </div>
                   )}
                 </div>
+                </div>
+                </div>
 
-                <Separator />
-
-                {/* Specifications */}
-                {(() => {
-                  const FINISH_OPTS = ["Chrome", "Brushed Nickel", "Matte Black", "Brushed Gold", "Brushed Brass", "White", "Black", "Powder Coat", "Custom"];
-                  const MATERIAL_OPTS = ["Brass", "Stainless Steel", "Ceramic", "Porcelain", "Timber", "Glass", "Acrylic", "Custom"];
-                  const EXTRA_FIELDS = [
-                    { key: "diameter", label: "Diameter (mm)", type: "number" },
-                    { key: "weight", label: "Weight (kg)", type: "number" },
-                    { key: "colour", label: "Colour", type: "text" },
-                    { key: "colourCode", label: "Colour code", type: "text" },
-                    { key: "flowRate", label: "Flow rate (L/min)", type: "number" },
-                    { key: "spoutHeight", label: "Spout height (mm)", type: "number" },
-                    { key: "spoutReach", label: "Spout reach (mm)", type: "number" },
-                    { key: "mountingType", label: "Mounting type", type: "text" },
-                    { key: "welsRating", label: "WELS rating (1–6)", type: "number" },
-                    { key: "thickness", label: "Thickness (mm)", type: "number" },
-                    { key: "slipRatingP", label: "Slip rating — Wet", type: "text" },
-                    { key: "slipRatingR", label: "Slip rating — Oil", type: "text" },
-                    { key: "wattage", label: "Wattage (W)", type: "number" },
-                    { key: "lumens", label: "Lumens (lm)", type: "number" },
-                    { key: "colourTemp", label: "Colour temperature (K)", type: "number" },
-                    { key: "ipRating", label: "IP rating", type: "text" },
-                    { key: "dimmable", label: "Dimmable", type: "boolean" },
-                    { key: "energyRating", label: "Energy rating (1–10)", type: "number" },
-                    { key: "warranty", label: "Warranty (years)", type: "number" },
-                    { key: "leadTime", label: "Lead time (weeks)", type: "number" },
-                    { key: "fireRating", label: "Fire rating", type: "text" },
-                  ];
-                  const setSpec = (key: string, value: any) => setOptionSpecifications(s => ({ ...s, [key]: value }));
-                  const removeSpec = (key: string) => setOptionSpecifications(s => { const n = { ...s }; delete n[key]; return n; });
-                  const activeCount = Object.keys(optionSpecifications).filter(k => k !== 'custom' && optionSpecifications[k] !== undefined && optionSpecifications[k] !== "").length;
-                  return (
-                    <div className="border rounded-md overflow-hidden">
-                      <button
-                        type="button"
-                        className="w-full flex items-center justify-between px-3 py-2 text-sm font-medium hover-elevate bg-muted/40 text-left"
-                        onClick={() => setSpecsOpen(o => !o)}
-                      >
-                        <span className="flex items-center gap-2">
-                          {specsOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                          Product Specifications
-                          {activeCount > 0 && (
-                            <Badge variant="secondary" className="h-4 text-[10px]">{activeCount} set</Badge>
-                          )}
-                        </span>
-                      </button>
-                      {specsOpen && (
-                        <div className="p-3 space-y-3 border-t">
-                          <div className="grid grid-cols-3 gap-2">
-                            {["width","height","depth"].map(key => (
-                              <div key={key} className="space-y-1">
-                                <Label className="text-xs">{key === "width" ? "Width (mm)" : key === "height" ? "Height (mm)" : "Depth (mm)"}</Label>
-                                <Input type="number" min="0" className="h-8 text-xs"
-                                  value={optionSpecifications[key] ?? ""}
-                                  onChange={e => setSpec(key, e.target.value ? parseFloat(e.target.value) : undefined)} />
-                              </div>
-                            ))}
-                          </div>
-                          <div className="grid grid-cols-2 gap-2">
-                            <div className="space-y-1">
-                              <Label className="text-xs">Finish</Label>
-                              <Select value={optionSpecifications.finish ?? ""} onValueChange={v => setSpec("finish", v || undefined)}>
-                                <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Select..." /></SelectTrigger>
-                                <SelectContent>{FINISH_OPTS.map(f => <SelectItem key={f} value={f}>{f}</SelectItem>)}</SelectContent>
-                              </Select>
-                            </div>
-                            <div className="space-y-1">
-                              <Label className="text-xs">Material</Label>
-                              <Select value={optionSpecifications.material ?? ""} onValueChange={v => setSpec("material", v || undefined)}>
-                                <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Select..." /></SelectTrigger>
-                                <SelectContent>{MATERIAL_OPTS.map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}</SelectContent>
-                              </Select>
-                            </div>
-                          </div>
-                          {EXTRA_FIELDS.filter(f => {
-                            const v = optionSpecifications[f.key];
-                            return v !== undefined && v !== "" && v !== null;
-                          }).map(f => (
-                            <div key={f.key} className="flex items-center gap-2">
-                              <Label className="text-xs w-40 shrink-0">{f.label}</Label>
-                              {f.type === "boolean" ? (
-                                <Switch checked={!!optionSpecifications[f.key]} onCheckedChange={checked => setSpec(f.key, checked)} />
-                              ) : (
-                                <div className="flex-1 flex items-center gap-1">
-                                  <Input type={f.type === "number" ? "number" : "text"} min="0" className="h-8 text-xs flex-1"
-                                    value={optionSpecifications[f.key] ?? ""}
-                                    onChange={e => setSpec(f.key, f.type === "number" ? (e.target.value ? parseFloat(e.target.value) : undefined) : e.target.value || undefined)} />
-                                  <button type="button" className="p-1 text-muted-foreground hover:text-foreground" onClick={() => removeSpec(f.key)}>
-                                    <X className="h-3.5 w-3.5" />
-                                  </button>
-                                </div>
-                              )}
-                            </div>
-                          ))}
-                          {((optionSpecifications.custom || []) as { label: string; value: string }[]).map((c, idx) => (
-                            <div key={idx} className="flex items-center gap-2">
-                              <Input className="h-8 text-xs w-28 shrink-0" placeholder="Label" value={c.label}
-                                onChange={e => {
-                                  const custom = [...((optionSpecifications.custom || []) as {label:string;value:string}[])];
-                                  custom[idx] = { ...custom[idx], label: e.target.value };
-                                  setSpec("custom", custom);
-                                }} />
-                              <Input className="h-8 text-xs flex-1" placeholder="Value" value={c.value}
-                                onChange={e => {
-                                  const custom = [...((optionSpecifications.custom || []) as {label:string;value:string}[])];
-                                  custom[idx] = { ...custom[idx], value: e.target.value };
-                                  setSpec("custom", custom);
-                                }} />
-                              <button type="button" className="p-1 text-muted-foreground hover:text-foreground shrink-0"
-                                onClick={() => {
-                                  const custom = [...((optionSpecifications.custom || []) as {label:string;value:string}[])];
-                                  custom.splice(idx, 1);
-                                  setSpec("custom", custom);
-                                }}>
-                                <X className="h-3.5 w-3.5" />
-                              </button>
-                            </div>
-                          ))}
-                          <div className="relative">
-                            <button type="button"
-                              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground border border-dashed rounded-md px-2 py-1"
-                              onClick={() => setSpecPickerOpen(o => !o)}>
-                              <Plus className="h-3 w-3" />
-                              Add detail
-                            </button>
-                            {specPickerOpen && (
-                              <div className="absolute bottom-full mb-1 left-0 z-50 bg-popover border rounded-md shadow-md p-2 min-w-52 max-h-64 overflow-y-auto">
-                                {EXTRA_FIELDS.filter(f => {
-                                  const v = optionSpecifications[f.key];
-                                  return v === undefined || v === "" || v === null;
-                                }).map(f => (
-                                  <button key={f.key} type="button"
-                                    className="w-full text-left text-xs px-2 py-1 rounded hover:bg-accent"
-                                    onClick={() => {
-                                      setSpec(f.key, f.type === "boolean" ? false : f.type === "number" ? undefined : "");
-                                      setSpecPickerOpen(false);
-                                    }}>
-                                    {f.label}
-                                  </button>
-                                ))}
-                                <div className="border-t pt-1 mt-1">
-                                  <button type="button"
-                                    className="w-full text-left text-xs px-2 py-1 rounded hover:bg-accent text-muted-foreground"
-                                    onClick={() => {
-                                      const custom = [...((optionSpecifications.custom || []) as {label:string;value:string}[]), { label: "", value: "" }];
-                                      setSpec("custom", custom);
-                                      setSpecPickerOpen(false);
-                                    }}>
-                                    + Custom field
-                                  </button>
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })()}
-
-                {/* Notes to trades — collapsible */}
-                <FormField
-                  control={optionForm.control}
-                  name="notes"
-                  render={({ field }) => (
-                    <div className="border rounded-md overflow-hidden">
-                      <button
-                        type="button"
-                        className="w-full flex items-center justify-between px-3 py-2 text-sm font-medium hover-elevate bg-muted/40 text-left"
-                        onClick={() => setNotesOpen(o => !o)}
-                      >
-                        <span className="flex items-center gap-2">
-                          {notesOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                          Notes to trades
-                          {field.value && <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber" />}
-                        </span>
-                      </button>
-                      {notesOpen && (
-                        <div className="p-3 space-y-2 border-t">
-                          <FormControl>
-                            <Textarea
-                              placeholder="Instructions, warnings, or notes for your trades team…"
-                              rows={3}
-                              {...field}
-                              value={field.value || ""}
-                              data-testid="input-option-notes"
-                            />
-                          </FormControl>
-                          {field.value && (
-                            <p className="text-xs px-2 py-1 rounded-md bg-status-warning-bg text-status-warning border border-status-warning/30">
-                              Visible to your internal team only — not the client.
-                            </p>
-                          )}
-                          <FormMessage />
-                        </div>
-                      )}
-                    </div>
-                  )}
-                />
-
-                <div className="flex items-center justify-end space-x-3 pt-4 mt-6 border-t">
+                <div className="sticky bottom-0 bg-background flex items-center justify-end space-x-3 py-3 mt-6 border-t">
                   <Button 
                     type="button" 
                     variant="outline" 

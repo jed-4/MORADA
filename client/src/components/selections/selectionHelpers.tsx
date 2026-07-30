@@ -3,6 +3,7 @@
 // pages/Selections.tsx so the page owns data/orchestration only.
 
 import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
 import { Image as ImageIcon } from "lucide-react";
 import { format, differenceInCalendarDays } from "date-fns";
 import type { SelectionWithOptions, SelectionOption, OptionAttachment } from "@shared/schema";
@@ -99,8 +100,9 @@ const STATUS_BADGE_VARIANT: Record<DerivedStatus, "status-action" | "status-warn
 };
 
 export function SelectionStatusPill({ derived, className }: { derived: DerivedStatus; className?: string }) {
+  // rounded-[5px]: squarer corners than the stock pill radius (Jed's call)
   return (
-    <Badge variant={STATUS_BADGE_VARIANT[derived]} className={className}>
+    <Badge variant={STATUS_BADGE_VARIANT[derived]} className={cn("rounded-[5px]", className)}>
       {STATUS_LABEL[derived]}
     </Badge>
   );

@@ -221,14 +221,13 @@ export default function Selections() {
     "64px",
   ].filter(Boolean).join(" ");
 
-  // Pointer-capture based resize — survives fast drags and doesn't fight text
-  // selection (the previous mousemove version was unreliable)
+  // Column resize. Listeners live on window, NOT the handle element — the
+  // handle unmounts on the first width re-render, which killed the drag after
+  // one tick and left the col-resize cursor stuck on the whole page.
   const resizeRef = useRef<{ key: WidthKey; startX: number; startW: number } | null>(null);
-  const startColumnResize = (key: WidthKey) => (e: React.PointerEvent<HTMLDivElement>) => {
+  const startColumnResize = (key: WidthKey, e: React.PointerEvent<HTMLDivElement>) => {
     e.preventDefault();
     e.stopPropagation();
-    const handle = e.currentTarget;
-    try { handle.setPointerCapture(e.pointerId); } catch { /* synthetic events */ }
     resizeRef.current = { key, startX: e.clientX, startW: columnWidths[key] };
     document.body.style.userSelect = "none";
     document.body.style.cursor = "col-resize";
@@ -238,18 +237,17 @@ export default function Selections() {
       const next = Math.max(60, Math.min(400, r.startW + (ev.clientX - r.startX)));
       setColumnWidths((prev) => ({ ...prev, [r.key]: next }));
     };
-    const onUp = (ev: PointerEvent) => {
+    const onUp = () => {
       resizeRef.current = null;
       document.body.style.userSelect = "";
       document.body.style.cursor = "";
-      try { handle.releasePointerCapture(ev.pointerId); } catch { /* already released */ }
-      handle.removeEventListener("pointermove", onMove);
-      handle.removeEventListener("pointerup", onUp);
-      handle.removeEventListener("pointercancel", onUp);
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onUp);
     };
-    handle.addEventListener("pointermove", onMove);
-    handle.addEventListener("pointerup", onUp);
-    handle.addEventListener("pointercancel", onUp);
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onUp);
   };
   const [expandedTemplateIds, setExpandedTemplateIds] = useState<Set<string>>(new Set());
   const [expandedGroupIds, setExpandedGroupIds] = useState<Set<string>>(new Set());
@@ -1076,19 +1074,15 @@ export default function Selections() {
             (asc → desc → off); drag the divider after a label to resize
             (widths persisted). */}
         {viewMode === "list" && (() => {
-          const SortArrow = ({ col }: { col: typeof sortBy }) =>
-            sortBy === col ? (
-              <span className="text-primary">{sortDir === "asc" ? "↑" : "↓"}</span>
-            ) : null;
-          const HeaderCell = ({
-            label, sortKey, widthKey, align = "left",
-          }: {
-            label: string;
-            sortKey: NonNullable<typeof sortBy>;
-            widthKey?: "category" | "location" | "status" | "budget" | "deadline";
-            align?: "left" | "right";
-          }) => (
-            <div className={cn("relative flex items-center h-full min-w-0", align === "right" && "justify-end")}>
+          // Plain render functions (NOT components) — inline component types
+          // remounted the header every render, breaking drags mid-resize
+          const headerCell = (
+            label: string,
+            sortKey: NonNullable<typeof sortBy>,
+            widthKey?: WidthKey,
+            align: "left" | "right" = "left",
+          ) => (
+            <div key={sortKey} className={cn("relative flex items-center h-full min-w-0", align === "right" && "justify-end")}>
               <button
                 type="button"
                 onClick={() => cycleSort(sortKey)}
@@ -1096,12 +1090,12 @@ export default function Selections() {
                 data-testid={`sort-${sortKey}`}
               >
                 {label}
-                <SortArrow col={sortKey} />
+                {sortBy === sortKey && <span className="text-primary">{sortDir === "asc" ? "↑" : "↓"}</span>}
               </button>
               {widthKey && (
                 <div
                   className="absolute -right-2 top-0 h-full w-3 cursor-col-resize flex items-center justify-center group/handle touch-none"
-                  onPointerDown={startColumnResize(widthKey)}
+                  onPointerDown={(e) => startColumnResize(widthKey, e)}
                   data-testid={`resize-${widthKey}`}
                 >
                   <div className="h-4 w-px bg-border group-hover/handle:bg-primary group-hover/handle:w-0.5" />
@@ -1116,13 +1110,13 @@ export default function Selections() {
             >
               <div></div>
               <div></div>
-              <HeaderCell label="Selection" sortKey="name" />
-              {visibleColumns.category && <HeaderCell label="Category" sortKey="category" widthKey="category" />}
-              {visibleColumns.location && <HeaderCell label="Location" sortKey="location" widthKey="location" />}
-              <HeaderCell label="Status" sortKey="status" widthKey="status" />
+              {headerCell("Selection", "name")}
+              {visibleColumns.category && headerCell("Category", "category", "category")}
+              {visibleColumns.location && headerCell("Location", "location", "location")}
+              {headerCell("Status", "status", "status")}
               {visibleColumns.options && <div className="text-center uppercase tracking-wider font-semibold">Opts</div>}
-              <HeaderCell label="Budget" sortKey="budget" widthKey="budget" align="right" />
-              <HeaderCell label="Due" sortKey="due" widthKey="deadline" align="right" />
+              {headerCell("Budget", "budget", "budget", "right")}
+              {headerCell("Due", "due", "deadline", "right")}
               <div></div>
             </div>
           );
