@@ -522,7 +522,11 @@ export async function pushBillToXeroInternal(
           if ((project as any).xeroTrackingOptionId) {
             projectXeroTrackingOptionId = (project as any).xeroTrackingOptionId;
           } else {
-            const option = await xeroService.createTrackingOption(
+            // Link to an existing same-named option or create one. Previously
+            // this blind-created and Xero's unique-name rule made it 400 for
+            // any project name that already existed as an option — swallowed
+            // below, so those bills pushed with no job tracking at all.
+            const option = await xeroService.findOrCreateTrackingOption(
               connection.id,
               (connection as any).trackingCategory2Id,
               project.name,
@@ -531,7 +535,7 @@ export async function pushBillToXeroInternal(
               projectXeroTrackingOptionId = option.TrackingOptionID;
               await storage.updateProject(bill.projectId, {
                 xeroTrackingOptionId: option.TrackingOptionID,
-                xeroTrackingOptionName: project.name,
+                xeroTrackingOptionName: option.Name || project.name,
               } as any);
             }
           }
@@ -34040,7 +34044,9 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
                 projectXeroTrackingOptionId = (project as any).xeroTrackingOptionId;
               } else {
                 try {
-                  const option = await xeroService.createTrackingOption(
+                  // Match an existing same-named option before creating — see
+                  // the identical block in pushBillToXeroInternal.
+                  const option = await xeroService.findOrCreateTrackingOption(
                     connection.id,
                     (connection as any).trackingCategory2Id,
                     project.name,
@@ -34049,7 +34055,7 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
                     projectXeroTrackingOptionId = option.TrackingOptionID;
                     await storage.updateProject((po as any).projectId, {
                       xeroTrackingOptionId: option.TrackingOptionID,
-                      xeroTrackingOptionName: project.name,
+                      xeroTrackingOptionName: option.Name || project.name,
                     } as any);
                   }
                 } catch (e) {
@@ -34375,7 +34381,7 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
           if ((project as any).xeroTrackingOptionId) {
             projectXeroTrackingOptionId = (project as any).xeroTrackingOptionId;
           } else {
-            const option = await xeroService.createTrackingOption(
+            const option = await xeroService.findOrCreateTrackingOption(
               connection.id,
               connection.trackingCategory2Id,
               project.name
@@ -34384,7 +34390,7 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
               projectXeroTrackingOptionId = option.TrackingOptionID;
               await storage.updateProject(invoice.projectId, {
                 xeroTrackingOptionId: option.TrackingOptionID,
-                xeroTrackingOptionName: project.name,
+                xeroTrackingOptionName: option.Name || project.name,
               } as any);
             }
           }
@@ -34541,12 +34547,12 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
           if ((project as any).xeroTrackingOptionId) {
             projectXeroTrackingOptionId = (project as any).xeroTrackingOptionId;
           } else {
-            const option = await xeroService.createTrackingOption(connection.id, connection.trackingCategory2Id, project.name);
+            const option = await xeroService.findOrCreateTrackingOption(connection.id, connection.trackingCategory2Id, project.name);
             if (option?.TrackingOptionID) {
               projectXeroTrackingOptionId = option.TrackingOptionID;
               await storage.updateProject(invoice.projectId, {
                 xeroTrackingOptionId: option.TrackingOptionID,
-                xeroTrackingOptionName: project.name,
+                xeroTrackingOptionName: option.Name || project.name,
               } as any);
             }
           }
@@ -35660,16 +35666,22 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
       if (!connection) return res.status(400).json({ error: "Xero is not connected" });
 
       const categories = await xeroService.getTrackingCategories(connection.id);
-      res.json(categories.map((tc: any) => ({
-        trackingCategoryId: tc.TrackingCategoryID,
-        name: tc.Name,
-        status: tc.Status,
-        options: (tc.Options || []).map((opt: any) => ({
-          trackingOptionId: opt.TrackingOptionID,
-          name: opt.Name,
-          status: opt.Status,
-        })),
-      })));
+      // Archived categories/options are not selectable anywhere in the UI, so
+      // drop them here rather than in every picker.
+      res.json(categories
+        .filter((tc: any) => tc.Status === "ACTIVE")
+        .map((tc: any) => ({
+          trackingCategoryId: tc.TrackingCategoryID,
+          name: tc.Name,
+          status: tc.Status,
+          options: (tc.Options || [])
+            .filter((opt: any) => opt.Status === "ACTIVE")
+            .map((opt: any) => ({
+              trackingOptionId: opt.TrackingOptionID,
+              name: opt.Name,
+              status: opt.Status,
+            })),
+        })));
     } catch (error: any) {
       console.error("Error fetching Xero tracking categories:", error);
       res.status(500).json({ error: error.message || "Failed to fetch tracking categories" });
