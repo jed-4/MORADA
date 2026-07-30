@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useLocation } from "wouter";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import {
@@ -67,6 +67,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
@@ -136,7 +137,7 @@ const TYPE_CONFIG: Record<string, { color: string; icon: any; label: string }> =
   folder: { color: "hsl(var(--bp-amber))", icon: Folder, label: "Folder" },
   variation: { color: "hsl(var(--bp-purple))", icon: GitBranch, label: "Variation" },
   bill: { color: "hsl(var(--bp-green))", icon: Receipt, label: "Bill" },
-  checklist: { color: "#4a90d4", icon: CheckSquare, label: "Checklist" },
+  checklist: { color: "hsl(var(--bp-teal))", icon: CheckSquare, label: "Checklist" },
   defect: { color: "hsl(var(--bp-coral))", icon: AlertCircle, label: "Defect" },
   diary: { color: "hsl(var(--bp-muted))", icon: BookOpen, label: "Site Diary" },
   note: { color: "hsl(var(--bp-amber))", icon: StickyNote, label: "Note" },
@@ -378,6 +379,7 @@ export default function PinnedItemsWidget({
   onUpdate,
   isConfiguring,
   onCloseConfig,
+  onSetHeaderActions,
   scope = "project",
 }: WidgetProps & { scope?: PinnedItemsScope }) {
   const isProject = scope === "project";
@@ -391,10 +393,13 @@ export default function PinnedItemsWidget({
     ...((widget.config as Partial<PinnedConfig>) || {}),
   };
 
-  const updateConfig = (patch: Partial<PinnedConfig>) => {
-    if (!onUpdate) return;
-    onUpdate({ ...widget, config: { ...config, ...patch } });
-  };
+  // Config edits stage into a draft and persist on Save
+  const [draftCfg, setDraftCfg] = useState<Partial<PinnedConfig> | null>(null);
+  useEffect(() => {
+    if (isConfiguring) setDraftCfg({});
+    else setDraftCfg(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isConfiguring]);
 
   // Project-scope UI state
   const [showPinModal, setShowPinModal] = useState(false);
@@ -607,98 +612,128 @@ export default function PinnedItemsWidget({
     return Array.from(map.entries());
   }, [isProject, visibleItems, config.groupByCategory]);
 
+  // Project scope: + pin button in the widget header
+  useEffect(() => {
+    if (!isProject) return;
+    onSetHeaderActions?.(
+      currentProject ? (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              size="icon"
+              variant="default"
+              className="h-6 w-6"
+              onClick={() => setShowPinModal(true)}
+              data-testid="button-pinned-add"
+              aria-label="Pin an item"
+            >
+              <Plus className="h-3.5 w-3.5" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="top">Pin an item</TooltipContent>
+        </Tooltip>
+      ) : null,
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isProject, currentProject?.id]);
+
   // -------------------------------------------------------------------------
   // Configure panels
   // -------------------------------------------------------------------------
 
-  if (isConfiguring && isProject) {
+  if (isConfiguring && isProject && draftCfg) {
+    const cfg: PinnedConfig = { ...config, ...draftCfg };
+    const stage = (patch: Partial<PinnedConfig>) =>
+      setDraftCfg(prev => ({ ...(prev ?? {}), ...patch }));
+    const cancelConfig = () => { setDraftCfg(null); onCloseConfig?.(); };
+    const saveConfig = () => {
+      onUpdate?.({ ...widget, config: { ...config, ...draftCfg } });
+      setDraftCfg(null);
+      onCloseConfig?.();
+    };
+
     return (
-      <div className="flex flex-col h-full" data-testid="widget-pinned-config">
-        <div className="flex-1 overflow-auto space-y-4 p-3">
-          <h4 className="text-sm font-medium">Display options</h4>
-
-          <div className="space-y-1.5">
-            <Label className="text-xs">Sort by</Label>
-            <Select
-              value={config.sortOrder}
-              onValueChange={(v) => updateConfig({ sortOrder: v as PinnedConfig["sortOrder"] })}
-            >
-              <SelectTrigger className="h-8 text-xs" data-testid="select-pinned-sort">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="manual">Manual order</SelectItem>
-                <SelectItem value="newest">Newest first</SelectItem>
-                <SelectItem value="oldest">Oldest first</SelectItem>
-                <SelectItem value="az">A–Z</SelectItem>
-                <SelectItem value="byType">By type</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-1.5">
-            <Label className="text-xs">Max visible</Label>
-            <Select
-              value={String(config.maxVisible)}
-              onValueChange={(v) =>
-                updateConfig({ maxVisible: Number(v) as PinnedConfig["maxVisible"] })
-              }
-            >
-              <SelectTrigger className="h-8 text-xs" data-testid="select-pinned-max">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="5">5</SelectItem>
-                <SelectItem value="10">10</SelectItem>
-                <SelectItem value="0">All</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-3 pt-1">
-            <label className="flex items-center justify-between gap-2 cursor-pointer">
-              <span className="text-xs">Group by category</span>
-              <Switch
-                checked={config.groupByCategory}
-                onCheckedChange={(v) => updateConfig({ groupByCategory: v })}
-                data-testid="switch-pinned-group"
-              />
-            </label>
-            <label className="flex items-center justify-between gap-2 cursor-pointer">
-              <span className="text-xs">Show type label</span>
-              <Switch
-                checked={config.showTypeLabel}
-                onCheckedChange={(v) => updateConfig({ showTypeLabel: v })}
-                data-testid="switch-pinned-type"
-              />
-            </label>
-            <label className="flex items-center justify-between gap-2 cursor-pointer">
-              <span className="text-xs">Show date pinned</span>
-              <Switch
-                checked={config.showDatePinned}
-                onCheckedChange={(v) => updateConfig({ showDatePinned: v })}
-                data-testid="switch-pinned-date"
-              />
-            </label>
-            <label className="flex items-center justify-between gap-2 cursor-pointer">
-              <span className="text-xs">Compact mode</span>
-              <Switch
-                checked={config.compactMode}
-                onCheckedChange={(v) => updateConfig({ compactMode: v })}
-                data-testid="switch-pinned-compact"
-              />
-            </label>
-          </div>
-        </div>
-
-        <div className="flex justify-end gap-2 border-t border-border p-2">
-          <Button
-            size="sm"
-            onClick={() => onCloseConfig?.()}
-            className="h-7 px-3 text-xs"
-            data-testid="button-pinned-config-done"
+      <div className="flex-1 overflow-y-auto p-1 space-y-5 text-[12px]" data-testid="widget-pinned-config">
+        <section className="space-y-2">
+          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+            Display
+          </p>
+          <Select
+            value={cfg.sortOrder}
+            onValueChange={(v) => stage({ sortOrder: v as PinnedConfig["sortOrder"] })}
           >
-            Done
+            <SelectTrigger className="h-8 text-xs" data-testid="select-pinned-sort">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="manual">Manual order</SelectItem>
+              <SelectItem value="newest">Newest first</SelectItem>
+              <SelectItem value="oldest">Oldest first</SelectItem>
+              <SelectItem value="az">A–Z</SelectItem>
+              <SelectItem value="byType">By type</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select
+            value={String(cfg.maxVisible)}
+            onValueChange={(v) =>
+              stage({ maxVisible: Number(v) as PinnedConfig["maxVisible"] })
+            }
+          >
+            <SelectTrigger className="h-8 text-xs" data-testid="select-pinned-max">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="5">Show 5</SelectItem>
+              <SelectItem value="10">Show 10</SelectItem>
+              <SelectItem value="0">Show all</SelectItem>
+            </SelectContent>
+          </Select>
+        </section>
+
+        <section className="space-y-2">
+          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+            Show
+          </p>
+          <div className="flex items-center justify-between gap-2">
+            <Label className="text-xs font-normal">Group by category</Label>
+            <Switch
+              checked={cfg.groupByCategory}
+              onCheckedChange={(v) => stage({ groupByCategory: v })}
+              data-testid="switch-pinned-group"
+            />
+          </div>
+          <div className="flex items-center justify-between gap-2">
+            <Label className="text-xs font-normal">Type label</Label>
+            <Switch
+              checked={cfg.showTypeLabel}
+              onCheckedChange={(v) => stage({ showTypeLabel: v })}
+              data-testid="switch-pinned-type"
+            />
+          </div>
+          <div className="flex items-center justify-between gap-2">
+            <Label className="text-xs font-normal">Date pinned</Label>
+            <Switch
+              checked={cfg.showDatePinned}
+              onCheckedChange={(v) => stage({ showDatePinned: v })}
+              data-testid="switch-pinned-date"
+            />
+          </div>
+          <div className="flex items-center justify-between gap-2">
+            <Label className="text-xs font-normal">Compact mode</Label>
+            <Switch
+              checked={cfg.compactMode}
+              onCheckedChange={(v) => stage({ compactMode: v })}
+              data-testid="switch-pinned-compact"
+            />
+          </div>
+        </section>
+
+        <div className="flex justify-end gap-2 pt-1">
+          <Button size="sm" variant="outline" onClick={cancelConfig} className="h-7 px-3 text-xs">
+            Cancel
+          </Button>
+          <Button size="sm" onClick={saveConfig} className="h-7 px-3 text-xs" data-testid="button-pinned-config-done">
+            Save
           </Button>
         </div>
       </div>
@@ -891,27 +926,11 @@ export default function PinnedItemsWidget({
   if (itemsQ.isLoading) return <WidgetSkeleton />;
   if (itemsQ.isError) return <WidgetError onRetry={() => itemsQ.refetch()} />;
 
-  const headerRight = (
-    <Button
-      size="sm"
-      className="h-7 px-2 text-xs"
-      onClick={() => setShowPinModal(true)}
-      data-testid="button-pinned-add"
-    >
-      <Plus className="h-3 w-3 mr-1" />
-      Pin
-    </Button>
-  );
-
   return (
     <div className="flex flex-col h-full" data-testid="widget-pinned-items">
-      <div className="flex items-center justify-end gap-2 px-3 pt-3 pb-2">
-        <div className="flex items-center gap-1 shrink-0">{headerRight}</div>
-      </div>
-
-      <div className="flex-1 overflow-auto px-2 pb-2">
+      <div className="flex-1 overflow-auto">
         {sortedItems.length === 0 ? (
-          <WidgetEmpty message="No pinned items yet — use the pin icon on any item to pin it here." />
+          <WidgetEmpty message="No pinned items yet — click + to pin bills, checklists, notes or links here." />
         ) : grouped ? (
           <div className="space-y-2">
             {grouped.map(([category, items]) => {
