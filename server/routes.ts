@@ -17685,6 +17685,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // All variation items for a project (dashboard cost metrics)
+  app.get("/api/variation-items", async (req, res) => {
+    try {
+      const { projectId } = req.query;
+      if (!(req.user as any)?.companyId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      if (!projectId) return res.status(400).json({ error: "projectId is required" });
+      if (!(await enforceProjectCompany(req, res, projectId as string, "Project not found"))) return;
+      const items = await storage.getVariationItemsByProject(projectId as string);
+      res.json(items);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch variation items" });
+    }
+  });
+
   app.patch("/api/variation-items/:id", async (req, res) => {
     try {
       const { variationItems: viTbl } = await import("@shared/schema");
@@ -24970,11 +24986,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!budget) {
         budget = await storage.calculateBudget(req.params.projectId);
       }
-      res.json(budget);
+      // Attach the labour share of the actual so the budget widget can show a
+      // bills/labour split without another round trip.
+      let labourActualAmount = 0;
+      try {
+        const { timesheets: tsTbl } = await import("@shared/schema");
+        const approvedTs = await db.select().from(tsTbl).where(
+          and(eq(tsTbl.projectId, req.params.projectId), eq(tsTbl.status, "approved")),
+        );
+        labourActualAmount = approvedTs.reduce((s: number, ts: any) => s + timesheetTotalExGstCents(ts), 0);
+      } catch {}
+      res.json(budget ? { ...budget, labourActualAmount } : budget);
     } catch (error: any) {
-      res.status(500).json({ 
+      res.status(500).json({
         error: "Failed to fetch budget",
-        details: error.message 
+        details: error.message
       });
     }
   });
@@ -36888,15 +36914,20 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
         clientInvoicePayments: paymentsTbl,
         bills: billsTbl,
         variations: variationsTbl,
+        timesheets: timesheetsTbl,
       } = await import("@shared/schema");
 
-      const [invoiceRows, billRows, variationRows] = await Promise.all([
+      const [invoiceRows, billRows, variationRows, timesheetRows] = await Promise.all([
         db.select().from(invoicesTbl).where(eq(invoicesTbl.projectId, projectId)),
         db.select().from(billsTbl).where(eq(billsTbl.projectId, projectId)),
         db
           .select()
           .from(variationsTbl)
           .where(and(eq(variationsTbl.projectId, projectId), eq(variationsTbl.status, "approved"))),
+        db
+          .select()
+          .from(timesheetsTbl)
+          .where(and(eq(timesheetsTbl.projectId, projectId), eq(timesheetsTbl.status, "approved"))),
       ]);
 
       const invoiceIds = invoiceRows.map((i: any) => i.id);
@@ -36954,6 +36985,7 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
         label: string;
         moneyIn: number;
         moneyOut: number;
+        labourOut: number;
         invoicedNotPaid: number;
         committedNotPaid: number;
         plannedIn: number;
@@ -36968,6 +37000,7 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
           label: bucketLabel(cursor),
           moneyIn: 0,
           moneyOut: 0,
+          labourOut: 0,
           invoicedNotPaid: 0,
           committedNotPaid: 0,
           plannedIn: 0,
@@ -36977,7 +37010,7 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
 
       const addToBucket = (
         d: Date | string | null | undefined,
-        field: "moneyIn" | "moneyOut" | "invoicedNotPaid" | "committedNotPaid" | "plannedIn",
+        field: "moneyIn" | "moneyOut" | "labourOut" | "invoicedNotPaid" | "committedNotPaid" | "plannedIn",
         amount: number,
       ) => {
         if (!d || !amount) return;
@@ -37006,6 +37039,11 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
           const remaining = (Number(i.totalAmount) || 0) - (Number(i.paidAmount) || 0);
           if (remaining > 0) addToBucket(i.dueDate || i.invoiceDate, "invoicedNotPaid", remaining);
         }
+      }
+      // Approved timesheet labour is cash out too (wages, ex GST — no GST on
+      // wages). Bucketed by the timesheet date as the closest cash proxy.
+      for (const ts of timesheetRows as any[]) {
+        addToBucket((ts as any).date, "labourOut", timesheetTotalExGstCents(ts as any));
       }
 
       let contractCeiling =
@@ -37077,21 +37115,25 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
 
       let cumIn = 0;
       let cumOut = 0;
+      let cumLabour = 0;
       let cumPlanned = 0;
       const periodsOut = periods.map((p) => {
         cumIn += p.moneyIn;
         cumOut += p.moneyOut;
+        cumLabour += p.labourOut;
         cumPlanned += p.plannedIn;
         return {
           label: p.label,
           periodStart: p.periodStart.toISOString(),
           moneyIn: p.moneyIn,
           moneyOut: p.moneyOut,
+          labourOut: p.labourOut,
           invoicedNotPaid: p.invoicedNotPaid,
           committedNotPaid: p.committedNotPaid,
           plannedIn: p.plannedIn,
           cumulativeIn: cumIn,
           cumulativeOut: cumOut,
+          cumulativeLabour: cumLabour,
           cumulativePlanned: cumPlanned,
         };
       });
@@ -37115,6 +37157,10 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
       const totalMoneyOut = (billRows as any[])
         .filter((b) => b.status === "paid")
         .reduce((s, b) => s + (Number(b.paidAmount) || 0), 0);
+      const totalLabour = (timesheetRows as any[]).reduce(
+        (s, ts) => s + timesheetTotalExGstCents(ts),
+        0,
+      );
       const totalInvoiced = (invoiceRows as any[]).reduce(
         (s, i) => s + (Number(i.totalAmount) || 0),
         0,
@@ -37129,7 +37175,8 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
         summary: {
           totalMoneyIn,
           totalMoneyOut,
-          netPosition: totalMoneyIn - totalMoneyOut,
+          totalLabour,
+          netPosition: totalMoneyIn - totalMoneyOut - totalLabour,
           totalInvoiced,
           totalBilled,
         },

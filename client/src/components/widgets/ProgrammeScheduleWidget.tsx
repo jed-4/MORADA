@@ -56,13 +56,15 @@ function packIntoRows<
 >(items: T[]): T[][] {
   const rows: T[][] = [];
   for (const item of items) {
-    const start = new Date(item.startDate);
-    const end = new Date(item.endDate);
+    // Whole-day comparison: stored timestamps mix UTC midnight (form-created)
+    // and local midnight (drag-edited), so compare at day granularity.
+    const start = startOfDay(new Date(item.startDate));
+    const end = startOfDay(new Date(item.endDate));
     let placed = false;
     for (const row of rows) {
       const overlaps = row.some((r) => {
-        const rs = new Date(r.startDate);
-        const re = new Date(r.endDate);
+        const rs = startOfDay(new Date(r.startDate));
+        const re = startOfDay(new Date(r.endDate));
         return start <= re && end >= rs;
       });
       if (!overlaps) {
@@ -153,13 +155,13 @@ export default function ProgrammeScheduleWidget({
     return saved ? startOfDay(new Date(saved)) : current;
   });
   const setWeekStart = (updater: (w: Date) => Date) => {
-    setWeekStartState((prev) => {
-      const next = updater(prev);
-      if (!config.defaultCurrentWeek) {
-        updateConfig("lastWeekStartIso", next.toISOString());
-      }
-      return next;
-    });
+    // Compute outside the state updater — updaters must be pure, and
+    // updateConfig triggers the parent's onUpdate (persistence).
+    const next = updater(weekStart);
+    setWeekStartState(next);
+    if (!config.defaultCurrentWeek) {
+      updateConfig("lastWeekStartIso", next.toISOString());
+    }
   };
   const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
   const visibleDays = config.showWeekends ? days : days.slice(0, 5);
@@ -171,8 +173,11 @@ export default function ProgrammeScheduleWidget({
   const weekItems = useMemo(
     () =>
       filteredItems.filter((item) => {
-        const s = new Date(item.startDate);
-        const e = new Date(item.endDate);
+        // Normalise to local midnight: form-created items are stored as UTC
+        // midnight, which parses as 10:00 local in AEST and would otherwise
+        // fall outside a boundary set to local midnight of the last visible day.
+        const s = startOfDay(new Date(item.startDate));
+        const e = startOfDay(new Date(item.endDate));
         return s <= visibleEnd && e >= visibleStart;
       }),
     [filteredItems, visibleStart, visibleEnd],
@@ -667,8 +672,11 @@ export default function ProgrammeScheduleWidget({
                     </div>
                   )}
                   {group.items.map((item) => {
-                    const s = new Date(item.startDate);
-                    const e = new Date(item.endDate);
+                    // Normalise to local midnight (UTC-midnight timestamps
+                    // parse as 10:00 AEST) so boundary comparisons and the
+                    // day-count width stay whole-day accurate.
+                    const s = startOfDay(new Date(item.startDate));
+                    const e = startOfDay(new Date(item.endDate));
                     const clampS = s < ganttStart ? ganttStart : s;
                     const clampE = e > ganttEnd ? ganttEnd : e;
                     if (clampS > ganttEnd || clampE < ganttStart)
