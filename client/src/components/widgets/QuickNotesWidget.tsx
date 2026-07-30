@@ -193,7 +193,7 @@ export default function QuickNotesWidget(_: WidgetProps) {
 
   return (
     <div className="flex flex-col h-full gap-2" data-testid="widget-quick-notes">
-      <div className="flex-1 overflow-auto px-0.5">
+      <div className="flex-1 overflow-auto px-0.5 divide-y divide-border/60">
         {notes.length === 0 && (
           <p className="text-xs text-muted-foreground text-center py-4">
             Nothing jotted yet — type below and hit enter.
