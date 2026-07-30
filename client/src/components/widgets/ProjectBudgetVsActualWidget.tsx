@@ -40,32 +40,65 @@ function SegmentedBar({
   const over = actual > budget && budget > 0;
 
   return (
-    <div className="relative h-3.5 w-full overflow-hidden rounded-full bg-muted" data-testid="bar-spent">
-      <div className="absolute inset-0 flex">
-        <div style={{ width: `${billsPct}%`, backgroundColor: "hsl(var(--amber))" }} />
-        <div style={{ width: `${labourPct}%`, backgroundColor: "hsl(var(--teal))" }} />
-      </div>
-      {over && (
-        <div
-          className="absolute inset-y-0"
-          style={{
-            left: `${budgetPct}%`,
-            width: `${Math.max(0, (actual / scale) * 100 - budgetPct)}%`,
-            backgroundColor: "hsl(var(--coral) / 0.55)",
-            backgroundImage:
-              "repeating-linear-gradient(45deg, rgba(255,255,255,0.45) 0, rgba(255,255,255,0.45) 3px, transparent 3px, transparent 6px)",
-          }}
-          data-testid="bar-overage"
-        />
-      )}
-      {budget > 0 && (
-        <div
-          className="absolute top-0 bottom-0 w-0.5 -translate-x-1/2 bg-foreground/80"
-          style={{ left: `${Math.min(98, Math.max(2, budgetPct))}%` }}
-          data-testid="bar-budget-marker"
-        />
-      )}
-    </div>
+    <Tooltip delayDuration={1500}>
+      <TooltipTrigger asChild>
+        <div className="relative h-3.5 w-full overflow-hidden rounded-full bg-muted" data-testid="bar-spent">
+          <div className="absolute inset-0 flex">
+            <div style={{ width: `${billsPct}%`, backgroundColor: "hsl(var(--amber))" }} />
+            <div style={{ width: `${labourPct}%`, backgroundColor: "hsl(var(--teal))" }} />
+          </div>
+          {over && (
+            <div
+              className="absolute inset-y-0"
+              style={{
+                left: `${budgetPct}%`,
+                width: `${Math.max(0, (actual / scale) * 100 - budgetPct)}%`,
+                backgroundColor: "hsl(var(--coral) / 0.55)",
+                backgroundImage:
+                  "repeating-linear-gradient(45deg, rgba(255,255,255,0.45) 0, rgba(255,255,255,0.45) 3px, transparent 3px, transparent 6px)",
+              }}
+              data-testid="bar-overage"
+            />
+          )}
+          {budget > 0 && (
+            <div
+              className="absolute top-0 bottom-0 w-0.5 -translate-x-1/2 bg-foreground/80"
+              style={{ left: `${Math.min(98, Math.max(2, budgetPct))}%` }}
+              data-testid="bar-budget-marker"
+            />
+          )}
+        </div>
+      </TooltipTrigger>
+      <TooltipContent side="top" align="start" className="p-2">
+        <div className="space-y-1 text-[10px]">
+          <div className="flex items-center gap-1.5">
+            <span className="inline-block h-2 w-2 rounded-full" style={{ backgroundColor: "hsl(var(--amber))" }} />
+            <span>Bills {formatCurrency(bills)}</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="inline-block h-2 w-2 rounded-full" style={{ backgroundColor: "hsl(var(--teal))" }} />
+            <span>Labour {formatCurrency(labour)}</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="inline-block h-3 w-0.5 bg-foreground/80" />
+            <span>Budget {formatCurrency(budget)}</span>
+          </div>
+          {over && (
+            <div className="flex items-center gap-1.5">
+              <span
+                className="inline-block h-2 w-3 rounded-sm"
+                style={{
+                  backgroundColor: "hsl(var(--coral) / 0.55)",
+                  backgroundImage:
+                    "repeating-linear-gradient(45deg, rgba(255,255,255,0.45) 0, rgba(255,255,255,0.45) 2px, transparent 2px, transparent 4px)",
+                }}
+              />
+              <span>Over by {formatCurrency(actual - budget)}</span>
+            </div>
+          )}
+        </div>
+      </TooltipContent>
+    </Tooltip>
   );
 }
 
