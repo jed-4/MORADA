@@ -11,6 +11,7 @@ import {
   Pencil,
   Check,
   X,
+  FileText,
 } from "lucide-react";
 import type { WidgetProps } from "@/types/widgets";
 import { useProject } from "@/contexts/ProjectContext";
@@ -147,6 +148,25 @@ export default function QuickNotesWidget(_: WidgetProps) {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/notes", projectId, QUICK_TAG] }),
   });
 
+  // Promote a quick jot to a proper project note: strip the quick tags and
+  // give it a real title, so it surfaces in the Notes widget and Notes page.
+  const promote = useMutation({
+    mutationFn: async (n: QuickNoteRow) => {
+      const title = (n.content || "").trim().split("\n")[0].slice(0, 60) || "Note";
+      return apiRequest(`/api/notes/${n.id}`, "PATCH", {
+        title,
+        tags: [],
+        category: "General",
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/notes", projectId, QUICK_TAG] });
+      queryClient.invalidateQueries({ queryKey: ["/api/notes", projectId] });
+      toast({ title: "Turned into note", description: "It's now in Project Notes." });
+    },
+    onError: (e: any) => toast({ title: "Couldn't convert", description: e.message, variant: "destructive" }),
+  });
+
   if (!currentProject) return <WidgetEmpty message="Select a project to capture quick notes" />;
   if (notesQ.isLoading) return <WidgetSkeleton />;
   if (notesQ.isError) return <WidgetError onRetry={() => notesQ.refetch()} />;
@@ -172,11 +192,73 @@ export default function QuickNotesWidget(_: WidgetProps) {
   };
 
   return (
-    <div className="flex flex-col h-full" data-testid="widget-quick-notes">
-      <div className="flex-1 overflow-auto px-3 py-3 divide-y divide-border">
+    <div className="flex flex-col h-full gap-2" data-testid="widget-quick-notes">
+      {/* Jot first: capture bar up top, front and centre */}
+      <form
+        className="flex items-center gap-1.5 flex-shrink-0"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (draft.trim()) create.mutate({ kind, text: draft });
+        }}
+      >
+        <Input
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          placeholder={meta.placeholder}
+          className="h-8 text-sm flex-1"
+          data-testid="input-quicknote"
+        />
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              type="button"
+              size="icon"
+              variant="ghost"
+              className="h-8 w-8 text-muted-foreground"
+              title={`Format: ${meta.label}`}
+              data-testid="button-block-kind"
+            >
+              <KindIcon className="h-3.5 w-3.5" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            {(["text", "heading", "bullet", "todo"] as BlockKind[]).map((kk) => {
+              const m = blockMeta(kk);
+              const Ico = m.icon;
+              return (
+                <DropdownMenuItem
+                  key={kk}
+                  onClick={() => setKind(kk)}
+                  data-testid={`button-block-kind-${kk}`}
+                >
+                  <Ico className="h-3.5 w-3.5 mr-2" />
+                  {m.label}
+                  {kind === kk && <Check className="h-3.5 w-3.5 ml-auto" />}
+                </DropdownMenuItem>
+              );
+            })}
+          </DropdownMenuContent>
+        </DropdownMenu>
+        <Button
+          type="submit"
+          size="icon"
+          variant="default"
+          className="h-8 w-8"
+          disabled={!draft.trim() || create.isPending}
+          data-testid="button-add-quicknote"
+        >
+          <Plus className="h-3.5 w-3.5" />
+        </Button>
+      </form>
+
+      {/* The sticky pad */}
+      <div
+        className="flex-1 overflow-auto rounded-lg px-3 py-2"
+        style={{ backgroundColor: "hsl(var(--amber-light) / 0.55)" }}
+      >
         {notes.length === 0 && (
           <p className="text-xs text-muted-foreground text-center py-4">
-            No quick notes yet. Add the first block below.
+            Nothing jotted yet — type above and hit enter.
           </p>
         )}
         {notes.map((n) => {
@@ -276,6 +358,13 @@ export default function QuickNotesWidget(_: WidgetProps) {
                       Edit
                     </DropdownMenuItem>
                     <DropdownMenuItem
+                      onClick={() => promote.mutate(n)}
+                      data-testid={`button-promote-quicknote-${n.id}`}
+                    >
+                      <FileText className="h-3.5 w-3.5 mr-2" />
+                      Turn into note
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
                       className="text-destructive focus:text-destructive"
                       onClick={() => remove.mutate(n.id)}
                       data-testid={`button-delete-quicknote-${n.id}`}
@@ -290,62 +379,6 @@ export default function QuickNotesWidget(_: WidgetProps) {
           );
         })}
       </div>
-      <form
-        className="border-t border-border p-2 flex items-center gap-1.5"
-        onSubmit={(e) => {
-          e.preventDefault();
-          if (draft.trim()) create.mutate({ kind, text: draft });
-        }}
-      >
-        <Input
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          placeholder={meta.placeholder}
-          className="h-8 text-sm flex-1"
-          data-testid="input-quicknote"
-        />
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              type="button"
-              size="icon"
-              variant="ghost"
-              className="h-8 w-8 text-muted-foreground"
-              title={`Format: ${meta.label}`}
-              data-testid="button-block-kind"
-            >
-              <KindIcon className="h-3.5 w-3.5" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" side="top">
-            {(["text", "heading", "bullet", "todo"] as BlockKind[]).map((kk) => {
-              const m = blockMeta(kk);
-              const Ico = m.icon;
-              return (
-                <DropdownMenuItem
-                  key={kk}
-                  onClick={() => setKind(kk)}
-                  data-testid={`button-block-kind-${kk}`}
-                >
-                  <Ico className="h-3.5 w-3.5 mr-2" />
-                  {m.label}
-                  {kind === kk && <Check className="h-3.5 w-3.5 ml-auto" />}
-                </DropdownMenuItem>
-              );
-            })}
-          </DropdownMenuContent>
-        </DropdownMenu>
-        <Button
-          type="submit"
-          size="icon"
-          variant="default"
-          className="h-8 w-8"
-          disabled={!draft.trim() || create.isPending}
-          data-testid="button-add-quicknote"
-        >
-          <Plus className="h-3.5 w-3.5" />
-        </Button>
-      </form>
     </div>
   );
 }
