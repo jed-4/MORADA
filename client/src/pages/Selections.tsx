@@ -1070,6 +1070,10 @@ export default function Selections() {
 
       {/* Table */}
       <div className="flex-1 overflow-auto">
+       {/* min-w-full + w-fit: children paint across the full scrollable width,
+           not just the visible viewport (header/row colour vanished on
+           horizontal scroll) */}
+       <div className="min-w-full w-fit">
         {/* Table header — hidden in cards view. Click a label to sort
             (asc → desc → off); drag the divider after a label to resize
             (widths persisted). */}
@@ -1251,6 +1255,7 @@ export default function Selections() {
             )
           )}
         </DndContext>
+       </div>
       </div>
 
       {/* Bulk action toolbar */}
