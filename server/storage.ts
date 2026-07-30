@@ -121,6 +121,7 @@ import { eq, or, and, desc, asc, gte, lte, sql, inArray, isNull, isNotNull, gt, 
 import * as schema from "@shared/schema";
 import { computeEstimateItemPrice, computeEstimateSummary, estimateItemBuilderCostExTax, resolveEstimateStoredPrice } from "@shared/pricing";
 import { computeBillTotalsCents, billLineExGstCents } from "@shared/billTotals";
+import { timesheetTotalExGstCents } from "@shared/money";
 import type { CircuitContext } from "@shared/schema";
 import type { AiConversation, InsertAiConversation, AiMessage, InsertAiMessage, AiBlockedItem, InsertAiBlockedItem } from "@shared/schema";
 
@@ -19085,11 +19086,26 @@ export class DbStorage implements IStorage {
         : [];
       const billByIdForActual = new Map<string, Bill>(bills.map((b) => [b.id, b]));
 
-      const actualAmount = billLineItemsForActual.reduce((sum, li) => {
+      const billsActualAmount = billLineItemsForActual.reduce((sum, li) => {
         const bill = billByIdForActual.get(li.billId);
         const exGst = billLineExGstCents(li.total || 0, li.tax, bill?.taxMode);
         return sum + (bill?.billType === 'credit' ? -exGst : exGst);
       }, 0);
+
+      // Approved timesheet labour is a real project cost (ex GST — wages carry
+      // no GST), so it belongs in the actual alongside the ex-GST bill costs.
+      const approvedTimesheetsForActual = await exec.select()
+        .from(schema.timesheets)
+        .where(and(
+          eq(schema.timesheets.projectId, projectId),
+          eq(schema.timesheets.status, "approved"),
+        ));
+      const labourActualAmount = approvedTimesheetsForActual.reduce(
+        (sum: number, ts: any) => sum + timesheetTotalExGstCents(ts),
+        0,
+      );
+
+      const actualAmount = billsActualAmount + labourActualAmount;
 
       // Calculate variations
       const variations: Variation[] = await exec.select()
