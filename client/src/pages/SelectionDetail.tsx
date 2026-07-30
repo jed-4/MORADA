@@ -271,6 +271,13 @@ export default function SelectionDetail() {
   const [commentText, setCommentText] = useState("");
   const [commentsExpanded, setCommentsExpanded] = useState(false);
   const [notesPanelExpanded, setNotesPanelExpanded] = useState(false);
+  // Unread-comment indicator: last-seen timestamp per selection (local to
+  // this browser — no schema change). Seen is stamped while the panel is open.
+  const commentsSeenKey = `selection-comments-seen-${id}`;
+  const [commentsSeenAt, setCommentsSeenAt] = useState<number>(() => {
+    const v = Number(localStorage.getItem(commentsSeenKey) || 0);
+    return Number.isFinite(v) ? v : 0;
+  });
   const [showQrModal, setShowQrModal] = useState(false);
   const [portalLinkCopied, setPortalLinkCopied] = useState(false);
 
@@ -371,6 +378,15 @@ export default function SelectionDetail() {
       });
     },
   });
+
+  useEffect(() => {
+    if (commentsExpanded) {
+      const now = Date.now();
+      localStorage.setItem(commentsSeenKey, String(now));
+      setCommentsSeenAt(now);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [commentsExpanded, id]);
 
   const { data: comments = [] } = useQuery<SelectionComment[]>({
     queryKey: ["/api/selections", id, "comments"],
@@ -548,7 +564,7 @@ export default function SelectionDetail() {
         description: option.description ?? null,
         defaultUnitCost: option.unitCost ?? null,
         unitType: option.unitType ?? "ea",
-        url: (option as any).productUrl ?? null,
+        url: option.url ?? null,
         isActive: true,
       });
     },
@@ -2036,9 +2052,9 @@ export default function SelectionDetail() {
                           {option.brand && (
                             <span className="text-xs text-muted-foreground">{option.brand}</span>
                           )}
-                          {option.productUrl && (
+                          {option.url && (
                             <a
-                              href={option.productUrl}
+                              href={option.url}
                               target="_blank"
                               rel="noopener noreferrer"
                               onClick={(e) => e.stopPropagation()}
@@ -2306,6 +2322,12 @@ export default function SelectionDetail() {
               {comments.length > 0 && (
                 <Badge variant="secondary" className="text-xs">{comments.length}</Badge>
               )}
+              {!commentsExpanded && (() => {
+                const unread = comments.filter((c) => new Date(c.createdAt).getTime() > commentsSeenAt).length;
+                return unread > 0 ? (
+                  <Badge variant="status-danger" className="rounded-[5px] text-xs">{unread} new</Badge>
+                ) : null;
+              })()}
               <ChevronDown className={cn("w-3.5 h-3.5 text-muted-foreground ml-auto transition-transform duration-150", commentsExpanded && "rotate-180")} />
             </button>
 
@@ -2688,15 +2710,15 @@ export default function SelectionDetail() {
                             data-testid="display-option-total-cost"
                           >
                             <div className="flex items-baseline justify-between gap-2">
-                              <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Total inc. GST</span>
-                              <span className="text-lg font-semibold tabular-nums">
-                                {totalIncGst !== null ? `$${(totalIncGst / 100).toFixed(2)}` : "—"}
+                              <span className="text-xs text-muted-foreground uppercase tracking-wide">Total ex. GST</span>
+                              <span className="text-sm text-muted-foreground tabular-nums">
+                                {totalExGst !== null ? `$${(totalExGst / 100).toFixed(2)}` : "—"}
                               </span>
                             </div>
                             <div className="flex items-baseline justify-between gap-2">
-                              <span className="text-xs text-muted-foreground">ex. GST</span>
-                              <span className="text-sm text-muted-foreground tabular-nums">
-                                {totalExGst !== null ? `$${(totalExGst / 100).toFixed(2)}` : "—"}
+                              <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Total inc. GST</span>
+                              <span className="text-lg font-semibold tabular-nums">
+                                {totalIncGst !== null ? `$${(totalIncGst / 100).toFixed(2)}` : "—"}
                               </span>
                             </div>
                           </div>
