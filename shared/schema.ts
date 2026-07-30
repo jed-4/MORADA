@@ -377,7 +377,7 @@ export const referralCredits = pgTable("referral_credits", {
 export type ReferralCredit = typeof referralCredits.$inferSelect;
 
 // Trial lifecycle emails already sent, one row per (company, email). The
-// UNIQUE(company_id, email_key) index — see migration 0030 — is what makes
+// UNIQUE(company_id, email_key) index — see migration 0033 — is what makes
 // each send once-only; the sweep claims by inserting before calling Resend.
 export const onboardingEmailLog = pgTable("onboarding_email_log", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
