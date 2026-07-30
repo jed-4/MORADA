@@ -561,41 +561,27 @@ export class XeroService {
   }
 
   /**
-   * Resolve a tracking option by name within a category, creating it only when
-   * it doesn't already exist. Xero enforces unique option names (including
-   * archived ones), so blind creation 400s for any name that was ever used —
-   * previously that meant a project whose name already existed as an option
-   * could never be linked. Match is case-insensitive and trimmed; ACTIVE
-   * options are preferred, an archived match is returned as a last resort so
-   * the caller surfaces a real push error instead of silently dropping tracking.
+   * Find an ACTIVE tracking option by name within a category (trimmed,
+   * case-insensitive). Deliberately never creates options — Xero is the
+   * source of truth for the tracking option list, and enforces unique names
+   * (including archived ones), so blind auto-creation 400s for any name that
+   * was ever used. Callers surface a warning when no match exists.
    */
-  async findOrCreateTrackingOption(
+  async findTrackingOptionByName(
     connectionId: string,
     trackingCategoryId: string,
     name: string,
   ): Promise<{ TrackingOptionID: string; Name: string; Status?: string } | null> {
-    const matchIn = (categories: any[]) => {
-      const category = categories.find((tc: any) => tc.TrackingCategoryID === trackingCategoryId);
-      const options = (category?.Options || []) as any[];
-      const wanted = name.trim().toLowerCase();
-      const hits = options.filter((o: any) => String(o.Name || "").trim().toLowerCase() === wanted);
-      return hits.find((o: any) => o.Status === "ACTIVE") || hits[0] || null;
-    };
-
-    const existing = matchIn(await this.getTrackingCategories(connectionId));
-    if (existing?.TrackingOptionID) return existing;
-
-    try {
-      const created = await this.createTrackingOption(connectionId, trackingCategoryId, name);
-      if (created?.TrackingOptionID) return created;
-    } catch (e: any) {
-      // Duplicate-name failure: the clashing option may be archived (Xero's
-      // default fetch hides those), so re-fetch WITH archived before giving up.
-      const retry = matchIn(await this.getTrackingCategories(connectionId, { includeArchived: true }));
-      if (retry?.TrackingOptionID) return retry;
-      throw e;
-    }
-    return null;
+    const categories = await this.getTrackingCategories(connectionId);
+    const category = categories.find((tc: any) => tc.TrackingCategoryID === trackingCategoryId);
+    const options = (category?.Options || []) as any[];
+    const wanted = name.trim().toLowerCase();
+    return (
+      options.find(
+        (o: any) =>
+          o.Status === "ACTIVE" && String(o.Name || "").trim().toLowerCase() === wanted,
+      ) || null
+    );
   }
 
   async createTrackingOption(connectionId: string, trackingCategoryId: string, name: string): Promise<any> {

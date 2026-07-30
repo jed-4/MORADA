@@ -255,6 +255,7 @@ type PushBillResult = {
   updated?: boolean;
   error?: string; // 'UNMAPPED_CONTACT' | 'NOT_CONNECTED' | 'NOT_FOUND' | 'XERO_VALIDATION' | 'MISSING_ACCOUNT_CODE' | 'INVALID_TAX_TYPE' | other
   message?: string;
+  warning?: string; // non-fatal, e.g. pushed without job tracking
   supplierId?: string | null;
   supplierName?: string;
   validationErrors?: XeroValidationIssue[];
@@ -514,7 +515,13 @@ export async function pushBillToXeroInternal(
       return date.toISOString().split("T")[0];
     };
 
+    // Project → job tracking (TC2). Xero owns the option list — we never
+    // create options, only link to an existing one: the saved mapping first,
+    // else a name match. When nothing lines up the push proceeds without job
+    // tracking and carries a warning (stored via writeSyncStatus and returned
+    // to the caller) instead of failing or silently dropping it.
     let projectXeroTrackingOptionId: string | undefined;
+    let trackingWarning: string | undefined;
     if (bill.projectId && (connection as any).trackingCategory2Id) {
       try {
         const project = await storage.getProject(bill.projectId);
@@ -522,11 +529,7 @@ export async function pushBillToXeroInternal(
           if ((project as any).xeroTrackingOptionId) {
             projectXeroTrackingOptionId = (project as any).xeroTrackingOptionId;
           } else {
-            // Link to an existing same-named option or create one. Previously
-            // this blind-created and Xero's unique-name rule made it 400 for
-            // any project name that already existed as an option — swallowed
-            // below, so those bills pushed with no job tracking at all.
-            const option = await xeroService.findOrCreateTrackingOption(
+            const option = await xeroService.findTrackingOptionByName(
               connection.id,
               (connection as any).trackingCategory2Id,
               project.name,
@@ -537,11 +540,13 @@ export async function pushBillToXeroInternal(
                 xeroTrackingOptionId: option.TrackingOptionID,
                 xeroTrackingOptionName: option.Name || project.name,
               } as any);
+            } else {
+              trackingWarning = `Pushed without job tracking — no Xero tracking option matches project "${project.name}". Create the option in Xero or link one in Project Settings → Xero Integration.`;
             }
           }
         }
       } catch (e) {
-        console.error("Failed to create/get Xero tracking option for project:", e);
+        console.error("Failed to resolve Xero tracking option for project:", e);
       }
     }
 
@@ -738,8 +743,10 @@ export async function pushBillToXeroInternal(
       }
     }
 
-    await writeSyncStatus("success");
-    logOutcome({ ok: true, reason: "OK", xeroInvoiceId: xeroBill?.InvoiceID });
+    // On success the error column doubles as a warning carrier (e.g. pushed
+    // without job tracking) — the UI renders it as a warning, not a failure.
+    await writeSyncStatus("success", trackingWarning);
+    logOutcome({ ok: true, reason: "OK", xeroInvoiceId: xeroBill?.InvoiceID, message: trackingWarning });
 
     return {
       ok: true,
@@ -747,6 +754,7 @@ export async function pushBillToXeroInternal(
       xeroInvoiceId: xeroBill?.InvoiceID,
       xeroInvoiceNumber: xeroBill?.InvoiceNumber,
       updated: !!bill.xeroInvoiceId,
+      warning: trackingWarning,
     };
   } catch (error: any) {
     if (error instanceof XeroValidationError) {
@@ -33916,6 +33924,7 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
       }
       return res.json({
         success: true,
+        warning: result.warning,
         xeroInvoiceId: result.xeroInvoiceId,
         xeroInvoiceNumber: result.xeroInvoiceNumber,
         updated: result.updated,
@@ -34044,9 +34053,8 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
                 projectXeroTrackingOptionId = (project as any).xeroTrackingOptionId;
               } else {
                 try {
-                  // Match an existing same-named option before creating — see
-                  // the identical block in pushBillToXeroInternal.
-                  const option = await xeroService.findOrCreateTrackingOption(
+                  // Link-only, never create — see pushBillToXeroInternal.
+                  const option = await xeroService.findTrackingOptionByName(
                     connection.id,
                     (connection as any).trackingCategory2Id,
                     project.name,
@@ -34057,9 +34065,11 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
                       xeroTrackingOptionId: option.TrackingOptionID,
                       xeroTrackingOptionName: option.Name || project.name,
                     } as any);
+                  } else {
+                    console.warn(`[PO push] no Xero tracking option matches project "${project.name}" — pushed without job tracking`);
                   }
                 } catch (e) {
-                  console.error("Failed to create/get Xero tracking option for project:", e);
+                  console.error("Failed to resolve Xero tracking option for project:", e);
                 }
               }
             }
@@ -34381,7 +34391,7 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
           if ((project as any).xeroTrackingOptionId) {
             projectXeroTrackingOptionId = (project as any).xeroTrackingOptionId;
           } else {
-            const option = await xeroService.findOrCreateTrackingOption(
+            const option = await xeroService.findTrackingOptionByName(
               connection.id,
               connection.trackingCategory2Id,
               project.name
@@ -34392,6 +34402,8 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
                 xeroTrackingOptionId: option.TrackingOptionID,
                 xeroTrackingOptionName: option.Name || project.name,
               } as any);
+            } else {
+              console.warn(`[client-invoice push] no Xero tracking option matches project "${project.name}" — pushed without job tracking`);
             }
           }
         } catch (e) {
@@ -34547,13 +34559,15 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
           if ((project as any).xeroTrackingOptionId) {
             projectXeroTrackingOptionId = (project as any).xeroTrackingOptionId;
           } else {
-            const option = await xeroService.findOrCreateTrackingOption(connection.id, connection.trackingCategory2Id, project.name);
+            const option = await xeroService.findTrackingOptionByName(connection.id, connection.trackingCategory2Id, project.name);
             if (option?.TrackingOptionID) {
               projectXeroTrackingOptionId = option.TrackingOptionID;
               await storage.updateProject(invoice.projectId, {
                 xeroTrackingOptionId: option.TrackingOptionID,
                 xeroTrackingOptionName: option.Name || project.name,
               } as any);
+            } else {
+              console.warn(`[client-invoice push] no Xero tracking option matches project "${project.name}" — pushed without job tracking`);
             }
           }
         } catch (e) {

@@ -1163,13 +1163,20 @@ export default function Bills({ embedded }: { embedded?: boolean } = {}) {
           const syncStatus = bill.xeroLastSyncStatus;
           const syncErr = bill.xeroLastSyncError;
           const syncAt = bill.xeroLastSyncAt;
+          // On success the error column carries non-fatal warnings (e.g.
+          // pushed without job tracking) — amber icon, not the red failure one.
+          const syncWarn = syncStatus === "success" ? syncErr : null;
           const tip = syncStatus === "failed"
             ? `Last push failed${syncAt ? ` (${new Date(syncAt).toLocaleString()})` : ""}: ${syncErr || "unknown error"}`
-            : syncStatus === "success" && syncAt
-              ? `Synced ${new Date(syncAt).toLocaleString()}`
-              : bill.xeroInvoiceId ? "Linked to Xero" : "";
+            : syncWarn
+              ? syncWarn
+              : syncStatus === "success" && syncAt
+                ? `Synced ${new Date(syncAt).toLocaleString()}`
+                : bill.xeroInvoiceId ? "Linked to Xero" : "";
           return syncStatus === "failed" ? (
             <span title={tip}><AlertCircle className="h-3 w-3 inline text-destructive" /></span>
+          ) : syncWarn ? (
+            <span title={tip}><AlertCircle className="h-3 w-3 inline" style={{ color: "hsl(var(--amber))" }} /></span>
           ) : bill.xeroInvoiceId ? (
             <span title={tip}><SiXero className="h-3.5 w-3.5 inline text-[#13B5EA]" /></span>
           ) : null;
