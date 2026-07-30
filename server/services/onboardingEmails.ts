@@ -24,6 +24,14 @@ export type OnboardingEmailKey = "welcome" | "tips_day3" | "trial_ending" | "tri
 
 const FROM = "Morada <noreply@moradaco.com.au>";
 
+// These emails go to real customers, and dev/staging routinely runs against a
+// copy of real data — so sending is OFF unless we're in production. Set
+// ONBOARDING_EMAILS_ENABLED=true to deliberately exercise it elsewhere.
+function sendingEnabled(): boolean {
+  if (process.env.ONBOARDING_EMAILS_ENABLED === "true") return true;
+  return process.env.NODE_ENV === "production";
+}
+
 // ---- Schema safety net (additive, idempotent — deploy runs no migrations) ----
 export async function ensureOnboardingEmailTable(): Promise<void> {
   await pool.query(
@@ -279,6 +287,10 @@ async function companyContext(companyId: string): Promise<
  * new signup hears from us immediately.
  */
 export async function sendWelcomeEmail(companyId: string): Promise<boolean> {
+  if (!sendingEnabled()) {
+    console.log(`[onboarding-email] skipping welcome for company ${companyId} (sending disabled outside production)`);
+    return false;
+  }
   await ensureOnboardingEmailTable();
   const ctx = await companyContext(companyId);
   if (!ctx) {
@@ -294,6 +306,7 @@ export async function sendWelcomeEmail(companyId: string): Promise<boolean> {
  * run as often as we like.
  */
 export async function processOnboardingEmails(): Promise<{ sent: number }> {
+  if (!sendingEnabled()) return { sent: 0 };
   await ensureOnboardingEmailTable();
 
   // Companies still on the trial track. Subscribers (planStatus 'active') are
