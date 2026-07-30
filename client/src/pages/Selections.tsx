@@ -228,7 +228,7 @@ export default function Selections() {
     e.preventDefault();
     e.stopPropagation();
     const handle = e.currentTarget;
-    handle.setPointerCapture(e.pointerId);
+    try { handle.setPointerCapture(e.pointerId); } catch { /* synthetic events */ }
     resizeRef.current = { key, startX: e.clientX, startW: columnWidths[key] };
     document.body.style.userSelect = "none";
     document.body.style.cursor = "col-resize";
@@ -647,7 +647,7 @@ export default function Selections() {
       groups.get(g)!.push(sel);
     }
     return groups;
-  }, [filtered, groupBy]);
+  }, [sorted, groupBy]);
 
   const allGroupKeys = useMemo(() => (groupedFiltered ? [...groupedFiltered.keys()] : []), [groupedFiltered]);
 
