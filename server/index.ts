@@ -461,6 +461,21 @@ app.use((req, res, next) => {
     trialExpirySweep();
     setInterval(trialExpirySweep, 60 * 60 * 1000);
 
+    // Trial lifecycle emails (day 3 tip, day 10 "4 days left", post-expiry).
+    // The day-0 welcome fires inline at company creation. Once-only delivery is
+    // enforced by a unique index, so running this hourly is safe.
+    const onboardingEmailSweep = async () => {
+      try {
+        const { processOnboardingEmails } = await import("./services/onboardingEmails");
+        const r = await processOnboardingEmails();
+        if (r.sent > 0) log(`[onboarding-email] sent ${r.sent} trial email(s)`);
+      } catch (err) {
+        console.error('[onboarding-email] sweep failed (non-fatal):', err);
+      }
+    };
+    onboardingEmailSweep();
+    setInterval(onboardingEmailSweep, 60 * 60 * 1000);
+
     // Referral-credit sweep: issues pending referral credits past their 7-day
     // hold (after re-checking the referee's invoice wasn't refunded). Runs
     // hourly alongside the trial sweep. No-op while Stripe is unconfigured.

@@ -10160,6 +10160,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .then((result) => console.log(`[demo] seeded demo data for new company ${company.id}:`, JSON.stringify(result)))
         .catch((seedErr) => console.error(`[demo] failed to seed demo data for new company ${company.id}:`, seedErr));
 
+      // Day-0 welcome email. Background + once-only (unique index on
+      // company/email key), so a failure here never blocks signup and the
+      // hourly sweep won't double-send.
+      import("./services/onboardingEmails")
+        .then(({ sendWelcomeEmail }) => sendWelcomeEmail(company.id))
+        .catch((mailErr) => console.error(`[onboarding-email] welcome failed for company ${company.id}:`, mailErr));
+
       res.status(201).json(created);
     } catch (error) {
       console.error("Error creating company:", error);
