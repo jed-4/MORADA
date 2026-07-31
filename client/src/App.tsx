@@ -222,7 +222,7 @@ function Router() {
       <Route path="/projects/:projectId/estimates/:estimateId" component={EstimateDetail} />
       <Route path="/projects/:projectId/labour-estimate" component={LabourEstimate} />
       <Route path="/projects/:projectId/costings" component={ProjectCostings} />
-      <Route path="/projects/:projectId/selections/:id" component={SelectionDetail} />
+      <Route path="/projects/:projectId/selections/:id" component={Dashboard} />
       <Route path="/projects/:projectId/rfqs/new" component={CreateRFQ} />
       <Route path="/projects/:projectId/rfqs/:id" component={RFQDetail} />
       <Route path="/projects/:projectId/rfis/new" component={CreateRFI} />
