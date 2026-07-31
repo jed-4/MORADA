@@ -40,6 +40,7 @@ import {
 } from "@/components/ui/select";
 import { CreatableFieldSelect } from "@/components/ui/creatable-field-select";
 import { Label } from "@/components/ui/label";
+import { formatCents } from "@shared/money";
 import {
   Dialog,
   DialogContent,
@@ -288,7 +289,12 @@ export default function SelectionDetail() {
   const effectiveProjectId = projectId || currentProject?.id;
   const { data: projectAllowances = [] } = useQuery<any[]>({
     queryKey: ["/api/projects", effectiveProjectId, "allowances"],
-    queryFn: () => apiRequest(`/api/projects/${effectiveProjectId}/allowances`, "GET"),
+    // Rows come back as { item, actualCost, ... } — flatten to the estimate
+    // item, which carries name / allowance type / priceIncTax
+    queryFn: async () => {
+      const rows: any[] = await apiRequest(`/api/projects/${effectiveProjectId}/allowances`, "GET");
+      return (rows ?? []).map((r: any) => r?.item ?? r).filter(Boolean);
+    },
     enabled: pricingPopoverOpen && !!effectiveProjectId,
   });
 
@@ -1179,7 +1185,7 @@ export default function SelectionDetail() {
   const isAdminUser = !!user?.isAdminLike;
   const isOverAllowance = allowanceAmount > 0 && selectedPrice > allowanceAmount;
   const linkedAllowanceName = selection.estimateItemId
-    ? (projectAllowances.find((a: any) => a.id === selection.estimateItemId)?.name ?? null)
+    ? (projectAllowances.find((a: any) => a.id === selection.estimateItemId)?.name ?? "Linked allowance")
     : null;
 
   return (
@@ -1399,7 +1405,10 @@ export default function SelectionDetail() {
                             // Adopt the allowance's budget so the two agree
                             const picked = projectAllowances.find((a: any) => a.id === id);
                             if (picked) {
-                              const cents = Math.round(Number(picked.priceIncTax ?? 0) * 100);
+                              // This endpoint recomputes and returns priceIncTax
+                              // already in CENTS (it deliberately doesn't trust
+                              // the dollars cache on estimate_items)
+                              const cents = Number(picked.priceIncTax ?? 0);
                               setEditingAllowance((cents / 100).toFixed(2));
                             }
                           }}
@@ -1413,7 +1422,7 @@ export default function SelectionDetail() {
                               <SelectItem key={a.id} value={a.id}>
                                 {a.name}
                                 {a.allowance ? ` · ${a.allowance === "Prime Cost" ? "PC" : "PS"}` : ""}
-                                {a.priceIncTax != null ? ` · $${Number(a.priceIncTax).toLocaleString("en-AU", { maximumFractionDigits: 0 })}` : ""}
+                                {a.priceIncTax != null ? ` · ${formatCents(Number(a.priceIncTax))}` : ""}
                               </SelectItem>
                             ))}
                           </SelectContent>
