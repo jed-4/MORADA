@@ -19,6 +19,7 @@ import { useProject } from "@/contexts/ProjectContext";
 import { useAuth } from "@/hooks/use-auth";
 import { usePermission } from "@/hooks/use-permission";
 import { useSelectionStatusOptions } from "@/hooks/useSelectionStatusOptions";
+import { SelectionStatusPill, getDerivedStatus } from "@/components/selections/selectionHelpers";
 import { 
   insertSelectionOptionSchema, 
   insertSelectionSchema,
@@ -261,6 +262,9 @@ export default function SelectionDetail() {
   const optionsSearchWrapRef = useRef<HTMLDivElement>(null);
   const [pricingPopoverOpen, setPricingPopoverOpen] = useState(false);
   const [editingAllowance, setEditingAllowance] = useState<string>("");
+  // Allowance linking: a selection can point at a PC/PS estimate line so its
+  // budget follows the estimate instead of being a typed-in number.
+  const [editingAllowanceItemId, setEditingAllowanceItemId] = useState<string>("");
   const [isEditingDetails, setIsEditingDetails] = useState(false);
   const { toast } = useToast();
   const { user } = useAuth();
@@ -282,6 +286,12 @@ export default function SelectionDetail() {
   const [portalLinkCopied, setPortalLinkCopied] = useState(false);
 
   const effectiveProjectId = projectId || currentProject?.id;
+  const { data: projectAllowances = [] } = useQuery<any[]>({
+    queryKey: ["/api/projects", effectiveProjectId, "allowances"],
+    queryFn: () => apiRequest(`/api/projects/${effectiveProjectId}/allowances`, "GET"),
+    enabled: pricingPopoverOpen && !!effectiveProjectId,
+  });
+
 
   const { data: selectionCategories } = useQuery<FieldCategoryWithOptions>({
     queryKey: ["/api/field-categories/by-key/selection.category"],
@@ -1168,6 +1178,9 @@ export default function SelectionDetail() {
 
   const isAdminUser = !!user?.isAdminLike;
   const isOverAllowance = allowanceAmount > 0 && selectedPrice > allowanceAmount;
+  const linkedAllowanceName = selection.estimateItemId
+    ? (projectAllowances.find((a: any) => a.id === selection.estimateItemId)?.name ?? null)
+    : null;
 
   return (
     <div className="flex flex-col h-full">
@@ -1255,13 +1268,7 @@ export default function SelectionDetail() {
                 {/* Status */}
                 <div>
                   <div className="text-data text-muted-foreground uppercase tracking-wide mb-1">Status</div>
-                  <Badge 
-                    variant="outline" 
-                    className={cn("text-xs capitalize", currentStatus.bgClass, currentStatus.textClass)}
-                  >
-                    <StatusIcon className="w-3 h-3 mr-1" />
-                    {currentStatus.name}
-                  </Badge>
+                  <SelectionStatusPill derived={getDerivedStatus(selection as any)} />
                 </div>
 
                 {/* Category */}
@@ -1296,14 +1303,18 @@ export default function SelectionDetail() {
                   </div>
                 )}
 
-                {/* Estimate link */}
+                {/* Linked allowance */}
                 {selection.estimateItemId && (
                   <div>
-                    <div className="text-data text-muted-foreground uppercase tracking-wide mb-1">Source</div>
-                    <div className="text-sm font-medium flex items-center gap-1 text-muted-foreground">
+                    <div className="text-data text-muted-foreground uppercase tracking-wide mb-1">Allowance</div>
+                    <a
+                      href={`/projects/${effectiveProjectId}/allowances/${selection.estimateItemId}`}
+                      className="text-sm font-medium flex items-center gap-1 text-primary hover:underline"
+                      data-testid="link-selection-allowance"
+                    >
                       <Link2 className="w-3 h-3" />
-                      Linked from estimate
-                    </div>
+                      {linkedAllowanceName ?? "Linked allowance"}
+                    </a>
                   </div>
                 )}
                 
@@ -1314,6 +1325,7 @@ export default function SelectionDetail() {
                   setPricingPopoverOpen(open);
                   if (open) {
                     setEditingAllowance((allowanceAmount / 100).toFixed(2));
+                    setEditingAllowanceItemId(selection.estimateItemId ?? "");
                   }
                 }}>
                   <PopoverTrigger asChild>
@@ -1376,7 +1388,42 @@ export default function SelectionDetail() {
                   </PopoverTrigger>
                   <PopoverContent align="end" className="w-64">
                     <div className="space-y-4">
-                      <div className="text-sm font-semibold">Edit Allowance</div>
+                      <div className="text-sm font-semibold">Allowance</div>
+                      <div>
+                        <label className="text-xs text-muted-foreground uppercase tracking-wide">Linked to</label>
+                        <Select
+                          value={editingAllowanceItemId || "none"}
+                          onValueChange={(v) => {
+                            const id = v === "none" ? "" : v;
+                            setEditingAllowanceItemId(id);
+                            // Adopt the allowance's budget so the two agree
+                            const picked = projectAllowances.find((a: any) => a.id === id);
+                            if (picked) {
+                              const cents = Math.round(Number(picked.priceIncTax ?? 0) * 100);
+                              setEditingAllowance((cents / 100).toFixed(2));
+                            }
+                          }}
+                        >
+                          <SelectTrigger className="mt-1 h-9 text-sm" data-testid="select-allowance-link">
+                            <SelectValue placeholder="Not linked — manual amount" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="none">Not linked — manual amount</SelectItem>
+                            {projectAllowances.map((a: any) => (
+                              <SelectItem key={a.id} value={a.id}>
+                                {a.name}
+                                {a.allowance ? ` · ${a.allowance === "Prime Cost" ? "PC" : "PS"}` : ""}
+                                {a.priceIncTax != null ? ` · $${Number(a.priceIncTax).toLocaleString("en-AU", { maximumFractionDigits: 0 })}` : ""}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        {projectAllowances.length === 0 && (
+                          <p className="mt-1 text-[11px] text-muted-foreground">
+                            No PC/PS allowances on this project's estimate yet.
+                          </p>
+                        )}
+                      </div>
                       <div>
                         <label className="text-xs text-muted-foreground uppercase tracking-wide">Allowance Amount</label>
                         <div className="relative mt-1">
@@ -1391,6 +1438,11 @@ export default function SelectionDetail() {
                             data-testid="input-edit-allowance"
                           />
                         </div>
+                        {editingAllowanceItemId && (
+                          <p className="mt-1 text-[11px] text-muted-foreground">
+                            Prefilled from the linked allowance — edit to override.
+                          </p>
+                        )}
                       </div>
                       <div className="flex justify-end gap-2">
                         <Button 
@@ -1406,6 +1458,7 @@ export default function SelectionDetail() {
                             const parsed = parseFloat(editingAllowance);
                             const newAllowance = isNaN(parsed) ? allowanceAmount : Math.round(parsed * 100);
                             selectionForm.setValue("allowance", newAllowance);
+                            selectionForm.setValue("estimateItemId", editingAllowanceItemId || null);
                             setHasUnsavedChanges(true);
                             setPricingPopoverOpen(false);
                             handleSaveSelection();
@@ -2280,36 +2333,6 @@ export default function SelectionDetail() {
             </div>
           )}
 
-          {/* Notes to trades — collapsible, above comments */}
-          <div className="surface-panel" data-testid="selection-trades-notes">
-            <button
-              type="button"
-              onClick={() => setNotesPanelExpanded((v) => !v)}
-              className="w-full flex items-center gap-2 p-3 hover-elevate rounded-t-md text-left"
-            >
-              <HardHat className="w-3.5 h-3.5 text-muted-foreground" />
-              <span className="text-data text-muted-foreground uppercase tracking-wide">Notes to Trades</span>
-              {!!localNotes && <Badge variant="secondary" className="text-xs">set</Badge>}
-              <ChevronDown className={cn("w-3.5 h-3.5 text-muted-foreground ml-auto transition-transform duration-150", notesPanelExpanded && "rotate-180")} />
-            </button>
-            {notesPanelExpanded && (
-              <div className="px-3 pb-3 space-y-1.5">
-                <p className="text-xs px-2 py-1 rounded-md bg-status-warning-bg text-status-warning border border-status-warning/30">
-                  Visible to your internal team only — not the client.
-                </p>
-                <Textarea
-                  value={localNotes}
-                  onChange={(e) => setLocalNotes(e.target.value)}
-                  onBlur={(e) => handleSaveNotes(e.target.value)}
-                  placeholder="Instructions, warnings, or notes for your trades team…"
-                  rows={3}
-                  className="text-sm resize-none"
-                  data-testid="input-selection-notes"
-                />
-              </div>
-            )}
-          </div>
-
           {/* Comments */}
           <div className="surface-panel" data-testid="selection-comments">
             <button
@@ -2400,6 +2423,36 @@ export default function SelectionDetail() {
                     )}
                   </Button>
                 </div>
+              </div>
+            )}
+          </div>
+
+          {/* Notes to trades — collapsible, below comments */}
+          <div className="surface-panel" data-testid="selection-trades-notes">
+            <button
+              type="button"
+              onClick={() => setNotesPanelExpanded((v) => !v)}
+              className="w-full flex items-center gap-2 p-3 hover-elevate rounded-t-md text-left"
+            >
+              <HardHat className="w-3.5 h-3.5 text-muted-foreground" />
+              <span className="text-data text-muted-foreground uppercase tracking-wide">Notes to Trades</span>
+              {!!localNotes && <Badge variant="secondary" className="text-xs">set</Badge>}
+              <ChevronDown className={cn("w-3.5 h-3.5 text-muted-foreground ml-auto transition-transform duration-150", notesPanelExpanded && "rotate-180")} />
+            </button>
+            {notesPanelExpanded && (
+              <div className="px-3 pb-3 space-y-1.5">
+                <p className="text-xs px-2 py-1 rounded-md bg-status-warning-bg text-status-warning border border-status-warning/30">
+                  Visible to your internal team only — not the client.
+                </p>
+                <Textarea
+                  value={localNotes}
+                  onChange={(e) => setLocalNotes(e.target.value)}
+                  onBlur={(e) => handleSaveNotes(e.target.value)}
+                  placeholder="Instructions, warnings, or notes for your trades team…"
+                  rows={3}
+                  className="text-sm resize-none"
+                  data-testid="input-selection-notes"
+                />
               </div>
             )}
           </div>
