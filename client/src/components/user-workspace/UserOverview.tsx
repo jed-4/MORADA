@@ -72,7 +72,6 @@ const DEFAULT_WIDGETS: Widget[] = [
   { id: "3", type: "personalTasks", title: "My Tasks", size: "md" },
   { id: "4", type: "personalReminders", title: "My Reminders", size: "md" },
   { id: "5", type: "crossProjectDeadlines", title: "Upcoming Deadlines", size: "md" },
-  { id: "6", type: "personalMemos", title: "My Memos", size: "md" },
   { id: "7", type: "personalCalendar", title: "My Calendar", size: "md" },
   { id: "8", type: "personalAISummary", title: "AI Summary", size: "md" },
 ];
@@ -95,6 +94,10 @@ function SortableWidget({
   themeStyle?: { className: string; style?: React.CSSProperties };
 }) {
   const [isResizing, setIsResizing] = useState(false);
+  // Header buttons the widget registers for itself. Kept local to this
+  // component (not lifted) so the setState identity is stable and a widget's
+  // registration effect can never loop against a parent's state.
+  const [headerActions, setHeaderActions] = useState<React.ReactNode>(null);
 
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: widget.id, disabled: isResizing });
@@ -136,6 +139,7 @@ function SortableWidget({
         title={widget.title}
         icon={<definition.icon className="h-3.5 w-3.5" />}
         accent={definition.accent}
+        headerActions={headerActions}
         onRemove={() => onRemove(widget.id)}
         onConfigure={definition.configurable ? () => onConfigure(widget.id) : undefined}
         dragHandleProps={{ ...attributes, ...listeners }}
@@ -157,6 +161,7 @@ function SortableWidget({
           onRemove={onRemove}
           isConfiguring={isConfiguring}
           onCloseConfig={() => onConfigure(null)}
+          onSetHeaderActions={setHeaderActions}
           userId={userId}
         />
       </DashboardWidgetContainer>

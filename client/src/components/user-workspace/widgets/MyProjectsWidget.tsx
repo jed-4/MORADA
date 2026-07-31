@@ -6,6 +6,7 @@ import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Progress } from "@/components/ui/progress";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Switch } from "@/components/ui/switch";
 import { 
   FolderOpen, 
   ChevronRight, 
@@ -47,17 +48,36 @@ export default function MyProjectsWidget({ widget, onUpdate, isConfiguring, onCl
 
   // Empty array means "show all phases" (default behaviour).
   const activePhaseFilter: string[] = Array.isArray(widget.config?.phases) ? widget.config!.phases : [];
+  // Escape hatch for owners/admins who oversee every job rather than being
+  // explicitly granted access to each one.
+  const showAllProjects = widget.config?.showAllProjects === true;
+  const [editingShowAll, setEditingShowAll] = useState(showAllProjects);
 
   const { data: projects = [], isLoading } = useQuery<Project[]>({
     queryKey: ["/api/projects"],
   });
 
+  const currentUserId = userId || (user as any)?.id;
+
+  // Projects explicitly granted to this user. Combined with ownerId below this
+  // mirrors the server's own scoping rule for GET /api/tasks.
+  const { data: projectAccess = [] } = useQuery<Array<{ projectId: string }>>({
+    queryKey: ["/api/users", currentUserId, "project-access"],
+    enabled: !!currentUserId && !showAllProjects,
+  });
+
   const myProjects = useMemo(() => {
-    const currentUserId = userId || (user as any)?.id;
     if (!currentUserId) return [];
-    
+
+    const accessibleIds = new Set(projectAccess.map(a => a.projectId));
+
     return projects
       .filter(p => !p.isArchived)
+      .filter(p => {
+        // "My Projects" means assigned to me — access grant or ownership.
+        if (showAllProjects) return true;
+        return accessibleIds.has(p.id) || (p as any).ownerId === currentUserId;
+      })
       .filter(p => {
         if (activePhaseFilter.length === 0) return true;
         return activePhaseFilter.includes(p.currentSystemPhase || "");
@@ -77,7 +97,7 @@ export default function MyProjectsWidget({ widget, onUpdate, isConfiguring, onCl
         const bOrder = phaseOrder.indexOf(b.currentSystemPhase || 'construction');
         return aOrder - bOrder;
       });
-  }, [projects, userId, user, searchQuery, activePhaseFilter]);
+  }, [projects, projectAccess, currentUserId, showAllProjects, searchQuery, activePhaseFilter]);
 
   const handleProjectClick = (projectId: string) => {
     navigate(`/projects/${projectId}`);
@@ -93,6 +113,19 @@ export default function MyProjectsWidget({ widget, onUpdate, isConfiguring, onCl
             onChange={(e) => setEditingTitle(e.target.value)}
             placeholder="My Projects"
             data-testid="input-widget-title"
+          />
+        </div>
+        <div className="flex items-center justify-between gap-2">
+          <div>
+            <Label>Show all company projects</Label>
+            <p className="text-xs text-muted-foreground">
+              Off shows only projects assigned to you.
+            </p>
+          </div>
+          <Switch
+            checked={editingShowAll}
+            onCheckedChange={setEditingShowAll}
+            data-testid="switch-show-all-projects"
           />
         </div>
         <div className="space-y-2">
@@ -125,7 +158,17 @@ export default function MyProjectsWidget({ widget, onUpdate, isConfiguring, onCl
           </div>
         </div>
         <div className="flex justify-end gap-2">
-          <Button variant="outline" size="sm" onClick={onCloseConfig}>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              // Revert the draft so abandoned edits don't reappear next open
+              setEditingTitle(widget.title);
+              setEditingPhases(initialPhases);
+              setEditingShowAll(showAllProjects);
+              onCloseConfig?.();
+            }}
+          >
             Cancel
           </Button>
           <Button
@@ -134,7 +177,11 @@ export default function MyProjectsWidget({ widget, onUpdate, isConfiguring, onCl
               onUpdate?.({
                 ...widget,
                 title: editingTitle,
-                config: { ...(widget.config || {}), phases: editingPhases },
+                config: {
+                  ...(widget.config || {}),
+                  phases: editingPhases,
+                  showAllProjects: editingShowAll,
+                },
               });
               onCloseConfig?.();
             }}

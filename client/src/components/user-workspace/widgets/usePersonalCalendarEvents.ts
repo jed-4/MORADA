@@ -67,8 +67,11 @@ export function usePersonalCalendarEvents({
       const allTasks = await apiRequest("/api/tasks", "GET");
       return Array.isArray(allTasks)
         ? allTasks.filter((task: any) => {
+            // assigneeIds is the current multi-assignee field; assigneeId is legacy.
+            // (The old code checked `assignedTo`, which doesn't exist, so tasks
+            // assigned through the multi-assignee UI never reached the calendar.)
             const isAssigned = task.assigneeId === userId ||
-              (Array.isArray(task.assignedTo) && task.assignedTo.includes(userId));
+              (Array.isArray(task.assigneeIds) && task.assigneeIds.includes(userId));
             return isAssigned && task.dueDate;
           })
         : [];
@@ -133,14 +136,13 @@ export function usePersonalCalendarEvents({
     retry: false,
   });
 
+  // /api/reminders is session-scoped server-side, so no userId in the URL.
+  // (The old /api/users/:id/reminders route doesn't exist — it fell through to
+  // the SPA catch-all and returned HTML, so reminders never loaded at all.)
+  // Sharing the key with PersonalRemindersWidget means dismissing there
+  // refreshes the calendar for free.
   const { data: reminders = [], isLoading: remindersLoading } = useQuery<any[]>({
-    queryKey: ["/api/users", userId, "reminders"],
-    queryFn: async () => {
-      if (!userId) return [];
-      const response = await fetch(`/api/users/${userId}/reminders`, { credentials: 'include' });
-      if (!response.ok) return [];
-      return response.json();
-    },
+    queryKey: ["/api/reminders"],
     enabled: !!userId && includeReminders,
     refetchInterval: REFETCH_INTERVAL,
   });
@@ -255,8 +257,9 @@ export function usePersonalCalendarEvents({
 
     if (includeReminders) {
       reminders.forEach((reminder: any) => {
-        if (!reminder.triggerAt) return;
-        const triggerDate = new Date(reminder.triggerAt);
+        // Schema fields are dueAt/description (the old code read triggerAt/content)
+        if (!reminder.dueAt) return;
+        const triggerDate = new Date(reminder.dueAt);
         if (!isWithinInterval(triggerDate, { start: rangeStart, end: rangeEnd })) return;
 
         items.push({
@@ -268,7 +271,7 @@ export function usePersonalCalendarEvents({
           endTime: null,
           allDay: false,
           type: "reminder",
-          description: reminder.content,
+          description: reminder.description,
         });
       });
     }
