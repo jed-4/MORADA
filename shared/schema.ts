@@ -1956,6 +1956,12 @@ export const bills = pgTable("bills", {
   tax: integer("tax").notNull().default(0), // Tax amount in cents
   total: integer("total").notNull().default(0), // Total amount in cents
   roundingCents: integer("rounding_cents").notNull().default(0), // Manual rounding adjustment (cents), applied to total to match supplier invoice
+  // The total printed on the supplier's invoice document (cents inc GST), as
+  // typed by the user or extracted by the AI reader. When set it is the ANCHOR:
+  // roundingCents is re-derived from it whenever lines/taxMode change, so the
+  // bill total tracks the document instead of drifting with a stale delta.
+  // Null = no anchor captured (totals are purely line-derived).
+  documentTotalCents: integer("document_total_cents"),
   paidAmount: integer("paid_amount").notNull().default(0), // Paid amount in cents
   taxMode: text("tax_mode").notNull().default("exclusive"), // "inclusive" or "exclusive" — line totals interpretation
   sendToXero: boolean("send_to_xero").notNull().default(false), // Checkbox for Xero sync
