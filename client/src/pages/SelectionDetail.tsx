@@ -1190,79 +1190,83 @@ export default function SelectionDetail() {
 
   return (
     <div className="flex flex-col h-full">
-      {/* Breadcrumb bar */}
-      <div className="h-9 bg-background border-b flex items-center justify-between px-2 gap-2 flex-shrink-0">
-        <button
-          onClick={goBack}
-          className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
-          data-testid="button-back"
-        >
-          <ChevronLeft className="w-3.5 h-3.5" />
-          Selections
-        </button>
-        <div className="flex items-center gap-2">
-          {hasUnsavedChanges && !isEditingDetails && (
-            <Button
-              size="sm"
-              onClick={handleSaveSelection}
-              disabled={updateSelectionMutation.isPending}
-              data-testid="button-save-selection"
-            >
-              {updateSelectionMutation.isPending ? (
-                <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />
-              ) : (
-                <Save className="w-3.5 h-3.5 mr-1" />
-              )}
-              Save
-            </Button>
-          )}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-7 w-7" data-testid="button-selection-menu">
-                <MoreVertical className="w-4 h-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={() => setIsEditingDetails(true)}>
-                <Settings className="w-4 h-4 mr-2" />
-                Edit Details
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setSendDialogOpen(true)} data-testid="menu-send-to-client">
-                <Send className="w-4 h-4 mr-2" />
-                Send to Client
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={handleCopyPortalLink}>
-                <LinkIcon className="w-4 h-4 mr-2" />
-                {portalLinkCopied ? "Link copied!" : "Copy Portal Link"}
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setShowQrModal(true)}>
-                <QrCode className="w-4 h-4 mr-2" />
-                Show QR Code
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={() => window.open(`/api/selections/${id}/pdf`, "_blank")}
-              >
-                <Package className="w-4 h-4 mr-2" />
-                Export PDF
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-      </div>
-
       {/* Main Content Area */}
       <div className="flex-1 overflow-y-auto">
         <div className="p-4 space-y-6">
 
 
-          {/* Prominent name heading */}
+          {/* Breadcrumb + title row. The project header and section tabs come
+              from the project shell, so this page only owns its own crumb. */}
           <div>
-            <h2 className="text-2xl font-bold leading-tight">{selection.name}</h2>
-            {(selection.category || selection.room) && (
-              <p className="text-sm text-muted-foreground mt-0.5">
-                {[selection.category, selection.room].filter(Boolean).join(" · ")}
-              </p>
+            <nav className="flex items-center gap-1 text-xs text-muted-foreground mb-1.5" aria-label="Breadcrumb">
+              <button
+                onClick={goBack}
+                className="hover:text-foreground transition-colors"
+                data-testid="button-back"
+              >
+                Selections
+              </button>
+              <ChevronRight className="w-3 h-3 opacity-50" />
+              <span className="text-foreground font-medium truncate max-w-[320px]">{selection.name}</span>
+            </nav>
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <h2 className="text-2xl font-bold leading-tight">{selection.name}</h2>
+                {(selection.category || selection.room) && (
+                  <p className="text-sm text-muted-foreground mt-0.5">
+                    {[selection.category, selection.room].filter(Boolean).join(" · ")}
+                  </p>
+                )}
+              </div>
+      <div className="flex items-center gap-2">
+        {hasUnsavedChanges && !isEditingDetails && (
+          <Button
+            size="sm"
+            onClick={handleSaveSelection}
+            disabled={updateSelectionMutation.isPending}
+            data-testid="button-save-selection"
+          >
+            {updateSelectionMutation.isPending ? (
+              <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />
+            ) : (
+              <Save className="w-3.5 h-3.5 mr-1" />
             )}
+            Save
+          </Button>
+        )}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="icon" className="h-7 w-7" data-testid="button-selection-menu">
+              <MoreVertical className="w-4 h-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onClick={() => setIsEditingDetails(true)}>
+              <Settings className="w-4 h-4 mr-2" />
+              Edit Details
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => setSendDialogOpen(true)} data-testid="menu-send-to-client">
+              <Send className="w-4 h-4 mr-2" />
+              Send to Client
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={handleCopyPortalLink}>
+              <LinkIcon className="w-4 h-4 mr-2" />
+              {portalLinkCopied ? "Link copied!" : "Copy Portal Link"}
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => setShowQrModal(true)}>
+              <QrCode className="w-4 h-4 mr-2" />
+              Show QR Code
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={() => window.open(`/api/selections/${id}/pdf`, "_blank")}
+            >
+              <Package className="w-4 h-4 mr-2" />
+              Export PDF
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+            </div>
           </div>
 
 
