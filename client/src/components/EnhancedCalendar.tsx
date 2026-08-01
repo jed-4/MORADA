@@ -8,6 +8,7 @@ import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, Check } from "luci
 import { cn } from "@/lib/utils";
 import { useWeekStartDay } from "@/hooks/useWeekStartDay";
 import { generateNotionColors, TYPE_COLORS_HEX } from "@/lib/taskColors";
+import type { ProjectBand } from "@shared/scheduleVisibility";
 import {
   DndContext,
   DragEndEvent,
@@ -92,6 +93,12 @@ interface EnhancedCalendarProps {
   focusBlocks?: FocusBlockData[];
   onFocusBlockClick?: (block: FocusBlockData) => void;
   onFocusBlockUpdate?: (blockId: string, startTime: string, endTime: string) => void;
+  /**
+   * Collapsed project-schedule spans drawn as a slim band under the day headers,
+   * so other people's multi-day work bars don't compete with real appointments.
+   */
+  projectBands?: ProjectBand[];
+  onProjectBandClick?: (band: ProjectBand) => void;
 }
 
 interface DraggableEventProps {
@@ -347,6 +354,8 @@ export function EnhancedCalendar({
   focusBlocks = [],
   onFocusBlockClick,
   onFocusBlockUpdate,
+  projectBands = [],
+  onProjectBandClick,
 }: EnhancedCalendarProps) {
   const weekStartDay = useWeekStartDay();
   const { effectiveTimezone } = useTimezone();
@@ -413,6 +422,7 @@ export function EnhancedCalendar({
   
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const allDayScrollRef = useRef<HTMLDivElement>(null);
+  const bandScrollRef = useRef<HTMLDivElement>(null);
   const timeGridScrollRef = useRef<HTMLDivElement>(null);
   const monthScrollRef = useRef<HTMLDivElement>(null);
   const monthScrolledToToday = useRef(false);
@@ -533,19 +543,22 @@ export function EnhancedCalendar({
   }, []);
 
   // Synchronize horizontal scroll across date header, all-day, and time grid
-  const handleHorizontalScroll = useCallback((source: 'header' | 'allDay' | 'timeGrid') => {
+  const handleHorizontalScroll = useCallback((source: 'header' | 'allDay' | 'timeGrid' | 'band') => {
     return (e: React.UIEvent<HTMLDivElement>) => {
       const element = e.currentTarget;
       const scrollLeft = element.scrollLeft;
       const scrollWidth = element.scrollWidth;
       const clientWidth = element.clientWidth;
-      
+
       // Sync scroll position
       if (source !== 'header' && scrollContainerRef.current) {
         scrollContainerRef.current.scrollLeft = scrollLeft;
       }
       if (source !== 'allDay' && allDayScrollRef.current) {
         allDayScrollRef.current.scrollLeft = scrollLeft;
+      }
+      if (source !== 'band' && bandScrollRef.current) {
+        bandScrollRef.current.scrollLeft = scrollLeft;
       }
       if (source !== 'timeGrid' && timeGridScrollRef.current) {
         timeGridScrollRef.current.scrollLeft = scrollLeft;
@@ -1076,6 +1089,77 @@ export function EnhancedCalendar({
             })}
           </div>
         </div>
+
+        {/* Project phase band — one slim segment per project per contiguous run of
+            other people's work, so it reads at a glance without crowding the grid. */}
+        {projectBands.length > 0 && (
+          <div className="flex border-b border-border" data-testid="project-band-row">
+            <div className="py-1 px-2 border-r border-border/50 w-16 flex-shrink-0 text-label text-muted-foreground flex items-center justify-center bg-background uppercase font-semibold">
+              Projects
+            </div>
+            <div
+              className={cn("flex overflow-x-auto hide-scrollbar", (view === "day" || view === "week") && "flex-1")}
+              ref={bandScrollRef}
+              onScroll={handleHorizontalScroll('band')}
+            >
+              {dateRange.map((date, idx) => {
+                const dayKey = format(date, "yyyy-MM-dd");
+                const covering = projectBands.filter(b => dayKey >= b.startDate && dayKey <= b.endDate);
+                const MAX_BANDS = 3;
+                return (
+                  <div
+                    key={idx}
+                    className={cn(
+                      "border-r border-border/50 flex-shrink-0 py-1 space-y-0.5 min-h-[16px]",
+                      (view === "day" || view === "week") && "flex-1"
+                    )}
+                    style={DAY_WIDTH ? { minWidth: `${DAY_WIDTH}px`, width: `${DAY_WIDTH}px` } : undefined}
+                    data-testid={`project-band-${dayKey}`}
+                  >
+                    {covering.slice(0, MAX_BANDS).map(band => {
+                      const bandColors = generateNotionColors(band.projectColor || undefined);
+                      // Label on the band's first day, or the first visible day when it
+                      // started before this week — otherwise the run reads as anonymous colour.
+                      const showLabel =
+                        dayKey === band.startDate ||
+                        (idx === 0 && band.startDate < format(dateRange[0], "yyyy-MM-dd"));
+                      const detail = [band.projectName, band.label].filter(Boolean).join(" — ");
+                      return (
+                        <div
+                          key={`${band.projectId}-${band.startDate}`}
+                          className={cn(
+                            "h-2.5 flex items-center overflow-hidden",
+                            onProjectBandClick && "cursor-pointer"
+                          )}
+                          style={{
+                            backgroundColor: bandColors.pastelBg,
+                            borderLeft: showLabel ? `3px solid ${bandColors.originalHex}` : undefined,
+                          }}
+                          title={`${detail}${band.itemCount > 1 ? ` (${band.itemCount} items)` : ""}`}
+                          onClick={() => onProjectBandClick?.(band)}
+                        >
+                          {showLabel && (
+                            <span
+                              className="text-2xs leading-none px-1 truncate font-semibold"
+                              style={{ color: bandColors.darkText }}
+                            >
+                              {detail}
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })}
+                    {covering.length > MAX_BANDS && (
+                      <div className="text-2xs leading-none px-1 text-muted-foreground">
+                        +{covering.length - MAX_BANDS}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* All-Day Events Section - Notion style */}
         <div className="flex border-b border-border">

@@ -252,19 +252,33 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
     }
   };
 
-  // Fetch schedule items for displayed user
-  const { data: scheduleItems = [], isLoading: isLoadingSchedule } = useQuery({
-    queryKey: ["/api/schedule-items/all", { calendarUser: displayedUserId }],
+  // Projects the user has opted into seeing in full; everything else is banded.
+  // Sorted so the query key is stable regardless of selection order.
+  const fullScheduleKey = [...(filters.fullScheduleProjects ?? [])].sort().join(",");
+
+  // Schedule items split into grid chips (in-house work + appointments) and
+  // collapsed per-project bands (everyone else's work bars).
+  const { data: scheduleCalendar, isLoading: isLoadingSchedule } = useQuery({
+    queryKey: ["/api/schedule-items/calendar", fullScheduleKey],
     queryFn: async () => {
       try {
-        const allSchedule = await apiRequest("/api/schedule-items/all", "GET");
-        return Array.isArray(allSchedule) ? allSchedule : [];
+        const qs = fullScheduleKey
+          ? `?fullScheduleProjects=${encodeURIComponent(fullScheduleKey)}`
+          : "";
+        const result = await apiRequest(`/api/schedule-items/calendar${qs}`, "GET");
+        return {
+          events: Array.isArray(result?.events) ? result.events : [],
+          bands: Array.isArray(result?.bands) ? result.bands : [],
+        };
       } catch {
-        return [];
+        return { events: [], bands: [] };
       }
     },
     enabled: !!displayedUserId,
   });
+
+  const scheduleItems = scheduleCalendar?.events ?? [];
+  const projectBands = scheduleCalendar?.bands ?? [];
 
   // Fetch Google Calendar connection status
   const { data: googleCalendarStatus } = useQuery<{ connected: boolean; email?: string }>({
@@ -484,6 +498,14 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
       return true;
     });
   }, [calendarEvents, filters]);
+
+  // Bands follow the same project filter as events, so filtering to one project
+  // doesn't leave other projects' bands stranded above an empty grid.
+  const filteredProjectBands = useMemo(() => {
+    if (!filters.projectIds?.length) return projectBands;
+    const wanted = new Set(filters.projectIds);
+    return projectBands.filter((band: any) => wanted.has(band.projectId));
+  }, [projectBands, filters.projectIds]);
 
   const handleEventClick = (event: CalendarEvent) => {
     setSelectedEvent(event);
@@ -746,21 +768,48 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
                     )}
                   </div>
                   <div className="space-y-1.5 max-h-64 overflow-y-auto">
-                    {projects.map((project: any) => (
-                      <label key={project.id} className="flex items-center gap-2 cursor-pointer">
-                        <Checkbox
-                          checked={filters.projectIds?.includes(project.id) || false}
-                          onCheckedChange={() => {
-                            const current = filters.projectIds || [];
-                            const updated = current.includes(project.id)
-                              ? current.filter(p => p !== project.id)
-                              : [...current, project.id];
-                            setFilters({...filters, projectIds: updated.length > 0 ? updated : undefined});
-                          }}
-                        />
-                        <span className="text-xs">{project.name}</span>
-                      </label>
-                    ))}
+                    {projects.map((project: any) => {
+                      const showsFullSchedule = filters.fullScheduleProjects?.includes(project.id) || false;
+                      return (
+                        <div key={project.id} className="flex items-center gap-2">
+                          <label className="flex items-center gap-2 cursor-pointer flex-1 min-w-0">
+                            <Checkbox
+                              checked={filters.projectIds?.includes(project.id) || false}
+                              onCheckedChange={() => {
+                                const current = filters.projectIds || [];
+                                const updated = current.includes(project.id)
+                                  ? current.filter(p => p !== project.id)
+                                  : [...current, project.id];
+                                setFilters({...filters, projectIds: updated.length > 0 ? updated : undefined});
+                              }}
+                            />
+                            <span className="text-xs truncate">{project.name}</span>
+                          </label>
+                          <button
+                            type="button"
+                            className="text-2xs px-1.5 py-0.5 rounded border hover-elevate active-elevate-2 flex-shrink-0"
+                            title={
+                              showsFullSchedule
+                                ? "Showing every schedule item for this project"
+                                : "Subcontractor work is collapsed into the project band"
+                            }
+                            onClick={() => {
+                              const current = filters.fullScheduleProjects || [];
+                              const updated = current.includes(project.id)
+                                ? current.filter(p => p !== project.id)
+                                : [...current, project.id];
+                              setFilters({
+                                ...filters,
+                                fullScheduleProjects: updated.length > 0 ? updated : undefined,
+                              });
+                            }}
+                            data-testid={`full-schedule-toggle-${project.id}`}
+                          >
+                            {showsFullSchedule ? "Full" : "Band"}
+                          </button>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               </PopoverContent>
@@ -1035,6 +1084,7 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
           view={calendarMode as any}
           onViewChange={(newView) => setCalendarMode(newView)}
           hideInternalHeader={true}
+          projectBands={filteredProjectBands}
         />
       </div>
 

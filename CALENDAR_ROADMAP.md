@@ -1,0 +1,240 @@
+# Morada User Calendar — "Life and Work in One" Roadmap
+
+**Date:** 30 July 2026
+**Benchmark:** Notion Calendar
+**Goal:** the user calendar (`/users/:id/calendar`) becomes the one surface a Morada user opens each morning — personal life, in-house site work, and their own task plan on a single grid.
+
+---
+
+## Part 1 — Where it's at
+
+### What already works
+
+Three sources merge onto one grid in [`UserCalendar.tsx`](client/src/components/user-workspace/UserCalendar.tsx): Morada tasks (draggable, resizable, completable), project schedule items, and Google Calendar events. On top of that there are focus blocks, saved filter views, and day/week/month modes. The hard part — one grid, many sources — is done.
+
+### The diagnosis
+
+**The calendar doesn't know what's *yours*.** Everything below follows from that.
+
+| Signal | Today | Should be |
+|---|---|---|
+| Schedule items filtered by user | **No filter at all** — whole company schedule | Only what you'd turn up for |
+| Schedule → user link | **Impossible** — no user FK exists | Optional, on appointment-type items |
+| Multi-assignee tasks on calendar | **Never appear** (wrong field name) | Appear |
+| Task filtering | Client-side, after fetching all company tasks | Server-side |
+| Google calendars | Primary only, one flat colour, read-only | All calendars, own colours, two-way |
+| Task duration | Not modelled (`start = end = dueDate`) | Real duration, drag to timebox |
+
+### Confirmed defects
+
+1. **Schedule items are not filtered by user.**
+   [`UserCalendar.tsx:261`](client/src/components/user-workspace/UserCalendar.tsx:261) puts `{ calendarUser: displayedUserId }` in the query key, but its `queryFn` calls `/api/schedule-items/all` with no parameters, and that endpoint ([`routes.ts:27151`](server/routes.ts:27151)) filters only by project access. `calendarUser` is a dead cache key. Result: the entire company construction schedule lands on every personal calendar.
+
+2. **Schedule items cannot be assigned to a user.**
+   `scheduleItems.assignedToId` → `contacts` (subbies/suppliers); `teamId` → `teams`, which is just id/name/colour with **no membership table**. There is no path from a schedule item to a Morada user. The existing `/api/schedule-items/user-assigned` endpoint compares `item.assignedToId === String(user.id)` — a contact ID against a user ID, which never matches — and admins bypass the filter entirely.
+
+3. **~~Multi-assignee tasks are silently invisible.~~** *(Fixed 31 July 2026 — Phase 0.)*
+   The client filter read `task.assignedTo`, which is not a column. Tasks live in the `notes` table and the real field is `assigneeIds`. `assignedTo` was also referenced in three places in `server/storage.ts`, and `DbStorage.getTasks` matched only the legacy single `assigneeId` in SQL. Both storage implementations and both client callers now match legacy-or-array.
+
+   Root cause of why it went unnoticed: `shared/schema.ts` declares `export const notes: any = pgTable(...)`, so `Note`/`Task` infer as `any` and TypeScript never flagged the missing property. **Any future work on tasks should assume the compiler will not catch field-name errors.** The same class of bug is still live in `client/src/pages/Gantt.tsx:948`, which filters schedule items on a non-existent `item.assignedTo`.
+
+4. **~~Events misaligned against the time scale.~~** *(Fixed 30 July 2026.)*
+   The hour grid used a hardcoded `h-10` (40px) while events positioned at `HOUR_HEIGHT = 60`, so everything rendered 1.5× its true distance from midnight. All vertical sizing now derives from `HOUR_HEIGHT`.
+
+### The conceptual problem
+
+Tasks and schedule items are **different kinds of time**, and the calendar flattens them into one.
+
+- **Schedule items are project duration.** Multi-day spans with dependencies, baselines, Gantt semantics. "Balcony Waterproofing & Tiling" running Thu–Sun isn't an appointment; it's a state the project is in. Rendering it as an all-day chip is a category error — and it's why the all-day row overflows with "+4 more".
+- **Tasks are commitments**, but thinly modelled: a `dueDate` plus optional `startTime`/`endTime`, with the calendar always setting `startDate = endDate = dueDate`. No duration, no multi-day. A task is either a point on the grid or it falls into the all-day pile. `taskTemplates.estimatedDuration` already stores minutes and nothing uses it.
+
+---
+
+## Part 2 — The three design decisions
+
+### Decision 1 — Schedule items: business-assigned by default, not all, not none
+
+`AssigneeSelect.tsx:56` already offers `company:${authUser.companyId}` as an assignee, and `schedules` carries `businessAssignColor` / `businessAssignStatus`. **Business-assigned means your own company is doing it in-house**, as opposed to a subbie. That's precisely the line between "I might need to be there" and "someone else's problem" — and it already exists in the data model, so it needs no new concept.
+
+Three visibility tiers:
+
+| Tier | What | How it renders |
+|---|---|---|
+| **A. In-house work** | Business-assigned items (`company:<your companyId>`) | Chips on the grid |
+| **B. Appointments** | `type` ∈ `milestone` / `inspection` / `delivery` / `meeting`, regardless of assignee | Chips on the grid — you may need to attend even if a subbie owns it |
+| **C. Everyone else's work** | Subbie-assigned `task`-type bars | **Project phase band**, not chips (see below) |
+
+Per-project opt-in overrides this for anyone who genuinely wants the full schedule on their calendar.
+
+> **Data caveat:** business assignment currently *nulls out* `assignedToId` and keeps only the cached `assignedToName` ([`routes.ts` POST `/api/schedule-items`](server/routes.ts)). Detection today is "`assignedToId` is null AND `assignedToName` is not null" — fragile. Phase 1 adds an explicit `assignedCompanyId` column so the tier test is honest.
+
+### Decision 2 — Don't assign users to schedule items. Book time against them.
+
+The first draft of this plan proposed adding `assigned_user_ids` to `schedule_items`. **That was the wrong answer**, for the reason Jed identified: assigning yourself to "Framing Carpentry" would drop a five-day bar on your calendar, when the actual commitment is *one hour on Tuesday morning*. Ownership and calendar time are different things, and only the second belongs on the grid.
+
+The right model is a **linked time booking**: a task, linked to the schedule item, carrying its own start and end time.
+
+> Link a task to "Framing Carpentry", offset +0 days from start, 09:00–10:00.
+> It appears on your calendar as a one-hour chip on Tuesday.
+> If framing slips three days, the booking moves with it.
+
+**Most of this already exists.** `scheduleItems.taskIds` and `scheduleItems.taskLinkOffsets` (`[{taskId, offsetDays, offsetFrom}]`) are live, and [`applyTaskOffsets`](client/src/pages/Schedule.tsx:782) already recomputes a linked task's `dueDate` from the schedule item's start or end date whenever the item moves. Tasks already carry `startTime`, `endTime`, and `assigneeIds`, and already render on the calendar.
+
+The only gaps:
+
+1. `applyTaskOffsets` writes `dueDate` only — it never sets `startTime`/`endTime`.
+2. `taskLinkOffsets` has no time-of-day component, only whole days.
+3. There's no one-click way to create the booking from a schedule item.
+
+This is strictly better than user assignment: no new column on a hot table, no change to how schedules are built, and it works identically for both cases — attending a subbie's frame inspection, and doing a site visit partway through a multi-day work bar. `assigned_user_ids` is therefore **dropped from this plan**. If ownership-based filtering is wanted later it can return on its own merits, but it isn't what the calendar needs.
+
+### Decision 3 — "Layer, not events" — what that actually means
+
+This was the point that didn't land last time, so concretely:
+
+**Today** every schedule item becomes a chip competing for space with your real appointments. Your Friday column in the screenshot has five all-day bars plus "+4 more", which pushes the actual time grid down and tells you nothing you can act on.
+
+**A layer** means the tier-C work bars stop being chips and become a **slim band** — roughly 6–8px — sitting under each day's date header. Each active project gets one continuous coloured segment across the days it's running, with a tooltip or a click for detail. No text competing for space, no all-day overflow.
+
+```
+        MON 27      TUE 28      WED 29      THU 30      FRI 31
+      ┌──────────────────────────────────────────────────────────┐
+band  │▓▓▓▓▓▓▓▓ Smithies: waterproofing ▓▓▓▓│░░░ Chamberlain ░░░░│  ← 8px, glanceable
+      ├──────────────────────────────────────────────────────────┤
+ALLDAY│                        │ Tiles Delivery │                 │  ← tier B only
+      ├──────────────────────────────────────────────────────────┤
+ 7AM  │                                                          │
+ 8AM  │            │ Frame inspection 8:00 │                      │  ← tier A + B
+```
+
+You glance at the band and know "Smithies is in waterproofing this week" without reading a single chip. Instead of eight all-day bars you get one thin band plus the two things you actually have to show up for. The all-day row goes back to meaning *all-day appointments*.
+
+---
+
+## Part 3 — Phased implementation
+
+Ordered so each phase is shippable on its own. **Schedule noise is fixed before Google expands**, because tripling the number of Google events on top of today's flood would make the page worse, not better.
+
+### Phase 0 — Correctness ✅ *(done — branch `feat/calendar-phase0`)*
+
+No schema change. Pure bug fixes.
+
+1. ✅ **Phantom `assignedTo` removed.** `DbStorage.getTasks` now matches `assigneeId = X OR assigneeIds @> [X]` via drizzle's `arrayContains`; `DbStorage.getTasksByUser` and both `MemStorage` equivalents use `assigneeIds`. A dead `assigneeType === 'user'` branch was also removed — those columns exist on `task_templates`, never on `notes`.
+2. ✅ **Task filtering moved server-side.** `UserCalendar` and `usePersonalCalendarEvents` now request `/api/tasks?assigneeId=…` instead of fetching every company task and filtering in the browser. Deliberately *not* date-ranged: the assignee filter is the large win, and a `currentDate`-derived range would either refetch on every week navigation (~400ms each, AU ↔ us-east-1) or silently hide tasks outside the window. Revisit only if per-user payloads grow.
+3. ✅ **`calendarUser` retired.** It was never sent to the server, so it implied a filter that did not exist; the schedule queries now share one honest cache entry.
+
+**Blast radius (bigger than the calendar):** seven other callers hit `/api/tasks?assigneeId=` — `MyDayWidget`, `PersonalMetricsWidget`, `PersonalCalendarWidget`, `PersonalAISummaryWidget`, `CrossProjectDeadlinesWidget`, `UserTasks`, plus the calendar. All were missing multi-assignee tasks and are corrected by the same server fix.
+
+**Verified:** with two fixtures (one assigned only via `assigneeIds`, one only via legacy `assigneeId`), `/api/tasks?assigneeId=` returned both; the array-only row would not have matched the old predicate. `tsc` error count in the touched files was 255 before and after — no new type errors. Fixtures removed afterwards.
+
+**Ships:** tasks that were invisible appear, across the calendar and six widgets; the page stops shipping the whole company's task list to the browser.
+
+### Phase 1 — Schedule visibility model ✅ *(done — branch `feat/calendar-phase0`)*
+
+**No migration.** The planned `assigned_company_id` column was dropped from this phase: it makes the business-assigned test tidier but enables nothing, since the codebase already detects business assignment reliably (the same test it uses internally in the schedule-item PATCH path). Adding a column would have made the phase unverifiable without a manual `psql` run. It remains available as an optional cleanup — see `isBusinessAssigned`, which already reads an `assignedCompanyId` field first if one ever appears.
+
+1. ✅ **Tier rules extracted** to [`shared/scheduleVisibility.ts`](shared/scheduleVisibility.ts) — `isBusinessAssigned`, `isAppointmentType`, `scheduleItemTier`, `computeProjectBands`. One place, unit-testable, shared by client and server. Handles all three storage forms of business assignment, including legacy `assignedToId = "company:<uuid>"` rows.
+2. ✅ **New endpoint** `GET /api/schedule-items/calendar?startDate=&endDate=&fullScheduleProjects=` returning `{ events, bands }`, with the same project-access rules as `/all`.
+3. ✅ **Retired `/api/schedule-items/user-assigned`** — nothing consumed it and its filter compared contact ids to user ids.
+4. ✅ **Project band rendered** under the day headers in week/day view, horizontally scroll-synced with the header, all-day and time-grid rows. Labelled on the band's first visible day, `title` tooltip carries project, label and item count, max 3 stacked bands per day with a `+n` overflow.
+5. ✅ **Per-project opt-in** — a `Band`/`Full` toggle beside each project in the calendar's Projects filter, persisted in `filters.fullScheduleProjects` and therefore in saved views.
+
+Also fixed in passing: `CalendarFilters` did not declare `projectIds`/`statuses`, the field names UserCalendar's own inline filter panel reads *and* writes. The filters worked at runtime; only the shared type was wrong. Declaring them removed ~50 type errors.
+
+**Verified on dev data:** 6 schedule items became 3 chips + 3 bands. The three promoted to chips were exactly the milestones (Concrete Slab, Lock-Up Stage, Practical Completion); the three banded were the multi-month work spans. With fixtures added to the current week, a subbie's 4-day framing bar rendered as one band labelled on its start day with continuation segments Wed–Fri and nothing on the weekend, while a subbie's frame inspection stayed a real 09:00 chip on the grid. Toggling that project to `Full` collapsed the band and restored per-day chips; toggling back restored the band. Fixtures removed afterwards.
+
+**Ships:** the flood is gone. This is the single biggest perceived improvement.
+
+### Phase 2 — Task timeboxing
+
+Migration: add `duration_minutes` to `notes` (nullable).
+
+1. **Unscheduled tray** — a collapsible sidebar listing tasks that are due but untimed, instead of dumping them in the all-day row.
+2. **Drag onto the grid** to set `startTime`/`endTime`. Drop position sets start; `estimatedDuration` from the template (or a 30-min default) sets the length.
+3. Size existing timed tasks by real duration rather than a fixed block.
+4. Drag back to the tray to un-timebox.
+5. Reconcile with focus blocks — dropping a task inside a block adds it to `pinnedTaskIds`.
+
+**Ships:** the calendar becomes a planner. This is the Notion Calendar workflow and the piece you're most keen on.
+
+### Phase 3 — Book my time against a schedule item
+
+No new table. Extends the existing `taskIds` / `taskLinkOffsets` link.
+
+1. Widen the `taskLinkOffsets` shape to `{taskId, offsetDays, offsetFrom, startTime?, endTime?}` — additive, so existing rows keep working.
+2. Teach [`applyTaskOffsets`](client/src/pages/Schedule.tsx:782) to write `startTime`/`endTime` alongside `dueDate`, so a booking keeps its hour when the schedule item moves.
+3. Add a **"Book my time"** action on any schedule item — creates a linked task in one click, assigned to the current user, defaulting to a one-hour window on the item's start date, with the item's name as the title.
+4. Show existing bookings on the schedule item's detail panel, so it's obvious who has committed time to it.
+5. Make the offset cascade fire on **Gantt drags**, not just the edit-modal save path — otherwise bookings silently detach from reality when a schedule is reflowed. Verify against `computeMoveCascade`.
+6. On the calendar, render bookings with a subtle link affordance back to the source schedule item.
+
+**Ships:** "I'm at the frame inspection 9–10am Tuesday" — one hour on your calendar, not a five-day bar, and it follows the schedule when the job moves.
+
+### Phase 4 — Google multi-calendar + real colours
+
+1. `/api/google-calendar/calendars` listing the user's calendar list.
+2. Persist per-user calendar selections and replace the hardcoded `calendarId: 'primary'` ([`routes.ts:9250`](server/routes.ts:9250)) with a fan-out over selected calendars.
+3. Carry each calendar's Google colour through instead of the single `#7aafff`.
+4. Calendar picker in the settings dialog; toggles in the filter bar.
+5. Surface `event.location` on chips — it's already fetched and currently discarded.
+
+**Ships:** family calendar, partner's calendar, personal calendar. This is the "my whole life is here" moment.
+
+### Phase 5 — Google two-way write
+
+1. Create/update/delete endpoints; confirm the OAuth scope is read-write and re-consent if not.
+2. Let Google events drag, resize, and edit like tasks do — remove the block at [`UserCalendar.tsx:246`](client/src/components/user-workspace/UserCalendar.tsx:246).
+3. Optimistic updates with rollback, since every write is a trans-Pacific round trip.
+4. Respect per-calendar `accessRole` — never offer edit on a read-only subscribed calendar.
+
+**Ships:** you stop leaving Morada to move a meeting.
+
+### Phase 6 — Local sync instead of live proxy
+
+Migration: new `google_calendar_events` + `google_calendar_sync_state` tables.
+
+1. Store events locally; refresh with Google's incremental sync tokens.
+2. Register push webhooks (`watch`) so changes arrive rather than being polled.
+3. Serve the calendar from the local table — instant paint, background refresh.
+4. Reconciliation job for missed webhooks and expired channels.
+
+**Ships:** the calendar opens instantly instead of waiting on a Google round trip (currently guarded by a 20s timeout).
+
+### Phase 7 — Morada → Google publish
+
+1. Per-user secret iCal feed exposing their tier A/B schedule items and timeboxed tasks.
+2. Or write into a dedicated "Morada" Google calendar via the Phase 5 write path.
+3. Settings toggle for what to publish.
+
+**Ships:** your plan shows up in the phone's native calendar — which for anyone living in a truck matters more than anything in-app.
+
+### Phase 8 — Differentiators (pick by appetite)
+
+- **Availability / booking links** — "pick a time with Jed" for clients and consultants. Fits the existing onsite-consultation flow and is Notion Calendar's standout feature.
+- **Natural-language quick add** — "Site meeting Tue 7am @ Smithies".
+- **Join-meeting affordance** — detect Meet/Zoom links in event descriptions, surface a join button near the event time.
+- **Teammate overlay** — view another user's calendar as a translucent layer for scheduling.
+- **Timesheet actuals overlay** — planned vs actually-worked on the same grid.
+- **Reminders as a source** — the tab exists; the events never reach the calendar.
+- **Week templates** — stamp out a standard routine (the Sign On / PM Sweep / Estimating pattern is hand-maintained today).
+- **Keyboard shortcuts + mini-month** — `t` for today, `w`/`m` for view, fast navigation.
+
+---
+
+## Part 4 — Sequencing summary
+
+| Phase | Theme | Migration | Independent? |
+|---|---|---|---|
+| 0 | Correctness ✅ | — | Yes |
+| 1 | Schedule visibility ✅ | — | Needs 0 |
+| 2 | Task timeboxing | `duration_minutes` | Yes |
+| 3 | Time bookings on schedule items | — | Needs 0 |
+| 4 | Google multi-calendar | — | Yes |
+| 5 | Google two-way write | — | Needs 4 |
+| 6 | Google local sync | 2 new tables | Needs 4 |
+| 7 | Morada → Google | — | Needs 1, 2 |
+| 8 | Differentiators | varies | Needs 4–6 |
+
+Phases 0–3 are the ones that change how the page *feels* day to day, and only two of them touch the schema. Phases 4–6 are what make it the only calendar you open.
+
+> **Migration numbering:** this checkout has up to `0028`, but `0029`–`0031` exist on the variations and dashboard-widgets branches. Take the next free number at implementation time rather than reserving one now. Per project convention, apply to prod manually via `psql` — never `db:push`.

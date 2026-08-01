@@ -185,6 +185,7 @@ import {
   readTimesheetBreakFromRow,
 } from "@shared/import";
 import { computeEstimateItemPrice, resolveEstimateStoredPrice } from "@shared/pricing";
+import { scheduleItemTier, computeProjectBands } from "@shared/scheduleVisibility";
 import { z } from "zod";
 import { fromZodError } from "zod-validation-error";
 import { eq, and, asc, desc, or, isNull, isNotNull, sql, min, max, gte, lte, inArray, gt } from "drizzle-orm";
@@ -27190,27 +27191,70 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Must be before /:id to avoid route conflict
-  app.get("/api/schedule-items/user-assigned", async (req, res) => {
+  // Schedule items shaped for a *personal* calendar.
+  //
+  // Replaces the old /user-assigned endpoint, which compared item.assignedToId (a
+  // contact id) against a user id and so matched nothing, while admins bypassed the
+  // filter entirely and got the whole company schedule.
+  //
+  // Returns two buckets (see shared/scheduleVisibility.ts for the rules):
+  //   events — in-house work plus appointment-type items, to draw as chips
+  //   bands  — everyone else's work bars, collapsed to one span per project per run
+  app.get("/api/schedule-items/calendar", async (req, res) => {
     try {
       const user = req.user as any;
       if (!user?.companyId) {
-        return res.status(401).json({ error: "Unauthorized" });
+        return res.status(401).json({ error: "Unauthorized - no company context" });
       }
-      const { startDate, endDate } = req.query;
+
+      const { startDate, endDate, fullScheduleProjects } = req.query;
       const dateRange = (startDate || endDate) ? {
         startDate: startDate as string | undefined,
         endDate: endDate as string | undefined
       } : undefined;
+
       let items = await storage.getAllScheduleItems(user.companyId, dateRange);
+
+      // Same project-access rules as /api/schedule-items/all.
       const isAdmin = user.roleName?.toLowerCase()?.includes('admin') ||
                       user.roleName?.toLowerCase()?.includes('owner') ||
                       user.roleName?.toLowerCase()?.includes('general manager');
+
       if (!isAdmin) {
-        items = items.filter((item: any) => item.assignedToId === String(user.id));
+        const userAccess = await storage.getUserProjectAccess(String(user.id));
+        const accessibleProjectIds = new Set(userAccess.map(a => a.projectId));
+        const allProjects = await storage.getProjects();
+        const ownedProjectIds = new Set(
+          allProjects.filter(p => p.ownerId === String(user.id)).map(p => p.id)
+        );
+        items = items.filter((item: any) =>
+          accessibleProjectIds.has(item.projectId) || ownedProjectIds.has(item.projectId)
+        );
       }
-      res.json(items);
+
+      const optedInProjects = new Set(
+        String(fullScheduleProjects ?? "")
+          .split(",")
+          .map(id => id.trim())
+          .filter(Boolean)
+      );
+
+      const events: any[] = [];
+      const banded: any[] = [];
+      for (const item of items as any[]) {
+        if (scheduleItemTier(item, user.companyId, optedInProjects) === "event") {
+          events.push(item);
+        } else {
+          banded.push(item);
+        }
+      }
+
+      res.json({ events, bands: computeProjectBands(banded) });
     } catch (error: any) {
-      res.status(500).json({ error: "Failed to fetch user-assigned schedule items", details: error.message });
+      res.status(500).json({
+        error: "Failed to fetch calendar schedule items",
+        details: error.message
+      });
     }
   });
 
