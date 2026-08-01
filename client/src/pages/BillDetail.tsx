@@ -14,6 +14,10 @@ import {
   Trash2, 
   Ban,
   Wallet,
+  Tag,
+  Landmark,
+  Percent,
+  Ruler,
   Paperclip,
   MessageSquare,
   Check,
@@ -3129,10 +3133,11 @@ export default function BillDetail() {
                   fixedLayout
                   resizeNamespace="bill-line-items"
                   // The default --table-header-bg (#F8F7FC) is 2% off white and
-                  // vanishes against the card. Tint it with the Bills section
-                  // accent instead — same language as the 3px section borders —
-                  // and darken the label text so the header reads as a header.
-                  headerClassName="bg-[hsl(var(--amber-light))] border-b border-[hsl(var(--amber)/0.35)] [&_th]:text-foreground/70"
+                  // vanishes against the card. Rather than a fill (an amber
+                  // tint read as too loud), the header earns its separation
+                  // through typography: no background, a 2px rule beneath, and
+                  // darker semibold labels.
+                  headerClassName="bg-transparent border-b-2 border-border [&_th]:text-foreground/75 [&_th]:font-semibold"
                   data={lineItems}
                   rowKey={(_item, index) => index}
                   rowTestId={(_item, index) => `row-line-item-${index}`}
@@ -4148,13 +4153,12 @@ export default function BillDetail() {
         className="bottom-20"
         data-testid="bulk-action-bar-bill-lines"
       >
-        <span className="text-xs text-muted-foreground">Set</span>
         {([
-          { field: "costCode" as const, label: "Cost Code", testId: "button-bulk-change-cost-code" },
-          { field: "account" as const, label: "Account", testId: "button-bulk-change-account" },
-          { field: "tax" as const, label: "Tax", testId: "button-bulk-change-tax" },
-          { field: "unit" as const, label: "Unit", testId: "button-bulk-change-unit" },
-        ]).map(({ field, label, testId }) => (
+          { field: "costCode" as const, label: "Cost Code", Icon: Tag, testId: "button-bulk-change-cost-code" },
+          { field: "account" as const, label: "Account", Icon: Landmark, testId: "button-bulk-change-account" },
+          { field: "tax" as const, label: "Tax", Icon: Percent, testId: "button-bulk-change-tax" },
+          { field: "unit" as const, label: "Unit", Icon: Ruler, testId: "button-bulk-change-unit" },
+        ]).map(({ field, label, Icon, testId }) => (
           <Button
             key={field}
             type="button"
@@ -4164,6 +4168,7 @@ export default function BillDetail() {
             onClick={() => { setBulkValue(""); setBulkField(field); }}
             data-testid={testId}
           >
+            <Icon className="h-3.5 w-3.5 mr-1" />
             {label}
           </Button>
         ))}
