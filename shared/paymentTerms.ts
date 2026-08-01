@@ -4,6 +4,18 @@
 // or free text ("Net 30", "COD", "EOM", "Net 60", "45"). This parser handles
 // both, plus arbitrary "Net N", so it degrades gracefully as data varies.
 
+// Canonical picker options for supplier payment terms. Values are the enum
+// keys parsePaymentTerms understands. (Three page-local copies of this literal
+// predate it — EditContactDialog, Trades, Suppliers — and should migrate here.)
+export const PAYMENT_TERMS_OPTIONS = [
+  { value: "on_receipt", label: "On Receipt" },
+  { value: "net_7", label: "Net 7" },
+  { value: "net_14", label: "Net 14" },
+  { value: "net_30", label: "Net 30" },
+  { value: "eom", label: "End of Month" },
+  { value: "end_of_next_month", label: "End of Next Month" },
+] as const;
+
 export type ParsedTerms =
   | { kind: "days"; days: number }
   | { kind: "eom" } // end of the bill's month

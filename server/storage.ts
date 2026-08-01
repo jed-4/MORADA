@@ -16327,10 +16327,15 @@ export class DbStorage implements IStorage {
         .where(eq(schema.billApprovals.billId, billId))
         .orderBy(desc(schema.billApprovals.createdAt));
 
+      // The join above already resolves the approver — surface it as
+      // `approvedByName` so the UI can show a person instead of the raw UUID
+      // (it used to be selected and then dropped here).
       return approvals.map(approval => ({
         id: approval.id,
         billId: approval.billId,
         approvedById: approval.approvedById,
+        approvedByName:
+          [approval.approvedByName, approval.approvedByLastName].filter(Boolean).join(" ") || null,
         status: approval.status,
         comments: approval.comments,
         createdAt: approval.createdAt,
