@@ -9,6 +9,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
+import { useResizableColumns, ColResizeHandle } from "@/components/useResizableColumns";
 
 /**
  * LineItemTable — shared primitive for detail-page line-item tables.
@@ -18,10 +19,12 @@ import { cn } from "@/lib/utils";
  * share the same typography, padding, alignment and totals-row treatment.
  *
  * Owns: header styling, padding, right-align for numeric columns, ellipsis
- * truncation, totals row styling, optional selection checkbox + actions slot.
+ * truncation, totals row styling, optional selection checkbox + actions slot,
+ * and — when `resizeNamespace` is set — drag-to-resize columns whose widths
+ * persist per namespace (shared with the allowance grid via
+ * useResizableColumns).
  *
- * Does NOT own: inline-edit logic, drag-row reorder, data fetching, column
- * resize/persistence (those belong in pages or the heavier DataTable primitive).
+ * Does NOT own: inline-edit logic, drag-row reorder, data fetching.
  */
 
 export interface LineItemColumn<T> {
@@ -62,6 +65,15 @@ export interface LineItemTableProps<T> {
   selectAllTestId?: string;
   /** When true, applies `table-fixed` so per-column `width` styles are honoured strictly. Defaults to false (auto layout, matches the original ad-hoc tables on template/settings pages). Inline-edit grids (BillDetail, VariationDetail) opt in. */
   fixedLayout?: boolean;
+  /**
+   * Enables drag-to-resize on columns that declare a numeric `width`, with the
+   * dragged widths persisted under this namespace (localStorage, shared store).
+   * Omit to keep the table fixed-width. Best paired with `fixedLayout`.
+   */
+  resizeNamespace?: string;
+  /** Extra classes for the `<thead>` — e.g. a section-accent tint so the
+   *  header row reads as a header rather than blending into the card. */
+  headerClassName?: string;
 }
 
 const alignClass = (align: LineItemColumn<unknown>["align"]) =>
@@ -89,9 +101,24 @@ export function LineItemTable<T>({
   rowCheckboxTestId,
   selectAllTestId,
   fixedLayout = false,
+  resizeNamespace,
+  headerClassName,
 }: LineItemTableProps<T>) {
   const textSize = size === "sm" ? "text-xs" : "text-table";
   const cellPad = "px-2 py-1";
+
+  // Resize is opt-in per table, but the hook must run unconditionally.
+  const resizable = !!resizeNamespace;
+  const { widthFor, startResize } = useResizableColumns(
+    resizeNamespace ?? "__none__",
+    columns
+      .filter((c) => typeof c.width === "number")
+      .map((c) => ({ key: c.key, defaultWidth: c.width as number })),
+  );
+  // Effective width: the persisted drag width when resizing is on and the
+  // column declared a pixel width, else whatever the column asked for.
+  const colWidth = (col: LineItemColumn<T>) =>
+    resizable && typeof col.width === "number" ? widthFor(col.key, col.width) : col.width;
 
   const allSelectableKeys = selection
     ? data
@@ -135,7 +162,7 @@ export function LineItemTable<T>({
   return (
     <div className={cn("w-full", className)} data-testid={testId}>
       <Table className={cn(textSize, fixedLayout && "table-fixed", tableClassName)}>
-        <TableHeader>
+        <TableHeader className={headerClassName}>
           <TableRow>
             {selection && (
               <TableHead className="w-8 px-2">
@@ -147,15 +174,29 @@ export function LineItemTable<T>({
                 />
               </TableHead>
             )}
-            {columns.map((col) => (
-              <TableHead
-                key={col.key}
-                style={widthStyle(col.width)}
-                className={cn(cellPad, alignClass(col.align), col.headerClassName)}
-              >
-                {col.header}
-              </TableHead>
-            ))}
+            {columns.map((col) => {
+              const w = colWidth(col);
+              return (
+                <TableHead
+                  key={col.key}
+                  style={widthStyle(w)}
+                  className={cn(
+                    cellPad,
+                    alignClass(col.align),
+                    resizable && typeof w === "number" && "relative",
+                    col.headerClassName,
+                  )}
+                >
+                  {col.header}
+                  {resizable && typeof w === "number" && (
+                    <ColResizeHandle
+                      onStart={(e) => startResize(col.key, e.clientX, w)}
+                      testId={`resize-${col.key}`}
+                    />
+                  )}
+                </TableHead>
+              );
+            })}
             {actions && (
               <TableHead className={cn("w-10 text-right", cellPad)}>
                 {actionsHeader}
@@ -212,7 +253,7 @@ export function LineItemTable<T>({
                     return (
                       <TableCell
                         key={col.key}
-                        style={widthStyle(col.width)}
+                        style={widthStyle(colWidth(col))}
                         className={cn(
                           cellPad,
                           alignClass(col.align),
