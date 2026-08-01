@@ -71,6 +71,9 @@ export interface LineItemTableProps<T> {
    * Omit to keep the table fixed-width. Best paired with `fixedLayout`.
    */
   resizeNamespace?: string;
+  /** Extra classes for the `<thead>` — e.g. a section-accent tint so the
+   *  header row reads as a header rather than blending into the card. */
+  headerClassName?: string;
 }
 
 const alignClass = (align: LineItemColumn<unknown>["align"]) =>
@@ -99,6 +102,7 @@ export function LineItemTable<T>({
   selectAllTestId,
   fixedLayout = false,
   resizeNamespace,
+  headerClassName,
 }: LineItemTableProps<T>) {
   const textSize = size === "sm" ? "text-xs" : "text-table";
   const cellPad = "px-2 py-1";
@@ -158,7 +162,7 @@ export function LineItemTable<T>({
   return (
     <div className={cn("w-full", className)} data-testid={testId}>
       <Table className={cn(textSize, fixedLayout && "table-fixed", tableClassName)}>
-        <TableHeader>
+        <TableHeader className={headerClassName}>
           <TableRow>
             {selection && (
               <TableHead className="w-8 px-2">

@@ -110,6 +110,7 @@ import { Badge } from "@/components/ui/badge";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { CostCodeSelect } from "@/components/CostCodeSelect";
 import { UnitSelect } from "@/components/UnitSelect";
+import { BulkActionBar } from "@/components/BulkActionBar";
 import type { Bill, Supplier, Project, CostCode, BillLineItem, BillApproval, BillPayment, BillLineItemAllowance, EstimateItem, PurchaseOrder } from "@shared/schema";
 
 const DocumentPreview = lazy(() => import("@/components/DocumentPreview"));
@@ -3123,42 +3124,15 @@ export default function BillDetail() {
                 </div>
               )}
 
-              {selectedLineIndices.size > 0 && (
-                <div className="flex items-center gap-2 px-3 py-1.5 bg-muted/30 border-b text-table flex-wrap">
-                  <span className="text-muted-foreground">{selectedLineIndices.size} selected</span>
-                  <span className="text-muted-foreground">Set</span>
-                  {([
-                    { field: "costCode" as const, label: "Cost Code", testId: "button-bulk-change-cost-code" },
-                    { field: "account" as const, label: "Account", testId: "button-bulk-change-account" },
-                    { field: "tax" as const, label: "Tax", testId: "button-bulk-change-tax" },
-                    { field: "unit" as const, label: "Unit", testId: "button-bulk-change-unit" },
-                  ]).map(({ field, label, testId }) => (
-                    <Button
-                      key={field}
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      className="h-6 text-table px-2"
-                      onClick={() => { setBulkValue(""); setBulkField(field); }}
-                      data-testid={testId}
-                    >
-                      {label}
-                    </Button>
-                  ))}
-                  <button
-                    type="button"
-                    className="text-muted-foreground hover:text-foreground ml-auto text-table"
-                    onClick={() => setSelectedLineIndices(new Set())}
-                  >
-                    Clear selection
-                  </button>
-                </div>
-              )}
-
               <div className="overflow-x-auto">
                 <LineItemTable
                   fixedLayout
                   resizeNamespace="bill-line-items"
+                  // The default --table-header-bg (#F8F7FC) is 2% off white and
+                  // vanishes against the card. Tint it with the Bills section
+                  // accent instead — same language as the 3px section borders —
+                  // and darken the label text so the header reads as a header.
+                  headerClassName="bg-[hsl(var(--amber-light))] border-b border-[hsl(var(--amber)/0.35)] [&_th]:text-foreground/70"
                   data={lineItems}
                   rowKey={(_item, index) => index}
                   rowTestId={(_item, index) => `row-line-item-${index}`}
@@ -3221,6 +3195,22 @@ export default function BillDetail() {
                             onValueChange={(value) => updateLineItem(index, "unit", value)}
                             triggerClassName="w-full h-7 px-1.5 text-table bg-transparent border-0 focus:ring-1 focus:ring-ring rounded-sm"
                             data-testid={`select-unit-${index}`}
+                          />
+                        ),
+                      },
+                      {
+                        // Sits directly after Unit — qty → unit → unit cost
+                        // reads as one thought before the tax/account coding.
+                        key: "unitCost",
+                        header: taxMode === "inclusive" ? "Unit Cost (inc GST)" : "Unit Cost (ex GST)",
+                        align: "right", width: getColWidth("unitCost"), truncate: false,
+                        cell: (item, index) => (
+                          <input
+                            type="number"
+                            value={item.unitPrice}
+                            onChange={(e) => updateLineItem(index, "unitPrice", parseFloat(e.target.value) || 0)}
+                            className="w-full h-7 px-1.5 text-table text-right bg-transparent border-0 outline-none focus:ring-1 focus:ring-ring rounded-sm"
+                            data-testid={`input-amount-${index}`}
                           />
                         ),
                       },
@@ -3321,20 +3311,6 @@ export default function BillDetail() {
                               <span className="text-label text-muted-foreground px-1 py-px rounded bg-muted/40 shrink-0" title="Supplier default" data-testid={`badge-account-default-${index}`}>default</span>
                             )}
                           </div>
-                        ),
-                      },
-                      {
-                        key: "unitCost",
-                        header: taxMode === "inclusive" ? "Unit Cost (inc GST)" : "Unit Cost (ex GST)",
-                        align: "right", width: getColWidth("unitCost"), truncate: false,
-                        cell: (item, index) => (
-                          <input
-                            type="number"
-                            value={item.unitPrice}
-                            onChange={(e) => updateLineItem(index, "unitPrice", parseFloat(e.target.value) || 0)}
-                            className="w-full h-7 px-1.5 text-table text-right bg-transparent border-0 outline-none focus:ring-1 focus:ring-ring rounded-sm"
-                            data-testid={`input-amount-${index}`}
-                          />
                         ),
                       },
                     ];
@@ -4158,6 +4134,40 @@ export default function BillDetail() {
           }
         }}
       />
+
+      {/* Shared floating-pill bulk bar, same as the list pages. Raised clear of
+          this page's own bottom action bar. */}
+      <BulkActionBar
+        count={selectedLineIndices.size}
+        summary={formatCurrency(
+          lineItems
+            .filter((_, i) => selectedLineIndices.has(i))
+            .reduce((s, li) => s + getLineIncTax(li), 0),
+        )}
+        onClear={() => setSelectedLineIndices(new Set())}
+        className="bottom-20"
+        data-testid="bulk-action-bar-bill-lines"
+      >
+        <span className="text-xs text-muted-foreground">Set</span>
+        {([
+          { field: "costCode" as const, label: "Cost Code", testId: "button-bulk-change-cost-code" },
+          { field: "account" as const, label: "Account", testId: "button-bulk-change-account" },
+          { field: "tax" as const, label: "Tax", testId: "button-bulk-change-tax" },
+          { field: "unit" as const, label: "Unit", testId: "button-bulk-change-unit" },
+        ]).map(({ field, label, testId }) => (
+          <Button
+            key={field}
+            type="button"
+            size="sm"
+            variant="outline"
+            className="h-7 text-xs"
+            onClick={() => { setBulkValue(""); setBulkField(field); }}
+            data-testid={testId}
+          >
+            {label}
+          </Button>
+        ))}
+      </BulkActionBar>
 
       {/* One bulk-edit dialog for every field — the control and the property it
           writes are chosen by `bulkField`. */}

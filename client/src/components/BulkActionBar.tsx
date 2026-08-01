@@ -1,6 +1,7 @@
 import { useEffect, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { X } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 interface BulkActionBarProps {
   /** Number of currently selected rows. The bar renders only when this is > 0. */
@@ -11,6 +12,11 @@ interface BulkActionBarProps {
   onClear: () => void;
   /** Action buttons for the current page (e.g. Change Project, Approve, Delete). */
   children: ReactNode;
+  /**
+   * Extra classes for the floating pill — mainly to raise it clear of a page
+   * that has its own bottom action bar (e.g. `bottom-20` on bill detail).
+   */
+  className?: string;
   "data-testid"?: string;
 }
 
@@ -24,6 +30,7 @@ export function BulkActionBar({
   summary,
   onClear,
   children,
+  className,
   "data-testid": dataTestId,
 }: BulkActionBarProps) {
   useEffect(() => {
@@ -40,7 +47,13 @@ export function BulkActionBar({
   return (
     <div
       data-testid={dataTestId}
-      className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex flex-wrap items-center gap-2 px-3 py-2 rounded-xl shadow-lg border border-border bg-popover text-popover-foreground"
+      className={cn(
+        // w-max so the pill sizes to its content — without it the shrink-to-fit
+        // width lands mid-content and wraps the clear button onto its own row.
+        // The max-width keeps flex-wrap doing its job on genuinely narrow screens.
+        "fixed bottom-6 left-1/2 -translate-x-1/2 z-50 w-max max-w-[calc(100vw-2rem)] flex flex-wrap items-center gap-2 px-3 py-2 rounded-xl shadow-lg border border-border bg-popover text-popover-foreground",
+        className,
+      )}
     >
       <span className="text-xs font-medium text-muted-foreground pr-1 border-r border-border mr-1">
         {count} selected
