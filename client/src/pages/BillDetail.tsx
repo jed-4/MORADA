@@ -196,6 +196,45 @@ function formatXeroErrorDescription(e: unknown): string {
   return e?.message || "Could not push to Xero. Check your Xero connection in Settings.";
 }
 
+/**
+ * An AI-extracted value with a hover/focus copy button. The invoice preview
+ * can't be selected on scans or photos, so these read-outs are the practical
+ * way to get a reference number or ABN onto the clipboard without retyping it.
+ */
+function CopyableValue({
+  value,
+  emptyLabel = "Not detected",
+  testId,
+}: {
+  value?: string | null;
+  emptyLabel?: string;
+  testId?: string;
+}) {
+  const [copied, setCopied] = useState(false);
+  if (!value) {
+    return <p className="font-medium" data-testid={testId}>{emptyLabel}</p>;
+  }
+  return (
+    <p className="font-medium flex items-center gap-1 group/copy min-w-0" data-testid={testId}>
+      <span className="truncate">{value}</span>
+      <button
+        type="button"
+        onClick={() => {
+          navigator.clipboard?.writeText(value);
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1200);
+        }}
+        className="opacity-0 group-hover/copy:opacity-100 focus:opacity-100 text-muted-foreground hover:text-foreground shrink-0 transition-opacity"
+        title={`Copy "${value}"`}
+        aria-label={`Copy ${value}`}
+        data-testid={testId ? `${testId}-copy` : undefined}
+      >
+        {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+      </button>
+    </p>
+  );
+}
+
 export default function BillDetail() {
   const { id, projectId } = useParams<{ id: string; projectId?: string }>();
   const [, setLocation] = useLocation();
@@ -252,8 +291,14 @@ export default function BillDetail() {
   const [unmappedSupplierId, setUnmappedSupplierId] = useState<string | null>(null);
   const [pendingXeroBillId, setPendingXeroBillId] = useState<string | null>(null);
   const [selectedLineIndices, setSelectedLineIndices] = useState<Set<number>>(new Set());
-  const [bulkCostCodeOpen, setBulkCostCodeOpen] = useState(false);
-  const [bulkCostCodeValue, setBulkCostCodeValue] = useState<string>("");
+  // Bulk edit of the selected line items. One dialog drives every field —
+  // `bulkField` picks which control it shows and which property it writes.
+  type BulkField = "costCode" | "account" | "tax" | "unit";
+  const [bulkField, setBulkField] = useState<BulkField | null>(null);
+  const [bulkValue, setBulkValue] = useState<string>("");
+  // Last active field/count, so the dialog keeps its labels through Radix's
+  // close animation after Apply clears the state.
+  const lastBulkRef = useRef<{ field: BulkField; count: number } | null>(null);
   const [paymentsOpen, setPaymentsOpen] = useState(false);
   const [supplierDefaultsOpen, setSupplierDefaultsOpen] = useState(false);
   const [supplierDefaultsCostCode, setSupplierDefaultsCostCode] = useState<string>("");
@@ -1056,8 +1101,9 @@ export default function BillDetail() {
     return getLineExTax(item) + getLineTax(item);
   };
 
-  // Column widths for the line-item grid. Resize handles were removed in #169
-  // when this table was migrated to the shared LineItemTable primitive.
+  // Starting widths for the line-item grid. Columns are drag-resizable (see
+  // LineItemTable's `resizeNamespace`) and dragged widths persist per user, so
+  // these are only the defaults before any resize.
   const defaultColWidths: Record<string, number> = {
     description: 140,
     costCode: 130,
@@ -2851,50 +2897,54 @@ export default function BillDetail() {
                             <CollapsibleContent className="mt-2 space-y-2" data-testid="card-ocr-results">
                               <div className="border rounded-md p-2 space-y-1.5 text-table">
                                 <div className="grid grid-cols-2 gap-1.5">
-                                  <div>
+                                  <div className="min-w-0">
                                     <p className="text-muted-foreground">Supplier</p>
-                                    <p className="font-medium" data-testid="text-ocr-supplier">
-                                      {ocrResults.supplierName || "Not detected"}
-                                    </p>
+                                    <CopyableValue value={ocrResults.supplierName} testId="text-ocr-supplier" />
                                   </div>
-                                  <div>
+                                  <div className="min-w-0">
                                     <p className="text-muted-foreground">Invoice #</p>
-                                    <p className="font-medium" data-testid="text-ocr-invoice-number">
-                                      {ocrResults.invoiceNumber || "Not detected"}
-                                    </p>
+                                    <CopyableValue value={ocrResults.invoiceNumber} testId="text-ocr-invoice-number" />
                                   </div>
-                                  <div>
+                                  <div className="min-w-0">
                                     <p className="text-muted-foreground">Date</p>
-                                    <p className="font-medium" data-testid="text-ocr-invoice-date">
-                                      {ocrResults.invoiceDate ? format(new Date(ocrResults.invoiceDate), "dd/MM/yyyy") : "Not detected"}
-                                    </p>
+                                    <CopyableValue
+                                      value={ocrResults.invoiceDate ? format(new Date(ocrResults.invoiceDate), "dd/MM/yyyy") : null}
+                                      testId="text-ocr-invoice-date"
+                                    />
                                   </div>
-                                  <div>
+                                  <div className="min-w-0">
                                     <p className="text-muted-foreground">Due</p>
-                                    <p className="font-medium" data-testid="text-ocr-due-date">
-                                      {ocrResults.dueDate ? format(new Date(ocrResults.dueDate), "dd/MM/yyyy") : "Not detected"}
-                                    </p>
+                                    <CopyableValue
+                                      value={ocrResults.dueDate ? format(new Date(ocrResults.dueDate), "dd/MM/yyyy") : null}
+                                      testId="text-ocr-due-date"
+                                    />
                                   </div>
                                 </div>
                                 <div className="border-t pt-1.5">
                                   <div className="grid grid-cols-3 gap-1.5">
-                                    <div>
+                                    <div className="min-w-0">
                                       <p className="text-muted-foreground">Subtotal</p>
-                                      <p className="font-medium" data-testid="text-ocr-subtotal">
-                                        {ocrResults.subtotalAmount ? formatCurrency(ocrResults.subtotalAmount / 100) : "—"}
-                                      </p>
+                                      <CopyableValue
+                                        value={ocrResults.subtotalAmount ? formatCurrency(ocrResults.subtotalAmount / 100) : null}
+                                        emptyLabel="—"
+                                        testId="text-ocr-subtotal"
+                                      />
                                     </div>
-                                    <div>
+                                    <div className="min-w-0">
                                       <p className="text-muted-foreground">Tax</p>
-                                      <p className="font-medium" data-testid="text-ocr-tax">
-                                        {ocrResults.totalTax ? formatCurrency(ocrResults.totalTax / 100) : "—"}
-                                      </p>
+                                      <CopyableValue
+                                        value={ocrResults.totalTax ? formatCurrency(ocrResults.totalTax / 100) : null}
+                                        emptyLabel="—"
+                                        testId="text-ocr-tax"
+                                      />
                                     </div>
-                                    <div>
+                                    <div className="min-w-0">
                                       <p className="text-muted-foreground">Total</p>
-                                      <p className="font-medium" data-testid="text-ocr-total">
-                                        {ocrResults.totalAmount ? formatCurrency(ocrResults.totalAmount / 100) : "—"}
-                                      </p>
+                                      <CopyableValue
+                                        value={ocrResults.totalAmount ? formatCurrency(ocrResults.totalAmount / 100) : null}
+                                        emptyLabel="—"
+                                        testId="text-ocr-total"
+                                      />
                                     </div>
                                   </div>
                                 </div>
@@ -3074,18 +3124,27 @@ export default function BillDetail() {
               )}
 
               {selectedLineIndices.size > 0 && (
-                <div className="flex items-center gap-2 px-3 py-1.5 bg-muted/30 border-b text-table">
+                <div className="flex items-center gap-2 px-3 py-1.5 bg-muted/30 border-b text-table flex-wrap">
                   <span className="text-muted-foreground">{selectedLineIndices.size} selected</span>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    className="h-6 text-table px-2"
-                    onClick={() => setBulkCostCodeOpen(true)}
-                    data-testid="button-bulk-change-cost-code"
-                  >
-                    Change Cost Code
-                  </Button>
+                  <span className="text-muted-foreground">Set</span>
+                  {([
+                    { field: "costCode" as const, label: "Cost Code", testId: "button-bulk-change-cost-code" },
+                    { field: "account" as const, label: "Account", testId: "button-bulk-change-account" },
+                    { field: "tax" as const, label: "Tax", testId: "button-bulk-change-tax" },
+                    { field: "unit" as const, label: "Unit", testId: "button-bulk-change-unit" },
+                  ]).map(({ field, label, testId }) => (
+                    <Button
+                      key={field}
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="h-6 text-table px-2"
+                      onClick={() => { setBulkValue(""); setBulkField(field); }}
+                      data-testid={testId}
+                    >
+                      {label}
+                    </Button>
+                  ))}
                   <button
                     type="button"
                     className="text-muted-foreground hover:text-foreground ml-auto text-table"
@@ -3099,6 +3158,7 @@ export default function BillDetail() {
               <div className="overflow-x-auto">
                 <LineItemTable
                   fixedLayout
+                  resizeNamespace="bill-line-items"
                   data={lineItems}
                   rowKey={(_item, index) => index}
                   rowTestId={(_item, index) => `row-line-item-${index}`}
@@ -4099,44 +4159,111 @@ export default function BillDetail() {
         }}
       />
 
-      <Dialog open={bulkCostCodeOpen} onOpenChange={(open) => { setBulkCostCodeOpen(open); if (!open) setBulkCostCodeValue(""); }}>
-        <DialogContent className="max-w-sm" data-testid="dialog-bulk-cost-code">
-          <DialogHeader>
-            <DialogTitle>Change Cost Code</DialogTitle>
-            <DialogDescription>
-              Apply a cost code to the {selectedLineIndices.size} selected item{selectedLineIndices.size !== 1 ? 's' : ''}.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="py-2">
-            <CostCodeSelect
-              value={bulkCostCodeValue}
-              onValueChange={(v) => setBulkCostCodeValue(v || "")}
-              placeholder="Select cost code..."
-              data-testid="select-bulk-cost-code"
-            />
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => { setBulkCostCodeOpen(false); setBulkCostCodeValue(""); }}>Cancel</Button>
-            <Button
-              disabled={!bulkCostCodeValue}
-              onClick={() => {
-                const indices = Array.from(selectedLineIndices);
-                setLineItems(prev => prev.map((item, i) =>
-                  indices.includes(i) ? { ...item, costCodeId: bulkCostCodeValue } : item
-                ));
-                toast({
-                  title: "Cost code updated",
-                  description: `Cost code updated on ${indices.length} item${indices.length !== 1 ? 's' : ''}. Save the bill to persist.`,
-                });
-                setBulkCostCodeOpen(false);
-                setBulkCostCodeValue("");
-                setSelectedLineIndices(new Set());
-              }}
-              data-testid="button-apply-bulk-cost-code"
-            >
-              Apply
-            </Button>
-          </DialogFooter>
+      {/* One bulk-edit dialog for every field — the control and the property it
+          writes are chosen by `bulkField`. */}
+      <Dialog open={bulkField !== null} onOpenChange={(open) => { if (!open) { setBulkField(null); setBulkValue(""); } }}>
+        <DialogContent className="max-w-sm" data-testid="dialog-bulk-edit">
+          {(() => {
+            const meta: Record<BulkField, { label: string; prop: keyof LineItem }> = {
+              costCode: { label: "Cost Code", prop: "costCodeId" },
+              account: { label: "Account", prop: "account" },
+              tax: { label: "Tax", prop: "tax" },
+              unit: { label: "Unit", prop: "unit" },
+            };
+            // Applying clears the field and the selection, but Radix keeps the
+            // dialog mounted through its close animation — so render from the
+            // last active values to avoid a "Set / 0 selected items" flash.
+            if (bulkField) {
+              lastBulkRef.current = { field: bulkField, count: selectedLineIndices.size };
+            }
+            const shownField = bulkField ?? lastBulkRef.current?.field ?? null;
+            const active = shownField ? meta[shownField] : null;
+            const count = bulkField ? selectedLineIndices.size : (lastBulkRef.current?.count ?? 0);
+            return (
+              <>
+                <DialogHeader>
+                  <DialogTitle>Set {active?.label}</DialogTitle>
+                  <DialogDescription>
+                    Apply to the {count} selected item{count !== 1 ? "s" : ""}.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="py-2">
+                  {shownField === "costCode" && (
+                    <CostCodeSelect
+                      value={bulkValue}
+                      onValueChange={(v) => setBulkValue(v || "")}
+                      placeholder="Select cost code..."
+                      data-testid="select-bulk-cost-code"
+                    />
+                  )}
+                  {shownField === "unit" && (
+                    <UnitSelect
+                      value={bulkValue}
+                      onValueChange={(v) => setBulkValue(v || "")}
+                      data-testid="select-bulk-unit"
+                    />
+                  )}
+                  {shownField === "tax" && (
+                    <Select value={bulkValue} onValueChange={setBulkValue}>
+                      <SelectTrigger data-testid="select-bulk-tax">
+                        <SelectValue placeholder="Select tax treatment..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="GST on expenses">GST on expenses</SelectItem>
+                        <SelectItem value="No GST">No GST</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  )}
+                  {shownField === "account" && (
+                    xeroAccounts.length > 0 ? (
+                      <Select value={bulkValue} onValueChange={setBulkValue}>
+                        <SelectTrigger data-testid="select-bulk-account">
+                          <SelectValue placeholder="Select account..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {xeroAccounts.map((acc) => (
+                            <SelectItem key={acc.code} value={acc.code}>
+                              {acc.code} - {acc.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <Input
+                        value={bulkValue}
+                        onChange={(e) => setBulkValue(e.target.value)}
+                        placeholder="Account code"
+                        data-testid="input-bulk-account"
+                      />
+                    )
+                  )}
+                </div>
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => { setBulkField(null); setBulkValue(""); }}>Cancel</Button>
+                  <Button
+                    disabled={!bulkValue || !active}
+                    onClick={() => {
+                      if (!active) return;
+                      const indices = Array.from(selectedLineIndices);
+                      setLineItems(prev => prev.map((item, i) =>
+                        indices.includes(i) ? { ...item, [active.prop]: bulkValue } : item
+                      ));
+                      toast({
+                        title: `${active.label} updated`,
+                        description: `${active.label} set on ${indices.length} item${indices.length !== 1 ? "s" : ""}. Save the bill to persist.`,
+                      });
+                      setBulkField(null);
+                      setBulkValue("");
+                      setSelectedLineIndices(new Set());
+                    }}
+                    data-testid="button-apply-bulk-edit"
+                  >
+                    Apply
+                  </Button>
+                </DialogFooter>
+              </>
+            );
+          })()}
         </DialogContent>
       </Dialog>
 
