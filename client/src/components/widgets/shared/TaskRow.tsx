@@ -1,4 +1,3 @@
-import { CSSProperties } from "react";
 import { CheckSquare, Circle, ListChecks } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -58,9 +57,17 @@ export function formatTaskDue(dueDate: Date | string | null | undefined): {
   };
 }
 
-const DUE_WASH: Record<string, CSSProperties | undefined> = {
-  overdue: { backgroundColor: "hsl(var(--coral-light))", color: "hsl(11 52% 38%)" },
-  today: { backgroundColor: "hsl(var(--amber-light))", color: "hsl(42 45% 30%)" },
+/**
+ * --coral-light / --amber-light invert between themes (near-white in light,
+ * dark in dark) while --coral / --amber stay put. So the wash background can
+ * come straight from the token, but the text has to flip with it — a single
+ * hardcoded ink is unreadable in one theme or the other.
+ */
+const DUE_WASH: Record<string, string | undefined> = {
+  overdue:
+    "bg-[hsl(var(--coral-light))] text-[hsl(11_52%_32%)] dark:text-[hsl(11_52%_84%)]",
+  today:
+    "bg-[hsl(var(--amber-light))] text-[hsl(42_45%_26%)] dark:text-[hsl(42_58%_84%)]",
   soon: undefined,
   later: undefined,
 };
@@ -164,8 +171,10 @@ export function TaskRow({
         {due && (
           dueWash ? (
             <span
-              className="text-[11px] font-medium px-1.5 py-px rounded-full whitespace-nowrap tabular-nums"
-              style={dueWash}
+              className={cn(
+                "text-[11px] font-medium px-1.5 py-px rounded-full whitespace-nowrap tabular-nums",
+                dueWash,
+              )}
             >
               {due.label}
             </span>
@@ -256,8 +265,10 @@ export function TaskCard({
           {due ? (
             dueWash ? (
               <span
-                className="text-[10px] font-medium px-1.5 py-px rounded-full whitespace-nowrap tabular-nums"
-                style={dueWash}
+                className={cn(
+                  "text-[10px] font-medium px-1.5 py-px rounded-full whitespace-nowrap tabular-nums",
+                  dueWash,
+                )}
               >
                 {due.label}
               </span>
