@@ -1337,7 +1337,7 @@ export default function SelectionDetail() {
               </div>
 
               {/* Right column: the money, divided off and read vertically */}
-              <div className="shrink-0 self-stretch border-l border-border/70 pl-4">
+              <div className="shrink-0 self-stretch border-l border-border/70 pl-5 pr-1">
                 {/* Pricing Section */}
                 <Popover open={pricingPopoverOpen} onOpenChange={(open) => {
                   setPricingPopoverOpen(open);
@@ -1352,7 +1352,7 @@ export default function SelectionDetail() {
                       className="text-left hover-elevate rounded-md p-2 -m-2 transition-colors cursor-pointer"
                       data-testid="button-edit-pricing"
                     >
-                      <div className="space-y-2.5 whitespace-nowrap">
+                      <div className="space-y-2.5 whitespace-nowrap min-w-[150px]">
                         {/* Label above value, matching the detail cells */}
                         <div>
                           <div className="text-data text-muted-foreground uppercase tracking-wide mb-0.5">Allowance</div>
