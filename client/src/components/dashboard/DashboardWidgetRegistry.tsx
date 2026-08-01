@@ -64,7 +64,6 @@ import PersonalTasksWidget from "@/components/user-workspace/widgets/PersonalTas
 import PersonalMetricsWidget from "@/components/user-workspace/widgets/PersonalMetricsWidget";
 import CrossProjectDeadlinesWidget from "@/components/user-workspace/widgets/CrossProjectDeadlinesWidget";
 import PersonalQuickActionsWidget from "@/components/user-workspace/widgets/PersonalQuickActionsWidget";
-import PersonalMemosWidget from "@/components/user-workspace/widgets/PersonalMemosWidget";
 import PersonalRemindersWidget from "@/components/user-workspace/widgets/PersonalRemindersWidget";
 import MyDayWidget from "@/components/user-workspace/widgets/MyDayWidget";
 import PersonalActivityWidget from "@/components/user-workspace/widgets/PersonalActivityWidget";
@@ -397,18 +396,6 @@ export const personalWidgetRegistry: Record<string, WidgetDefinition> = {
     accent: "purple",
     defaultColumns: 2,
     defaultRowSpan: 2,
-  },
-  personalMemos: {
-    type: "personalMemos",
-    name: "My Memos",
-    description: "Quick notes and personal reminders",
-    icon: FileText,
-    component: PersonalMemosWidget,
-    defaultSize: "md",
-    configurable: true,
-    accent: "amber",
-    defaultColumns: 4,
-    defaultRowSpan: 3,
   },
   personalReminders: {
     type: "personalReminders",

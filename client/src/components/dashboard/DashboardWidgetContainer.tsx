@@ -55,6 +55,8 @@ interface PersonalVariantProps {
   icon?: ReactNode;
   accent?: WidgetAccent;
   children: ReactNode;
+  /** Widget-supplied header buttons (matches the project variant). */
+  headerActions?: ReactNode;
   onRemove?: () => void;
   onConfigure?: () => void;
   dragHandleProps?: Record<string, unknown>;
@@ -497,6 +499,7 @@ function PersonalContainer({
   icon,
   accent = "purple",
   children,
+  headerActions,
   onRemove,
   onConfigure,
   dragHandleProps,
@@ -598,6 +601,7 @@ function PersonalContainer({
         headerRight={
           <div className="flex items-center gap-1">
             {titleNode}
+            {headerActions}
             {headerRight}
           </div>
         }
