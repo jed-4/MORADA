@@ -10,6 +10,8 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { TaskTooltip } from "@/components/ui/task-tooltip";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { useLocation } from "wouter";
 import { 
   CheckSquare, 
   Clock, 
@@ -20,7 +22,8 @@ import {
   ChevronRight,
   Folder,
   ChevronsUpDown,
-  ChevronsDownUp
+  ChevronsDownUp,
+  ArrowRight
 } from "lucide-react";
 import { WidgetProps } from "@/types/widgets";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -34,7 +37,10 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
 import { useTimezone, formatInTimezone } from "@/hooks/useTimezone";
 
-type FilterType = 'all' | 'overdue' | 'today' | 'tomorrow' | 'next-3-days' | 'this-week' | 'next-week' | 'next-2-weeks' | 'this-month' | 'no-date' | 'high-priority';
+// Every value here is offered in the config dropdown AND handled in the filter
+// switch below. (It previously declared seven date filters that existed in
+// neither, while omitting 'upcoming' — which the dropdown actually sets.)
+type FilterType = 'all' | 'overdue' | 'today' | 'upcoming' | 'high-priority';
 type GroupByType = 'none' | 'project' | 'dueDate' | 'priority';
 
 interface WidgetConfig {
@@ -45,8 +51,9 @@ interface WidgetConfig {
   projectFilter?: string;
 }
 
-export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, onCloseConfig, userId }: WidgetProps) {
+export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, onCloseConfig, onSetHeaderActions, userId }: WidgetProps) {
   const { user } = useAuth();
+  const [, navigate] = useLocation();
   const { effectiveTimezone } = useTimezone();
   const businessLabel = (user as any)?.companyNickname || "Business";
   
@@ -79,17 +86,60 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
     setConfigProjectFilter(config.projectFilter ?? 'all');
   }, [widget.title, widget.config]);
 
-  const { data: tasks = [], isLoading } = useQuery<Task[]>({
+  const { data: tasks = [], isLoading, isError, refetch } = useQuery<Task[]>({
     queryKey: ["/api/tasks/my"],
     enabled: !!userId,
   });
 
+  // Supplies project colours for grouping and labels for the filter dropdown.
+  // Shared cache key, so this is deduped with every other widget that needs it.
   const { data: projects = [] } = useQuery<Project[]>({
     queryKey: ["/api/projects"],
   });
 
+  // Header row: + new task, hover arrow through to the full Tasks page
+  useEffect(() => {
+    onSetHeaderActions?.(
+      <>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              size="icon"
+              variant="default"
+              className="h-6 w-6"
+              onClick={() => setShowCreateDialog(true)}
+              data-testid="button-add-task-widget"
+              aria-label="New task"
+            >
+              <Plus className="h-3.5 w-3.5" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="top">New task</TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-6 w-6 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity"
+              onClick={() => navigate("/tasks")}
+              data-testid="personal-tasks-open-full"
+              aria-label="Open tasks"
+            >
+              <ArrowRight className="h-3.5 w-3.5" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="top">All tasks</TooltipContent>
+        </Tooltip>
+      </>
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const projectMap = useMemo(() => new Map(projects.map(p => [p.id, p])), [projects]);
-  const today = startOfDay(new Date());
+  // Stable per-day value: rebuilding this every render made every filter memo
+  // below recompute continuously.
+  const today = useMemo(() => startOfDay(new Date()), []);
 
   const toggleTaskMutation = useMutation({
     mutationFn: async (task: Task) => {
@@ -467,11 +517,10 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
             );
           })}
         </div>
-        <div className="flex items-center gap-1">
         {groupBy !== 'none' && groupedTasks.length > 1 && (
-          <Button 
-            size="icon" 
-            variant="ghost" 
+          <Button
+            size="icon"
+            variant="ghost"
             className="h-5 w-5"
             onClick={toggleAllGroups}
             data-testid="button-toggle-all-tasks"
@@ -484,16 +533,6 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
             )}
           </Button>
         )}
-        <Button 
-          size="icon" 
-          variant="ghost" 
-          className="h-5 w-5"
-          onClick={() => setShowCreateDialog(true)}
-          data-testid="button-add-task-widget"
-        >
-          <Plus className="h-3 w-3" />
-        </Button>
-        </div>
       </div>
       
       <TaskEditModal
@@ -519,6 +558,14 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
         <div className="space-y-2 pr-2">
           {isLoading ? (
             <WidgetSkeleton rows={3} />
+          ) : isError ? (
+            <div className="flex flex-col items-center gap-2 py-6 text-sm text-muted-foreground">
+              <AlertCircle className="h-4 w-4 text-destructive" />
+              Couldn't load your tasks
+              <Button size="sm" variant="outline" className="h-6 px-2 text-xs" onClick={() => refetch()}>
+                Retry
+              </Button>
+            </div>
           ) : filteredTasks.length === 0 ? (
             <WidgetEmpty icon={CheckSquare} message="No tasks match your filters" />
           ) : groupBy === 'none' ? (

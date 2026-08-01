@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { TaskTooltip } from "@/components/ui/task-tooltip";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { 
   Sun, 
   Circle,
@@ -24,6 +25,7 @@ import {
   ChevronsDownUp,
   Timer,
   Clock,
+  ArrowRight,
 } from "lucide-react";
 import { WidgetProps } from "@/types/widgets";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -171,13 +173,15 @@ function SortableSectionItem({
   );
 }
 
-export default function MyDayWidget({ widget, onUpdate, isConfiguring, onCloseConfig, userId }: WidgetProps) {
+export default function MyDayWidget({ widget, onUpdate, isConfiguring, onCloseConfig, onSetHeaderActions, userId }: WidgetProps) {
   const [editingTitle, setEditingTitle] = useState(widget.title);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const { effectiveTimezone } = useTimezone();
   const [, setLocation] = useLocation();
-  const today = startOfDay(new Date());
+  // Stable per-mount value — rebuilding it every render invalidated every memo
+  // below that lists it as a dependency.
+  const today = useMemo(() => startOfDay(new Date()), []);
 
   const sections: SectionConfig[] = useMemo(() => {
     const saved = widget.config?.sections as SectionConfig[] | undefined;
@@ -216,27 +220,65 @@ export default function MyDayWidget({ widget, onUpdate, isConfiguring, onCloseCo
     })
   );
 
-  const { data: tasks = [], isLoading: tasksLoading } = useQuery<Task[]>({
-    queryKey: ["/api/tasks", { assigneeId: userId }],
-    queryFn: async () => {
-      if (!userId) return [];
-      const response = await fetch(`/api/tasks?assigneeId=${userId}`, { credentials: 'include' });
-      if (!response.ok) return [];
-      return response.json();
-    },
+  // Header row: new focus block, collapse/expand all, hover arrow to Tasks
+  useEffect(() => {
+    onSetHeaderActions?.(
+      <>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-6 w-6"
+              onClick={() => setShowFocusCreator(true)}
+              data-testid="button-new-focus-block"
+              aria-label="New focus block"
+            >
+              <Clock className="h-3.5 w-3.5" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="top">New focus block</TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-6 w-6 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity"
+              onClick={() => setLocation("/tasks")}
+              data-testid="myday-open-tasks"
+              aria-label="Open tasks"
+            >
+              <ArrowRight className="h-3.5 w-3.5" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="top">All tasks</TooltipContent>
+        </Tooltip>
+      </>
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Same endpoint and cache key as PersonalTasksWidget, so ticking a task in
+  // either widget updates both. Session-scoped server-side.
+  const { data: tasks = [], isLoading: tasksLoading, isError: tasksError, refetch: refetchTasks } = useQuery<Task[]>({
+    queryKey: ["/api/tasks/my"],
     enabled: !!userId,
   });
 
+  // Supplies project colours for the task chips. Shared cache key, so this is
+  // deduped with every other widget that needs it.
   const { data: projects = [] } = useQuery<Project[]>({
     queryKey: ["/api/projects"],
   });
 
-  const { data: scheduleItems = [], isLoading: scheduleLoading } = useQuery<ScheduleItem[]>({
-    queryKey: ["/api/schedule-items", { date: format(today, 'yyyy-MM-dd') }],
+  const { data: scheduleItems = [], isLoading: scheduleLoading, isError: scheduleError, refetch: refetchSchedule } = useQuery<ScheduleItem[]>({
+    // Key mirrors the URL so this shares cache with other schedule consumers.
+    queryKey: ["/api/schedule-items/all", { date: format(today, 'yyyy-MM-dd') }],
     queryFn: async () => {
       const todayStr = format(today, 'yyyy-MM-dd');
       const response = await fetch(`/api/schedule-items/all?startDate=${todayStr}&endDate=${todayStr}`, { credentials: 'include' });
-      if (!response.ok) return [];
+      if (!response.ok) throw new Error(`Failed to load schedule (${response.status})`);
       const items = await response.json();
       return items.filter((item: ScheduleItem) => {
         const itemDate = new Date(item.startDate);
@@ -265,13 +307,13 @@ export default function MyDayWidget({ widget, onUpdate, isConfiguring, onCloseCo
   }, [allFocusBlocks, today]);
 
   const todaysTasks = useMemo(() => tasks.filter(t => {
-    if (t.status === 'done' || t.status === 'complete') return false;
+    if (t.status === 'done') return false;
     if (!t.dueDate) return false;
     return isToday(new Date(t.dueDate));
   }), [tasks]);
 
   const overdueTasks = useMemo(() => tasks.filter(t => {
-    if (t.status === 'done' || t.status === 'complete') return false;
+    if (t.status === 'done') return false;
     if (!t.dueDate) return false;
     return isBefore(new Date(t.dueDate), today);
   }), [tasks, today]);
@@ -288,33 +330,25 @@ export default function MyDayWidget({ widget, onUpdate, isConfiguring, onCloseCo
 
   const toggleTaskMutation = useMutation({
     mutationFn: async (task: Task) => {
-      const newStatus = task.status === 'done' || task.status === 'complete' ? 'todo' : 'done';
+      const newStatus = task.status === 'done' ? 'todo' : 'done';
       return apiRequest(`/api/tasks/${task.id}`, "PATCH", { status: newStatus });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/tasks", { assigneeId: userId }] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks/my"] });
       queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
     },
   });
 
+  // Collapsing is a view preference, not a dashboard edit. It used to call
+  // onUpdate on every click, which persisted the entire dashboard layout to the
+  // server each time (~400ms round trip per collapse). Kept local now; the
+  // configured defaults still come from widget.config.sections.
   const toggleCollapsed = (sectionId: string) => {
-    setCollapsedState(prev => {
-      const newState = { ...prev, [sectionId]: !prev[sectionId] };
-      if (onUpdate) {
-        const updatedSections = sections.map(s => ({
-          ...s,
-          collapsed: s.id === sectionId ? !prev[sectionId] : prev[s.id] ?? s.collapsed
-        }));
-        onUpdate({ 
-          ...widget, 
-          config: { ...widget.config, sections: updatedSections } 
-        });
-      }
-      return newState;
-    });
+    setCollapsedState(prev => ({ ...prev, [sectionId]: !prev[sectionId] }));
   };
 
   const isLoading = tasksLoading || scheduleLoading;
+  const isError = tasksError || scheduleError;
 
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
@@ -565,15 +599,6 @@ export default function MyDayWidget({ widget, onUpdate, isConfiguring, onCloseCo
       <div className="flex items-center justify-between gap-1">
         <span className="text-xs text-muted-foreground">{formatInTimezone(new Date(), effectiveTimezone, { weekday: 'long', month: 'long', day: 'numeric' })}</span>
         <div className="flex items-center gap-1.5">
-          <Button
-            size="icon"
-            variant="ghost"
-            className="h-5 w-5"
-            onClick={() => setShowFocusCreator(true)}
-            title="New Focus Block"
-          >
-            <Clock className="h-3 w-3" />
-          </Button>
           {visibleSections.length > 0 && (
             <Button
               size="icon"
@@ -599,6 +624,19 @@ export default function MyDayWidget({ widget, onUpdate, isConfiguring, onCloseCo
 
       {isLoading ? (
         <WidgetSkeleton rows={3} />
+      ) : isError ? (
+        <div className="flex flex-col items-center gap-2 py-6 text-sm text-muted-foreground">
+          <AlertTriangle className="h-4 w-4 text-destructive" />
+          Couldn't load your day
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-6 px-2 text-xs"
+            onClick={() => { refetchTasks(); refetchSchedule(); }}
+          >
+            Retry
+          </Button>
+        </div>
       ) : visibleSections.length === 0 ? (
         <WidgetEmpty
           icon={Sun}
