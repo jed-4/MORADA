@@ -45,6 +45,18 @@ type FilterType = 'all' | 'overdue' | 'today' | 'upcoming' | 'high-priority';
 type GroupByType = 'none' | 'project' | 'dueDate' | 'priority';
 type ViewType = 'list' | 'board';
 
+/**
+ * `scope` is marked legacy in shared/schema.ts and defaults to "project", so a
+ * business task saved without an explicit scope reads as a project task with no
+ * project — which rendered a blank label. taskContextType is the field the
+ * server actually derives, so trust it first.
+ */
+function isBusinessTask(task: Task): boolean {
+  if ((task as any).taskContextType === 'business') return true;
+  if (task.scope === 'business') return true;
+  return !task.projectId && !task.scope;
+}
+
 interface WidgetConfig {
   maxTasks?: number;
   showFilter?: FilterType;
@@ -180,7 +192,7 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
 
     if (projectFilter === 'business') {
       // Include scope='business' OR legacy tasks (no scope + no projectId)
-      result = result.filter(t => t.scope === 'business' || (!t.scope && !t.projectId));
+      result = result.filter(t => isBusinessTask(t));
     } else if (projectFilter !== 'all') {
       result = result.filter(t => t.projectId === projectFilter);
     }
@@ -214,7 +226,7 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
       base = base.filter(t => t.status !== 'done' && t.status !== 'complete');
     }
     if (projectFilter === 'business') {
-      base = base.filter(t => t.scope === 'business' || (!t.scope && !t.projectId));
+      base = base.filter(t => isBusinessTask(t));
     } else if (projectFilter !== 'all') {
       base = base.filter(t => t.projectId === projectFilter);
     }
@@ -245,7 +257,7 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
       switch (effectiveGroupBy) {
         case 'project':
           // Include scope='business' OR legacy tasks (no scope + no projectId) as business
-          if (task.scope === 'business' || (!task.scope && !task.projectId)) {
+          if (isBusinessTask(task)) {
             key = 'business';
             label = businessLabel;
             color = undefined;
@@ -322,7 +334,7 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
     opts: { hideDue?: boolean; hideAccent?: boolean } = {},
   ) => {
     const project = task.projectId ? projectMap.get(task.projectId) : null;
-    const isBusiness = task.scope === 'business' || (!task.scope && !task.projectId);
+    const isBusiness = isBusinessTask(task);
 
     let accentColor: string | null = null;
     let accentLabel: string | null = null;
@@ -360,6 +372,14 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
       return next;
     });
   };
+
+  // Must sit above the isConfiguring early return — a hook after it changes the
+  // hook count between renders and crashes with "Rendered fewer hooks than
+  // expected" the moment the config panel opens.
+  const allCollapsed = useMemo(() => {
+    if (effectiveGroupBy === 'none') return false;
+    return groupedTasks.every(g => collapsedGroups.has(g.key));
+  }, [groupedTasks, collapsedGroups, effectiveGroupBy]);
 
   if (isConfiguring) {
     const handleSaveConfig = () => {
@@ -505,11 +525,6 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
     );
   }
 
-  const allCollapsed = useMemo(() => {
-    if (effectiveGroupBy === 'none') return false;
-    return groupedTasks.every(g => collapsedGroups.has(g.key));
-  }, [groupedTasks, collapsedGroups, effectiveGroupBy]);
-
   const toggleAllGroups = () => {
     if (effectiveGroupBy === 'none') return;
     if (allCollapsed) {
@@ -629,7 +644,7 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
                   <div className="space-y-1 max-h-[320px] overflow-y-auto pr-0.5">
                     {group.tasks.map((task) => {
                       const project = task.projectId ? projectMap.get(task.projectId) : null;
-                      const isBusiness = task.scope === 'business' || (!task.scope && !task.projectId);
+                      const isBusiness = isBusinessTask(task);
                       const showAccent = effectiveGroupBy !== 'project';
                       return (
                         <TaskCard

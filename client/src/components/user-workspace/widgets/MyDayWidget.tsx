@@ -374,6 +374,40 @@ export default function MyDayWidget({ widget, onUpdate, isConfiguring, onCloseCo
     ));
   };
 
+  // These and the memo below must precede the isConfiguring early return —
+  // a hook after it crashes with "Rendered fewer hooks than expected" as soon
+  // as the config panel opens.
+  /**
+   * Each section owns one Morada tone, used only for its heading dot. Coral is
+   * reserved for Overdue so that seeing coral anywhere in the widget always
+   * means the same thing.
+   */
+  const SECTION_TONE: Record<string, string> = {
+    overdue: "hsl(var(--coral))",
+    today: "hsl(var(--primary))",
+    schedule: "hsl(var(--teal))",
+    focus: "hsl(var(--amber))",
+  };
+
+  const sectionItems = (id: string): any[] => {
+    switch (id) {
+      case "overdue": return overdueTasks;
+      case "today": return todaysTasks;
+      case "schedule": return scheduleItems;
+      case "focus": return todayFocusBlocks;
+      default: return [];
+    }
+  };
+
+  const visibleSections = sections.filter(s => s.visible);
+  // A section with nothing in it is noise, not information — hide it outright.
+  const populatedSections = visibleSections.filter(s => sectionItems(s.id).length > 0);
+
+  // Collapse-all only concerns the sections actually on screen.
+  const allCollapsed = useMemo(() => {
+    return populatedSections.length > 0 && populatedSections.every(s => collapsedState[s.id]);
+  }, [populatedSections, collapsedState]);
+
   if (isConfiguring) {
     const handleSaveConfig = () => {
       if (onUpdate) {
@@ -453,32 +487,9 @@ export default function MyDayWidget({ widget, onUpdate, isConfiguring, onCloseCo
     );
   }
 
-  const visibleSections = sections.filter(s => s.visible);
 
-  /**
-   * Each section owns one Morada tone, used only for its heading dot. Coral is
-   * reserved for Overdue so that seeing coral anywhere in the widget always
-   * means the same thing.
-   */
-  const SECTION_TONE: Record<string, string> = {
-    overdue: "hsl(var(--coral))",
-    today: "hsl(var(--primary))",
-    schedule: "hsl(var(--teal))",
-    focus: "hsl(var(--amber))",
-  };
 
-  const sectionItems = (id: string): any[] => {
-    switch (id) {
-      case "overdue": return overdueTasks;
-      case "today": return todaysTasks;
-      case "schedule": return scheduleItems;
-      case "focus": return todayFocusBlocks;
-      default: return [];
-    }
-  };
 
-  // A section with nothing in it is noise, not information — hide it outright.
-  const populatedSections = visibleSections.filter(s => sectionItems(s.id).length > 0);
 
   /** Section heading — shared by the stacked list and the board columns. */
   const renderSectionHeading = (sectionConfig: SectionConfig) => {
@@ -577,11 +588,6 @@ export default function MyDayWidget({ widget, onUpdate, isConfiguring, onCloseCo
       </Collapsible>
     );
   };
-
-  // Collapse-all only concerns the sections actually on screen.
-  const allCollapsed = useMemo(() => {
-    return populatedSections.length > 0 && populatedSections.every(s => collapsedState[s.id]);
-  }, [populatedSections, collapsedState]);
 
   const toggleAllSections = () => {
     const newState: Record<string, boolean> = {};
