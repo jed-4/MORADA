@@ -96,7 +96,7 @@ import {
   CommandList,
 } from "@/components/ui/command";
 import { matchSupplier, type SupplierMatch } from "@shared/supplierMatcher";
-import { clampRoundingCents } from "@shared/billTotals";
+import { clampRoundingCents, MAX_ROUNDING_CENTS } from "@shared/billTotals";
 import { computeDueDate, describePaymentTerms } from "@shared/paymentTerms";
 import { DatePicker } from "@/components/DatePicker";
 import {
@@ -206,6 +206,11 @@ export default function BillDetail() {
   // Manual rounding adjustment in cents (±MAX_ROUNDING_CENTS), applied to the
   // total so it can be nudged to match the supplier invoice — like Xero.
   const [roundingCents, setRoundingCents] = useState(0);
+  // The total printed on the supplier's invoice (cents inc GST) — the ANCHOR.
+  // While set, roundingCents is re-derived from it on every lines/taxMode
+  // change so the bill total tracks the document instead of keeping a stale
+  // one-shot delta. Null = no anchor (totals purely line-derived).
+  const [documentTotalCents, setDocumentTotalCents] = useState<number | null>(null);
   const [editingInvoiceTotal, setEditingInvoiceTotal] = useState(false);
   const [invoiceTotalInput, setInvoiceTotalInput] = useState("");
   const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
@@ -318,6 +323,20 @@ export default function BillDetail() {
   const { data: xeroStatus } = useQuery<{ connected: boolean }>({
     queryKey: ["/api/xero/status"],
   });
+
+  // New bills default to syncing when the company is connected to Xero —
+  // Morada's approval workflow mirrors into Xero, so an unticked box on a
+  // fresh bill almost always meant "saved but never reached Xero". Applied
+  // once so the user can still untick it deliberately.
+  const sendToXeroDefaultApplied = useRef(false);
+  useEffect(() => {
+    if (isEditMode || sendToXeroDefaultApplied.current) return;
+    if (xeroStatus?.connected) {
+      sendToXeroDefaultApplied.current = true;
+      form.setValue("sendToXero", true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [xeroStatus?.connected, isEditMode]);
 
   const { data: approvals = [] } = useQuery<BillApproval[]>({
     queryKey: ["/api/bills", id, "approvals"],
@@ -467,8 +486,20 @@ export default function BillDetail() {
   });
   const existingAllowances = existingAllowancesData ?? [];
 
+  // ── Guarded form hydration ─────────────────────────────────────────────────
+  // The bill query refetches constantly (status PATCHes, payments, Xero sync
+  // writes, list invalidations…). Rebuilding the form from the server copy on
+  // every refetch used to wipe whatever the user (or the AI reader) had typed
+  // but not yet saved — the "page reloads as if never edited" bug. Rule now:
+  // always hydrate when a DIFFERENT bill loads; for the same bill, hydrate only
+  // while the form has no unsaved changes.
+  const lastHydratedBillIdRef = useRef<string | null>(null);
+  const hasUnsavedChangesRef = useRef(false);
   useEffect(() => {
     if (bill && isEditMode) {
+      const billChanged = lastHydratedBillIdRef.current !== bill.id;
+      if (!billChanged && hasUnsavedChangesRef.current) return;
+      lastHydratedBillIdRef.current = bill.id;
       form.reset({
         billNumber: bill.billNumber,
         projectId: bill.projectId,
@@ -493,6 +524,7 @@ export default function BillDetail() {
         setTaxMode(persistedTaxMode);
       }
       setRoundingCents((bill as any).roundingCents ?? 0);
+      setDocumentTotalCents((bill as any).documentTotalCents ?? null);
       // attachmentUrls may now contain either legacy string entries or rich
       // attachment record objects ({objectPath, filename, mimeType, ...}).
       // Normalize down to a string[] of object paths for the existing UI;
@@ -528,9 +560,15 @@ export default function BillDetail() {
     }
   }, [suppliers.length, bill?.id, isEditMode]);
 
+  // Same guard as the form hydration above: never clobber in-progress line-item
+  // edits with a refetch of the same bill.
+  const lastHydratedLinesBillIdRef = useRef<string | null>(null);
   useEffect(() => {
     if (existingLineItemsLoading || existingAllowancesLoading) return;
     if (existingLineItems.length > 0 && isEditMode) {
+      const billChanged = lastHydratedLinesBillIdRef.current !== id;
+      if (!billChanged && hasUnsavedChangesRef.current) return;
+      lastHydratedLinesBillIdRef.current = id ?? null;
       setLineItems(
         existingLineItems.map((item) => {
           const allowance = existingAllowances.find(a => a.billLineItemId === item.id);
@@ -649,17 +687,38 @@ export default function BillDetail() {
   // excluded — they persist immediately via their own endpoints.
   const baselineRef = useRef<string | null>(null);
   const watchedAll = form.watch();
-  const currentSnapshot = JSON.stringify({ f: watchedAll, lineItems, roundingCents, taxMode });
+  const currentSnapshot = JSON.stringify({ f: watchedAll, lineItems, roundingCents, documentTotalCents, taxMode });
+  // Navigating to a different bill in the same mounted component (e.g.
+  // "Approve & next") must drop the previous bill's baseline, or the new
+  // bill's snapshot would compare against the old bill and read as "dirty".
+  useEffect(() => {
+    baselineRef.current = null;
+  }, [id]);
+  const currentSnapshotRef = useRef(currentSnapshot);
+  currentSnapshotRef.current = currentSnapshot;
   useEffect(() => {
     if (!isEditMode) { baselineRef.current = null; return; }
     if (!bill || existingLineItemsLoading || existingAllowancesLoading) return;
     if (baselineRef.current !== null) return; // capture once per load
-    baselineRef.current = currentSnapshot;
+    // Capture on a macrotask so the baseline reflects the SETTLED post-
+    // hydration state: the form reset and line-item hydration land across
+    // follow-up renders, and snapshotting synchronously here would freeze the
+    // pre-hydration state as the baseline — every bill would then read as
+    // "dirty" the moment it finished loading. Each snapshot change before
+    // settling re-arms the timer, so the capture happens once rendering goes
+    // quiet.
+    const timer = setTimeout(() => {
+      if (baselineRef.current === null) baselineRef.current = currentSnapshotRef.current;
+    }, 0);
+    return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isEditMode, bill, existingLineItemsLoading, existingAllowancesLoading, currentSnapshot]);
 
   const hasUnsavedChanges =
     isEditMode && baselineRef.current !== null && currentSnapshot !== baselineRef.current;
+  // Ref mirror so the hydration effects above (declared earlier in the file)
+  // can consult dirtiness without re-running on every keystroke.
+  hasUnsavedChangesRef.current = hasUnsavedChanges;
 
   // Warn on tab close / refresh when there are unsaved edits.
   useEffect(() => {
@@ -849,6 +908,22 @@ export default function BillDetail() {
     return calculateTotalBeforeRounding() + roundingCents / 100;
   };
 
+  // ── Document-total anchor ──────────────────────────────────────────────────
+  // While an anchor is set, re-derive the rounding adjustment whenever the
+  // computed base moves (line edits, tax mode) so the total tracks the invoice
+  // document. Rounding is capped at ±MAX_ROUNDING_CENTS — a larger gap means
+  // the lines genuinely disagree with the invoice, which renders as an amber
+  // mismatch warning next to the totals instead of being silently absorbed.
+  const documentMismatchCents =
+    documentTotalCents != null
+      ? documentTotalCents - Math.round(calculateTotalBeforeRounding() * 100)
+      : 0;
+  useEffect(() => {
+    if (documentTotalCents == null) return;
+    setRoundingCents(clampRoundingCents(documentTotalCents - Math.round(calculateTotalBeforeRounding() * 100)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [documentTotalCents, lineItems, taxMode]);
+
   const calculateDue = () => {
     const total = calculateTotal();
     return total - paidDollars;
@@ -920,6 +995,7 @@ export default function BillDetail() {
         tax: Math.round(calculateTax() * 100),
         total: Math.round(calculateTotal() * 100),
         roundingCents: clampRoundingCents(roundingCents),
+        documentTotalCents,
         // Convert paidAmount (held in the form as dollars) back to integer cents.
         paidAmount: Math.round((data.paidAmount || 0) * 100),
         taxMode,
@@ -1038,13 +1114,15 @@ export default function BillDetail() {
   });
 
   const updateMutation = useMutation({
-    mutationFn: async (data: BillFormData) => {
+    // __stayOnPage: save without navigating away afterwards — used by
+    // save-then-approve so the approve call runs against the just-saved bill.
+    mutationFn: async (data: BillFormData & { __stayOnPage?: boolean }) => {
       // paidAmount is payment-managed (set only by recording payments + syncBillPaidStatus)
       // and has no input in this form — it is merely carried in defaultValues as DOLLARS.
       // Spreading it back unconverted sent e.g. $47.50 -> 47.5 into the integer "paid_amount"
       // column and 500'd the update. It is also a stale value (payments/Xero sync may have
       // changed it since load), so we omit it entirely from the update payload instead.
-      const { paidAmount: _omitPaidAmount, ...rest } = data;
+      const { paidAmount: _omitPaidAmount, __stayOnPage: _omitStayFlag, ...rest } = data;
       const billData = {
         ...rest,
         billDate: new Date(data.billDate),
@@ -1053,6 +1131,7 @@ export default function BillDetail() {
         tax: Math.round(calculateTax() * 100),
         total: Math.round(calculateTotal() * 100),
         roundingCents: clampRoundingCents(roundingCents),
+        documentTotalCents,
         taxMode,
         // attachmentUrls is intentionally omitted — attachments are managed
         // through the dedicated POST /api/bills/:id/attachments endpoint to
@@ -1114,7 +1193,8 @@ export default function BillDetail() {
 
       return updatedBill;
     },
-    onSuccess: async () => {
+    onSuccess: async (_updatedBill, variables) => {
+      const stayOnPage = !!variables.__stayOnPage;
       // Content is now persisted — drop the baseline so it re-captures the
       // saved state (prevents a false "unsaved changes" prompt when the flow
       // stays on the page, e.g. the Xero-unmapped or update-defaults prompts).
@@ -1149,7 +1229,7 @@ export default function BillDetail() {
                 title: "Bill saved",
                 description: errData.message || "This bill is paid in Xero, so its line items can't be changed there.",
               });
-              setLocation(projectId ? `/projects/${projectId}/bills` : "/bills");
+              if (!stayOnPage) setLocation(projectId ? `/projects/${projectId}/bills` : "/bills");
               return;
             }
             const err: XeroPushError = Object.assign(
@@ -1161,7 +1241,9 @@ export default function BillDetail() {
           const result = await pushRes.json();
           toast({
             title: "Bill saved & synced to Xero",
-            description: result.updated ? "Existing Xero bill updated." : "New bill created in Xero.",
+            description: result.warning
+              ? result.warning
+              : result.updated ? "Existing Xero bill updated." : "New bill created in Xero.",
           });
         } catch (e) {
           // Stay on page so user can see the error and retry
@@ -1175,6 +1257,7 @@ export default function BillDetail() {
       } else {
         toast({ title: "Success", description: "Bill updated successfully" });
       }
+      if (stayOnPage) return; // save-then-approve keeps the user here
       // If supplier defaults are stored but the user coded this bill differently,
       // stay on the page so they can decide whether to update the defaults.
       if (currentSupplier && !currentSupplier.suppressDefaultsPrompt && !defaultsPromptDismissed) {
@@ -1295,6 +1378,31 @@ export default function BillDetail() {
     if (remainingInQueue.length === 0) setLocation("/bills?status=awaiting_approval");
     else setLocation(`/bills/${remainingInQueue[0].id}`);
   };
+
+  // Approve commits whatever is on screen: unsaved edits are saved FIRST, then
+  // the approval runs against the persisted bill. Previously Approve posted
+  // straight to the server and silently approved the stale saved copy while
+  // the reviewer was looking at their edited (unsaved) version.
+  const approveWithSave = async (goNext: boolean) => {
+    if (hasUnsavedChanges) {
+      const valid = await form.trigger();
+      if (!valid) {
+        toast({
+          title: "Can't approve yet",
+          description: "Fix the highlighted form errors, then approve.",
+          variant: "destructive",
+        });
+        return;
+      }
+      try {
+        await updateMutation.mutateAsync({ ...form.getValues(), __stayOnPage: true });
+      } catch {
+        return; // save failed — updateMutation.onError already showed the toast
+      }
+    }
+    approveMutation.mutate(undefined, goNext ? { onSuccess: () => goToNextInQueue() } : undefined);
+  };
+  const approveBusy = approveMutation.isPending || updateMutation.isPending;
 
   const rejectMutation = useMutation({
     mutationFn: async (comments: string) => {
@@ -1466,6 +1574,7 @@ export default function BillDetail() {
       if (data.dueDate) {
         form.setValue("dueDate", format(new Date(data.dueDate), "yyyy-MM-dd"));
       }
+      let matchedSupplierId: string | null = null;
       if (data.supplierName) {
         const candidates = (suppliers as any[]).map((s) => ({
           id: s.id,
@@ -1474,6 +1583,7 @@ export default function BillDetail() {
         }));
         const result = matchSupplier(data.supplierName, candidates);
         if (result.match) {
+          matchedSupplierId = result.match.candidate.id;
           form.setValue("supplierId", result.match.candidate.id);
         } else {
           const top: SupplierMatch<typeof candidates[number]> | undefined = result.nearMatches[0];
@@ -1496,10 +1606,31 @@ export default function BillDetail() {
           setUnmatchedSupplierDialogOpen(true);
         }
       }
+      // Detect the invoice's tax mode from the AI's own numbers instead of
+      // forcing "inclusive": if the extracted line totals sum to the document's
+      // ex-GST subtotal they are ex-GST lines (exclusive mode); if they sum to
+      // the inc-GST total they are inc-GST (inclusive). Forcing inclusive on an
+      // ex-GST invoice made every computed total ~10% off the document — the
+      // main source of "the Total ends up being wrong".
+      let detectedTaxMode: "inclusive" | "exclusive" = "inclusive";
       if (data.lineItems && data.lineItems.length > 0) {
+        const sumLinesCents = data.lineItems.reduce(
+          (s: number, it: any) => s + (it.totalAmount || 0),
+          0,
+        );
+        const docTotal = data.totalAmount as number | null | undefined; // cents inc GST
+        const docSubtotal = data.subtotalAmount as number | null | undefined; // cents ex GST
+        if (
+          docTotal != null &&
+          docSubtotal != null &&
+          docTotal !== docSubtotal &&
+          Math.abs(sumLinesCents - docSubtotal) < Math.abs(sumLinesCents - docTotal)
+        ) {
+          detectedTaxMode = "exclusive";
+        }
         const firstCostCode = costCodes[0]?.id;
         const defaultAccount = getSupplierDefaultAccount();
-        setTaxMode("inclusive");
+        setTaxMode(detectedTaxMode);
         const newLineItems = data.lineItems.map((item: any, index: number) => ({
           lineType: "custom" as const,
           description: item.description || "",
@@ -1516,14 +1647,36 @@ export default function BillDetail() {
         }));
         setLineItems(newLineItems);
       }
+      // Anchor the document's printed total — rounding is derived from it and
+      // keeps the bill total pinned to the invoice through later edits.
+      if (typeof data.totalAmount === "number" && data.totalAmount > 0) {
+        setDocumentTotalCents(data.totalAmount);
+      }
       form.setValue("status", "awaiting_approval");
       if (isEditMode && id && bill?.status === "draft") {
-        apiRequest(`/api/bills/${id}`, "PATCH", { status: "awaiting_approval" })
+        // Persist everything the AI extracted, not just the status. The status
+        // PATCH triggers a refetch, and only server-persisted fields survive
+        // one — the old {status}-only PATCH is why "AI fills in the bill info
+        // at the top, then it disappears".
+        const persist: Record<string, unknown> = {
+          status: "awaiting_approval",
+          taxMode: detectedTaxMode,
+        };
+        const extractedRef = data.billReference || data.invoiceNumber;
+        if (extractedRef) persist.billReference = extractedRef;
+        const extractedBillDate = data.billDate || data.invoiceDate;
+        if (extractedBillDate) persist.billDate = new Date(extractedBillDate);
+        if (data.dueDate) persist.dueDate = new Date(data.dueDate);
+        if (matchedSupplierId) persist.supplierId = matchedSupplierId;
+        if (typeof data.totalAmount === "number" && data.totalAmount > 0) {
+          persist.documentTotalCents = data.totalAmount;
+        }
+        apiRequest(`/api/bills/${id}`, "PATCH", persist)
           .then(() => {
             queryClient.invalidateQueries({ queryKey: ["/api/bills", id] });
             queryClient.invalidateQueries({ queryKey: ["/api/bills"] });
           })
-          .catch((err) => console.error("Failed to set bill status to awaiting_approval:", err));
+          .catch((err) => console.error("Failed to persist AI-extracted bill fields:", err));
       }
       toast({
         title: "Bill updated",
@@ -1917,20 +2070,20 @@ export default function BillDetail() {
                 <Button
                   variant="default"
                   size="sm"
-                  onClick={() => approveMutation.mutate(undefined)}
-                  disabled={approveMutation.isPending}
+                  onClick={() => approveWithSave(false)}
+                  disabled={approveBusy}
                   data-testid="button-approve"
                   className="gap-1"
                 >
-                  {approveMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
-                  {approveMutation.isPending ? "Approving..." : "Approve"}
+                  {approveBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+                  {updateMutation.isPending ? "Saving..." : approveMutation.isPending ? "Approving..." : hasUnsavedChanges ? "Save & approve" : "Approve"}
                 </Button>
                 {remainingInQueue.length > 0 && (
                   <Button
                     variant="default"
                     size="sm"
-                    onClick={() => approveMutation.mutate(undefined, { onSuccess: () => goToNextInQueue() })}
-                    disabled={approveMutation.isPending}
+                    onClick={() => approveWithSave(true)}
+                    disabled={approveBusy}
                     data-testid="button-approve-next"
                     className="gap-1"
                     title={`${remainingInQueue.length} more awaiting approval`}
@@ -3212,9 +3365,9 @@ export default function BillDetail() {
                           Rounding
                           <button
                             type="button"
-                            onClick={() => setRoundingCents(0)}
+                            onClick={() => { setDocumentTotalCents(null); setRoundingCents(0); }}
                             className="text-muted-foreground/60 hover:text-foreground"
-                            title="Clear rounding"
+                            title="Clear rounding and unpin from the invoice total"
                             data-testid="button-clear-rounding"
                           >
                             <X className="h-3 w-3" />
@@ -3238,8 +3391,11 @@ export default function BillDetail() {
                           onBlur={() => {
                             const typed = parseFloat(invoiceTotalInput);
                             if (!isNaN(typed)) {
-                              const diffCents = Math.round((typed - calculateTotalBeforeRounding()) * 100);
-                              setRoundingCents(clampRoundingCents(diffCents));
+                              // Anchor the document total — the rounding
+                              // adjustment is derived from it (and re-derived
+                              // on later line/tax-mode edits) by the anchor
+                              // effect, so the total keeps tracking the invoice.
+                              setDocumentTotalCents(Math.round(typed * 100));
                             }
                             setEditingInvoiceTotal(false);
                             setInvoiceTotalInput("");
@@ -3263,6 +3419,16 @@ export default function BillDetail() {
                         </button>
                       )}
                     </div>
+                    {documentTotalCents != null && Math.abs(documentMismatchCents) > MAX_ROUNDING_CENTS && (
+                      <div
+                        className="text-xs leading-snug"
+                        style={{ color: "hsl(var(--amber))" }}
+                        data-testid="text-document-total-mismatch"
+                      >
+                        Invoice says {formatCurrency(documentTotalCents / 100)} but lines total{" "}
+                        {formatCurrency(calculateTotalBeforeRounding())} — check the line amounts or tax mode.
+                      </div>
+                    )}
                     <div className="flex justify-between gap-4 text-xs">
                       <span className="text-muted-foreground">Paid</span>
                       <span className="font-medium" data-testid="text-paid">

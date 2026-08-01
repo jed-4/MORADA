@@ -16247,14 +16247,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
           scheduleAutoPushBill(bill.id, companyId);
         } else if (
           !bill.xeroInvoiceId &&
-          (bill.status === "awaiting_approval" || bill.status === "awaiting_payment") &&
-          previous?.status !== bill.status
+          (bill.status === "awaiting_approval" || bill.status === "awaiting_payment")
         ) {
-          // Create-first push: when an unlinked bill enters the approval
-          // workflow (awaiting_approval) it lands in Xero as SUBMITTED
-          // ("Awaiting Approval"). When it later moves to awaiting_payment it
-          // is updated to AUTHORISED ("Awaiting Payment"). Either transition
-          // is allowed to be the very first push.
+          // Create-first push: an unlinked bill in the approval workflow lands
+          // in Xero as SUBMITTED (awaiting_approval) or AUTHORISED
+          // (awaiting_payment). Deliberately NOT gated on a status *transition*:
+          // a bill can already be awaiting_approval when its content is first
+          // completed (e.g. AI read set the status before the user filled in
+          // the rest), and that save must sync too — previously it silently
+          // didn't, leaving the bill "saved but unsynced". The queue's own
+          // guards (sendToXero, fire-time re-check) keep this from over-pushing.
           scheduleAutoPushBill(bill.id, companyId);
         }
 
@@ -16820,14 +16822,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Helper: schedule auto-push for the parent bill if linked to Xero and not paid
+  // Helper: schedule auto-push for the parent bill after a line-item write.
+  // Always schedules — scheduleAutoPushBill re-reads the bill at fire time and
+  // its guards decide (linked, or sendToXero + in approval workflow; never
+  // paid). Because the queue is debounced, each line write RESETS the timer, so
+  // the push fires once after the last write instead of racing a save that is
+  // still streaming line items (previously the bill PATCH armed the push and
+  // slow line writes could get pushed half-finished — and line edits on
+  // unlinked sendToXero bills never pushed at all).
   const maybeAutoPushParentBill = async (billId: string, companyId?: string) => {
     if (!companyId) return;
     try {
-      const parent = await storage.getBillById(billId);
-      if (parent?.xeroInvoiceId && parent.status !== "paid") {
-        scheduleAutoPushBill(parent.id, companyId);
-      }
+      scheduleAutoPushBill(billId, companyId);
     } catch {}
   };
 
