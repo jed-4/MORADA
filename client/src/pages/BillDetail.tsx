@@ -254,6 +254,7 @@ export default function BillDetail() {
   const [selectedLineIndices, setSelectedLineIndices] = useState<Set<number>>(new Set());
   const [bulkCostCodeOpen, setBulkCostCodeOpen] = useState(false);
   const [bulkCostCodeValue, setBulkCostCodeValue] = useState<string>("");
+  const [paymentsOpen, setPaymentsOpen] = useState(false);
   const [supplierDefaultsOpen, setSupplierDefaultsOpen] = useState(false);
   const [supplierDefaultsCostCode, setSupplierDefaultsCostCode] = useState<string>("");
   const [supplierDefaultsAccount, setSupplierDefaultsAccount] = useState<string>("");
@@ -2287,9 +2288,13 @@ export default function BillDetail() {
       )}
 
       <div className="flex-1 flex overflow-hidden">
-        <div className="flex-1 overflow-auto p-4">
+        {/* Column: scrolling content + a real footer bar. The action bar is a
+            flex sibling OUTSIDE the scroll area (not sticky inside it), so
+            content can never appear below or behind it. */}
+        <div className="flex-1 flex flex-col overflow-hidden">
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-3">
+          <form onSubmit={form.handleSubmit(onSubmit)} className="flex-1 flex flex-col overflow-hidden">
+            <div className="flex-1 overflow-auto p-4 space-y-3">
             <div className={`grid grid-cols-1 gap-3 ${sheetPreviewUrl ? 'lg:grid-cols-[1fr_140px]' : 'lg:grid-cols-[1fr_280px]'}`}>
               <Card className="p-4">
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
@@ -3492,30 +3497,49 @@ export default function BillDetail() {
 
                 {isEditMode && (
                   <Card className="p-3">
-                    <div className="flex items-center justify-between gap-2 flex-wrap mb-2">
-                      <div className="flex items-center gap-1.5">
-                        <Wallet className="h-3.5 w-3.5 text-muted-foreground" />
-                        <h3 className="text-xs font-semibold">Payments</h3>
+                    {/* Collapsed by default — payment history is reference
+                        material, not something you read on every visit. The
+                        header carries the count and total so it stays useful
+                        while closed. */}
+                    <Collapsible open={paymentsOpen} onOpenChange={setPaymentsOpen}>
+                      <div className="flex items-center justify-between gap-2 flex-wrap">
+                        <CollapsibleTrigger asChild>
+                          <button
+                            type="button"
+                            className="flex items-center gap-1.5 min-w-0 hover:text-foreground text-left"
+                            data-testid="button-toggle-payments"
+                          >
+                            <ChevronDown
+                              className={`h-3.5 w-3.5 text-muted-foreground transition-transform ${paymentsOpen ? "rotate-180" : ""}`}
+                            />
+                            <Wallet className="h-3.5 w-3.5 text-muted-foreground" />
+                            <h3 className="text-xs font-semibold">Payments</h3>
+                            {billPayments.length > 0 && (
+                              <span className="text-data text-muted-foreground">
+                                {billPayments.filter((p) => !p.isVoided).length} · {formatCurrency(paid)}
+                              </span>
+                            )}
+                          </button>
+                        </CollapsibleTrigger>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => {
+                            setPaymentForm((f) => ({
+                              ...f,
+                              amount: due > 0 ? due.toFixed(2) : "",
+                              paymentDate: format(new Date(), "yyyy-MM-dd"),
+                            }));
+                            setPaymentDialogOpen(true);
+                          }}
+                          data-testid="button-record-payment"
+                        >
+                          <Plus className="h-3 w-3 mr-1" />
+                          Record
+                        </Button>
                       </div>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        className="gap-1"
-                        onClick={() => {
-                          setPaymentForm((f) => ({
-                            ...f,
-                            amount: due > 0 ? due.toFixed(2) : "",
-                            paymentDate: format(new Date(), "yyyy-MM-dd"),
-                          }));
-                          setPaymentDialogOpen(true);
-                        }}
-                        data-testid="button-record-payment"
-                      >
-                        <Plus className="h-3.5 w-3.5" />
-                        Record Payment
-                      </Button>
-                    </div>
+                      <CollapsibleContent className="mt-2">
                     {billPayments.length === 0 ? (
                       <EmptyState
                         variant="inline"
@@ -3575,15 +3599,17 @@ export default function BillDetail() {
                         ))}
                       </div>
                     )}
+                      </CollapsibleContent>
+                    </Collapsible>
                   </Card>
                 )}
 
-                {/* Sticky action bar — pinned to the bottom of the scroll area
-                    so Save (and Approve) are always reachable on a long bill
-                    instead of sitting below the fold. Negative margins cancel
-                    the scroll container's p-4 so it spans the full width. */}
+                </div>
+                {/* Action bar — a real footer outside the scroll area, so Save
+                    and Approve are always reachable on a long bill and no
+                    content can ever pass under or below them. */}
                 <div
-                  className="sticky bottom-0 z-20 -mx-4 -mb-4 px-4 py-2 border-t bg-background flex items-center justify-between gap-3 flex-wrap"
+                  className="shrink-0 px-4 py-2 border-t bg-background flex items-center justify-between gap-3 flex-wrap"
                   data-testid="bill-action-bar"
                 >
                   <div>
