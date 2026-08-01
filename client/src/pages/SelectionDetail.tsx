@@ -1352,38 +1352,38 @@ export default function SelectionDetail() {
                       className="text-left hover-elevate rounded-md p-2 -m-2 transition-colors cursor-pointer"
                       data-testid="button-edit-pricing"
                     >
-                      <div className="w-[200px] space-y-1.5">
-                        {/* Vertical read: allowance → selected → difference */}
-                        <div className="flex items-baseline justify-between gap-3">
-                          <span className="text-data text-muted-foreground uppercase tracking-wide">Allowance</span>
-                          <span className="text-sm font-semibold tabular-nums">
+                      <div className="w-[200px] space-y-2.5">
+                        {/* Label above value, matching the detail cells */}
+                        <div>
+                          <div className="text-data text-muted-foreground uppercase tracking-wide mb-0.5">Allowance</div>
+                          <div className="text-sm font-semibold tabular-nums">
                             {allowanceAmount > 0 ? formatCents(allowanceAmount) : "—"}
-                          </span>
+                          </div>
                         </div>
-                        <div className="flex items-baseline justify-between gap-3">
-                          <span className="text-data text-muted-foreground uppercase tracking-wide">Selected</span>
-                          <span className="text-sm font-semibold tabular-nums text-primary">
+                        <div>
+                          <div className="text-data text-muted-foreground uppercase tracking-wide mb-0.5">Selected</div>
+                          <div className="text-sm font-semibold tabular-nums text-primary">
                             {selectedPrice > 0 ? formatCents(selectedPrice) : "—"}
-                          </span>
+                          </div>
                         </div>
                         {/* Nothing to compare against without an allowance —
                             showing a "difference" there reads as overspend */}
                         {allowanceAmount > 0 && (
-                          <div className="flex items-baseline justify-between gap-3 pt-1.5 border-t border-border/70">
-                            <span className="text-data text-muted-foreground uppercase tracking-wide">Difference</span>
+                          <div className="pt-2 border-t border-border/70">
+                            <div className="text-data text-muted-foreground uppercase tracking-wide mb-0.5">Difference</div>
                             {(() => {
                               const difference = selectedPrice - allowanceAmount;
                               const isOver = difference > 0;
                               const isUnder = difference < 0;
                               return (
-                                <span className={cn(
+                                <div className={cn(
                                   "text-sm font-semibold tabular-nums",
                                   isOver && "text-status-danger",
                                   isUnder && "text-status-success",
                                   !isOver && !isUnder && "text-muted-foreground",
                                 )}>
                                   {isOver && "+"}{formatCents(Math.abs(difference))}
-                                </span>
+                                </div>
                               );
                             })()}
                           </div>
