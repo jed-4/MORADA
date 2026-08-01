@@ -1337,7 +1337,7 @@ export default function SelectionDetail() {
               </div>
 
               {/* Right column: the money, divided off and read vertically */}
-              <div className="w-[220px] shrink-0 self-stretch border-l border-border/70 pl-4 flex items-start gap-1">
+              <div className="w-[220px] shrink-0 self-stretch border-l border-border/70 pl-4">
                 {/* Pricing Section */}
                 <Popover open={pricingPopoverOpen} onOpenChange={(open) => {
                   setPricingPopoverOpen(open);
@@ -1505,16 +1505,6 @@ export default function SelectionDetail() {
                   </PopoverContent>
                 </Popover>
 
-                {/* Edit toggle */}
-                <button
-                  type="button"
-                  onClick={() => setIsEditingDetails(true)}
-                  className="h-7 w-7 rounded-md hover-elevate active-elevate-2 flex items-center justify-center text-muted-foreground"
-                  data-testid="button-toggle-edit-details"
-                  aria-label="Edit selection details"
-                >
-                  <Edit3 className="w-3.5 h-3.5" />
-                </button>
               </div>
               </div>
 
