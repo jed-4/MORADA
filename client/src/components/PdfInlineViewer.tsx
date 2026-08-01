@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { Document, Page } from "react-pdf";
+// Required for the selectable text spans to line up with the rendered page.
+import "react-pdf/dist/Page/TextLayer.css";
 import { ensurePdfWorker } from "@/lib/pdfWorker";
 
 interface PdfInlineViewerProps {
@@ -29,7 +31,7 @@ export default function PdfInlineViewer({ url }: PdfInlineViewerProps) {
           <Page
             key={i}
             pageNumber={i + 1}
-            renderTextLayer={false}
+            renderTextLayer
             renderAnnotationLayer={false}
             width={680}
             className="shadow-sm"

@@ -97,7 +97,7 @@ import {
 } from "@/components/ui/command";
 import { matchSupplier, type SupplierMatch } from "@shared/supplierMatcher";
 import { clampRoundingCents, MAX_ROUNDING_CENTS } from "@shared/billTotals";
-import { computeDueDate, describePaymentTerms } from "@shared/paymentTerms";
+import { computeDueDate, describePaymentTerms, PAYMENT_TERMS_OPTIONS } from "@shared/paymentTerms";
 import { DatePicker } from "@/components/DatePicker";
 import {
   Collapsible,
@@ -109,6 +109,7 @@ import { useUpload } from "@/hooks/use-upload";
 import { Badge } from "@/components/ui/badge";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { CostCodeSelect } from "@/components/CostCodeSelect";
+import { UnitSelect } from "@/components/UnitSelect";
 import type { Bill, Supplier, Project, CostCode, BillLineItem, BillApproval, BillPayment, BillLineItemAllowance, EstimateItem, PurchaseOrder } from "@shared/schema";
 
 const DocumentPreview = lazy(() => import("@/components/DocumentPreview"));
@@ -256,13 +257,21 @@ export default function BillDetail() {
   const [supplierDefaultsOpen, setSupplierDefaultsOpen] = useState(false);
   const [supplierDefaultsCostCode, setSupplierDefaultsCostCode] = useState<string>("");
   const [supplierDefaultsAccount, setSupplierDefaultsAccount] = useState<string>("");
-  // Track which of the two defaults the user actually edited this session, so
-  // saving one (e.g. cost code) never overwrites/clears the other.
+  // Payment terms drive the auto-filled due date (computeDueDate), so they
+  // belong in this dialog alongside the other per-supplier bill defaults.
+  const [supplierDefaultsTerms, setSupplierDefaultsTerms] = useState<string>("");
+  // Track which of the defaults the user actually edited this session, so
+  // saving one (e.g. cost code) never overwrites/clears the others.
   const [supplierDefaultsCostCodeDirty, setSupplierDefaultsCostCodeDirty] = useState(false);
   const [supplierDefaultsAccountDirty, setSupplierDefaultsAccountDirty] = useState(false);
+  const [supplierDefaultsTermsDirty, setSupplierDefaultsTermsDirty] = useState(false);
   const [defaultsAccountPickerOpen, setDefaultsAccountPickerOpen] = useState(false);
   const [defaultsAccountSearch, setDefaultsAccountSearch] = useState("");
-  const [defaultsPromptDismissed, setDefaultsPromptDismissed] = useState(false);
+  // Cost code and Xero account are offered as supplier defaults independently —
+  // accepting one must not silently save the other, and declining one must not
+  // hide the other.
+  const [costCodeDefaultDismissed, setCostCodeDefaultDismissed] = useState(false);
+  const [accountDefaultDismissed, setAccountDefaultDismissed] = useState(false);
   const [showUpdateDefaultsPrompt, setShowUpdateDefaultsPrompt] = useState(false);
   const [poSearchOpen, setPoSearchOpen] = useState(false);
   const [poSearchText, setPoSearchText] = useState("");
@@ -579,7 +588,7 @@ export default function BillDetail() {
             costCodeId: item.costCodeId || undefined,
             quantity: item.quantity,
             unitPrice: item.unitPrice / 100,
-            unit: "",
+            unit: (item as any).unit || "",
             tax: item.tax as "GST on expenses" | "No GST",
             account: item.account || "",
             total: item.total / 100,
@@ -749,7 +758,8 @@ export default function BillDetail() {
 
   // Reset per-bill dismissals whenever the supplier changes.
   useEffect(() => {
-    setDefaultsPromptDismissed(false);
+    setCostCodeDefaultDismissed(false);
+    setAccountDefaultDismissed(false);
     setShowUpdateDefaultsPrompt(false);
   }, [watchedSupplierId]);
 
@@ -798,6 +808,7 @@ export default function BillDetail() {
       supplierId: string;
       defaultCostCodeId?: string | null;
       xeroDefaultAccountCode?: string | null;
+      paymentTerms?: string | null;
       suppressDefaultsPrompt?: boolean;
     }) => {
       const { supplierId, ...patch } = payload;
@@ -832,10 +843,97 @@ export default function BillDetail() {
   // Suggest whenever the bill has a value that differs from (or fills in) the stored default.
   const suggestedCostCode = (mostUsedCostCode && mostUsedCostCode !== supplierDefaultCostCode) ? mostUsedCostCode : "";
   const suggestedAccount = (mostUsedAccount && mostUsedAccount !== supplierDefaultAccountCode) ? mostUsedAccount : "";
-  const showDefaultsPrompt = !!currentSupplier
-    && !defaultsPromptDismissed
-    && !currentSupplier.suppressDefaultsPrompt
-    && (!!suggestedCostCode || !!suggestedAccount);
+  const defaultsPromptable = !!currentSupplier && !currentSupplier.suppressDefaultsPrompt;
+  const showCostCodeDefaultPrompt = defaultsPromptable && !costCodeDefaultDismissed && !!suggestedCostCode;
+  const showAccountDefaultPrompt =
+    defaultsPromptable && !accountDefaultDismissed && !!suggestedAccount && xeroAccounts.length > 0;
+  // The post-save "update the saved default?" prompt only makes sense once the
+  // user has finished with the offers above.
+  const defaultsPromptDismissed = costCodeDefaultDismissed && accountDefaultDismissed;
+
+  // One "save this as a supplier default?" row. Rendered once per field so
+  // cost code and Xero account can be accepted or declined independently.
+  // A plain render function (not a component) so it can't remount mid-edit.
+  const renderDefaultsPrompt = (opts: {
+    testId: string;
+    fieldLabel: string;
+    valueLabel: string;
+    payload: { defaultCostCodeId?: string; xeroDefaultAccountCode?: string };
+    onDone: () => void;
+    saveTestId: string;
+    deferTestId: string;
+  }) => (
+    <div
+      className="flex flex-wrap items-center gap-2 px-3 py-2 border-b bg-muted/20 text-table"
+      data-testid={opts.testId}
+    >
+      <span className="text-muted-foreground">
+        Save {opts.fieldLabel}{" "}
+        <span className="font-medium text-foreground">{opts.valueLabel}</span>
+        {" "}as the default for {currentSupplier?.name || "this supplier"}?
+      </span>
+      <div className="flex items-center gap-1 ml-auto">
+        <Button
+          type="button"
+          size="sm"
+          variant="default"
+          className="h-6 text-table px-2"
+          disabled={updateSupplierDefaultsMutation.isPending}
+          onClick={() => {
+            if (!currentSupplier) return;
+            updateSupplierDefaultsMutation.mutate(
+              { supplierId: currentSupplier.id, ...opts.payload },
+              {
+                onSuccess: () => {
+                  opts.onDone();
+                  toast({
+                    title: "Default saved",
+                    description: `Future bills for ${currentSupplier.name} will use this ${opts.fieldLabel}.`,
+                  });
+                },
+              },
+            );
+          }}
+          data-testid={opts.saveTestId}
+        >
+          Save
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          className="h-6 text-table px-2"
+          onClick={opts.onDone}
+          data-testid={opts.deferTestId}
+        >
+          Not now
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          className="h-6 text-table px-2 text-muted-foreground"
+          disabled={updateSupplierDefaultsMutation.isPending}
+          onClick={() => {
+            if (!currentSupplier) return;
+            // Suppression is per-supplier, so it silences both rows.
+            updateSupplierDefaultsMutation.mutate(
+              { supplierId: currentSupplier.id, suppressDefaultsPrompt: true },
+              {
+                onSuccess: () => {
+                  setCostCodeDefaultDismissed(true);
+                  setAccountDefaultDismissed(true);
+                },
+              },
+            );
+          }}
+          data-testid="button-suppress-supplier-defaults"
+        >
+          Don't ask for this supplier
+        </Button>
+      </div>
+    </div>
+  );
 
   const addLineItem = () => {
     setLineItems([
@@ -1020,6 +1118,7 @@ export default function BillDetail() {
           description: item.description,
           costCodeId: item.costCodeId,
           quantity: item.quantity,
+          unit: item.unit || null,
           unitPrice: Math.round(item.unitPrice * 100),
           tax: item.tax,
           account: item.account,
@@ -1156,6 +1255,7 @@ export default function BillDetail() {
           description: item.description,
           costCodeId: item.costCodeId,
           quantity: item.quantity,
+          unit: item.unit || null,
           unitPrice: Math.round(item.unitPrice * 100),
           tax: item.tax,
           account: item.account,
@@ -2065,47 +2165,9 @@ export default function BillDetail() {
                 {formatCurrency(due)}
               </span>
             </div>
-            {isEditMode && bill?.status === "awaiting_approval" && canApprove && (
-              <>
-                <Button
-                  variant="default"
-                  size="sm"
-                  onClick={() => approveWithSave(false)}
-                  disabled={approveBusy}
-                  data-testid="button-approve"
-                  className="gap-1"
-                >
-                  {approveBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
-                  {updateMutation.isPending ? "Saving..." : approveMutation.isPending ? "Approving..." : hasUnsavedChanges ? "Save & approve" : "Approve"}
-                </Button>
-                {remainingInQueue.length > 0 && (
-                  <Button
-                    variant="default"
-                    size="sm"
-                    onClick={() => approveWithSave(true)}
-                    disabled={approveBusy}
-                    data-testid="button-approve-next"
-                    className="gap-1"
-                    title={`${remainingInQueue.length} more awaiting approval`}
-                  >
-                    <Check className="h-3.5 w-3.5" />
-                    Approve &amp; next
-                    <span className="opacity-70">({remainingInQueue.length})</span>
-                  </Button>
-                )}
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setRejectDialogOpen(true)}
-                  disabled={rejectMutation.isPending}
-                  data-testid="button-reject"
-                  className="gap-1"
-                >
-                  <X className="h-3.5 w-3.5" />
-                  Reject
-                </Button>
-              </>
-            )}
+            {/* Approve / Approve & next / Reject now live in the sticky action
+                bar at the bottom, next to Save — they were up here, far from
+                the save controls and easy to miss. */}
             {isEditMode && (
               <Button 
                 variant="ghost" 
@@ -2358,8 +2420,10 @@ export default function BillDetail() {
                             onClick={() => {
                               setSupplierDefaultsCostCode(selected.defaultCostCodeId || "");
                               setSupplierDefaultsAccount(selected.xeroDefaultAccountCode || selected.xeroDefaultAccount || "");
+                              setSupplierDefaultsTerms(selected.paymentTerms || "");
                               setSupplierDefaultsCostCodeDirty(false);
                               setSupplierDefaultsAccountDirty(false);
+                              setSupplierDefaultsTermsDirty(false);
                               setSupplierDefaultsOpen(true);
                             }}
                             data-testid="button-open-supplier-defaults"
@@ -2924,91 +2988,34 @@ export default function BillDetail() {
                 </div>
               </div>
 
-              {showDefaultsPrompt && (
-                <div className="flex flex-wrap items-center gap-2 px-3 py-2 border-b bg-muted/20 text-table" data-testid="prompt-save-supplier-defaults">
-                  <span className="text-muted-foreground">
-                    Save{" "}
-                    {suggestedCostCode && (
-                      <>
-                        cost code{" "}
-                        <span className="font-medium text-foreground">
-                          {(costCodes.find(c => c.id === suggestedCostCode)?.code) || ""} {(costCodes.find(c => c.id === suggestedCostCode)?.name) || ""}
-                        </span>
-                      </>
-                    )}
-                    {suggestedCostCode && suggestedAccount && " and "}
-                    {suggestedAccount && xeroAccounts.length > 0 && (
-                      <>
-                        Xero account{" "}
-                        <span className="font-medium text-foreground">
-                          {(() => {
-                            const a = xeroAccounts.find(x => x.code === suggestedAccount);
-                            return a ? `${a.code} - ${a.name}` : suggestedAccount;
-                          })()}
-                        </span>
-                      </>
-                    )}
-                    {" "}as defaults for {currentSupplier?.name || "this supplier"}?
-                  </span>
-                  <div className="flex items-center gap-1 ml-auto">
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="default"
-                      className="h-6 text-table px-2"
-                      disabled={updateSupplierDefaultsMutation.isPending}
-                      onClick={() => {
-                        if (!currentSupplier) return;
-                        const payload: {
-                          supplierId: string;
-                          defaultCostCodeId?: string | null;
-                          xeroDefaultAccountCode?: string | null;
-                        } = { supplierId: currentSupplier.id };
-                        if (suggestedCostCode) payload.defaultCostCodeId = suggestedCostCode;
-                        if (suggestedAccount && xeroAccounts.length > 0) payload.xeroDefaultAccountCode = suggestedAccount;
-                        updateSupplierDefaultsMutation.mutate(payload, {
-                          onSuccess: () => {
-                            setDefaultsPromptDismissed(true);
-                            toast({ title: "Defaults saved", description: `Future bills for ${currentSupplier.name} will use these.` });
-                          },
-                        });
-                      }}
-                      data-testid="button-save-supplier-defaults"
-                    >
-                      Save
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="ghost"
-                      className="h-6 text-table px-2"
-                      onClick={() => setDefaultsPromptDismissed(true)}
-                      data-testid="button-defer-supplier-defaults"
-                    >
-                      Not now
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="ghost"
-                      className="h-6 text-table px-2 text-muted-foreground"
-                      disabled={updateSupplierDefaultsMutation.isPending}
-                      onClick={() => {
-                        if (!currentSupplier) return;
-                        updateSupplierDefaultsMutation.mutate({
-                          supplierId: currentSupplier.id,
-                          suppressDefaultsPrompt: true,
-                        }, {
-                          onSuccess: () => setDefaultsPromptDismissed(true),
-                        });
-                      }}
-                      data-testid="button-suppress-supplier-defaults"
-                    >
-                      Don't ask for this supplier
-                    </Button>
-                  </div>
-                </div>
-              )}
+              {showCostCodeDefaultPrompt && renderDefaultsPrompt({
+                testId: "prompt-save-supplier-default-cost-code",
+                fieldLabel: "cost code",
+                valueLabel: (() => {
+                  const c = costCodes.find(c => c.id === suggestedCostCode);
+                  // `title`, not `name` — the cost-code schema has code + title,
+                  // so the old `.name` was always undefined and only the number
+                  // showed.
+                  return c ? [c.code, c.title].filter(Boolean).join(" – ") : suggestedCostCode;
+                })(),
+                payload: { defaultCostCodeId: suggestedCostCode },
+                onDone: () => setCostCodeDefaultDismissed(true),
+                saveTestId: "button-save-supplier-default-cost-code",
+                deferTestId: "button-defer-supplier-default-cost-code",
+              })}
+
+              {showAccountDefaultPrompt && renderDefaultsPrompt({
+                testId: "prompt-save-supplier-default-account",
+                fieldLabel: "Xero account",
+                valueLabel: (() => {
+                  const a = xeroAccounts.find(x => x.code === suggestedAccount);
+                  return a ? `${a.code} - ${a.name}` : suggestedAccount;
+                })(),
+                payload: { xeroDefaultAccountCode: suggestedAccount },
+                onDone: () => setAccountDefaultDismissed(true),
+                saveTestId: "button-save-supplier-default-account",
+                deferTestId: "button-defer-supplier-default-account",
+              })}
 
               {showUpdateDefaultsPrompt && currentSupplier && (
                 <div className="flex flex-wrap items-center gap-2 px-3 py-2 border-b bg-muted/20 text-table" data-testid="prompt-update-supplier-defaults">
@@ -3144,12 +3151,11 @@ export default function BillDetail() {
                       {
                         key: "unit", header: "Unit", width: getColWidth("unit"), truncate: false,
                         cell: (item, index) => (
-                          <input
+                          <UnitSelect
                             value={item.unit}
-                            onChange={(e) => updateLineItem(index, "unit", e.target.value)}
-                            placeholder="Unit"
-                            className="w-full h-7 px-1.5 text-table bg-transparent border-0 outline-none focus:ring-1 focus:ring-ring rounded-sm"
-                            data-testid={`input-unit-${index}`}
+                            onValueChange={(value) => updateLineItem(index, "unit", value)}
+                            triggerClassName="w-full h-7 px-1.5 text-table bg-transparent border-0 focus:ring-1 focus:ring-ring rounded-sm"
+                            data-testid={`select-unit-${index}`}
                           />
                         ),
                       },
@@ -3457,7 +3463,7 @@ export default function BillDetail() {
                           <div className="flex-1">
                             <div className="flex items-center gap-1.5">
                               <span className="text-xs font-medium">
-                                {approval.approvedById}
+                                {(approval as any).approvedByName || "Unknown user"}
                               </span>
                               <span
                                 className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-data font-medium ${
@@ -3572,7 +3578,14 @@ export default function BillDetail() {
                   </Card>
                 )}
 
-                <div className="flex items-center justify-between gap-3">
+                {/* Sticky action bar — pinned to the bottom of the scroll area
+                    so Save (and Approve) are always reachable on a long bill
+                    instead of sitting below the fold. Negative margins cancel
+                    the scroll container's p-4 so it spans the full width. */}
+                <div
+                  className="sticky bottom-0 z-20 -mx-4 -mb-4 px-4 py-2 border-t bg-background flex items-center justify-between gap-3 flex-wrap"
+                  data-testid="bill-action-bar"
+                >
                   <div>
                     {isEditMode && bill?.status === "draft" && (() => {
                       const validation = getSubmitForApprovalValidation();
@@ -3585,7 +3598,51 @@ export default function BillDetail() {
                       ) : null;
                     })()}
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {isEditMode && bill?.status === "awaiting_approval" && canApprove && (
+                      <>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setRejectDialogOpen(true)}
+                          disabled={rejectMutation.isPending}
+                          data-testid="button-reject"
+                          className="gap-1"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                          Reject
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="default"
+                          size="sm"
+                          onClick={() => approveWithSave(false)}
+                          disabled={approveBusy}
+                          data-testid="button-approve"
+                          className="gap-1"
+                        >
+                          {approveBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+                          {updateMutation.isPending ? "Saving..." : approveMutation.isPending ? "Approving..." : hasUnsavedChanges ? "Save & approve" : "Approve"}
+                        </Button>
+                        {remainingInQueue.length > 0 && (
+                          <Button
+                            type="button"
+                            variant="default"
+                            size="sm"
+                            onClick={() => approveWithSave(true)}
+                            disabled={approveBusy}
+                            data-testid="button-approve-next"
+                            className="gap-1"
+                            title={`${remainingInQueue.length} more awaiting approval`}
+                          >
+                            <Check className="h-3.5 w-3.5" />
+                            Approve &amp; next
+                            <span className="opacity-70">({remainingInQueue.length})</span>
+                          </Button>
+                        )}
+                      </>
+                    )}
                     {isEditMode && (bill as any)?.xeroInvoiceId && (
                       <div className="text-table text-muted-foreground" data-testid="text-xero-sync-status">
                         {(bill as any)?.xeroLastSyncStatus === "success" && (bill as any)?.xeroLastSyncAt && (
@@ -4119,22 +4176,49 @@ export default function BillDetail() {
                 />
               )}
             </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium">Payment Terms</label>
+              <Select
+                value={supplierDefaultsTerms || "__none__"}
+                onValueChange={(v) => {
+                  setSupplierDefaultsTerms(v === "__none__" ? "" : v);
+                  setSupplierDefaultsTermsDirty(true);
+                }}
+              >
+                <SelectTrigger className="text-xs" data-testid="select-supplier-defaults-terms">
+                  <SelectValue placeholder="Select payment terms" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">None</SelectItem>
+                  {PAYMENT_TERMS_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-[10px] text-muted-foreground">
+                Sets the due date automatically on new bills for this supplier.
+              </p>
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setSupplierDefaultsOpen(false)}>Cancel</Button>
             <Button
-              disabled={!currentSupplier || updateSupplierDefaultsMutation.isPending || (!supplierDefaultsCostCodeDirty && !supplierDefaultsAccountDirty)}
+              disabled={!currentSupplier || updateSupplierDefaultsMutation.isPending || (!supplierDefaultsCostCodeDirty && !supplierDefaultsAccountDirty && !supplierDefaultsTermsDirty)}
               onClick={() => {
                 if (!currentSupplier) return;
-                // Only send the field(s) the user actually changed — sending both
-                // would clear whichever one they left untouched.
+                // Only send the field(s) the user actually changed — sending all
+                // would clear whichever ones they left untouched.
                 const payload: {
                   supplierId: string;
                   defaultCostCodeId?: string | null;
                   xeroDefaultAccountCode?: string | null;
+                  paymentTerms?: string | null;
                 } = { supplierId: currentSupplier.id };
                 if (supplierDefaultsCostCodeDirty) payload.defaultCostCodeId = supplierDefaultsCostCode || null;
                 if (supplierDefaultsAccountDirty) payload.xeroDefaultAccountCode = supplierDefaultsAccount || null;
+                if (supplierDefaultsTermsDirty) payload.paymentTerms = supplierDefaultsTerms || null;
                 updateSupplierDefaultsMutation.mutate(payload, {
                   onSuccess: () => {
                     toast({ title: "Defaults saved" });
