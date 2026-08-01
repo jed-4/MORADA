@@ -306,10 +306,11 @@ interface DroppableTimeSlotProps {
   quarter: number; // 0, 15, 30, or 45
   children?: React.ReactNode;
   className?: string;
+  style?: React.CSSProperties;
   onClick?: () => void;
 }
 
-function DroppableTimeSlot({ date, hour, quarter, children, className, onClick }: DroppableTimeSlotProps) {
+function DroppableTimeSlot({ date, hour, quarter, children, className, style, onClick }: DroppableTimeSlotProps) {
   const slotId = `${format(date, "yyyy-MM-dd")}-${hour}:${quarter.toString().padStart(2, '0')}`;
   const { setNodeRef } = useDroppable({
     id: slotId,
@@ -321,6 +322,7 @@ function DroppableTimeSlot({ date, hour, quarter, children, className, onClick }
       ref={setNodeRef}
       onClick={onClick}
       className={className}
+      style={style}
     >
       {children}
     </div>
@@ -1162,7 +1164,7 @@ export function EnhancedCalendar({
             onScroll={handleHourLabelsScroll}
           >
             {hours.map((hour) => (
-              <div key={hour} className="h-10 p-1 text-label text-muted-foreground border-b border-border/50 text-center uppercase">
+              <div key={hour} className="p-1 text-label text-muted-foreground border-b border-border/50 text-center uppercase" style={{ height: HOUR_HEIGHT }}>
                 {format(new Date().setHours(hour, 0), "ha")}
               </div>
             ))}
@@ -1197,14 +1199,15 @@ export function EnhancedCalendar({
                     )}
                   >
                     {hours.map((hour) => (
-                      <div key={hour} className="relative h-10 border-b border-border/50">
+                      <div key={hour} className="relative border-b border-border/50" style={{ height: HOUR_HEIGHT }}>
                         {[0, 15, 30, 45].map((quarter) => (
                           <DroppableTimeSlot
                             key={`${hour}-${quarter}`}
                             date={date}
                             hour={hour}
                             quarter={quarter}
-                            className="h-2.5 hover:bg-primary/10 cursor-pointer transition-colors"
+                            className="hover:bg-primary/10 cursor-pointer transition-colors"
+                            style={{ height: HOUR_HEIGHT / 4 }}
                             onClick={() => onDateClick?.(date)}
                           />
                         ))}
