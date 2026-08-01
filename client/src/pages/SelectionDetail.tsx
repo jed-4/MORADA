@@ -19,7 +19,7 @@ import { useProject } from "@/contexts/ProjectContext";
 import { useAuth } from "@/hooks/use-auth";
 import { usePermission } from "@/hooks/use-permission";
 import { useSelectionStatusOptions } from "@/hooks/useSelectionStatusOptions";
-import { SelectionStatusPill, getDerivedStatus, SelectionThumbnail, isDecided } from "@/components/selections/selectionHelpers";
+import { SelectionStatusPill, getDerivedStatus, isDecided } from "@/components/selections/selectionHelpers";
 import { 
   insertSelectionOptionSchema, 
   insertSelectionSchema,
@@ -1314,28 +1314,6 @@ export default function SelectionDetail() {
                   <div className="w-full mt-2">
                     <div className="text-data text-muted-foreground uppercase tracking-wide mb-1">Description</div>
                     <div className="text-sm text-foreground">{selection.description}</div>
-                  </div>
-                )}
-
-                {/* Chosen product — the decision itself, not just its cost */}
-                {selectedOption && (
-                  <div className="w-full mt-2 min-w-0">
-                    <div className="text-data text-muted-foreground uppercase tracking-wide mb-1">Selected</div>
-                    <div className="flex items-center gap-2 min-w-0">
-                      <SelectionThumbnail
-                        category={selection.category}
-                        attachment={(selectedOption as any).attachments?.find((a: any) => a.fileType?.toLowerCase() === "image")}
-                        size={24}
-                      />
-                      <div className="min-w-0">
-                        <div className="text-sm font-medium truncate">{selectedOption.name}</div>
-                        {(selectedOption.brand || selectedOption.sku) && (
-                          <div className="text-[11px] text-muted-foreground truncate">
-                            {[selectedOption.brand, selectedOption.sku].filter(Boolean).join(" · ")}
-                          </div>
-                        )}
-                      </div>
-                    </div>
                   </div>
                 )}
 
