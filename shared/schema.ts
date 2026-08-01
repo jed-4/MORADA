@@ -591,8 +591,10 @@ export const insertNoteSchema = createInsertSchema(notes).omit({
   assigneeIds: z.array(z.string()).optional(), // Multiple assignee user IDs
   assigneeNames: z.array(z.string()).optional(), // Cached names for performance
   dueDate: z.coerce.date().optional(), // Coerce strings to dates for JSON compatibility
-  startTime: z.string().optional(), // HH:MM format
-  endTime: z.string().optional(), // HH:MM format
+  // Nullable so a timeboxed task can be returned to the unscheduled tray. Both
+  // columns are nullable in the DB; without null here the value cannot be cleared.
+  startTime: z.string().nullable().optional(), // HH:MM format
+  endTime: z.string().nullable().optional(), // HH:MM format
   completedAt: z.coerce.date().optional(), // Coerce strings to dates for JSON compatibility
   tags: z.array(z.string()).optional(),
   labels: z.array(z.string()).optional(),

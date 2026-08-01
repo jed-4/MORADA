@@ -2608,11 +2608,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const existingTask = await getOwnedTask(req, res, req.params.id);
       if (!existingTask) return;
 
-      // Preprocess: remove empty/null date/time/assignee fields to avoid validation errors
+      // Preprocess: drop empty-string date/time/assignee fields to avoid validation errors.
+      // startTime/endTime keep an explicit null — that is how a task is un-timeboxed and
+      // sent back to the unscheduled tray. Dropping null made clearing them impossible.
       const body = { ...req.body };
       if (body.dueDate === "" || body.dueDate === null) delete body.dueDate;
-      if (body.startTime === "" || body.startTime === null) delete body.startTime;
-      if (body.endTime === "" || body.endTime === null) delete body.endTime;
+      if (body.startTime === "") delete body.startTime;
+      if (body.endTime === "") delete body.endTime;
       if (body.assigneeId === "" || body.assigneeId === null) delete body.assigneeId;
 
       const updateSchema = insertTaskSchema.partial();

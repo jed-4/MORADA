@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery, useQueries, useMutation } from "@tanstack/react-query";
 import { format, isWithinInterval } from "date-fns";
 import { useTimezone, formatInTimezone, formatDateTimeInTimezone } from "@/hooks/useTimezone";
 import {
@@ -81,6 +81,21 @@ function deterministicProjectColor(seed: string): string {
 // Module-level constant — never changes, so safe as a useEffect dependency
 const DEFAULT_EVENT_TYPES = ["task", "schedule", "google-calendar"];
 
+/** Block length given to a task that had no time until it was dropped on the grid. */
+const DEFAULT_TIMEBOX_MINUTES = 30;
+
+const toMinutes = (time: string) => {
+  const [h, m] = time.split(":").map(Number);
+  return h * 60 + m;
+};
+
+const fromMinutes = (total: number) => {
+  const clamped = Math.max(0, Math.min(24 * 60 - 1, total));
+  const h = Math.floor(clamped / 60);
+  const m = clamped % 60;
+  return `${`${h}`.padStart(2, "0")}:${`${m}`.padStart(2, "0")}`;
+};
+
 // Helper function to normalize filter dates from API responses
 function normalizeFilterDates(filters: CalendarFiltersType): CalendarFiltersType {
   const normalized = { ...filters };
@@ -137,14 +152,46 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
   });
 
   // Fetch projects for color coding
-  const { data: projects = [] } = useQuery({
+  const { data: projects = [] } = useQuery<any[]>({
     queryKey: ["/api/projects"],
   });
 
   // Fetch task templates to filter out tasks from inactive templates
-  const { data: taskTemplates = [] } = useQuery({
+  const { data: taskTemplates = [] } = useQuery<any[]>({
     queryKey: ["/api/task-templates"],
   });
+
+  // Focus blocks for the displayed user. The API takes ?userId= for admins viewing
+  // someone else; only the block's owner may edit one, so editing is own-page only.
+  const { data: focusBlocks = [] } = useQuery<any[]>({
+    queryKey: ["/api/focus-blocks", displayedUserId],
+    queryFn: () =>
+      apiRequest(
+        isOwnPage ? "/api/focus-blocks" : `/api/focus-blocks?userId=${encodeURIComponent(displayedUserId)}`,
+        "GET"
+      ).catch(() => []),
+    enabled: !!displayedUserId,
+    staleTime: 60 * 1000,
+  });
+
+  // Each block's pinned/matching tasks, for the chips drawn inside the overlay.
+  const focusBlockTaskQueries = useQueries({
+    queries: focusBlocks.map((fb: any) => ({
+      queryKey: ["/api/focus-blocks", fb.id, "tasks"],
+      queryFn: () => apiRequest(`/api/focus-blocks/${fb.id}/tasks`, "GET").catch(() => []),
+      staleTime: 60 * 1000,
+      enabled: !!displayedUserId,
+    })),
+  });
+
+  const focusBlocksWithTasks = useMemo(
+    () =>
+      focusBlocks.map((fb: any, idx: number) => ({
+        ...fb,
+        tasks: (focusBlockTaskQueries[idx]?.data as any[]) || [],
+      })),
+    [focusBlocks, focusBlockTaskQueries]
+  );
 
   // Fetch field categories to get completed status option
   const { data: fieldCategories = [] } = useQuery<FieldCategoryWithOptions[]>({
@@ -192,13 +239,18 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
 
   // Task reschedule mutation (for drag-and-drop)
   const rescheduleTaskMutation = useMutation({
-    mutationFn: async ({ taskId, newDate, newTime }: { taskId: string; newDate: Date; newTime?: string }) => {
-      const updateData: any = { 
+    mutationFn: async ({ taskId, newDate, newTime, newEndTime }: { taskId: string; newDate: Date; newTime?: string; newEndTime?: string }) => {
+      const updateData: any = {
         dueDate: newDate.toISOString(),
         isModified: true, // Mark as moved from original template time
       };
       if (newTime !== undefined) {
         updateData.startTime = newTime;
+      }
+      // Carried alongside the start so a moved block keeps its length, and a newly
+      // timeboxed task gets one instead of relying on the renderer's 1-hour fallback.
+      if (newEndTime !== undefined) {
+        updateData.endTime = newEndTime;
       }
       return await apiRequest(`/api/tasks/${taskId}`, "PATCH", updateData);
     },
@@ -237,13 +289,97 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
     },
   });
 
+  // Clears a task's times, sending it back to the unscheduled tray.
+  const unscheduleTaskMutation = useMutation({
+    mutationFn: async (taskId: string) => {
+      return await apiRequest(`/api/tasks/${taskId}`, "PATCH", {
+        startTime: null,
+        endTime: null,
+        isModified: true,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+      toast({ title: "Task unscheduled" });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Failed to unschedule task",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
   // Handler for task reschedule from calendar drag-and-drop
   const handleEventReschedule = (eventId: string, newDate: Date, eventType: "task" | "schedule" | "meeting" | "google-calendar", newTime?: string) => {
     // Only allow rescheduling of tasks (not Google Calendar events)
+    if (eventType !== "task") return;
+
+    let newEndTime: string | undefined;
+    if (newTime) {
+      const task = userTasks.find((t: any) => t.id === eventId);
+      if (task?.startTime && task?.endTime) {
+        // Moving an existing block — keep its length rather than silently resizing it.
+        newEndTime = fromMinutes(toMinutes(newTime) + (toMinutes(task.endTime) - toMinutes(task.startTime)));
+      } else {
+        // Timeboxing an untimed task — length comes from the template's estimate.
+        const template = taskTemplates.find((t: any) => t.id === task?.taskTemplateId);
+        newEndTime = fromMinutes(toMinutes(newTime) + (template?.estimatedDuration || DEFAULT_TIMEBOX_MINUTES));
+      }
+    }
+
+    rescheduleTaskMutation.mutate({ taskId: eventId, newDate, newTime, newEndTime });
+  };
+
+  const handleEventUnschedule = (eventId: string, eventType: CalendarEvent["type"]) => {
     if (eventType === "task") {
-      rescheduleTaskMutation.mutate({ taskId: eventId, newDate, newTime });
+      unscheduleTaskMutation.mutate(eventId);
     }
   };
+
+  // Pins a task to a focus block. Read-modify-write because the API replaces the
+  // whole pinnedTaskIds array rather than appending.
+  const pinTaskToFocusBlockMutation = useMutation({
+    mutationFn: async ({ blockId, taskId }: { blockId: string; taskId: string }) => {
+      const block = focusBlocks.find((fb: any) => fb.id === blockId);
+      const current: string[] = (block?.pinnedTaskIds as string[]) || [];
+      if (current.includes(taskId)) return null;
+      return await apiRequest(`/api/focus-blocks/${blockId}`, "PATCH", {
+        pinnedTaskIds: [...current, taskId],
+      });
+    },
+    onSuccess: (result, { blockId }) => {
+      if (!result) return; // already pinned
+      queryClient.invalidateQueries({ queryKey: ["/api/focus-blocks"] });
+      const block = focusBlocks.find((fb: any) => fb.id === blockId);
+      toast({ title: block?.title ? `Added to ${block.title}` : "Added to focus block" });
+    },
+    // Deliberately quiet on failure: the task was still timeboxed, which is the
+    // action the user asked for. Pinning is a convenience on top of it.
+    onError: () => {},
+  });
+
+  const handleTaskDropInFocusBlock = (blockId: string, taskId: string) => {
+    if (!isOwnPage) return; // only a block's owner may edit it
+    pinTaskToFocusBlockMutation.mutate({ blockId, taskId });
+  };
+
+  // Dragging or resizing the block overlay itself.
+  const updateFocusBlockMutation = useMutation({
+    mutationFn: async ({ blockId, startTime, endTime }: { blockId: string; startTime: string; endTime: string }) =>
+      await apiRequest(`/api/focus-blocks/${blockId}`, "PATCH", { startTime, endTime }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/focus-blocks"] });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Failed to move focus block",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
 
   // Handler for task resize from calendar
   const handleEventResize = (eventId: string, startTime: string, endTime: string, eventType: "task" | "schedule" | "meeting" | "google-calendar") => {
@@ -498,6 +634,25 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
       return true;
     });
   }, [calendarEvents, filters]);
+
+  // Untimed tasks go to the tray to be timeboxed, rather than piling up in the
+  // all-day row. Everything else — including genuinely all-day schedule items and
+  // Google all-day events — stays on the grid.
+  const isUntimedTask = (event: CalendarEvent) =>
+    event.type === "task" && !event.startTime && !event.endTime;
+
+  const gridEvents = useMemo(
+    () => filteredEvents.filter(event => !isUntimedTask(event)),
+    [filteredEvents]
+  );
+
+  const unscheduledEvents = useMemo(
+    () =>
+      filteredEvents
+        .filter(isUntimedTask)
+        .sort((a, b) => a.startDate.getTime() - b.startDate.getTime()),
+    [filteredEvents]
+  );
 
   // Bands follow the same project filter as events, so filtering to one project
   // doesn't leave other projects' bands stranded above an empty grid.
@@ -1073,7 +1228,7 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
       {/* Calendar Content - No Card Wrapper, Flush with Header */}
       <div className="flex-1 min-h-0">
         <EnhancedCalendar
-          events={filteredEvents}
+          events={gridEvents}
           onEventClick={handleEventClick}
           onEventComplete={handleEventComplete}
           onEventReschedule={handleEventReschedule}
@@ -1085,6 +1240,16 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
           onViewChange={(newView) => setCalendarMode(newView)}
           hideInternalHeader={true}
           projectBands={filteredProjectBands}
+          unscheduledEvents={unscheduledEvents}
+          onEventUnschedule={handleEventUnschedule}
+          focusBlocks={focusBlocksWithTasks}
+          onTaskDropInFocusBlock={handleTaskDropInFocusBlock}
+          onFocusBlockUpdate={
+            isOwnPage
+              ? (blockId, startTime, endTime) =>
+                  updateFocusBlockMutation.mutate({ blockId, startTime, endTime })
+              : undefined
+          }
         />
       </div>
 

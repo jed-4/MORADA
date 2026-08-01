@@ -145,15 +145,34 @@ Also fixed in passing: `CalendarFilters` did not declare `projectIds`/`statuses`
 
 **Ships:** the flood is gone. This is the single biggest perceived improvement.
 
-### Phase 2 — Task timeboxing
+### Phase 2 — Task timeboxing ✅ *(done — branch `feat/calendar-phase0`)*
 
-Migration: add `duration_minutes` to `notes` (nullable).
+**No migration.** The planned `duration_minutes` on `notes` isn't needed: a timeboxed task's duration is already `endTime − startTime`, and the length for a *newly* dropped task comes from `taskTemplates.estimatedDuration` (falling back to 30 minutes). Adding a third source of truth for duration would invite drift.
 
-1. **Unscheduled tray** — a collapsible sidebar listing tasks that are due but untimed, instead of dumping them in the all-day row.
-2. **Drag onto the grid** to set `startTime`/`endTime`. Drop position sets start; `estimatedDuration` from the template (or a 30-min default) sets the length.
-3. Size existing timed tasks by real duration rather than a fixed block.
-4. Drag back to the tray to un-timebox.
-5. Reconcile with focus blocks — dropping a task inside a block adds it to `pinnedTaskIds`.
+1. ✅ **Unscheduled tray** — collapsible right-hand panel listing due-but-untimed tasks, which no longer land in the all-day row. Shows tasks due up to the end of the visible range, including overdue ones with a count. Collapses to a 7px rail with a badge.
+2. ✅ **Drag onto the grid** sets `startTime` *and* `endTime` — length from the task template's `estimatedDuration`, else 30 minutes.
+3. ✅ **Already done** — the week renderer has always sized blocks from `endTime − startTime`; no change needed.
+4. ✅ **Drag back to the tray** clears both times via a new unschedule mutation. *(Implemented; not yet exercised in the browser — see below.)*
+5. ✅ **Focus block reconciliation** — dropping a task on a slot covered by a focus block also pins it to that block. This first required *wiring focus blocks onto this calendar at all*: `EnhancedCalendar` has always had a focus-block overlay with drag and resize, but **nothing ever passed the `focusBlocks` prop**, so it was dead code. Blocks were only on `/my-calendar` (`PersonalCalendar`), which has its own renderer. UserCalendar now fetches them (`?userId=` when an admin views someone else) along with each block's tasks, renders the overlay, and allows moving/resizing — editing only on your own page, since the API requires block ownership.
+
+Pinning stays quiet on failure: the task was still timeboxed, which is what the user asked for. Unscheduling a task leaves it pinned — pinning records "this belongs to this block", which is independent of whether it currently has a time; unpin from the focus block panel.
+
+**Server fix required:** clearing a task's times was impossible. `PATCH /api/tasks/:id` deleted null `startTime`/`endTime` from the body ("to avoid validation errors") because `insertNoteSchema` typed them `z.string().optional()` without `.nullable()`. The tray's drag-back returned 200 and silently did nothing. Both are fixed; empty strings are still stripped, and the create path is unchanged.
+
+Also fixed: dragging an *existing* timed block used to move its start without its end, silently resizing it. Reschedule now carries the end time so a block keeps its length.
+
+**Collision detection changed** from dnd-kit's default (rectangle overlap) to pointer-first with a `closestCenter` fallback. The default compares the dragged element's box, so a full-width tray item grabbed near its right edge dropped a whole column to the left of the cursor — observed in testing. This affects on-grid event drags too, making them cursor-accurate.
+
+**Verified end to end** against the dev database, with a focus block on Wed 29 (13:00–15:00) and three fixture tasks:
+
+- The tray rendered five untimed tasks — fixtures plus three real ones that had been buried in the all-day row — each with project name and colour; the all-day row went empty.
+- Dragging a tray item into the focus block timeboxed it to `14:00`–`14:30` (the 30-minute default), and the chip rendered in the **Wed 29** column — confirming pointer-first collision lands drops where the cursor is.
+- The same drop pinned the task: the block's `pinnedTaskIds` contained it, and it appeared both on the grid and inside the block overlay.
+- Dragging the chip back to the tray cleared both times and returned it to the list.
+
+> A caution for anyone reading verification output: `dueDate` is a timestamp at **local** midnight, so a task on Wed 29 AEST serialises as `2026-07-28T14:00:00Z`. Slicing the ISO string looks like an off-by-one-day bug and isn't — check the rendered column instead.
+
+All fixtures were deleted afterwards and the dev DB confirmed clean.
 
 **Ships:** the calendar becomes a planner. This is the Notion Calendar workflow and the piece you're most keen on.
 
@@ -227,7 +246,7 @@ Migration: new `google_calendar_events` + `google_calendar_sync_state` tables.
 |---|---|---|---|
 | 0 | Correctness ✅ | — | Yes |
 | 1 | Schedule visibility ✅ | — | Needs 0 |
-| 2 | Task timeboxing | `duration_minutes` | Yes |
+| 2 | Task timeboxing ✅ | — | Yes |
 | 3 | Time bookings on schedule items | — | Needs 0 |
 | 4 | Google multi-calendar | — | Yes |
 | 5 | Google two-way write | — | Needs 4 |
