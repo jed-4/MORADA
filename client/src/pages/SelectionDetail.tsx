@@ -19,7 +19,7 @@ import { useProject } from "@/contexts/ProjectContext";
 import { useAuth } from "@/hooks/use-auth";
 import { usePermission } from "@/hooks/use-permission";
 import { useSelectionStatusOptions } from "@/hooks/useSelectionStatusOptions";
-import { SelectionStatusPill, getDerivedStatus, SelectionThumbnail } from "@/components/selections/selectionHelpers";
+import { SelectionStatusPill, getDerivedStatus, SelectionThumbnail, isDecided } from "@/components/selections/selectionHelpers";
 import { 
   insertSelectionOptionSchema, 
   insertSelectionSchema,
@@ -295,7 +295,7 @@ export default function SelectionDetail() {
       const rows: any[] = await apiRequest(`/api/projects/${effectiveProjectId}/allowances`, "GET");
       return (rows ?? []).map((r: any) => r?.item ?? r).filter(Boolean);
     },
-    enabled: pricingPopoverOpen && !!effectiveProjectId,
+    enabled: (pricingPopoverOpen || isEditingDetails) && !!effectiveProjectId,
   });
 
 
@@ -1283,9 +1283,43 @@ export default function SelectionDetail() {
                   <SelectionStatusPill derived={getDerivedStatus(selection as any)} />
                 </div>
 
+                {/* Category */}
+                <div>
+                  <div className="text-data text-muted-foreground uppercase tracking-wide mb-1">Category</div>
+                  <div className="text-sm font-medium">{selection.category || "—"}</div>
+                </div>
+                
+                {/* Location */}
+                <div>
+                  <div className="text-data text-muted-foreground uppercase tracking-wide mb-1">Location</div>
+                  <div className="text-sm font-medium flex items-center gap-1">
+                    <MapPin className="w-3 h-3 text-muted-foreground" />
+                    {selection.room || "—"}
+                  </div>
+                </div>
+                
+                {/* Deadline — irrelevant once the client has decided */}
+                {!isDecided(getDerivedStatus(selection as any)) && (
+                  <div>
+                    <div className="text-data text-muted-foreground uppercase tracking-wide mb-1">Deadline</div>
+                    <div className="text-sm font-medium flex items-center gap-1">
+                      <CalendarIcon className="w-3 h-3 text-muted-foreground" />
+                      {selection.deadline ? format(new Date(selection.deadline), "dd/MM/yyyy") : "—"}
+                    </div>
+                  </div>
+                )}
+
+                {/* Description */}
+                {selection.description && (
+                  <div className="w-full mt-2">
+                    <div className="text-data text-muted-foreground uppercase tracking-wide mb-1">Description</div>
+                    <div className="text-sm text-foreground">{selection.description}</div>
+                  </div>
+                )}
+
                 {/* Chosen product — the decision itself, not just its cost */}
                 {selectedOption && (
-                  <div className="min-w-0">
+                  <div className="w-full mt-2 min-w-0">
                     <div className="text-data text-muted-foreground uppercase tracking-wide mb-1">Selected</div>
                     <div className="flex items-center gap-2 min-w-0">
                       <SelectionThumbnail
@@ -1302,38 +1336,6 @@ export default function SelectionDetail() {
                         )}
                       </div>
                     </div>
-                  </div>
-                )}
-
-                {/* Category */}
-                <div>
-                  <div className="text-data text-muted-foreground uppercase tracking-wide mb-1">Category</div>
-                  <div className="text-sm font-medium">{selection.category || "—"}</div>
-                </div>
-                
-                {/* Location */}
-                <div>
-                  <div className="text-data text-muted-foreground uppercase tracking-wide mb-1">Location</div>
-                  <div className="text-sm font-medium flex items-center gap-1">
-                    <MapPin className="w-3 h-3 text-muted-foreground" />
-                    {selection.room || "—"}
-                  </div>
-                </div>
-                
-                {/* Deadline */}
-                <div>
-                  <div className="text-data text-muted-foreground uppercase tracking-wide mb-1">Deadline</div>
-                  <div className="text-sm font-medium flex items-center gap-1">
-                    <CalendarIcon className="w-3 h-3 text-muted-foreground" />
-                    {selection.deadline ? format(new Date(selection.deadline), "dd/MM/yyyy") : "—"}
-                  </div>
-                </div>
-
-                {/* Description */}
-                {selection.description && (
-                  <div className="w-full mt-2">
-                    <div className="text-data text-muted-foreground uppercase tracking-wide mb-1">Description</div>
-                    <div className="text-sm text-foreground">{selection.description}</div>
                   </div>
                 )}
 
@@ -1368,18 +1370,21 @@ export default function SelectionDetail() {
                       className="text-left hover-elevate rounded-md p-2 -m-2 transition-colors cursor-pointer"
                       data-testid="button-edit-pricing"
                     >
-                      <div className="flex items-start gap-6">
-                        <div className="flex flex-col gap-0.5">
-                          <div className="flex items-center gap-2">
-                            <span className="text-data text-muted-foreground uppercase tracking-wide w-16">Allowance</span>
-                            <span className="text-sm font-semibold">${(allowanceAmount / 100).toLocaleString('en-AU', { minimumFractionDigits: 2 })}</span>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <span className="text-data text-muted-foreground uppercase tracking-wide w-16">Selected</span>
-                            <span className="text-sm font-semibold text-primary">${(selectedPrice / 100).toLocaleString('en-AU', { minimumFractionDigits: 2 })}</span>
-                          </div>
+                      <div className="w-[200px] space-y-1.5">
+                        {/* Vertical read: allowance → selected → difference */}
+                        <div className="flex items-baseline justify-between gap-3">
+                          <span className="text-data text-muted-foreground uppercase tracking-wide">Allowance</span>
+                          <span className="text-sm font-semibold tabular-nums">
+                            {allowanceAmount > 0 ? formatCents(allowanceAmount) : "—"}
+                          </span>
                         </div>
-                        <div className="flex flex-col items-end">
+                        <div className="flex items-baseline justify-between gap-3">
+                          <span className="text-data text-muted-foreground uppercase tracking-wide">Selected</span>
+                          <span className="text-sm font-semibold tabular-nums text-primary">
+                            {selectedPrice > 0 ? formatCents(selectedPrice) : "—"}
+                          </span>
+                        </div>
+                        <div className="flex items-baseline justify-between gap-3 pt-1.5 border-t border-border/70">
                           <span className="text-data text-muted-foreground uppercase tracking-wide">Difference</span>
                           {(() => {
                             const difference = selectedPrice - allowanceAmount;
@@ -1387,12 +1392,12 @@ export default function SelectionDetail() {
                             const isUnder = difference < 0;
                             return (
                               <span className={cn(
-                                "text-sm font-semibold",
+                                "text-sm font-semibold tabular-nums",
                                 isOver && "text-status-danger",
                                 isUnder && "text-status-success",
-                                !isOver && !isUnder && "text-muted-foreground"
+                                !isOver && !isUnder && "text-muted-foreground",
                               )}>
-                                {isOver && "+"}${(Math.abs(difference) / 100).toLocaleString('en-AU', { minimumFractionDigits: 2 })}
+                                {isOver && "+"}{formatCents(Math.abs(difference))}
                               </span>
                             );
                           })()}
@@ -1657,33 +1662,38 @@ export default function SelectionDetail() {
                     />
                     <FormField
                       control={selectionForm.control}
-                      name="allowance"
+                      name="estimateItemId"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel className="text-data text-muted-foreground uppercase tracking-wide">Allowance ($)</FormLabel>
-                          <FormControl>
-                            <div className="relative">
-                              <span className="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">$</span>
-                              <Input
-                                type="number"
-                                step="0.01"
-                                min="0"
-                                className="h-9 pl-6 text-sm shadow-none border-border"
-                                value={field.value !== undefined && field.value !== null ? (Number(field.value) / 100).toString() : ""}
-                                onChange={(e) => {
-                                  const v = e.target.value;
-                                  if (v === "") {
-                                    field.onChange(undefined);
-                                  } else {
-                                    const parsed = parseFloat(v);
-                                    field.onChange(isNaN(parsed) ? undefined : Math.round(parsed * 100));
-                                  }
-                                  setHasUnsavedChanges(true);
-                                }}
-                                data-testid="input-allowance"
-                              />
-                            </div>
-                          </FormControl>
+                          <FormLabel className="text-data text-muted-foreground uppercase tracking-wide">Allowance</FormLabel>
+                          <Select
+                            value={field.value || "none"}
+                            onValueChange={(v) => {
+                              const id = v === "none" ? null : v;
+                              field.onChange(id);
+                              // The budget follows the linked estimate line;
+                              // no link means no allowance at all
+                              const picked = projectAllowances.find((a: any) => a.id === id);
+                              selectionForm.setValue("allowance", picked ? Number(picked.priceIncTax ?? 0) : null);
+                              setHasUnsavedChanges(true);
+                            }}
+                          >
+                            <FormControl>
+                              <SelectTrigger className="h-9 text-sm" data-testid="select-allowance-link-edit">
+                                <SelectValue placeholder="No allowance" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              <SelectItem value="none">No allowance</SelectItem>
+                              {projectAllowances.map((a: any) => (
+                                <SelectItem key={a.id} value={a.id}>
+                                  {a.name}
+                                  {a.allowance ? ` · ${a.allowance === "Prime Cost" ? "PC" : "PS"}` : ""}
+                                  {a.priceIncTax != null ? ` · ${formatCents(Number(a.priceIncTax))}` : ""}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
                           <FormMessage />
                         </FormItem>
                       )}
