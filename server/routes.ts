@@ -180,6 +180,7 @@ import { AI_MODEL, buildSystemPrompt, buildCircuitStartMessage } from "./ai/prom
 import { executeTool } from "./ai/executor";
 import { computeBillTotalsCents, billLineExGstCents, clampRoundingCents } from "@shared/billTotals";
 import { computeVariationTotals, computeVariationLinePriceCents } from "@shared/variationTotals";
+import { PENDING_VARIATION_STATUSES } from "@shared/projectMetrics";
 import { matchSupplier } from "@shared/supplierMatcher";
 import {
   fuzzyMatchTimesheetCostCode,
@@ -11187,7 +11188,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .from(variationsTbl)
         .where(
           and(
-            inArray(variationsTbl.status, ["pending", "action"]),
+            inArray(variationsTbl.status, [...PENDING_VARIATION_STATUSES]),
             inArray(variationsTbl.projectId, Array.from(companyProjectIds)),
           ),
         );
@@ -12063,25 +12064,43 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!companyId) return res.status(401).json({ error: "Unauthorized" });
 
       const { projects: projectsTbl, variations: variationsTbl, users: usersTbl } = await import("@shared/schema");
-      const [projectRows, variationRows, userRows] = await Promise.all([
-        db.select({ id: projectsTbl.id, name: projectsTbl.name }).from(projectsTbl).where(eq(projectsTbl.companyId, companyId)),
-        db.select().from(variationsTbl),
-        db.select({ id: usersTbl.id, firstName: usersTbl.firstName, lastName: usersTbl.lastName, email: usersTbl.email }).from(usersTbl),
+      // Scoped to this company's projects and users in SQL — previously both
+      // tables were read in full and filtered in JS, so the query grew with
+      // every other tenant's data.
+      const projectRows = await db
+        .select({ id: projectsTbl.id, name: projectsTbl.name })
+        .from(projectsTbl)
+        .where(eq(projectsTbl.companyId, companyId));
+      const projectsMap = new Map(projectRows.map((p: any) => [p.id, p.name as string]));
+      if (projectsMap.size === 0) return res.json({ variations: [], totalValue: 0, count: 0 });
+
+      const [variationRows, userRows] = await Promise.all([
+        db
+          .select()
+          .from(variationsTbl)
+          .where(
+            and(
+              inArray(variationsTbl.status, [...PENDING_VARIATION_STATUSES]),
+              inArray(variationsTbl.projectId, Array.from(projectsMap.keys())),
+            ),
+          ),
+        db
+          .select({ id: usersTbl.id, firstName: usersTbl.firstName, lastName: usersTbl.lastName, email: usersTbl.email })
+          .from(usersTbl)
+          .where(eq(usersTbl.companyId, companyId)),
       ]);
 
-      const projectsMap = new Map(projectRows.map((p: any) => [p.id, p.name as string]));
       const usersMap = new Map(userRows.map((u: any) => [u.id, u]));
       const now = Date.now();
 
-      const pending = variationRows
-        .filter((v: any) =>
-          (v.status === "pending" || v.status === "action") &&
-          projectsMap.has(v.projectId),
-        )
-        .sort((a: any, b: any) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+      const pending = [...variationRows].sort(
+        (a: any, b: any) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+      );
 
       const variations = pending.map((v: any) => {
-        const u = (v as any).approvedBy ? usersMap.get((v as any).approvedBy) : null;
+        // Who raised it. Was read from approvedBy — always null on a pending
+        // variation, so this rendered "—" for every row.
+        const u = (v as any).createdById ? usersMap.get((v as any).createdById) : null;
         const submittedBy = u
           ? `${(u as any).firstName || ""} ${(u as any).lastName || ""}`.trim() || (u as any).email
           : "—";
@@ -17401,6 +17420,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     balanceAmount: true,
     portalToken: true,
     portalSentAt: true,
+    portalViewedAt: true,
+    createdById: true,
     clientSignedName: true,
     clientSignedDate: true,
     clientSignedIp: true,
@@ -17710,6 +17731,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // the create schema, so they can't come from the client).
       const baseData = {
         ...validationResult.data,
+        createdById: (req.user as any)?.id ?? null,
         subtotal: 0,
         gstAmount: 0,
         totalAmount: 0,
@@ -18173,12 +18195,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
           sortOrder: item.sortOrder,
         }));
 
+      // Hidden lines are still real charges, so their value is returned as a
+      // single "not itemised" figure. Without it the visible rows wouldn't sum
+      // to the Total the client is asked to approve.
+      const hiddenItems = items.filter((item: any) => item.showInPdf === false);
+      const notItemisedIncCents = hiddenItems.length
+        ? computeVariationTotals({ items: hiddenItems }).totalCents
+        : 0;
+
       const publicBills = bills.map((bill: any) => ({
         id: bill.id,
         billNumber: bill.billNumber,
         supplierName: bill.supplierName ?? null,
         invoiceDate: bill.billDate,
         totalAmountCents: bill.total,
+      }));
+
+      // Attachments are exposed by index only — the raw object-storage path
+      // stays server-side and downloads go through the token-scoped route
+      // below (the /objects route requires a logged-in company member).
+      const attachmentList = Array.isArray((variation as any).attachments)
+        ? ((variation as any).attachments as any[])
+        : [];
+      const publicAttachments = attachmentList.map((a: any, index: number) => ({
+        index,
+        name: a?.name || `attachment-${index + 1}`,
+        size: a?.size ?? null,
+        type: a?.type ?? null,
       }));
 
       // Timesheet rows (names, hours, rates) stay server-side; the portal
@@ -18188,10 +18231,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
         0,
       );
 
+      // Record the client's first view. Fire-and-forget: a tracking write must
+      // never fail the page load. isSeen is kept in step so the builder's list
+      // column finally means "the client has seen it".
+      if (!(variation as any).portalViewedAt) {
+        storage
+          .updateVariation(variation.id, { portalViewedAt: new Date(), isSeen: true } as any)
+          .catch((err) => console.error("[portal] failed to record variation view:", err));
+      }
+
       res.json({
         variation: projectPortalVariation(variation),
         items: publicItems,
         bills: publicBills,
+        attachments: publicAttachments,
+        notItemisedIncCents,
         labourTotalCents,
         project: project
           ? {
@@ -18218,6 +18272,46 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error fetching portal variation:", error);
       res.status(500).json({ error: "Failed to fetch portal data" });
+    }
+  });
+
+  // Public portal — download an attachment by index.
+  //
+  // The normal /objects route requires a logged-in company member, so a client
+  // holding a portal link could never open the files attached to the variation
+  // they're being asked to approve. Access here is scoped by the token AND by
+  // the index being present on that specific variation — no caller-supplied
+  // paths, so this can't be used to reach any other object.
+  app.get("/api/portal/variation/:token/attachments/:index", async (req, res) => {
+    try {
+      const { token, index } = req.params;
+      const { variations } = await import("@shared/schema");
+      const [variation] = await db.select().from(variations).where(eq(variations.portalToken, token));
+      if (!variation) return res.status(404).json({ error: "Portal link not found" });
+
+      const attachments = Array.isArray((variation as any).attachments)
+        ? ((variation as any).attachments as any[])
+        : [];
+      const attachment = attachments[Number(index)];
+      const objectPath: string | undefined = attachment?.url;
+      if (!attachment || typeof objectPath !== "string" || !objectPath.startsWith("/objects/")) {
+        return res.status(404).json({ error: "Attachment not found" });
+      }
+
+      // Stored paths carry a /company/<id> segment for the authenticated route;
+      // the bucket itself is flat, so strip it before the lookup.
+      const normalised = objectPath.replace(/^\/objects\/company\/[^/]+/, "/objects");
+      const objectFile = await objectStorageService.getObjectEntityFile(normalised);
+      if (attachment.name) {
+        res.setHeader("Content-Disposition", `inline; filename="${String(attachment.name).replace(/"/g, "")}"`);
+      }
+      await objectStorageService.downloadObject(objectFile, res);
+    } catch (error: any) {
+      if (error?.name === "ObjectNotFoundError") {
+        return res.status(404).json({ error: "Attachment not found" });
+      }
+      console.error("Error serving portal attachment:", error);
+      res.status(500).json({ error: "Failed to download attachment" });
     }
   });
 
@@ -18322,10 +18416,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
         attachments,
       });
 
-      // Mark portalSentAt
-      await storage.updateVariation(variation.id, { portalSentAt: new Date() } as any);
+      // Mark portalSentAt, and advance an unissued variation to "pending".
+      // The portal presents an approve/reject signature panel, so once the
+      // client has the link the variation IS awaiting their decision —
+      // previously status stayed "draft" and the client was shown a Draft
+      // chip on a document they were being asked to sign. Approved/rejected
+      // variations keep their decided status.
+      const sendUpdates: Record<string, any> = { portalSentAt: new Date() };
+      if (variation.status === "draft" || variation.status === "action") {
+        sendUpdates.status = "pending";
+      }
+      await storage.updateVariation(variation.id, sendUpdates as any);
 
-      res.json({ success: true });
+      res.json({ success: true, status: sendUpdates.status ?? variation.status });
     } catch (error) {
       console.error("Error sending variation:", error);
       res.status(500).json({ error: "Failed to send variation" });

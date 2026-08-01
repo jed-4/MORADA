@@ -12,6 +12,8 @@ export default function VariationPortal() {
     variation: any;
     items: any[];
     bills: any[];
+    attachments: any[];
+    notItemisedIncCents: number;
     labourTotalCents: number;
     project: any;
     company: any;
@@ -61,6 +63,8 @@ export default function VariationPortal() {
           items={data.items}
           bills={data.bills}
           labourTotalCents={data.labourTotalCents}
+          notItemisedIncCents={data.notItemisedIncCents}
+          attachments={data.attachments}
           company={data.company}
           companySettings={companySettings}
           project={data.project}

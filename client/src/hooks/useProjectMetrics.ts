@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useProject } from "@/contexts/ProjectContext";
 import type { Estimate, Bill, Variation, ClientInvoice } from "@shared/schema";
-import { computeContractMetrics, type ContractMetrics } from "@shared/projectMetrics";
+import { computeContractMetrics, isPendingVariationStatus, type ContractMetrics } from "@shared/projectMetrics";
 
 export interface ProjectMetric {
   id: string;
@@ -338,20 +338,23 @@ export function useProjectMetrics() {
 
     // Variation status buckets (for counts + pending value)
     const approvedVariationsList = variations.filter(v => v.status === 'approved' || v.status === 'released');
-    const pendingVariationsList = variations.filter(v => v.status === 'pending' || v.status === 'draft');
+    const pendingVariationsList = variations.filter(v => isPendingVariationStatus(v.status));
     const rejectedVariationsList = variations.filter(v => v.status === 'rejected');
     const actionVariationsList = variations.filter(v => v.status === 'action');
     // "Active" = everything that still counts toward the contract (i.e. not rejected).
     const activeVariationsList = variations.filter(v => v.status !== 'rejected');
 
     const approvedChangeOrders = contractMetrics.approvedVariationsIncGst;
-    const pendingVariationValue = pendingVariationsList.reduce((sum, v) => {
-      return sum + (v.totalIncTax || 0);
-    }, 0) / 100;
 
     // Inc-GST value in cents, preferring totalAmount (inc-GST) and falling back
     // to totalIncTax so legacy rows that only populate one field still count.
     const variationIncGstCents = (v: any) => (v?.totalAmount ?? v?.totalIncTax) || 0;
+
+    // Was summing v.totalIncTax alone — a field variations don't have — so the
+    // "pending approval" value rendered $0 no matter what was outstanding.
+    const pendingVariationValue = pendingVariationsList.reduce((sum, v) => {
+      return sum + variationIncGstCents(v);
+    }, 0) / 100;
 
     // Combined value of all non-rejected variations (inc GST).
     const totalVariationValue = activeVariationsList.reduce((sum, v) => {

@@ -511,26 +511,37 @@ export default function Variations({ embedded }: { embedded?: boolean } = {}) {
         id: "seen",
         header: "Seen",
         enableSorting: false,
-        cell: ({ row }) => (
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              toggleSeenMutation.mutate({ id: row.original.id, isSeen: !row.original.isSeen });
-            }}
-            className={cn(
-              "p-0.5 rounded hover-elevate",
-              row.original.isSeen ? "text-foreground" : "text-muted-foreground/40",
-            )}
-            data-testid={`button-seen-${row.original.id}`}
-          >
-            {row.original.isSeen
-              ? <Eye className="w-3.5 h-3.5" />
-              : <EyeOff className="w-3.5 h-3.5" />}
-          </button>
-        ),
+        cell: ({ row }) => {
+          // Set automatically the first time the client opens their portal
+          // link; still click-toggleable as a manual override.
+          const viewedAt = (row.original as any).portalViewedAt as string | null | undefined;
+          const title = viewedAt
+            ? `Client viewed ${format(new Date(viewedAt), "d MMM yyyy 'at' h:mm a")}`
+            : row.original.isSeen
+              ? "Marked as seen"
+              : "Client hasn't opened this yet";
+          return (
+            <button
+              type="button"
+              title={title}
+              onClick={(e) => {
+                e.stopPropagation();
+                toggleSeenMutation.mutate({ id: row.original.id, isSeen: !row.original.isSeen });
+              }}
+              className={cn(
+                "p-0.5 rounded hover-elevate",
+                row.original.isSeen ? "text-foreground" : "text-muted-foreground/40",
+              )}
+              data-testid={`button-seen-${row.original.id}`}
+            >
+              {row.original.isSeen
+                ? <Eye className="w-3.5 h-3.5" />
+                : <EyeOff className="w-3.5 h-3.5" />}
+            </button>
+          );
+        },
         size: 60,
-        meta: { defaultWidth: 60, align: "center", headerLabel: "Seen", defaultHidden: true },
+        meta: { defaultWidth: 60, align: "center", headerLabel: "Seen by client", defaultHidden: true },
       },
       {
         id: "deadline",

@@ -2,6 +2,11 @@ import { useEffect, useState, useRef } from "react";
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { SendVariationDialog } from "@/components/variations/SendVariationDialog";
+import {
+  ImportBillsDialog,
+  ImportLabourDialog,
+  ImportAllowancesDialog,
+} from "@/components/variations/VariationImportDialogs";
 import { DocumentPreviewModal } from "@/components/ui/DocumentPreviewModal";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -34,7 +39,6 @@ import {
   ExternalLink,
 } from "lucide-react";
 import { CostCodeSelect } from "@/components/CostCodeSelect";
-import { VariationPreviewContent } from "@/components/variations/VariationPreviewContent";
 import { VariationDocument } from "@/components/variations/pdf/VariationDocument";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -197,19 +201,14 @@ export default function VariationDetail() {
 
   // Bills state
   const [selectedBillIds, setSelectedBillIds] = useState<string[]>([]);
-  const [modalBillIds, setModalBillIds] = useState<string[]>([]);
   const [billsModalOpen, setBillsModalOpen] = useState(false);
-  const [billsSearch, setBillsSearch] = useState("");
 
   // Labour state
   const [selectedTimesheetIds, setSelectedTimesheetIds] = useState<string[]>([]);
-  const [modalTimesheetIds, setModalTimesheetIds] = useState<string[]>([]);
   const [labourModalOpen, setLabourModalOpen] = useState(false);
-  const [labourSearch, setLabourSearch] = useState("");
 
   // Allowances modal state
   const [allowancesModalOpen, setAllowancesModalOpen] = useState(false);
-  const [allowancesSearch, setAllowancesSearch] = useState("");
 
   // Section collapse state
   const [billsCollapsed, setBillsCollapsed] = useState(true);
@@ -535,19 +534,7 @@ export default function VariationDetail() {
   const getSelectedBills = () => projectBills.filter((b: any) => selectedBillIds.includes(b.id));
   const getSelectedTimesheets = () => projectTimesheets.filter((t: any) => selectedTimesheetIds.includes(t.id));
 
-  const filteredBills = projectBills.filter((b: any) => {
-    if (!billsSearch) return true;
-    const q = billsSearch.toLowerCase();
-    return (b.billNumber || "").toLowerCase().includes(q) || (b.supplierName || "").toLowerCase().includes(q);
-  });
 
-  const filteredTimesheets = projectTimesheets.filter((t: any) => {
-    if (!labourSearch) return true;
-    const q = labourSearch.toLowerCase();
-    const name = getUserName(t.userId).toLowerCase();
-    const dateStr = t.date ? format(new Date(t.date), "d MMM yy").toLowerCase() : "";
-    return name.includes(q) || dateStr.includes(q);
-  });
 
   // ── Allowance line handlers ────────────────────────────────────────────────
 
@@ -1775,7 +1762,7 @@ export default function VariationDetail() {
                       rightEl={
                         <button
                           type="button"
-                          onClick={(e) => { e.stopPropagation(); setModalBillIds([...selectedBillIds]); setBillsModalOpen(true); }}
+                          onClick={(e) => { e.stopPropagation(); setBillsModalOpen(true); }}
                           className="h-6 px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
                           data-testid="button-import-bills"
                         >
@@ -1831,7 +1818,7 @@ export default function VariationDetail() {
                       rightEl={
                         <button
                           type="button"
-                          onClick={(e) => { e.stopPropagation(); setModalTimesheetIds([...selectedTimesheetIds]); setLabourModalOpen(true); }}
+                          onClick={(e) => { e.stopPropagation(); setLabourModalOpen(true); }}
                           className="h-6 px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
                           data-testid="button-import-labour"
                         >
@@ -2271,249 +2258,29 @@ export default function VariationDetail() {
         </div>
       </div>
 
-      {/* ── Import Bills Modal ── */}
-      <Dialog open={billsModalOpen} onOpenChange={setBillsModalOpen}>
-        <DialogContent className="max-w-3xl" data-testid="dialog-bills">
-          <DialogHeader>
-            <DialogTitle>Import Bills</DialogTitle>
-            <DialogDescription>Select bills to include in this variation.</DialogDescription>
-          </DialogHeader>
-          <div className="relative">
-            <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
-            <Input
-              placeholder="Search by bill number or supplier..."
-              value={billsSearch}
-              onChange={(e) => setBillsSearch(e.target.value)}
-              className="pl-8 h-8 text-sm"
-            />
-          </div>
-          <div className="rounded-md border overflow-hidden">
-            <div className="max-h-[360px] overflow-y-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow className="h-6 bg-muted/30 hover:bg-muted/30">
-                    <TableHead className="w-8 py-0 px-2" />
-                    <TableHead className="text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Bill No.</TableHead>
-                    <TableHead className="text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Supplier</TableHead>
-                    <TableHead className="text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Date</TableHead>
-                    <TableHead className="text-right text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Total</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredBills.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={5} className="text-center text-sm text-muted-foreground py-8">No bills found for this project.</TableCell>
-                    </TableRow>
-                  ) : filteredBills.map((b: any) => {
-                    const isChecked = modalBillIds.includes(b.id);
-                    return (
-                      <TableRow
-                        key={b.id}
-                        className="h-9 hover-elevate cursor-pointer"
-                        onClick={() => setModalBillIds(prev => isChecked ? prev.filter(id => id !== b.id) : [...prev, b.id])}
-                      >
-                        <TableCell className="w-8 py-1 px-2">
-                          <div className={cn("w-4 h-4 rounded border flex items-center justify-center", isChecked ? "bg-primary border-primary" : "border-input")}>
-                            {isChecked && <Check className="h-3 w-3 text-primary-foreground" />}
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-sm font-medium py-1 px-2">{b.billNumber}</TableCell>
-                        <TableCell className="text-sm text-muted-foreground py-1 px-2">{b.supplierName || "—"}</TableCell>
-                        <TableCell className="text-sm text-muted-foreground py-1 px-2">{b.billDate ? format(new Date(b.billDate), "d MMM yyyy") : "—"}</TableCell>
-                        <TableCell className="text-right text-sm font-medium py-1 px-2">{formatCurrency((b.total || 0) / 100)}</TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            </div>
-          </div>
-          <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => setBillsModalOpen(false)}>Cancel</Button>
-            <Button
-              onClick={() => {
-                setSelectedBillIds([...modalBillIds]);
-                setBillsModalOpen(false);
-              }}
-            >
-              Add {modalBillIds.length > 0 ? `${modalBillIds.length} ` : ""}to Variation
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ImportBillsDialog
+        open={billsModalOpen}
+        onOpenChange={setBillsModalOpen}
+        bills={projectBills}
+        selectedIds={selectedBillIds}
+        onConfirm={setSelectedBillIds}
+      />
 
-      {/* ── Import Labour Modal ── */}
-      <Dialog open={labourModalOpen} onOpenChange={setLabourModalOpen}>
-        <DialogContent className="max-w-3xl" data-testid="dialog-labour">
-          <DialogHeader>
-            <DialogTitle>Import Labour</DialogTitle>
-            <DialogDescription>Select approved timesheets to include in this variation.</DialogDescription>
-          </DialogHeader>
-          <div className="relative">
-            <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
-            <Input
-              placeholder="Search by staff name or date..."
-              value={labourSearch}
-              onChange={(e) => setLabourSearch(e.target.value)}
-              className="pl-8 h-8 text-sm"
-            />
-          </div>
-          <div className="rounded-md border overflow-hidden">
-            <div className="max-h-[360px] overflow-y-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow className="h-6 bg-muted/30 hover:bg-muted/30">
-                    <TableHead className="w-8 py-0 px-2" />
-                    <TableHead className="text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Date</TableHead>
-                    <TableHead className="text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Staff</TableHead>
-                    <TableHead className="text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Status</TableHead>
-                    <TableHead className="text-right text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Hours</TableHead>
-                    <TableHead className="text-right text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Total</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredTimesheets.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={6} className="text-center text-sm text-muted-foreground py-8">No timesheets found for this project.</TableCell>
-                    </TableRow>
-                  ) : filteredTimesheets.filter((t: any) => t.status === "approved" || t.status === "submitted").map((t: any) => {
-                    const isApproved = t.status === "approved";
-                    const isChecked = modalTimesheetIds.includes(t.id);
-                    return (
-                      <TableRow
-                        key={t.id}
-                        className={cn("h-9", isApproved ? "hover-elevate cursor-pointer" : "opacity-40 cursor-not-allowed")}
-                        onClick={() => {
-                          if (!isApproved) return;
-                          setModalTimesheetIds(prev => isChecked ? prev.filter(id => id !== t.id) : [...prev, t.id]);
-                        }}
-                      >
-                        <TableCell className="w-8 py-1 px-2">
-                          <div className={cn("w-4 h-4 rounded border flex items-center justify-center", isChecked && isApproved ? "bg-primary border-primary" : "border-input")}>
-                            {isChecked && isApproved && <Check className="h-3 w-3 text-primary-foreground" />}
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-sm tabular-nums py-1 px-2">{t.date ? format(new Date(t.date), "d MMM yy") : "—"}</TableCell>
-                        <TableCell className="text-sm font-medium py-1 px-2">{getUserName(t.userId)}</TableCell>
-                        <TableCell className="py-1 px-2">
-                          {isApproved
-                            ? <span className="flex items-center gap-1 text-xs"><div className="w-1.5 h-1.5 rounded-full bg-sage flex-shrink-0" />Approved</span>
-                            : <span className="flex items-center gap-1 text-xs"><div className="w-1.5 h-1.5 rounded-full bg-amber flex-shrink-0" />Pending</span>}
-                        </TableCell>
-                        <TableCell className="text-right text-sm tabular-nums py-1 px-2">{Number(t.duration).toFixed(1)}</TableCell>
-                        <TableCell className="text-right text-sm font-medium py-1 px-2">{formatCurrency(toNumber(t.total))}</TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            </div>
-          </div>
-          <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => setLabourModalOpen(false)}>Cancel</Button>
-            <Button
-              onClick={() => {
-                setSelectedTimesheetIds([...modalTimesheetIds]);
-                setLabourModalOpen(false);
-              }}
-              disabled={modalTimesheetIds.length === 0}
-            >
-              Add {modalTimesheetIds.length > 0 ? `${modalTimesheetIds.length} ` : ""}to Variation
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ImportLabourDialog
+        open={labourModalOpen}
+        onOpenChange={setLabourModalOpen}
+        timesheets={projectTimesheets}
+        selectedIds={selectedTimesheetIds}
+        getUserName={getUserName}
+        onConfirm={setSelectedTimesheetIds}
+      />
 
-      {/* ── Import Allowances Modal ── */}
-      <Dialog open={allowancesModalOpen} onOpenChange={setAllowancesModalOpen}>
-        <DialogContent className="max-w-2xl" data-testid="dialog-allowances">
-          <DialogHeader>
-            <DialogTitle>Import Project Allowances</DialogTitle>
-            <DialogDescription>
-              Select a finalized allowance (PC/PS item) to include the cost difference in this variation.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="relative">
-            <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
-            <Input
-              placeholder="Search allowances..."
-              value={allowancesSearch}
-              onChange={(e) => setAllowancesSearch(e.target.value)}
-              className="pl-8 h-8 text-sm"
-            />
-          </div>
-          <div className="space-y-2 max-h-96 overflow-y-auto">
-            {projectAllowances.length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-8">
-                No allowance items (PC/PS) found for this project.
-              </p>
-            ) : (
-              projectAllowances
-                .filter((a: any) => {
-                  const name = a.item?.name || "";
-                  const desc = a.item?.description || "";
-                  const q = allowancesSearch.toLowerCase();
-                  return !q || name.toLowerCase().includes(q) || desc.toLowerCase().includes(q);
-                })
-                .map((a: any) => {
-                  const item = a.item;
-                  const budgetedCents = item?.priceIncTax || 0;
-                  const actualCents = a.actualCost || 0;
-                  const varianceCents: number = a.variance ?? (actualCents - budgetedCents);
-                  const isOverBudget = varianceCents > 0;
-                  return (
-                    <div
-                      key={item.id}
-                      className="flex items-center gap-3 p-3 rounded-md border hover-elevate cursor-pointer"
-                      onClick={() => {
-                        // Variance is inc-GST cents (allowance tables are inc-GST);
-                        // adjustment lines are stored ex-GST and taxed like any
-                        // other line, so strip the GST here to keep the client
-                        // total equal to the variance.
-                        addAllowanceLine({
-                          description: `${item.name} — allowance adjustment`,
-                          amount: centsToDollars(exGstFromInc(varianceCents)),
-                        });
-                        setAllowancesModalOpen(false);
-                        setAllowancesSearch("");
-                      }}
-                      data-testid={`allowance-option-${item.id}`}
-                    >
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-medium truncate">{item.name}</span>
-                          <Badge variant="outline" className="text-data flex-shrink-0">{item.allowance}</Badge>
-                        </div>
-                        {item.description && (
-                          <p className="text-xs text-muted-foreground truncate mt-0.5">{item.description}</p>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-4 flex-shrink-0 text-right">
-                        <div>
-                          <p className="text-xs text-muted-foreground">Budgeted</p>
-                          <p className="text-sm font-medium tabular-nums">{formatCurrency(budgetedCents / 100)}</p>
-                        </div>
-                        <div>
-                          <p className="text-xs text-muted-foreground">Actual</p>
-                          <p className="text-sm font-medium tabular-nums">{formatCurrency(actualCents / 100)}</p>
-                        </div>
-                        <div>
-                          <p className="text-xs text-muted-foreground">Variance</p>
-                          <p className={cn("text-sm font-semibold tabular-nums", isOverBudget ? "text-status-warning" : varianceCents < 0 ? "text-status-success" : "")}>
-                            {varianceCents >= 0 ? "+" : ""}{formatCurrency(varianceCents / 100)}
-                          </p>
-                        </div>
-                        <Badge variant="outline" className="text-xs capitalize">
-                          {item.allowanceStatus || "pending"}
-                        </Badge>
-                      </div>
-                    </div>
-                  );
-                })
-            )}
-          </div>
-        </DialogContent>
-      </Dialog>
+      <ImportAllowancesDialog
+        open={allowancesModalOpen}
+        onOpenChange={setAllowancesModalOpen}
+        allowances={projectAllowances}
+        onSelect={addAllowanceLine}
+      />
 
       {/* ── Approve Dialog ── */}
       <Dialog open={approveDialogOpen} onOpenChange={setApproveDialogOpen}>
