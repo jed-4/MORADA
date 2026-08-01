@@ -31,6 +31,7 @@ import {
   Trash2,
   CircleCheck,
   AlertTriangle,
+  CalendarPlus,
 } from "lucide-react";
 import { format } from "date-fns";
 import { getPriorityStyle } from "@/lib/priorityConfig";
@@ -45,6 +46,13 @@ interface TaskDetailModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onEdit?: (task: Task) => void;
+}
+
+/** "14:00" -> "15:00", clamped so a late start can't roll past midnight. */
+function addOneHour(time: string): string {
+  const [h, m] = time.split(":").map(Number);
+  const end = Math.min(h * 60 + m + 60, 23 * 60 + 59);
+  return `${`${Math.floor(end / 60)}`.padStart(2, "0")}:${`${end % 60}`.padStart(2, "0")}`;
 }
 
 function getInitials(name: string | null | undefined): string {
@@ -245,6 +253,36 @@ export function TaskDetailModal({ event, taskId, open, onOpenChange, onEdit }: T
   const displayEndTime = event?.endTime;
   const displayStatus = taskDetails?.status || event?.status;
   const displayLocation = event?.location;
+  const bookingStart = displayStartTime || "09:00";
+
+  // Books an hour of the viewer's own time against this schedule item, as a linked
+  // task. Deliberately not "assign me to the item": a five-day work bar would then
+  // occupy five days of calendar for what is really a one-hour commitment.
+  const bookTimeMutation = useMutation({
+    mutationFn: async () =>
+      await apiRequest(`/api/schedule-items/${event?.id}/book-time`, "POST", {
+        // Inherit the item's own times when it has them (an inspection at 9), else
+        // a sensible default the user can then drag on the calendar.
+        startTime: bookingStart,
+        endTime: displayEndTime || addOneHour(bookingStart),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/schedule-items/calendar"] });
+      toast({
+        title: "Time booked",
+        description: "Added to your calendar. Drag it to adjust.",
+      });
+      onOpenChange(false);
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Failed to book time",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
 
   const handleNavigate = () => {
     if (isTask && displayProjectId) {
@@ -538,6 +576,18 @@ export function TaskDetailModal({ event, taskId, open, onOpenChange, onEdit }: T
             >
               <Pencil className="h-4 w-4 mr-2" />
               Edit
+            </Button>
+          )}
+          {isSchedule && event?.id && (
+            <Button
+              variant="default"
+              onClick={() => bookTimeMutation.mutate()}
+              disabled={bookTimeMutation.isPending}
+              title={`Adds ${bookingStart}–${displayEndTime || addOneHour(bookingStart)} to your calendar, linked to this item`}
+              data-testid="book-my-time"
+            >
+              <CalendarPlus className="h-4 w-4 mr-2" />
+              {bookTimeMutation.isPending ? "Booking…" : "Book my time"}
             </Button>
           )}
           <Button variant="outline" onClick={() => onOpenChange(false)} data-testid="close-event-detail">

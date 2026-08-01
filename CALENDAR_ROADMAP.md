@@ -176,16 +176,24 @@ All fixtures were deleted afterwards and the dev DB confirmed clean.
 
 **Ships:** the calendar becomes a planner. This is the Notion Calendar workflow and the piece you're most keen on.
 
-### Phase 3 — Book my time against a schedule item
+### Phase 3 — Book my time against a schedule item ✅ *(done — branch `feat/calendar-phase0`)*
 
-No new table. Extends the existing `taskIds` / `taskLinkOffsets` link.
+No new table, no migration. Extends the existing `taskIds` / `taskLinkOffsets` link.
 
-1. Widen the `taskLinkOffsets` shape to `{taskId, offsetDays, offsetFrom, startTime?, endTime?}` — additive, so existing rows keep working.
-2. Teach [`applyTaskOffsets`](client/src/pages/Schedule.tsx:782) to write `startTime`/`endTime` alongside `dueDate`, so a booking keeps its hour when the schedule item moves.
-3. Add a **"Book my time"** action on any schedule item — creates a linked task in one click, assigned to the current user, defaulting to a one-hour window on the item's start date, with the item's name as the title.
-4. Show existing bookings on the schedule item's detail panel, so it's obvious who has committed time to it.
-5. Make the offset cascade fire on **Gantt drags**, not just the edit-modal save path — otherwise bookings silently detach from reality when a schedule is reflowed. Verify against `computeMoveCascade`.
-6. On the calendar, render bookings with a subtle link affordance back to the source schedule item.
+1. ✅ `taskLinkOffsets` widened to `{taskId, offsetDays, offsetFrom, startTime?, endTime?}` — additive, so existing rows keep working. Times are only present on *bookings*; a plain due-date link is left alone.
+2. ✅ **Reflow moved to the server** ([`server/utils/scheduleTaskLinks.ts`](server/utils/scheduleTaskLinks.ts)) and hooked into both the single-item PATCH and the bulk endpoint, firing when dates *or* offsets change. It writes `startTime`/`endTime` alongside `dueDate` so a booking keeps its hour. The old client-side `applyTaskOffsets` in Schedule.tsx is deleted — it only ever covered that one modal.
+3. ✅ **"Book my time"** on any schedule item in the calendar's detail modal, via `POST /api/schedule-items/:id/book-time`. Creates a task assigned to you, inheriting the item's own times when it has them (an inspection at 9 books 9–10) else 09:00–10:00, and links it back. Adjust afterwards by dragging on the grid — Phase 2 made that cheap.
+4. ⬜ Show existing bookings on the schedule item's detail panel. Not done; the link exists in `taskIds` so this is presentation-only.
+5. ✅ Reflow now fires for **every** path — Schedule edit modal, single Gantt drag, and the bulk endpoint the Gantt uses for cascades.
+6. ⬜ Calendar affordance linking a booking back to its schedule item. Not done.
+
+**Two pre-existing bugs fixed to make this work:**
+- `notes.author` is NOT NULL and is filled by the task-create *route*, not `storage.createTask`. Any other server-side caller of `createTask` hits a constraint violation.
+- `POST /api/schedule-items/bulk` never validated its payload, so date strings reached Drizzle uncoerced and **any bulk date change threw `value.toISOString is not a function`**. It went unnoticed because the Gantt only ever sent `sortOrder` through it. Each item's `updates` now goes through `updateScheduleItemSchema`, the same schema the single PATCH uses.
+
+**Verified** against the dev database: booking an inspection produced a task assigned to the user at 09:00–10:00 on the item's date, with `taskLinkOffsets` carrying the window. Moving the item **29 Jul → 3 Aug** via single PATCH moved the booking and kept 09:00–10:00; moving it **3 Aug → 27 Jul** via the bulk endpoint did the same. Fixtures removed afterwards. No new type errors (1414 both sides).
+
+**Not verified in-browser:** the "Book my time" button click itself — the dev browser pane wedged with a zero-size viewport. The button is a thin wrapper over the endpoint above, and the one real risk (that a schedule event's `id` is the schedule item's id) was confirmed from the mapping in `UserCalendar`.
 
 **Ships:** "I'm at the frame inspection 9–10am Tuesday" — one hour on your calendar, not a five-day bar, and it follows the schedule when the job moves.
 
@@ -247,7 +255,7 @@ Migration: new `google_calendar_events` + `google_calendar_sync_state` tables.
 | 0 | Correctness ✅ | — | Yes |
 | 1 | Schedule visibility ✅ | — | Needs 0 |
 | 2 | Task timeboxing ✅ | — | Yes |
-| 3 | Time bookings on schedule items | — | Needs 0 |
+| 3 | Time bookings on schedule items ✅ | — | Needs 0 |
 | 4 | Google multi-calendar | — | Yes |
 | 5 | Google two-way write | — | Needs 4 |
 | 6 | Google local sync | 2 new tables | Needs 4 |

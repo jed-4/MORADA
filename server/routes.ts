@@ -186,6 +186,7 @@ import {
 } from "@shared/import";
 import { computeEstimateItemPrice, resolveEstimateStoredPrice } from "@shared/pricing";
 import { scheduleItemTier, computeProjectBands } from "@shared/scheduleVisibility";
+import { reflowLinkedTasks, scheduleDatesChanged } from "./utils/scheduleTaskLinks";
 import { z } from "zod";
 import { fromZodError } from "zod-validation-error";
 import { eq, and, asc, desc, or, isNull, isNotNull, sql, min, max, gte, lte, inArray, gt } from "drizzle-orm";
@@ -27260,6 +27261,89 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Book time against a schedule item.
+  //
+  // Assigning yourself to a five-day work bar would drop five days on your
+  // calendar when the real commitment is an hour. So instead of assigning, this
+  // creates a *linked task* carrying its own time window, attached to the item via
+  // taskIds/taskLinkOffsets. When the item moves, reflowLinkedTasks moves the
+  // booking with it and keeps the hour.
+  app.post("/api/schedule-items/:id/book-time", requireAuth, async (req: any, res) => {
+    try {
+      const user = req.user;
+      const userId = String(user?.dbUser?.id || user?.id || "");
+      if (!user?.companyId || !userId) {
+        return res.status(401).json({ error: "Unauthorized - no company context" });
+      }
+
+      const item = await getOwnedScheduleItem(req, res, req.params.id);
+      if (!item) return;
+
+      const { z } = await import("zod");
+      const bodySchema = z.object({
+        startTime: z.string().regex(/^([0-1][0-9]|2[0-3]):[0-5][0-9]$/).default("09:00"),
+        endTime: z.string().regex(/^([0-1][0-9]|2[0-3]):[0-5][0-9]$/).default("10:00"),
+        offsetDays: z.number().int().default(0),
+        offsetFrom: z.enum(["start", "end"]).default("start"),
+        title: z.string().optional(),
+      });
+      const parsed = bodySchema.safeParse(req.body ?? {});
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Validation failed", details: fromZodError(parsed.error).toString() });
+      }
+      const { startTime, endTime, offsetDays, offsetFrom, title } = parsed.data;
+
+      if (startTime >= endTime) {
+        return res.status(400).json({ error: "End time must be after start time" });
+      }
+
+      const reference = offsetFrom === "end" ? item.endDate : item.startDate;
+      if (!reference) {
+        return res.status(400).json({ error: "Schedule item has no date to book against" });
+      }
+      const dueDate = new Date(reference as any);
+      dueDate.setDate(dueDate.getDate() + offsetDays);
+
+      // Resolve the project so the booking is filed against the right job.
+      const schedule = item.scheduleId ? await storage.getScheduleById(item.scheduleId) : null;
+      const projectId = (item as any).projectId || schedule?.projectId || null;
+
+      const task = await storage.createTask({
+        title: title || item.name,
+        content: `Booked against schedule item: ${item.name}`,
+        type: "task",
+        status: "todo",
+        scope: projectId ? "project" : "personal",
+        taskContextType: projectId ? "project" : "business",
+        taskContextId: projectId || user.companyId,
+        projectId,
+        companyId: user.companyId,
+        // Server-managed on the normal create route; `author` is NOT NULL.
+        ownerId: user.id,
+        ownerName: user.email,
+        author: user.email,
+        assigneeIds: [userId],
+        dueDate,
+        startTime,
+        endTime,
+      } as any);
+
+      // Link it to the item so the booking follows future moves.
+      const existingTaskIds: string[] = Array.isArray((item as any).taskIds) ? (item as any).taskIds : [];
+      const existingOffsets: any[] = Array.isArray((item as any).taskLinkOffsets) ? (item as any).taskLinkOffsets : [];
+
+      await storage.updateScheduleItem(item.id, {
+        taskIds: [...existingTaskIds, task.id],
+        taskLinkOffsets: [...existingOffsets, { taskId: task.id, offsetDays, offsetFrom, startTime, endTime }],
+      } as any);
+
+      res.status(201).json(task);
+    } catch (error: any) {
+      console.error("Failed to book time against schedule item:", error);
+      res.status(500).json({ error: "Failed to book time", details: error.message });
+    }
+  });
+
   app.get("/api/schedule-items/:id", async (req, res) => {
     try {
       const item = await getOwnedScheduleItem(req, res, req.params.id);
@@ -27527,6 +27611,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const item = await storage.updateScheduleItem(req.params.id, updateData);
       if (!item) {
         return res.status(404).json({ error: "Schedule item not found" });
+      }
+
+      // Move linked tasks with the item. Done here rather than in the callers so
+      // Gantt drags get it too — they PATCH dates directly and never ran the
+      // client-side offset pass that the Schedule edit modal used to do.
+      // Also fires when only the offsets changed — retargeting a link without
+      // moving the item still has to move the task.
+      if (scheduleDatesChanged(originalItem as any, item as any) || updateData.taskLinkOffsets !== undefined) {
+        try {
+          await reflowLinkedTasks(item as any, storage);
+        } catch (reflowError) {
+          console.error("Failed to reflow tasks linked to schedule item:", reflowError);
+        }
       }
 
       // Recalculate parent progress if this item has a parent
@@ -27863,7 +27960,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
-      const updatedItems = await storage.bulkUpdateScheduleItems(items);
+      // Run each update through the same schema the single-item PATCH uses. Without
+      // this, date strings reached Drizzle uncoerced and any bulk date change threw
+      // "value.toISOString is not a function" — the Gantt only ever sent sortOrder
+      // through here, so it went unnoticed.
+      const validatedItems: any[] = [];
+      for (const item of items) {
+        if (!item?.id) continue;
+        const parsed = updateScheduleItemSchema.safeParse(item.updates ?? {});
+        if (!parsed.success) {
+          return res.status(400).json({
+            error: "Validation failed",
+            details: `Item ${item.id}: ${fromZodError(parsed.error).toString()}`,
+          });
+        }
+        validatedItems.push({ id: item.id, updates: parsed.data });
+      }
+
+      const updatedItems = await storage.bulkUpdateScheduleItems(validatedItems);
+
+      // Same linked-task reflow as the single-item PATCH — the Gantt drives
+      // cascades through this endpoint, so bookings would otherwise detach.
+      for (const updated of updatedItems) {
+        const original = originalItemsMap.get(updated.id);
+        if (original && scheduleDatesChanged(original, updated as any)) {
+          try {
+            await reflowLinkedTasks(updated as any, storage);
+          } catch (reflowError) {
+            console.error("Failed to reflow tasks linked to schedule item:", reflowError);
+          }
+        }
+      }
 
       // Recalculate parent progress for all affected parents
       try {

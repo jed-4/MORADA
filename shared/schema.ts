@@ -3687,6 +3687,10 @@ export const insertScheduleItemSchema = createInsertSchema(scheduleItems).omit({
     taskId: z.string(),
     offsetDays: z.number().int().default(0),
     offsetFrom: z.enum(["start", "end"]).default("start"),
+    // Present when the link is a *time booking* rather than just a due date —
+    // "I'm at this inspection 09:00-10:00" — so the hour survives the item moving.
+    startTime: z.string().nullable().optional(),
+    endTime: z.string().nullable().optional(),
   })).optional(),
   attachments: z.array(z.object({
     url: z.string(),
