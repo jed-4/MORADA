@@ -1,13 +1,18 @@
 import { useState } from "react";
 import { format } from "date-fns";
 import { useMutation } from "@tanstack/react-query";
-import { CheckCircle, XCircle, Pen, Building2 } from "lucide-react";
+import { CheckCircle, XCircle, Pen, Building2, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import type { Variation, VariationItem } from "@shared/schema";
+import {
+  buildVariationDocumentModel,
+  variationStatusPresentation,
+  type VariationDocAttachment,
+} from "./variationDocumentModel";
 
 interface AttachmentItem {
   name: string;
@@ -57,6 +62,11 @@ export interface VariationPreviewProps {
   };
   items: VariationItem[];
   bills?: Bill[];
+  /** On-charged labour total in ex-GST cents (aggregated server-side — raw timesheets never reach the portal). */
+  labourTotalCents?: number | null;
+  /** Inc-GST value of lines hidden from the client, rendered as one row so the visible breakdown reconciles. */
+  notItemisedIncCents?: number;
+  attachments?: VariationDocAttachment[];
   company?: Company | null;
   companySettings?: CompanySettings | null;
   project?: Project | null;
@@ -81,22 +91,8 @@ function hexToRgba(hex: string, alpha: number): string {
   return `rgba(${r},${g},${b},${alpha})`;
 }
 
-const TYPE_LABELS: Record<string, string> = {
-  material: "Materials",
-  labour: "Labour",
-  subcontractor: "Subcontractor",
-  fee: "Fee / Overhead",
-  allowance: "Allowances",
-  other: "Other",
-};
-
-const STATUS_STYLES: Record<string, { bg: string; text: string; label: string }> = {
-  draft: { bg: "#e5e7eb", text: "#374151", label: "Draft" },
-  action: { bg: "#fef3c7", text: "#92400e", label: "Action Required" },
-  pending: { bg: "#dbeafe", text: "#1e40af", label: "Pending Approval" },
-  approved: { bg: "#d1fae5", text: "#065f46", label: "Approved" },
-  rejected: { bg: "#fee2e2", text: "#991b1b", label: "Rejected" },
-};
+// Type labels, status wording and the document model all come from
+// variationDocumentModel so this page and the PDF can't drift apart.
 
 function SignatureCard({
   title,
@@ -224,6 +220,9 @@ export function VariationPreviewContent({
   variation,
   items,
   bills = [],
+  labourTotalCents = 0,
+  notItemisedIncCents,
+  attachments = [],
   company,
   companySettings,
   project,
@@ -234,23 +233,20 @@ export function VariationPreviewContent({
   const { toast } = useToast();
   const primaryColor = companySettings?.brandColor || "#6d28d9";
 
-  const costItems = items.filter((i) => (i as any).itemType !== "allowance");
-  const allowanceItems = items.filter((i) => (i as any).itemType === "allowance");
+  // Shared with the PDF so both documents group, label and total identically.
+  const docModel = buildVariationDocumentModel({
+    variation,
+    items,
+    bills,
+    labourExCents: labourTotalCents ?? 0,
+    notItemisedIncCents,
+  });
 
-  const visibleCostItems = costItems.filter((i) => (i as any).showInPdf !== false);
+  const subtotalCents = docModel.subtotalCents;
+  const gstCents = docModel.gstCents;
+  const totalCents = docModel.totalCents;
 
-  const typeGroups = visibleCostItems.reduce<Record<string, VariationItem[]>>((acc, item) => {
-    const type = (item as any).type || "other";
-    if (!acc[type]) acc[type] = [];
-    acc[type].push(item);
-    return acc;
-  }, {});
-
-  const subtotalCents = variation.subtotal ?? 0;
-  const gstCents = variation.gstAmount ?? 0;
-  const totalCents = variation.totalAmount ?? 0;
-
-  const statusStyle = STATUS_STYLES[variation.status ?? "draft"] ?? STATUS_STYLES.draft;
+  const statusStyle = variationStatusPresentation(variation.status);
 
   const signMutation = useMutation({
     mutationFn: async (body: {
@@ -264,15 +260,20 @@ export function VariationPreviewContent({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      if (!res.ok) throw new Error("Sign failed");
+      if (!res.ok) {
+        // Surface the server's guard messages (already signed / finalised /
+        // deadline passed) instead of a generic failure.
+        const errBody = await res.json().catch(() => ({}));
+        throw new Error(errBody.error || "Sign failed");
+      }
       return res.json();
     },
     onSuccess: (data, vars) => {
       toast({ title: vars.action === "approve" ? "Variation approved" : "Rejection submitted" });
       onSigned?.(vars);
     },
-    onError: () => {
-      toast({ title: "Failed to sign", variant: "destructive" });
+    onError: (error: Error) => {
+      toast({ title: "Failed to sign", description: error.message, variant: "destructive" });
     },
   });
 
@@ -395,7 +396,7 @@ export function VariationPreviewContent({
         )}
 
         {/* Cost Lines grouped by type */}
-        {Object.keys(typeGroups).length > 0 && (
+        {docModel.costGroups.length > 0 && (
           <div>
             <h2 className="text-xs font-semibold text-muted uppercase tracking-wider mb-3">Cost Lines</h2>
             <div className="border border-border rounded-lg overflow-hidden">
@@ -404,112 +405,95 @@ export function VariationPreviewContent({
                 className="grid text-xs font-semibold text-white px-3 py-2"
                 style={{
                   backgroundColor: primaryColor,
-                  gridTemplateColumns: "1fr 80px 90px 70px 90px",
+                  gridTemplateColumns: "1fr 80px 100px 100px",
                 }}
               >
                 <span>Description</span>
                 <span className="text-right">Qty</span>
-                <span className="text-right">Unit Cost</span>
-                <span className="text-right">Markup</span>
+                <span className="text-right">Unit Price</span>
                 <span className="text-right">Amt inc. GST</span>
               </div>
 
-              {Object.entries(typeGroups).map(([type, typeItems]) => {
-                const typeTotal = typeItems.reduce((sum, item) => {
-                  const exTax = (item.quantity ?? 1) * ((item.unitCostExTax ?? (item.unitPrice ?? 0) / 100));
-                  const markup = exTax * ((item.markupPercent ?? 0) / 100);
-                  const withMarkup = exTax + markup;
-                  const incTax = (item as any).taxable !== false ? withMarkup * 1.1 : withMarkup;
-                  return sum + incTax;
-                }, 0);
+              {docModel.costGroups.map((group) => (
+                <div key={group.type}>
+                  {/* Type header row */}
+                  <div className="px-3 py-1.5 bg-muted border-t border-border flex items-center justify-between">
+                    <span className="text-xs font-semibold text-muted uppercase tracking-wide">
+                      {group.label}
+                    </span>
+                    <span className="text-xs font-semibold text-secondary">
+                      {formatCents(group.totalIncCents)}
+                    </span>
+                  </div>
 
-                return (
-                  <div key={type}>
-                    {/* Type header row */}
-                    <div className="px-3 py-1.5 bg-muted border-t border-border flex items-center justify-between">
-                      <span className="text-xs font-semibold text-muted uppercase tracking-wide">
-                        {TYPE_LABELS[type] ?? type}
+                  {group.lines.map((line, idx) => (
+                    <div
+                      key={line.id}
+                      className="grid px-3 py-2 border-t border-border text-sm"
+                      style={{
+                        backgroundColor: idx % 2 === 1 ? "#f9fafb" : "#ffffff",
+                        gridTemplateColumns: "1fr 80px 100px 100px",
+                      }}
+                    >
+                      <div className="pr-2 min-w-0">
+                        {line.name && <span className="block text-foreground font-semibold truncate">{line.name}</span>}
+                        {line.description && <span className="block text-muted text-xs truncate">{line.description}</span>}
+                        {!line.name && !line.description && <span className="text-muted">—</span>}
+                      </div>
+                      <span className="text-right text-secondary text-xs tabular-nums">
+                        {line.quantity} {line.unitType || ""}
                       </span>
-                      <span className="text-xs font-semibold text-secondary">
-                        {new Intl.NumberFormat("en-AU", { style: "currency", currency: "AUD" }).format(typeTotal)}
+                      <span className="text-right text-secondary text-xs tabular-nums">
+                        {formatCents(line.unitPriceExCents)}
+                      </span>
+                      <span className="text-right text-foreground font-medium text-xs tabular-nums">
+                        {formatCents(line.amountIncCents)}
                       </span>
                     </div>
+                  ))}
+                </div>
+              ))}
 
-                    {typeItems.map((item, idx) => {
-                      const unitCost = item.unitCostExTax ?? (item.unitPrice ?? 0) / 100;
-                      const qty = item.quantity ?? 1;
-                      const exTax = qty * unitCost;
-                      const markup = exTax * ((item.markupPercent ?? 0) / 100);
-                      const withMarkup = exTax + markup;
-                      const incTax = (item as any).taxable !== false ? withMarkup * 1.1 : withMarkup;
-                      const isAlt = idx % 2 === 1;
-
-                      return (
-                        <div
-                          key={item.id}
-                          className="grid px-3 py-2 border-t border-border text-sm"
-                          style={{
-                            backgroundColor: isAlt ? "#f9fafb" : "#ffffff",
-                            gridTemplateColumns: "1fr 80px 90px 70px 90px",
-                          }}
-                        >
-                          <div className="pr-2 min-w-0">
-                            {(item as any).name && <span className="block text-foreground font-semibold truncate">{(item as any).name}</span>}
-                            {item.description && <span className="block text-muted text-xs truncate">{item.description}</span>}
-                            {!(item as any).name && !item.description && <span className="text-muted">—</span>}
-                          </div>
-                          <span className="text-right text-secondary text-xs tabular-nums">
-                            {qty} {(item as any).unitType || ""}
-                          </span>
-                          <span className="text-right text-secondary text-xs tabular-nums">
-                            {new Intl.NumberFormat("en-AU", { style: "currency", currency: "AUD" }).format(unitCost)}
-                          </span>
-                          <span className="text-right text-secondary text-xs tabular-nums">
-                            {item.markupPercent ? `${item.markupPercent}%` : "—"}
-                          </span>
-                          <span className="text-right text-foreground font-medium text-xs tabular-nums">
-                            {new Intl.NumberFormat("en-AU", { style: "currency", currency: "AUD" }).format(incTax)}
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                );
-              })}
+              {/* Value the builder chose not to itemise — shown so the rows
+                  above still add up to the Total below. */}
+              {docModel.notItemisedIncCents !== 0 && (
+                <div className="grid px-3 py-2 border-t border-border text-sm bg-white"
+                  style={{ gridTemplateColumns: "1fr 100px" }}>
+                  <span className="text-foreground">Additional works (not itemised)</span>
+                  <span className="text-right text-foreground font-medium text-xs tabular-nums">
+                    {formatCents(docModel.notItemisedIncCents)}
+                  </span>
+                </div>
+              )}
             </div>
           </div>
         )}
 
         {/* Allowances */}
-        {allowanceItems.length > 0 && (
+        {docModel.allowanceLines.length > 0 && (
           <div>
             <h2 className="text-xs font-semibold text-muted uppercase tracking-wider mb-3">Allowances</h2>
             <div className="border border-border rounded-lg overflow-hidden">
-              {allowanceItems.map((item, idx) => {
-                const amount = (item.unitPrice ?? 0) / 100;
-                const isAlt = idx % 2 === 1;
-                return (
-                  <div
-                    key={item.id}
-                    className="flex items-center justify-between px-3 py-2 border-t border-border text-sm"
-                    style={{ backgroundColor: isAlt ? "#f9fafb" : "#ffffff" }}
+              {docModel.allowanceLines.map((line, idx) => (
+                <div
+                  key={line.id}
+                  className="flex items-center justify-between px-3 py-2 border-t border-border text-sm"
+                  style={{ backgroundColor: idx % 2 === 1 ? "#f9fafb" : "#ffffff" }}
+                >
+                  <span className="text-foreground">{line.description}</span>
+                  <span
+                    className={`font-medium tabular-nums ${line.amountIncCents < 0 ? "text-status-danger" : "text-foreground"}`}
                   >
-                    <span className="text-foreground">{item.description}</span>
-                    <span
-                      className={`font-medium tabular-nums ${amount < 0 ? "text-status-danger" : "text-foreground"}`}
-                    >
-                      {amount < 0 ? "-" : ""}
-                      {new Intl.NumberFormat("en-AU", { style: "currency", currency: "AUD" }).format(Math.abs(amount))}
-                    </span>
-                  </div>
-                );
-              })}
+                    {formatCents(line.amountIncCents)}
+                  </span>
+                </div>
+              ))}
             </div>
           </div>
         )}
 
         {/* Bills */}
-        {bills.length > 0 && (
+        {docModel.bills.length > 0 && (
           <div>
             <h2 className="text-xs font-semibold text-muted uppercase tracking-wider mb-3">Linked Bills</h2>
             <div className="border border-border rounded-lg overflow-hidden">
@@ -520,30 +504,80 @@ export function VariationPreviewContent({
                 <span className="text-right">Date</span>
                 <span className="text-right">Total</span>
               </div>
-              {bills.map((bill, idx) => {
-                const totalCents = bill.totalAmountCents ?? (bill.totalAmount ?? 0);
-                const isAlt = idx % 2 === 1;
-                return (
-                  <div
-                    key={bill.id}
-                    className="grid px-3 py-2 text-sm border-t border-border"
-                    style={{
-                      backgroundColor: isAlt ? "#f9fafb" : "#ffffff",
-                      gridTemplateColumns: "100px 1fr 100px 100px",
-                    }}
-                  >
-                    <span className="text-secondary">{bill.billNumber || "—"}</span>
-                    <span className="text-foreground">{bill.supplierName || "—"}</span>
-                    <span className="text-right text-secondary">
-                      {bill.invoiceDate ? format(new Date(bill.invoiceDate), "d MMM yy") : "—"}
-                    </span>
-                    <span className="text-right font-medium tabular-nums">
-                      {new Intl.NumberFormat("en-AU", { style: "currency", currency: "AUD" }).format(totalCents / 100)}
-                    </span>
-                  </div>
-                );
-              })}
+              {docModel.bills.map((bill, idx) => (
+                <div
+                  key={bill.id}
+                  className="grid px-3 py-2 text-sm border-t border-border"
+                  style={{
+                    backgroundColor: idx % 2 === 1 ? "#f9fafb" : "#ffffff",
+                    gridTemplateColumns: "100px 1fr 100px 100px",
+                  }}
+                >
+                  <span className="text-secondary">{bill.billNumber || "—"}</span>
+                  <span className="text-foreground">{bill.supplierName || "—"}</span>
+                  <span className="text-right text-secondary">
+                    {bill.invoiceDate ? format(new Date(bill.invoiceDate), "d MMM yy") : "—"}
+                  </span>
+                  <span className="text-right font-medium tabular-nums">
+                    {formatCents(bill.totalIncCents)}
+                  </span>
+                </div>
+              ))}
             </div>
+          </div>
+        )}
+
+        {/* On-charged site labour (aggregated; individual timesheets stay private) */}
+        {docModel.labourIncCents > 0 && (
+          <div>
+            <h2 className="text-xs font-semibold text-muted uppercase tracking-wider mb-3">Site Labour</h2>
+            <div className="border border-border rounded-lg overflow-hidden">
+              <div className="flex items-center justify-between px-3 py-2 text-sm">
+                <span className="text-foreground">Labour</span>
+                <span className="font-medium tabular-nums">{formatCents(docModel.labourIncCents)}</span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Attachments — downloadable through the token-scoped portal route */}
+        {attachments.length > 0 && (
+          <div>
+            <h2 className="text-xs font-semibold text-muted uppercase tracking-wider mb-3">Attachments</h2>
+            <div className="border border-border rounded-lg overflow-hidden">
+              {attachments.map((att, idx) => (
+                <div
+                  key={att.index}
+                  className="flex items-center justify-between px-3 py-2 border-t border-border text-sm"
+                  style={{ backgroundColor: idx % 2 === 1 ? "#f9fafb" : "#ffffff" }}
+                >
+                  <span className="text-foreground truncate pr-3">{att.name}</span>
+                  {portalToken ? (
+                    <a
+                      href={`/api/portal/variation/${portalToken}/attachments/${att.index}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-1 text-xs font-medium flex-shrink-0"
+                      style={{ color: primaryColor }}
+                      data-testid={`link-attachment-${att.index}`}
+                    >
+                      <Download className="w-3 h-3" />
+                      Download
+                    </a>
+                  ) : (
+                    <span className="text-xs text-muted flex-shrink-0">Attached</span>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Why it was rejected — captured at rejection but never shown before */}
+        {variation.status === "rejected" && variation.rejectionReason && (
+          <div className="border border-status-danger/30 bg-status-danger/5 rounded-lg p-4">
+            <p className="text-xs font-semibold text-status-danger uppercase tracking-wide mb-1">Reason for rejection</p>
+            <p className="text-sm text-foreground whitespace-pre-wrap">{variation.rejectionReason}</p>
           </div>
         )}
 

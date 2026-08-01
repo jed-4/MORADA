@@ -45,6 +45,19 @@ export function isApprovedVariationStatus(status: string | null | undefined): bo
   return !!status && APPROVED_VARIATION_STATUSES.has(status);
 }
 
+// "Pending" = raised with the client and awaiting their decision. Draft is
+// deliberately excluded (not yet issued) and so is rejected/approved (decided).
+// Single definition for every surface that counts or values pending
+// variations — the KPI card, business widget, project summary and open-items
+// widget each used to filter differently, so the same number disagreed
+// depending on where you read it.
+export const PENDING_VARIATION_STATUSES = ["pending", "action"] as const;
+const PENDING_VARIATION_STATUS_SET = new Set<string>(PENDING_VARIATION_STATUSES);
+
+export function isPendingVariationStatus(status: string | null | undefined): boolean {
+  return !!status && PENDING_VARIATION_STATUS_SET.has(status);
+}
+
 export function computeContractMetricsCents(
   estimateItems: EstimateItemForMetrics[],
   variations: VariationForMetrics[],

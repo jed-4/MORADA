@@ -2,12 +2,19 @@ import { useEffect, useState, useRef } from "react";
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { SendVariationDialog } from "@/components/variations/SendVariationDialog";
+import {
+  ImportBillsDialog,
+  ImportLabourDialog,
+  ImportAllowancesDialog,
+} from "@/components/variations/VariationImportDialogs";
 import { DocumentPreviewModal } from "@/components/ui/DocumentPreviewModal";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { format } from "date-fns";
 import { pdf } from "@react-pdf/renderer";
+import { computeVariationTotals } from "@shared/variationTotals";
+import { formatCents, dollarsToCents, centsToDollars, exGstFromInc, toNumber } from "@shared/money";
 import { 
   ArrowLeft, 
   Plus, 
@@ -32,7 +39,6 @@ import {
   ExternalLink,
 } from "lucide-react";
 import { CostCodeSelect } from "@/components/CostCodeSelect";
-import { VariationPreviewContent } from "@/components/variations/VariationPreviewContent";
 import { VariationDocument } from "@/components/variations/pdf/VariationDocument";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -121,7 +127,8 @@ type CostLine = {
 type AllowanceLine = {
   id?: string;
   description: string;
-  amount: number;
+  amount: number; // ex-GST dollars (legacy rows loaded with taxable=false hold inc-GST amounts)
+  taxable: boolean;
   sortOrder: number;
 };
 
@@ -194,19 +201,14 @@ export default function VariationDetail() {
 
   // Bills state
   const [selectedBillIds, setSelectedBillIds] = useState<string[]>([]);
-  const [modalBillIds, setModalBillIds] = useState<string[]>([]);
   const [billsModalOpen, setBillsModalOpen] = useState(false);
-  const [billsSearch, setBillsSearch] = useState("");
 
   // Labour state
   const [selectedTimesheetIds, setSelectedTimesheetIds] = useState<string[]>([]);
-  const [modalTimesheetIds, setModalTimesheetIds] = useState<string[]>([]);
   const [labourModalOpen, setLabourModalOpen] = useState(false);
-  const [labourSearch, setLabourSearch] = useState("");
 
   // Allowances modal state
   const [allowancesModalOpen, setAllowancesModalOpen] = useState(false);
-  const [allowancesSearch, setAllowancesSearch] = useState("");
 
   // Section collapse state
   const [billsCollapsed, setBillsCollapsed] = useState(true);
@@ -246,6 +248,10 @@ export default function VariationDetail() {
     queryKey: [`/api/variations/${effectiveVariationId}`],
     enabled: isEditMode,
   });
+
+  // Approved variations are immutable (server-enforced): the editor renders
+  // read-only and the only available action is Reject.
+  const isLocked = isEditMode && variation?.status === "approved";
 
   const { data: existingCostLines = [] } = useQuery<VariationItem[]>({
     queryKey: [`/api/variations/${effectiveVariationId}/items`],
@@ -427,7 +433,11 @@ export default function VariationDetail() {
           unitType: item.unitType || "each",
           costCode: item.costCode || "",
           quantity: item.quantity,
-          unitCostExTax: item.unitCostExTax ?? (item.unitPrice / 100),
+          // Legacy rows (pre cost-fields) have unitCostExTax 0/null with the
+          // real client price only in unitPrice — adopt it as the cost basis
+          // (price = cost, 0% markup) so their value isn't displayed, and on
+          // save re-derived, as $0.
+          unitCostExTax: item.unitCostExTax || centsToDollars(item.unitPrice ?? 0),
           markupPercent: item.markupPercent ?? null,
           taxable: item.taxable,
           sortOrder: item.sortOrder,
@@ -439,7 +449,11 @@ export default function VariationDetail() {
         allowanceItems.map((item) => ({
           id: item.id,
           description: item.description,
-          amount: item.totalPrice / 100,
+          amount: centsToDollars(item.totalPrice),
+          // Preserve the stored flag: new adjustment lines are ex-GST taxable;
+          // legacy rows were saved taxable=false with inc-GST amounts, and
+          // flipping them on load would change their client total.
+          taxable: item.taxable !== false,
           sortOrder: item.sortOrder,
         }))
       );
@@ -520,26 +534,14 @@ export default function VariationDetail() {
   const getSelectedBills = () => projectBills.filter((b: any) => selectedBillIds.includes(b.id));
   const getSelectedTimesheets = () => projectTimesheets.filter((t: any) => selectedTimesheetIds.includes(t.id));
 
-  const filteredBills = projectBills.filter((b: any) => {
-    if (!billsSearch) return true;
-    const q = billsSearch.toLowerCase();
-    return (b.billNumber || "").toLowerCase().includes(q) || (b.supplierName || "").toLowerCase().includes(q);
-  });
 
-  const filteredTimesheets = projectTimesheets.filter((t: any) => {
-    if (!labourSearch) return true;
-    const q = labourSearch.toLowerCase();
-    const name = getUserName(t.userId).toLowerCase();
-    const dateStr = t.date ? format(new Date(t.date), "d MMM yy").toLowerCase() : "";
-    return name.includes(q) || dateStr.includes(q);
-  });
 
   // ── Allowance line handlers ────────────────────────────────────────────────
 
   const addAllowanceLine = (prefill?: { description?: string; amount?: number }) => {
     setAllowanceLines([
       ...allowanceLines,
-      { description: prefill?.description ?? "", amount: prefill?.amount ?? 0, sortOrder: allowanceLines.length },
+      { description: prefill?.description ?? "", amount: prefill?.amount ?? 0, taxable: true, sortOrder: allowanceLines.length },
     ]);
   };
 
@@ -746,6 +748,11 @@ export default function VariationDetail() {
   };
 
   // ── Financial calculations ─────────────────────────────────────────────────
+  // Display totals go through shared/variationTotals — the same function the
+  // server uses to persist subtotal/gstAmount/totalAmount — so the preview can
+  // never drift from what gets saved. All amounts below are EX-GST dollars
+  // unless noted; bills are stored inc-GST cents, timesheets ex-GST dollar
+  // strings (see shared/money.ts).
 
   const calculateCostLinesBaseTotal = () =>
     costLines.reduce((sum, item) => sum + item.quantity * item.unitCostExTax, 0);
@@ -757,32 +764,42 @@ export default function VariationDetail() {
     allowanceLines.reduce((sum, item) => sum + item.amount, 0);
 
   const calculateBillsTotal = () =>
-    getSelectedBills().reduce((sum: number, b: any) => sum + (b.total || 0) / 100, 0);
+    centsToDollars(
+      getSelectedBills().reduce(
+        (sum: number, b: any) =>
+          sum +
+          (typeof b.subtotal === "number" && typeof b.tax === "number" && b.subtotal + b.tax === b.total
+            ? b.subtotal
+            : exGstFromInc(b.total || 0)),
+        0,
+      ),
+    );
 
   const calculateLabourTotal = () =>
-    getSelectedTimesheets().reduce((sum: number, t: any) => sum + (t.total || 0) / 100, 0);
+    getSelectedTimesheets().reduce((sum: number, t: any) => sum + toNumber(t.total), 0);
 
-  const calculateSubtotal = () =>
-    calculateCostLinesSubtotal() + calculateAllowancesTotal() + calculateBillsTotal() + calculateLabourTotal();
+  const calculateTotals = () =>
+    computeVariationTotals({
+      items: [
+        ...costLines.map((line) => ({
+          totalPrice: dollarsToCents(getCostLineAmountExTax(line)),
+          taxable: line.taxable,
+        })),
+        ...allowanceLines.map((line) => ({
+          totalPrice: dollarsToCents(line.amount),
+          taxable: line.taxable,
+        })),
+      ],
+      bills: getSelectedBills(),
+      timesheets: getSelectedTimesheets(),
+    });
 
-  const calculateGST = () => {
-    const taxableAmount = costLines
-      .filter((item) => item.taxable)
-      .reduce((sum, item) => sum + getCostLineAmountExTax(item), 0);
-    return taxableAmount * 0.1;
-  };
+  const calculateSubtotal = () => centsToDollars(calculateTotals().subtotalCents);
+  const calculateGST = () => centsToDollars(calculateTotals().gstCents);
+  const calculateTotal = () => centsToDollars(calculateTotals().totalCents);
 
-  const calculateTotal = () => calculateSubtotal() + calculateGST();
-
-  const formatCurrency = (amount: number) => {
-    const isWholeNumber = amount % 1 === 0;
-    return new Intl.NumberFormat("en-AU", {
-      style: "currency",
-      currency: "AUD",
-      minimumFractionDigits: isWholeNumber ? 0 : 2,
-      maximumFractionDigits: 2,
-    }).format(amount);
-  };
+  // Canonical AUD formatter (shared/money.ts), fed dollars from the helpers above.
+  const formatCurrency = (amount: number) => formatCents(dollarsToCents(amount));
 
   // ── Save bills/timesheets helper ──────────────────────────────────────────
 
@@ -799,19 +816,16 @@ export default function VariationDetail() {
         ...data,
         approvalDeadline: data.approvalDeadline || undefined,
         daysChanged: data.daysChanged || undefined,
-        subtotal: Math.round(calculateSubtotal() * 100),
-        gstAmount: Math.round(calculateGST() * 100),
-        totalAmount: Math.round(calculateTotal() * 100),
-        paidAmount: 0,
-        balanceAmount: Math.round(calculateTotal() * 100),
+        // subtotal/gstAmount/totalAmount/paidAmount/balanceAmount are
+        // server-maintained — recomputed from items/bills/timesheets on every
+        // write and from invoice payments; never sent from the client.
       };
 
       const newVariation = await apiRequest("/api/variations", "POST", variationData) as Variation;
 
       for (let i = 0; i < costLines.length; i++) {
         const item = costLines[i];
-        const amountExTax = getCostLineAmountExTax(item);
-        const markupFactor = 1 + (item.markupPercent ?? 0) / 100;
+        // unitPrice/totalPrice are derived server-side from the cost inputs.
         await apiRequest(`/api/variations/${newVariation.id}/items`, "POST", {
           variationId: newVariation.id,
           name: item.name || null,
@@ -822,8 +836,6 @@ export default function VariationDetail() {
           quantity: item.quantity,
           unitCostExTax: item.unitCostExTax,
           markupPercent: item.markupPercent ?? null,
-          unitPrice: Math.round(item.unitCostExTax * markupFactor * 100),
-          totalPrice: Math.round(amountExTax * 100),
           taxable: item.taxable,
           sortOrder: i,
           itemType: "cost_line",
@@ -837,9 +849,9 @@ export default function VariationDetail() {
           variationId: newVariation.id,
           description: item.description,
           quantity: 1,
-          unitPrice: Math.round(item.amount * 100),
-          totalPrice: Math.round(item.amount * 100),
-          taxable: false,
+          unitPrice: dollarsToCents(item.amount),
+          totalPrice: dollarsToCents(item.amount),
+          taxable: item.taxable,
           sortOrder: i,
           itemType: "allowance",
         });
@@ -876,11 +888,7 @@ export default function VariationDetail() {
         ...data,
         approvalDeadline: data.approvalDeadline || undefined,
         daysChanged: data.daysChanged || undefined,
-        subtotal: Math.round(calculateSubtotal() * 100),
-        gstAmount: Math.round(calculateGST() * 100),
-        totalAmount: Math.round(calculateTotal() * 100),
-        paidAmount: 0,
-        balanceAmount: Math.round(calculateTotal() * 100),
+        // Money totals + paid/balance are server-maintained; see createMutation.
       };
 
       const updatedVariation = await apiRequest(`/api/variations/${effectiveVariationId}`, "PATCH", variationData) as Variation;
@@ -902,11 +910,9 @@ export default function VariationDetail() {
         await apiRequest(`/api/variation-items/${itemId}`, "DELETE");
       }
 
-      // Save cost lines
+      // Save cost lines (unitPrice/totalPrice derived server-side)
       for (let i = 0; i < costLines.length; i++) {
         const item = costLines[i];
-        const amountExTax = getCostLineAmountExTax(item);
-        const markupFactor = 1 + (item.markupPercent ?? 0) / 100;
         const itemData = {
           variationId: effectiveVariationId,
           name: item.name || null,
@@ -917,8 +923,6 @@ export default function VariationDetail() {
           quantity: item.quantity,
           unitCostExTax: item.unitCostExTax,
           markupPercent: item.markupPercent ?? null,
-          unitPrice: Math.round(item.unitCostExTax * markupFactor * 100),
-          totalPrice: Math.round(amountExTax * 100),
           taxable: item.taxable,
           sortOrder: i,
           itemType: "cost_line",
@@ -938,9 +942,9 @@ export default function VariationDetail() {
           variationId: effectiveVariationId,
           description: item.description,
           quantity: 1,
-          unitPrice: Math.round(item.amount * 100),
-          totalPrice: Math.round(item.amount * 100),
-          taxable: false,
+          unitPrice: dollarsToCents(item.amount),
+          totalPrice: dollarsToCents(item.amount),
+          taxable: item.taxable,
           sortOrder: i,
           itemType: "allowance",
         };
@@ -957,6 +961,7 @@ export default function VariationDetail() {
     onSuccess: (updatedVariation) => {
       queryClient.invalidateQueries({ queryKey: ["/api/variations"] });
       queryClient.invalidateQueries({ queryKey: [`/api/variations/${effectiveVariationId}`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/variations/${effectiveVariationId}/items`] });
       queryClient.invalidateQueries({ queryKey: [`/api/variations/${effectiveVariationId}/bills`] });
       queryClient.invalidateQueries({ queryKey: [`/api/variations/${effectiveVariationId}/timesheets`] });
       toast({ title: "Success", description: "Variation updated successfully" });
@@ -1143,6 +1148,7 @@ export default function VariationDetail() {
           variation={variation as any}
           items={existingCostLines}
           bills={existingVariationBills}
+          labourTotalCents={dollarsToCents(calculateLabourTotal())}
           company={companyInfo}
           project={projects.find((p) => p.id === form.watch("projectId")) as any}
           brandColor={companySettings?.brandColor || "#6d28d9"}
@@ -1340,6 +1346,18 @@ export default function VariationDetail() {
                 <span>Send for Approval</span>
               </button>
             )}
+            {isLocked && (
+              <button
+                type="button"
+                onClick={() => setRejectDialogOpen(true)}
+                disabled={rejectMutation.isPending}
+                className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
+                data-testid="button-reject-approved"
+              >
+                <X className="w-3 h-3" />
+                <span>Reject</span>
+              </button>
+            )}
             {isEditMode && variation?.status === "pending" && (
               <>
                 <button
@@ -1364,6 +1382,7 @@ export default function VariationDetail() {
                 </button>
               </>
             )}
+            {!isLocked && (
             <button
               type="button"
               onClick={form.handleSubmit(onSubmit)}
@@ -1378,8 +1397,19 @@ export default function VariationDetail() {
               )}
               <span>{isEditMode ? "Save Changes" : "Create Variation"}</span>
             </button>
+            )}
           </div>
         </div>
+
+        {/* Approved-lock banner */}
+        {isLocked && (
+          <div className="bg-sage/15 border-y border-sage/30 px-4 py-1.5 flex items-center gap-2 text-xs" data-testid="banner-locked">
+            <Check className="w-3.5 h-3.5 text-sage" />
+            <span className="text-muted-foreground">
+              This variation is approved and locked. To make changes, reject it first — the rejection reason is kept on record.
+            </span>
+          </div>
+        )}
 
         {/* Row 2 — Live financial summary strip */}
         <div className="bg-primary/10 flex items-center px-4 py-2 gap-5 text-xs">
@@ -1404,7 +1434,10 @@ export default function VariationDetail() {
       <div className="flex-1 overflow-auto">
         <div className="max-w-6xl mx-auto px-3 py-3">
           <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-3">
+            <form onSubmit={form.handleSubmit(onSubmit)}>
+            {/* fieldset[disabled] is what makes the approved lock airtight in
+                the UI: every native input/select/button inside is disabled. */}
+            <fieldset disabled={isLocked} className="space-y-3 min-w-0">
 
                 {/* ── General Info ── */}
                 <div className="rounded-lg border border-border bg-card overflow-hidden">
@@ -1729,7 +1762,7 @@ export default function VariationDetail() {
                       rightEl={
                         <button
                           type="button"
-                          onClick={(e) => { e.stopPropagation(); setModalBillIds([...selectedBillIds]); setBillsModalOpen(true); }}
+                          onClick={(e) => { e.stopPropagation(); setBillsModalOpen(true); }}
                           className="h-6 px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
                           data-testid="button-import-bills"
                         >
@@ -1785,7 +1818,7 @@ export default function VariationDetail() {
                       rightEl={
                         <button
                           type="button"
-                          onClick={(e) => { e.stopPropagation(); setModalTimesheetIds([...selectedTimesheetIds]); setLabourModalOpen(true); }}
+                          onClick={(e) => { e.stopPropagation(); setLabourModalOpen(true); }}
                           className="h-6 px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
                           data-testid="button-import-labour"
                         >
@@ -1815,7 +1848,7 @@ export default function VariationDetail() {
                                 <TableCell className="text-sm text-muted-foreground py-1 px-2">{t.date ? format(new Date(t.date), "d MMM yyyy") : "—"}</TableCell>
                                 <TableCell className="text-sm font-medium py-1 px-2">{getUserName(t.userId)}</TableCell>
                                 <TableCell className="text-right text-sm tabular-nums py-1 px-2">{Number(t.duration).toFixed(1)}</TableCell>
-                                <TableCell className="text-right text-sm font-medium py-1 px-2">{formatCurrency((t.total || 0) / 100)}</TableCell>
+                                <TableCell className="text-right text-sm font-medium py-1 px-2">{formatCurrency(toNumber(t.total))}</TableCell>
                                 <TableCell className="py-1 px-2 w-8">
                                   <button type="button" onClick={() => setSelectedTimesheetIds(prev => prev.filter(id => id !== t.id))} className="text-muted-foreground hover:text-destructive">
                                     <X className="w-3.5 h-3.5" />
@@ -1882,7 +1915,7 @@ export default function VariationDetail() {
                             <TableHeader>
                               <TableRow className="h-6 bg-muted/30">
                                 <TableHead className="text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Description</TableHead>
-                                <TableHead className="w-36 text-right text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Adjustment ($)</TableHead>
+                                <TableHead className="w-36 text-right text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Adjustment ($ ex GST)</TableHead>
                                 <TableHead className="w-8 py-0" />
                               </TableRow>
                             </TableHeader>
@@ -2219,250 +2252,35 @@ export default function VariationDetail() {
                   </div>
                 )}
 
+            </fieldset>
               </form>
             </Form>
         </div>
       </div>
 
-      {/* ── Import Bills Modal ── */}
-      <Dialog open={billsModalOpen} onOpenChange={setBillsModalOpen}>
-        <DialogContent className="max-w-3xl" data-testid="dialog-bills">
-          <DialogHeader>
-            <DialogTitle>Import Bills</DialogTitle>
-            <DialogDescription>Select bills to include in this variation.</DialogDescription>
-          </DialogHeader>
-          <div className="relative">
-            <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
-            <Input
-              placeholder="Search by bill number or supplier..."
-              value={billsSearch}
-              onChange={(e) => setBillsSearch(e.target.value)}
-              className="pl-8 h-8 text-sm"
-            />
-          </div>
-          <div className="rounded-md border overflow-hidden">
-            <div className="max-h-[360px] overflow-y-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow className="h-6 bg-muted/30 hover:bg-muted/30">
-                    <TableHead className="w-8 py-0 px-2" />
-                    <TableHead className="text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Bill No.</TableHead>
-                    <TableHead className="text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Supplier</TableHead>
-                    <TableHead className="text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Date</TableHead>
-                    <TableHead className="text-right text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Total</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredBills.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={5} className="text-center text-sm text-muted-foreground py-8">No bills found for this project.</TableCell>
-                    </TableRow>
-                  ) : filteredBills.map((b: any) => {
-                    const isChecked = modalBillIds.includes(b.id);
-                    return (
-                      <TableRow
-                        key={b.id}
-                        className="h-9 hover-elevate cursor-pointer"
-                        onClick={() => setModalBillIds(prev => isChecked ? prev.filter(id => id !== b.id) : [...prev, b.id])}
-                      >
-                        <TableCell className="w-8 py-1 px-2">
-                          <div className={cn("w-4 h-4 rounded border flex items-center justify-center", isChecked ? "bg-primary border-primary" : "border-input")}>
-                            {isChecked && <Check className="h-3 w-3 text-primary-foreground" />}
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-sm font-medium py-1 px-2">{b.billNumber}</TableCell>
-                        <TableCell className="text-sm text-muted-foreground py-1 px-2">{b.supplierName || "—"}</TableCell>
-                        <TableCell className="text-sm text-muted-foreground py-1 px-2">{b.billDate ? format(new Date(b.billDate), "d MMM yyyy") : "—"}</TableCell>
-                        <TableCell className="text-right text-sm font-medium py-1 px-2">{formatCurrency((b.total || 0) / 100)}</TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            </div>
-          </div>
-          <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => setBillsModalOpen(false)}>Cancel</Button>
-            <Button
-              onClick={() => {
-                setSelectedBillIds([...modalBillIds]);
-                setBillsModalOpen(false);
-              }}
-            >
-              Add {modalBillIds.length > 0 ? `${modalBillIds.length} ` : ""}to Variation
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ImportBillsDialog
+        open={billsModalOpen}
+        onOpenChange={setBillsModalOpen}
+        bills={projectBills}
+        selectedIds={selectedBillIds}
+        onConfirm={setSelectedBillIds}
+      />
 
-      {/* ── Import Labour Modal ── */}
-      <Dialog open={labourModalOpen} onOpenChange={setLabourModalOpen}>
-        <DialogContent className="max-w-3xl" data-testid="dialog-labour">
-          <DialogHeader>
-            <DialogTitle>Import Labour</DialogTitle>
-            <DialogDescription>Select approved timesheets to include in this variation.</DialogDescription>
-          </DialogHeader>
-          <div className="relative">
-            <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
-            <Input
-              placeholder="Search by staff name or date..."
-              value={labourSearch}
-              onChange={(e) => setLabourSearch(e.target.value)}
-              className="pl-8 h-8 text-sm"
-            />
-          </div>
-          <div className="rounded-md border overflow-hidden">
-            <div className="max-h-[360px] overflow-y-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow className="h-6 bg-muted/30 hover:bg-muted/30">
-                    <TableHead className="w-8 py-0 px-2" />
-                    <TableHead className="text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Date</TableHead>
-                    <TableHead className="text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Staff</TableHead>
-                    <TableHead className="text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Status</TableHead>
-                    <TableHead className="text-right text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Hours</TableHead>
-                    <TableHead className="text-right text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Total</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredTimesheets.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={6} className="text-center text-sm text-muted-foreground py-8">No timesheets found for this project.</TableCell>
-                    </TableRow>
-                  ) : filteredTimesheets.filter((t: any) => t.status === "approved" || t.status === "submitted").map((t: any) => {
-                    const isApproved = t.status === "approved";
-                    const isChecked = modalTimesheetIds.includes(t.id);
-                    return (
-                      <TableRow
-                        key={t.id}
-                        className={cn("h-9", isApproved ? "hover-elevate cursor-pointer" : "opacity-40 cursor-not-allowed")}
-                        onClick={() => {
-                          if (!isApproved) return;
-                          setModalTimesheetIds(prev => isChecked ? prev.filter(id => id !== t.id) : [...prev, t.id]);
-                        }}
-                      >
-                        <TableCell className="w-8 py-1 px-2">
-                          <div className={cn("w-4 h-4 rounded border flex items-center justify-center", isChecked && isApproved ? "bg-primary border-primary" : "border-input")}>
-                            {isChecked && isApproved && <Check className="h-3 w-3 text-primary-foreground" />}
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-sm tabular-nums py-1 px-2">{t.date ? format(new Date(t.date), "d MMM yy") : "—"}</TableCell>
-                        <TableCell className="text-sm font-medium py-1 px-2">{getUserName(t.userId)}</TableCell>
-                        <TableCell className="py-1 px-2">
-                          {isApproved
-                            ? <span className="flex items-center gap-1 text-xs"><div className="w-1.5 h-1.5 rounded-full bg-sage flex-shrink-0" />Approved</span>
-                            : <span className="flex items-center gap-1 text-xs"><div className="w-1.5 h-1.5 rounded-full bg-amber flex-shrink-0" />Pending</span>}
-                        </TableCell>
-                        <TableCell className="text-right text-sm tabular-nums py-1 px-2">{Number(t.duration).toFixed(1)}</TableCell>
-                        <TableCell className="text-right text-sm font-medium py-1 px-2">{formatCurrency((t.total || 0) / 100)}</TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            </div>
-          </div>
-          <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => setLabourModalOpen(false)}>Cancel</Button>
-            <Button
-              onClick={() => {
-                setSelectedTimesheetIds([...modalTimesheetIds]);
-                setLabourModalOpen(false);
-              }}
-              disabled={modalTimesheetIds.length === 0}
-            >
-              Add {modalTimesheetIds.length > 0 ? `${modalTimesheetIds.length} ` : ""}to Variation
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ImportLabourDialog
+        open={labourModalOpen}
+        onOpenChange={setLabourModalOpen}
+        timesheets={projectTimesheets}
+        selectedIds={selectedTimesheetIds}
+        getUserName={getUserName}
+        onConfirm={setSelectedTimesheetIds}
+      />
 
-      {/* ── Import Allowances Modal ── */}
-      <Dialog open={allowancesModalOpen} onOpenChange={setAllowancesModalOpen}>
-        <DialogContent className="max-w-2xl" data-testid="dialog-allowances">
-          <DialogHeader>
-            <DialogTitle>Import Project Allowances</DialogTitle>
-            <DialogDescription>
-              Select a finalized allowance (PC/PS item) to include the cost difference in this variation.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="relative">
-            <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
-            <Input
-              placeholder="Search allowances..."
-              value={allowancesSearch}
-              onChange={(e) => setAllowancesSearch(e.target.value)}
-              className="pl-8 h-8 text-sm"
-            />
-          </div>
-          <div className="space-y-2 max-h-96 overflow-y-auto">
-            {projectAllowances.length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-8">
-                No allowance items (PC/PS) found for this project.
-              </p>
-            ) : (
-              projectAllowances
-                .filter((a: any) => {
-                  const name = a.item?.name || "";
-                  const desc = a.item?.description || "";
-                  const q = allowancesSearch.toLowerCase();
-                  return !q || name.toLowerCase().includes(q) || desc.toLowerCase().includes(q);
-                })
-                .map((a: any) => {
-                  const item = a.item;
-                  const budgetedCents = item?.priceIncTax || 0;
-                  const actualCents = a.actualCost || 0;
-                  const varianceCents: number = a.variance ?? (actualCents - budgetedCents);
-                  const isOverBudget = varianceCents > 0;
-                  return (
-                    <div
-                      key={item.id}
-                      className="flex items-center gap-3 p-3 rounded-md border hover-elevate cursor-pointer"
-                      onClick={() => {
-                        addAllowanceLine({
-                          description: `${item.name} — allowance adjustment`,
-                          amount: varianceCents / 100,
-                        });
-                        setAllowancesModalOpen(false);
-                        setAllowancesSearch("");
-                      }}
-                      data-testid={`allowance-option-${item.id}`}
-                    >
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-medium truncate">{item.name}</span>
-                          <Badge variant="outline" className="text-data flex-shrink-0">{item.allowance}</Badge>
-                        </div>
-                        {item.description && (
-                          <p className="text-xs text-muted-foreground truncate mt-0.5">{item.description}</p>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-4 flex-shrink-0 text-right">
-                        <div>
-                          <p className="text-xs text-muted-foreground">Budgeted</p>
-                          <p className="text-sm font-medium tabular-nums">{formatCurrency(budgetedCents / 100)}</p>
-                        </div>
-                        <div>
-                          <p className="text-xs text-muted-foreground">Actual</p>
-                          <p className="text-sm font-medium tabular-nums">{formatCurrency(actualCents / 100)}</p>
-                        </div>
-                        <div>
-                          <p className="text-xs text-muted-foreground">Variance</p>
-                          <p className={cn("text-sm font-semibold tabular-nums", isOverBudget ? "text-status-warning" : varianceCents < 0 ? "text-status-success" : "")}>
-                            {varianceCents >= 0 ? "+" : ""}{formatCurrency(varianceCents / 100)}
-                          </p>
-                        </div>
-                        <Badge variant="outline" className="text-xs capitalize">
-                          {item.allowanceStatus || "pending"}
-                        </Badge>
-                      </div>
-                    </div>
-                  );
-                })
-            )}
-          </div>
-        </DialogContent>
-      </Dialog>
+      <ImportAllowancesDialog
+        open={allowancesModalOpen}
+        onOpenChange={setAllowancesModalOpen}
+        allowances={projectAllowances}
+        onSelect={addAllowanceLine}
+      />
 
       {/* ── Approve Dialog ── */}
       <Dialog open={approveDialogOpen} onOpenChange={setApproveDialogOpen}>
@@ -2513,6 +2331,7 @@ export default function VariationDetail() {
               variation={variation as any}
               items={existingCostLines}
               bills={existingVariationBills}
+              labourTotalCents={dollarsToCents(calculateLabourTotal())}
               company={companyInfo}
               project={projects.find((p) => p.id === form.watch("projectId")) as any}
               brandColor={companySettings?.brandColor || "#6d28d9"}
@@ -2536,6 +2355,7 @@ export default function VariationDetail() {
           variationId={effectiveVariationId!}
           items={existingCostLines}
           bills={existingVariationBills}
+          labourTotalCents={dollarsToCents(calculateLabourTotal())}
           company={companyInfo}
           project={projects.find((p) => p.id === form.watch("projectId")) as any}
           brandColor={companySettings?.brandColor || "#6d28d9"}

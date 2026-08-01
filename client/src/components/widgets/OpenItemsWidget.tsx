@@ -4,6 +4,7 @@ import { useLocation } from "wouter";
 import type { WidgetProps } from "@/types/widgets";
 import { useProject } from "@/contexts/ProjectContext";
 import { WidgetSkeleton, WidgetError, WidgetEmpty } from "@/components/ui/widget-states";
+import { isPendingVariationStatus } from "@shared/projectMetrics";
 
 interface NoteRow {
   id: string;
@@ -88,9 +89,7 @@ export default function OpenItemsWidget({ widget }: WidgetProps) {
   const tasks = notes.filter((n) => n.type === "task" && n.status !== "done" && !isRfi(n)).length;
   const rfis = notes.filter((n) => isRfi(n) && n.status !== "done").length;
   const defects = (defectsQ.data || []).filter((d) => d.status === "open" || d.status === "in_progress").length;
-  const variations = (variationsQ.data || []).filter(
-    (v) => v.status === "pending" || v.status === "action" || v.status === "draft",
-  ).length;
+  const variations = (variationsQ.data || []).filter((v) => isPendingVariationStatus(v.status)).length;
 
   const tiles = [
     {

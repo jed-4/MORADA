@@ -179,6 +179,8 @@ import { AI_TOOLS } from "./ai/tools";
 import { AI_MODEL, buildSystemPrompt, buildCircuitStartMessage } from "./ai/prompts";
 import { executeTool } from "./ai/executor";
 import { computeBillTotalsCents, billLineExGstCents, clampRoundingCents } from "@shared/billTotals";
+import { computeVariationTotals, computeVariationLinePriceCents } from "@shared/variationTotals";
+import { PENDING_VARIATION_STATUSES } from "@shared/projectMetrics";
 import { matchSupplier } from "@shared/supplierMatcher";
 import {
   fuzzyMatchTimesheetCostCode,
@@ -11226,7 +11228,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .from(variationsTbl)
         .where(
           and(
-            inArray(variationsTbl.status, ["pending", "action"]),
+            inArray(variationsTbl.status, [...PENDING_VARIATION_STATUSES]),
             inArray(variationsTbl.projectId, Array.from(companyProjectIds)),
           ),
         );
@@ -12102,25 +12104,43 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!companyId) return res.status(401).json({ error: "Unauthorized" });
 
       const { projects: projectsTbl, variations: variationsTbl, users: usersTbl } = await import("@shared/schema");
-      const [projectRows, variationRows, userRows] = await Promise.all([
-        db.select({ id: projectsTbl.id, name: projectsTbl.name }).from(projectsTbl).where(eq(projectsTbl.companyId, companyId)),
-        db.select().from(variationsTbl),
-        db.select({ id: usersTbl.id, firstName: usersTbl.firstName, lastName: usersTbl.lastName, email: usersTbl.email }).from(usersTbl),
+      // Scoped to this company's projects and users in SQL — previously both
+      // tables were read in full and filtered in JS, so the query grew with
+      // every other tenant's data.
+      const projectRows = await db
+        .select({ id: projectsTbl.id, name: projectsTbl.name })
+        .from(projectsTbl)
+        .where(eq(projectsTbl.companyId, companyId));
+      const projectsMap = new Map(projectRows.map((p: any) => [p.id, p.name as string]));
+      if (projectsMap.size === 0) return res.json({ variations: [], totalValue: 0, count: 0 });
+
+      const [variationRows, userRows] = await Promise.all([
+        db
+          .select()
+          .from(variationsTbl)
+          .where(
+            and(
+              inArray(variationsTbl.status, [...PENDING_VARIATION_STATUSES]),
+              inArray(variationsTbl.projectId, Array.from(projectsMap.keys())),
+            ),
+          ),
+        db
+          .select({ id: usersTbl.id, firstName: usersTbl.firstName, lastName: usersTbl.lastName, email: usersTbl.email })
+          .from(usersTbl)
+          .where(eq(usersTbl.companyId, companyId)),
       ]);
 
-      const projectsMap = new Map(projectRows.map((p: any) => [p.id, p.name as string]));
       const usersMap = new Map(userRows.map((u: any) => [u.id, u]));
       const now = Date.now();
 
-      const pending = variationRows
-        .filter((v: any) =>
-          (v.status === "pending" || v.status === "action") &&
-          projectsMap.has(v.projectId),
-        )
-        .sort((a: any, b: any) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+      const pending = [...variationRows].sort(
+        (a: any, b: any) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+      );
 
       const variations = pending.map((v: any) => {
-        const u = (v as any).approvedBy ? usersMap.get((v as any).approvedBy) : null;
+        // Who raised it. Was read from approvedBy — always null on a pending
+        // variation, so this rendered "—" for every row.
+        const u = (v as any).createdById ? usersMap.get((v as any).createdById) : null;
         const submittedBy = u
           ? `${(u as any).firstName || ""} ${(u as any).lastName || ""}`.trim() || (u as any).email
           : "—";
@@ -17436,7 +17456,115 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Variations API Routes
-  app.get("/api/variations", async (req, res) => {
+
+  // Client-settable money/workflow fields are stripped at the validation
+  // boundary: subtotal/gstAmount/totalAmount are recomputed server-side from
+  // the variation's components (see recomputeVariationTotals), paid/balance
+  // are maintained from invoice payments, and portal/signature/approval
+  // stamps are only written by their dedicated flows.
+  const VARIATION_GUARDED_FIELDS = {
+    subtotal: true,
+    gstAmount: true,
+    totalAmount: true,
+    paidAmount: true,
+    balanceAmount: true,
+    portalToken: true,
+    portalSentAt: true,
+    portalViewedAt: true,
+    createdById: true,
+    clientSignedName: true,
+    clientSignedDate: true,
+    clientSignedIp: true,
+    clientSignedUserAgent: true,
+    builderSignedName: true,
+    builderSignedDate: true,
+    approvedBy: true,
+    approvedDate: true,
+  } as const;
+  const createVariationSchema = insertVariationSchema.omit(VARIATION_GUARDED_FIELDS);
+  const updateVariationSchema = insertVariationSchema.partial().omit(VARIATION_GUARDED_FIELDS);
+
+  // Shared status-change payload for every door that flips a variation's
+  // status (single PATCH, bulk-status): stamps approval metadata on the
+  // transition INTO approved so approvals are attributable no matter which
+  // UI performed them.
+  const buildVariationStatusUpdates = (
+    prev: any,
+    status: string,
+    actorUserId?: string | null,
+  ): Record<string, any> => {
+    const updates: Record<string, any> = { status };
+    if (status === "approved" && prev?.status !== "approved") {
+      updates.approvedBy = actorUserId ?? null;
+      updates.approvedDate = new Date();
+    }
+    return updates;
+  };
+
+  // Once approved, a variation is immutable: the ONLY permitted change is a
+  // rejection (with a reason). Editing again means reject → edit → re-approve,
+  // which keeps an audit trail instead of silently rewriting contract value.
+  const APPROVED_VARIATION_LOCK_MESSAGE =
+    "Approved variations are locked. Reject the variation to make changes.";
+
+  // Invoice claims pin a variation: while a client invoice claims part of its
+  // value it can be neither rejected out of the contract nor deleted.
+  const getVariationInvoiceClaimCount = async (variationId: string): Promise<number> => {
+    const { invoiceVariations: ivTbl } = await import("@shared/schema");
+    const rows = await db.select({ id: ivTbl.id }).from(ivTbl).where(eq(ivTbl.variationId, variationId));
+    return rows.length;
+  };
+
+  // Recompute and persist a variation's money totals from its stored
+  // components: line items (ex-GST cents, taxable lines attract 10%), linked
+  // bills (stored ex/tax components), and linked timesheets (ex-GST dollars,
+  // grossed up — on-charged labour is a taxable supply). The server is the
+  // authority on these totals; balanceAmount tracks totalAmount minus the
+  // server-maintained paidAmount.
+  const recomputeVariationTotals = async (variationId: string): Promise<any | undefined> => {
+    const [current, items, bills, timesheets] = await Promise.all([
+      storage.getVariation(variationId),
+      storage.getVariationItems(variationId),
+      storage.getVariationBills(variationId),
+      storage.getVariationTimesheets(variationId),
+    ]);
+    if (!current) return undefined;
+    const totals = computeVariationTotals({ items, bills, timesheets });
+    return storage.updateVariation(variationId, {
+      subtotal: totals.subtotalCents,
+      gstAmount: totals.gstCents,
+      totalAmount: totals.totalCents,
+      balanceAmount: totals.totalCents - ((current as any).paidAmount ?? 0),
+    } as any);
+  };
+
+  // T005: EOT — extend the project end date by daysChanged working days when a
+  // variation transitions into approved. Shared by the single-PATCH and
+  // bulk-status paths so approvals behave the same from either door.
+  const extendScheduleOnVariationApproval = async (
+    prev: any,
+    updated: any,
+  ): Promise<{ days: number; newEndDate: string } | undefined> => {
+    const wasApproved = prev?.status === "approved";
+    const isApproved = updated?.status === "approved";
+    const daysChanged = updated?.daysChanged ?? 0;
+    if (wasApproved || !isApproved || daysChanged <= 0 || !updated?.projectId) return undefined;
+    const project = await storage.getProject(updated.projectId);
+    if (!project || !project.proposedEndDate) return undefined;
+    // Add working days (Mon-Fri) to the current proposedEndDate
+    let date = new Date(project.proposedEndDate);
+    let remaining = daysChanged;
+    while (remaining > 0) {
+      date.setDate(date.getDate() + 1);
+      const day = date.getDay();
+      if (day !== 0 && day !== 6) remaining--;
+    }
+    const newEndDate = date.toISOString().split("T")[0];
+    await storage.updateProject(updated.projectId, { proposedEndDate: newEndDate });
+    return { days: daysChanged, newEndDate };
+  };
+
+  app.get("/api/variations", requireAuth, async (req, res) => {
     try {
       const { projectId, status } = req.query;
       // Tenant scoping: always restrict to the caller's company (previously an
@@ -17519,7 +17647,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/variations/bulk-status", async (req, res) => {
+  app.post("/api/variations/bulk-status", requireAuth, async (req, res) => {
     try {
       const userCompanyId = (req.user as any)?.companyId;
       if (!userCompanyId) {
@@ -17537,6 +17665,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // transitions for the contract-metrics derivation.
       const previous = await Promise.all(ids.map((id: string) => storage.getVariation(id)));
 
+      // Approved lock: bulk actions never touch approved variations — a
+      // rejection must go through the variation page so a reason is captured.
+      const lockedIdx = previous.findIndex((v: any) => v?.status === "approved" && v.status !== status);
+      if (lockedIdx !== -1) {
+        return res.status(409).json({
+          error: "Selection includes approved variations, which are locked. Reject them individually from the variation page.",
+        });
+      }
+
       // Per-record company ownership (via each variation's project) — reject
       // mixed/foreign IDs before writing anything, mirroring PO bulk-status.
       const projectIds = Array.from(new Set(previous.map((v: any) => v?.projectId).filter(Boolean)));
@@ -17549,7 +17686,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
-      await Promise.all(ids.map((id: string) => storage.updateVariation(id, { status })));
+      const actorUserId = (req.user as any)?.id;
+      await Promise.all(
+        previous.map((prev: any) =>
+          storage.updateVariation(prev.id, buildVariationStatusUpdates(prev, status, actorUserId)),
+        ),
+      );
+      // Same EOT rule as the single PATCH path: approving a variation with
+      // daysChanged extends the project schedule regardless of which door
+      // performed the approval.
+      if (status === "approved") {
+        for (const prev of previous as any[]) {
+          if (prev.status === "approved") continue;
+          try {
+            await extendScheduleOnVariationApproval(prev, { ...prev, status });
+          } catch (err) {
+            console.error("[variation bulk-status] EOT extension failed:", err);
+          }
+        }
+      }
       const APPROVED = new Set(["approved", "released"]);
       const projectsAffected = new Set<string>();
       previous.forEach((prev: any) => {
@@ -17587,30 +17742,68 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/variations", async (req, res) => {
+  app.post("/api/variations", requireAuth, async (req, res) => {
     try {
-      const validationResult = insertVariationSchema.safeParse(req.body);
+      const validationResult = createVariationSchema.safeParse(req.body);
       if (!validationResult.success) {
-        return res.status(400).json({ 
-          error: "Validation failed", 
-          details: fromZodError(validationResult.error).toString() 
+        return res.status(400).json({
+          error: "Validation failed",
+          details: fromZodError(validationResult.error).toString()
         });
       }
 
-      // Generate variation number if not provided
-      let variationNumber = validationResult.data.variationNumber;
-      if (!variationNumber || variationNumber === "Auto-generated") {
-        const projectId = validationResult.data.projectId;
-        const existingVariations = await storage.getVariations(projectId);
-        const projectPrefix = Math.floor(1000 + Math.random() * 9000); // Random 4-digit number
-        const variationCount = existingVariations.length + 1;
-        variationNumber = `${projectPrefix}-VO-${String(variationCount).padStart(3, '0')}`;
-      }
+      // The target project must belong to the caller's company.
+      if (!(await enforceProjectCompany(req, res, validationResult.data.projectId, "Project not found"))) return;
 
-      const variation = await storage.createVariation({
+      // Generate variation number if not provided. Numbering comes from
+      // Settings (variationPrefix/variationStartNumber — previously dead
+      // config while the generator used a random prefix) with a per-project
+      // sequence of max-existing-suffix + 1, so deleting a variation never
+      // reuses its number the way the old count-based scheme did.
+      const providedNumber = validationResult.data.variationNumber;
+      const autoNumber = !providedNumber || providedNumber === "Auto-generated";
+      const generateVariationNumber = async (bump: number): Promise<string> => {
+        const config = await storage.getSystemConfiguration().catch(() => undefined);
+        const prefix = (config as any)?.variationPrefix || "VAR-";
+        const startNumber = (config as any)?.variationStartNumber ?? 1;
+        const existingVariations = await storage.getVariations(validationResult.data.projectId);
+        let maxSeen = 0;
+        for (const v of existingVariations) {
+          const m = /(\d+)\s*$/.exec((v as any).variationNumber || "");
+          if (m) maxSeen = Math.max(maxSeen, parseInt(m[1], 10));
+        }
+        const seq = Math.max(startNumber, maxSeen + 1) + bump;
+        return `${prefix}${String(seq).padStart(3, "0")}`;
+      };
+
+      // Money totals start at zero — recomputeVariationTotals fills them as
+      // items/bills/timesheets are attached (guarded fields are stripped from
+      // the create schema, so they can't come from the client).
+      const baseData = {
         ...validationResult.data,
-        variationNumber
-      });
+        createdById: (req.user as any)?.id ?? null,
+        subtotal: 0,
+        gstAmount: 0,
+        totalAmount: 0,
+        paidAmount: 0,
+        balanceAmount: 0,
+      };
+      let variation;
+      for (let attempt = 0; ; attempt++) {
+        const variationNumber = autoNumber ? await generateVariationNumber(attempt) : providedNumber;
+        try {
+          variation = await storage.createVariation({ ...baseData, variationNumber });
+          break;
+        } catch (err: any) {
+          // Unique (project_id, variation_number) index: a concurrent create
+          // can win the race — regenerate with the next number and retry.
+          if (err?.code === "23505" && autoNumber && attempt < 2) continue;
+          if (err?.code === "23505") {
+            return res.status(409).json({ error: `Variation number ${variationNumber} is already in use on this project` });
+          }
+          throw err;
+        }
+      }
       res.status(201).json(variation);
     } catch (error) {
       res.status(500).json({ error: "Failed to create variation" });
@@ -17619,11 +17812,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/variations/:id", async (req, res) => {
     try {
-      const validationResult = insertVariationSchema.partial().safeParse(req.body);
+      const validationResult = updateVariationSchema.safeParse(req.body);
       if (!validationResult.success) {
-        return res.status(400).json({ 
-          error: "Validation failed", 
-          details: fromZodError(validationResult.error).toString() 
+        return res.status(400).json({
+          error: "Validation failed",
+          details: fromZodError(validationResult.error).toString()
         });
       }
 
@@ -17631,10 +17824,46 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const prevVariation = await getOwnedVariation(req, res, req.params.id);
       if (!prevVariation) return;
 
-      const variation = await storage.updateVariation(req.params.id, validationResult.data);
+      // Approved lock: the only permitted PATCHes are a rejection (status +
+      // reason) or the builder's list-view "seen" toggle. Everything else —
+      // field edits, moving back to draft/pending, re-approving — is blocked.
+      if ((prevVariation as any).status === "approved") {
+        const keys = Object.keys(validationResult.data);
+        const allowedKeys = new Set(["status", "rejectionReason", "isSeen"]);
+        const withinAllowed = keys.every((k) => allowedKeys.has(k));
+        const wantsStatusChange = validationResult.data.status !== undefined
+          && validationResult.data.status !== "approved";
+        if (!withinAllowed || (wantsStatusChange && validationResult.data.status !== "rejected")) {
+          return res.status(409).json({ error: APPROVED_VARIATION_LOCK_MESSAGE });
+        }
+        if (validationResult.data.status === "rejected") {
+          if (!validationResult.data.rejectionReason?.trim()) {
+            return res.status(400).json({ error: "A rejection reason is required to reject an approved variation" });
+          }
+          if ((await getVariationInvoiceClaimCount(req.params.id)) > 0) {
+            return res.status(409).json({
+              error: "This variation is claimed on a client invoice. Remove the claim from the invoice before rejecting it.",
+            });
+          }
+        }
+      }
+
+      const updates: Record<string, any> = { ...validationResult.data };
+      if (updates.status && updates.status !== (prevVariation as any).status) {
+        Object.assign(
+          updates,
+          buildVariationStatusUpdates(prevVariation, updates.status, (req.user as any)?.id),
+        );
+      }
+
+      let variation = await storage.updateVariation(req.params.id, updates);
       if (!variation) {
         return res.status(404).json({ error: "Variation not found" });
       }
+
+      // Header money totals are server-derived; refresh them before any
+      // budget recalc reads the row.
+      variation = (await recomputeVariationTotals(req.params.id)) ?? variation;
 
       // Task #257: emit a marker log whenever a variation crosses the approved
       // boundary so downstream consumers (and operators tailing logs) can
@@ -17654,26 +17883,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // T005: EOT — extend project end date when variation is approved and has daysChanged
-      let scheduleExtended: { days: number; newEndDate: string } | undefined;
-      const wasApproved = prevVariation?.status !== "approved" && (variation as any).status === "approved";
-      const daysChanged = (variation as any).daysChanged ?? 0;
-
-      if (wasApproved && daysChanged > 0 && (variation as any).projectId) {
-        const project = await storage.getProject((variation as any).projectId);
-        if (project && project.proposedEndDate) {
-          // Add working days (Mon-Fri) to the current proposedEndDate
-          let date = new Date(project.proposedEndDate);
-          let remaining = daysChanged;
-          while (remaining > 0) {
-            date.setDate(date.getDate() + 1);
-            const day = date.getDay();
-            if (day !== 0 && day !== 6) remaining--;
-          }
-          const newEndDate = date.toISOString().split("T")[0];
-          await storage.updateProject((variation as any).projectId, { proposedEndDate: newEndDate });
-          scheduleExtended = { days: daysChanged, newEndDate };
-        }
-      }
+      const scheduleExtended = await extendScheduleOnVariationApproval(prevVariation, variation);
 
       res.json({ ...variation, scheduleExtended });
     } catch (error) {
@@ -17685,6 +17895,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const owned = await getOwnedVariation(req, res, req.params.id);
       if (!owned) return;
+      if ((owned as any).status === "approved") {
+        return res.status(409).json({
+          error: "Approved variations cannot be deleted. Reject the variation first.",
+        });
+      }
+      if ((await getVariationInvoiceClaimCount(req.params.id)) > 0) {
+        return res.status(409).json({
+          error: "This variation is claimed on a client invoice. Remove the claim from the invoice before deleting it.",
+        });
+      }
       const deleted = await storage.deleteVariation(req.params.id);
       if (!deleted) {
         return res.status(404).json({ error: "Variation not found" });
@@ -17711,6 +17931,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const ownedVariation = await getOwnedVariation(req, res, req.params.id);
       if (!ownedVariation) return;
+      if ((ownedVariation as any).status === "approved") {
+        return res.status(409).json({ error: APPROVED_VARIATION_LOCK_MESSAGE });
+      }
       const validationResult = insertVariationItemSchema.safeParse({
         ...req.body,
         variationId: req.params.id
@@ -17722,7 +17945,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      const item = await storage.createVariationItem(validationResult.data);
+      // Cost-line client prices are derived server-side from the builder cost
+      // fields (unitCostExTax dollars × markup × qty → ex-GST cents) so a
+      // buggy or hand-crafted client can't store prices that disagree with
+      // the line's own inputs. Allowance adjustment lines set their amount
+      // directly and are stored as sent. Lines with no cost basis (legacy
+      // rows carry the price only in unitPrice) keep their explicit prices —
+      // deriving from a zero cost would wipe them.
+      const data: Record<string, any> = { ...validationResult.data };
+      if ((data.itemType ?? "cost_line") === "cost_line" && (data.unitCostExTax ?? 0) !== 0) {
+        const priced = computeVariationLinePriceCents({
+          quantity: data.quantity ?? 1,
+          unitCostExTax: data.unitCostExTax ?? 0,
+          markupPercent: data.markupPercent ?? null,
+        });
+        data.unitPrice = priced.unitPriceCents;
+        data.totalPrice = priced.totalPriceCents;
+      }
+
+      const item = await storage.createVariationItem(data as any);
+      await recomputeVariationTotals(req.params.id);
       res.status(201).json(item);
     } catch (error) {
       res.status(500).json({ error: "Failed to create variation item" });
@@ -17732,22 +17974,42 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.patch("/api/variation-items/:id", async (req, res) => {
     try {
       const { variationItems: viTbl } = await import("@shared/schema");
-      const [viRow] = await db.select({ variationId: viTbl.variationId }).from(viTbl).where(eq(viTbl.id, req.params.id));
+      const [viRow] = await db.select().from(viTbl).where(eq(viTbl.id, req.params.id));
       if (!viRow) return res.status(404).json({ error: "Variation item not found" });
-      if (!(await getOwnedVariation(req, res, viRow.variationId, "Variation item not found"))) return;
+      const parentVariation = await getOwnedVariation(req, res, viRow.variationId, "Variation item not found");
+      if (!parentVariation) return;
+      if ((parentVariation as any).status === "approved") {
+        return res.status(409).json({ error: APPROVED_VARIATION_LOCK_MESSAGE });
+      }
 
       const validationResult = insertVariationItemSchema.partial().safeParse(req.body);
       if (!validationResult.success) {
-        return res.status(400).json({ 
-          error: "Validation failed", 
-          details: fromZodError(validationResult.error).toString() 
+        return res.status(400).json({
+          error: "Validation failed",
+          details: fromZodError(validationResult.error).toString()
         });
       }
 
-      const item = await storage.updateVariationItem(req.params.id, validationResult.data);
+      // Same server-side pricing rule as item create: recompute the stored
+      // client price from the merged line's cost inputs (skipped when there is
+      // no cost basis — legacy lines keep their explicit prices).
+      const data: Record<string, any> = { ...validationResult.data };
+      const merged: Record<string, any> = { ...viRow, ...data };
+      if ((merged.itemType ?? "cost_line") === "cost_line" && (merged.unitCostExTax ?? 0) !== 0) {
+        const priced = computeVariationLinePriceCents({
+          quantity: merged.quantity ?? 1,
+          unitCostExTax: merged.unitCostExTax ?? 0,
+          markupPercent: merged.markupPercent ?? null,
+        });
+        data.unitPrice = priced.unitPriceCents;
+        data.totalPrice = priced.totalPriceCents;
+      }
+
+      const item = await storage.updateVariationItem(req.params.id, data as any);
       if (!item) {
         return res.status(404).json({ error: "Variation item not found" });
       }
+      await recomputeVariationTotals(viRow.variationId);
       res.json(item);
     } catch (error) {
       res.status(500).json({ error: "Failed to update variation item" });
@@ -17759,11 +18021,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { variationItems: viTbl } = await import("@shared/schema");
       const [viRow] = await db.select({ variationId: viTbl.variationId }).from(viTbl).where(eq(viTbl.id, req.params.id));
       if (!viRow) return res.status(404).json({ error: "Variation item not found" });
-      if (!(await getOwnedVariation(req, res, viRow.variationId, "Variation item not found"))) return;
+      const parentVariation = await getOwnedVariation(req, res, viRow.variationId, "Variation item not found");
+      if (!parentVariation) return;
+      if ((parentVariation as any).status === "approved") {
+        return res.status(409).json({ error: APPROVED_VARIATION_LOCK_MESSAGE });
+      }
       const deleted = await storage.deleteVariationItem(req.params.id);
       if (!deleted) {
         return res.status(404).json({ error: "Variation item not found" });
       }
+      await recomputeVariationTotals(viRow.variationId);
       res.status(204).send();
     } catch (error) {
       res.status(500).json({ error: "Failed to delete variation item" });
@@ -17786,13 +18053,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const ownedVariation = await getOwnedVariation(req, res, req.params.id);
       if (!ownedVariation) return;
+      if ((ownedVariation as any).status === "approved") {
+        return res.status(409).json({ error: APPROVED_VARIATION_LOCK_MESSAGE });
+      }
       const { billIds } = req.body as { billIds: string[] };
       await storage.deleteVariationBillsByVariationId(req.params.id);
-      const results = [];
-      for (const billId of (billIds || [])) {
-        const vb = await storage.createVariationBill({ variationId: req.params.id, billId });
-        results.push(vb);
-      }
+      const results = await storage.createVariationBills(
+        req.params.id,
+        Array.isArray(billIds) ? billIds : [],
+      );
+      await recomputeVariationTotals(req.params.id);
       res.json(results);
     } catch (error) {
       res.status(500).json({ error: "Failed to update variation bills" });
@@ -17815,13 +18085,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const ownedVariation = await getOwnedVariation(req, res, req.params.id);
       if (!ownedVariation) return;
+      if ((ownedVariation as any).status === "approved") {
+        return res.status(409).json({ error: APPROVED_VARIATION_LOCK_MESSAGE });
+      }
       const { timesheetIds } = req.body as { timesheetIds: string[] };
       await storage.deleteVariationTimesheetsByVariationId(req.params.id);
-      const results = [];
-      for (const timesheetId of (timesheetIds || [])) {
-        const vt = await storage.createVariationTimesheet({ variationId: req.params.id, timesheetId });
-        results.push(vt);
-      }
+      const results = await storage.createVariationTimesheets(
+        req.params.id,
+        Array.isArray(timesheetIds) ? timesheetIds : [],
+      );
+      await recomputeVariationTotals(req.params.id);
       res.json(results);
     } catch (error) {
       res.status(500).json({ error: "Failed to update variation timesheets" });
@@ -17893,7 +18166,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       let token = (variation as any).portalToken;
       if (!token) {
-        token = require("crypto").randomUUID();
+        token = randomUUID();
         await storage.updateVariation(req.params.id, { portalToken: token } as any);
       }
 
@@ -17904,73 +18177,246 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Public portal — fetch variation data by token (no auth required)
+  // Public portal — fetch variation data by token (no auth required).
+  //
+  // SECURITY: everything returned here is readable by ANY holder of the
+  // portal link, so the payload is projected down to exactly what the portal
+  // page renders. Builder-internal data (unit costs, markup, cost codes,
+  // hidden lines, timesheet rates, company integration credentials) must
+  // never be added back to this response.
+  const projectPortalVariation = (variation: any) => ({
+    id: variation.id,
+    variationNumber: variation.variationNumber,
+    name: variation.name,
+    introductionText: variation.introductionText,
+    closingText: variation.closingText,
+    approvalDeadline: variation.approvalDeadline,
+    daysChanged: variation.daysChanged,
+    subtotal: variation.subtotal,
+    gstAmount: variation.gstAmount,
+    totalAmount: variation.totalAmount,
+    status: variation.status,
+    rejectionReason: variation.rejectionReason,
+    termsAndConditions: variation.termsAndConditions,
+    attachments: variation.attachments,
+    clientSignedName: variation.clientSignedName,
+    clientSignedDate: variation.clientSignedDate,
+    builderSignedName: variation.builderSignedName,
+    builderSignedDate: variation.builderSignedDate,
+    portalSentAt: variation.portalSentAt,
+    createdAt: variation.createdAt,
+  });
+
   app.get("/api/portal/variation/:token", async (req, res) => {
     try {
       const { token } = req.params;
-      // Find variation by portal token
-      const { db } = await import("./db");
-      const { variations, projects, companies } = await import("@shared/schema");
-      const { eq } = await import("drizzle-orm");
+      const { variations, projects } = await import("@shared/schema");
 
       const [variation] = await db.select().from(variations).where(eq(variations.portalToken, token));
-      if (!variation) return res.status(404).json({ error: "Portal link not found or expired" });
+      if (!variation) return res.status(404).json({ error: "Portal link not found" });
 
-      const [project] = variation.projectId
-        ? await db.select().from(projects).where(eq(projects.id, variation.projectId))
-        : [undefined];
+      const [projectRows, items, bills, timesheets, settings] = await Promise.all([
+        variation.projectId
+          ? db.select().from(projects).where(eq(projects.id, variation.projectId))
+          : Promise.resolve([] as any[]),
+        storage.getVariationItems(variation.id),
+        storage.getVariationBills(variation.id),
+        storage.getVariationTimesheets(variation.id),
+        storage.getCompanySettings().catch(() => undefined),
+      ]);
+      const project: any = projectRows[0];
+      const company = project ? await storage.getCompany(project.companyId) : undefined;
 
-      const company = project
-        ? await storage.getCompany((project as any).companyId)
-        : undefined;
+      // Lines the builder marked "hide from client" are dropped server-side;
+      // remaining lines expose only client-price fields.
+      const publicItems = items
+        .filter((item: any) => item.showInPdf !== false)
+        .map((item: any) => ({
+          id: item.id,
+          name: item.name,
+          description: item.description,
+          quantity: item.quantity,
+          unitType: item.unitType,
+          unitPrice: item.unitPrice,
+          totalPrice: item.totalPrice,
+          taxable: item.taxable,
+          itemType: item.itemType,
+          type: item.type,
+          sortOrder: item.sortOrder,
+        }));
 
-      const items = await storage.getVariationItems(variation.id);
-      const bills = await storage.getVariationBills(variation.id);
-      const timesheets = await storage.getVariationTimesheets(variation.id);
+      // Hidden lines are still real charges, so their value is returned as a
+      // single "not itemised" figure. Without it the visible rows wouldn't sum
+      // to the Total the client is asked to approve.
+      const hiddenItems = items.filter((item: any) => item.showInPdf === false);
+      const notItemisedIncCents = hiddenItems.length
+        ? computeVariationTotals({ items: hiddenItems }).totalCents
+        : 0;
 
-      res.json({ variation, items, bills, timesheets, project, company });
+      const publicBills = bills.map((bill: any) => ({
+        id: bill.id,
+        billNumber: bill.billNumber,
+        supplierName: bill.supplierName ?? null,
+        invoiceDate: bill.billDate,
+        totalAmountCents: bill.total,
+      }));
+
+      // Attachments are exposed by index only — the raw object-storage path
+      // stays server-side and downloads go through the token-scoped route
+      // below (the /objects route requires a logged-in company member).
+      const attachmentList = Array.isArray((variation as any).attachments)
+        ? ((variation as any).attachments as any[])
+        : [];
+      const publicAttachments = attachmentList.map((a: any, index: number) => ({
+        index,
+        name: a?.name || `attachment-${index + 1}`,
+        size: a?.size ?? null,
+        type: a?.type ?? null,
+      }));
+
+      // Timesheet rows (names, hours, rates) stay server-side; the portal
+      // only needs the on-charged labour total.
+      const labourTotalCents = timesheets.reduce(
+        (sum: number, ts: any) => sum + timesheetTotalExGstCents(ts),
+        0,
+      );
+
+      // Record the client's first view. Fire-and-forget: a tracking write must
+      // never fail the page load. isSeen is kept in step so the builder's list
+      // column finally means "the client has seen it".
+      if (!(variation as any).portalViewedAt) {
+        storage
+          .updateVariation(variation.id, { portalViewedAt: new Date(), isSeen: true } as any)
+          .catch((err) => console.error("[portal] failed to record variation view:", err));
+      }
+
+      res.json({
+        variation: projectPortalVariation(variation),
+        items: publicItems,
+        bills: publicBills,
+        attachments: publicAttachments,
+        notItemisedIncCents,
+        labourTotalCents,
+        project: project
+          ? {
+              id: project.id,
+              name: project.name,
+              address: project.address,
+              clientName: project.clientName,
+              clientPhone: project.clientPhone,
+              clientEmail: project.clientEmail,
+            }
+          : undefined,
+        company: company
+          ? {
+              id: company.id,
+              name: company.name,
+              abn: company.abn,
+              phone: company.phone,
+              email: company.email,
+              logo: company.logo,
+              brandColor: (settings as any)?.brandColor ?? null,
+            }
+          : undefined,
+      });
     } catch (error) {
       console.error("Error fetching portal variation:", error);
       res.status(500).json({ error: "Failed to fetch portal data" });
     }
   });
 
-  // Public portal — client/builder sign
+  // Public portal — download an attachment by index.
+  //
+  // The normal /objects route requires a logged-in company member, so a client
+  // holding a portal link could never open the files attached to the variation
+  // they're being asked to approve. Access here is scoped by the token AND by
+  // the index being present on that specific variation — no caller-supplied
+  // paths, so this can't be used to reach any other object.
+  app.get("/api/portal/variation/:token/attachments/:index", async (req, res) => {
+    try {
+      const { token, index } = req.params;
+      const { variations } = await import("@shared/schema");
+      const [variation] = await db.select().from(variations).where(eq(variations.portalToken, token));
+      if (!variation) return res.status(404).json({ error: "Portal link not found" });
+
+      const attachments = Array.isArray((variation as any).attachments)
+        ? ((variation as any).attachments as any[])
+        : [];
+      const attachment = attachments[Number(index)];
+      const objectPath: string | undefined = attachment?.url;
+      if (!attachment || typeof objectPath !== "string" || !objectPath.startsWith("/objects/")) {
+        return res.status(404).json({ error: "Attachment not found" });
+      }
+
+      // Stored paths carry a /company/<id> segment for the authenticated route;
+      // the bucket itself is flat, so strip it before the lookup.
+      const normalised = objectPath.replace(/^\/objects\/company\/[^/]+/, "/objects");
+      const objectFile = await objectStorageService.getObjectEntityFile(normalised);
+      if (attachment.name) {
+        res.setHeader("Content-Disposition", `inline; filename="${String(attachment.name).replace(/"/g, "")}"`);
+      }
+      await objectStorageService.downloadObject(objectFile, res);
+    } catch (error: any) {
+      if (error?.name === "ObjectNotFoundError") {
+        return res.status(404).json({ error: "Attachment not found" });
+      }
+      console.error("Error serving portal attachment:", error);
+      res.status(500).json({ error: "Failed to download attachment" });
+    }
+  });
+
+  // Public portal — client sign (approve or reject).
+  //
+  // SECURITY: this endpoint is reachable by anyone holding the portal link,
+  // so it can only ever act as the CLIENT signature. It never sets builder
+  // signature fields and never sets status "approved" — a client approval
+  // moves the variation to "pending" for the builder to finalise in-app
+  // (which stamps approvedBy/approvedDate and runs budget/EOT side-effects).
   app.post("/api/portal/variation/:token/sign", async (req, res) => {
     try {
       const { token } = req.params;
-      const { signerType, name, action, rejectionReason } = req.body as {
-        signerType: "client" | "builder";
+      const { name, action, rejectionReason } = req.body as {
         name: string;
         action: "approve" | "reject";
         rejectionReason?: string;
       };
 
-      if (!name) return res.status(400).json({ error: "Name is required" });
+      if (!name || !String(name).trim()) return res.status(400).json({ error: "Name is required" });
+      if (action !== "approve" && action !== "reject") {
+        return res.status(400).json({ error: "Invalid action" });
+      }
 
-      const { db } = await import("./db");
       const { variations } = await import("@shared/schema");
-      const { eq } = await import("drizzle-orm");
-
       const [variation] = await db.select().from(variations).where(eq(variations.portalToken, token));
       if (!variation) return res.status(404).json({ error: "Portal link not found" });
 
-      const now = new Date();
-      const updates: Record<string, any> = {};
-
-      if (signerType === "client") {
-        updates.clientSignedName = name;
-        updates.clientSignedDate = now;
-        updates.status = action === "approve" ? "pending" : "rejected";
-        if (rejectionReason) updates.rejectionReason = rejectionReason;
-      } else {
-        updates.builderSignedName = name;
-        updates.builderSignedDate = now;
-        if (action === "approve") updates.status = "approved";
+      // State guard + idempotency: a variation that is already signed or
+      // finalised cannot be signed again through the public link.
+      if (variation.status === "approved" || variation.status === "rejected") {
+        return res.status(409).json({ error: "This variation has already been finalised." });
+      }
+      if (variation.clientSignedName) {
+        return res.status(409).json({ error: "This variation has already been signed." });
+      }
+      if (variation.approvalDeadline && new Date() > new Date(variation.approvalDeadline)) {
+        return res.status(410).json({
+          error: "The approval deadline for this variation has passed. Please contact your builder for an updated link.",
+        });
       }
 
+      // Audit trail: server timestamp + request origin (trust proxy is set,
+      // so req.ip reflects the real client IP behind the proxy).
+      const updates: Record<string, any> = {
+        clientSignedName: String(name).trim(),
+        clientSignedDate: new Date(),
+        clientSignedIp: req.ip ?? null,
+        clientSignedUserAgent: (req.headers["user-agent"] || "").toString().slice(0, 500) || null,
+        status: action === "approve" ? "pending" : "rejected",
+      };
+      if (action === "reject" && rejectionReason) updates.rejectionReason = rejectionReason;
+
       const updated = await storage.updateVariation(variation.id, updates as any);
-      res.json({ success: true, variation: updated });
+      res.json({ success: true, variation: updated ? projectPortalVariation(updated) : undefined });
     } catch (error) {
       console.error("Error signing variation:", error);
       res.status(500).json({ error: "Failed to sign variation" });
@@ -17997,7 +18443,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Ensure portal token exists
       let token = (variation as any).portalToken;
       if (!token) {
-        token = require("crypto").randomUUID();
+        token = randomUUID();
         await storage.updateVariation(variation.id, { portalToken: token } as any);
       }
 
@@ -18020,10 +18466,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
         attachments,
       });
 
-      // Mark portalSentAt
-      await storage.updateVariation(variation.id, { portalSentAt: new Date() } as any);
+      // Mark portalSentAt, and advance an unissued variation to "pending".
+      // The portal presents an approve/reject signature panel, so once the
+      // client has the link the variation IS awaiting their decision —
+      // previously status stayed "draft" and the client was shown a Draft
+      // chip on a document they were being asked to sign. Approved/rejected
+      // variations keep their decided status.
+      const sendUpdates: Record<string, any> = { portalSentAt: new Date() };
+      if (variation.status === "draft" || variation.status === "action") {
+        sendUpdates.status = "pending";
+      }
+      await storage.updateVariation(variation.id, sendUpdates as any);
 
-      res.json({ success: true });
+      res.json({ success: true, status: sendUpdates.status ?? variation.status });
     } catch (error) {
       console.error("Error sending variation:", error);
       res.status(500).json({ error: "Failed to send variation" });
@@ -20002,8 +20457,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/client-invoices/:id/variations", async (req, res) => {
     try {
-      const ownedInvoice = await getOwnedClientInvoice(req, res, req.params.id);
-      if (!ownedInvoice) return;
+      const invoice = await getOwnedClientInvoice(req, res, req.params.id, "Client invoice not found");
+      if (!invoice) return;
       const validationResult = insertInvoiceVariationSchema.safeParse({
         ...req.body,
         invoiceId: req.params.id
@@ -20014,11 +20469,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
           details: fromZodError(validationResult.error).toString()
         });
       }
-      // The variation being linked must belong to the caller's company too.
+      // The claimed variation must belong to the same project as the (owned)
+      // invoice — which also pins it to the caller's company.
       const variation = await storage.getVariation(validationResult.data.variationId);
-      if (!variation || !(await enforceProjectCompany(req, res, (variation as any).projectId, "Variation not found"))) return;
+      if (!variation || (variation as any).projectId !== (invoice as any).projectId) {
+        return res.status(400).json({ error: "Variation does not belong to this invoice's project" });
+      }
 
       const invoiceVariation = await storage.createInvoiceVariation(validationResult.data);
+      await storage.recomputeVariationPaidAmount(validationResult.data.variationId);
       res.status(201).json(invoiceVariation);
     } catch (error) {
       res.status(500).json({ error: "Failed to create invoice variation" });
@@ -20058,6 +20517,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!updated) {
         return res.status(404).json({ error: "Invoice variation not found" });
       }
+      await storage.recomputeVariationPaidAmount(updated.variationId);
       res.json(updated);
     } catch (error) {
       res.status(500).json({ error: "Failed to update invoice variation" });
@@ -20075,6 +20535,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!deleted) {
         return res.status(404).json({ error: "Invoice variation not found" });
       }
+      await storage.recomputeVariationPaidAmount(link.variationId);
       res.status(204).send();
     } catch (error) {
       res.status(500).json({ error: "Failed to delete invoice variation" });
