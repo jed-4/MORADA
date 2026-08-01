@@ -29,10 +29,16 @@ export function getCategoryColour(category?: string | null): string {
 export function getDerivedStatus(sel: SelectionWithOptions): DerivedStatus {
   if ((sel as any).status === "received") return "received";
   if ((sel as any).status === "ordered") return "ordered";
-  if (sel.status === "approved" || sel.status === "completed") return "approved";
+  // Approval is a fact on the option — the stored selection status can lag
+  // behind it (e.g. an option approved before the status writer existed)
+  if (sel.status === "approved" || sel.status === "completed" || sel.options?.some((o) => o.approvedAt)) {
+    return "approved";
+  }
+  // A client decision closes out the deadline. "Overdue" means we're still
+  // WAITING on a decision past the due date — never a decided selection.
+  if (sel.options?.some((o) => o.isSelectedByClient)) return "submitted";
   const isPastDue = sel.deadline && new Date(sel.deadline).getTime() < Date.now();
   if (isPastDue) return "overdue";
-  if (sel.options?.some((o) => o.isSelectedByClient)) return "submitted";
   return "open";
 }
 
@@ -62,7 +68,8 @@ export function formatVarianceCents(cents: number | null): { text: string; tone:
 // Relative deadline: "Overdue 3d" / "Due today" / "5d left" / date. Decided
 // selections show "Done" — the date stops mattering once the choice is made.
 export function getDeadlineMeta(deadline: Date | null | undefined, derived: DerivedStatus) {
-  if (derived === "approved" || derived === "ordered" || derived === "received") {
+  // Decided (incl. submitted) — the countdown stops mattering
+  if (isDecided(derived)) {
     return { text: "Done", className: "text-muted-foreground/50" };
   }
   if (!deadline) return { text: "—", className: "text-muted-foreground/40" };

@@ -1198,25 +1198,21 @@ export default function SelectionDetail() {
           {/* Breadcrumb + title row. The project header and section tabs come
               from the project shell, so this page only owns its own crumb. */}
           <div>
-            <nav className="flex items-center gap-1 text-xs text-muted-foreground mb-1.5" aria-label="Breadcrumb">
-              <button
-                onClick={goBack}
-                className="hover:text-foreground transition-colors"
-                data-testid="button-back"
-              >
-                Selections
-              </button>
-              <ChevronRight className="w-3 h-3 opacity-50" />
-              <span className="text-foreground font-medium truncate max-w-[320px]">{selection.name}</span>
-            </nav>
+            {/* One back affordance — the shell header already names the
+                project/section, and the info bar below carries category and
+                location, so neither is repeated here */}
+            <button
+              onClick={goBack}
+              className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors mb-1.5"
+              data-testid="button-back"
+            >
+              <ChevronLeft className="w-3.5 h-3.5" />
+              Back to Selections
+            </button>
             <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
+              <div className="min-w-0 flex items-center gap-2.5 flex-wrap">
                 <h2 className="text-2xl font-bold leading-tight">{selection.name}</h2>
-                {(selection.category || selection.room) && (
-                  <p className="text-sm text-muted-foreground mt-0.5">
-                    {[selection.category, selection.room].filter(Boolean).join(" · ")}
-                  </p>
-                )}
+                <SelectionStatusPill derived={getDerivedStatus(selection as any)} />
               </div>
       <div className="flex items-center gap-2">
         {hasUnsavedChanges && !isEditingDetails && (
@@ -1275,12 +1271,6 @@ export default function SelectionDetail() {
             {!isEditingDetails ? (
               <>
               <div className="flex items-center gap-6 flex-wrap">
-                {/* Status */}
-                <div>
-                  <div className="text-data text-muted-foreground uppercase tracking-wide mb-1">Status</div>
-                  <SelectionStatusPill derived={getDerivedStatus(selection as any)} />
-                </div>
-
                 {/* Category */}
                 <div>
                   <div className="text-data text-muted-foreground uppercase tracking-wide mb-1">Category</div>
