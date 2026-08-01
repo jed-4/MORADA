@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { getWorkspacePreferences } from "@/lib/workspacePreferences";
 import { generateNotionColors } from "@/lib/taskColors";
-import { TaskRow } from "@/components/widgets/shared/TaskRow";
+import { TaskRow, TaskCard } from "@/components/widgets/shared/TaskRow";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -43,6 +43,7 @@ import { useTimezone, formatInTimezone } from "@/hooks/useTimezone";
 // neither, while omitting 'upcoming' — which the dropdown actually sets.)
 type FilterType = 'all' | 'overdue' | 'today' | 'upcoming' | 'high-priority';
 type GroupByType = 'none' | 'project' | 'dueDate' | 'priority';
+type ViewType = 'list' | 'board';
 
 interface WidgetConfig {
   maxTasks?: number;
@@ -50,6 +51,7 @@ interface WidgetConfig {
   groupBy?: GroupByType;
   showCompleted?: boolean;
   projectFilter?: string;
+  view?: ViewType;
 }
 
 export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, onCloseConfig, onSetHeaderActions, userId }: WidgetProps) {
@@ -64,6 +66,10 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
   const groupBy = config.groupBy ?? 'none';
   const showCompleted = config.showCompleted ?? false;
   const projectFilter = config.projectFilter ?? 'all';
+  const view = config.view ?? 'list';
+  // A board with one column is just a list with extra chrome.
+  const effectiveGroupBy: GroupByType =
+    view === 'board' && groupBy === 'none' ? 'project' : groupBy;
 
   const [editingTitle, setEditingTitle] = useState(widget.title);
   const [configMaxTasks, setConfigMaxTasks] = useState(maxTasks);
@@ -71,6 +77,7 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
   const [configGroupBy, setConfigGroupBy] = useState<GroupByType>(groupBy);
   const [configShowCompleted, setConfigShowCompleted] = useState(showCompleted);
   const [configProjectFilter, setConfigProjectFilter] = useState(projectFilter);
+  const [configView, setConfigView] = useState<ViewType>(view);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
@@ -85,6 +92,7 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
     setConfigGroupBy(config.groupBy ?? 'none');
     setConfigShowCompleted(config.showCompleted ?? false);
     setConfigProjectFilter(config.projectFilter ?? 'all');
+    setConfigView(config.view ?? 'list');
   }, [widget.title, widget.config]);
 
   const { data: tasks = [], isLoading, isError, refetch } = useQuery<Task[]>({
@@ -223,7 +231,7 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
   }, [tasks, showCompleted, projectFilter, today]);
 
   const groupedTasks = useMemo(() => {
-    if (groupBy === 'none') {
+    if (effectiveGroupBy === 'none') {
       return [{ key: 'all', label: '', tasks: filteredTasks }];
     }
 
@@ -234,7 +242,7 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
       let label: string;
       let color: string | undefined;
 
-      switch (groupBy) {
+      switch (effectiveGroupBy) {
         case 'project':
           // Include scope='business' OR legacy tasks (no scope + no projectId) as business
           if (task.scope === 'business' || (!task.scope && !task.projectId)) {
@@ -282,26 +290,26 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
     });
 
     return Array.from(groups.entries()).map(([key, value]) => ({ key, ...value }));
-  }, [filteredTasks, groupBy, projectMap, today]);
+  }, [filteredTasks, effectiveGroupBy, projectMap, today]);
 
-  const [prevGroupBy, setPrevGroupBy] = useState(groupBy);
+  const [prevGroupBy, setPrevGroupBy] = useState(effectiveGroupBy);
   useEffect(() => {
-    if (groupBy !== prevGroupBy) {
-      setPrevGroupBy(groupBy);
+    if (effectiveGroupBy !== prevGroupBy) {
+      setPrevGroupBy(effectiveGroupBy);
       setGroupsInitialized(false);
       setCollapsedGroups(new Set());
     }
-  }, [groupBy, prevGroupBy]);
+  }, [effectiveGroupBy, prevGroupBy]);
 
   useEffect(() => {
-    if (!groupsInitialized && groupBy !== 'none' && groupedTasks.length > 0) {
+    if (!groupsInitialized && effectiveGroupBy !== 'none' && groupedTasks.length > 0) {
       const { defaultExpanded } = getWorkspacePreferences();
       if (!defaultExpanded) {
         setCollapsedGroups(new Set(groupedTasks.map(g => g.key)));
       }
       setGroupsInitialized(true);
     }
-  }, [groupedTasks, groupBy, groupsInitialized]);
+  }, [groupedTasks, effectiveGroupBy, groupsInitialized]);
 
   /**
    * Every task row in this widget goes through here so the grouped and
@@ -364,6 +372,7 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
             maxTasks: configMaxTasks,
             showFilter: configShowFilter,
             groupBy: configGroupBy,
+            view: configView,
             showCompleted: configShowCompleted,
             projectFilter: configProjectFilter,
           }
@@ -379,6 +388,7 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
       setConfigGroupBy(config.groupBy ?? 'none');
       setConfigShowCompleted(config.showCompleted ?? false);
       setConfigProjectFilter(config.projectFilter ?? 'all');
+      setConfigView(config.view ?? 'list');
       onCloseConfig?.();
     };
 
@@ -430,20 +440,39 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
         </div>
 
         <div className="space-y-2">
-          <Label className="text-xs">Group By</Label>
+          <Label className="text-xs">View</Label>
+          <Select value={configView} onValueChange={(v) => setConfigView(v as ViewType)}>
+            <SelectTrigger className="h-7 text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="list">List</SelectItem>
+              <SelectItem value="board">Board</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="space-y-2">
+          <Label className="text-xs">{configView === 'board' ? 'Columns' : 'Group By'}</Label>
           <Select value={configGroupBy} onValueChange={(v) => setConfigGroupBy(v as GroupByType)}>
             <SelectTrigger className="h-7 text-xs">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="none">No Grouping</SelectItem>
+              {/* A board needs an axis, so "no grouping" isn't offered for it. */}
+              {configView !== 'board' && <SelectItem value="none">No Grouping</SelectItem>}
               <SelectItem value="project">Project</SelectItem>
               <SelectItem value="dueDate">Due Date</SelectItem>
               <SelectItem value="priority">Priority</SelectItem>
             </SelectContent>
           </Select>
+          {configView === 'board' && (
+            <p className="text-[11px] text-muted-foreground">
+              Each {configGroupBy === 'none' ? 'group' : configGroupBy === 'dueDate' ? 'due date' : configGroupBy} becomes a column.
+            </p>
+          )}
         </div>
-        
+
         <div className="space-y-2">
           <Label className="text-xs">Max Tasks</Label>
           <Input 
@@ -477,12 +506,12 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
   }
 
   const allCollapsed = useMemo(() => {
-    if (groupBy === 'none') return false;
+    if (effectiveGroupBy === 'none') return false;
     return groupedTasks.every(g => collapsedGroups.has(g.key));
-  }, [groupedTasks, collapsedGroups, groupBy]);
+  }, [groupedTasks, collapsedGroups, effectiveGroupBy]);
 
   const toggleAllGroups = () => {
-    if (groupBy === 'none') return;
+    if (effectiveGroupBy === 'none') return;
     if (allCollapsed) {
       setCollapsedGroups(new Set());
     } else {
@@ -527,7 +556,7 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
             );
           })}
         </div>
-        {groupBy !== 'none' && groupedTasks.length > 1 && (
+        {view !== 'board' && effectiveGroupBy !== 'none' && groupedTasks.length > 1 && (
           <Button
             size="icon"
             variant="ghost"
@@ -578,7 +607,55 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
             </div>
           ) : filteredTasks.length === 0 ? (
             <WidgetEmpty icon={CheckSquare} message="No tasks match your filters" />
-          ) : groupBy === 'none' ? (
+          ) : view === 'board' ? (
+            // Columns scroll sideways; each column scrolls on its own vertically
+            // so one busy project can't stretch the whole widget.
+            <div className="flex gap-2 overflow-x-auto pb-1">
+              {groupedTasks.map((group) => (
+                <div
+                  key={group.key}
+                  className="flex-shrink-0 w-[190px] flex flex-col"
+                  data-testid={`personal-tasks-column-${group.key}`}
+                >
+                  <div className="flex items-center gap-1.5 px-1 pb-1.5">
+                    {group.color && (
+                      <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: group.color }} />
+                    )}
+                    <span className="text-[10px] font-semibold uppercase tracking-wider truncate" title={group.label}>
+                      {group.label}
+                    </span>
+                    <span className="text-[10px] text-muted-foreground tabular-nums">{group.tasks.length}</span>
+                  </div>
+                  <div className="space-y-1 max-h-[320px] overflow-y-auto pr-0.5">
+                    {group.tasks.map((task) => {
+                      const project = task.projectId ? projectMap.get(task.projectId) : null;
+                      const isBusiness = task.scope === 'business' || (!task.scope && !task.projectId);
+                      const showAccent = effectiveGroupBy !== 'project';
+                      return (
+                        <TaskCard
+                          key={task.id}
+                          task={{ ...task, dueDate: effectiveGroupBy === 'dueDate' ? null : task.dueDate } as any}
+                          accentColor={
+                            !showAccent ? null
+                              : project ? generateNotionColors(project.color).originalHex
+                              : isBusiness ? 'hsl(var(--primary))' : null
+                          }
+                          accentLabel={
+                            !showAccent ? null
+                              : project ? project.name
+                              : isBusiness ? businessLabel : null
+                          }
+                          onToggle={() => toggleTaskMutation.mutate(task)}
+                          onClick={() => setSelectedTaskId(task.id)}
+                          testIdPrefix="personal-task-card"
+                        />
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : effectiveGroupBy === 'none' ? (
             <div className="space-y-0.5">
               {filteredTasks.map((task) => renderTaskRow(task))}
             </div>
@@ -598,7 +675,7 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
                   {group.color && (
                     <div className="w-2 h-2 rounded-full" style={{ backgroundColor: group.color }} />
                   )}
-                  {!group.color && groupBy === 'project' && (
+                  {!group.color && effectiveGroupBy === 'project' && (
                     <Folder className="h-3 w-3 text-muted-foreground" />
                   )}
                   <span className="text-table font-medium flex-1 text-left">{group.label}</span>
@@ -609,8 +686,8 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
                 <CollapsibleContent className="pt-1 space-y-0.5 ml-2">
                   {/* Inside a group, don't repeat what the group heading already says. */}
                   {group.tasks.map((task) => renderTaskRow(task, {
-                    hideDue: groupBy === 'dueDate',
-                    hideAccent: groupBy === 'project',
+                    hideDue: effectiveGroupBy === 'dueDate',
+                    hideAccent: effectiveGroupBy === 'project',
                   }))}
                 </CollapsibleContent>
               </Collapsible>

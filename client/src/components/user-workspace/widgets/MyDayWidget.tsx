@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { TaskTooltip } from "@/components/ui/task-tooltip";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { 
@@ -35,7 +36,7 @@ import { useLocation } from "wouter";
 import { format, isToday, isBefore, startOfDay } from "date-fns";
 import { type Task, type Project, type FocusBlock } from "@shared/schema";
 import { generateNotionColors } from "@/lib/taskColors";
-import { TaskRow } from "@/components/widgets/shared/TaskRow";
+import { TaskRow, TaskCard } from "@/components/widgets/shared/TaskRow";
 import { getPriorityStyle } from "@/lib/priorityConfig";
 import { useTimezone, formatInTimezone } from "@/hooks/useTimezone";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -199,6 +200,10 @@ export default function MyDayWidget({ widget, onUpdate, isConfiguring, onCloseCo
   const [initialized, setInitialized] = useState(false);
   const [showFocusCreator, setShowFocusCreator] = useState(false);
 
+  // 'board' lays the sections out as columns instead of stacked rows.
+  const view: 'list' | 'board' = (widget.config?.view as 'list' | 'board') ?? 'list';
+  const [editingView, setEditingView] = useState<'list' | 'board'>(view);
+
   useEffect(() => {
     setEditingTitle(widget.title);
   }, [widget.title]);
@@ -206,6 +211,7 @@ export default function MyDayWidget({ widget, onUpdate, isConfiguring, onCloseCo
   useEffect(() => {
     if (!initialized || JSON.stringify(editingSections) !== JSON.stringify(sections)) {
       setEditingSections(sections);
+      setEditingView(view);
       const initial: Record<string, boolean> = {};
       const { defaultExpanded } = getWorkspacePreferences();
       sections.forEach(s => { initial[s.id] = defaultExpanded ? false : s.collapsed; });
@@ -374,15 +380,17 @@ export default function MyDayWidget({ widget, onUpdate, isConfiguring, onCloseCo
         onUpdate({ 
           ...widget, 
           title: editingTitle,
-          config: { ...widget.config, sections: editingSections }
+          config: { ...widget.config, sections: editingSections, view: editingView }
         });
       }
       onCloseConfig?.();
     };
 
     const handleCancelConfig = () => {
+      // Revert every draft so an abandoned edit doesn't reappear next open.
       setEditingTitle(widget.title);
       setEditingSections(sections);
+      setEditingView(view);
       onCloseConfig?.();
     };
 
@@ -399,6 +407,19 @@ export default function MyDayWidget({ widget, onUpdate, isConfiguring, onCloseCo
           />
         </div>
         
+        <div className="space-y-2">
+          <Label className="text-xs">Layout</Label>
+          <Select value={editingView} onValueChange={(v) => setEditingView(v as 'list' | 'board')}>
+            <SelectTrigger className="h-7 text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="list">Stacked list</SelectItem>
+              <SelectItem value="board">Board (sections as columns)</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
         <div className="space-y-2">
           <Label className="text-xs">Sections (drag to reorder)</Label>
           <DndContext
@@ -459,6 +480,75 @@ export default function MyDayWidget({ widget, onUpdate, isConfiguring, onCloseCo
   // A section with nothing in it is noise, not information — hide it outright.
   const populatedSections = visibleSections.filter(s => sectionItems(s.id).length > 0);
 
+  /** Section heading — shared by the stacked list and the board columns. */
+  const renderSectionHeading = (sectionConfig: SectionConfig) => {
+    const sectionDef = SECTION_LABELS[sectionConfig.id];
+    const isOverdue = sectionConfig.id === "overdue";
+    const tone = SECTION_TONE[sectionConfig.id] ?? "hsl(var(--muted-foreground))";
+    return (
+      <>
+        <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: tone }} />
+        <span
+          className="text-[10px] font-semibold uppercase tracking-wider text-left truncate"
+          style={isOverdue ? { color: "hsl(var(--coral))" } : undefined}
+        >
+          {sectionDef.label}
+        </span>
+        <span className="text-[10px] text-muted-foreground tabular-nums">
+          {sectionItems(sectionConfig.id).length}
+        </span>
+      </>
+    );
+  };
+
+  /** Section contents. `compact` switches task rows to stacked board cards. */
+  const renderSectionBody = (sectionConfig: SectionConfig, compact = false) => {
+    const items = sectionItems(sectionConfig.id);
+
+    if (sectionConfig.id === "schedule") {
+      return (items as ScheduleItem[]).map((item) => (
+        <div
+          key={item.id}
+          className={`flex items-center gap-2 py-1.5 px-2 rounded-md hover:bg-muted/60 cursor-pointer ${compact ? 'border bg-card' : ''}`}
+          onClick={() => item.projectId && setLocation(`/projects/${item.projectId}/schedule`)}
+          data-testid={`myday-schedule-${item.id}`}
+        >
+          <CalendarDays className="h-3.5 w-3.5 flex-shrink-0" style={{ color: "hsl(var(--teal))" }} />
+          <TaskTooltip content={item.title}>
+            <span className={`truncate flex-1 leading-snug cursor-default ${compact ? 'text-xs' : 'text-sm'}`}>
+              {item.title}
+            </span>
+          </TaskTooltip>
+          {item.startTime && (
+            <span className="text-[11px] text-muted-foreground tabular-nums flex-shrink-0">
+              {item.startTime}
+            </span>
+          )}
+        </div>
+      ));
+    }
+
+    if (sectionConfig.id === "focus") {
+      return (items as FocusBlock[]).map((fb) => <FocusBlockItem key={fb.id} block={fb} />);
+    }
+
+    const Row = compact ? TaskCard : TaskRow;
+    return (items as Task[]).map((task) => {
+      const project = task.projectId ? projects.find(p => p.id === task.projectId) : null;
+      return (
+        <Row
+          key={task.id}
+          task={task as any}
+          accentColor={project ? generateNotionColors(project.color).originalHex : null}
+          accentLabel={project?.name ?? null}
+          onToggle={() => toggleTaskMutation.mutate(task)}
+          onClick={() => setSelectedTaskId(task.id)}
+          testIdPrefix="myday-task"
+        />
+      );
+    });
+  };
+
   const renderSection = (sectionConfig: SectionConfig) => {
     const isCollapsed = collapsedState[sectionConfig.id] ?? sectionConfig.collapsed;
     const sectionDef = SECTION_LABELS[sectionConfig.id];
@@ -473,14 +563,7 @@ export default function MyDayWidget({ widget, onUpdate, isConfiguring, onCloseCo
         onOpenChange={() => toggleCollapsed(sectionConfig.id)}
       >
         <CollapsibleTrigger className="group/sec flex items-center gap-2 w-full py-1 cursor-pointer">
-          <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: tone }} />
-          <span
-            className="text-[10px] font-semibold uppercase tracking-wider text-left"
-            style={isOverdue ? { color: "hsl(var(--coral))" } : undefined}
-          >
-            {sectionDef.label}
-          </span>
-          <span className="text-[10px] text-muted-foreground tabular-nums">{items.length}</span>
+          {renderSectionHeading(sectionConfig)}
           {/* Hairline carries the eye across to the chevron instead of a filled bar. */}
           <span className="flex-1 h-px bg-border" />
           {isCollapsed
@@ -489,43 +572,7 @@ export default function MyDayWidget({ widget, onUpdate, isConfiguring, onCloseCo
         </CollapsibleTrigger>
 
         <CollapsibleContent className="pt-0.5 pb-1 space-y-0.5">
-          {sectionConfig.id === "schedule" && (items as ScheduleItem[]).map((item) => (
-            <div
-              key={item.id}
-              className="flex items-center gap-2 py-1.5 px-2 rounded-md hover:bg-muted/60 cursor-pointer"
-              onClick={() => item.projectId && setLocation(`/projects/${item.projectId}/schedule`)}
-              data-testid={`myday-schedule-${item.id}`}
-            >
-              <CalendarDays className="h-3.5 w-3.5 flex-shrink-0" style={{ color: "hsl(var(--teal))" }} />
-              <TaskTooltip content={item.title}>
-                <span className="text-sm truncate flex-1 leading-snug cursor-default">{item.title}</span>
-              </TaskTooltip>
-              {item.startTime && (
-                <span className="text-[11px] text-muted-foreground tabular-nums flex-shrink-0">
-                  {item.startTime}
-                </span>
-              )}
-            </div>
-          ))}
-
-          {sectionConfig.id === "focus" && (items as FocusBlock[]).map((fb) => (
-            <FocusBlockItem key={fb.id} block={fb} />
-          ))}
-
-          {sectionConfig.id !== "schedule" && sectionConfig.id !== "focus" && (items as Task[]).map((task) => {
-            const project = task.projectId ? projects.find(p => p.id === task.projectId) : null;
-            return (
-              <TaskRow
-                key={task.id}
-                task={task as any}
-                accentColor={project ? generateNotionColors(project.color).originalHex : null}
-                accentLabel={project?.name ?? null}
-                onToggle={() => toggleTaskMutation.mutate(task)}
-                onClick={() => setSelectedTaskId(task.id)}
-                testIdPrefix="myday-task"
-              />
-            );
-          })}
+          {renderSectionBody(sectionConfig)}
         </CollapsibleContent>
       </Collapsible>
     );
@@ -601,6 +648,23 @@ export default function MyDayWidget({ widget, onUpdate, isConfiguring, onCloseCo
           title="Nothing on today"
           message="No overdue work, tasks due, or scheduled items"
         />
+      ) : view === 'board' ? (
+        <div className="flex gap-2 overflow-x-auto pb-1">
+          {populatedSections.map(section => (
+            <div
+              key={section.id}
+              className="flex-shrink-0 w-[190px] flex flex-col"
+              data-testid={`myday-column-${section.id}`}
+            >
+              <div className="flex items-center gap-1.5 px-1 pb-1.5">
+                {renderSectionHeading(section)}
+              </div>
+              <div className="space-y-1 max-h-[320px] overflow-y-auto pr-0.5">
+                {renderSectionBody(section, true)}
+              </div>
+            </div>
+          ))}
+        </div>
       ) : (
         <div className="space-y-1.5">
           {populatedSections.map(section => renderSection(section))}
