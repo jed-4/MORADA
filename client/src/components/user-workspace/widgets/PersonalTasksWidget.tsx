@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { getWorkspacePreferences } from "@/lib/workspacePreferences";
-import { getPriorityStyle } from "@/lib/priorityConfig";
+import { generateNotionColors } from "@/lib/taskColors";
+import { TaskRow } from "@/components/widgets/shared/TaskRow";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -302,33 +303,42 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
     }
   }, [groupedTasks, groupBy, groupsInitialized]);
 
-  const getTaskDueInfo = (task: Task) => {
-    if (!task.dueDate) return null;
-    const dueDate = new Date(task.dueDate);
-    
-    if (isBefore(dueDate, today)) {
-      return { label: formatInTimezone(dueDate, effectiveTimezone, { month: 'short', day: 'numeric' }), color: 'text-bp-coral bg-bp-coral/10' };
-    }
-    if (isToday(dueDate)) {
-      return { label: 'Today', color: 'text-bp-amber bg-bp-amber/10' };
-    }
-    if (isTomorrow(dueDate)) {
-      return { label: 'Tomorrow', color: 'text-bp-teal bg-bp-teal/10' };
-    }
-    return { label: formatInTimezone(dueDate, effectiveTimezone, { month: 'short', day: 'numeric' }), color: 'text-bp-muted bg-bp-subtle' };
-  };
+  /**
+   * Every task row in this widget goes through here so the grouped and
+   * ungrouped branches can't drift apart again. The accent carries the
+   * project's own colour (or lavender for business-scope tasks), which is
+   * the one thing a cross-project list needs that a per-project list doesn't.
+   */
+  const renderTaskRow = (
+    task: Task,
+    opts: { hideDue?: boolean; hideAccent?: boolean } = {},
+  ) => {
+    const project = task.projectId ? projectMap.get(task.projectId) : null;
+    const isBusiness = task.scope === 'business' || (!task.scope && !task.projectId);
 
-  // Left-border accent from the shared Morada priority scale; transparent when unset.
-  const getPriorityBorderColor = (priority: string | null | undefined) => {
-    switch (priority) {
-      case 'urgent':
-      case 'high':
-      case 'medium':
-      case 'low':
-        return getPriorityStyle(priority).color;
-      default:
-        return 'transparent';
+    let accentColor: string | null = null;
+    let accentLabel: string | null = null;
+    if (!opts.hideAccent) {
+      if (project) {
+        accentColor = generateNotionColors(project.color).originalHex;
+        accentLabel = project.name;
+      } else if (isBusiness) {
+        accentColor = 'hsl(var(--primary))';
+        accentLabel = businessLabel;
+      }
     }
+
+    return (
+      <TaskRow
+        key={task.id}
+        task={{ ...task, dueDate: opts.hideDue ? null : task.dueDate } as any}
+        accentColor={accentColor}
+        accentLabel={accentLabel}
+        onToggle={() => toggleTaskMutation.mutate(task)}
+        onClick={() => setSelectedTaskId(task.id)}
+        testIdPrefix="personal-task"
+      />
+    );
   };
 
   const toggleGroup = (key: string) => {
@@ -570,65 +580,7 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
             <WidgetEmpty icon={CheckSquare} message="No tasks match your filters" />
           ) : groupBy === 'none' ? (
             <div className="space-y-0.5">
-              {filteredTasks.map((task) => {
-                const dueInfo = getTaskDueInfo(task);
-                const project = task.projectId ? projectMap.get(task.projectId) : null;
-                const isCompleted = task.status === 'done' || task.status === 'complete';
-                
-                return (
-                  <div 
-                    key={task.id}
-                    className={`flex items-center gap-2 py-1.5 px-2 rounded border-l-2 hover-elevate cursor-pointer ${isCompleted ? 'opacity-50' : ''}`}
-                    style={{ borderLeftColor: getPriorityBorderColor(task.priority) }}
-                    onClick={() => setSelectedTaskId(task.id)}
-                    data-testid={`personal-task-${task.id}`}
-                  >
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        toggleTaskMutation.mutate(task);
-                      }}
-                      className="flex-shrink-0"
-                    >
-                      {isCompleted ? (
-                        <CheckSquare className="h-3.5 w-3.5 text-bp-green" />
-                      ) : (
-                        <Circle className="h-3.5 w-3.5 text-muted-foreground" />
-                      )}
-                    </button>
-                    
-                    <TaskTooltip content={task.title}>
-                      <span className={`text-table flex-1 truncate cursor-default ${isCompleted ? 'line-through' : ''}`}>
-                        {task.title}
-                      </span>
-                    </TaskTooltip>
-                    
-                    <div className="flex items-center gap-1 flex-shrink-0">
-                      {dueInfo && (
-                        <span className={`text-label px-1.5 py-0.5 rounded font-medium w-14 text-center ${dueInfo.color}`}>
-                          {dueInfo.label}
-                        </span>
-                      )}
-                      {project && (
-                        <span 
-                          className="text-label px-1.5 py-0.5 rounded bg-muted text-muted-foreground w-20 text-center truncate"
-                          title={project.name}
-                        >
-                          {project.name}
-                        </span>
-                      )}
-                      {(task.scope === 'business' || (!task.scope && !task.projectId)) && (
-                        <span 
-                          className="text-label px-1.5 py-0.5 rounded bg-bp-purple/15 text-bp-purple w-20 text-center truncate"
-                          title={businessLabel}
-                        >
-                          {businessLabel}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
+              {filteredTasks.map((task) => renderTaskRow(task))}
             </div>
           ) : (
             groupedTasks.map((group) => (
@@ -655,66 +607,11 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
                   </Badge>
                 </CollapsibleTrigger>
                 <CollapsibleContent className="pt-1 space-y-0.5 ml-2">
-                  {group.tasks.map((task) => {
-                    const dueInfo = getTaskDueInfo(task);
-                    const project = task.projectId ? projectMap.get(task.projectId) : null;
-                    const isCompleted = task.status === 'done' || task.status === 'complete';
-                    
-                    return (
-                      <div 
-                        key={task.id}
-                        className={`flex items-center gap-2 py-1.5 px-2 rounded border-l-2 hover-elevate cursor-pointer ${isCompleted ? 'opacity-50' : ''}`}
-                        style={{ borderLeftColor: getPriorityBorderColor(task.priority) }}
-                        onClick={() => setSelectedTaskId(task.id)}
-                        data-testid={`personal-task-${task.id}`}
-                      >
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            toggleTaskMutation.mutate(task);
-                          }}
-                          className="flex-shrink-0"
-                        >
-                          {isCompleted ? (
-                            <CheckSquare className="h-3.5 w-3.5 text-bp-green" />
-                          ) : (
-                            <Circle className="h-3.5 w-3.5 text-muted-foreground" />
-                          )}
-                        </button>
-                        
-                        
-                        <TaskTooltip content={task.title}>
-                          <span className={`text-table flex-1 truncate cursor-default ${isCompleted ? 'line-through' : ''}`}>
-                            {task.title}
-                          </span>
-                        </TaskTooltip>
-                        
-                        <div className="flex items-center gap-1 flex-shrink-0">
-                          {groupBy !== 'dueDate' && dueInfo && (
-                            <span className={`text-label px-1.5 py-0.5 rounded font-medium w-14 text-center ${dueInfo.color}`}>
-                              {dueInfo.label}
-                            </span>
-                          )}
-                          {groupBy !== 'project' && project && (
-                            <span 
-                              className="text-label px-1.5 py-0.5 rounded bg-muted text-muted-foreground w-20 text-center truncate"
-                              title={project.name}
-                            >
-                              {project.name}
-                            </span>
-                          )}
-                          {groupBy !== 'project' && (task.scope === 'business' || (!task.scope && !task.projectId)) && (
-                            <span 
-                              className="text-label px-1.5 py-0.5 rounded bg-primary/10 text-primary w-20 text-center truncate"
-                              title={businessLabel}
-                            >
-                              {businessLabel}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
+                  {/* Inside a group, don't repeat what the group heading already says. */}
+                  {group.tasks.map((task) => renderTaskRow(task, {
+                    hideDue: groupBy === 'dueDate',
+                    hideAccent: groupBy === 'project',
+                  }))}
                 </CollapsibleContent>
               </Collapsible>
             ))

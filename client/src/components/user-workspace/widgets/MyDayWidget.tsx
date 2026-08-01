@@ -35,6 +35,7 @@ import { useLocation } from "wouter";
 import { format, isToday, isBefore, startOfDay } from "date-fns";
 import { type Task, type Project, type FocusBlock } from "@shared/schema";
 import { generateNotionColors } from "@/lib/taskColors";
+import { TaskRow } from "@/components/widgets/shared/TaskRow";
 import { getPriorityStyle } from "@/lib/priorityConfig";
 import { useTimezone, formatInTimezone } from "@/hooks/useTimezone";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -433,162 +434,112 @@ export default function MyDayWidget({ widget, onUpdate, isConfiguring, onCloseCo
 
   const visibleSections = sections.filter(s => s.visible);
 
+  /**
+   * Each section owns one Morada tone, used only for its heading dot. Coral is
+   * reserved for Overdue so that seeing coral anywhere in the widget always
+   * means the same thing.
+   */
+  const SECTION_TONE: Record<string, string> = {
+    overdue: "hsl(var(--coral))",
+    today: "hsl(var(--primary))",
+    schedule: "hsl(var(--teal))",
+    focus: "hsl(var(--amber))",
+  };
+
+  const sectionItems = (id: string): any[] => {
+    switch (id) {
+      case "overdue": return overdueTasks;
+      case "today": return todaysTasks;
+      case "schedule": return scheduleItems;
+      case "focus": return todayFocusBlocks;
+      default: return [];
+    }
+  };
+
+  // A section with nothing in it is noise, not information — hide it outright.
+  const populatedSections = visibleSections.filter(s => sectionItems(s.id).length > 0);
+
   const renderSection = (sectionConfig: SectionConfig) => {
     const isCollapsed = collapsedState[sectionConfig.id] ?? sectionConfig.collapsed;
     const sectionDef = SECTION_LABELS[sectionConfig.id];
-    
-    let items: any[] = [];
-    let emptyMessage = "";
-    let itemColor = "";
-    
-    switch (sectionConfig.id) {
-      case "overdue":
-        items = overdueTasks;
-        emptyMessage = "No overdue tasks";
-        itemColor = "text-bp-coral";
-        break;
-      case "today":
-        items = todaysTasks;
-        emptyMessage = "No tasks due today";
-        itemColor = "";
-        break;
-      case "schedule":
-        items = scheduleItems;
-        emptyMessage = "No schedule items today";
-        itemColor = "text-bp-teal";
-        break;
-      case "focus":
-        items = todayFocusBlocks;
-        emptyMessage = "No focus blocks today";
-        itemColor = "text-bp-purple";
-        break;
-    }
-
-    const count = items.length;
+    const items = sectionItems(sectionConfig.id);
+    const isOverdue = sectionConfig.id === "overdue";
+    const tone = SECTION_TONE[sectionConfig.id] ?? "hsl(var(--muted-foreground))";
 
     return (
-      <Collapsible 
-        key={sectionConfig.id} 
+      <Collapsible
+        key={sectionConfig.id}
         open={!isCollapsed}
         onOpenChange={() => toggleCollapsed(sectionConfig.id)}
       >
-        <CollapsibleTrigger className={`flex items-center gap-2 w-full py-1.5 px-2 border-l-2 cursor-pointer transition-colors ${
-          sectionConfig.id === 'overdue' 
-            ? 'border-l-bp-coral bg-bp-coral/10' 
-            : sectionConfig.id === 'schedule'
-            ? 'border-l-bp-teal bg-bp-teal/10'
-            : sectionConfig.id === 'focus'
-            ? 'border-l-bp-purple bg-bp-purple/10'
-            : 'border-l-bp-purple bg-bp-purple/5'
-        }`}>
-          {isCollapsed ? (
-            <ChevronRight className="h-3 w-3 text-bp-muted" />
-          ) : (
-            <ChevronDown className="h-3 w-3 text-bp-muted" />
-          )}
-          <span className={`text-[10px] font-semibold uppercase tracking-wide flex-1 text-left ${
-            sectionConfig.id === 'overdue' && count > 0 
-              ? 'text-bp-coral' 
-              : sectionConfig.id === 'schedule'
-              ? 'text-bp-teal'
-              : sectionConfig.id === 'focus'
-              ? 'text-bp-purple'
-              : 'text-foreground/80'
-          }`}>
+        <CollapsibleTrigger className="group/sec flex items-center gap-2 w-full py-1 cursor-pointer">
+          <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: tone }} />
+          <span
+            className="text-[10px] font-semibold uppercase tracking-wider text-left"
+            style={isOverdue ? { color: "hsl(var(--coral))" } : undefined}
+          >
             {sectionDef.label}
           </span>
-          <span className={`text-[10px] font-bold min-w-[18px] h-[18px] flex items-center justify-center rounded-full ${
-            sectionConfig.id === 'overdue' && count > 0 
-              ? 'bg-bp-coral text-white' 
-              : 'bg-bp-subtle text-bp-muted'
-          }`}>
-            {count}
-          </span>
+          <span className="text-[10px] text-muted-foreground tabular-nums">{items.length}</span>
+          {/* Hairline carries the eye across to the chevron instead of a filled bar. */}
+          <span className="flex-1 h-px bg-border" />
+          {isCollapsed
+            ? <ChevronRight className="h-3 w-3 text-muted-foreground opacity-0 group-hover/sec:opacity-100 transition-opacity" />
+            : <ChevronDown className="h-3 w-3 text-muted-foreground opacity-0 group-hover/sec:opacity-100 transition-opacity" />}
         </CollapsibleTrigger>
-        <CollapsibleContent className="pt-1 space-y-1">
-          {items.length === 0 ? (
-            <div className="text-data text-muted-foreground pl-6 py-1">{emptyMessage}</div>
-          ) : (
-            <>
-              {sectionConfig.id === "schedule" && items.map((item: ScheduleItem) => (
-                <div 
-                  key={item.id}
-                  className="flex items-center gap-2 p-1.5 rounded-md border hover-elevate cursor-pointer ml-4"
-                  onClick={() => item.projectId && setLocation(`/projects/${item.projectId}/schedule`)}
-                  data-testid={`myday-schedule-${item.id}`}
-                >
-                  <CalendarDays className="h-3.5 w-3.5 text-bp-teal flex-shrink-0" />
-                  <TaskTooltip content={item.title}>
-                    <span className="text-xs truncate flex-1 cursor-default">{item.title}</span>
-                  </TaskTooltip>
-                  {item.startTime && (
-                    <span className="text-data text-muted-foreground">{item.startTime}</span>
-                  )}
-                </div>
-              ))}
-              {sectionConfig.id === "focus" && (items as FocusBlock[]).map((fb) => (
-                <FocusBlockItem key={fb.id} block={fb} />
-              ))}
-              {sectionConfig.id !== "schedule" && sectionConfig.id !== "focus" && (items as Task[]).map((task) => {
-                const project = task.projectId ? projects.find(p => p.id === task.projectId) : null;
-                return (
-                  <div 
-                    key={task.id}
-                    className={`flex items-center gap-2 p-1.5 rounded-md border hover-elevate cursor-pointer ml-4 ${
-                      sectionConfig.id === 'overdue' ? 'bg-bp-coral/10 border-bp-coral/30' : 'border-bp-border'
-                    }`}
-                    onClick={() => setSelectedTaskId(task.id)}
-                    data-testid={`myday-task-${task.id}`}
-                  >
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        toggleTaskMutation.mutate(task);
-                      }}
-                      className="flex-shrink-0"
-                    >
-                      <Circle className={`h-3.5 w-3.5 ${sectionConfig.id === 'overdue' ? 'text-bp-coral' : 'text-bp-muted'}`} />
-                    </button>
-                    <TaskTooltip content={task.title}>
-                      <span className="text-xs truncate flex-1 cursor-default">{task.title}</span>
-                    </TaskTooltip>
-                    <div className="flex items-center gap-1.5 flex-shrink-0">
-                      {task.dueDate && (
-                        <span className="text-data text-muted-foreground w-12 text-right">
-                          {formatInTimezone(new Date(task.dueDate), effectiveTimezone, { month: 'short', day: 'numeric' })}
-                        </span>
-                      )}
-                      {project && (() => {
-                        const colors = generateNotionColors(project.color);
-                        return (
-                          <span 
-                            className="text-label px-1.5 py-0.5 rounded truncate max-w-[80px]"
-                            style={{ backgroundColor: colors.pastelBg, color: colors.darkText }}
-                            title={project.name}
-                          >
-                            {project.name}
-                          </span>
-                        );
-                      })()}
-                    </div>
-                  </div>
-                );
-              })}
-            </>
-          )}
+
+        <CollapsibleContent className="pt-0.5 pb-1 space-y-0.5">
+          {sectionConfig.id === "schedule" && (items as ScheduleItem[]).map((item) => (
+            <div
+              key={item.id}
+              className="flex items-center gap-2 py-1.5 px-2 rounded-md hover:bg-muted/60 cursor-pointer"
+              onClick={() => item.projectId && setLocation(`/projects/${item.projectId}/schedule`)}
+              data-testid={`myday-schedule-${item.id}`}
+            >
+              <CalendarDays className="h-3.5 w-3.5 flex-shrink-0" style={{ color: "hsl(var(--teal))" }} />
+              <TaskTooltip content={item.title}>
+                <span className="text-sm truncate flex-1 leading-snug cursor-default">{item.title}</span>
+              </TaskTooltip>
+              {item.startTime && (
+                <span className="text-[11px] text-muted-foreground tabular-nums flex-shrink-0">
+                  {item.startTime}
+                </span>
+              )}
+            </div>
+          ))}
+
+          {sectionConfig.id === "focus" && (items as FocusBlock[]).map((fb) => (
+            <FocusBlockItem key={fb.id} block={fb} />
+          ))}
+
+          {sectionConfig.id !== "schedule" && sectionConfig.id !== "focus" && (items as Task[]).map((task) => {
+            const project = task.projectId ? projects.find(p => p.id === task.projectId) : null;
+            return (
+              <TaskRow
+                key={task.id}
+                task={task as any}
+                accentColor={project ? generateNotionColors(project.color).originalHex : null}
+                accentLabel={project?.name ?? null}
+                onToggle={() => toggleTaskMutation.mutate(task)}
+                onClick={() => setSelectedTaskId(task.id)}
+                testIdPrefix="myday-task"
+              />
+            );
+          })}
         </CollapsibleContent>
       </Collapsible>
     );
   };
 
+  // Collapse-all only concerns the sections actually on screen.
   const allCollapsed = useMemo(() => {
-    return visibleSections.every(s => collapsedState[s.id]);
-  }, [visibleSections, collapsedState]);
+    return populatedSections.length > 0 && populatedSections.every(s => collapsedState[s.id]);
+  }, [populatedSections, collapsedState]);
 
   const toggleAllSections = () => {
     const newState: Record<string, boolean> = {};
     const shouldCollapse = !allCollapsed;
-    visibleSections.forEach(s => {
+    populatedSections.forEach(s => {
       newState[s.id] = shouldCollapse;
     });
     setCollapsedState(prev => ({ ...prev, ...newState }));
@@ -599,7 +550,7 @@ export default function MyDayWidget({ widget, onUpdate, isConfiguring, onCloseCo
       <div className="flex items-center justify-between gap-1">
         <span className="text-xs text-muted-foreground">{formatInTimezone(new Date(), effectiveTimezone, { weekday: 'long', month: 'long', day: 'numeric' })}</span>
         <div className="flex items-center gap-1.5">
-          {visibleSections.length > 0 && (
+          {populatedSections.length > 0 && (
             <Button
               size="icon"
               variant="ghost"
@@ -643,9 +594,16 @@ export default function MyDayWidget({ widget, onUpdate, isConfiguring, onCloseCo
           title="No sections enabled"
           message="Configure widget to show sections"
         />
+      ) : populatedSections.length === 0 ? (
+        // Sections are enabled, there's just nothing in any of them today.
+        <WidgetEmpty
+          icon={Sun}
+          title="Nothing on today"
+          message="No overdue work, tasks due, or scheduled items"
+        />
       ) : (
-        <div className="space-y-1">
-          {visibleSections.map(section => renderSection(section))}
+        <div className="space-y-1.5">
+          {populatedSections.map(section => renderSection(section))}
         </div>
       )}
       
