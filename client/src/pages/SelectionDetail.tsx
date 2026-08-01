@@ -19,7 +19,7 @@ import { useProject } from "@/contexts/ProjectContext";
 import { useAuth } from "@/hooks/use-auth";
 import { usePermission } from "@/hooks/use-permission";
 import { useSelectionStatusOptions } from "@/hooks/useSelectionStatusOptions";
-import { SelectionStatusPill, getDerivedStatus } from "@/components/selections/selectionHelpers";
+import { SelectionStatusPill, getDerivedStatus, SelectionThumbnail } from "@/components/selections/selectionHelpers";
 import { 
   insertSelectionOptionSchema, 
   insertSelectionSchema,
@@ -1091,7 +1091,14 @@ export default function SelectionDetail() {
     option.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
     option.brand?.toLowerCase().includes(searchTerm.toLowerCase()) ||
     option.sku?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  )
+    // Once a decision exists, the chosen/approved option leads — the rest are
+    // history and get muted in the card grid below
+    .sort((a, b) => {
+      const rank = (o: typeof a) => (o.approvedAt ? 0 : o.isSelectedByClient ? 1 : 2);
+      return rank(a) - rank(b) || (a.sortOrder ?? 0) - (b.sortOrder ?? 0);
+    });
+  const hasDecision = (selection?.options || []).some((o) => o.isSelectedByClient || o.approvedAt);
 
   const handleSaveSelection = () => {
     const data = selectionForm.getValues();
@@ -1198,21 +1205,20 @@ export default function SelectionDetail() {
           {/* Breadcrumb + title row. The project header and section tabs come
               from the project shell, so this page only owns its own crumb. */}
           <div>
-            {/* Breadcrumb line — 'Back' rather than the selection name, which
-                the title below already carries */}
-            <nav className="flex items-center gap-1 text-xs text-muted-foreground mb-1.5" aria-label="Breadcrumb">
-              <ChevronLeft className="w-3 h-3 opacity-60" />
-              <button
-                onClick={goBack}
-                className="hover:text-foreground transition-colors"
-                data-testid="button-back"
-              >
-                Back
-              </button>
-            </nav>
+            {/* The project shell already renders one crumb row
+                (Project · Selections), so Back sits inline with the title
+                rather than adding a second row */}
             <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <h2 className="text-2xl font-bold leading-tight">{selection.name}</h2>
+              <div className="min-w-0 flex items-center gap-2">
+                <button
+                  onClick={goBack}
+                  className="h-7 w-7 -ml-1 rounded-md hover-elevate active-elevate-2 flex items-center justify-center text-muted-foreground hover:text-foreground shrink-0"
+                  data-testid="button-back"
+                  aria-label="Back to Selections"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+                <h2 className="text-2xl font-bold leading-tight truncate">{selection.name}</h2>
               </div>
       <div className="flex items-center gap-2">
         {hasUnsavedChanges && !isEditingDetails && (
@@ -1276,6 +1282,28 @@ export default function SelectionDetail() {
                   <div className="text-data text-muted-foreground uppercase tracking-wide mb-1">Status</div>
                   <SelectionStatusPill derived={getDerivedStatus(selection as any)} />
                 </div>
+
+                {/* Chosen product — the decision itself, not just its cost */}
+                {selectedOption && (
+                  <div className="min-w-0">
+                    <div className="text-data text-muted-foreground uppercase tracking-wide mb-1">Selected</div>
+                    <div className="flex items-center gap-2 min-w-0">
+                      <SelectionThumbnail
+                        category={selection.category}
+                        attachment={(selectedOption as any).attachments?.find((a: any) => a.fileType?.toLowerCase() === "image")}
+                        size={24}
+                      />
+                      <div className="min-w-0">
+                        <div className="text-sm font-medium truncate">{selectedOption.name}</div>
+                        {(selectedOption.brand || selectedOption.sku) && (
+                          <div className="text-[11px] text-muted-foreground truncate">
+                            {[selectedOption.brand, selectedOption.sku].filter(Boolean).join(" · ")}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 {/* Category */}
                 <div>
@@ -1900,7 +1928,10 @@ export default function SelectionDetail() {
                       className={cn(
                         "transition-all duration-200 group hover-elevate cursor-pointer",
                         option.isSelectedByClient && !isApproved && "ring-1 ring-[hsl(var(--amber))]",
-                        isApproved && "ring-1 ring-[hsl(var(--sage))]"
+                        isApproved && "ring-1 ring-[hsl(var(--sage))]",
+                        // Not the pick — fade back so the decision reads first
+                        hasDecision && !option.isSelectedByClient && !isApproved &&
+                          "opacity-55 saturate-50 hover:opacity-100 hover:saturate-100"
                       )}
                       onClick={() => { if (isLocked) handleViewOption(option); else handleEditOption(option); }}
                       data-testid={`card-option-${option.id}`}
