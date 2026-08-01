@@ -3135,9 +3135,11 @@ export default function BillDetail() {
                   // The default --table-header-bg (#F8F7FC) is 2% off white and
                   // vanishes against the card. Rather than a fill (an amber
                   // tint read as too loud), the header earns its separation
-                  // through typography: no background, a 2px rule beneath, and
-                  // darker semibold labels.
-                  headerClassName="bg-transparent border-b-2 border-border [&_th]:text-foreground/75 [&_th]:font-semibold"
+                  // through typography plus a rule below it.
+                  // NOTE: the rule MUST go on the th cells — the table is
+                  // `border-separate`, and in that border model borders on a
+                  // row group (thead) are never painted.
+                  headerClassName="bg-transparent [&_th]:border-b-2 [&_th]:border-border [&_th]:text-foreground/75 [&_th]:font-semibold"
                   data={lineItems}
                   rowKey={(_item, index) => index}
                   rowTestId={(_item, index) => `row-line-item-${index}`}
