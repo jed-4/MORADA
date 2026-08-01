@@ -1276,7 +1276,9 @@ export default function SelectionDetail() {
           <div className="surface-panel p-3" data-testid="selection-details-block">
             {!isEditingDetails ? (
               <>
-              <div className="flex items-center gap-6 flex-wrap">
+              <div className="flex items-start gap-4">
+              {/* Left: the selection's own details */}
+              <div className="flex-1 min-w-0 flex items-center gap-6 flex-wrap">
                 {/* Status */}
                 <div>
                   <div className="text-data text-muted-foreground uppercase tracking-wide mb-1">Status</div>
@@ -1332,8 +1334,10 @@ export default function SelectionDetail() {
                   </div>
                 )}
                 
-                <div className="flex-1" />
-                
+              </div>
+
+              {/* Right column: the money, divided off and read vertically */}
+              <div className="w-[220px] shrink-0 self-stretch border-l border-border/70 pl-4 flex items-start gap-1">
                 {/* Pricing Section */}
                 <Popover open={pricingPopoverOpen} onOpenChange={(open) => {
                   setPricingPopoverOpen(open);
@@ -1362,24 +1366,28 @@ export default function SelectionDetail() {
                             {selectedPrice > 0 ? formatCents(selectedPrice) : "—"}
                           </span>
                         </div>
-                        <div className="flex items-baseline justify-between gap-3 pt-1.5 border-t border-border/70">
-                          <span className="text-data text-muted-foreground uppercase tracking-wide">Difference</span>
-                          {(() => {
-                            const difference = selectedPrice - allowanceAmount;
-                            const isOver = difference > 0;
-                            const isUnder = difference < 0;
-                            return (
-                              <span className={cn(
-                                "text-sm font-semibold tabular-nums",
-                                isOver && "text-status-danger",
-                                isUnder && "text-status-success",
-                                !isOver && !isUnder && "text-muted-foreground",
-                              )}>
-                                {isOver && "+"}{formatCents(Math.abs(difference))}
-                              </span>
-                            );
-                          })()}
-                        </div>
+                        {/* Nothing to compare against without an allowance —
+                            showing a "difference" there reads as overspend */}
+                        {allowanceAmount > 0 && (
+                          <div className="flex items-baseline justify-between gap-3 pt-1.5 border-t border-border/70">
+                            <span className="text-data text-muted-foreground uppercase tracking-wide">Difference</span>
+                            {(() => {
+                              const difference = selectedPrice - allowanceAmount;
+                              const isOver = difference > 0;
+                              const isUnder = difference < 0;
+                              return (
+                                <span className={cn(
+                                  "text-sm font-semibold tabular-nums",
+                                  isOver && "text-status-danger",
+                                  isUnder && "text-status-success",
+                                  !isOver && !isUnder && "text-muted-foreground",
+                                )}>
+                                  {isOver && "+"}{formatCents(Math.abs(difference))}
+                                </span>
+                              );
+                            })()}
+                          </div>
+                        )}
                       </div>
                       {/* Allowance progress bar */}
                       {allowanceAmount > 0 && (
@@ -1507,6 +1515,7 @@ export default function SelectionDetail() {
                 >
                   <Edit3 className="w-3.5 h-3.5" />
                 </button>
+              </div>
               </div>
 
               </>
