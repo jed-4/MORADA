@@ -10174,6 +10174,44 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Manual resend of the day-0 welcome email, behind the first-run "check your
+  // inbox" banner. The onboarding email log tombstones 'welcome' the moment it
+  // is first claimed, so an ordinary send would silently no-op here — the
+  // resend deliberately overrides that suppression. Owner-only (the welcome
+  // always goes to the owner's address) and rate-limited so the button can't be
+  // used to hammer someone's inbox.
+  const welcomeResendAt = new Map<string, number>();
+  const WELCOME_RESEND_COOLDOWN_MS = 60 * 1000;
+  app.post('/api/onboarding/resend-welcome', requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      const companyId = req.user?.companyId;
+      if (!companyId) return res.status(401).json({ message: "No company context" });
+
+      const company = await storage.getCompany(companyId);
+      if (!company) return res.status(404).json({ message: "Company not found" });
+      if ((company as any).ownerId && (company as any).ownerId !== req.user?.id) {
+        return res.status(403).json({ message: "Only the account owner can resend the welcome email" });
+      }
+
+      const last = welcomeResendAt.get(companyId) ?? 0;
+      if (Date.now() - last < WELCOME_RESEND_COOLDOWN_MS) {
+        return res.status(429).json({ message: "Just sent one — give it a minute before trying again." });
+      }
+      welcomeResendAt.set(companyId, Date.now());
+
+      const { sendWelcomeEmail } = await import("./services/onboardingEmails");
+      const result = await sendWelcomeEmail(companyId, { force: true });
+      if (!result.sent) {
+        // Roll the cooldown back so a genuine failure isn't also a lockout.
+        welcomeResendAt.delete(companyId);
+      }
+      return res.json(result);
+    } catch (error) {
+      console.error("[onboarding-email] manual resend failed:", error);
+      res.status(500).json({ message: "Failed to resend the welcome email" });
+    }
+  });
+
   // Demo data: whether the sample dataset (seeded at signup) is still present.
   // Drives the first-run "this is sample data" banner.
   app.get('/api/demo-data/status', requireAuth, requireTeamMember, async (req: any, res) => {
