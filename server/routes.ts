@@ -1,7 +1,7 @@
 import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
 import { storage, InvalidProposalStateError, calendarDateMidnightUtcInTz } from "./storage";
-import { timesheetHours, timesheetTotalExGstCents } from "@shared/money";
+import { timesheetHours, timesheetTotalExGstCents, exGstFromInc, incGstFromEx, gstSplit } from "@shared/money";
 import { db, pool } from "./db";
 import { google } from "googleapis";
 import { randomBytes, randomUUID } from "crypto";
@@ -174,6 +174,10 @@ import {
   insertSuggestionSchema,
   type CircuitContext
 } from "@shared/schema";
+// Namespace import for table references (schema.selections etc.). Several
+// existing routes already referenced `schema.` without this import and threw
+// a ReferenceError at runtime (every selections-portal request 500ed).
+import * as schema from "@shared/schema";
 import Anthropic from "@anthropic-ai/sdk";
 import { AI_TOOLS } from "./ai/tools";
 import { AI_MODEL, buildSystemPrompt, buildCircuitStartMessage } from "./ai/prompts";
@@ -190,7 +194,7 @@ import {
 import { computeEstimateItemPrice, resolveEstimateStoredPrice } from "@shared/pricing";
 import { z } from "zod";
 import { fromZodError } from "zod-validation-error";
-import { eq, and, asc, desc, or, isNull, isNotNull, sql, min, max, gte, lte, inArray, gt } from "drizzle-orm";
+import { eq, and, asc, desc, or, isNull, isNotNull, sql, min, max, gte, lte, inArray, gt, ne, notExists } from "drizzle-orm";
 import { PasswordUtils } from "./utils/auth";
 import { requireAuth, requireAdmin, requireTeamMember, requireTeamMemberOrClient, requirePermission, requirePlatformStaff, toSafeUser, isAdminRole } from "./middleware/auth";
 import { clientAccessGate } from "./middleware/clientAccess";
@@ -13127,26 +13131,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "estimateItemId is required" });
       }
 
+      // Look up the estimate item, then its estimate for the projectId
+      const estimateItem = await storage.getEstimateItem(estimateItemId);
+      if (!estimateItem) {
+        return res.status(404).json({ error: "Estimate item not found" });
+      }
+      const estimate = await storage.getEstimate(estimateItem.estimateId);
+      if (!estimate) {
+        return res.status(404).json({ error: "Estimate not found" });
+      }
+      // Tenant isolation — before any data (including an existing selection)
+      // is returned to the caller
+      if (!(await enforceProjectCompany(req, res, estimate.projectId, "Estimate item not found"))) return;
+
       // Check if a selection already exists for this estimate item
       const existing = await storage.getSelectionByEstimateItemId(estimateItemId);
       if (existing) {
         return res.json({ selection: existing, created: false });
       }
 
-      // Look up the estimate item
-      const estimateItem = await storage.getEstimateItem(estimateItemId);
-      if (!estimateItem) {
-        return res.status(404).json({ error: "Estimate item not found" });
-      }
-
-      // Look up the estimate to get the projectId
-      const estimate = await storage.getEstimate(estimateItem.estimateId);
-      if (!estimate) {
-        return res.status(404).json({ error: "Estimate not found" });
-      }
-
-      // Convert priceIncTax (dollars) to cents, rounded to 2dp first
-      const allowanceCents = Math.round(Number(Number(estimateItem.priceIncTax || 0).toFixed(2)) * 100);
+      // Allowance = the line's pre-margin inc-GST amount. Recompute via
+      // resolveEstimateStoredPrice rather than trusting the priceIncTax cache
+      // (stale for priced lines; only fixed-price lines trust the typed value).
+      const { priceIncTax } = resolveEstimateStoredPrice({
+        unitCostExTax: estimateItem.unitCostExTax,
+        quantity: estimateItem.quantity,
+        markupPercent: estimateItem.markupPercent,
+        projectMarkupPercent: (estimate as any).projectMarkupPercent,
+        taxRate: (estimate as any).taxRate,
+        wastagePercent: (estimateItem as any).wastagePercent,
+        existingPriceIncTax: estimateItem.priceIncTax,
+      });
+      const allowanceCents = Math.round(priceIncTax * 100);
 
       const selectionData = {
         projectId: estimate.projectId,
@@ -13180,6 +13196,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!Array.isArray(updates) || updates.some((u: any) => !u.id || typeof u.sortOrder !== "number")) {
         return res.status(400).json({ error: "updates must be an array of {id, sortOrder}" });
       }
+      // Tenant isolation: every referenced selection must belong to the
+      // caller's company
+      const companyId = (req.user as any)?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Not authenticated" });
+      const ids = updates.map((u: any) => u.id);
+      const owned = await db.select({ id: schema.selections.id })
+        .from(schema.selections)
+        .innerJoin(schema.projects, eq(schema.selections.projectId, schema.projects.id))
+        .where(and(inArray(schema.selections.id, ids), eq(schema.projects.companyId, companyId)));
+      if (owned.length !== new Set(ids).size) {
+        return res.status(404).json({ error: "Selection not found" });
+      }
       await storage.batchUpdateSelectionSortOrder(updates);
       res.json({ ok: true });
     } catch (error) {
@@ -13198,6 +13226,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!Array.isArray(selectionIds) || selectionIds.length === 0 || !projectId) {
         return res.status(400).json({ error: "selectionIds (array) and projectId are required" });
       }
+      if (!(await enforceProjectCompany(req, res, projectId, "Project not found"))) return;
 
       // Fetch each selection and find its chosen option
       const eligible: Array<{ selection: any; chosenOption: any }> = [];
@@ -13205,7 +13234,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       for (const selId of selectionIds) {
         const sel = await storage.getSelectionWithOptions(selId);
-        if (!sel) { skipped.push({ id: selId, reason: "Not found" }); continue; }
+        // Tenant isolation: every selection must belong to the verified project
+        if (!sel || sel.projectId !== projectId) { skipped.push({ id: selId, reason: "Not found" }); continue; }
+        if (sel.status === "ordered" || sel.status === "received" || sel.purchaseOrderId) {
+          skipped.push({ id: selId, reason: "Already ordered" });
+          continue;
+        }
         const chosenOption = sel.options?.find((o: any) => o.isSelectedByClient);
         if (!chosenOption) { skipped.push({ id: selId, reason: "No client selection made" }); continue; }
         eligible.push({ selection: sel, chosenOption });
@@ -13218,15 +13252,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Generate PO number
       const poNumber = await storage.getNextPONumber(req.user.companyId, "main");
 
-      // Calculate totals (unitCost = pre-markup supplier cost in cents)
+      // Calculate totals from the pre-markup supplier cost. gstInclusive
+      // describes unitCost, so normalise to ex-GST before summing — the old
+      // unitTax-based sum double-counted GST for inc-GST options.
       let subtotal = 0;
       let gstTotal = 0;
       for (const { chosenOption } of eligible) {
-        const unitCost = chosenOption.unitCost ?? 0;
+        const rawUnit = chosenOption.unitCost ?? 0;
         const qty = chosenOption.quantity ?? 1;
-        const tax = chosenOption.unitTax ?? 0;
-        subtotal += unitCost * qty;
-        gstTotal += tax * qty;
+        const unitEx = chosenOption.gstInclusive ? exGstFromInc(rawUnit) : rawUnit;
+        const lineEx = unitEx * qty;
+        subtotal += lineEx;
+        gstTotal += incGstFromEx(lineEx) - lineEx;
       }
       const total = subtotal + gstTotal;
 
@@ -13257,19 +13294,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const updatedSelections: any[] = [];
       for (let i = 0; i < eligible.length; i++) {
         const { selection, chosenOption } = eligible[i];
-        const unitCost = chosenOption.unitCost ?? 0;
+        const rawUnit = chosenOption.unitCost ?? 0;
         const qty = chosenOption.quantity ?? 1;
-        const tax = (chosenOption.unitTax ?? 0) * qty;
+        const unitEx = chosenOption.gstInclusive ? exGstFromInc(rawUnit) : rawUnit;
+        const lineEx = unitEx * qty;
 
         const itemData = {
           purchaseOrderId: po.id,
           description: `${selection.name} — ${chosenOption.name}`,
           quantity: String(qty),
           unit: chosenOption.unitType ?? "ea",
-          unitPrice: unitCost,
-          total: unitCost * qty,
+          unitPrice: unitEx,
+          total: lineEx,
           isGstFree: false,
-          gstAmount: tax,
+          gstAmount: incGstFromEx(lineEx) - lineEx,
           selectionOptionId: chosenOption.id,
           displayOrder: i,
         };
@@ -13303,6 +13341,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const selection = await storage.getSelectionWithOptions(req.params.id);
       if (!selection) return res.status(404).json({ error: "Selection not found" });
+      if (!(await enforceProjectCompany(req, res, selection.projectId, "Selection not found"))) return;
       if (selection.status !== "ordered") {
         return res.status(400).json({ error: "Selection must be in 'ordered' status to mark as received" });
       }
@@ -13682,6 +13721,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!projectId) {
         return res.status(400).json({ error: "projectId is required" });
       }
+      if (!(await enforceProjectCompany(req, res, projectId as string, "Project not found"))) return;
       const clientSelections = await storage.getClientSelections(projectId as string);
       res.json(clientSelections);
     } catch (error) {
@@ -13693,11 +13733,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const validationResult = insertClientSelectionSchema.safeParse(req.body);
       if (!validationResult.success) {
-        return res.status(400).json({ 
-          error: "Validation failed", 
-          details: fromZodError(validationResult.error).toString() 
+        return res.status(400).json({
+          error: "Validation failed",
+          details: fromZodError(validationResult.error).toString()
         });
       }
+      if (!(await enforceProjectCompany(req, res, validationResult.data.projectId, "Project not found"))) return;
 
       const clientSelection = await storage.createClientSelection(validationResult.data);
       res.status(201).json(clientSelection);
@@ -13709,6 +13750,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Selection Comments API Routes
   app.get("/api/selections/:id/comments", requireAuth, requireTeamMember, async (req, res) => {
     try {
+      const selection = await storage.getSelection(req.params.id);
+      if (!selection) return res.status(404).json({ error: "Selection not found" });
+      if (!(await enforceProjectCompany(req, res, selection.projectId, "Selection not found"))) return;
       const comments = await storage.getSelectionComments(req.params.id);
       res.json(comments);
     } catch (error) {
@@ -13722,6 +13766,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!content || typeof content !== "string" || !content.trim()) {
         return res.status(400).json({ error: "Content is required" });
       }
+      const selection = await storage.getSelection(req.params.id);
+      if (!selection) return res.status(404).json({ error: "Selection not found" });
+      if (!(await enforceProjectCompany(req, res, selection.projectId, "Selection not found"))) return;
       const user = req.user!;
       const comment = await storage.createSelectionComment({
         selectionId: req.params.id,
@@ -13738,8 +13785,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/selection-comments/:id", requireAuth, async (req, res) => {
+  app.delete("/api/selection-comments/:id", requireAuth, requireTeamMember, async (req, res) => {
     try {
+      const [comment] = await db.select().from(schema.selectionComments)
+        .where(eq(schema.selectionComments.id, req.params.id))
+        .limit(1);
+      if (!comment) return res.status(404).json({ error: "Comment not found" });
+      const selection = await storage.getSelection(comment.selectionId);
+      if (!selection) return res.status(404).json({ error: "Comment not found" });
+      if (!(await enforceProjectCompany(req, res, selection.projectId, "Comment not found"))) return;
       const success = await storage.deleteSelectionComment(req.params.id);
       if (!success) return res.status(404).json({ error: "Comment not found" });
       res.status(204).send();
@@ -13753,6 +13807,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const selection = await storage.getSelection(req.params.id);
       if (!selection) return res.status(404).json({ error: "Selection not found" });
+      if (!(await enforceProjectCompany(req, res, selection.projectId, "Selection not found"))) return;
       let token = selection.portalToken;
       if (!token) {
         token = randomBytes(24).toString("hex");
@@ -13794,10 +13849,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Tenant isolation: load a product by id and verify the caller's company
+  // owns it. Sends a 404 and returns null otherwise.
+  const getOwnedProduct = async (req: any, res: any, productId: number) => {
+    const product = await storage.getProduct(productId);
+    if (!product || product.companyId !== req.user?.companyId) {
+      res.status(404).json({ error: "Product not found" });
+      return null;
+    }
+    return product;
+  };
+
   app.get("/api/products/:id", requireAuth, requireTeamMember, async (req: any, res) => {
     try {
-      const product = await storage.getProduct(Number(req.params.id));
-      if (!product) return res.status(404).json({ error: "Product not found" });
+      const product = await getOwnedProduct(req, res, Number(req.params.id));
+      if (!product) return;
       const images = await storage.getProductImages(product.id);
       res.json({ ...product, images });
     } catch (error) {
@@ -13807,7 +13873,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/products/:id", requireAuth, requireTeamMember, async (req: any, res) => {
     try {
-      const product = await storage.updateProduct(Number(req.params.id), req.body);
+      if (!(await getOwnedProduct(req, res, Number(req.params.id)))) return;
+      // Never allow re-parenting a product to another company
+      const { companyId: _ignored, ...body } = req.body ?? {};
+      const product = await storage.updateProduct(Number(req.params.id), body);
       if (!product) return res.status(404).json({ error: "Product not found" });
       res.json(product);
     } catch (error) {
@@ -13817,6 +13886,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/products/:id", requireAuth, requireTeamMember, async (req: any, res) => {
     try {
+      if (!(await getOwnedProduct(req, res, Number(req.params.id)))) return;
       const success = await storage.deleteProduct(Number(req.params.id));
       if (!success) return res.status(404).json({ error: "Product not found" });
       res.status(204).send();
@@ -13828,6 +13898,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/products/:id/images", requireAuth, requireTeamMember, async (req: any, res) => {
     try {
       const productId = Number(req.params.id);
+      if (!(await getOwnedProduct(req, res, productId))) return;
       const image = await storage.createProductImage({ ...req.body, productId });
       res.status(201).json(image);
     } catch (error) {
@@ -13837,7 +13908,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/product-images/:id", requireAuth, requireTeamMember, async (req: any, res) => {
     try {
-      const success = await storage.deleteProductImage(Number(req.params.id));
+      const imageId = Number(req.params.id);
+      const [image] = await db.select().from(schema.productImages)
+        .where(eq(schema.productImages.id, imageId))
+        .limit(1);
+      if (!image) return res.status(404).json({ error: "Image not found" });
+      if (!(await getOwnedProduct(req, res, image.productId))) return;
+      const success = await storage.deleteProductImage(imageId);
       if (!success) return res.status(404).json({ error: "Image not found" });
       res.status(204).send();
     } catch (error) {
@@ -13849,8 +13926,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/selection-options/:id/save-to-library", requireAuth, requireTeamMember, async (req: any, res) => {
     try {
       const companyId = req.user!.companyId!;
-      const option = await storage.getSelectionOption(req.params.id);
-      if (!option) return res.status(404).json({ error: "Option not found" });
+      const option = await assertOptionAccess(req, res, req.params.id);
+      if (!option) return;
       if (!option.name?.trim()) return res.status(400).json({ error: "Option must have a name before saving to the library" });
       const product = await storage.createProduct({
         companyId,
@@ -13889,8 +13966,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/selections/:id/options/from-product", requireAuth, requireTeamMember, async (req: any, res) => {
     try {
       const { productId, quantity, markupPercent, visibleToClient } = req.body;
-      const product = await storage.getProduct(Number(productId));
-      if (!product) return res.status(404).json({ error: "Product not found" });
+      const selection = await storage.getSelection(req.params.id);
+      if (!selection) return res.status(404).json({ error: "Selection not found" });
+      if (!(await enforceProjectCompany(req, res, selection.projectId, "Selection not found"))) return;
+      const product = await getOwnedProduct(req, res, Number(productId));
+      if (!product) return;
       const allOptions = await storage.getSelectionOptions(req.params.id);
       const newOption = await storage.createSelectionOption({
         selectionId: req.params.id,
@@ -13905,7 +13985,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         unitType: product.unitType ?? "ea",
         url: product.url ?? undefined,
         markupPercent: markupPercent ?? undefined,
-        totalCost: product.defaultUnitCost ?? undefined,
+        totalCost: product.defaultUnitCost != null
+          ? Math.round(product.defaultUnitCost * (quantity ?? 1) * (1 + (markupPercent ?? 0) / 100))
+          : undefined,
         visibleToClient: visibleToClient !== false,
         sortOrder: allOptions.length,
         productId: product.id,
@@ -13933,6 +14015,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get/generate trades portal token for a project
   app.get("/api/projects/:id/trades-portal-token", requireAuth, requireTeamMember, async (req: any, res) => {
     try {
+      if (!(await enforceProjectCompany(req, res, req.params.id, "Project not found"))) return;
       const project = await storage.getProject(req.params.id);
       if (!project) return res.status(404).json({ error: "Project not found" });
       let token = (project as any).tradesPortalToken;
@@ -13950,6 +14033,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // QR code for project trades portal
   app.get("/api/projects/:id/trades-qr", requireAuth, requireTeamMember, async (req: any, res) => {
     try {
+      if (!(await enforceProjectCompany(req, res, req.params.id, "Project not found"))) return;
       const project = await storage.getProject(req.params.id);
       if (!project) return res.status(404).json({ error: "Project not found" });
       let token = (project as any).tradesPortalToken;
@@ -13972,6 +14056,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const selection = await storage.getSelectionWithOptions(req.params.id);
       if (!selection) return res.status(404).json({ error: "Selection not found" });
+      if (!(await enforceProjectCompany(req, res, selection.projectId, "Selection not found"))) return;
       const pdfBuffer = await generateSelectionPdf([selection]);
       res.set("Content-Type", "application/pdf");
       res.set("Content-Disposition", `attachment; filename="${selection.name.replace(/[^a-z0-9]/gi, "_")}.pdf"`);
@@ -13984,16 +14069,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/selections/project/:projectId/pdf", requireAuth, requireTeamMember, async (req: any, res) => {
     try {
-      const { eq: eqFn } = await import("drizzle-orm");
-      const schemaImport = await import("@shared/schema");
-      const selectionsRaw = await db.select().from(schemaImport.selections)
-        .where(eqFn(schemaImport.selections.projectId, req.params.projectId))
-        .orderBy(schemaImport.selections.name);
-      const selections: any[] = [];
-      for (const s of selectionsRaw) {
-        const withOptions = await storage.getSelectionWithOptions(s.id);
-        if (withOptions) selections.push(withOptions);
-      }
+      if (!(await enforceProjectCompany(req, res, req.params.projectId, "Project not found"))) return;
+      const selections = (await storage.getSelectionsWithOptions(req.params.projectId))
+        .sort((a: any, b: any) => String(a.name).localeCompare(String(b.name)));
       const project = await storage.getProject(req.params.projectId);
       const pdfBuffer = await generateSelectionPdf(selections, project?.name);
       res.set("Content-Type", "application/pdf");
@@ -15533,6 +15611,44 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Public Selection Portal (no auth required - clients access via token link)
+  // Client price for a selection option in cents INC GST. Derived from
+  // unitCost/gstInclusive/markupPercent — NEVER from totalCost, whose GST-ness
+  // is unreliable (see syncSelectionCostingToAllowance). Returns null when the
+  // option has no cost entered.
+  function selectionOptionClientPriceCents(opt: any): number | null {
+    const rawUnit = opt?.unitCost;
+    if (rawUnit == null) return null;
+    const qty = Number(opt.quantity) || 1;
+    const markup = Number(opt.markupPercent) || 0;
+    const unitEx = opt.gstInclusive ? exGstFromInc(rawUnit) : rawUnit;
+    const totalEx = Math.round(unitEx * qty * (1 + markup / 100));
+    return incGstFromEx(totalEx);
+  }
+
+  // A selection is closed to further client changes once an option is approved
+  // (locked) or the selection has moved into procurement.
+  function isSelectionLockedForClient(sel: any, options: any[]): boolean {
+    if (["approved", "ordered", "received"].includes(sel.status)) return true;
+    return options.some((o: any) => o.lockedAt);
+  }
+
+  // Rewrite an attachment's file path to the public, token-scoped portal file
+  // route (raw /objects/... paths are behind authenticated company-scoped URLs
+  // that a portal visitor cannot load).
+  function portalAttachmentView(att: any, urlPrefix: string) {
+    return {
+      id: att.id,
+      optionId: att.optionId,
+      fileName: att.fileName,
+      fileType: att.fileType,
+      mimeType: att.mimeType,
+      sortOrder: att.sortOrder,
+      thumbnailX: att.thumbnailX,
+      thumbnailY: att.thumbnailY,
+      filePath: `${urlPrefix}/attachments/${att.id}`,
+    };
+  }
+
   app.get("/api/portal/selections/:token", async (req, res) => {
     try {
       const { token } = req.params;
@@ -15542,78 +15658,185 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .limit(1);
       if (!sel) return res.status(404).json({ error: "Invalid link" });
 
-      const selWithOptions = await storage.getSelectionWithOptions(sel.id);
-      if (!selWithOptions) return res.status(404).json({ error: "Selection not found" });
-
+      const options = await storage.getSelectionOptions(sel.id);
       const clientSelection = await storage.getClientSelectionBySelectionId(sel.id);
       const comments = await storage.getSelectionComments(sel.id);
 
-      res.json({ selection: selWithOptions, clientSelection, comments });
+      // Client-safe projection: only client-visible options, and NEVER the
+      // builder's cost fields (unitCost/unitTax/markupPercent/totalCost) or
+      // internal trades notes. Price is exposed only as a derived inc-GST
+      // client price, and only when the builder enabled clientCanSeePrice.
+      const clientCanSeePrice = !!(sel as any).clientCanSeePrice;
+      const urlPrefix = `/api/portal/selections/${token}`;
+      const safeOptions = options
+        .filter((o: any) => o.visibleToClient !== false)
+        .map((o: any) => ({
+          id: o.id,
+          selectionId: o.selectionId,
+          name: o.name,
+          description: o.description,
+          sku: o.sku,
+          brand: o.brand,
+          category: o.category,
+          subcategory: o.subcategory,
+          quantity: o.quantity,
+          unitType: o.unitType,
+          url: o.url,
+          specifications: o.specifications,
+          isSelectedByClient: o.isSelectedByClient,
+          sortOrder: o.sortOrder,
+          approvedAt: o.approvedAt,
+          clientPrice: clientCanSeePrice ? selectionOptionClientPriceCents(o) : null,
+          attachments: ((o as any).attachments ?? []).map((a: any) => portalAttachmentView(a, urlPrefix)),
+        }))
+        .sort((a: any, b: any) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+
+      const safeSelection = {
+        id: sel.id,
+        name: (sel as any).name,
+        category: (sel as any).category,
+        room: (sel as any).room,
+        description: (sel as any).description,
+        status: (sel as any).status,
+        deadline: (sel as any).deadline,
+        clientCanChange: (sel as any).clientCanChange,
+        clientCanSeePrice,
+        allowance: clientCanSeePrice ? (sel as any).allowance : null,
+        locked: isSelectionLockedForClient(sel, options),
+        options: safeOptions,
+      };
+
+      res.json({ selection: safeSelection, clientSelection, comments });
     } catch (error) {
       console.error("Portal selection error:", error);
       res.status(500).json({ error: "Failed to load selection" });
     }
   });
 
-  app.patch("/api/portal/selections/:token/options/:optionId/select", async (req, res) => {
+  // Public, token-scoped file serving for portal option attachments. The raw
+  // object paths are only served to authenticated same-company users, so the
+  // portal rewrites attachment URLs to this route instead.
+  app.get("/api/portal/selections/:token/attachments/:attachmentId", async (req, res) => {
     try {
-      const { token, optionId } = req.params;
-      const { clientName } = req.body;
+      const { token, attachmentId } = req.params;
       const { eq: eqFn } = await import("drizzle-orm");
       const [sel] = await db.select().from(schema.selections as any)
         .where(eqFn((schema.selections as any).portalToken, token))
         .limit(1);
-      if (!sel) return res.status(404).json({ error: "Invalid link" });
-      if ((sel as any).lockedAt) return res.status(403).json({ error: "Selection is locked" });
+      if (!sel) return res.status(404).json({ error: "Not found" });
 
-      const allOptionsForCheck = await storage.getSelectionOptions(sel.id);
-      const option = allOptionsForCheck.find(o => o.id === optionId);
-      if (!option) return res.status(403).json({ error: "Option not accessible" });
-
-      // Clear previous client selections on this selection
-      const prevClientSelection = await storage.getClientSelectionBySelectionId(sel.id);
-      if (prevClientSelection) await storage.deleteClientSelection(prevClientSelection.id);
-
-      // Deselect all options for this selection
-      const allOptions = await storage.getSelectionOptions(sel.id);
-      for (const opt of allOptions) {
-        if (opt.isSelectedByClient) {
-          await storage.updateSelectionOption(opt.id, { isSelectedByClient: false });
-        }
+      const attachment = await storage.getOptionAttachmentById(attachmentId);
+      if (!attachment) return res.status(404).json({ error: "Not found" });
+      const option = await storage.getSelectionOption(attachment.optionId);
+      if (!option || option.selectionId !== sel.id || option.visibleToClient === false) {
+        return res.status(404).json({ error: "Not found" });
       }
 
-      // Mark the chosen option as selected
-      await storage.updateSelectionOption(optionId, { isSelectedByClient: true });
+      // Stored paths may be raw /objects/... or company-scoped
+      // /objects/company/<id>/objects/... — normalise to the raw form.
+      const normalisedPath = (attachment.filePath || "").replace(/^\/objects\/company\/[^/]+\/objects\//, "/objects/");
+      const objectFile = await objectStorageService.getObjectEntityFile(normalisedPath);
+      await objectStorageService.downloadObject(objectFile, res);
+    } catch (error: any) {
+      if (error?.name === "ObjectNotFoundError") {
+        return res.status(404).json({ error: "Not found" });
+      }
+      console.error("Portal attachment error:", error);
+      res.status(500).json({ error: "Failed to load attachment" });
+    }
+  });
 
-      // Create clientSelection record
+  app.patch("/api/portal/selections/:token/options/:optionId/select", async (req, res) => {
+    try {
+      const { token, optionId } = req.params;
+      const { eq: eqFn, and: andFn } = await import("drizzle-orm");
+      const [sel] = await db.select().from(schema.selections as any)
+        .where(eqFn((schema.selections as any).portalToken, token))
+        .limit(1);
+      if (!sel) return res.status(404).json({ error: "Invalid link" });
+
+      const allOptions = await storage.getSelectionOptions(sel.id);
+      if (isSelectionLockedForClient(sel, allOptions)) {
+        return res.status(403).json({ error: "This selection has been finalised and can no longer be changed. Please contact your builder." });
+      }
+
+      const option = allOptions.find(o => o.id === optionId);
+      if (!option || option.visibleToClient === false) {
+        return res.status(403).json({ error: "Option not accessible" });
+      }
+
+      const prevClientSelection = await storage.getClientSelectionBySelectionId(sel.id);
+      if (prevClientSelection && (sel as any).clientCanChange === false) {
+        return res.status(403).json({ error: "Your choice has been submitted and can no longer be changed. Please contact your builder." });
+      }
+      if (prevClientSelection) await storage.deleteClientSelection(prevClientSelection.id);
+
+      // Move the client's choice: clear any current choice, set the new one
+      const now = new Date();
+      await db.update(schema.selectionOptions)
+        .set({ isSelectedByClient: false, updatedAt: now })
+        .where(andFn(
+          eqFn(schema.selectionOptions.selectionId, sel.id),
+          eqFn(schema.selectionOptions.isSelectedByClient, true),
+        ));
+      await db.update(schema.selectionOptions)
+        .set({ isSelectedByClient: true, updatedAt: now })
+        .where(eqFn(schema.selectionOptions.id, optionId));
+
       const newClientSelection = await storage.createClientSelection({
         projectId: sel.projectId,
         selectionId: sel.id,
-        selectedOptionId: optionId,
-        clientName: clientName || "Client",
+        optionId,
       });
 
-      // Auto-generate a draft variation if selection exceeds allowance
+      // A choice moves a still-draft selection into pending review
+      if ((sel as any).status === "draft") {
+        await storage.updateSelection(sel.id, { status: "pending" } as any);
+      }
+
+      // Maintain the auto-generated draft over-allowance variation for this
+      // selection: create it when the chosen option exceeds the allowance,
+      // update it when the client changes choice, remove it when the new
+      // choice fits within the allowance. Non-fatal — variation upkeep must
+      // not break the client's selection.
       try {
-        const chosenOption = await storage.getSelectionOption(optionId);
         const allowanceCents = Number((sel as any).allowance) || 0;
-        const totalCostCents = Number(chosenOption?.totalCost) || 0;
-        if (allowanceCents > 0 && totalCostCents > allowanceCents) {
-          const overageCents = totalCostCents - allowanceCents;
-          const gstCents = Math.round(overageCents * 0.1);
-          const totalCents = overageCents + gstCents;
-          await storage.createVariation({
-            projectId: sel.projectId,
-            variationNumber: `SEL-OA-${Date.now().toString(36).toUpperCase()}`,
-            name: `Over-allowance: ${(sel as any).name}`,
-            status: "draft",
-            subtotal: overageCents,
-            gstAmount: gstCents,
-            totalAmount: totalCents,
-            paidAmount: 0,
-            balanceAmount: totalCents,
-            relatedTo: sel.id,
-          });
+        if (allowanceCents > 0) {
+          const priceCents = selectionOptionClientPriceCents(option) ?? 0;
+          const overageIncCents = priceCents - allowanceCents;
+
+          const existingDrafts = await db.select().from(schema.variations)
+            .where(andFn(
+              eqFn(schema.variations.relatedTo, sel.id),
+              eqFn(schema.variations.status, "draft"),
+            ));
+          const existingAuto = existingDrafts.find((v: any) => String(v.variationNumber || "").startsWith("SEL-OA-"));
+
+          if (overageIncCents > 0) {
+            // Overage is inc GST (client price vs inc-GST allowance) — split it
+            const { exGst, gst } = gstSplit(overageIncCents);
+            const payload = {
+              name: `Over-allowance: ${(sel as any).name}`,
+              subtotal: exGst,
+              gstAmount: gst,
+              totalAmount: overageIncCents,
+              paidAmount: 0,
+              balanceAmount: overageIncCents,
+            };
+            if (existingAuto) {
+              await storage.updateVariation(existingAuto.id, payload as any);
+            } else {
+              await storage.createVariation({
+                projectId: sel.projectId,
+                variationNumber: `SEL-OA-${Date.now().toString(36).toUpperCase()}`,
+                status: "draft",
+                relatedTo: sel.id,
+                ...payload,
+              });
+            }
+          } else if (existingAuto) {
+            await storage.deleteVariation(existingAuto.id);
+          }
         }
       } catch (_varErr) {
         // Non-fatal — variation auto-gen failure should not break selection
@@ -15633,6 +15856,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!content || typeof content !== "string" || !content.trim()) {
         return res.status(400).json({ error: "Content is required" });
       }
+      if (content.length > 5000) {
+        return res.status(400).json({ error: "Comment is too long" });
+      }
       const { eq: eqFn } = await import("drizzle-orm");
       const [sel] = await db.select().from(schema.selections as any)
         .where(eqFn((schema.selections as any).portalToken, token))
@@ -15645,7 +15871,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         attachmentUrls: [],
         attachmentFileNames: [],
         createdById: null,
-        createdByName: clientName || "Client",
+        createdByName: (typeof clientName === "string" && clientName.trim() ? clientName.trim().slice(0, 100) : "Client"),
         isClientComment: true,
       });
       res.status(201).json(comment);
@@ -15665,23 +15891,81 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .limit(1);
       if (!project) return res.status(404).json({ error: "Invalid or expired link" });
 
-      const selectionsRaw = await db.select().from(schemaImp.selections)
-        .where(eqFn(schemaImp.selections.projectId, project.id))
-        .orderBy(schemaImp.selections.name);
+      const selectionsWithOptions = await storage.getSelectionsWithOptions(project.id);
 
-      const selectionsWithOptions: any[] = [];
-      for (const s of selectionsRaw) {
-        const withOptions = await storage.getSelectionWithOptions(s.id);
-        if (withOptions) selectionsWithOptions.push(withOptions);
-      }
+      // Public payload — trades need product/spec/image data, never the
+      // builder's cost fields (unitCost/unitTax/markupPercent/totalCost).
+      const urlPrefix = `/api/portal/project/${token}/trades`;
+      const safeSelections = selectionsWithOptions
+        .sort((a: any, b: any) => String(a.name).localeCompare(String(b.name)))
+        .map((s: any) => ({
+          id: s.id,
+          name: s.name,
+          category: s.category,
+          room: s.room,
+          description: s.description,
+          status: s.status,
+          deadline: s.deadline,
+          notes: s.notes,
+          options: (s.options ?? []).map((o: any) => ({
+            id: o.id,
+            selectionId: o.selectionId,
+            name: o.name,
+            description: o.description,
+            sku: o.sku,
+            brand: o.brand,
+            category: o.category,
+            subcategory: o.subcategory,
+            quantity: o.quantity,
+            unitType: o.unitType,
+            url: o.url,
+            specifications: o.specifications,
+            notes: o.notes,
+            isSelectedByClient: o.isSelectedByClient,
+            approvedAt: o.approvedAt,
+            sortOrder: o.sortOrder,
+            attachments: (o.attachments ?? []).map((a: any) => portalAttachmentView(a, urlPrefix)),
+          })),
+        }));
 
       res.json({
         project: { id: project.id, name: (project as any).name, address: (project as any).address },
-        selections: selectionsWithOptions,
+        selections: safeSelections,
       });
     } catch (error) {
       console.error("Trades portal error:", error);
       res.status(500).json({ error: "Failed to load trades portal" });
+    }
+  });
+
+  // Public, token-scoped file serving for trades-portal option attachments
+  app.get("/api/portal/project/:token/trades/attachments/:attachmentId", async (req, res) => {
+    try {
+      const { token, attachmentId } = req.params;
+      const { eq: eqFn } = await import("drizzle-orm");
+      const schemaImp = await import("@shared/schema");
+      const [project] = await db.select().from(schemaImp.projects)
+        .where(eqFn((schemaImp.projects as any).tradesPortalToken, token))
+        .limit(1);
+      if (!project) return res.status(404).json({ error: "Not found" });
+
+      const attachment = await storage.getOptionAttachmentById(attachmentId);
+      if (!attachment) return res.status(404).json({ error: "Not found" });
+      const option = await storage.getSelectionOption(attachment.optionId);
+      const selection = option ? await storage.getSelection(option.selectionId) : undefined;
+      if (!selection || selection.projectId !== project.id) {
+        return res.status(404).json({ error: "Not found" });
+      }
+
+      const normalisedPath = (attachment.filePath || "").replace(/^\/objects\/company\/[^/]+\/objects\//, "/objects/");
+      const objectFile = await objectStorageService.getObjectEntityFile(normalisedPath);
+      await objectStorageService.downloadObject(objectFile, res);
+    } catch (error: any) {
+      if (error?.name === "ObjectNotFoundError") {
+        return res.status(404).json({ error: "Not found" });
+      }
+      console.error("Trades portal attachment error:", error);
+      res.status(500).json({ error: "Failed to load attachment" });
     }
   });
 
@@ -20757,6 +21041,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!validationResult.success) {
         return res.status(400).json({ error: "Validation failed" });
       }
+      // The linked option must belong to the invoice's own project
+      const option = await storage.getSelectionOption(validationResult.data.selectionOptionId);
+      const optionSelection = option ? await storage.getSelection(option.selectionId) : undefined;
+      if (!optionSelection || optionSelection.projectId !== (ownedInvoice as any).projectId) {
+        return res.status(404).json({ error: "Selection option not found" });
+      }
+      // Block double-billing: the option must not already sit on a live invoice
+      const [existingLink] = await db.select({ id: schema.invoiceSelections.id })
+        .from(schema.invoiceSelections)
+        .innerJoin(schema.clientInvoices, eq(schema.invoiceSelections.invoiceId, schema.clientInvoices.id))
+        .where(and(
+          eq(schema.invoiceSelections.selectionOptionId, validationResult.data.selectionOptionId),
+          ne(schema.clientInvoices.status, "void"),
+        ))
+        .limit(1);
+      if (existingLink) {
+        return res.status(409).json({ error: "This selection option is already on an invoice" });
+      }
       const row = await storage.createInvoiceSelection(validationResult.data);
       res.status(201).json(row);
     } catch (error) {
@@ -20864,7 +21166,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
           and(
             eq(schema.selections.projectId, projectId),
             eq(schema.selectionOptions.isSelectedByClient, true),
-            gt(schema.selectionOptions.totalCost, 0)
+            gt(schema.selectionOptions.totalCost, 0),
+            // Exclude options already on a live (non-void) invoice so the
+            // same approved option can't be billed twice
+            notExists(
+              db.select({ one: sql`1` }).from(schema.invoiceSelections)
+                .innerJoin(schema.clientInvoices, eq(schema.invoiceSelections.invoiceId, schema.clientInvoices.id))
+                .where(and(
+                  eq(schema.invoiceSelections.selectionOptionId, schema.selectionOptions.id),
+                  ne(schema.clientInvoices.status, "void"),
+                ))
+            )
           )
         );
       res.json(rows);
@@ -30372,33 +30684,39 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // ─── Selection Template Apply / Save-as-Template ────────────────────────────
 
+  // Batched: builds all rows up front (ids generated locally) and does at most
+  // 3 inserts, instead of 1 insert per selection/option/attachment — a large
+  // template was minutes of serial round trips against a ~400ms-RTT database.
   async function applyTemplateItems(
     items: any[],
     projectId: string,
     selectionType: string,
-    storage: any
+    _storage: any
   ): Promise<string[]> {
-    const selectionIds: string[] = [];
-    for (const item of items) {
-      const selection = await storage.createSelection({
-        projectId,
-        name: item.itemName,
-        description: item.description || null,
-        category: item.categoryName || null,
-        room: item.room || null,
-        selectionType: selectionType || "selection",
-        status: "draft",
-        allowance: item.budgetAmount || null,
-        clientCanSeePrice: item.clientCanSeePrice ?? true,
-        clientCanChange: item.clientCanChange ?? true,
-        deadline: item.deadline || null,
-        sortOrder: item.sortOrder ?? 0,
-        notes: item.notes || null,
-      });
-      selectionIds.push(selection.id);
+    const selectionRows = items.map((item) => ({
+      id: randomUUID(),
+      projectId,
+      name: item.itemName,
+      description: item.description || null,
+      category: item.categoryName || null,
+      room: item.room || null,
+      selectionType: selectionType || "selection",
+      status: "draft",
+      allowance: item.budgetAmount || null,
+      clientCanSeePrice: item.clientCanSeePrice ?? true,
+      clientCanChange: item.clientCanChange ?? true,
+      deadline: item.deadline ? new Date(item.deadline) : null,
+      sortOrder: item.sortOrder ?? 0,
+      notes: item.notes || null,
+    }));
+    const optionRows: any[] = [];
+    const attachmentRows: any[] = [];
+    items.forEach((item, i) => {
       for (const opt of (item.options || [])) {
-        const option = await storage.createSelectionOption({
-          selectionId: selection.id,
+        const optionId = randomUUID();
+        optionRows.push({
+          id: optionId,
+          selectionId: selectionRows[i].id,
           name: opt.name,
           brand: opt.brand || null,
           sku: opt.sku || null,
@@ -30417,20 +30735,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
           specifications: opt.specifications || null,
         });
         const imageUrls: string[] = opt.imageUrls || (opt.imageUrl ? [opt.imageUrl] : []);
-        for (let idx = 0; idx < imageUrls.length; idx++) {
-          const filePath = imageUrls[idx];
-          await storage.createOptionAttachment({
-            optionId: option.id,
+        imageUrls.forEach((filePath, idx) => {
+          attachmentRows.push({
+            optionId,
             fileName: filePath.split("/").pop() || "image.jpg",
             filePath,
             fileType: "image",
             mimeType: "image/jpeg",
             sortOrder: idx,
           });
-        }
+        });
       }
-    }
-    return selectionIds;
+    });
+    if (selectionRows.length > 0) await db.insert(schema.selections).values(selectionRows as any);
+    if (optionRows.length > 0) await db.insert(schema.selectionOptions).values(optionRows);
+    if (attachmentRows.length > 0) await db.insert(schema.optionAttachments).values(attachmentRows);
+    return selectionRows.map((r) => r.id);
   }
 
   app.post("/api/selection-templates/:id/apply", requireAuth, requireTeamMember, async (req, res) => {
@@ -30468,9 +30788,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
           sortOrder: maxOrder + 1,
           notes: null,
         } as any);
-        for (let idx = 0; idx < items.length; idx++) {
-          const opt = items[idx];
-          const option = await storage.createSelectionOption({
+        // Batched inserts — see applyTemplateItems
+        const optionRows: any[] = [];
+        const attachmentRows: any[] = [];
+        items.forEach((opt: any, idx: number) => {
+          const optionId = randomUUID();
+          optionRows.push({
+            id: optionId,
             selectionId: selection.id,
             name: opt.name,
             brand: opt.brand || null,
@@ -30490,18 +30814,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
             specifications: opt.specifications || null,
           });
           const imageUrls: string[] = opt.imageUrls || (opt.imageUrl ? [opt.imageUrl] : []);
-          for (let imgIdx = 0; imgIdx < imageUrls.length; imgIdx++) {
-            const filePath = imageUrls[imgIdx];
-            await storage.createOptionAttachment({
-              optionId: option.id,
+          imageUrls.forEach((filePath: string, imgIdx: number) => {
+            attachmentRows.push({
+              optionId,
               fileName: filePath.split("/").pop() || "image.jpg",
               filePath,
               fileType: "image",
               mimeType: "image/jpeg",
               sortOrder: imgIdx,
             });
-          }
-        }
+          });
+        });
+        if (optionRows.length > 0) await db.insert(schema.selectionOptions).values(optionRows);
+        if (attachmentRows.length > 0) await db.insert(schema.optionAttachments).values(attachmentRows);
         res.json({ created: 1, selectionIds: [selection.id] });
       }
     } catch (error: any) {
@@ -30542,12 +30867,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const project = await storage.getProject(projectId);
       if (!project || project.companyId !== user.companyId) return res.status(403).json({ error: "Project not found or access denied" });
       const selectionsWithOptions = await storage.getSelectionsWithOptions(projectId);
-      const templateData = await Promise.all(
-        selectionsWithOptions.map(async (sel: any) => {
-          const optionsWithImages = await Promise.all(
-            (sel.options || []).map(async (opt: any) => {
-              const attachments = await storage.getOptionAttachments(opt.id);
-              return {
+      // getSelectionsWithOptions already includes each option's attachments —
+      // no per-option re-fetch
+      const templateData = selectionsWithOptions.map((sel: any) => {
+          const optionsWithImages = (sel.options || []).map((opt: any) => ({
                 id: crypto.randomUUID(),
                 name: opt.name, brand: opt.brand, sku: opt.sku,
                 description: opt.description, category: opt.category,
@@ -30556,10 +30879,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 markupPercent: opt.markupPercent, totalCost: opt.totalCost,
                 url: opt.url, visibleToClient: opt.visibleToClient,
                 gstInclusive: opt.gstInclusive, sortOrder: opt.sortOrder,
-                imageUrls: attachments.map((a: any) => a.filePath),
-              };
-            })
-          );
+                imageUrls: (opt.attachments || []).map((a: any) => a.filePath),
+          }));
           return {
             id: crypto.randomUUID(),
             itemName: sel.name,
@@ -30574,8 +30895,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             sortOrder: sel.sortOrder ?? 0,
             options: optionsWithImages,
           };
-        })
-      );
+      });
       const template = await storage.createSelectionTemplate({
         companyId: user.companyId,
         name,

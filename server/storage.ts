@@ -8331,8 +8331,27 @@ export class DbStorage implements IStorage {
   }
 
   async getSelectionsWithOptions(projectId: string): Promise<SelectionWithOptions[]> {
+    // Batched: 3 queries total regardless of selection count. The previous
+    // per-selection fan-out was 3 round trips × N selections against a
+    // ~400ms-RTT database.
     const selections = await this.getSelections(projectId);
-    return Promise.all(selections.map(async (s) => (await this.getSelectionWithOptions(s.id))!));
+    if (selections.length === 0) return [];
+    const selectionIds = selections.map((s) => s.id);
+    const options = await db.select().from(schema.selectionOptions)
+      .where(inArray(schema.selectionOptions.selectionId, selectionIds));
+    const optionIds = options.map((o) => o.id);
+    const attachments = optionIds.length === 0 ? [] : await db.select().from(schema.optionAttachments)
+      .where(inArray(schema.optionAttachments.optionId, optionIds))
+      .orderBy(asc(schema.optionAttachments.sortOrder));
+    const attachmentsByOption = attachments.reduce<Record<string, OptionAttachment[]>>((acc, att) => {
+      (acc[att.optionId] ??= []).push(att);
+      return acc;
+    }, {});
+    const optionsBySelection = options.reduce<Record<string, SelectionOption[]>>((acc, o) => {
+      (acc[o.selectionId] ??= []).push({ ...o, attachments: attachmentsByOption[o.id] ?? [] } as SelectionOption);
+      return acc;
+    }, {});
+    return selections.map((s) => ({ ...s, options: optionsBySelection[s.id] ?? [] }));
   }
 
   async createSelection(insertSelection: InsertSelection): Promise<Selection> {
@@ -14018,10 +14037,18 @@ export class DbStorage implements IStorage {
       throw error;
     }
   }
-  async getClientSelections(projectId: string): Promise<ClientSelection[]> { return []; }
-  async createClientSelection(selection: InsertClientSelection): Promise<ClientSelection> { throw new Error("Not implemented"); }
-  async deleteClientSelection(id: string): Promise<boolean> { return false; }
-  async getClientSelectionBySelectionId(selectionId: string): Promise<ClientSelection | undefined> { return undefined; }
+  async getClientSelections(projectId: string): Promise<ClientSelection[]> {
+    return db.select().from(schema.clientSelections)
+      .where(eq(schema.clientSelections.projectId, projectId));
+  }
+  async createClientSelection(selection: InsertClientSelection): Promise<ClientSelection> {
+    const [row] = await db.insert(schema.clientSelections).values(selection).returning();
+    return row;
+  }
+  async deleteClientSelection(id: string): Promise<boolean> {
+    const result = await db.delete(schema.clientSelections).where(eq(schema.clientSelections.id, id));
+    return (result.rowCount ?? 0) > 0;
+  }
   async getSelectionComments(selectionId: string): Promise<SelectionComment[]> { return []; }
   async createSelectionComment(comment: InsertSelectionComment): Promise<SelectionComment> { throw new Error("Not implemented"); }
   async deleteSelectionComment(id: string): Promise<boolean> { return false; }
