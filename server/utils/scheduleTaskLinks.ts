@@ -12,6 +12,9 @@
  * skipped it.
  */
 
+/** `notes.referenceType` marking a task as time booked against a schedule item. */
+export const SCHEDULE_BOOKING_REFERENCE = "schedule_item_booking";
+
 export interface TaskLinkOffset {
   taskId: string;
   offsetDays?: number;

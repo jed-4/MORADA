@@ -87,6 +87,22 @@ export function TaskDetailModal({ event, taskId, open, onOpenChange, onEdit }: T
     enabled: open && isTaskType && !!effectiveTaskId,
   });
 
+  // Time already booked against this schedule item, so it's clear who is turning up.
+  const { data: bookings = [] } = useQuery<any[]>({
+    queryKey: ["/api/schedule-items", event?.id, "bookings"],
+    queryFn: () => apiRequest(`/api/schedule-items/${event?.id}/bookings`, "GET").catch(() => []),
+    enabled: open && event?.type === "schedule" && !!event?.id,
+  });
+
+  // When the open task is itself a booking, the item it was booked against.
+  const bookedAgainstId =
+    taskDetails?.referenceType === "schedule_item_booking" ? taskDetails?.referenceId : null;
+  const { data: bookedAgainstItem } = useQuery<any>({
+    queryKey: ["/api/schedule-items", bookedAgainstId],
+    queryFn: () => apiRequest(`/api/schedule-items/${bookedAgainstId}`, "GET").catch(() => null),
+    enabled: open && !!bookedAgainstId,
+  });
+
   // Fetch project details - use taskDetails.projectId when opened via taskId
   const projectIdForQuery = event?.projectId || taskDetails?.projectId;
   const { data: project } = useQuery<Project>({
@@ -269,6 +285,7 @@ export function TaskDetailModal({ event, taskId, open, onOpenChange, onEdit }: T
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
       queryClient.invalidateQueries({ queryKey: ["/api/schedule-items/calendar"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/schedule-items", event?.id, "bookings"] });
       toast({
         title: "Time booked",
         description: "Added to your calendar. Drag it to adjust.",
@@ -550,6 +567,62 @@ export function TaskDetailModal({ event, taskId, open, onOpenChange, onEdit }: T
           )}
 
           {/* Read-only notice for Google Calendar */}
+          {/* Time already committed to this schedule item */}
+          {isSchedule && bookings.length > 0 && (
+            <>
+              <Separator />
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 text-xs font-semibold text-muted-foreground uppercase">
+                  <Clock className="h-3.5 w-3.5" />
+                  Booked time
+                </div>
+                <div className="space-y-1.5" data-testid="schedule-item-bookings">
+                  {bookings.map((booking: any) => (
+                    <div
+                      key={booking.id}
+                      className="flex items-center justify-between gap-2 text-sm bg-muted/40 rounded px-2 py-1.5"
+                    >
+                      <span className="truncate">
+                        {(booking.assigneeNames || []).join(", ") || booking.title}
+                      </span>
+                      <span className="text-xs text-muted-foreground flex-shrink-0">
+                        {booking.startTime && booking.endTime
+                          ? `${booking.startTime}–${booking.endTime}`
+                          : "no time set"}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* This task is itself time booked against a schedule item */}
+          {bookedAgainstItem && (
+            <>
+              <Separator />
+              <div className="flex items-start gap-2">
+                <CalendarPlus className="h-4 w-4 text-muted-foreground mt-0.5 flex-shrink-0" />
+                <div className="min-w-0">
+                  <div className="text-xs text-muted-foreground">Booked against</div>
+                  <button
+                    className="text-sm font-medium hover:underline text-left truncate"
+                    onClick={() => {
+                      const pid = bookedAgainstItem.projectId || displayProjectId;
+                      if (pid) {
+                        navigate(`/projects/${pid}/schedule`);
+                        onOpenChange(false);
+                      }
+                    }}
+                    data-testid="booked-against-link"
+                  >
+                    {bookedAgainstItem.name}
+                  </button>
+                </div>
+              </div>
+            </>
+          )}
+
           {isGoogleCalendar && (
             <>
               <Separator />

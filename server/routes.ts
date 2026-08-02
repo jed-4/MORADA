@@ -186,7 +186,7 @@ import {
 } from "@shared/import";
 import { computeEstimateItemPrice, resolveEstimateStoredPrice } from "@shared/pricing";
 import { scheduleItemTier, computeProjectBands } from "@shared/scheduleVisibility";
-import { reflowLinkedTasks, scheduleDatesChanged } from "./utils/scheduleTaskLinks";
+import { reflowLinkedTasks, scheduleDatesChanged, SCHEDULE_BOOKING_REFERENCE } from "./utils/scheduleTaskLinks";
 import { z } from "zod";
 import { fromZodError } from "zod-validation-error";
 import { eq, and, asc, desc, or, isNull, isNotNull, sql, min, max, gte, lte, inArray, gt } from "drizzle-orm";
@@ -27326,6 +27326,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         dueDate,
         startTime,
         endTime,
+        // Back-reference so the calendar can link a booking to what it's for, and
+        // the schedule item can list who has committed time to it.
+        referenceType: SCHEDULE_BOOKING_REFERENCE,
+        referenceId: item.id,
       } as any);
 
       // Link it to the item so the booking follows future moves.
@@ -27341,6 +27345,45 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: any) {
       console.error("Failed to book time against schedule item:", error);
       res.status(500).json({ error: "Failed to book time", details: error.message });
+    }
+  });
+
+  // Who has booked time against this schedule item. Reads the item's own taskIds
+  // rather than scanning tasks by reference, so links made before the back-reference
+  // existed still resolve.
+  app.get("/api/schedule-items/:id/bookings", requireAuth, async (req: any, res) => {
+    try {
+      const item = await getOwnedScheduleItem(req, res, req.params.id);
+      if (!item) return;
+
+      const linkedIds: string[] = Array.isArray((item as any).taskIds) ? (item as any).taskIds : [];
+      if (linkedIds.length === 0) return res.json([]);
+
+      const offsets: any[] = Array.isArray((item as any).taskLinkOffsets) ? (item as any).taskLinkOffsets : [];
+      const bookings = [];
+
+      for (const taskId of linkedIds) {
+        const task = await storage.getTask(taskId);
+        if (!task) continue; // deleted since it was linked
+        const offset = offsets.find((o: any) => o?.taskId === taskId);
+        bookings.push({
+          id: task.id,
+          title: task.title,
+          dueDate: task.dueDate,
+          startTime: task.startTime,
+          endTime: task.endTime,
+          status: task.status,
+          assigneeIds: task.assigneeIds ?? [],
+          assigneeNames: task.assigneeNames ?? [],
+          // A booking carries a time window on its link; a plain task link doesn't.
+          isTimeBooking: !!(offset?.startTime || task.referenceType === SCHEDULE_BOOKING_REFERENCE),
+        });
+      }
+
+      res.json(bookings);
+    } catch (error: any) {
+      console.error("Failed to list schedule item bookings:", error);
+      res.status(500).json({ error: "Failed to list bookings", details: error.message });
     }
   });
 
