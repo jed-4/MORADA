@@ -1397,9 +1397,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         : null;
       const trialEndsAt = existingTrialEndsAt ?? new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
       const nextStatus = (company as any).planStatus === 'active' ? 'active' : 'trialing';
+      // Effective tier during the trial: Subbie signups trial Subbie (it's a
+      // genuinely different, mobile-first product), everyone else trials
+      // Studio so they experience full value before choosing. An active
+      // subscription keeps its current plan — plan changes for subscribers go
+      // through Stripe, not this endpoint.
+      const trialPlan = planKey === 'subbie' ? 'subbie' : 'studio';
+      const nextPlan = nextStatus === 'active' ? (company as any).plan : trialPlan;
       await storage.updateCompany(companyId, {
         chosenPlan: planKey,
-        plan: 'builder',
+        plan: nextPlan,
         planStatus: nextStatus,
         billingCycle: cycle,
         trialEndsAt,
@@ -8500,113 +8507,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // EMAIL/PASSWORD AUTHENTICATION ROUTES
   // ============================================================
   
-  // Register new user
-  app.post('/api/auth/register', async (req, res) => {
-    try {
-      const { email, password, name, companyName } = req.body;
-      
-      if (!email || !password) {
-        return res.status(400).json({ message: "Email and password are required" });
-      }
-      
-      if (!name || !companyName) {
-        return res.status(400).json({ message: "Name and company name are required" });
-      }
-      
-      // Check if user already exists
-      const existingUser = await storage.getUserByEmail(email);
-      if (existingUser) {
-        return res.status(400).json({ message: "User already exists" });
-      }
-      
-      // Split name into first and last name
-      const nameParts = name.trim().split(/\s+/);
-      const firstName = nameParts[0] || name;
-      const lastName = nameParts.slice(1).join(' ') || '';
-      
-      // Hash password
-      const hashedPassword = await bcrypt.hash(password, 10);
-      
-      // Step 1: Create user without company
-      const user = await storage.createUser({
-        email,
-        password: hashedPassword,
-        firstName,
-        lastName,
-        userCategory: "team",
-      });
-      
-      // Step 2: Create company with user as owner
-      const company = await storage.createCompany({
-        name: companyName,
-      }, user.id);
-      
-      // Step 3: Update user with companyId
-      await storage.updateUser(user.id, {
-        companyId: company.id,
-      });
-      
-      // Step 4: Fetch updated user with companyId
-      const updatedUser = await storage.getUser(user.id);
-      if (!updatedUser) {
-        return res.status(500).json({ message: "Failed to retrieve updated user" });
-      }
-      
-      // Create session and explicitly save it
-      (req.session as any).userId = user.id;
-      
-      // Force save session before responding
-      req.session.save((err) => {
-        if (err) {
-          console.error("Session save error:", err);
-          return res.status(500).json({ message: "Failed to save session" });
-        }
-        res.status(201).json({ user: toSafeUser(updatedUser) });
-      });
-    } catch (error) {
-      console.error("Registration error:", error);
-      res.status(500).json({ message: "Failed to register user" });
-    }
-  });
-  
-  // Login
-  app.post('/api/auth/login', async (req, res) => {
-    try {
-      const { email, password } = req.body;
-      
-      if (!email || !password) {
-        return res.status(400).json({ message: "Email and password are required" });
-      }
-      
-      // Get user
-      const user = await storage.getUserByEmail(email);
-      if (!user || !user.password) {
-        return res.status(401).json({ message: "Invalid credentials" });
-      }
-      
-      // Verify password
-      const isValid = await bcrypt.compare(password, user.password);
-      if (!isValid) {
-        return res.status(401).json({ message: "Invalid credentials" });
-      }
-      
-      // Create session and explicitly save it
-      (req.session as any).userId = user.id;
-      
-      // Force save session before responding
-      req.session.save((err) => {
-        if (err) {
-          console.error("Session save error:", err);
-          return res.status(500).json({ message: "Failed to save session" });
-        }
-        res.json({ user: toSafeUser(user) });
-      });
-    } catch (error) {
-      console.error("Login error:", error);
-      res.status(500).json({ message: "Failed to login" });
-    }
-  });
-  
+  // Register/login live in server/auth.ts (setupAuth) — registered earlier, so
+  // any duplicates added here would be shadowed and never execute.
+
   // Logout
   app.post('/api/auth/logout', (req, res) => {
     req.session.destroy((err) => {
@@ -10239,6 +10142,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const updated = await storage.updateCompany(company.id, {
             planStatus: 'trialing',
             trialEndsAt,
+            // Trial on Studio limits until the plan step records a choice
+            // (select-plan maps Subbie signups back down to Subbie).
+            plan: 'studio',
           } as any);
           if (updated) created = updated;
         }
@@ -10254,10 +10160,53 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .then((result) => console.log(`[demo] seeded demo data for new company ${company.id}:`, JSON.stringify(result)))
         .catch((seedErr) => console.error(`[demo] failed to seed demo data for new company ${company.id}:`, seedErr));
 
+      // Day-0 welcome email. Background + once-only (unique index on
+      // company/email key), so a failure here never blocks signup and the
+      // hourly sweep won't double-send.
+      import("./services/onboardingEmails")
+        .then(({ sendWelcomeEmail }) => sendWelcomeEmail(company.id))
+        .catch((mailErr) => console.error(`[onboarding-email] welcome failed for company ${company.id}:`, mailErr));
+
       res.status(201).json(created);
     } catch (error) {
       console.error("Error creating company:", error);
       res.status(500).json({ message: "Failed to create company" });
+    }
+  });
+
+  // Demo data: whether the sample dataset (seeded at signup) is still present.
+  // Drives the first-run "this is sample data" banner.
+  app.get('/api/demo-data/status', requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      const companyId = req.user?.companyId;
+      if (!companyId) return res.json({ seeded: false });
+      const { isDemoSeeded, DEMO_PROJECT_NAMES, DEMO_CONTACT_NAMES } = await import("./seed-lenny");
+      // Names let the client tell real data apart from sample data (e.g. the
+      // getting-started checklist only ticks "create a project" for a real one).
+      res.json({
+        seeded: await isDemoSeeded(companyId),
+        demoProjectNames: DEMO_PROJECT_NAMES,
+        demoContactNames: DEMO_CONTACT_NAMES,
+      });
+    } catch (error) {
+      console.error("[demo] status check failed:", error);
+      res.json({ seeded: false });
+    }
+  });
+
+  // Demo data: remove the sample dataset once the user is ready to work with
+  // real data. Keeps the useful defaults (cost codes, payment terms).
+  app.post('/api/demo-data/clear', requireAuth, requireTeamMember, requirePermission("admin.company", "delete"), async (req: any, res) => {
+    try {
+      const companyId = req.user?.companyId;
+      if (!companyId) return res.status(401).json({ message: "No company context" });
+      const { clearLennyDemo } = await import("./seed-lenny");
+      const result = await clearLennyDemo(companyId);
+      console.log(`[demo] cleared demo data for company ${companyId}:`, JSON.stringify(result));
+      res.json(result);
+    } catch (error) {
+      console.error("[demo] clear failed:", error);
+      res.status(500).json({ message: "Failed to clear demo data" });
     }
   });
 

@@ -67,6 +67,7 @@ interface UserWorkspaceView {
 }
 
 const DEFAULT_WIDGETS: Widget[] = [
+  { id: "0", type: "gettingStarted", title: "Getting Started", size: "sm" },
   { id: "1", type: "myDay", title: "My Day", size: "md" },
   { id: "2", type: "personalQuickActions", title: "Quick Actions", size: "sm" },
   { id: "3", type: "personalTasks", title: "My Tasks", size: "md" },

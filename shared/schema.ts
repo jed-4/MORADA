@@ -45,7 +45,8 @@ export const companies = pgTable("companies", {
 
   // Trial / plan / billing tracking.
   // chosenPlan = tier picked at signup; plan = effective tier for gating
-  // (always 'builder' during trial, switches to chosenPlan at expiry);
+  // (during trial: 'subbie' for Subbie signups, 'studio' for everyone else;
+  // switches to chosenPlan at expiry/subscription);
   // planStatus = trialing | active | expired | cancelled (legacy: 'trial').
   trialEndsAt: timestamp("trial_ends_at"),
   planStatus: varchar("plan_status").default("trial"),
@@ -103,6 +104,11 @@ export const users = pgTable("users", {
   // Authentication fields
   passwordHash: text("password_hash"), // For email/password login (bcrypt)
   googleId: varchar("google_id").unique(), // For Google OAuth login
+
+  // Terms of Service acceptance — proof of agreement at registration.
+  // Null on accounts created before this was recorded (or via invite/OAuth).
+  termsAcceptedAt: timestamp("terms_accepted_at"),
+  termsVersion: text("terms_version"),
   
   // Application fields
   phone: text("phone"),
@@ -369,6 +375,19 @@ export const referralCredits = pgTable("referral_credits", {
 });
 
 export type ReferralCredit = typeof referralCredits.$inferSelect;
+
+// Trial lifecycle emails already sent, one row per (company, email). The
+// UNIQUE(company_id, email_key) index — see migration 0033 — is what makes
+// each send once-only; the sweep claims by inserting before calling Resend.
+export const onboardingEmailLog = pgTable("onboarding_email_log", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull(),
+  emailKey: varchar("email_key", { length: 40 }).notNull(), // welcome | tips_day3 | trial_ending | trial_ended
+  toEmail: text("to_email").notNull(),
+  sentAt: timestamp("sent_at").notNull().defaultNow(),
+});
+
+export type OnboardingEmailLogEntry = typeof onboardingEmailLog.$inferSelect;
 
 // Schema for user creation/updates (Replit Auth compatible)
 export const upsertUserSchema = z.object({

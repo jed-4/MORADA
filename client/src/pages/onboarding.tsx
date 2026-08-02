@@ -80,9 +80,15 @@ const PLAN_CARDS: {
 export default function OnboardingPage() {
   const { toast } = useToast();
   const { logout, user } = useAuth();
-  const [step, setStep] = useState<1 | 2 | 3>(1);
+  // The register form already collects first/last name, so the profile step
+  // only appears when they're missing (e.g. Google OAuth signups without a
+  // usable name). Everyone else starts straight at company creation.
+  const [needsProfile] = useState(() => !user?.firstName || !user?.lastName);
+  const [step, setStep] = useState<1 | 2 | 3>(needsProfile ? 1 : 2);
   const [billingCycle, setBillingCycle] = useState<BillingCycle>("monthly");
   const [selectedPlan, setSelectedPlan] = useState<PlanKey>("builder");
+  const totalSteps = needsProfile ? 3 : 2;
+  const displayStep = needsProfile ? step : step - 1;
   
   const userProfileForm = useForm<UserProfileValues>({
     resolver: zodResolver(userProfileSchema),
@@ -199,17 +205,21 @@ export default function OnboardingPage() {
             <span className="text-3xl font-bold text-foreground" data-testid="text-logo-onboarding">Morada</span>
           </div>
           <h1 className="text-2xl font-bold text-foreground mb-2" data-testid="text-onboarding-title">
-            {step === 1 ? "Welcome to Morada!" : step === 2 ? "Create Your Company" : "Choose Your Plan"}
+            {step === 1
+              ? "Welcome to Morada!"
+              : step === 2
+                ? (needsProfile ? "Create Your Company" : "Welcome to Morada!")
+                : "Choose Your Plan"}
           </h1>
           <p className="text-muted-foreground mb-1" data-testid="text-onboarding-subtitle">
             {step === 1
               ? "Let's start by completing your profile"
               : step === 2
-                ? "Now let's set up your company details"
+                ? "Let's set up your company details"
                 : "Start with a 14-day free trial. No charge today — pick the plan that fits."}
           </p>
           <p className="text-xs text-muted-foreground" data-testid="text-step-indicator">
-            Step {step} of 3
+            Step {displayStep} of {totalSteps}
           </p>
         </div>
 
@@ -404,22 +414,24 @@ export default function OnboardingPage() {
                     )}
                   />
 
-                  <div className="flex justify-between pt-4">
-                    <Button 
-                      type="button"
-                      variant="outline"
-                      onClick={() => setStep(1)}
-                      data-testid="button-back"
-                    >
-                      Back
-                    </Button>
-                    <Button 
-                      type="submit" 
+                  <div className={`flex ${needsProfile ? "justify-between" : "justify-end"} pt-4`}>
+                    {needsProfile && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => setStep(1)}
+                        data-testid="button-back"
+                      >
+                        Back
+                      </Button>
+                    )}
+                    <Button
+                      type="submit"
                       size="lg"
                       disabled={createCompanyMutation.isPending}
                       data-testid="button-complete-setup"
                     >
-                      {createCompanyMutation.isPending ? "Creating..." : "Complete Setup"}
+                      {createCompanyMutation.isPending ? "Creating..." : "Continue"}
                     </Button>
                   </div>
                 </form>
@@ -506,6 +518,9 @@ export default function OnboardingPage() {
 
             <p className="text-center text-xs text-muted-foreground">
               Your card won't be charged during the 14-day trial. You can change or cancel your plan anytime.
+              {selectedPlan === "subbie"
+                ? " Your trial runs on the Subbie tier."
+                : " Your trial includes full Studio access, so you can try everything."}
             </p>
 
             <div className="flex justify-center pt-2">
