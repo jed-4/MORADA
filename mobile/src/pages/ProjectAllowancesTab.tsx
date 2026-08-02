@@ -3,8 +3,6 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { useState } from "react";
 import { Search, Loader2, DollarSign, TrendingUp, TrendingDown, Percent, ChevronRight } from "lucide-react";
 import { BottomSheet } from "@/components/BottomSheet";
-import { MobileInput } from "@/components/ui/MobileInput";
-import { MobileButton } from "@/components/ui/MobileButton";
 import { PullToRefreshIndicator } from "@/components/PullToRefresh";
 import { usePullToRefresh } from "@/hooks/usePullToRefresh";
 import { apiRequest, getApiBaseUrl, queryClient } from "@lib/queryClient";
@@ -17,7 +15,7 @@ type EstimateItem = {
   name: string;
   allowance: string;
   allowanceStatus: string;
-  pcMarkupPercent: number | null;
+  markupPercent: number | null;
   unitCostExTax: number;
   quantity: number;
   priceIncTax: number;
@@ -69,8 +67,6 @@ export function ProjectAllowancesTab() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [selectedAllowance, setSelectedAllowance] = useState<AllowanceWithCosts | null>(null);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
-  const [editingMarkup, setEditingMarkup] = useState(false);
-  const [markupValue, setMarkupValue] = useState("");
 
   const { data: allowances = [], isLoading, refetch } = useQuery<AllowanceWithCosts[]>({
     queryKey: ["/api/projects", currentProject?.id, "allowances"],
@@ -117,18 +113,6 @@ export function ProjectAllowancesTab() {
     },
   });
 
-  const updateMarkupMutation = useMutation({
-    mutationFn: async ({ itemId, markup }: { itemId: string; markup: number }) => {
-      return await apiRequest(`/api/estimate-items/${itemId}`, "PATCH", { pcMarkupPercent: markup });
-    },
-    onSuccess: async () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/projects", currentProject?.id, "allowances"] });
-      const Haptics = await getHaptics();
-      await Haptics.impact({ style: ImpactStyle.Medium });
-      setEditingMarkup(false);
-    },
-  });
-
   const formatCurrency = (cents: number) => {
     const dollars = cents / 100;
     const isWholeNumber = dollars % 1 === 0;
@@ -153,8 +137,6 @@ export function ProjectAllowancesTab() {
 
   const handleAllowanceClick = async (allowance: AllowanceWithCosts) => {
     setSelectedAllowance(allowance);
-    setMarkupValue(allowance.item.pcMarkupPercent?.toString() || "0");
-    setEditingMarkup(false);
     setIsDetailOpen(true);
     const Haptics = await getHaptics();
     await Haptics.impact({ style: ImpactStyle.Light });
@@ -166,27 +148,6 @@ export function ProjectAllowancesTab() {
       setSelectedAllowance(prev => prev ? {
         ...prev,
         item: { ...prev.item, allowanceStatus: status }
-      } : null);
-    }
-  };
-
-  const isValidMarkup = (value: string): boolean => {
-    if (!value.trim()) return false;
-    const num = parseFloat(value);
-    return !isNaN(num) && num >= 0;
-  };
-
-  const handleMarkupSave = async () => {
-    if (selectedAllowance) {
-      if (!isValidMarkup(markupValue)) {
-        setMarkupValue("0");
-        return;
-      }
-      const markup = Math.max(0, parseFloat(markupValue));
-      await updateMarkupMutation.mutateAsync({ itemId: selectedAllowance.item.id, markup });
-      setSelectedAllowance(prev => prev ? {
-        ...prev,
-        item: { ...prev.item, pcMarkupPercent: markup }
       } : null);
     }
   };
@@ -308,10 +269,10 @@ export function ProjectAllowancesTab() {
                           <DollarSign className="w-3 h-3" />
                           <span>Est: {formatCurrency(allowance.item.priceIncTax)}</span>
                         </div>
-                        {isPC && allowance.item.pcMarkupPercent !== null && (
+                        {allowance.item.markupPercent !== null && Number(allowance.item.unitCostExTax ?? 0) !== 0 && (
                           <div className="flex items-center gap-1">
                             <Percent className="w-3 h-3" />
-                            <span>{allowance.item.pcMarkupPercent}%</span>
+                            <span>{allowance.item.markupPercent}%</span>
                           </div>
                         )}
                       </div>
@@ -349,7 +310,6 @@ export function ProjectAllowancesTab() {
         onClose={() => {
           setIsDetailOpen(false);
           setSelectedAllowance(null);
-          setEditingMarkup(false);
         }}
         title="Allowance Details"
       >
@@ -431,45 +391,20 @@ export function ProjectAllowancesTab() {
                   {selectedAllowance.variance >= 0 ? "+" : ""}{formatCurrency(selectedAllowance.variance)}
                 </p>
               </div>
-              {selectedAllowance.item.allowance === "Prime Cost" && (
+              {/* Markup is read-only here. This tile used to edit
+                  pcMarkupPercent, a column no pricing path reads — saving
+                  reported success and changed nothing. It now shows the markup
+                  that actually prices the line; editing it belongs on the
+                  estimate, where the money change is visible. */}
+              {Number(selectedAllowance.item.unitCostExTax ?? 0) !== 0 && (
                 <div className="p-3 bg-muted/50 rounded-lg">
                   <div className="flex items-center gap-2 text-muted-foreground mb-1">
                     <Percent className="w-4 h-4" />
-                    <span className="text-xs font-medium">PC Markup</span>
+                    <span className="text-xs font-medium">Markup</span>
                   </div>
-                  {editingMarkup ? (
-                    <div className="flex items-center gap-2">
-                      <MobileInput
-                        type="number"
-                        value={markupValue}
-                        onChange={(e) => setMarkupValue(e.target.value)}
-                        className="w-16 h-8 text-sm"
-                      />
-                      <span className="text-sm">%</span>
-                      <MobileButton
-                        size="sm"
-                        onClick={handleMarkupSave}
-                        disabled={updateMarkupMutation.isPending}
-                      >
-                        Save
-                      </MobileButton>
-                      <MobileButton
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => setEditingMarkup(false)}
-                      >
-                        Cancel
-                      </MobileButton>
-                    </div>
-                  ) : (
-                    <button
-                      onClick={() => setEditingMarkup(true)}
-                      className="font-semibold underline underline-offset-2"
-                      data-testid="button-edit-markup"
-                    >
-                      {selectedAllowance.item.pcMarkupPercent || 0}%
-                    </button>
-                  )}
+                  <p className="font-semibold" data-testid="text-markup">
+                    {selectedAllowance.item.markupPercent ?? 0}%
+                  </p>
                 </div>
               )}
             </div>

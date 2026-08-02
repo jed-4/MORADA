@@ -3,7 +3,8 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Plus, ChevronDown, ChevronRight, CheckCircle, RotateCcw, Loader2, Link2, RefreshCw } from "lucide-react";
+import { ArrowLeft, Plus, ChevronDown, ChevronRight, CheckCircle, RotateCcw, Loader2, Link2, RefreshCw, MoreVertical, Ban } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { EmptyState } from "@/components/EmptyState";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -40,7 +41,11 @@ type EstimateItem = {
   name: string;
   allowance: string;
   allowanceStatus: string;
-  pcMarkupPercent: number | null;
+  /** "This item is not included" — the allowance is excluded and prices at $0. */
+  notIncluded?: boolean | null;
+  /** The line's price at the moment it was excluded, in dollars inc GST. */
+  notIncludedOriginalPriceIncTax?: number | null;
+  markupPercent: number | null;
   unitCostExTax: number;
   quantity: number;
   priceIncTax: number; // cents inc GST (recomputed server-side, never the raw cache)
@@ -673,6 +678,8 @@ export default function AllowanceDetail() {
   const [, setLocation] = useLocation();
   const { getStatusInfo } = useAllowanceStatusOptions();
 
+  const [itemMenuOpen, setItemMenuOpen] = useState(false);
+  const [confirmNotIncludedOpen, setConfirmNotIncludedOpen] = useState(false);
   const [isBillModalOpen, setIsBillModalOpen] = useState(false);
   const [isPsBillModalOpen, setIsPsBillModalOpen] = useState(false);
   const [isTimesheetModalOpen, setIsTimesheetModalOpen] = useState(false);
@@ -813,6 +820,12 @@ export default function AllowanceDetail() {
 
   const allowance = allowances.find((a) => a.item.id === allowanceId);
   const isPrimeCost = allowance?.item.allowance === "Prime Cost";
+
+  // What "Include this item again" would put back. The stash is dollars inc GST
+  // (estimate_items price fields are dollars); everything on this page is cents.
+  const originalNotIncludedCents = dollarsToCents(
+    allowance?.item.notIncludedOriginalPriceIncTax ?? 0,
+  );
 
   // Selections picker (PC only, when nothing linked yet)
   const { data: projectSelections = [] } = useQuery<SelectionLite[]>({
@@ -1118,6 +1131,27 @@ export default function AllowanceDetail() {
     onError: () => {
       toast({ title: "Error", description: "Failed to update status", variant: "destructive" });
     },
+  });
+
+  // "This item is not included" — excludes the allowance so it prices at $0.
+  // Hits its own endpoint because a contracted estimate is locked, and the
+  // ordinary item PATCH refuses to touch a locked estimate.
+  const notIncludedMutation = useMutation({
+    mutationFn: async (notIncluded: boolean) =>
+      apiRequest(`/api/estimate-items/${allowanceId}/not-included`, "PATCH", { notIncluded }),
+    onSuccess: async (_data, notIncluded) => {
+      await queryClient.refetchQueries({ queryKey: ["/api/projects", projectId, "allowances"] });
+      // The estimate total moved, so anything showing it is now stale.
+      queryClient.invalidateQueries({ queryKey: ["/api/estimates"] });
+      toast({
+        title: notIncluded ? "Marked not included" : "Allowance restored",
+        description: notIncluded
+          ? "This allowance is now $0. Raise a variation to credit the client."
+          : "The original allowance amount has been restored.",
+      });
+    },
+    onError: (err: any) =>
+      toast({ title: "Error", description: errorMessage(err) || "Failed to update", variant: "destructive" }),
   });
 
   const linkSelectionMutation = useMutation({
@@ -1476,6 +1510,18 @@ export default function AllowanceDetail() {
                   <span className="text-xs text-muted-foreground">
                     {item.estimateName} (v{item.estimateVersion})
                   </span>
+                  {item.notIncluded && (
+                    <>
+                      <span className="text-muted-foreground text-xs">·</span>
+                      <span
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-[hsl(var(--coral-bg))] text-[hsl(var(--coral))]"
+                        data-testid="badge-not-included"
+                      >
+                        <Ban className="h-3 w-3" />
+                        Not included · $0
+                      </span>
+                    </>
+                  )}
                 </div>
               </div>
               <div className="flex items-center gap-2 flex-shrink-0 flex-wrap">
@@ -1517,15 +1563,131 @@ export default function AllowanceDetail() {
                     Reopen
                   </Button>
                 )}
+
+                {/* Overflow menu — exclusion lives here rather than as a primary
+                    action: it zeroes the line and is rare, but it must be
+                    reachable AFTER the estimate is contracted (and locked). */}
+                <Popover open={itemMenuOpen} onOpenChange={setItemMenuOpen}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-8 w-8"
+                      data-testid="button-allowance-menu"
+                      aria-label="More allowance actions"
+                    >
+                      <MoreVertical className="h-4 w-4" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent align="end" className="w-72 p-1">
+                    {!item.notIncluded ? (
+                      <button
+                        type="button"
+                        disabled={notIncludedMutation.isPending}
+                        onClick={() => {
+                          setItemMenuOpen(false);
+                          setConfirmNotIncludedOpen(true);
+                        }}
+                        className="w-full flex items-start gap-2.5 rounded px-2 py-2 text-left hover-elevate active-elevate-2 disabled:opacity-50"
+                        data-testid="button-mark-not-included"
+                      >
+                        <Ban className="h-4 w-4 mt-0.5 flex-shrink-0 text-muted-foreground" />
+                        <span className="min-w-0">
+                          <span className="block text-[13px] font-medium">This item is not included</span>
+                          <span className="block text-[11px] text-muted-foreground leading-snug">
+                            Sets the allowance to $0. The original amount is kept so you can undo it.
+                          </span>
+                        </span>
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        disabled={notIncludedMutation.isPending}
+                        onClick={() => {
+                          setItemMenuOpen(false);
+                          notIncludedMutation.mutate(false);
+                        }}
+                        className="w-full flex items-start gap-2.5 rounded px-2 py-2 text-left hover-elevate active-elevate-2 disabled:opacity-50"
+                        data-testid="button-mark-included"
+                      >
+                        <RotateCcw className="h-4 w-4 mt-0.5 flex-shrink-0 text-muted-foreground" />
+                        <span className="min-w-0">
+                          <span className="block text-[13px] font-medium">Include this item again</span>
+                          <span className="block text-[11px] text-muted-foreground leading-snug">
+                            Restores {formatCurrency(originalNotIncludedCents)} to the estimate.
+                          </span>
+                        </span>
+                      </button>
+                    )}
+                  </PopoverContent>
+                </Popover>
               </div>
             </div>
             <div className="mt-3 pt-3 border-t border-border">
               <p className="text-xs text-muted-foreground">
                 {isPrimeCost ? "PC" : "PS"} allowance · {item.estimateName}
+                {item.notIncluded && (
+                  <>
+                    {" · "}
+                    <span className="text-[hsl(var(--coral))]">
+                      Excluded — was {formatCurrency(originalNotIncludedCents)}. The client still
+                      needs a variation to be credited.
+                    </span>
+                  </>
+                )}
               </p>
             </div>
           </div>
         </div>
+
+        {/* Confirm exclusion. Worth a step: it drops the estimate total and, on
+            a contracted job, changes what the client owes. */}
+        <Dialog open={confirmNotIncludedOpen} onOpenChange={setConfirmNotIncludedOpen}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>Mark “{item.name}” as not included?</DialogTitle>
+              <DialogDescription asChild>
+                <div className="space-y-3 pt-1 text-sm">
+                  <p>
+                    This allowance drops from{" "}
+                    <span className="font-semibold text-foreground">
+                      {formatCurrency(allowance?.item.priceIncTax ?? 0)}
+                    </span>{" "}
+                    to <span className="font-semibold text-foreground">$0</span> and the estimate
+                    total falls by the same amount.
+                  </p>
+                  <p>
+                    The original amount is kept, so you can undo this at any time from the same
+                    menu.
+                  </p>
+                  <p className="text-[hsl(var(--coral))]">
+                    If this allowance is already contracted, the client is not credited by this
+                    action — raise a variation with a deduction line for{" "}
+                    {formatCurrency(allowance?.item.priceIncTax ?? 0)}.
+                  </p>
+                </div>
+              </DialogDescription>
+            </DialogHeader>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="ghost" onClick={() => setConfirmNotIncludedOpen(false)}>
+                Cancel
+              </Button>
+              <Button
+                disabled={notIncludedMutation.isPending}
+                onClick={() => {
+                  notIncludedMutation.mutate(true);
+                  setConfirmNotIncludedOpen(false);
+                }}
+                data-testid="button-confirm-not-included"
+              >
+                {notIncludedMutation.isPending && (
+                  <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                )}
+                Mark not included
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
 
         {/* ── FINANCIAL SUMMARY ───────────────────────────────────────────── */}
         <div className="bg-card rounded-xl border border-border overflow-hidden">

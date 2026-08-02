@@ -4401,6 +4401,7 @@ export class MemStorage implements IStorage {
       projectMarkupPercent: estimate?.projectMarkupPercent,
       taxRate: estimate?.taxRate,
       existingPriceIncTax: insertItem.priceIncTax,
+      notIncluded: (insertItem as any).notIncluded,
     });
 
     try {
@@ -4469,6 +4470,7 @@ export class MemStorage implements IStorage {
         projectMarkupPercent: estimate?.projectMarkupPercent,
         taxRate: estimate?.taxRate,
         existingPriceIncTax: insertItem.priceIncTax,
+        notIncluded: (insertItem as any).notIncluded,
       });
 
       return {
@@ -4547,6 +4549,7 @@ export class MemStorage implements IStorage {
       projectMarkupPercent: estimate?.projectMarkupPercent,
       taxRate: estimate?.taxRate,
       existingPriceIncTax: updatedItem.priceIncTax,
+      notIncluded: (updatedItem as any).notIncluded,
     });
     updatedItem.taxAmount = taxAmount;
     updatedItem.priceIncTax = priceIncTax;
@@ -4621,6 +4624,7 @@ export class MemStorage implements IStorage {
         projectMarkupPercent: estimate?.projectMarkupPercent,
         taxRate: estimate?.taxRate,
         existingPriceIncTax: item.priceIncTax,
+        notIncluded: (item as any).notIncluded,
       });
       const priceInCents = Math.round(Number(resolved.priceIncTax.toFixed(2)) * 100);
       const priceExCents = Math.round(Number((resolved.priceIncTax - resolved.taxAmount).toFixed(2)) * 100);
@@ -4820,6 +4824,7 @@ export class MemStorage implements IStorage {
         projectMarkupPercent: targetEstimate.projectMarkupPercent,
         taxRate: targetEstimate.taxRate,
         existingPriceIncTax: item.priceIncTax,
+        notIncluded: (item as any).notIncluded,
       });
       const newItem: EstimateItem = {
         ...item,
@@ -4898,6 +4903,7 @@ export class MemStorage implements IStorage {
       projectMarkupPercent: targetEstimate.projectMarkupPercent,
       taxRate: targetEstimate.taxRate,
       existingPriceIncTax: item.priceIncTax,
+      notIncluded: (item as any).notIncluded,
     });
 
     // Create copy in target estimate (without group assignment)
@@ -10266,6 +10272,7 @@ export class DbStorage implements IStorage {
         taxRate: estimate?.taxRate,
         wastagePercent: insertItem.wastagePercent,
         existingPriceIncTax: insertItem.priceIncTax,
+        notIncluded: (insertItem as any).notIncluded,
       });
 
       // Inherit the group's default cost code / category when the new item
@@ -10321,6 +10328,7 @@ export class DbStorage implements IStorage {
           taxRate: estimate?.taxRate,
           wastagePercent: insertItem.wastagePercent,
           existingPriceIncTax: insertItem.priceIncTax,
+          notIncluded: (insertItem as any).notIncluded,
         });
 
         return {
@@ -10471,40 +10479,60 @@ export class DbStorage implements IStorage {
         .where(inArray(schema.estimateGroups.estimateId, estimateIds));
       const groupsMap = new Map(groupsRows.map(g => [g.id, g]));
       
-      // For each item, calculate actual costs from bills and timesheets
-      const allowancesWithCosts = await Promise.all(
-        allowanceItems.map(async (item) => {
+      if (allowanceItems.length === 0) return [];
+
+      // Actual-spend allocations for EVERY allowance in one query per source.
+      // These used to be three queries *per item*, which on a project with a
+      // few estimate revisions meant hundreds of round trips to a US region.
+      const allowanceItemIds = allowanceItems.map(i => i.id);
+
+      const sumByEstimateItem = (
+        rows: { estimateItemId: string; amount: number | null }[],
+      ): Map<string, number> => {
+        const totals = new Map<string, number>();
+        for (const row of rows) {
+          totals.set(row.estimateItemId, (totals.get(row.estimateItemId) || 0) + (row.amount || 0));
+        }
+        return totals;
+      };
+
+      const [billRows, timesheetRows, customRows] = await Promise.all([
+        db.select({
+          estimateItemId: schema.billLineItemAllowances.estimateItemId,
+          amount: schema.billLineItemAllowances.amount,
+        })
+        .from(schema.billLineItemAllowances)
+        .where(inArray(schema.billLineItemAllowances.estimateItemId, allowanceItemIds)),
+
+        db.select({
+          estimateItemId: schema.timesheetAllowances.estimateItemId,
+          amount: schema.timesheetAllowances.amount,
+        })
+        .from(schema.timesheetAllowances)
+        .where(inArray(schema.timesheetAllowances.estimateItemId, allowanceItemIds)),
+
+        // Custom lines / PC cost entries (allowance_items) are part of actual
+        // spend too — totalPrice is inc GST cents. Previously these were never
+        // summed, so saved PC entries left the actual cost at $0.
+        db.select({
+          estimateItemId: schema.allowanceItems.estimateItemId,
+          amount: schema.allowanceItems.totalPrice,
+        })
+        .from(schema.allowanceItems)
+        .where(inArray(schema.allowanceItems.estimateItemId, allowanceItemIds)),
+      ]);
+
+      const billCostByItem = sumByEstimateItem(billRows);
+      const timesheetCostByItem = sumByEstimateItem(timesheetRows);
+      const customCostByItem = sumByEstimateItem(customRows);
+
+      const allowancesWithCosts = allowanceItems.map((item) => {
           const estimate = estimates.find(e => e.id === item.estimateId);
           const group = item.groupId ? groupsMap.get(item.groupId) : undefined;
-          
-          // Get bill line item allocations
-          const billAllocations = await db.select({
-            amount: schema.billLineItemAllowances.amount,
-          })
-          .from(schema.billLineItemAllowances)
-          .where(eq(schema.billLineItemAllowances.estimateItemId, item.id));
-          
-          const billCost = billAllocations.reduce((sum, a) => sum + (a.amount || 0), 0);
-          
-          // Get timesheet allocations
-          const timesheetAllocations = await db.select({
-            amount: schema.timesheetAllowances.amount,
-          })
-          .from(schema.timesheetAllowances)
-          .where(eq(schema.timesheetAllowances.estimateItemId, item.id));
-          
-          const timesheetCost = timesheetAllocations.reduce((sum, a) => sum + (a.amount || 0), 0);
 
-          // Custom lines / PC cost entries (allowance_items) are part of actual
-          // spend too — totalPrice is inc GST cents. Previously these were never
-          // summed, so saved PC entries left the actual cost at $0.
-          const itemAllocations = await db.select({
-            totalPrice: schema.allowanceItems.totalPrice,
-          })
-          .from(schema.allowanceItems)
-          .where(eq(schema.allowanceItems.estimateItemId, item.id));
-
-          const itemCostIncGst = itemAllocations.reduce((sum, a) => sum + (a.totalPrice || 0), 0);
+          const billCost = billCostByItem.get(item.id) || 0;
+          const timesheetCost = timesheetCostByItem.get(item.id) || 0;
+          const itemCostIncGst = customCostByItem.get(item.id) || 0;
 
           // Bills are stored inc GST; timesheet allocations are EX GST (labour =
           // hours × rate, wages carry no GST). Gross labour up for the inc-GST
@@ -10531,6 +10559,10 @@ export class DbStorage implements IStorage {
             taxRate: estimate?.taxRate,
             wastagePercent: (item as any).wastagePercent,
             existingPriceIncTax: item.priceIncTax,
+            // An excluded allowance stays $0 — without this a PRICED allowance
+            // (unitCost > 0) would recompute back to its full amount here, since
+            // the recompute deliberately ignores the zeroed cache.
+            notIncluded: (item as any).notIncluded,
           });
           const priceInCents = Math.round(Number(resolved.priceIncTax.toFixed(2)) * 100);
           const priceExCents = Math.round(Number((resolved.priceIncTax - resolved.taxAmount).toFixed(2)) * 100);
@@ -10557,9 +10589,8 @@ export class DbStorage implements IStorage {
             itemCostExGst,
             variance,
           };
-        })
-      );
-      
+      });
+
       return allowancesWithCosts;
     } catch (error) {
       console.error("Database error in getProjectAllowances:", error);
@@ -10818,6 +10849,7 @@ export class DbStorage implements IStorage {
           taxRate: targetEstimate.taxRate,
           wastagePercent: (item as any).wastagePercent,
           existingPriceIncTax: item.priceIncTax,
+          notIncluded: (item as any).notIncluded,
         });
 
         const newItemData = {
@@ -11606,6 +11638,7 @@ export class DbStorage implements IStorage {
         taxRate: targetEstimate.taxRate,
         wastagePercent: (item[0] as any).wastagePercent,
         existingPriceIncTax: item[0].priceIncTax,
+        notIncluded: (item[0] as any).notIncluded,
       });
 
       // Create copy in target estimate (without group assignment)

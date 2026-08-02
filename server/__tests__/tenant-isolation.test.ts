@@ -114,7 +114,9 @@ async function createTenant(label: string): Promise<Tenant> {
   const password = "TenantTest123!";
 
   const reg = await api("POST", "/api/auth/register", {
-    body: { email, password, firstName: label, lastName: "TenantTest" },
+    // agreeToTerms became mandatory on /api/auth/register with the signup
+    // overhaul; without it this fixture can't create its tenants at all.
+    body: { email, password, firstName: label, lastName: "TenantTest", agreeToTerms: true },
   });
   assert.strictEqual(reg.status, 200, `register ${label} failed: ${JSON.stringify(reg.body)}`);
   const userId = reg.body.user.id;
@@ -160,6 +162,15 @@ async function main() {
     name: "Tenant A Project",
     companyId: A.companyId,
     ownerId: A.userId,
+    projectSubStatus: "lead_new",
+  } as any);
+  // Company B needs a project of its own so we can prove the allowance routes
+  // validate the allowanceId against the project in the URL — not just that the
+  // caller owns whatever project they happened to name.
+  const projectB = await storage.createProject({
+    name: "Tenant B Project",
+    companyId: B.companyId,
+    ownerId: B.userId,
     projectSubStatus: "lead_new",
   } as any);
   const estimateA = await storage.createEstimate({ name: "Estimate A", projectId: projectA.id } as any);
@@ -463,6 +474,46 @@ async function main() {
     await controlOk("GET /api/projects/:projectId/estimate-items", "GET", `/api/projects/${projectA.id}/estimate-items`);
     await controlOk("GET PO import estimate-items", "GET", `/api/purchase-orders/import/estimate-items/${estimateA.id}`);
     await controlOk("GET /api/client-invoices/:id/estimates", "GET", `/api/client-invoices/${clientInvoiceA.id}/estimates`);
+
+    // ---- Allowances (getOwnedAllowance) ----
+    // The project-scoped guard alone was not enough here: these routes query
+    // straight off :allowanceId, so pairing a project you DO own with another
+    // company's estimate-item id used to return that company's bill numbers,
+    // suppliers, timesheets and charge rates.
+    await crossTenant(
+      "GET /api/projects/:projectId/allowances/:allowanceId/detail",
+      "GET",
+      `/api/projects/${projectA.id}/allowances/${estimateItemA.id}/detail`,
+      `/api/projects/${projectA.id}/allowances/${NONE}/detail`,
+    );
+    await crossTenant(
+      "POST /api/projects/:projectId/allowances/:allowanceId/sync-selection",
+      "POST",
+      `/api/projects/${projectA.id}/allowances/${estimateItemA.id}/sync-selection`,
+      `/api/projects/${projectA.id}/allowances/${NONE}/sync-selection`,
+      {},
+    );
+    await test("GET allowance detail: company B's OWN project + company A's allowance → 404", async () => {
+      const r = await api("GET", `/api/projects/${projectB.id}/allowances/${estimateItemA.id}/detail`, { cookie: B.cookie });
+      assert.strictEqual(r.status, 404, `expected 404, got ${r.status}: ${JSON.stringify(r.body)}`);
+    });
+    await test("POST sync-selection: company B's OWN project + company A's allowance → 404", async () => {
+      const r = await api("POST", `/api/projects/${projectB.id}/allowances/${estimateItemA.id}/sync-selection`, { cookie: B.cookie, body: {} });
+      assert.strictEqual(r.status, 404, `expected 404, got ${r.status}: ${JSON.stringify(r.body)}`);
+    });
+    await test("GET allowance detail: company A's OWN project + an allowance from another of its projects → 404", async () => {
+      // Same company, wrong project: the allowanceId must belong to the project
+      // named in the URL, or the path segment means nothing.
+      const otherProjectA = await storage.createProject({
+        name: "Tenant A Second Project", companyId: A.companyId, ownerId: A.userId, projectSubStatus: "lead_new",
+      } as any);
+      const r = await api("GET", `/api/projects/${otherProjectA.id}/allowances/${estimateItemA.id}/detail`, { cookie: A.cookie });
+      assert.strictEqual(r.status, 404, `expected 404, got ${r.status}: ${JSON.stringify(r.body)}`);
+      // Cleanup deletes projects by company_id, so this one goes with the rest.
+    });
+    await controlOk("GET allowance detail", "GET", `/api/projects/${projectA.id}/allowances/${estimateItemA.id}/detail`);
+    await crossTenant("GET /api/projects/:projectId/allowances", "GET", `/api/projects/${projectA.id}/allowances`, `/api/projects/${NONE}/allowances`);
+    await controlOk("GET /api/projects/:projectId/allowances", "GET", `/api/projects/${projectA.id}/allowances`);
 
     // ---- Selections (enforceProjectCompany) ----
     await crossTenant("GET /api/selections/:id", "GET", `/api/selections/${selectionA.id}`, `/api/selections/${NONE}`);

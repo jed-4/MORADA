@@ -5984,6 +5984,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         taxRate: estimate.taxRate,
         wastagePercent: req.body.wastagePercent,
         existingPriceIncTax: req.body.priceIncTax,
+        notIncluded: (req.body as any).notIncluded,
       });
 
       const itemData = {
@@ -6140,6 +6141,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           taxRate: estimate.taxRate,
           wastagePercent: item.wastagePercent,
           existingPriceIncTax: item.priceIncTax,
+          notIncluded: (item as any).notIncluded,
         });
 
         const itemData = {
@@ -6344,6 +6346,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             taxRate: estimate.taxRate,
             wastagePercent: item.wastagePercent,
             existingPriceIncTax: item.priceIncTax,
+            notIncluded: (item as any).notIncluded,
           });
 
           const itemData = {
@@ -6491,6 +6494,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           taxRate: estimate?.taxRate,
           wastagePercent,
           existingPriceIncTax: item.priceIncTax,
+          notIncluded: (item as any).notIncluded,
         });
         next.taxAmount = taxAmount;
         next.priceIncTax = priceIncTax;
@@ -6559,6 +6563,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           taxRate: estimate?.taxRate,
           wastagePercent: (item as any).wastagePercent,
           existingPriceIncTax: item.priceIncTax,
+          notIncluded: (item as any).notIncluded,
         });
 
         await storage.updateEstimateItem(itemId, {
@@ -6684,6 +6689,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         existingPriceIncTax: updateData.priceIncTax !== undefined
           ? updateData.priceIncTax
           : existingItem.priceIncTax,
+        // An excluded allowance must survive a partial patch at $0. Without
+        // this, editing any unrelated field (notes, cost code) on an excluded
+        // PRICED allowance would recompute its full amount straight back.
+        // Inclusion is changed only via PATCH .../not-included.
+        notIncluded: updateData.notIncluded !== undefined
+          ? updateData.notIncluded
+          : (existingItem as any).notIncluded,
       });
 
       updateData.taxAmount = taxAmount;
@@ -6736,6 +6748,82 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(result[0]);
     } catch (error: any) {
       res.status(500).json({ error: "Failed to update allowance status" });
+    }
+  });
+
+  // "This item is not included" — exclude a PC/PS allowance so it prices at $0,
+  // or put it back. Like allowance-status above, this writes straight to the
+  // table rather than going through storage.updateEstimateItem: an allowance is
+  // normally excluded AFTER the estimate is contracted, and the contracted
+  // estimate is locked, so the guarded path throws. That lock is precisely why
+  // there was previously no way to make an allowance $0 in production.
+  app.patch("/api/estimate-items/:id/not-included", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const existingItem = await getOwnedEstimateItem(req, res, req.params.id);
+      if (!existingItem) return;
+
+      const { notIncluded } = req.body;
+      if (typeof notIncluded !== "boolean") {
+        return res.status(400).json({ error: "notIncluded must be a boolean" });
+      }
+      if ((existingItem as any).allowance === "None") {
+        return res.status(400).json({ error: "Only Prime Cost and Provisional Sum allowances can be marked not included" });
+      }
+
+      const { estimateItems: estimateItemsTbl } = await import("@shared/schema");
+      const estimate = await storage.getEstimate((existingItem as any).estimateId);
+      const taxRate = Number((estimate as any)?.taxRate ?? 10);
+
+      let patch: Record<string, any>;
+      if (notIncluded) {
+        // Stash the typed amount before zeroing the cache. Only a flat
+        // allowance needs it (a priced line rebuilds from qty × unitCost), but
+        // storing it unconditionally keeps restore symmetrical. Don't overwrite
+        // an existing stash — re-excluding an already-excluded line would
+        // otherwise record $0 as the "original".
+        const original = (existingItem as any).notIncludedOriginalPriceIncTax ?? (existingItem as any).priceIncTax ?? 0;
+        patch = {
+          notIncluded: true,
+          notIncludedAt: new Date(),
+          notIncludedOriginalPriceIncTax: original,
+          priceIncTax: 0,
+          taxAmount: 0,
+        };
+      } else {
+        // Restore. A priced line re-derives from its untouched qty × unitCost ×
+        // markup; a flat line comes back from the stash.
+        const restored = resolveEstimateStoredPrice({
+          unitCostExTax: (existingItem as any).unitCostExTax,
+          quantity: (existingItem as any).quantity,
+          markupPercent: (existingItem as any).markupPercent,
+          projectMarkupPercent: (estimate as any)?.projectMarkupPercent,
+          taxRate,
+          wastagePercent: (existingItem as any).wastagePercent,
+          existingPriceIncTax: (existingItem as any).notIncludedOriginalPriceIncTax ?? 0,
+        });
+        patch = {
+          notIncluded: false,
+          notIncludedAt: null,
+          notIncludedOriginalPriceIncTax: null,
+          priceIncTax: restored.priceIncTax,
+          taxAmount: restored.taxAmount,
+        };
+      }
+
+      const result = await db.update(estimateItemsTbl)
+        .set({ ...patch, updatedAt: new Date() })
+        .where(eq(estimateItemsTbl.id, req.params.id))
+        .returning();
+
+      if (!result[0]) {
+        return res.status(404).json({ error: "Estimate item not found" });
+      }
+      // The estimate total just moved by the allowance amount.
+      triggerBudgetAutoRecalc((existingItem as any).estimateId);
+      res.json(result[0]);
+    } catch (error: any) {
+      console.error("[not-included] update failed:", error?.message);
+      res.status(500).json({ error: "Failed to update allowance inclusion" });
     }
   });
 
@@ -13234,6 +13322,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         taxRate: (estimate as any).taxRate,
         wastagePercent: (estimateItem as any).wastagePercent,
         existingPriceIncTax: estimateItem.priceIncTax,
+        notIncluded: (estimateItem as any).notIncluded,
       });
       const allowanceCents = Math.round(priceIncTax * 100);
 
@@ -26284,18 +26373,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Ownership guard for the allowance-scoped routes below. Checking only the
+  // project (as this used to) left the allowanceId itself unverified — any
+  // authenticated user could pair their own projectId with another company's
+  // estimate-item id and read that company's bills, suppliers, timesheets and
+  // charge rates. Resolve the item, confirm the caller's company owns it, and
+  // confirm it actually belongs to the project in the URL.
+  const getOwnedAllowance = async (
+    req: any, res: any, projectId: string, allowanceId: string,
+  ): Promise<any | null> => {
+    const item = await getOwnedEstimateItem(req, res, allowanceId, "Allowance not found");
+    if (!item) return null;
+    const estimate = await storage.getEstimate((item as any).estimateId);
+    if (!estimate || (estimate as any).projectId !== projectId) {
+      res.status(404).json({ error: "Allowance not found" });
+      return null;
+    }
+    return item;
+  };
+
   // GET /api/projects/:projectId/allowances/:allowanceId/detail
   // Returns allocated bills, timesheets, and custom items saved for a specific allowance.
   app.get("/api/projects/:projectId/allowances/:allowanceId/detail", async (req, res) => {
     try {
       const { projectId, allowanceId } = req.params;
 
-      // Company-scope auth: verify the project belongs to the requester's company
-      const project = await storage.getProject(projectId);
-      if (!project) return res.status(404).json({ error: "Project not found" });
-      if (req.user && (project as any).companyId !== (req.user as any).companyId) {
-        return res.status(403).json({ error: "Forbidden" });
-      }
+      if (!(await getOwnedAllowance(req, res, projectId, allowanceId))) return;
 
       const {
         billLineItemAllowances: bliaTable,
@@ -26551,11 +26654,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/projects/:projectId/allowances/:allowanceId/sync-selection", async (req, res) => {
     try {
       const { projectId, allowanceId } = req.params;
-      const project = await storage.getProject(projectId);
-      if (!project) return res.status(404).json({ error: "Project not found" });
-      if (req.user && (project as any).companyId !== (req.user as any).companyId) {
-        return res.status(403).json({ error: "Forbidden" });
-      }
+      if (!(await getOwnedAllowance(req, res, projectId, allowanceId))) return;
       const selection = await storage.getSelectionByEstimateItemId(allowanceId);
       if (!selection) return res.status(404).json({ error: "No selection linked to this allowance" });
       await syncSelectionCostingToAllowance(selection.id);

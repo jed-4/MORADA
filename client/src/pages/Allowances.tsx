@@ -35,6 +35,7 @@ import {
   EyeOff,
 } from "lucide-react";
 import { type Estimate } from "@shared/schema";
+import { formatCents } from "@shared/money";
 
 // ───────────────────────────────────────────────────────────────────────
 // Types
@@ -46,7 +47,8 @@ type EstimateItem = {
   name: string;
   allowance: string;
   allowanceStatus: string;
-  pcMarkupPercent: number | null;
+  notIncluded?: boolean | null;
+  markupPercent: number | null;
   unitCostExTax: number;
   quantity: number;
   priceIncTax: number;
@@ -98,16 +100,8 @@ function getStatusToneClass(statusName: string): string {
   return "bg-muted/40 text-muted-foreground";
 }
 
-function formatCurrency(cents: number): string {
-  const dollars = cents / 100;
-  const isWhole = dollars % 1 === 0;
-  return new Intl.NumberFormat("en-AU", {
-    style: "currency",
-    currency: "AUD",
-    minimumFractionDigits: isWhole ? 0 : 2,
-    maximumFractionDigits: 2,
-  }).format(dollars);
-}
+// Canonical AUD formatter (takes cents) — see shared/money.ts.
+const formatCurrency = formatCents;
 
 function formatVariance(varianceCents: number): { text: string; tone: "under" | "over" | "none" } {
   if (varianceCents === 0) return { text: formatCurrency(0), tone: "none" };
@@ -421,14 +415,15 @@ export default function Allowances() {
       const est = item.priceIncTax || 0;
       totalEstimate += est;
       totalActual += actualCost;
-      const statusName = getStatusInfo(item.allowanceStatus).name.toLowerCase();
-      if (statusName.includes("pending") || statusName.includes("quoted")) {
-        outstanding += est;
-      }
+      // Budget still unspent, and budget already exceeded — two halves of the
+      // same comparison. Derived from the money, not from status labels: the
+      // status list is user-configurable, so the old name matching ("pending" /
+      // "quoted") silently zeroed this card as soon as a status was renamed.
+      if (actualCost < est) outstanding += est - actualCost;
       if (actualCost > est) overBudget += actualCost - est;
     });
     return { totalEstimate, totalActual, outstanding, overBudget };
-  }, [estimateScoped, getStatusInfo]);
+  }, [estimateScoped]);
 
   // Toggle group collapse
   const toggleGroup = useCallback((groupName: string) => {
@@ -490,7 +485,7 @@ export default function Allowances() {
           />
           <StatCard
             value={formatCurrency(stats.outstanding)}
-            label="Outstanding"
+            label="Remaining"
             variant="amber"
             testId="stat-outstanding"
           />
@@ -803,6 +798,7 @@ export default function Allowances() {
                     {items.map(({ item, actualCost, variance }, idx) => {
                       const variantBg = idx % 2 === 0 ? "bg-card" : "bg-muted/10";
                       const isPC = item.allowance === "Prime Cost";
+                      const isPriced = Number(item.unitCostExTax ?? 0) !== 0;
                       const typeBg = isPC
                         ? "bg-primary/10 text-primary"
                         : "bg-[hsl(var(--amber-bg))] text-[hsl(var(--amber))]";
@@ -820,8 +816,18 @@ export default function Allowances() {
                           <div></div>
 
                           {/* Description */}
-                          <div className="text-[12px] text-foreground pl-6 truncate" data-testid={`text-name-${item.id}`}>
-                            {item.name}
+                          <div className="text-[12px] text-foreground pl-6 truncate flex items-center gap-1.5" data-testid={`text-name-${item.id}`}>
+                            <span className={`truncate ${item.notIncluded ? "line-through text-muted-foreground" : ""}`}>
+                              {item.name}
+                            </span>
+                            {item.notIncluded && (
+                              <span
+                                className="flex-shrink-0 rounded text-[9px] font-semibold px-1.5 py-0.5 bg-[hsl(var(--coral-bg))] text-[hsl(var(--coral))]"
+                                data-testid={`badge-not-included-${item.id}`}
+                              >
+                                NOT INCLUDED
+                              </span>
+                            )}
                           </div>
 
                           {/* Type */}
@@ -853,10 +859,15 @@ export default function Allowances() {
                             {formatCurrency(item.priceIncTax || 0)}
                           </div>
 
-                          {/* Markup */}
+                          {/* Markup — the markup that actually prices the line.
+                              This used to read pcMarkupPercent, a column no
+                              pricing path consults, so it always showed 0%.
+                              Fixed-price lines (unit cost 0) skip markup
+                              entirely, so they show nothing rather than a
+                              percentage that isn't applied. */}
                           <div className="text-[12px] tabular-nums text-right">
-                            {isPC ? (
-                              <span className="text-muted-foreground">{item.pcMarkupPercent || 0}%</span>
+                            {isPriced ? (
+                              <span className="text-muted-foreground">{item.markupPercent ?? 0}%</span>
                             ) : (
                               <span className="text-muted-foreground/40">—</span>
                             )}
