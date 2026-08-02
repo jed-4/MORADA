@@ -52,6 +52,12 @@ export default function AuthPage() {
   const urlParams = new URLSearchParams(window.location.search);
   const errorParam = urlParams.get('error');
 
+  // Land on Register when the server bounced a Google signup for missing
+  // consent — the checkbox they need is on that tab.
+  const [activeTab, setActiveTab] = useState<'login' | 'register'>(
+    errorParam === 'terms_required' ? 'register' : 'login',
+  );
+
   // Referral link support: /auth?ref=M-XXXX-XXXX. Save the code so it can be
   // attached when the new user creates their company during onboarding.
   const refParam = urlParams.get('ref');
@@ -87,6 +93,9 @@ export default function AuthPage() {
     resolver: zodResolver(registerSchema),
     defaultValues: { email: '', password: '', confirmPassword: '', firstName: '', lastName: '', agreeToTerms: false },
   });
+
+  // Drives both "Create Account" and the shared Google button on the Register tab.
+  const agreedToTerms = registerForm.watch('agreeToTerms');
 
   const handleLogin = async (values: LoginFormValues) => {
     setIsLoading(true);
@@ -164,8 +173,21 @@ export default function AuthPage() {
     }
   };
 
+  // The Google button is shared by both tabs. On Register it creates an
+  // account, so it carries the same consent requirement as "Create Account":
+  // the ticked box is passed to the server, which pins the version and refuses
+  // to create an account without it. On Login it stays a plain sign-in.
   const handleGoogleLogin = () => {
-    window.location.href = '/api/auth/google';
+    if (activeTab === 'register' && !agreedToTerms) {
+      toast({
+        variant: 'destructive',
+        title: 'Please accept the terms',
+        description: 'You must agree to the Terms of Service and Privacy Policy to create an account.',
+      });
+      return;
+    }
+    const consented = activeTab === 'register' && agreedToTerms;
+    window.location.href = `/api/auth/google${consented ? '?terms=accepted' : ''}`;
   };
 
   // Credentials accepted — hold a loading screen until the workspace renders,
@@ -198,13 +220,15 @@ export default function AuthPage() {
             {errorParam === 'google_auth_failed' && 'Google login failed. Please try again.'}
             {errorParam === 'callback_failed' && 'Authentication callback failed. Please try again.'}
             {errorParam === 'session_failed' && 'Session creation failed. Please try again.'}
+            {errorParam === 'terms_required' &&
+              'To create an account with Google, please accept the Terms of Service and Privacy Policy below, then continue with Google.'}
             {errorParam === 'invalid_state' && 'Security check failed. Please try logging in again.'}
-            {!['google_auth_failed', 'callback_failed', 'session_failed', 'invalid_state'].includes(errorParam) && 'An error occurred. Please try again.'}
+            {!['google_auth_failed', 'callback_failed', 'session_failed', 'invalid_state', 'terms_required'].includes(errorParam) && 'An error occurred. Please try again.'}
           </div>
         )}
 
         <Card>
-          <Tabs defaultValue="login">
+          <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'login' | 'register')}>
             <CardHeader className="pb-2">
               <TabsList className="grid w-full grid-cols-2">
                 <TabsTrigger value="login" data-testid="tab-login">Login</TabsTrigger>
@@ -492,7 +516,7 @@ export default function AuthPage() {
                 variant="outline"
                 className="w-full"
                 onClick={handleGoogleLogin}
-                disabled={isLoading}
+                disabled={isLoading || (activeTab === 'register' && !agreedToTerms)}
                 data-testid="button-google-login"
               >
                 <svg className="mr-2 h-4 w-4" viewBox="0 0 24 24">
@@ -515,6 +539,15 @@ export default function AuthPage() {
                 </svg>
                 Continue with Google
               </Button>
+
+              {activeTab === 'register' && !agreedToTerms && (
+                <p
+                  className="text-center text-xs text-muted-foreground"
+                  data-testid="text-google-terms-hint"
+                >
+                  Accept the Terms of Service and Privacy Policy above to continue with Google.
+                </p>
+              )}
             </CardContent>
           </Tabs>
         </Card>
