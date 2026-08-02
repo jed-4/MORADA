@@ -30,6 +30,7 @@ const Proposals = lazy(() => import("@/pages/Proposals"));
 const Bills = lazy(() => import("@/pages/Bills"));
 const Budget = lazy(() => import("@/pages/Budget"));
 const Selections = lazy(() => import("@/pages/Selections"));
+const SelectionDetail = lazy(() => import("@/pages/SelectionDetail"));
 const RFQs = lazy(() => import("@/pages/RFQs"));
 const RFIs = lazy(() => import("@/pages/RFIs"));
 const Allowances = lazy(() => import("@/pages/Allowances"));
@@ -968,8 +969,13 @@ export default function CustomizableProjectOverview() {
             className="h-full"
           />
         );
-      case "selections":
-        return <Selections />;
+      case "selections": {
+        // /selections/<id> renders the detail INSIDE the project shell so it
+        // keeps the project header + section tabs like every other section
+        const selectionsPath = currentLocation.split(`/projects/${currentProject.id}/selections`)[1] || "";
+        const detailId = selectionsPath.split("/").filter(Boolean)[0];
+        return detailId ? <SelectionDetail /> : <Selections />;
+      }
       case "rfqs":
         return <RFQs embedded />;
       case "rfis":

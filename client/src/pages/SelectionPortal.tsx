@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useParams } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Loader2, CheckCircle2, Package, MessageSquare, Send, ChevronDown, ChevronUp } from "lucide-react";
+import { Loader2, CheckCircle2, Package, MessageSquare, Send, ChevronDown, ChevronUp, LayoutGrid, Columns3, X, Images } from "lucide-react";
 import { PortalLayout } from "@/components/portal/PortalLayout";
 import { PortalLoading, PortalError } from "@/components/portal/PortalStateBoundary";
 import { Button } from "@/components/ui/button";
@@ -10,11 +10,45 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
-import type { SelectionWithOptions, SelectionOption, SelectionComment } from "@shared/schema";
+import { formatCents } from "@shared/money";
+import type { SelectionComment } from "@shared/schema";
+
+interface PortalAttachment {
+  id: string;
+  fileName: string;
+  fileType: string;
+  filePath: string;
+  thumbnailX?: number;
+  thumbnailY?: number;
+}
+
+interface PortalOption {
+  id: string;
+  name: string;
+  description?: string | null;
+  sku?: string | null;
+  brand?: string | null;
+  quantity?: number | null;
+  unitType?: string | null;
+  specifications?: Record<string, any> | null;
+  approvedAt?: string | null;
+  isSelectedByClient?: boolean;
+  clientPrice?: number | null; // cents inc GST; null when hidden or not costed
+  attachments?: PortalAttachment[];
+}
 
 interface PortalData {
-  selection: SelectionWithOptions & { portalToken?: string; lockedAt?: string | null; allowance?: number | null; clientCanSeePrice?: boolean };
-  clientSelection: { selectedOptionId: string; clientName?: string } | null;
+  selection: {
+    id: string;
+    name: string;
+    description?: string | null;
+    allowance?: number | null; // cents; null when price hidden
+    clientCanSeePrice?: boolean;
+    clientCanChange?: boolean;
+    locked?: boolean;
+    options: PortalOption[];
+  };
+  clientSelection: { id: string; optionId: string } | null;
   comments: SelectionComment[];
 }
 
@@ -24,6 +58,8 @@ export default function SelectionPortal() {
   const [clientName, setClientName] = useState("");
   const [commentText, setCommentText] = useState("");
   const [showComments, setShowComments] = useState(true);
+  const [viewMode, setViewMode] = useState<"cards" | "compare">("cards");
+  const [lightboxImage, setLightboxImage] = useState<PortalAttachment | null>(null);
 
   const { data, isLoading, error } = useQuery<PortalData>({
     queryKey: ["/api/portal/selections", token],
@@ -86,12 +122,11 @@ export default function SelectionPortal() {
   }
 
   const { selection, clientSelection, comments } = data;
-  const isLocked = !!(selection as any).lockedAt;
-  const selectedOptionId = clientSelection?.selectedOptionId;
-  const allowance = (selection as any).allowance;
-  const clientCanSeePrice = (selection as any).clientCanSeePrice;
-
-  const selectedOption = selection.options.find(o => o.id === selectedOptionId);
+  const isLocked = !!selection.locked;
+  const selectedOptionId = clientSelection?.optionId;
+  const allowance = selection.allowance; // cents
+  const clientCanSeePrice = !!selection.clientCanSeePrice;
+  const changeBlocked = !!selectedOptionId && selection.clientCanChange === false;
 
   return (
     <PortalLayout title="Selection Request" maxWidth="max-w-2xl">
@@ -118,10 +153,10 @@ export default function SelectionPortal() {
               )}
             </div>
 
-            {allowance && (
+            {!!allowance && clientCanSeePrice && (
               <div className="mt-3 flex items-center gap-2">
                 <span className="text-xs text-muted-foreground">Allowance:</span>
-                <span className="text-sm font-medium">${Number(allowance).toLocaleString("en-AU", { minimumFractionDigits: 2 })}</span>
+                <span className="text-sm font-medium">{formatCents(allowance, { alwaysShowDecimals: true })}</span>
               </div>
             )}
           </div>
@@ -142,85 +177,252 @@ export default function SelectionPortal() {
 
         {/* Options */}
         <div className="space-y-3">
-          <p className="text-xs text-muted-foreground uppercase tracking-wide px-1">Choose an option</p>
+          <div className="flex items-center justify-between px-1">
+            <p className="text-xs text-muted-foreground uppercase tracking-wide">Choose an option</p>
+            {selection.options.length > 1 && (
+              <div className="flex items-center rounded-lg border bg-card p-0.5">
+                <button
+                  onClick={() => setViewMode("cards")}
+                  className={cn("flex items-center gap-1 rounded-md px-2 py-1 text-xs",
+                    viewMode === "cards" ? "bg-primary/15 text-foreground font-medium" : "text-muted-foreground")}
+                >
+                  <LayoutGrid className="w-3 h-3" /> Cards
+                </button>
+                <button
+                  onClick={() => setViewMode("compare")}
+                  className={cn("flex items-center gap-1 rounded-md px-2 py-1 text-xs",
+                    viewMode === "compare" ? "bg-primary/15 text-foreground font-medium" : "text-muted-foreground")}
+                >
+                  <Columns3 className="w-3 h-3" /> Compare
+                </button>
+              </div>
+            )}
+          </div>
+
           {selection.options.length === 0 && (
             <div className="bg-card rounded-xl p-8 text-center">
               <Package className="w-8 h-8 mx-auto mb-2 text-muted-foreground opacity-50" />
               <p className="text-sm text-muted-foreground">No options added yet</p>
             </div>
           )}
-          {selection.options.map((option: SelectionOption & { attachments?: any[] }) => {
-            const isSelected = option.id === selectedOptionId;
-            const isApproved = !!(option as any).approvedAt;
-            const price = (option as any).unitPrice;
-            const overAllowance = allowance && price ? Number(price) > Number(allowance) : false;
 
-            return (
-              <button
-                key={option.id}
-                disabled={isLocked || isApproved || selectOptionMutation.isPending}
-                onClick={() => !isLocked && !isApproved && selectOptionMutation.mutate(option.id)}
-                className={cn(
-                  "w-full text-left bg-card rounded-xl overflow-hidden border-2 transition-colors",
-                  isSelected
-                    ? "border-sage bg-status-success-bg/50"
-                    : "border-transparent hover:border-muted-foreground/20",
-                  (isLocked || isApproved) && "cursor-default opacity-80"
-                )}
-              >
-                <div className="p-4">
-                  <div className="flex items-start gap-3">
-                    {/* Selection indicator */}
-                    <div className={cn(
-                      "mt-0.5 w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0",
-                      isSelected ? "border-sage bg-sage" : "border-muted-foreground/30"
-                    )}>
-                      {isSelected && <CheckCircle2 className="w-3.5 h-3.5 text-white" />}
-                    </div>
+          {viewMode === "cards" ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {selection.options.map((option) => {
+                const isSelected = option.id === selectedOptionId;
+                const isApproved = !!option.approvedAt;
+                const price = option.clientPrice;
+                const overAllowance = !!allowance && price != null && price > allowance;
+                const images = (option.attachments ?? []).filter(a =>
+                  a.fileType === "image" || /\.(jpe?g|png|gif|webp|avif)$/i.test(a.fileName || ""));
+                const hero = images[0];
+                const disabled = isLocked || isApproved || changeBlocked || selectOptionMutation.isPending;
 
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-medium text-sm">{option.name}</span>
-                        {isApproved && (
-                          <Badge variant="outline" className="text-xs text-status-success border-status-success/30 bg-status-success-bg">
-                            Approved
-                          </Badge>
-                        )}
-                        {isSelected && !isApproved && (
-                          <Badge variant="outline" className="text-xs">Your choice</Badge>
-                        )}
-                      </div>
-
-                      {option.description && (
-                        <p className="mt-1 text-xs text-muted-foreground">{option.description}</p>
-                      )}
-
-                      <div className="mt-2 flex flex-wrap gap-3 text-xs text-muted-foreground">
-                        {option.supplierName && <span>Supplier: {option.supplierName}</span>}
-                        {option.sku && <span>SKU: {option.sku}</span>}
-                        {clientCanSeePrice && price && (
-                          <span className={cn("font-medium", overAllowance ? "text-status-warning" : "")}>
-                            ${Number(price).toLocaleString("en-AU", { minimumFractionDigits: 2 })}
-                            {overAllowance && " (over allowance)"}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Image thumbnail */}
-                    {option.attachments && option.attachments.length > 0 && option.attachments[0].url && (
-                      <img
-                        src={option.attachments[0].url}
-                        alt={option.name}
-                        className="w-16 h-16 rounded-lg object-cover shrink-0"
-                      />
+                return (
+                  <div
+                    key={option.id}
+                    className={cn(
+                      "bg-card rounded-xl overflow-hidden border-2 transition-colors flex flex-col",
+                      isSelected ? "border-sage" : "border-transparent shadow-sm",
                     )}
+                  >
+                    {/* Hero image */}
+                    <button
+                      type="button"
+                      className="relative block w-full aspect-[4/3] bg-muted overflow-hidden"
+                      onClick={() => hero && setLightboxImage(hero)}
+                      aria-label={hero ? `View ${option.name} image` : undefined}
+                    >
+                      {hero ? (
+                        <img
+                          src={hero.filePath}
+                          alt={option.name}
+                          className="w-full h-full object-cover"
+                          style={{ objectPosition: `${hero.thumbnailX ?? 50}% ${hero.thumbnailY ?? 50}%` }}
+                          loading="lazy"
+                        />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center">
+                          <Package className="w-10 h-10 text-muted-foreground opacity-30" />
+                        </div>
+                      )}
+                      {images.length > 1 && (
+                        <span className="absolute bottom-2 right-2 flex items-center gap-1 rounded-full bg-black/60 text-white text-[10px] px-2 py-0.5">
+                          <Images className="w-3 h-3" /> {images.length}
+                        </span>
+                      )}
+                      {(isSelected || isApproved) && (
+                        <span className={cn(
+                          "absolute top-2 left-2 flex items-center gap-1 rounded-full text-[10px] font-semibold px-2 py-0.5",
+                          isApproved ? "bg-sage text-white" : "bg-primary text-primary-foreground"
+                        )}>
+                          <CheckCircle2 className="w-3 h-3" /> {isApproved ? "Approved" : "Your choice"}
+                        </span>
+                      )}
+                    </button>
+
+                    {/* Body */}
+                    <div className="p-3.5 flex flex-col flex-1">
+                      <div className="font-medium text-sm leading-snug">{option.name}</div>
+                      {(option.brand || option.sku) && (
+                        <div className="mt-0.5 text-xs text-muted-foreground">
+                          {[option.brand, option.sku].filter(Boolean).join(" · ")}
+                        </div>
+                      )}
+                      {option.description && (
+                        <p className="mt-1.5 text-xs text-muted-foreground line-clamp-3">{option.description}</p>
+                      )}
+                      <div className="mt-auto pt-3 flex items-center justify-between gap-2">
+                        {clientCanSeePrice && price != null ? (
+                          <div>
+                            <span className="text-sm font-semibold">{formatCents(price, { alwaysShowDecimals: true })}</span>
+                            <span className="ml-1 text-[10px] text-muted-foreground">inc GST</span>
+                            {overAllowance && (
+                              <Badge variant="outline" className="ml-1.5 text-[10px] text-status-warning border-status-warning/40 bg-status-warning/5">
+                                over allowance
+                              </Badge>
+                            )}
+                          </div>
+                        ) : <span />}
+                        <Button
+                          size="sm"
+                          variant={isSelected ? "outline" : "default"}
+                          className="h-7 text-xs shrink-0"
+                          disabled={disabled || isSelected}
+                          onClick={() => selectOptionMutation.mutate(option.id)}
+                        >
+                          {selectOptionMutation.isPending && selectOptionMutation.variables === option.id ? (
+                            <Loader2 className="w-3 h-3 animate-spin" />
+                          ) : isSelected ? "Selected" : "Choose this"}
+                        </Button>
+                      </div>
+                    </div>
                   </div>
-                </div>
-              </button>
-            );
-          })}
+                );
+              })}
+            </div>
+          ) : (
+            /* Compare view — one column per option */
+            <div className="bg-card rounded-xl shadow-sm overflow-x-auto">
+              <table className="w-full text-xs" style={{ minWidth: `${Math.max(selection.options.length * 180, 360)}px` }}>
+                <tbody>
+                  <tr>
+                    {selection.options.map((o) => {
+                      const images = (o.attachments ?? []).filter(a =>
+                        a.fileType === "image" || /\.(jpe?g|png|gif|webp|avif)$/i.test(a.fileName || ""));
+                      const hero = images[0];
+                      return (
+                        <td key={o.id} className="p-2 align-top" style={{ width: `${100 / selection.options.length}%` }}>
+                          <button
+                            type="button"
+                            className="block w-full aspect-[4/3] bg-muted rounded-lg overflow-hidden"
+                            onClick={() => hero && setLightboxImage(hero)}
+                          >
+                            {hero ? (
+                              <img src={hero.filePath} alt={o.name} className="w-full h-full object-cover"
+                                style={{ objectPosition: `${hero.thumbnailX ?? 50}% ${hero.thumbnailY ?? 50}%` }} loading="lazy" />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center">
+                                <Package className="w-8 h-8 text-muted-foreground opacity-30" />
+                              </div>
+                            )}
+                          </button>
+                        </td>
+                      );
+                    })}
+                  </tr>
+                  <tr>
+                    {selection.options.map((o) => (
+                      <td key={o.id} className="px-3 pt-1 align-top">
+                        <div className="font-medium text-sm leading-snug">{o.name}</div>
+                        {(o.brand || o.sku) && (
+                          <div className="mt-0.5 text-muted-foreground">{[o.brand, o.sku].filter(Boolean).join(" · ")}</div>
+                        )}
+                      </td>
+                    ))}
+                  </tr>
+                  {clientCanSeePrice && selection.options.some(o => o.clientPrice != null) && (
+                    <tr>
+                      {selection.options.map((o) => {
+                        const over = !!allowance && o.clientPrice != null && o.clientPrice > allowance;
+                        return (
+                          <td key={o.id} className="px-3 pt-2 align-top">
+                            {o.clientPrice != null ? (
+                              <span className={cn("font-semibold text-sm", over && "text-status-warning")}>
+                                {formatCents(o.clientPrice, { alwaysShowDecimals: true })}
+                                {over && <span className="block text-[10px] font-normal">over allowance</span>}
+                              </span>
+                            ) : <span className="text-muted-foreground">—</span>}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  )}
+                  <tr>
+                    {selection.options.map((o) => (
+                      <td key={o.id} className="px-3 pt-2 align-top text-muted-foreground">
+                        {o.description || ""}
+                      </td>
+                    ))}
+                  </tr>
+                  {(() => {
+                    const specKeys = Array.from(new Set(
+                      selection.options.flatMap(o => Object.keys(o.specifications ?? {}))
+                    )).slice(0, 10);
+                    return specKeys.map(key => (
+                      <tr key={key} className="border-t border-border/60">
+                        {selection.options.map((o) => (
+                          <td key={o.id} className="px-3 py-1.5 align-top">
+                            <span className="block text-[10px] uppercase tracking-wide text-muted-foreground/70">{key}</span>
+                            {String((o.specifications ?? {})[key] ?? "—")}
+                          </td>
+                        ))}
+                      </tr>
+                    ));
+                  })()}
+                  <tr>
+                    {selection.options.map((o) => {
+                      const isSelected = o.id === selectedOptionId;
+                      const disabled = isLocked || !!o.approvedAt || changeBlocked || selectOptionMutation.isPending;
+                      return (
+                        <td key={o.id} className="px-3 py-3 align-top">
+                          <Button
+                            size="sm"
+                            variant={isSelected ? "outline" : "default"}
+                            className="h-7 text-xs w-full"
+                            disabled={disabled || isSelected}
+                            onClick={() => selectOptionMutation.mutate(o.id)}
+                          >
+                            {isSelected ? "Selected" : "Choose this"}
+                          </Button>
+                        </td>
+                      );
+                    })}
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
+
+        {/* Image lightbox */}
+        {lightboxImage && (
+          <button
+            type="button"
+            className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4 cursor-zoom-out"
+            onClick={() => setLightboxImage(null)}
+            aria-label="Close image"
+          >
+            <img
+              src={lightboxImage.filePath}
+              alt={lightboxImage.fileName}
+              className="max-w-full max-h-full rounded-lg object-contain"
+            />
+            <span className="absolute top-4 right-4 w-8 h-8 rounded-full bg-black/60 flex items-center justify-center text-white">
+              <X className="w-4 h-4" />
+            </span>
+          </button>
+        )}
 
         {/* Comments section */}
         <div className="bg-card rounded-xl overflow-hidden shadow-sm">
