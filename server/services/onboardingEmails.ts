@@ -19,10 +19,28 @@ import { pool } from "../db";
 import { sendGenericEmail } from "../utils/email";
 import { isFoundingProgrammeConfigured } from "../config/plans";
 import { foundingSpotsLeft } from "../foundingMembers";
+import { isStripeConfigured } from "../stripe";
 
 export type OnboardingEmailKey = "welcome" | "tips_day3" | "trial_ending" | "trial_ended";
 
 const FROM = "Morada <noreply@moradaco.com.au>";
+
+// These two ask the user to subscribe. With billing switched off there is
+// nothing to subscribe to and the paywall never engages (requireActivePlan is
+// a no-op without Stripe), so the nag is both useless and misleading — it
+// sends people to a checkout that 503s. Welcome and the day-3 tip carry no
+// billing call to action, so they still go out.
+//
+// Keyed on the same predicate the paywall uses rather than a separate flag, so
+// the emails and the enforcement can never disagree: wire Stripe up and these
+// switch themselves on.
+const BILLING_DEPENDENT_KEYS: OnboardingEmailKey[] = ["trial_ending", "trial_ended"];
+
+function emailAllowed(key: OnboardingEmailKey): boolean {
+  if (!sendingEnabled()) return false;
+  if (BILLING_DEPENDENT_KEYS.includes(key) && !isStripeConfigured()) return false;
+  return true;
+}
 
 // These emails go to real customers, and dev/staging routinely runs against a
 // copy of real data — so sending is OFF unless we're in production. Set
@@ -337,7 +355,9 @@ export async function processOnboardingEmails(): Promise<{ sent: number }> {
     if (msLeft <= 0) due = "trial_ended";
     else if (daysLeft <= 4) due = "trial_ending";
     else if (daysLeft <= 11) due = "tips_day3";
-    if (!due) continue;
+    // Skipping happens BEFORE the claim, so a suppressed expiry email stays
+    // owed rather than being tombstoned — it will go out once Stripe is live.
+    if (!due || !emailAllowed(due)) continue;
 
     try {
       const ctx = await companyContext(row.id);
