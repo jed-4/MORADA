@@ -16894,6 +16894,53 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Attachment download for a supplier on the portal.
+  //
+  // The portal lists the RFQ's attachments, but the objects route behind them
+  // is requireAuth — so a supplier clicking a plan got a 401. Attachments exist
+  // precisely so suppliers have what they need to quote, which makes that the
+  // whole feature. The portal token is the authorisation here, and the index is
+  // resolved server-side against that RFQ's own list so a token can never be
+  // used to fetch an arbitrary object path.
+  app.get("/api/portal/rfq/:token/attachments/:index", async (req, res) => {
+    try {
+      const portal = await resolvePortalToken(req.params.token);
+      if (!portal || portal.revoked) {
+        return res.status(404).json({ error: "Invalid or expired link" });
+      }
+      if (portal.expiresAt && new Date(portal.expiresAt) < new Date()) {
+        return res.status(410).json({ error: "This link has expired" });
+      }
+
+      const rfq = await storage.getRFQ(portal.rfqId);
+      if (!rfq) return res.status(404).json({ error: "Not found" });
+
+      const index = Number(req.params.index);
+      const urls = rfq.attachmentUrls ?? [];
+      if (!Number.isInteger(index) || index < 0 || index >= urls.length) {
+        return res.status(404).json({ error: "Attachment not found" });
+      }
+
+      // Strip the company prefix the same way the authenticated route does;
+      // the bucket is flat.
+      const stored = urls[index];
+      const objectPath = stored.replace(/^\/objects\/company\/[^/]+/, "/objects");
+      const objectFile = await objectStorageService.getObjectEntityFile(objectPath);
+
+      const name = rfq.attachmentFileNames?.[index];
+      if (name) {
+        res.setHeader("Content-Disposition", `attachment; filename="${name.replace(/"/g, "")}"`);
+      }
+      await objectStorageService.downloadObject(objectFile, res);
+    } catch (error: any) {
+      console.error("Error serving portal attachment:", error);
+      if (error?.name === "ObjectNotFoundError") {
+        return res.status(404).json({ error: "Attachment not found" });
+      }
+      res.status(500).json({ error: "Failed to download attachment" });
+    }
+  });
+
   app.post("/api/portal/rfq/:token/submit-quote", async (req, res) => {
     try {
       const portal = await resolvePortalToken(req.params.token);

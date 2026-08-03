@@ -1,6 +1,6 @@
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { pdf } from "@react-pdf/renderer";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/EmptyState";
@@ -44,6 +44,7 @@ import {
   Loader2,
   Plus,
   Trash2,
+  Pencil,
   Paperclip,
   Upload,
   X,
@@ -73,6 +74,7 @@ import { RfqRecipientsPanel } from "@/components/rfq/RfqRecipientsPanel";
 import { RFQ_STATUS_LABEL } from "@shared/rfqStatus";
 import { RfqActivityFeed } from "@/components/rfq/RfqActivityFeed";
 import { RfqRemindersDialog } from "@/components/rfq/RfqRemindersDialog";
+import { RfqAttachments } from "@/components/rfq/RfqAttachments";
 import { reminderDueAt } from "@shared/rfqReminders";
 
 // Radix Select cannot hold an empty string value, so "no selection" needs a
@@ -307,6 +309,53 @@ export default function RFQDetail() {
     },
   });
 
+  // The edit path the page has been missing: editingItem was declared and never
+  // used, and PATCH /api/rfq-items/:id had no client caller at all — so you
+  // could add and delete a line but never fix a typo in one.
+  const updateItemMutation = useMutation({
+    mutationFn: async ({ itemId, data }: { itemId: string; data: typeof newItem }) =>
+      apiRequest(`/api/rfq-items/${itemId}`, "PATCH", {
+        description: data.description,
+        quantity: data.quantity === "" ? null : parseFloat(data.quantity),
+        unit: data.unit || null,
+        unitPrice: data.unitPrice ? Math.round(parseFloat(data.unitPrice) * 100) : null,
+        costCodeId: data.costCodeId || null,
+        notes: data.notes,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/rfqs", id, "items"] });
+      closeItemDialog();
+      toast({ title: "Item updated" });
+    },
+    onError: (error: any) =>
+      toast({ title: "Failed to update item", description: error.message, variant: "destructive" }),
+  });
+
+  const openItemDialog = (item?: RfqItem) => {
+    if (item) {
+      setEditingItem(item);
+      setNewItem({
+        description: item.description ?? "",
+        quantity: item.quantity != null ? String(item.quantity) : "",
+        unit: item.unit ?? "each",
+        // rfq_items.unitPrice is cents; the form works in dollars.
+        unitPrice: item.unitPrice != null ? (item.unitPrice / 100).toFixed(2) : "",
+        costCodeId: item.costCodeId ?? "",
+        notes: item.notes ?? "",
+      });
+    } else {
+      setEditingItem(null);
+      setNewItem({ description: "", quantity: "", unit: "each", unitPrice: "", costCodeId: "", notes: "" });
+    }
+    setShowAddItemDialog(true);
+  };
+
+  const closeItemDialog = () => {
+    setShowAddItemDialog(false);
+    setEditingItem(null);
+    setNewItem({ description: "", quantity: "", unit: "each", unitPrice: "", costCodeId: "", notes: "" });
+  };
+
   const deleteItemMutation = useMutation({
     mutationFn: async (itemId: string) => {
       return await apiRequest(`/api/rfq-items/${itemId}`, "DELETE");
@@ -317,74 +366,82 @@ export default function RFQDetail() {
     },
   });
 
-  useEffect(() => {
-    if (!rfq || !items.length) return;
-
-    let isCancelled = false;
-    const rfqForPdf = rfq;
-
-    async function generatePdf() {
-      if (!showPreview) {
-        if (pdfUrlRef.current) {
-          URL.revokeObjectURL(pdfUrlRef.current);
-          pdfUrlRef.current = null;
-        }
-        setPdfUrl(null);
-        setPdfBlob(null);
-        return;
-      }
-
-      setIsGenerating(true);
-
-      try {
-        const blob = await pdf(
-          <RFQDocument
-            rfq={rfqForPdf}
-            items={items}
-            companyLogo={companySettings?.logo ?? undefined}
-            companyName={companySettings?.companyName || "Morada"}
-            companyEmail={companySettings?.email ?? undefined}
-            companyPhone={companySettings?.phone ?? undefined}
-            primaryColor="#215E35"
-            confirmLink={`${window.location.origin}/rfqs/${rfqForPdf.id}/confirm`}
-          />
-        ).toBlob();
-
-        if (!isCancelled) {
-          if (pdfUrlRef.current) {
-            URL.revokeObjectURL(pdfUrlRef.current);
-          }
-          const url = URL.createObjectURL(blob);
-          pdfUrlRef.current = url;
-          setPdfUrl(url);
-          setPdfBlob(blob);
-        }
-      } catch (error) {
-        console.error("Error generating PDF:", error);
-      } finally {
-        if (!isCancelled) {
-          setIsGenerating(false);
-        }
-      }
+  // PDF generation, shared by Preview, Download and Send.
+  //
+  // Was gated on items.length, so an RFQ with a scope but no itemised lines
+  // could never produce a PDF at all — and the blob only existed while Preview
+  // was open, which is why Download sat disabled and Send refused to attach
+  // anything until you had opened the preview first.
+  const buildPdf = useCallback(async (): Promise<Blob | null> => {
+    if (!rfq) return null;
+    setIsGenerating(true);
+    try {
+      return await pdf(
+        <RFQDocument
+          rfq={rfq}
+          items={items}
+          companyLogo={companySettings?.logo ?? undefined}
+          companyName={companySettings?.companyName || "Morada"}
+          companyEmail={companySettings?.email ?? undefined}
+          companyPhone={companySettings?.phone ?? undefined}
+          primaryColor="#215E35"
+        />
+      ).toBlob();
+    } catch (error) {
+      console.error("Error generating PDF:", error);
+      toast({ title: "Could not generate the PDF", variant: "destructive" });
+      return null;
+    } finally {
+      setIsGenerating(false);
     }
+  }, [rfq, items, companySettings, toast]);
 
-    generatePdf();
+  // Render for the inline preview only when it is open. Rendering eagerly on
+  // every page load would make @react-pdf run for every RFQ anyone opens, which
+  // is a lot of work for a panel most visits never expand.
+  useEffect(() => {
+    if (!rfq || !showPreview) return;
+    let isCancelled = false;
+
+    buildPdf().then((blob) => {
+      if (isCancelled || !blob) return;
+      setPdfBlob(blob);
+      if (pdfUrlRef.current) URL.revokeObjectURL(pdfUrlRef.current);
+      const url = URL.createObjectURL(blob);
+      pdfUrlRef.current = url;
+      setPdfUrl(url);
+    });
 
     return () => {
       isCancelled = true;
+    };
+  }, [buildPdf, rfq, showPreview]);
+
+  // Revoke only when the page goes away — regenerating swaps the URL above, and
+  // revoking on every dependency change killed the live preview.
+  useEffect(() => {
+    return () => {
       if (pdfUrlRef.current) {
         URL.revokeObjectURL(pdfUrlRef.current);
         pdfUrlRef.current = null;
       }
     };
-  }, [rfq, items, companySettings, showPreview]);
+  }, []);
 
-  const handleDownloadPdf = () => {
-    if (!pdfBlob || !rfq) return;
+  // Download and Send both build on demand rather than depending on Preview
+  // having been opened first — the old flow left Download disabled and Send
+  // silently refusing to attach anything until you had.
+  const handleDownloadPdf = async () => {
+    if (!rfq) return;
+    const blob = pdfBlob ?? (await buildPdf());
+    if (!blob) return;
+    const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
-    link.href = URL.createObjectURL(pdfBlob);
+    link.href = url;
     link.download = `RFQ-${rfq.rfqNumber}.pdf`;
     link.click();
+    // Revoke on a delay; revoking immediately can cancel the download.
+    setTimeout(() => URL.revokeObjectURL(url), 10_000);
   };
 
   const handleSave = () => {
@@ -481,8 +538,7 @@ export default function RFQDetail() {
               size="sm"
               variant="outline"
               onClick={handleDownloadPdf}
-              disabled={!pdfBlob}
-              title={!pdfBlob ? "Open Preview first to generate the PDF" : undefined}
+              disabled={isGenerating}
               className="h-7 text-xs"
               data-testid="button-download-pdf"
             >
@@ -769,7 +825,7 @@ export default function RFQDetail() {
                   <Button
                     size="sm"
                     variant="outline"
-                    onClick={() => setShowAddItemDialog(true)}
+                    onClick={() => openItemDialog()}
                     className="h-6 text-xs"
                     data-testid="button-add-item"
                   >
@@ -811,7 +867,12 @@ export default function RFQDetail() {
                         <TableCell className="text-sm text-muted-foreground">
                           {costCode ? `${costCode.code}` : "-"}
                         </TableCell>
-                        <TableCell className="text-sm">{item.description}</TableCell>
+                        <TableCell
+                          className="text-sm cursor-pointer"
+                          onClick={() => openItemDialog(item)}
+                        >
+                          {item.description}
+                        </TableCell>
                         <TableCell className="text-sm text-right">
                           {qty > 0 ? qty.toFixed(2) : "-"}
                         </TableCell>
@@ -823,14 +884,28 @@ export default function RFQDetail() {
                           {total > 0 ? `$${total.toFixed(2)}` : "-"}
                         </TableCell>
                         <TableCell>
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            className="h-6 w-6"
-                            onClick={() => deleteItemMutation.mutate(item.id)}
-                          >
-                            <Trash2 className="w-3 h-3 text-destructive" />
-                          </Button>
+                          <div className="flex items-center justify-end gap-0.5">
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-6 w-6"
+                              onClick={() => openItemDialog(item)}
+                              title="Edit item"
+                              data-testid={`button-edit-item-${item.id}`}
+                            >
+                              <Pencil className="w-3 h-3 text-muted-foreground" />
+                            </Button>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-6 w-6"
+                              onClick={() => deleteItemMutation.mutate(item.id)}
+                              title="Delete item"
+                              data-testid={`button-delete-item-${item.id}`}
+                            >
+                              <Trash2 className="w-3 h-3 text-destructive" />
+                            </Button>
+                          </div>
                         </TableCell>
                       </TableRow>
                     );
@@ -904,43 +979,8 @@ export default function RFQDetail() {
           collapsible
           collapsed={attachCollapsed}
           onCollapsedChange={setAttachCollapsed}
-          actions={
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-6 text-xs"
-              data-testid="button-add-attachment"
-              disabled
-              title="File upload is not wired up yet"
-            >
-              <Upload className="w-3 h-3 mr-1" />
-              Upload
-            </Button>
-          }
         >
-            <div>
-              {(
-                (!rfq.attachmentUrls || rfq.attachmentUrls.length === 0) ? (
-                  <div className="border-2 border-dashed rounded-lg m-3 p-6 text-center text-muted-foreground text-sm">
-                    <Paperclip className="w-6 h-6 mx-auto mb-2 opacity-50" />
-                    <p>Drag files here or click Upload</p>
-                    <p className="text-xs mt-1 text-muted-foreground/60">Plans, specs, drawings</p>
-                  </div>
-                ) : (
-                  <div className="p-3 space-y-1.5">
-                    {rfq.attachmentFileNames?.map((name, i) => (
-                      <div key={i} className="flex items-center gap-2 p-2 rounded bg-muted/30">
-                        <Paperclip className="w-4 h-4 text-muted-foreground" />
-                        <span className="text-sm flex-1">{name}</span>
-                        <Button size="icon" variant="ghost" className="h-6 w-6">
-                          <Download className="w-3 h-3" />
-                        </Button>
-                      </div>
-                    ))}
-                  </div>
-                )
-              )}
-            </div>
+          <RfqAttachments rfq={rfq} />
         </SectionCard>
 
         <SectionCard
@@ -990,10 +1030,10 @@ export default function RFQDetail() {
         </DetailLayout>
 
       {/* Add Item Dialog */}
-      <Dialog open={showAddItemDialog} onOpenChange={setShowAddItemDialog}>
+      <Dialog open={showAddItemDialog} onOpenChange={(o) => (o ? setShowAddItemDialog(true) : closeItemDialog())}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Add Line Item</DialogTitle>
+            <DialogTitle>{editingItem ? "Edit Line Item" : "Add Line Item"}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
@@ -1065,13 +1105,26 @@ export default function RFQDetail() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowAddItemDialog(false)}>Cancel</Button>
+            <Button variant="outline" onClick={closeItemDialog}>Cancel</Button>
             <Button
-              onClick={() => createItemMutation.mutate(newItem)}
-              disabled={!newItem.description || createItemMutation.isPending}
+              onClick={() =>
+                editingItem
+                  ? updateItemMutation.mutate({ itemId: editingItem.id, data: newItem })
+                  : createItemMutation.mutate(newItem)
+              }
+              disabled={
+                !newItem.description || createItemMutation.isPending || updateItemMutation.isPending
+              }
               className="bg-primary hover:bg-primary/90 text-white"
+              data-testid="button-save-item"
             >
-              {createItemMutation.isPending ? (<><Loader2 className="w-4 h-4 mr-2 animate-spin" />Adding...</>) : "Add Item"}
+              {createItemMutation.isPending || updateItemMutation.isPending ? (
+                <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Saving...</>
+              ) : editingItem ? (
+                "Save changes"
+              ) : (
+                "Add Item"
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1172,7 +1225,7 @@ export default function RFQDetail() {
           open={showSendDialog}
           onOpenChange={setShowSendDialog}
           rfq={rfq}
-          pdfBlob={pdfBlob}
+          getPdf={buildPdf}
         />
       )}
 

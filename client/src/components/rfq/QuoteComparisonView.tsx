@@ -7,6 +7,7 @@ import { Card } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { Check, X, FileText, TrendingDown, ShoppingCart } from "lucide-react";
 import { format } from "date-fns";
+import { gstSplit } from "@shared/money";
 import type { RfqQuote, Rfq } from "@shared/schema";
 
 interface QuoteComparisonViewProps {
@@ -69,6 +70,7 @@ export function QuoteComparisonView({ rfqId, quotes, rfq }: QuoteComparisonViewP
 
   const convertToPOMutation = useMutation({
     mutationFn: async (quote: RfqQuote) => {
+      const { exGst, gst } = gstSplit(quote.totalAmount);
       const poData = {
         projectId: rfq?.projectId,
         supplierId: quote.supplierId,
@@ -76,9 +78,13 @@ export function QuoteComparisonView({ rfqId, quotes, rfq }: QuoteComparisonViewP
         description: `PO from RFQ ${rfq?.rfqNumber} - ${rfq?.title || ""}`,
         rfqId: rfqId,
         rfqQuoteId: quote.id,
-        subtotal: quote.totalAmount,
-        gst: Math.round(quote.totalAmount * 0.1),
-        total: quote.totalAmount + Math.round(quote.totalAmount * 0.1),
+        // rfq_quotes.totalAmount is inc GST (the app-wide convention, and now
+        // explicitly captured on entry). This used to treat it as the ex-GST
+        // subtotal and add 10% on top, so every PO converted from a quote came
+        // out 10% high.
+        subtotal: exGst,
+        gst,
+        total: quote.totalAmount,
         status: "draft",
       };
       return apiRequest("/api/purchase-orders", "POST", poData);
@@ -165,11 +171,23 @@ export function QuoteComparisonView({ rfqId, quotes, rfq }: QuoteComparisonViewP
 
                 {quote.attachments && Array.isArray(quote.attachments) && quote.attachments.length > 0 && (
                   <div className="flex items-center gap-2 flex-wrap">
+                    {/* Real object-storage paths now, so these open. They used
+                        to be fabricated /uploads/quotes/ URLs pointing at
+                        nothing, rendered as if they were genuine files. */}
                     {(quote.attachments as any[]).map((attachment: any, index: number) => (
-                      <Badge key={index} variant="outline" className="gap-1 text-xs">
-                        <FileText className="h-3 w-3" />
-                        {attachment.name}
-                      </Badge>
+                      <a
+                        key={index}
+                        href={attachment.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        download={attachment.name}
+                        data-testid={`link-quote-attachment-${index}`}
+                      >
+                        <Badge variant="outline" className="gap-1 text-xs hover-elevate cursor-pointer">
+                          <FileText className="h-3 w-3" />
+                          {attachment.name}
+                        </Badge>
+                      </a>
                     ))}
                   </div>
                 )}

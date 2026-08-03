@@ -98,7 +98,7 @@ export function GlobalSearch({ open, onOpenChange }: GlobalSearchProps) {
     { name: "Calendar", icon: Calendar, path: "/business/calendar" },
     { name: "Estimates", icon: FileText, path: "/business/estimates" },
     { name: "Bills", icon: Receipt, path: "/business/bills" },
-    { name: "RFQs", icon: FileSearch, path: "/business/rfqs" },
+    { name: "RFQs", icon: FileSearch, path: "/rfqs" },
     { name: "RFIs", icon: ClipboardList, path: "/business/rfis" },
     { name: "Selections", icon: Palette, path: "/business/selections" },
     { name: "Settings", icon: Settings, path: "/settings" },

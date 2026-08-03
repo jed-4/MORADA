@@ -27,12 +27,14 @@ export function SendRFQDialog({
   open,
   onOpenChange,
   rfq,
-  pdfBlob,
+  getPdf,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   rfq: Rfq;
-  pdfBlob: Blob | null;
+  /** Builds the PDF on demand. Called only if the user keeps the attachment
+   *  checked, so opening this dialog costs nothing. */
+  getPdf: () => Promise<Blob | null>;
 }) {
   const { toast } = useToast();
   const [isSending, setIsSending] = useState(false);
@@ -79,7 +81,8 @@ export function SendRFQDialog({
     setIsSending(true);
     try {
       let pdfBase64: string | undefined;
-      if (attachPdf && pdfBlob) {
+      const pdfBlob = attachPdf ? await getPdf() : null;
+      if (pdfBlob) {
         const buf = await pdfBlob.arrayBuffer();
         // Chunked: String.fromCharCode(...bytes) blows the argument limit on a
         // multi-page PDF.
@@ -227,18 +230,12 @@ export function SendRFQDialog({
             <Checkbox
               checked={attachPdf}
               onCheckedChange={(c) => setAttachPdf(c as boolean)}
-              disabled={!pdfBlob}
               data-testid="checkbox-attach-pdf"
             />
-            <span className={cn("text-sm flex items-center gap-1.5", !pdfBlob && "text-muted-foreground")}>
+            <span className="text-sm flex items-center gap-1.5">
               <Paperclip className="w-3.5 h-3.5" />
               Attach the RFQ as a PDF
             </span>
-            {!pdfBlob && (
-              <span className="text-data text-muted-foreground">
-                — open Preview first to generate it
-              </span>
-            )}
           </label>
         </div>
 

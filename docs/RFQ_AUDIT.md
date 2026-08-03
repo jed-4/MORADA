@@ -1,13 +1,21 @@
 # RFQ Section — Code Audit
 
-> **Status:** Tier 0 and most of Tier 1/2 are now fixed on this branch.
-> PR 1 (`fix(rfq): make the RFQ core loop work`) closed 0.1–0.4, 2.2, 2.3 and
-> most of 2.6. PR 2 (`feat(rfq): recipients + per-line quote pricing`) closed
-> 0.5, 1.5, 1.6, 2.1, 2.4 and the dead controls in 2.5, and introduced
-> `rfq_recipients` / `rfq_quote_items` plus derived status.
-> Still open: 1.1 (item editing), 1.2/1.3 (real attachment upload),
-> 1.4 (follow-up scheduler — PR 4), and the `/rfqs/:id/confirm` page.
-> The findings below are kept as written for the record.
+> **Status: every finding below is now closed on this branch**, across five
+> changes: PR 1 (core loop), PR 2 (recipients + per-line quote schema, and the
+> detail-page rebuild), PR 3 (registry), PR 4 (real sending + reminder
+> scheduler), and PR 5 (the remaining Tier 1/2 items).
+>
+> Two were closed by removal rather than construction, deliberately:
+> - **2.5, the `/rfqs/:id/confirm` link.** Not built. One PDF goes to every
+>   supplier, so a confirm link in it can never say *who* confirmed. Each
+>   recipient now gets their own tokenised portal link in the email body, which
+>   is the only place it can be correct. `confirmed` is consequently an unused
+>   value in `rfq_status` — recipient status carries this now.
+> - **1.5, per-line quote comparison.** The schema (`rfq_quote_items`) and its
+>   API landed in PR 2, but no UI consumes it yet — comparison is still
+>   total-vs-total. Parked by agreement.
+>
+> The findings are kept as originally written for the record.
 
 **Date:** 2026-08-02
 **Branch:** `feat/rfq` (off `origin/main` @ 7736dcef)

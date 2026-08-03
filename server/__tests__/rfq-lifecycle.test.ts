@@ -232,11 +232,48 @@ async function main() {
     assert.strictEqual(res.status, 201, JSON.stringify(res.body));
   });
 
+  await test("PATCH /api/rfq-items/:id edits a line item", async () => {
+    const items = await api("GET", `/api/rfqs/${rfqId}/items`, { cookie: A.cookie });
+    const itemId = items.body[0].id;
+    const res = await api("PATCH", `/api/rfq-items/${itemId}`, {
+      cookie: A.cookie,
+      body: { description: "Reo mesh SL72", quantity: 20, unit: "sheet", unitPrice: 8900 },
+    });
+    assert.strictEqual(res.status, 200, JSON.stringify(res.body));
+    assert.strictEqual(res.body.description, "Reo mesh SL72");
+    assert.strictEqual(res.body.unit, "sheet");
+    assert.strictEqual(res.body.unitPrice, 8900);
+    assert.strictEqual(parseFloat(res.body.quantity), 20);
+  });
+
+  await test("company B cannot edit company A's line item", async () => {
+    const items = await api("GET", `/api/rfqs/${rfqId}/items`, { cookie: A.cookie });
+    const res = await api("PATCH", `/api/rfq-items/${items.body[0].id}`, {
+      cookie: B.cookie,
+      body: { description: "Hijacked" },
+    });
+    assert.strictEqual(res.status, 404, `expected 404, got ${res.status}`);
+  });
+
+  await test("RFQ attachments round-trip through PATCH", async () => {
+    const res = await api("PATCH", `/api/rfqs/${rfqId}`, {
+      cookie: A.cookie,
+      body: {
+        attachmentUrls: ["/objects/company/x/uploads/plan.pdf"],
+        attachmentFileNames: ["Slab plan Rev C.pdf"],
+      },
+    });
+    assert.strictEqual(res.status, 200, JSON.stringify(res.body));
+    assert.deepStrictEqual(res.body.attachmentFileNames, ["Slab plan Rev C.pdf"]);
+    assert.strictEqual(res.body.attachmentUrls.length, 1);
+  });
+
   await test("GET /api/rfqs/:id/items returns what was created", async () => {
     const res = await api("GET", `/api/rfqs/${rfqId}/items`, { cookie: A.cookie });
     assert.strictEqual(res.status, 200);
     assert.strictEqual(res.body.length, 1);
-    assert.strictEqual(res.body[0].description, "Reo mesh");
+    // Renamed by the edit test above — proving the PATCH persisted.
+    assert.strictEqual(res.body[0].description, "Reo mesh SL72");
   });
 
   // --- status transitions -------------------------------------------------
@@ -806,6 +843,34 @@ async function main() {
       live.every((r) => r.status === "sent" && r.followUpEnabled),
       "work list included an RFQ that should not be chased",
     );
+  });
+
+  await test("portal attachment download is scoped to the RFQ's own list", async () => {
+    const token = `attach-token-${Date.now()}`;
+    await storage.updateRFQRecipient(recipSmithId, {
+      portalToken: token,
+      portalTokenRevoked: false,
+    } as any);
+    await api("PATCH", `/api/rfqs/${recipRfqId}`, {
+      cookie: A.cookie,
+      body: {
+        attachmentUrls: ["/objects/company/whoever/uploads/plan.pdf"],
+        attachmentFileNames: ["Plan.pdf"],
+      },
+    });
+
+    // Out-of-range index must not resolve — the index is looked up against the
+    // RFQ's own list precisely so a token can't fetch an arbitrary object.
+    const outOfRange = await api("GET", `/api/portal/rfq/${token}/attachments/7`);
+    assert.strictEqual(outOfRange.status, 404, `expected 404, got ${outOfRange.status}`);
+
+    const notANumber = await api("GET", `/api/portal/rfq/${token}/attachments/abc`);
+    assert.strictEqual(notANumber.status, 404, `expected 404, got ${notANumber.status}`);
+  });
+
+  await test("portal attachments reject an unknown token", async () => {
+    const res = await api("GET", "/api/portal/rfq/definitely-not-a-token/attachments/0");
+    assert.strictEqual(res.status, 404, `expected 404, got ${res.status}`);
   });
 
   await test("a revoked portal token is refused", async () => {
