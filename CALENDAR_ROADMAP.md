@@ -253,7 +253,7 @@ Migration: new `google_calendar_events` + `google_calendar_sync_state` tables.
 - **Timesheet actuals overlay** — planned vs actually-worked on the same grid.
 - **Reminders as a source** — the tab exists; the events never reach the calendar.
 - **Week templates** — stamp out a standard routine (the Sign On / PM Sweep / Estimating pattern is hand-maintained today).
-- **Keyboard shortcuts + mini-month** — `t` for today, `w`/`m` for view, fast navigation.
+- ✅ **Keyboard shortcuts + mini-month** *(done, UNVERIFIED — see note)* — `t` today, `←`/`→` previous/next, `d`/`w`/`m` view. Suppressed while typing, while any modifier is held, and while a dialog or menu is open. The date label is now a popover with a month picker for jumping without stepping a week at a time. Both live in `UserCalendar`, not `EnhancedCalendar`, because this surface passes `hideInternalHeader` and renders its own nav.
 
 ---
 

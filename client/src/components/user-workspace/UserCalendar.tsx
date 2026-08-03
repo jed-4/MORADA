@@ -132,6 +132,7 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
   const [newViewName, setNewViewName] = useState("");
   const [currentDate, setCurrentDate] = useState(new Date());
   const [showSettingsDialog, setShowSettingsDialog] = useState(false);
+  const [miniMonthOpen, setMiniMonthOpen] = useState(false);
   const [connectingGoogle, setConnectingGoogle] = useState(false);
   const { toast } = useToast();
   const defaultViewCreationAttempted = useRef(false);
@@ -701,6 +702,42 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
     setCurrentDate(newDate);
   };
 
+  // Keyboard navigation, the way a calendar you live in should work:
+  // t = today, ←/→ = previous/next, d/w/m = day/week/month.
+  //
+  // Deliberately conservative about when it fires — never while typing in a field or
+  // a rich-text editor, never with a modifier held (so browser and OS shortcuts are
+  // untouched), and never while a dialog or menu is open, since the detail and edit
+  // modals sit above this and their own keys must win.
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+
+      const target = e.target as HTMLElement | null;
+      if (target) {
+        const tag = target.tagName;
+        if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || target.isContentEditable) return;
+        if (target.closest('[role="dialog"], [role="menu"], [role="listbox"], [contenteditable="true"]')) return;
+      }
+      if (document.querySelector('[role="dialog"]')) return;
+
+      switch (e.key) {
+        case "t": case "T": handleNavigateToday(); break;
+        case "ArrowLeft": handleNavigatePrevious(); break;
+        case "ArrowRight": handleNavigateNext(); break;
+        case "d": case "D": setCalendarMode("day"); break;
+        case "w": case "W": setCalendarMode("week"); break;
+        case "m": case "M": setCalendarMode("month"); break;
+        default: return;
+      }
+      e.preventDefault();
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+    // Re-subscribed each render so the handlers close over the current date/mode.
+  });
+
   // Get status options from field categories instead of hardcoded values
   const filterStatusOptions = (statusCategory?.options || []).map(opt => ({
     key: opt.key,
@@ -1183,10 +1220,32 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
             <ChevronRight className="w-3 h-3" />
           </button>
 
-          {/* Current Date Display */}
-          <span className="text-xs text-muted-foreground px-2" data-testid="text-current-date">
-            {formatInTimezone(currentDate, effectiveTimezone, { month: 'short', day: 'numeric', year: 'numeric' })}
-          </span>
+          {/* Current date — click for a mini-month to jump anywhere without
+              stepping a week at a time */}
+          <Popover open={miniMonthOpen} onOpenChange={setMiniMonthOpen}>
+            <PopoverTrigger asChild>
+              <button
+                className="text-xs text-muted-foreground px-2 h-6 rounded-md hover-elevate active-elevate-2"
+                data-testid="text-current-date"
+                title="Jump to a date"
+              >
+                {formatInTimezone(currentDate, effectiveTimezone, { month: 'short', day: 'numeric', year: 'numeric' })}
+              </button>
+            </PopoverTrigger>
+            <PopoverContent align="end" className="w-auto p-0">
+              <CalendarComponent
+                mode="single"
+                selected={currentDate}
+                defaultMonth={currentDate}
+                onSelect={(date) => {
+                  if (!date) return;
+                  setCurrentDate(date);
+                  setMiniMonthOpen(false);
+                }}
+                initialFocus
+              />
+            </PopoverContent>
+          </Popover>
 
           {/* View Mode Selector */}
           <div className="flex items-center gap-0.5">
