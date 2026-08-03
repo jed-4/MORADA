@@ -12,6 +12,7 @@ import {
   type DataTableColumnMeta,
 } from "@/components/data-table/DataTable";
 import { EmptyState } from "@/components/EmptyState";
+import { UnitSelect } from "@/components/UnitSelect";
 import {
   Dialog,
   DialogContent,
@@ -787,32 +788,12 @@ function PriceListItemModal({ open, onOpenChange, item, categories, suppliers }:
 
             <div>
               <Label className="text-data text-muted-foreground">Unit</Label>
-              <Select value={formData.unitType} onValueChange={(v) => updateField("unitType", v)}>
-                <SelectTrigger className="h-7 text-table" data-testid="select-unit-type">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="each" className="text-table">Each</SelectItem>
-                  <SelectItem value="m" className="text-table">m</SelectItem>
-                  <SelectItem value="m2" className="text-table">m2</SelectItem>
-                  <SelectItem value="m3" className="text-table">m3</SelectItem>
-                  <SelectItem value="lm" className="text-table">lm</SelectItem>
-                  <SelectItem value="kg" className="text-table">kg</SelectItem>
-                  <SelectItem value="t" className="text-table">t</SelectItem>
-                  <SelectItem value="l" className="text-table">L</SelectItem>
-                  <SelectItem value="hr" className="text-table">hr</SelectItem>
-                  <SelectItem value="day" className="text-table">day</SelectItem>
-                  <SelectItem value="pack" className="text-table">pack</SelectItem>
-                  <SelectItem value="box" className="text-table">box</SelectItem>
-                  <SelectItem value="roll" className="text-table">roll</SelectItem>
-                  <SelectItem value="sheet" className="text-table">sheet</SelectItem>
-                  <SelectItem value="bag" className="text-table">bag</SelectItem>
-                  <SelectItem value="pallet" className="text-table">pallet</SelectItem>
-                  <SelectItem value="item" className="text-table">item</SelectItem>
-                  <SelectItem value="lot" className="text-table">lot</SelectItem>
-                  <SelectItem value="allowance" className="text-table">allowance</SelectItem>
-                </SelectContent>
-              </Select>
+              <UnitSelect
+                value={formData.unitType}
+                onValueChange={(v) => updateField("unitType", v)}
+                triggerClassName="h-7 text-table"
+                data-testid="select-unit-type"
+              />
             </div>
           </div>
 

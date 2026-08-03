@@ -52,6 +52,7 @@ import {
   LayoutList,
 } from "lucide-react";
 import type { SelectionTemplate, FieldCategory } from "@shared/schema";
+import { UnitSelect } from "@/components/UnitSelect";
 
 const CASVA_LILAC = 'hsl(var(--primary))';
 
@@ -1151,19 +1152,13 @@ export default function SelectionTemplateItemDetail() {
               </div>
               <div className="space-y-2">
                 <Label>Unit Type</Label>
-                <Select
+                {/* Hardcoded five-unit list replaced by the shared Field
+                    Settings list, so units match the rest of the app. */}
+                <UnitSelect
                   value={optionForm.unitType || "ea"}
                   onValueChange={(value) => setOptionForm({ ...optionForm, unitType: value })}
-                >
-                  <SelectTrigger data-testid="select-unit-type"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="ea">Each</SelectItem>
-                    <SelectItem value="m2">m²</SelectItem>
-                    <SelectItem value="lm">Linear Meter</SelectItem>
-                    <SelectItem value="set">Set</SelectItem>
-                    <SelectItem value="pack">Pack</SelectItem>
-                  </SelectContent>
-                </Select>
+                  data-testid="select-unit-type"
+                />
               </div>
               <div className="space-y-2">
                 <Label>Markup (%)</Label>

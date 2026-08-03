@@ -118,6 +118,7 @@ import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { UnitSelect } from "@/components/UnitSelect";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { cn } from "@/lib/utils";
 
@@ -2651,26 +2652,16 @@ export default function SelectionDetail() {
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>Unit Type</FormLabel>
-                        <Select onValueChange={field.onChange} value={field.value || "ea"}>
-                          <FormControl>
-                            <SelectTrigger className="h-9" data-testid="select-option-unit-type">
-                              <SelectValue placeholder="Select unit" />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            <SelectItem value="ea">ea</SelectItem>
-                            <SelectItem value="m2">m²</SelectItem>
-                            <SelectItem value="lm">lm</SelectItem>
-                            <SelectItem value="m3">m³</SelectItem>
-                            <SelectItem value="hr">hr</SelectItem>
-                            <SelectItem value="day">day</SelectItem>
-                            <SelectItem value="wk">wk</SelectItem>
-                            <SelectItem value="lot">lot</SelectItem>
-                            <SelectItem value="allow">allow</SelectItem>
-                            <SelectItem value="t">t</SelectItem>
-                            <SelectItem value="kg">kg</SelectItem>
-                          </SelectContent>
-                        </Select>
+                        {/* Hardcoded unit list replaced by the shared
+                            Field Settings list. */}
+                        <FormControl>
+                          <UnitSelect
+                            value={field.value || "ea"}
+                            onValueChange={field.onChange}
+                            triggerClassName="h-9"
+                            data-testid="select-option-unit-type"
+                          />
+                        </FormControl>
                         <FormMessage />
                       </FormItem>
                     )}

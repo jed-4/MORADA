@@ -116,6 +116,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
+import { UnitSelect } from "@/components/UnitSelect";
 import {
   Form,
   FormControl,
@@ -4910,7 +4911,10 @@ export default function EstimateDetail() {
         if (isEditing) {
           return (
             <div className={`${cellBase} ${cellActive}`} role="gridcell">
-              <Select
+              {/* Same Field Settings source as before, via the shared
+                  component — this page's inline filter/sort of the unit
+                  options was the copy UnitSelect was extracted from. */}
+              <UnitSelect
                 value={editingValue}
                 onValueChange={(value) => {
                   setEditingValue(value);
@@ -4921,22 +4925,9 @@ export default function EstimateDetail() {
                   });
                   setEditingCell(null);
                 }}
+                triggerClassName="h-8 text-sm border-0 shadow-none focus:ring-0 bg-transparent"
                 data-testid={`select-edit-unitType-${item.id}`}
-              >
-                <SelectTrigger className="h-8 text-sm border-0 shadow-none focus:ring-0 bg-transparent">
-                  <SelectValue placeholder="Unit" />
-                </SelectTrigger>
-                <SelectContent>
-                  {estimateItemUnitCategory?.options
-                    ?.filter(opt => opt.isActive)
-                    .sort((a, b) => a.sortOrder - b.sortOrder)
-                    .map(option => (
-                      <SelectItem key={option.id} value={option.name}>
-                        {option.name}
-                      </SelectItem>
-                    ))}
-                </SelectContent>
-              </Select>
+              />
             </div>
           );
         }

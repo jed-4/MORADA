@@ -35,6 +35,7 @@ import {
   BookOpen,
 } from "lucide-react";
 import { formatCurrency } from "@/lib/formatters";
+import { UnitSelect } from "@/components/UnitSelect";
 
 interface Product {
   id: number;
@@ -328,7 +329,11 @@ export default function ProductLibrary() {
                 <FormField control={form.control} name="unitType" render={({ field }) => (
                   <FormItem>
                     <FormLabel>Unit Type</FormLabel>
-                    <FormControl><Input {...field} placeholder="ea, m2, lm…" /></FormControl>
+                    {/* Was free text, so every product invented its own spelling
+                        of the same unit. Now the shared Field Settings list. */}
+                    <FormControl>
+                      <UnitSelect value={field.value || ""} onValueChange={field.onChange} />
+                    </FormControl>
                   </FormItem>
                 )} />
                 <FormField control={form.control} name="url" render={({ field }) => (

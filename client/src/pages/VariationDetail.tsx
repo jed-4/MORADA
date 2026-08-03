@@ -94,6 +94,7 @@ import { queryClient, apiRequest } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
 import { logActivity } from "@/lib/activityLogger";
 import type { Variation, VariationItem, Project } from "@shared/schema";
+import { UnitSelect } from "@/components/UnitSelect";
 
 const variationFormSchema = z.object({
   variationNumber: z.string().min(1, "Variation number is required"),
@@ -702,8 +703,10 @@ export default function VariationDetail() {
           <Input type="number" value={line.quantity} onChange={(e) => updateCostLine(index, "quantity", parseFloat(e.target.value) || 0)} onFocus={(e) => e.target.select()} min="0" step="any" className="h-7 text-sm text-right border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1 rounded-sm w-full" data-testid={`input-quantity-${index}`} />
         );
       case "unit":
+        // Was a free-text input — variation lines could carry any spelling of
+        // a unit. Now the shared Field Settings list.
         return (
-          <Input value={line.unitType} onChange={(e) => updateCostLine(index, "unitType", e.target.value)} placeholder="each" className="h-7 text-xs border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1 rounded-sm text-muted-foreground w-full" data-testid={`input-unit-type-${index}`} />
+          <UnitSelect value={line.unitType} onValueChange={(v) => updateCostLine(index, "unitType", v)} triggerClassName="h-7 text-xs border-0 bg-transparent shadow-none focus:ring-1 focus:ring-ring px-1 rounded-sm text-muted-foreground w-full" data-testid={`input-unit-type-${index}`} />
         );
       case "unitCostExTax":
         return (
