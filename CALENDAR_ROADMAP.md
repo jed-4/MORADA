@@ -252,7 +252,13 @@ Migration: new `google_calendar_events` + `google_calendar_sync_state` tables.
 - **Teammate overlay** — view another user's calendar as a translucent layer for scheduling.
 - **Timesheet actuals overlay** — planned vs actually-worked on the same grid.
 - **Reminders as a source** — the tab exists; the events never reach the calendar.
-- **Week templates** — stamp out a standard routine (the Sign On / PM Sweep / Estimating pattern is hand-maintained today).
+- ✅ **Week templates — projected routine** *(done)*. **The premise in the original plan was wrong**: the Sign On / PM Sweep / Estimating pattern is *not* hand-maintained. `task_templates` already has `isRecurringTemplate` + `recurringDays` + `recurringSchedule` (`{dayOfWeek, startTime, duration}`, commented "perfect week"), `DefaultDiary` on the Systems page is already a weekly template editor, and `processRecurringTaskTemplates` materialises them daily.
+
+  The real gap was the **horizon**: `generateRecurringTaskInstances` only covers the current and next week (14 days), so any week beyond a fortnight looked empty despite a fixed routine. The calendar now projects recurring templates onto the visible range as read-only ghosts (dashed, 60% opacity, not draggable), suppressed for any day where the real task already exists — keyed on `templateId|occurrenceDate`, which survives the task being moved. Only templates with a time are projected, so nothing lands in the all-day row. Filterable as "Routine (projected)".
+
+  Ownership: a template counts as yours if it is explicitly assigned to you, or if you already hold tasks generated from it — a proxy for role-based templates, whose assignment can't be resolved from the template row alone.
+
+  **Bug found and fixed while building this:** `UserCalendar` queried `/api/task-templates`, which does not exist — it fell through to the SPA and returned HTML. The real route is `/api/systems/task-templates`. So the template list was always empty, silently disabling two existing behaviours: skipping tasks whose template is archived, and sizing a newly timeboxed task from its template's `estimatedDuration`.
 - ✅ **Keyboard shortcuts + mini-month** *(done, UNVERIFIED — see note)* — `t` today, `←`/`→` previous/next, `d`/`w`/`m` view. Suppressed while typing, while any modifier is held, and while a dialog or menu is open. The date label is now a popover with a month picker for jumping without stepping a week at a time. Both live in `UserCalendar`, not `EnhancedCalendar`, because this surface passes `hideInternalHeader` and renders its own nav.
 
 ---

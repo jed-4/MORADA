@@ -1,6 +1,10 @@
 import { useState, useMemo, useEffect, useRef } from "react";
 import { useQuery, useQueries, useMutation } from "@tanstack/react-query";
-import { format, isWithinInterval } from "date-fns";
+import {
+  format, isWithinInterval, addDays, startOfDay, endOfDay,
+  startOfWeek, endOfWeek, startOfMonth, endOfMonth,
+} from "date-fns";
+import { useWeekStartDay } from "@/hooks/useWeekStartDay";
 import { useTimezone, formatInTimezone, formatDateTimeInTimezone } from "@/hooks/useTimezone";
 import {
   Select,
@@ -79,7 +83,7 @@ function deterministicProjectColor(seed: string): string {
 }
 
 // Module-level constant — never changes, so safe as a useEffect dependency
-const DEFAULT_EVENT_TYPES = ["task", "schedule", "google-calendar", "reminder"];
+const DEFAULT_EVENT_TYPES = ["task", "schedule", "google-calendar", "reminder", "projected"];
 
 /** Reminders draw in amber — distinct from tasks, and not tied to a project colour. */
 const REMINDER_COLOR = "#D4B670";
@@ -136,6 +140,7 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [showSettingsDialog, setShowSettingsDialog] = useState(false);
   const [miniMonthOpen, setMiniMonthOpen] = useState(false);
+  const weekStartDay = useWeekStartDay();
   const [connectingGoogle, setConnectingGoogle] = useState(false);
   const { toast } = useToast();
   const defaultViewCreationAttempted = useRef(false);
@@ -161,8 +166,12 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
   });
 
   // Fetch task templates to filter out tasks from inactive templates
+  // The route is /api/systems/task-templates. "/api/task-templates" doesn't exist —
+  // it fell through to the SPA and returned HTML, so this list was always empty and
+  // two things silently did nothing: skipping tasks from archived templates, and
+  // sizing a newly timeboxed task from its template's estimatedDuration.
   const { data: taskTemplates = [] } = useQuery<any[]>({
-    queryKey: ["/api/task-templates"],
+    queryKey: ["/api/systems/task-templates"],
   });
 
   // Active reminders for the displayed user.
@@ -525,6 +534,9 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
             // Views saved before reminders existed would otherwise hide them for good
             normalizedFilters.eventTypes = [...normalizedFilters.eventTypes, "reminder"];
           }
+          if (!normalizedFilters.eventTypes.includes("projected")) {
+            normalizedFilters.eventTypes = [...normalizedFilters.eventTypes, "projected"];
+          }
         }
         setFilters(normalizedFilters);
       }
@@ -687,16 +699,104 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
     });
   }, [calendarEvents, filters]);
 
+  // Your standard week, projected onto weeks that haven't been generated yet.
+  //
+  // Recurring task templates are only materialised into real tasks for the current
+  // and next week (generateRecurringTaskInstances uses a 14-day window), so looking
+  // a month ahead showed an empty grid even though the routine is fixed. These are
+  // ghosts: read-only, not draggable, and never persisted. The moment the generator
+  // creates the real task, the projection for that day disappears.
+  const projectedTemplateEvents = useMemo(() => {
+    if (!isOwnPage) return [] as CalendarEvent[];
+
+    const recurring = taskTemplates.filter(
+      (t: any) => t.isActive && t.isRecurringTemplate && (t.recurringDays?.length || 0) > 0
+    );
+    if (recurring.length === 0) return [] as CalendarEvent[];
+
+    // Visible window only — projecting further is wasted work and risks duplicates.
+    let rangeStart: Date;
+    let rangeEnd: Date;
+    if (calendarMode === "day") {
+      rangeStart = startOfDay(currentDate);
+      rangeEnd = endOfDay(currentDate);
+    } else if (calendarMode === "month") {
+      rangeStart = startOfWeek(startOfMonth(currentDate), { weekStartsOn: weekStartDay });
+      rangeEnd = endOfWeek(endOfMonth(currentDate), { weekStartsOn: weekStartDay });
+    } else {
+      rangeStart = startOfWeek(currentDate, { weekStartsOn: weekStartDay });
+      rangeEnd = endOfWeek(currentDate, { weekStartsOn: weekStartDay });
+    }
+
+    // Days already materialised, so a projection never doubles up on a real task.
+    // occurrenceDate is the template's original slot and survives the task being moved.
+    const materialised = new Set<string>();
+    const templatesUsedByMe = new Set<string>();
+    userTasks.forEach((task: any) => {
+      if (!task.templateId) return;
+      templatesUsedByMe.add(task.templateId);
+      const ref = task.occurrenceDate || task.dueDate;
+      if (ref) materialised.add(`${task.templateId}|${format(new Date(ref), "yyyy-MM-dd")}`);
+    });
+
+    const projected: CalendarEvent[] = [];
+
+    for (let day = new Date(rangeStart); day <= rangeEnd; day = addDays(day, 1)) {
+      const dow = day.getDay();
+      const dayKey = format(day, "yyyy-MM-dd");
+
+      for (const template of recurring as any[]) {
+        if (!(template.recurringDays || []).includes(dow)) continue;
+        if (materialised.has(`${template.id}|${dayKey}`)) continue;
+
+        // Whose routine is it? Either explicitly this user's, or a template they
+        // already receive tasks from — a reliable proxy for role-based templates,
+        // whose assignment can't be resolved from the template alone.
+        const explicitlyMine =
+          template.assigneeType === "user" && template.assigneeUserId === displayedUserId;
+        if (!explicitlyMine && !templatesUsedByMe.has(template.id)) continue;
+
+        // Only project templates with a time. An untimed routine item would land in
+        // the all-day row and re-create the clutter Phase 1 cleared out.
+        const slot = (template.recurringSchedule || []).find(
+          (s: any) => Number(s.dayOfWeek) === dow
+        );
+        const startTime = slot?.startTime || template.dueTime || null;
+        if (!startTime) continue;
+
+        const duration = Number(slot?.duration) || template.estimatedDuration || 60;
+
+        projected.push({
+          id: `projected-${template.id}-${dayKey}`,
+          title: template.title,
+          startDate: new Date(day),
+          endDate: new Date(day),
+          startTime,
+          endTime: fromMinutes(toMinutes(startTime) + duration),
+          type: "projected",
+          color: template.color || undefined,
+          description: template.goal || template.description || null,
+          templateId: template.id,
+        });
+      }
+    }
+
+    return projected;
+  }, [isOwnPage, taskTemplates, userTasks, currentDate, calendarMode, weekStartDay, displayedUserId]);
+
   // Untimed tasks go to the tray to be timeboxed, rather than piling up in the
   // all-day row. Everything else — including genuinely all-day schedule items and
   // Google all-day events — stays on the grid.
   const isUntimedTask = (event: CalendarEvent) =>
     event.type === "task" && !event.startTime && !event.endTime;
 
-  const gridEvents = useMemo(
-    () => filteredEvents.filter(event => !isUntimedTask(event)),
-    [filteredEvents]
-  );
+  const gridEvents = useMemo(() => {
+    const base = filteredEvents.filter(event => !isUntimedTask(event));
+    // Projections bypass the main filter memo (they're derived from the visible
+    // range, not from calendarEvents), so honour the event-type filter here.
+    const showProjected = !filters.eventTypes?.length || filters.eventTypes.includes("projected");
+    return showProjected ? [...base, ...projectedTemplateEvents] : base;
+  }, [filteredEvents, projectedTemplateEvents, filters.eventTypes]);
 
   const unscheduledEvents = useMemo(
     () =>
@@ -802,6 +902,7 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
     { key: "task", label: "Tasks", disabled: false },
     { key: "schedule", label: "Schedule Items", disabled: false },
     { key: "reminder", label: "Reminders", disabled: false },
+    { key: "projected", label: "Routine (projected)", disabled: false },
     { key: "google-calendar", label: "Google Calendar", disabled: !isGoogleCalendarConnected },
   ];
 

@@ -53,7 +53,8 @@ export interface CalendarEvent {
   projectName?: string | null;
   assigneeName?: string | null;
   assigneeId?: string | null;
-  type: "task" | "schedule" | "meeting" | "google-calendar" | "timesheet" | "site_diary" | "reminder";
+  /** "projected" is a ghost from a recurring template — read-only, never persisted. */
+  type: "task" | "schedule" | "meeting" | "google-calendar" | "timesheet" | "site_diary" | "reminder" | "projected";
   status?: string;
   isCompleted?: boolean;
   description?: string | null;
@@ -143,7 +144,9 @@ interface DraggableEventProps {
 function DraggableEvent({ event, index, onEventClick, onToggleComplete, showCompletionCheckbox, showResizeHandles = false, displayOptions }: DraggableEventProps) {
   const isGoogleCalendarEvent = event.type === "google-calendar";
   const isLookbackEvent = event.type === "timesheet" || event.type === "site_diary";
-  const isReadOnlyEvent = isGoogleCalendarEvent || isLookbackEvent;
+  // A projection has no row behind it, so there is nothing to drag or resize.
+  const isProjected = event.type === "projected";
+  const isReadOnlyEvent = isGoogleCalendarEvent || isLookbackEvent || isProjected;
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: event.id,
     data: { event, type: 'move' },
@@ -203,12 +206,19 @@ function DraggableEvent({ event, index, onEventClick, onToggleComplete, showComp
         !isReadOnlyEvent && "touch-none cursor-move",
         isReadOnlyEvent && "cursor-pointer",
         isCompleted && "opacity-55",
+        // Ghosted so it reads as "this is what your week normally looks like",
+        // not as a task that already exists.
+        isProjected && "opacity-60",
         isDragging && "opacity-50 scale-[0.98] shadow-md"
       )}
       style={{
-        backgroundColor: notionColors.pastelBg,
-        borderLeft: `3px solid ${notionColors.originalHex}`,
+        backgroundColor: isProjected ? "transparent" : notionColors.pastelBg,
+        borderLeft: `3px ${isProjected ? "dashed" : "solid"} ${notionColors.originalHex}`,
+        ...(isProjected
+          ? { border: `1px dashed ${notionColors.originalHex}`, borderLeft: `3px dashed ${notionColors.originalHex}` }
+          : {}),
       }}
+      title={isProjected ? `${event.title} — from your recurring routine (not yet created)` : undefined}
     >
       {/* Top resize handle - Notion style, only interactive on hover */}
       {showResizeHandles && !isReadOnlyEvent && (
