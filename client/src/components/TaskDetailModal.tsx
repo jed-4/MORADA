@@ -203,6 +203,45 @@ export function TaskDetailModal({ event, taskId, open, onOpenChange, onEdit }: T
   });
 
   // Mutation to delete task
+  // Books an hour of the viewer's own time against this schedule item, as a linked
+  // task. Deliberately not "assign me to the item": a five-day work bar would then
+  // occupy five days of calendar for what is really a one-hour commitment.
+  //
+  // Must stay above the `if (!event && !taskId) return null` guard below — hooks
+  // cannot sit after an early return, or the hook count changes between renders
+  // and React tears the tree down ("Rendered more hooks than during the previous
+  // render"). Times are read from `event` inside mutationFn rather than from the
+  // display variables, which are only computed past that guard.
+  const bookTimeMutation = useMutation({
+    mutationFn: async () => {
+      // Inherit the item's own times when it has them (an inspection at 9), else
+      // a sensible default the user can then drag on the calendar.
+      const start = event?.startTime || "09:00";
+      const end = event?.endTime || addOneHour(start);
+      return await apiRequest(`/api/schedule-items/${event?.id}/book-time`, "POST", {
+        startTime: start,
+        endTime: end,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/schedule-items/calendar"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/schedule-items", event?.id, "bookings"] });
+      toast({
+        title: "Time booked",
+        description: "Added to your calendar. Drag it to adjust.",
+      });
+      onOpenChange(false);
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Failed to book time",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
   const deleteTaskMutation = useMutation({
     mutationFn: async () => {
       if (!effectiveTaskId) return;
@@ -270,36 +309,6 @@ export function TaskDetailModal({ event, taskId, open, onOpenChange, onEdit }: T
   const displayStatus = taskDetails?.status || event?.status;
   const displayLocation = event?.location;
   const bookingStart = displayStartTime || "09:00";
-
-  // Books an hour of the viewer's own time against this schedule item, as a linked
-  // task. Deliberately not "assign me to the item": a five-day work bar would then
-  // occupy five days of calendar for what is really a one-hour commitment.
-  const bookTimeMutation = useMutation({
-    mutationFn: async () =>
-      await apiRequest(`/api/schedule-items/${event?.id}/book-time`, "POST", {
-        // Inherit the item's own times when it has them (an inspection at 9), else
-        // a sensible default the user can then drag on the calendar.
-        startTime: bookingStart,
-        endTime: displayEndTime || addOneHour(bookingStart),
-      }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/schedule-items/calendar"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/schedule-items", event?.id, "bookings"] });
-      toast({
-        title: "Time booked",
-        description: "Added to your calendar. Drag it to adjust.",
-      });
-      onOpenChange(false);
-    },
-    onError: (error: any) => {
-      toast({
-        title: "Failed to book time",
-        description: error.message,
-        variant: "destructive",
-      });
-    },
-  });
 
   const handleNavigate = () => {
     if (isTask && displayProjectId) {

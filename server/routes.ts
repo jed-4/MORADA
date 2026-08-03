@@ -27420,6 +27420,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         ownerName: user.email,
         author: user.email,
         assigneeIds: [userId],
+        // Cached alongside the id: storage only resolves a name for the legacy
+        // single `assigneeId`, so without this the bookings list has no one to show.
+        assigneeNames: [
+          [user.firstName, user.lastName].filter(Boolean).join(" ").trim() || user.email,
+        ],
         dueDate,
         startTime,
         endTime,

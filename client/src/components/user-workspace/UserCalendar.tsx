@@ -713,8 +713,10 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.metaKey || e.ctrlKey || e.altKey) return;
 
-      const target = e.target as HTMLElement | null;
-      if (target) {
+      // instanceof, not a truthiness check: an event dispatched on window has
+      // target === window, which has no tagName or closest() and would throw.
+      const target = e.target;
+      if (target instanceof HTMLElement) {
         const tag = target.tagName;
         if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || target.isContentEditable) return;
         if (target.closest('[role="dialog"], [role="menu"], [role="listbox"], [contenteditable="true"]')) return;
