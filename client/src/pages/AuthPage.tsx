@@ -553,6 +553,17 @@ export default function AuthPage() {
         </Card>
 
         <p className="text-center text-sm text-muted-foreground">
+          New to Morada?{" "}
+          <a
+            href="/pricing"
+            className="font-medium text-primary underline-offset-4 hover:underline"
+            data-testid="link-see-pricing"
+          >
+            See plans and pricing
+          </a>
+        </p>
+
+        <p className="text-center text-sm text-muted-foreground">
           By continuing, you agree to our Terms of Service and Privacy Policy.
         </p>
       </div>
