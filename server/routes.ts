@@ -5473,6 +5473,39 @@ export async function registerRoutes(app: Express): Promise<Server> {
     return item;
   };
 
+  // Allowance operations are contract-reconciliation actions: finalising an
+  // allowance, or excluding one, only means something once the estimate IS the
+  // contract. Before that the estimate is unlocked, so an allowance you don't
+  // want is simply edited to $0 (or deleted) in the estimate itself — the two
+  // mechanisms would otherwise overlap and disagree.
+  //
+  // Deliberately gates on the estimate's LIVE status rather than a stored flag,
+  // so reverting contract → approved re-locks these actions automatically with
+  // no extra state to drift.
+  //
+  // Note the asymmetry at the call sites: RESTORING an excluded allowance is
+  // allowed at any status. Otherwise an estimate reverted to Approved could be
+  // stuck holding a $0 allowance with no way to undo it short of re-contracting.
+  const requireContractedEstimate = async (
+    req: any, res: any, estimateId: string,
+  ): Promise<boolean> => {
+    const estimate = await storage.getEstimate(estimateId);
+    if (!estimate) {
+      res.status(404).json({ error: "Estimate not found" });
+      return false;
+    }
+    if ((estimate as any).status !== "contract") {
+      res.status(409).json({
+        error: "This estimate is not contracted yet.",
+        details:
+          "Allowances can be finalised or excluded once the estimate is contracted. Until then, edit the allowance directly in the estimate.",
+        estimateStatus: (estimate as any).status,
+      });
+      return false;
+    }
+    return true;
+  };
+
   const getOwnedEstimateGroup = async (
     req: any, res: any, groupId: string, notFound = "Group not found",
   ): Promise<any | null> => {
@@ -6735,6 +6768,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!["pending", "in_progress", "finalized"].includes(allowanceStatus)) {
         return res.status(400).json({ error: "Invalid allowanceStatus value" });
       }
+      if (!(await requireContractedEstimate(req, res, (existingItem as any).estimateId))) return;
 
       const { estimateItems: estimateItemsTbl } = await import("@shared/schema");
       const result = await db.update(estimateItemsTbl)
@@ -6769,6 +6803,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if ((existingItem as any).allowance === "None") {
         return res.status(400).json({ error: "Only Prime Cost and Provisional Sum allowances can be marked not included" });
       }
+      // Asymmetric on purpose: EXCLUDING requires a contracted estimate (before
+      // that, just edit the line to $0 in the unlocked estimate). RESTORING is
+      // allowed at any status, so a reverted estimate can never be stuck at $0.
+      if (notIncluded && !(await requireContractedEstimate(req, res, (existingItem as any).estimateId))) return;
 
       const { estimateItems: estimateItemsTbl } = await import("@shared/schema");
       const estimate = await storage.getEstimate((existingItem as any).estimateId);

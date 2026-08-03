@@ -10573,6 +10573,9 @@ export class DbStorage implements IStorage {
               ...item,
               estimateName: estimate?.name || "Unknown",
               estimateVersion: estimate?.version || 1,
+              // Drives the contract gate in the UI: finalising or excluding an
+              // allowance is only offered once the estimate IS the contract.
+              estimateStatus: (estimate as any)?.status || "draft",
               groupName: group?.name || null,
               groupOrder: group?.order ?? null,
               priceIncTax: priceInCents,

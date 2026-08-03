@@ -511,6 +511,75 @@ async function main() {
       assert.strictEqual(r.status, 404, `expected 404, got ${r.status}: ${JSON.stringify(r.body)}`);
       // Cleanup deletes projects by company_id, so this one goes with the rest.
     });
+    // ---- Allowance contract gate (requireContractedEstimate) ----
+    // Finalising or excluding an allowance only means something once the
+    // estimate IS the contract; before that the estimate is unlocked and the
+    // line is edited directly. estimateA is a plain draft here.
+    await test("PATCH allowance-status: 409 while the estimate is not contracted", async () => {
+      const r = await api("PATCH", `/api/estimate-items/${estimateItemA.id}/allowance-status`, {
+        cookie: A.cookie, body: { allowanceStatus: "finalized" },
+      });
+      assert.strictEqual(r.status, 409, `expected 409, got ${r.status}: ${JSON.stringify(r.body)}`);
+    });
+    await test("PATCH not-included=true: 409 while the estimate is not contracted", async () => {
+      // Must be a real PC/PS line — a plain item is rejected as 400 (not an
+      // allowance) before the contract gate is ever reached.
+      const draftAllowance = await storage.createEstimateItem({
+        estimateId: estimateA.id, name: "Draft PC Allowance",
+        allowance: "Prime Cost", unitCostExTax: 0, quantity: 1, priceIncTax: 2200, taxAmount: 200,
+      } as any);
+      const r = await api("PATCH", `/api/estimate-items/${draftAllowance.id}/not-included`, {
+        cookie: A.cookie, body: { notIncluded: true },
+      });
+      assert.strictEqual(r.status, 409, `expected 409, got ${r.status}: ${JSON.stringify(r.body)}`);
+    });
+    await test("PATCH not-included: 400 on a line that is not an allowance", async () => {
+      const r = await api("PATCH", `/api/estimate-items/${estimateItemA.id}/not-included`, {
+        cookie: A.cookie, body: { notIncluded: true },
+      });
+      assert.strictEqual(r.status, 400, `expected 400, got ${r.status}: ${JSON.stringify(r.body)}`);
+    });
+    await test("allowance gate applies once contracted, and RESTORE stays allowed after revert", async () => {
+      const allowanceItem = await storage.createEstimateItem({
+        estimateId: estimateA.id, name: "PC Allowance A",
+        allowance: "Prime Cost", unitCostExTax: 0, quantity: 1, priceIncTax: 5500, taxAmount: 500,
+      } as any);
+
+      // Contracted: excluding is now permitted.
+      await storage.updateEstimateStatus(estimateA.id, { status: "contract", isLocked: true } as any);
+      const excluded = await api("PATCH", `/api/estimate-items/${allowanceItem.id}/not-included`, {
+        cookie: A.cookie, body: { notIncluded: true },
+      });
+      assert.strictEqual(excluded.status, 200, `expected 200, got ${excluded.status}: ${JSON.stringify(excluded.body)}`);
+      assert.strictEqual(excluded.body.priceIncTax, 0, "excluded allowance should price at $0");
+      assert.strictEqual(
+        Number(excluded.body.notIncludedOriginalPriceIncTax), 5500,
+        "the original amount must be stashed for the deduction variation",
+      );
+
+      // Reverted to approved: no NEW exclusions...
+      await storage.updateEstimateStatus(estimateA.id, { status: "approved", isLocked: false } as any);
+      const secondItem = await storage.createEstimateItem({
+        estimateId: estimateA.id, name: "PC Allowance A2",
+        allowance: "Prime Cost", unitCostExTax: 0, quantity: 1, priceIncTax: 1100, taxAmount: 100,
+      } as any);
+      const blocked = await api("PATCH", `/api/estimate-items/${secondItem.id}/not-included`, {
+        cookie: A.cookie, body: { notIncluded: true },
+      });
+      assert.strictEqual(blocked.status, 409, `expected 409, got ${blocked.status}`);
+
+      // ...but the already-excluded one can still be put back, so a reverted
+      // estimate is never stuck holding a $0 allowance.
+      const restored = await api("PATCH", `/api/estimate-items/${allowanceItem.id}/not-included`, {
+        cookie: A.cookie, body: { notIncluded: false },
+      });
+      assert.strictEqual(restored.status, 200, `restore should be exempt from the gate, got ${restored.status}: ${JSON.stringify(restored.body)}`);
+      assert.strictEqual(restored.body.priceIncTax, 5500, "restore must return the original amount");
+      assert.strictEqual(restored.body.notIncluded, false);
+
+      await storage.updateEstimateStatus(estimateA.id, { status: "draft", isLocked: false } as any);
+    });
+
     await controlOk("GET allowance detail", "GET", `/api/projects/${projectA.id}/allowances/${estimateItemA.id}/detail`);
     await crossTenant("GET /api/projects/:projectId/allowances", "GET", `/api/projects/${projectA.id}/allowances`, `/api/projects/${NONE}/allowances`);
     await controlOk("GET /api/projects/:projectId/allowances", "GET", `/api/projects/${projectA.id}/allowances`);

@@ -54,6 +54,8 @@ type EstimateItem = {
   priceIncTax: number;
   estimateName: string;
   estimateVersion: number;
+  /** "draft" | "approved" | "contract" | "archived" — gates the status picker. */
+  estimateStatus?: string;
   groupName?: string | null;
   groupOrder?: number | null;
   notes?: string | null;
@@ -102,6 +104,11 @@ function getStatusToneClass(statusName: string): string {
 
 // Canonical AUD formatter (takes cents) — see shared/money.ts.
 const formatCurrency = formatCents;
+
+// Shown wherever an allowance action is unavailable because the estimate isn't
+// the contract yet. Says what to do instead, not just that it's blocked.
+const NOT_CONTRACTED_HINT =
+  "Available once this estimate is contracted. Until then, set the allowance to $0 in the estimate itself (unlock the estimate first if it is locked).";
 
 function formatVariance(varianceCents: number): { text: string; tone: "under" | "over" | "none" } {
   if (varianceCents === 0) return { text: formatCurrency(0), tone: "none" };
@@ -155,6 +162,8 @@ interface StatusBadgePopoverProps {
   getStatusInfo: (key: string) => { key: string; name: string; color?: string | null };
   onChange: (newStatus: string) => void;
   disabled?: boolean;
+  /** Tooltip explaining WHY it's disabled, when it is. */
+  disabledHint?: string;
 }
 
 function StatusBadgePopover({
@@ -164,6 +173,7 @@ function StatusBadgePopover({
   getStatusInfo,
   onChange,
   disabled,
+  disabledHint,
 }: StatusBadgePopoverProps) {
   const [open, setOpen] = useState(false);
   const info = getStatusInfo(currentStatus);
@@ -175,6 +185,7 @@ function StatusBadgePopover({
         <button
           type="button"
           disabled={disabled}
+          title={disabled ? disabledHint : undefined}
           onClick={(e) => e.stopPropagation()}
           className={`inline-flex items-center rounded text-[10px] font-medium px-1.5 py-0.5 ${tone} hover-elevate active-elevate-2 disabled:opacity-50`}
           data-testid={`badge-status-${itemId}`}
@@ -316,15 +327,28 @@ export default function Allowances() {
   };
 
   const updateStatusMutation = useMutation({
+    // The dedicated endpoint, not the general item PATCH. The general one runs
+    // through the locked-estimate guard, so changing an allowance's status from
+    // this page used to 409 on a CONTRACTED estimate — precisely the estimates
+    // whose allowances you actually track.
     mutationFn: async ({ itemId, status }: { itemId: string; status: string }) => {
-      return apiRequest(`/api/estimate-items/${itemId}`, "PATCH", { allowanceStatus: status });
+      return apiRequest(`/api/estimate-items/${itemId}/allowance-status`, "PATCH", {
+        allowanceStatus: status,
+      });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "allowances"] });
       toast({ title: "Status updated" });
     },
-    onError: () => {
-      toast({ title: "Error", description: "Failed to update status.", variant: "destructive" });
+    onError: (err: any) => {
+      // A non-contracted estimate is a legitimate refusal, not a failure —
+      // say why rather than "something went wrong".
+      const detail = err?.body?.details || err?.details;
+      toast({
+        title: err?.status === 409 ? "Estimate not contracted" : "Error",
+        description: detail || "Failed to update status.",
+        variant: "destructive",
+      });
     },
   });
 
@@ -847,7 +871,15 @@ export default function Allowances() {
                               onChange={(status) =>
                                 updateStatusMutation.mutate({ itemId: item.id, status })
                               }
-                              disabled={updateStatusMutation.isPending}
+                              // Allowance status is a contract-reconciliation
+                              // field — see requireContractedEstimate.
+                              disabled={
+                                updateStatusMutation.isPending ||
+                                item.estimateStatus !== "contract"
+                              }
+                              disabledHint={
+                                item.estimateStatus !== "contract" ? NOT_CONTRACTED_HINT : undefined
+                              }
                             />
                           </div>
 

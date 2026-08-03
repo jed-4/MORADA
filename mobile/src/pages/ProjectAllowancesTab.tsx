@@ -103,8 +103,12 @@ export function ProjectAllowancesTab() {
   });
 
   const updateStatusMutation = useMutation({
+    // Dedicated endpoint — the general item PATCH goes through the
+    // locked-estimate guard and 409s on a contracted estimate.
     mutationFn: async ({ itemId, status }: { itemId: string; status: string }) => {
-      return await apiRequest(`/api/estimate-items/${itemId}`, "PATCH", { allowanceStatus: status });
+      return await apiRequest(`/api/estimate-items/${itemId}/allowance-status`, "PATCH", {
+        allowanceStatus: status,
+      });
     },
     onSuccess: async () => {
       queryClient.invalidateQueries({ queryKey: ["/api/projects", currentProject?.id, "allowances"] });

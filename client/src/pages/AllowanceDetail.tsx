@@ -52,6 +52,8 @@ type EstimateItem = {
   priceExTax?: number; // cents ex GST
   estimateName: string;
   estimateVersion: number;
+  /** "draft" | "approved" | "contract" | "archived" — gates the header actions. */
+  estimateStatus?: string;
 };
 
 type AllowanceWithCosts = {
@@ -240,6 +242,11 @@ type PendingLine = NewLineItem & { id: string };
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const formatCurrency = formatCents;
+
+// Shown wherever an allowance action is unavailable because the estimate isn't
+// the contract yet. Says what to do instead, not just that it's blocked.
+const NOT_CONTRACTED_HINT =
+  "Available once this estimate is contracted. Until then, set the allowance to $0 in the estimate itself (unlock the estimate first if it is locked).";
 
 /**
  * Pull the most specific message out of an apiRequest failure.
@@ -820,6 +827,13 @@ export default function AllowanceDetail() {
 
   const allowance = allowances.find((a) => a.item.id === allowanceId);
   const isPrimeCost = allowance?.item.allowance === "Prime Cost";
+
+  // Allowance operations are contract-reconciliation actions — see
+  // requireContractedEstimate on the server. Before the estimate is the
+  // contract it is unlocked, so an unwanted allowance is edited to $0 in the
+  // estimate itself. Restoring an excluded allowance is exempt (below), so a
+  // reverted estimate can never be stuck at $0.
+  const isContracted = allowance?.item.estimateStatus === "contract";
 
   // What "Include this item again" would put back. The stash is dollars inc GST
   // (estimate_items price fields are dollars); everything on this page is cents.
@@ -1536,7 +1550,8 @@ export default function AllowanceDetail() {
                   <Button
                     size="sm"
                     variant="outline"
-                    disabled={updateAllowanceStatusMutation.isPending}
+                    disabled={updateAllowanceStatusMutation.isPending || !isContracted}
+                    title={isContracted ? undefined : NOT_CONTRACTED_HINT}
                     onClick={() => updateAllowanceStatusMutation.mutate("finalized")}
                     data-testid="button-finalise-allowance"
                   >
@@ -1551,7 +1566,8 @@ export default function AllowanceDetail() {
                   <Button
                     size="sm"
                     variant="ghost"
-                    disabled={updateAllowanceStatusMutation.isPending}
+                    disabled={updateAllowanceStatusMutation.isPending || !isContracted}
+                    title={isContracted ? undefined : NOT_CONTRACTED_HINT}
                     onClick={() => updateAllowanceStatusMutation.mutate("in_progress")}
                     data-testid="button-reopen-allowance"
                   >
@@ -1583,19 +1599,21 @@ export default function AllowanceDetail() {
                     {!item.notIncluded ? (
                       <button
                         type="button"
-                        disabled={notIncludedMutation.isPending}
+                        disabled={notIncludedMutation.isPending || !isContracted}
                         onClick={() => {
                           setItemMenuOpen(false);
                           setConfirmNotIncludedOpen(true);
                         }}
-                        className="w-full flex items-start gap-2.5 rounded px-2 py-2 text-left hover-elevate active-elevate-2 disabled:opacity-50"
+                        className="w-full flex items-start gap-2.5 rounded px-2 py-2 text-left hover-elevate active-elevate-2 disabled:opacity-50 disabled:hover:bg-transparent"
                         data-testid="button-mark-not-included"
                       >
                         <Ban className="h-4 w-4 mt-0.5 flex-shrink-0 text-muted-foreground" />
                         <span className="min-w-0">
                           <span className="block text-[13px] font-medium">This item is not included</span>
                           <span className="block text-[11px] text-muted-foreground leading-snug">
-                            Sets the allowance to $0. The original amount is kept so you can undo it.
+                            {isContracted
+                              ? "Sets the allowance to $0. The original amount is kept so you can undo it."
+                              : NOT_CONTRACTED_HINT}
                           </span>
                         </span>
                       </button>
