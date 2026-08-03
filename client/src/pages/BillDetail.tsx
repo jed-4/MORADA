@@ -1217,7 +1217,12 @@ export default function BillDetail() {
             );
             throw err;
           }
-          toast({ title: "Bill created & synced to Xero", description: "New bill created in Xero." });
+          const pushData = await pushRes.json().catch(() => ({} as any));
+          if (pushData?.warning) {
+            toast({ title: "Bill created & synced to Xero", description: pushData.warning });
+          } else {
+            toast({ title: "Bill created & synced to Xero", description: "New bill created in Xero." });
+          }
         } catch (e) {
           const desc = formatXeroErrorDescription(e);
           toast({
@@ -3715,7 +3720,15 @@ export default function BillDetail() {
                     {isEditMode && (bill as any)?.xeroInvoiceId && (
                       <div className="text-table text-muted-foreground" data-testid="text-xero-sync-status">
                         {(bill as any)?.xeroLastSyncStatus === "success" && (bill as any)?.xeroLastSyncAt && (
-                          <span>Synced {format(new Date((bill as any).xeroLastSyncAt), "dd MMM HH:mm")}</span>
+                          (bill as any)?.xeroLastSyncError ? (
+                            // Success with text in the error column = non-fatal
+                            // warning (e.g. pushed without job tracking).
+                            <span style={{ color: "hsl(var(--amber))" }} title={(bill as any).xeroLastSyncError}>
+                              Synced with warning: {String((bill as any).xeroLastSyncError).slice(0, 60)}
+                            </span>
+                          ) : (
+                            <span>Synced {format(new Date((bill as any).xeroLastSyncAt), "dd MMM HH:mm")}</span>
+                          )
                         )}
                         {(bill as any)?.xeroLastSyncStatus === "failed" && (
                           <span className="text-destructive" title={(bill as any)?.xeroLastSyncError || ""}>
@@ -4121,11 +4134,11 @@ export default function BillDetail() {
             return;
           }
           try {
-            await apiRequest("/api/xero/push-bill", "POST", {
+            const pushResult: any = await apiRequest("/api/xero/push-bill", "POST", {
               billId: billIdToUse,
               xeroContactId,
             });
-            toast({ title: "Success", description: "Bill sent to Xero" });
+            toast({ title: "Success", description: pushResult?.warning || "Bill sent to Xero" });
             setUnmappedContactDialogOpen(false);
             setPendingXeroBillId(null);
             setUnmappedSupplierId(null);
