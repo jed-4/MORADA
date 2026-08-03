@@ -119,7 +119,25 @@ export function SearchableSelect({
         </Button>
       </PopoverTrigger>
       <PopoverContent className={cn("p-0", className)} align="start">
-        <Command shouldFilter={true}>
+        {/* cmdk's default filter is a FUZZY subsequence match, which makes a
+            numeric search wildly unintuitive: typing a cost code like "219"
+            also returned "192", because those digits appear in it in order.
+            Match directly instead — prefix first, then substring, nothing
+            else — so a typed code finds that code and nothing near it. */}
+        <Command
+          shouldFilter={true}
+          filter={(value, search) => {
+            const q = search.trim().toLowerCase();
+            if (!q) return 1;
+            const v = value.toLowerCase();
+            if (v.startsWith(q)) return 1;
+            // Prefix of any word ("con" → "192 - Concrete"), ranked above a
+            // bare mid-word substring so the obvious match sorts first.
+            if (v.split(/[\s\-–—/,()]+/).some((w) => w.startsWith(q))) return 0.7;
+            if (v.includes(q)) return 0.4;
+            return 0;
+          }}
+        >
           <CommandInput
             placeholder={searchPlaceholder}
             value={searchValue}

@@ -36,6 +36,7 @@ import {
 } from "lucide-react";
 import { type Estimate } from "@shared/schema";
 import { formatCents } from "@shared/money";
+import { useResizableColumns, ColResizeHandle } from "@/components/useResizableColumns";
 
 // ───────────────────────────────────────────────────────────────────────
 // Types
@@ -152,6 +153,51 @@ function StatCard({ value, label, variant, testId }: StatCardProps) {
 }
 
 // ───────────────────────────────────────────────────────────────────────
+// Filter checkbox row
+// ───────────────────────────────────────────────────────────────────────
+
+function FilterCheckbox({
+  label,
+  count,
+  checked,
+  onToggle,
+  testId,
+}: {
+  label: string;
+  count?: number;
+  checked: boolean;
+  onToggle: () => void;
+  testId?: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      className="w-full flex items-center gap-2 rounded px-1.5 py-1 text-left text-[12px] hover-elevate active-elevate-2"
+      role="checkbox"
+      aria-checked={checked}
+      data-testid={testId}
+    >
+      <span
+        className={`inline-flex h-3.5 w-3.5 flex-shrink-0 items-center justify-center rounded border ${
+          checked ? "bg-primary border-primary text-white" : "border-border"
+        }`}
+      >
+        {checked && (
+          <svg viewBox="0 0 12 12" className="h-2.5 w-2.5" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M2 6l3 3 5-6" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        )}
+      </span>
+      <span className="flex-1 truncate">{label}</span>
+      {count != null && (
+        <span className="text-[10px] tabular-nums text-muted-foreground">{count}</span>
+      )}
+    </button>
+  );
+}
+
+// ───────────────────────────────────────────────────────────────────────
 // Status popover badge
 // ───────────────────────────────────────────────────────────────────────
 
@@ -239,8 +285,11 @@ export default function Allowances() {
   const { statusOptions, getStatusInfo } = useAllowanceStatusOptions();
 
   const [searchTerm, setSearchTerm] = useState("");
-  const [statusFilter, setStatusFilter] = useState<string>("");
-  const [typeFilter, setTypeFilter] = useState<"all" | "pc" | "ps">("all");
+  // Both filters are multi-select. An EMPTY set means "no restriction", which
+  // keeps "nothing ticked" and "everything ticked" reading the same on screen
+  // and avoids a state where the table is inexplicably empty.
+  const [statusFilter, setStatusFilter] = useState<Set<string>>(new Set());
+  const [typeFilter, setTypeFilter] = useState<Set<"pc" | "ps">>(new Set());
   const [selectedEstimateId, setSelectedEstimateId] = useState<string | null>(null);
   const [showSummaryCards, setShowSummaryCards] = useState<boolean>(() => {
     try {
@@ -376,12 +425,32 @@ export default function Allowances() {
         )
           return false;
       }
-      if (statusFilter && a.item.allowanceStatus !== statusFilter) return false;
-      if (typeFilter === "pc" && a.item.allowance !== "Prime Cost") return false;
-      if (typeFilter === "ps" && a.item.allowance !== "Provisional Sum") return false;
+      if (statusFilter.size > 0 && !statusFilter.has(a.item.allowanceStatus)) return false;
+      if (typeFilter.size > 0) {
+        const key = a.item.allowance === "Prime Cost" ? "pc" : "ps";
+        if (!typeFilter.has(key)) return false;
+      }
       return true;
     });
   }, [estimateScoped, searchTerm, statusFilter, typeFilter]);
+
+  const activeFilterCount = statusFilter.size + typeFilter.size;
+
+  const toggleStatusFilter = useCallback((key: string) => {
+    setStatusFilter((prev) => {
+      const next = new Set(prev);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
+  }, []);
+
+  const toggleTypeFilter = useCallback((key: "pc" | "ps") => {
+    setTypeFilter((prev) => {
+      const next = new Set(prev);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
+  }, []);
 
   // Group items
   const grouped = useMemo(() => {
@@ -419,15 +488,17 @@ export default function Allowances() {
     return entries;
   }, [filtered]);
 
-  // What the list actually renders: the estimate groups, or a single flat
-  // pseudo-group (sorted like the in-group order) when grouping is turned off.
+  // What the list actually renders: the estimate groups, or ONE flat list when
+  // grouping is turned off.
+  //
+  // Turning the headers off must not re-shuffle the rows — it only hides the
+  // headers. Flattening `grouped` (rather than re-sorting `filtered`) keeps the
+  // estimate's job-stage order across the whole list, then the same in-group
+  // order within each stage. Previously this re-sorted by status then name, so
+  // hiding the headers silently scrambled the estimate's order.
   const displayGroups: [string, AllowanceWithCosts[]][] = groupItems
     ? grouped
-    : [["", [...filtered].sort((x, y) => {
-        const sp = statusPriority(x.item.allowanceStatus) - statusPriority(y.item.allowanceStatus);
-        if (sp !== 0) return sp;
-        return x.item.name.localeCompare(y.item.name);
-      })]];
+    : [["", grouped.flatMap(([, items]) => items)]];
 
   // Stats for summary strip
   const stats = useMemo(() => {
@@ -459,6 +530,39 @@ export default function Allowances() {
     });
   }, []);
 
+  // Column layout, per the app table standard: saved pixel widths on the sized
+  // columns, ONE filler column that soaks up the slack (Description), and a
+  // fixed actions column pinned right. The same template drives the header, the
+  // group header and the rows, so the group's EST/ACT/DIFF land in the very
+  // columns they summarise instead of floating right of them.
+  const cols = useResizableColumns("allowances", [
+    { key: "type", defaultWidth: 56 },
+    { key: "status", defaultWidth: 112 },
+    { key: "estimate", defaultWidth: 112 },
+    { key: "markup", defaultWidth: 80 },
+    { key: "actual", defaultWidth: 112 },
+    { key: "variance", defaultWidth: 112 },
+    { key: "notes", defaultWidth: 180 },
+  ]);
+  const w = (k: string, d: number) => `${cols.widthFor(k, d)}px`;
+  // Description is the filler; actions is the pinned trailing column.
+  const gridTemplate = [
+    "minmax(220px,1fr)",
+    w("type", 56),
+    w("status", 112),
+    w("estimate", 112),
+    w("markup", 80),
+    w("actual", 112),
+    w("variance", 112),
+    w("notes", 180),
+    "40px",
+  ].join(" ");
+  const rowMinWidth =
+    220 + cols.widthFor("type", 56) + cols.widthFor("status", 112) + cols.widthFor("estimate", 112) +
+    cols.widthFor("markup", 80) + cols.widthFor("actual", 112) + cols.widthFor("variance", 112) +
+    cols.widthFor("notes", 180) + 40;
+  const rowGrid = "grid gap-3 items-center";
+
   if (!currentProject) {
     return (
       <EmptyState
@@ -484,11 +588,6 @@ export default function Allowances() {
         ];
 
   const grandVariance = formatVariance(stats.totalActual - stats.totalEstimate);
-
-  // Column grid (must match between header / item / subtotal rows)
-  // [expand 24 | DESCRIPTION 1fr | TYPE 60 | STATUS 110 | ESTIMATE 110 | MARKUP 90 | ACTUAL 110 | VARIANCE 110 | NOTES 1fr | actions 32]
-  const colGrid =
-    "grid grid-cols-[24px_minmax(220px,2fr)_60px_110px_110px_90px_110px_110px_minmax(160px,1fr)_32px] gap-3 items-center";
 
   return (
     <div className="flex flex-col h-full bg-background rounded-lg border overflow-hidden">
@@ -524,34 +623,88 @@ export default function Allowances() {
         </div>
       )}
 
-      {/* Top bar (consolidated toolbar) */}
+      {/* Top bar. Filter first on the left, matching the rest of the app; the
+          old All/PC/PS segmented control now lives inside it as a facet. */}
       <div className="h-9 bg-background flex items-center justify-between px-4 gap-1 flex-shrink-0">
-        {/* PC / PS / All segmented toggle (left) */}
-        <div className="bg-muted/40 rounded-md p-0.5 h-7 flex items-center" role="tablist">
-          {(
-            [
-              { key: "all", label: "All" },
-              { key: "pc", label: "Prime Cost" },
-              { key: "ps", label: "Prov Sum" },
-            ] as const
-          ).map((seg) => {
-            const active = typeFilter === seg.key;
-            return (
-              <button
-                key={seg.key}
-                type="button"
-                onClick={() => setTypeFilter(seg.key)}
-                className={`h-6 px-2.5 rounded text-[11px] flex items-center ${
-                  active
-                    ? "bg-card shadow-sm text-foreground font-semibold"
-                    : "text-muted-foreground hover-elevate"
-                }`}
-                data-testid={`button-filter-${seg.key}`}
+        <div className="flex items-center gap-1">
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button
+                size="sm"
+                variant="ghost"
+                className={`h-7 px-2 gap-1.5 ${activeFilterCount ? "text-primary" : "text-muted-foreground"}`}
+                data-testid="button-filter-allowances"
               >
-                {seg.label}
-              </button>
-            );
-          })}
+                <SlidersHorizontal className="h-3.5 w-3.5" />
+                <span className="text-[11px]">Filter</span>
+                {activeFilterCount > 0 && (
+                  <span
+                    className="ml-0.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[9px] font-semibold text-white"
+                    data-testid="badge-active-filters"
+                  >
+                    {activeFilterCount}
+                  </span>
+                )}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent align="start" className="w-60 p-3">
+              <div className="space-y-3">
+                <div className="space-y-1.5">
+                  <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    Type
+                  </div>
+                  {([
+                    { key: "pc", label: "Prime Cost", count: pcCount },
+                    { key: "ps", label: "Provisional Sum", count: psCount },
+                  ] as const).map((t) => (
+                    <FilterCheckbox
+                      key={t.key}
+                      label={t.label}
+                      count={t.count}
+                      checked={typeFilter.has(t.key)}
+                      onToggle={() => toggleTypeFilter(t.key)}
+                      testId={`filter-type-${t.key}`}
+                    />
+                  ))}
+                </div>
+
+                <Separator />
+
+                <div className="space-y-1.5">
+                  <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    Status
+                  </div>
+                  {filterStatusOptions.map((s) => (
+                    <FilterCheckbox
+                      key={s.key}
+                      label={s.name}
+                      count={estimateScoped.filter((a) => a.item.allowanceStatus === s.key).length}
+                      checked={statusFilter.has(s.key)}
+                      onToggle={() => toggleStatusFilter(s.key)}
+                      testId={`filter-status-${s.key}`}
+                    />
+                  ))}
+                </div>
+
+                {activeFilterCount > 0 && (
+                  <>
+                    <Separator />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setStatusFilter(new Set());
+                        setTypeFilter(new Set());
+                      }}
+                      className="w-full rounded px-2 py-1.5 text-left text-[12px] text-muted-foreground hover-elevate active-elevate-2"
+                      data-testid="button-clear-filters"
+                    >
+                      Clear all filters
+                    </button>
+                  </>
+                )}
+              </div>
+            </PopoverContent>
+          </Popover>
         </div>
 
         {/* Right-side actions */}
@@ -589,48 +742,6 @@ export default function Allowances() {
                   <X className="h-3 w-3" />
                 </button>
               )}
-            </div>
-          </PopoverContent>
-        </Popover>
-
-        {/* Filter icon button (popover with status filter) */}
-        <Popover>
-          <PopoverTrigger asChild>
-            <Button
-              size="icon"
-              variant="ghost"
-              className={`h-7 w-7 ${statusFilter ? "text-primary" : "text-muted-foreground"}`}
-              data-testid="button-filter-allowances"
-            >
-              <SlidersHorizontal className="h-3.5 w-3.5" />
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent align="end" className="w-56 p-3">
-            <div className="space-y-2">
-              <label className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                Status
-              </label>
-              <Select
-                value={statusFilter || "all"}
-                onValueChange={(v) => setStatusFilter(v === "all" ? "" : v)}
-              >
-                <SelectTrigger
-                  className="w-full h-8 text-[12px] bg-card border-border rounded-md"
-                  data-testid="select-status-filter"
-                >
-                  <SelectValue>
-                    {statusFilter ? getStatusInfo(statusFilter).name : "All Statuses"}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Statuses</SelectItem>
-                  {filterStatusOptions.map((s) => (
-                    <SelectItem key={s.key} value={s.key}>
-                      {s.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
             </div>
           </PopoverContent>
         </Popover>
@@ -730,19 +841,35 @@ export default function Allowances() {
 
       {/* Table */}
       <div className="flex-1 overflow-auto">
-        {/* Header (sticky, 34px) */}
+       <div style={{ minWidth: `${rowMinWidth}px` }}>
+        {/* Header (sticky, 34px). Each sized column carries a drag handle on its
+            right edge; Description is the filler and isn't dragged. */}
         <div
-          className={`${colGrid} bg-muted border-b border-border h-[34px] px-4 text-[10px] uppercase tracking-wider font-semibold text-muted-foreground sticky top-0 z-10`}
+          className={`${rowGrid} bg-muted border-b border-border h-[34px] px-4 text-[10px] uppercase tracking-wider font-semibold text-muted-foreground sticky top-0 z-10`}
+          style={{ gridTemplateColumns: gridTemplate }}
         >
-          <div></div>
-          <div>Description</div>
-          <div>Type</div>
-          <div>Status</div>
-          <div className="text-right">Estimate</div>
-          <div className="text-right">Markup</div>
-          <div className="text-right">Actual</div>
-          <div className="text-right">Variance</div>
-          <div>Notes</div>
+          <div className="pl-6">Description</div>
+          <div className="relative">Type
+            <ColResizeHandle testId="resize-type" onStart={(e) => cols.startResize("type", e.clientX, cols.widthFor("type", 56))} />
+          </div>
+          <div className="relative">Status
+            <ColResizeHandle testId="resize-status" onStart={(e) => cols.startResize("status", e.clientX, cols.widthFor("status", 112))} />
+          </div>
+          <div className="relative text-right">Estimate
+            <ColResizeHandle testId="resize-estimate" onStart={(e) => cols.startResize("estimate", e.clientX, cols.widthFor("estimate", 112))} />
+          </div>
+          <div className="relative text-right">Markup
+            <ColResizeHandle testId="resize-markup" onStart={(e) => cols.startResize("markup", e.clientX, cols.widthFor("markup", 80))} />
+          </div>
+          <div className="relative text-right">Actual
+            <ColResizeHandle testId="resize-actual" onStart={(e) => cols.startResize("actual", e.clientX, cols.widthFor("actual", 112))} />
+          </div>
+          <div className="relative text-right">Variance
+            <ColResizeHandle testId="resize-variance" onStart={(e) => cols.startResize("variance", e.clientX, cols.widthFor("variance", 112))} />
+          </div>
+          <div className="relative">Notes
+            <ColResizeHandle testId="resize-notes" onStart={(e) => cols.startResize("notes", e.clientX, cols.widthFor("notes", 180))} />
+          </div>
           <div></div>
         </div>
 
@@ -757,7 +884,7 @@ export default function Allowances() {
             description={
               allowances.length === 0
                 ? "Add Prime Cost or Provisional Sum items in your estimates to track allowances here."
-                : searchTerm || statusFilter || typeFilter !== "all"
+                : searchTerm || activeFilterCount > 0
                   ? "Try adjusting your search or filters."
                   : "No allowances found for the selected estimate."
             }
@@ -778,41 +905,46 @@ export default function Allowances() {
                 <button
                   type="button"
                   onClick={() => toggleGroup(groupName)}
-                  className="w-full flex items-center gap-3 px-4 h-10 bg-muted/30 border-y border-border hover-elevate text-left"
+                  className={`${rowGrid} w-full px-4 h-10 bg-muted/30 border-y border-border hover-elevate text-left`}
+                  style={{ gridTemplateColumns: gridTemplate }}
                   data-testid={`group-header-${groupIdx}`}
                 >
-                  {collapsed ? (
-                    <ChevronRight className="w-4 h-4 text-muted-foreground" />
-                  ) : (
-                    <ChevronDown className="w-4 h-4 text-muted-foreground" />
-                  )}
-                  <FolderOpen className="w-4 h-4 text-muted-foreground" />
-                  <span className="text-[13px] font-semibold text-foreground">{groupName}</span>
-
-                  <div className="ml-auto flex items-center gap-6">
-                    <span className="text-[11px] text-muted-foreground tabular-nums">
-                      EST <span className="text-foreground font-medium">{formatCurrency(groupEst)}</span>
-                    </span>
-                    {groupAct > 0 && (
-                      <span className="text-[11px] text-foreground tabular-nums">
-                        ACT <span className="font-medium">{formatCurrency(groupAct)}</span>
-                      </span>
+                  {/* Uses the row grid, so each subtotal sits UNDER the column it
+                      totals. It used to be right-aligned free text floating off
+                      the end of the row, which never lined up with anything. */}
+                  <span className="flex items-center gap-2 min-w-0">
+                    {collapsed ? (
+                      <ChevronRight className="w-4 h-4 flex-shrink-0 text-muted-foreground" />
+                    ) : (
+                      <ChevronDown className="w-4 h-4 flex-shrink-0 text-muted-foreground" />
                     )}
-                    <span
-                      className={`text-[12px] font-semibold tabular-nums ${
-                        groupVar.tone === "under"
-                          ? "text-[hsl(var(--sage))]"
-                          : groupVar.tone === "over"
-                            ? "text-[hsl(var(--coral))]"
-                            : "text-muted-foreground"
-                      }`}
-                    >
-                      {groupVar.text}
-                    </span>
-                    <span className="bg-muted/40 text-muted-foreground rounded-full text-[10px] font-medium px-2 py-0.5">
+                    <span className="text-[13px] font-semibold text-foreground truncate">{groupName}</span>
+                    <span className="flex-shrink-0 bg-muted/40 text-muted-foreground rounded-full text-[10px] font-medium px-2 py-0.5">
                       {items.length}
                     </span>
-                  </div>
+                  </span>
+                  <span />
+                  <span />
+                  <span className="text-[11px] font-medium text-foreground tabular-nums text-right">
+                    {formatCurrency(groupEst)}
+                  </span>
+                  <span />
+                  <span className="text-[11px] font-medium text-foreground tabular-nums text-right">
+                    {groupAct > 0 ? formatCurrency(groupAct) : ""}
+                  </span>
+                  <span
+                    className={`text-[11px] font-semibold tabular-nums text-right ${
+                      groupVar.tone === "under"
+                        ? "text-[hsl(var(--sage))]"
+                        : groupVar.tone === "over"
+                          ? "text-[hsl(var(--coral))]"
+                          : "text-muted-foreground"
+                    }`}
+                  >
+                    {groupAct > 0 ? groupVar.text : ""}
+                  </span>
+                  <span />
+                  <span />
                 </button>
                 )}
 
@@ -833,12 +965,11 @@ export default function Allowances() {
                       return (
                         <div
                           key={item.id}
-                          className={`${colGrid} h-[44px] px-4 border-b border-border/40 ${variantBg} hover-elevate cursor-pointer`}
+                          className={`${rowGrid} h-[44px] px-4 border-b border-border/40 ${variantBg} hover-elevate cursor-pointer`}
+                          style={{ gridTemplateColumns: gridTemplate }}
                           onClick={() => setLocation(`/projects/${projectId}/allowances/${item.id}`)}
                           data-testid={`row-allowance-${item.id}`}
                         >
-                          <div></div>
-
                           {/* Description */}
                           <div className="text-[12px] text-foreground pl-6 truncate flex items-center gap-1.5" data-testid={`text-name-${item.id}`}>
                             <span className={`truncate ${item.notIncluded ? "line-through text-muted-foreground" : ""}`}>
@@ -956,6 +1087,7 @@ export default function Allowances() {
             );
           })
         )}
+       </div>
       </div>
 
       {/* Sticky grand total footer (48px) */}
