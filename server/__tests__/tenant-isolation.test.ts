@@ -475,7 +475,7 @@ async function main() {
     await controlOk("GET PO import estimate-items", "GET", `/api/purchase-orders/import/estimate-items/${estimateA.id}`);
     await controlOk("GET /api/client-invoices/:id/estimates", "GET", `/api/client-invoices/${clientInvoiceA.id}/estimates`);
 
-    // ---- Field Settings (per company — migration 0037) ----
+    // ---- Field Settings (per company — migration 0040) ----
     // These were GLOBAL: one shared set of units / statuses / rooms for the
     // whole deployment, so any customer's admin renamed options for everyone.
     await test("field settings: each company gets its OWN seeded set", async () => {

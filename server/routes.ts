@@ -3499,7 +3499,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Field Settings are per company (migration 0037). Every route below resolves
+  // Field Settings are per company (migration 0040). Every route below resolves
   // the caller's company and passes it into storage, so one customer can never
   // read or edit another's units / statuses / rooms. Returns null and sends 401
   // when there's no company on the session.

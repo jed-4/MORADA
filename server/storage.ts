@@ -602,7 +602,7 @@ export interface IStorage {
   updateSystemConfiguration(config: Partial<InsertSystemConfiguration>): Promise<SystemConfiguration | undefined>;
 
   // Field Categories CRUD (Buildern-style)
-  // Field Settings are per company (migration 0037) — companyId is REQUIRED on
+  // Field Settings are per company (migration 0040) — companyId is REQUIRED on
   // every read and write, so one customer can never see or edit another's
   // units / statuses / rooms.
   getFieldCategories(companyId: string): Promise<FieldCategory[]>;
@@ -1642,7 +1642,7 @@ function getDefaultActionsForRole(
 }
 
 // MemStorage is the in-memory fallback and has no real company records,
-// but Field Settings are company-scoped since migration 0037, so its seeded
+// but Field Settings are company-scoped since migration 0040, so its seeded
 // categories/options need a stable owner id to satisfy the schema.
 const MEM_COMPANY_ID = "mem-company";
 
@@ -7541,7 +7541,7 @@ export class DbStorage implements IStorage {
   }
 
   // The canonical built-in Field Settings categories. Extracted so a NEW
-  // company can be seeded with the same set — before migration 0037 these
+  // company can be seeded with the same set — before migration 0040 these
   // rows were global and seeded exactly once for the whole deployment.
   private getDefaultCategoryDefinitions(now: Date): any[] {
     return [
@@ -7622,7 +7622,7 @@ export class DbStorage implements IStorage {
 
   // Give a brand-new company its own copy of every built-in category and its
   // options. Ids are generated per company; the hardcoded ids in the
-  // definitions are only meaningful to the pre-0037 global rows.
+  // definitions are only meaningful to the pre-0040 global rows.
   async seedFieldSettingsForCompany(companyId: string): Promise<void> {
     const now = new Date();
     try {
@@ -7630,7 +7630,7 @@ export class DbStorage implements IStorage {
       // code-defined defaults below cover only 6 of the 18 built-in categories
       // that real deployments carry, so seeding purely from them would hand a
       // new customer a thinner list than everyone else has.
-      // Any other company will do — post-0037 every one carries the same
+      // Any other company will do — post-0040 every one carries the same
       // built-in set, so the first match is as canonical as any.
       const template = await db
         .select({ companyId: schema.fieldCategories.companyId })
@@ -13895,7 +13895,7 @@ export class DbStorage implements IStorage {
     // Seed default roles for the company and get General Manager roleId
     const generalManagerRoleId = await this.seedDefaultRolesForCompany(newCompany.id);
 
-    // Field Settings are per company (migration 0037) — a new company starts
+    // Field Settings are per company (migration 0040) — a new company starts
     // with its own copy of the built-in units / statuses / rooms rather than
     // sharing one global set with every other customer.
     await this.seedFieldSettingsForCompany(newCompany.id);
@@ -14096,8 +14096,8 @@ export class DbStorage implements IStorage {
       return created;
     }
   }
-  // ── Field Settings (per company — migration 0037) ──────────────────────────
-  // Every method takes companyId and filters on it. Before 0037 these tables
+  // ── Field Settings (per company — migration 0040) ──────────────────────────
+  // Every method takes companyId and filters on it. Before 0040 these tables
   // had no company column at all, so one shared list of units / statuses /
   // rooms served every customer on the deployment.
 

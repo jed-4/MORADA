@@ -1446,7 +1446,7 @@ export const fieldCategories = pgTable("field_categories", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   // Field Settings are PER COMPANY. They used to be global — one shared list of
   // units / statuses / rooms for every company on the deployment, so a customer
-  // renaming an option renamed it for everyone. Migration 0037 cloned a set per
+  // renaming an option renamed it for everyone. Migration 0040 cloned a set per
   // company; `key` is now unique per company, not globally.
   companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
   key: text("key").notNull(), // e.g., "task.status", "task.priority"
@@ -1476,7 +1476,7 @@ export type FieldCategory = typeof fieldCategories.$inferSelect;
 export const fieldOptions = pgTable("field_options", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   // Denormalised from the parent category so option reads/writes can be
-  // company-scoped without a join. See migration 0037.
+  // company-scoped without a join. See migration 0040.
   companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
   categoryId: varchar("category_id").notNull().references(() => fieldCategories.id, { onDelete: "cascade" }),
   // NOTE: this self-reference has no `(): AnyPgColumn` return type, so
