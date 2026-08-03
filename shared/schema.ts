@@ -985,6 +985,16 @@ export const estimateItems = pgTable("estimate_items", {
   costCategoryId: varchar("cost_category_id").references(() => costCategories.id, { onDelete: "set null" }), // Optional direct category link
   allowance: text("allowance").notNull().default("None"), // "None" | "Prime Cost" | "Provisional Sum"
   allowanceStatus: text("allowance_status").notNull().default("pending"), // "pending" | "in_progress" | "finalized"
+  // "This item is not included": the allowance is excluded, so it prices at $0
+  // everywhere (see shared/pricing.ts) WITHOUT overwriting unitCostExTax /
+  // priceIncTax. The original amount survives, so the exclusion is reversible
+  // and a deduction variation can still credit the client the contracted value.
+  notIncluded: boolean("not_included").notNull().default(false),
+  notIncludedAt: timestamp("not_included_at"),
+  // The line's priceIncTax at the moment it was excluded. Only meaningful for a
+  // flat allowance (unitCostExTax = 0), where the cache is the sole record of
+  // the typed amount — a priced line rebuilds from qty × unitCost on restore.
+  notIncludedOriginalPriceIncTax: doublePrecision("not_included_original_price_inc_tax"),
   pcMarkupPercent: integer("pc_markup_percent"), // Markup % for PC items (separate from estimate markup)
   quantity: doublePrecision("quantity").notNull().default(1),
   wastagePercent: integer("wastage_percent").notNull().default(0), // Wastage percentage (0, 10, 15, 20, etc.)

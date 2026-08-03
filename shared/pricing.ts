@@ -60,6 +60,13 @@ export interface EstimateItemPriceInput {
    * Defaults to 0. Fixed-price (unitCost 0) lines ignore it.
    */
   wastagePercent?: number | null | undefined;
+  /**
+   * "This item is not included" — the allowance was excluded from the job. The
+   * line prices at $0 while its original unitCost / quantity / cached price stay
+   * untouched on the row, so the exclusion is reversible and the contracted
+   * amount is still available to a deduction variation. Defaults to false.
+   */
+  notIncluded?: boolean | null | undefined;
 }
 
 export interface EstimateItemPrice {
@@ -87,6 +94,23 @@ export function computeEstimateItemPrice(input: EstimateItemPriceInput): Estimat
   const wastagePercent = Number(input.wastagePercent ?? 0) || 0;
   const itemMarkup = input.markupPercent;
   const taxRate = Number(input.taxRate ?? 10);
+
+  // Excluded allowance: every amount is $0. Checked before the fixed-price
+  // branch anywhere this is consulted, so a flat PC sum can't preserve its typed
+  // amount past an exclusion — that preservation is exactly what made an
+  // allowance impossible to zero.
+  if (input.notIncluded) {
+    return {
+      builderCost: 0,
+      effectiveMarkupPercent: 0,
+      lineMarkupAmount: 0,
+      lineExTax: 0,
+      taxAmount: 0,
+      lineIncTax: 0,
+      unitCostIncTax: round2((Number(input.unitCostExTax) || 0) * (1 + taxRate / 100)),
+      builderCostIncTax: 0,
+    };
+  }
 
   // Wastage inflates the quantity actually purchased, so it raises the builder
   // cost. Applied to the quantity BEFORE markup and GST. A zero-quantity line
@@ -158,6 +182,8 @@ export interface StoredPriceResolveInput {
    * (unitCost === 0) lines — this is what must NOT be wiped to 0.
    */
   existingPriceIncTax?: number | null;
+  /** "This item is not included" — forces the stored price to $0. */
+  notIncluded?: boolean | null;
 }
 
 /**
@@ -182,6 +208,12 @@ export function resolveEstimateStoredPrice(
   input: StoredPriceResolveInput,
 ): { priceIncTax: number; taxAmount: number } {
   const taxRate = Number(input.taxRate ?? 10);
+
+  // Excluded allowance: stored price is $0. This MUST come before the
+  // fixed-price branch below, which would otherwise preserve the typed amount.
+  if (input.notIncluded) {
+    return { priceIncTax: 0, taxAmount: 0 };
+  }
 
   if (!isFixedPriceLine(input.unitCostExTax)) {
     const { taxAmount, lineIncTax } = computeEstimateItemPrice({
@@ -219,6 +251,8 @@ export interface EstimateItemSummaryInput {
   priceIncTax?: number | null;
   /** Used only as a fallback for fixed-price (unitCost=0) lines. */
   taxAmount?: number | null;
+  /** "This item is not included" — the line contributes $0 to every total. */
+  notIncluded?: boolean | null;
 }
 
 export interface EstimateSummary {
@@ -254,6 +288,8 @@ export interface EstimateSummary {
  * Excludes BOTH per-line markup and the global project markup, and excludes GST.
  */
 export function estimateItemBuilderCostExTax(item: EstimateItemSummaryInput): number {
+  // An excluded allowance costs the builder nothing.
+  if (item.notIncluded) return 0;
   const unitCost = Number(item.unitCostExTax ?? 0);
   const qty = Number(item.quantity ?? 0);
   if (!isFixedPriceLine(unitCost)) {
@@ -314,6 +350,11 @@ export function computeEstimateSummary(
   let sumLineIncTax = 0;
 
   for (const item of items) {
+    // Excluded allowance: contributes nothing to cost, markup, subtotal or the
+    // integrity reconstruction. Skipped before the fixed-price branch, which
+    // would otherwise add back its cached amount.
+    if (item.notIncluded) continue;
+
     const unitCost = Number(item.unitCostExTax ?? 0);
     const qty = Number(item.quantity ?? 0);
     const computed = computeEstimateItemPrice({

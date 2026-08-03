@@ -322,4 +322,79 @@ check("wastage flows into the summary and the builder-cost helper", () => {
   assert.strictEqual(estimateItemBuilderCostExTax(items[0]), 1100);
 });
 
+// ---------------------------------------------------------------------------
+// "This item is not included": an excluded allowance prices at $0 EVERYWHERE.
+// The fixed-price branch preserves a typed amount by design, which is exactly
+// what made an allowance impossible to zero — so these pin that the exclusion
+// wins over that preservation.
+// ---------------------------------------------------------------------------
+check("not-included FLAT allowance prices to $0 despite its typed amount", () => {
+  const resolved = resolveEstimateStoredPrice({
+    unitCostExTax: 0,
+    quantity: 1,
+    markupPercent: null,
+    projectMarkupPercent: 20,
+    taxRate: 10,
+    existingPriceIncTax: 5500, // typed PC sum — normally preserved
+    notIncluded: true,
+  });
+  assert.strictEqual(resolved.priceIncTax, 0);
+  assert.strictEqual(resolved.taxAmount, 0);
+});
+
+check("not-included PRICED allowance prices to $0 instead of recomputing", () => {
+  const resolved = resolveEstimateStoredPrice({
+    unitCostExTax: 250,
+    quantity: 4,
+    markupPercent: 15,
+    projectMarkupPercent: 20,
+    taxRate: 10,
+    existingPriceIncTax: 1265,
+    notIncluded: true,
+  });
+  assert.strictEqual(resolved.priceIncTax, 0);
+  assert.strictEqual(resolved.taxAmount, 0);
+});
+
+check("not-included line contributes $0 to the summary and builder cost", () => {
+  const excluded: EstimateItemSummaryInput = {
+    unitCostExTax: 0, quantity: 1, markupPercent: null,
+    priceIncTax: 5500, taxAmount: 500, notIncluded: true,
+  };
+  const kept: EstimateItemSummaryInput = {
+    unitCostExTax: 0, quantity: 1, markupPercent: null,
+    priceIncTax: 2200, taxAmount: 200,
+  };
+  const s = computeEstimateSummary([excluded, kept], { projectMarkupPercent: 0, taxRate: 10 });
+  assert.strictEqual(estimateItemBuilderCostExTax(excluded), 0);
+  // Only the kept allowance survives: 2000 ex + 10% GST.
+  assert.strictEqual(s.builderCostTotal, 2000);
+  assert.strictEqual(s.total, 2200);
+});
+
+check("excluding an allowance drops the estimate total by exactly its amount", () => {
+  const items: EstimateItemSummaryInput[] = [
+    { unitCostExTax: 100, quantity: 10, markupPercent: 0 },           // 1000 ex
+    { unitCostExTax: 0, quantity: 1, markupPercent: null, priceIncTax: 5500, taxAmount: 500 },
+  ];
+  const before = computeEstimateSummary(items, { projectMarkupPercent: 0, taxRate: 10 });
+  const after = computeEstimateSummary(
+    [items[0], { ...items[1], notIncluded: true }],
+    { projectMarkupPercent: 0, taxRate: 10 },
+  );
+  assert.strictEqual(before.total, 6600); // (1000 + 5000) * 1.1
+  assert.strictEqual(after.total, 1100);
+  assert.strictEqual(round2(before.total - after.total), 5500);
+});
+
+check("not-included is ignored on a line that is included", () => {
+  // Guards against the flag leaking in as a truthy default somewhere.
+  const resolved = resolveEstimateStoredPrice({
+    unitCostExTax: 0, quantity: 1, markupPercent: null,
+    projectMarkupPercent: 0, taxRate: 10,
+    existingPriceIncTax: 5500, notIncluded: false,
+  });
+  assert.strictEqual(resolved.priceIncTax, 5500);
+});
+
 console.log(`\nestimate-pricing: ${passed} checks passed\n`);
