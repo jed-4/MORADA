@@ -379,6 +379,19 @@ async function pushBillAttachmentsToXero(
   }
 }
 
+// The tracking-category selects in Settings use the literal string "none" as
+// their empty sentinel, and PATCH /api/xero/settings used to persist it as-is
+// (`"none" || null` is `"none"`). A connection saved that way looks configured
+// but points at a category ID Xero has never heard of, so every push resolved
+// no tracking option and the document went across untagged. Treat the sentinel
+// as unset on read so already-affected connections behave correctly without
+// needing the settings re-saved.
+const trackingCategoryId = (raw: unknown): string | undefined => {
+  const v = typeof raw === "string" ? raw.trim() : "";
+  if (!v || v === "none" || v === "__none__") return undefined;
+  return v;
+};
+
 export async function pushBillToXeroInternal(
   billId: string,
   companyId: string,
@@ -526,9 +539,18 @@ export async function pushBillToXeroInternal(
     // else a name match. When nothing lines up the push proceeds without job
     // tracking and carries a warning (stored via writeSyncStatus and returned
     // to the caller) instead of failing or silently dropping it.
+    const tc1Id = trackingCategoryId((connection as any).trackingCategory1Id);
+    const tc2Id = trackingCategoryId((connection as any).trackingCategory2Id);
+
     let projectXeroTrackingOptionId: string | undefined;
     let trackingWarning: string | undefined;
-    if (bill.projectId && (connection as any).trackingCategory2Id) {
+    if (bill.projectId && !tc2Id) {
+      // The connection has no job tracking category chosen, so every bill on a
+      // project pushes with no job tracking at all. This used to be entirely
+      // silent — the whole block below was skipped and nothing was recorded.
+      trackingWarning =
+        "Pushed without job tracking — no Xero job tracking category is selected for this organisation. Choose one in Settings → Integrations → Xero → Tracking Categories.";
+    } else if (bill.projectId && tc2Id) {
       try {
         const project = await storage.getProject(bill.projectId);
         if (project) {
@@ -537,7 +559,7 @@ export async function pushBillToXeroInternal(
           } else {
             const option = await xeroService.findTrackingOptionByName(
               connection.id,
-              (connection as any).trackingCategory2Id,
+              tc2Id,
               project.name,
             );
             if (option?.TrackingOptionID) {
@@ -552,12 +574,15 @@ export async function pushBillToXeroInternal(
           }
         }
       } catch (e) {
+        // A lookup failure (expired token, Xero 5xx, missing scope) also means
+        // the bill goes across untracked — warn rather than only logging.
         console.error("Failed to resolve Xero tracking option for project:", e);
+        trackingWarning = `Pushed without job tracking — couldn't read tracking options from Xero (${(e as any)?.message || "unknown error"}).`;
       }
     }
 
     let costCodeMap: Record<string, any> = {};
-    if ((connection as any).trackingCategory1Id) {
+    if (tc1Id) {
       try {
         const allCostCodes = await storage.getCostCodes(companyId);
         for (const cc of allCostCodes) costCodeMap[cc.id] = cc;
@@ -580,18 +605,18 @@ export async function pushBillToXeroInternal(
       if (item.tax === "No GST" || item.tax === "NONE") taxType = "NONE";
 
       const tracking: any[] = [];
-      if (item.costCodeId && (connection as any).trackingCategory1Id) {
+      if (item.costCodeId && tc1Id) {
         const costCode = costCodeMap[item.costCodeId];
         if (costCode?.xeroTrackingOptionId) {
           tracking.push({
-            TrackingCategoryID: (connection as any).trackingCategory1Id,
+            TrackingCategoryID: tc1Id,
             TrackingOptionID: costCode.xeroTrackingOptionId,
           });
         }
       }
-      if (projectXeroTrackingOptionId && (connection as any).trackingCategory2Id) {
+      if (projectXeroTrackingOptionId && tc2Id) {
         tracking.push({
-          TrackingCategoryID: (connection as any).trackingCategory2Id,
+          TrackingCategoryID: tc2Id,
           TrackingOptionID: projectXeroTrackingOptionId,
         });
       }
@@ -36898,11 +36923,17 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
 
       const { trackingCategory1Id, trackingCategory1Name, trackingCategory2Id, trackingCategory2Name } = req.body;
 
+      // The client's selects use "none" as their empty sentinel. Persisting it
+      // verbatim left the connection looking configured while pointing at a
+      // category ID Xero doesn't have, so bills pushed with no tracking at all.
+      const tc1 = trackingCategoryId(trackingCategory1Id);
+      const tc2 = trackingCategoryId(trackingCategory2Id);
+
       const updated = await storage.updateXeroConnection(connection.id, {
-        trackingCategory1Id: trackingCategory1Id || null,
-        trackingCategory1Name: trackingCategory1Name || null,
-        trackingCategory2Id: trackingCategory2Id || null,
-        trackingCategory2Name: trackingCategory2Name || null,
+        trackingCategory1Id: tc1 || null,
+        trackingCategory1Name: (tc1 && trackingCategory1Name) || null,
+        trackingCategory2Id: tc2 || null,
+        trackingCategory2Name: (tc2 && trackingCategory2Name) || null,
       });
 
       res.json({ success: true, connection: updated });
