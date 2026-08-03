@@ -1779,14 +1779,10 @@ export default function AllowanceDetail() {
               actionLabel="+ Add Bills"
               onAction={() => setIsPsBillModalOpen(true)}
             >
-              {allocatedBills.length === 0 && pendingPsBillItems.length === 0 ? (
-                <EmptyState
-                  variant="inline"
-                  title="No bills added yet"
-                  description={"Click “+ Add Bills” to allocate supplier invoices."}
-                  className="py-6"
-                />
-              ) : (
+              {/* No empty-state card: an empty table still shows its header row
+                  and the section's add action, exactly like Cost Entries /
+                  Custom Lines. One pattern for every table on the page. */}
+              {(
                 <div className="pt-2">
                  <div className="overflow-x-auto">
                   <div style={{ minWidth: `${billCols.minWidth}px` }}>
@@ -1902,15 +1898,18 @@ export default function AllowanceDetail() {
                   })}
                   </div>
                  </div>
-                  {(allocatedBills.length > 0 || pendingPsBillItems.length > 0) && (
-                    <div className="flex justify-between items-center pt-2">
-                      <span
-                        className="text-xs font-medium cursor-pointer"
-                        style={{ color: "hsl(var(--primary))" }}
-                        onClick={() => setIsPsBillModalOpen(true)}
-                      >
-                        + Add more
-                      </span>
+                  {/* Add affordance always present (like LineItemsTable's add
+                      row); the subtotal only once there's something to total. */}
+                  <div className="flex justify-between items-center pt-2">
+                    <span
+                      className="text-xs font-medium cursor-pointer"
+                      style={{ color: "hsl(var(--primary))" }}
+                      onClick={() => setIsPsBillModalOpen(true)}
+                      data-testid="button-add-ps-bill-inline"
+                    >
+                      {allocatedBills.length > 0 || pendingPsBillItems.length > 0 ? "+ Add more" : "+ Add bill"}
+                    </span>
+                    {(allocatedBills.length > 0 || pendingPsBillItems.length > 0) && (
                       <p className="text-xs font-semibold text-foreground">
                         Subtotal:{" "}
                         {formatCurrency(
@@ -1919,8 +1918,8 @@ export default function AllowanceDetail() {
                         )}{" "}
                         ex
                       </p>
-                    </div>
-                  )}
+                    )}
+                  </div>
                 </div>
               )}
             </SectionCard>
@@ -1935,9 +1934,9 @@ export default function AllowanceDetail() {
               actionLabel="+ Add Timesheets"
               onAction={() => setIsTimesheetModalOpen(true)}
             >
-              {sectionTimesheetRows.length === 0 ? (
-                <EmptyState variant="inline" title="No timesheets added yet." className="py-6" />
-              ) : (
+              {/* Header row always shown, no empty-state card — same pattern as
+                  the other tables on this page. */}
+              {(
                 <div className="pt-2">
                  <div className="overflow-x-auto">
                   <div style={{ minWidth: `${tsCols.minWidth}px` }}>
@@ -2334,14 +2333,9 @@ export default function AllowanceDetail() {
               actionLabel="+ Select from Bills"
               onAction={() => setIsBillModalOpen(true)}
             >
-              {allocatedBills.length === 0 && pendingPcBillItems.length === 0 ? (
-                <EmptyState
-                  variant="inline"
-                  title="No bills allocated yet"
-                  description={"Click “+ Select from Bills” to allocate supplier invoice lines."}
-                  className="py-6"
-                />
-              ) : (
+              {/* Same as Cost Entries: header row always shown, add action in
+                  the section header — no empty-state card. */}
+              {(
                 <div className="pt-2">
                  <div className="overflow-x-auto">
                   <div style={{ minWidth: `${billCols.minWidth}px` }}>
@@ -2456,6 +2450,28 @@ export default function AllowanceDetail() {
                   })}
                   </div>
                  </div>
+                  {/* Inline add, always present — mirrors the add row on Cost
+                      Entries so an empty table still offers the action. */}
+                  <div className="flex justify-between items-center pt-2">
+                    <span
+                      className="text-xs font-medium cursor-pointer"
+                      style={{ color: "hsl(var(--primary))" }}
+                      onClick={() => setIsBillModalOpen(true)}
+                      data-testid="button-add-pc-bill-inline"
+                    >
+                      {allocatedBills.length > 0 || pendingPcBillItems.length > 0 ? "+ Add more" : "+ Add bill"}
+                    </span>
+                    {(allocatedBills.length > 0 || pendingPcBillItems.length > 0) && (
+                      <p className="text-xs font-semibold text-foreground">
+                        Subtotal:{" "}
+                        {formatCurrency(
+                          allocatedBills.reduce((s, b) => s + b.amountExGst, 0) +
+                            pendingPcBillItems.reduce((s, li) => s + li.totalExGst, 0)
+                        )}{" "}
+                        ex
+                      </p>
+                    )}
+                  </div>
                 </div>
               )}
             </SectionCard>
