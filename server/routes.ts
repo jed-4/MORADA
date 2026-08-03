@@ -250,6 +250,41 @@ function isHoliday(d: Date, holidays: Set<string>): boolean {
 }
 
 /**
+ * Snapshot the answerable configuration of a checklist template item onto a new
+ * instance item. Every field the template author can set must be listed here —
+ * previously only description/tooltip/order were copied, so a template item
+ * configured as a text or choice question silently became a plain checkbox the
+ * moment it was instantiated, and the template editor's response-type UI had no
+ * effect on any live checklist.
+ *
+ * Not carried across: `assignedRoleId`. Template items name a *role*, instance
+ * items hold a concrete `assigneeId` (a user), and there is no column to keep
+ * the role on the instance — resolving role → user needs a product decision.
+ *
+ * Used by both instantiation paths (manual create, and status-trigger
+ * auto-create) so they can't drift apart again.
+ */
+function instanceItemFieldsFromTemplate(templateItem: {
+  description: string;
+  tooltip?: string | null;
+  order?: number | null;
+  responseType?: string | null;
+  responseOptions?: unknown;
+}) {
+  return {
+    description: templateItem.description,
+    tooltip: templateItem.tooltip ?? null,
+    order: templateItem.order ?? 0,
+    responseType: (templateItem.responseType ?? "checkbox") as
+      "checkbox" | "text" | "single_choice" | "multiple_choice",
+    responseOptions: Array.isArray(templateItem.responseOptions)
+      ? (templateItem.responseOptions as string[])
+      : [],
+    status: "pending" as const,
+  };
+}
+
+/**
  * Internal helper: push a bill to Xero (create or update) and update its sync status columns.
  * Returns a structured result so callers (HTTP route, auto-push, webhook) can handle uniformly.
  */
@@ -4773,11 +4808,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
                       groupId: instanceGroup.id,
                       groupName: group.name,
                       groupOrder: group.order,
-                      description: templateItem.description,
-                      tooltip: templateItem.tooltip,
-                      order: templateItem.order,
-                      isRequired: templateItem.isRequired ?? false,
-                      status: "pending",
+                      ...instanceItemFieldsFromTemplate(templateItem),
                     });
                   }
                 }
@@ -24832,6 +24863,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       for (const template of templates) {
         const groups = await storage.getChecklistTemplateGroups(template.id);
         
+        // Keep every row the same shape so the CSV has stable columns even when
+        // a template or group is empty.
+        const emptyItemColumns = { itemDescription: "", itemTooltip: "", responseType: "", responseOptions: "" };
+
         if (groups.length === 0) {
           // Template with no groups
           exportData.push({
@@ -24839,12 +24874,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
             templateDescription: template.description || "",
             type: template.type,
             groupName: "",
-            itemDescription: "",
+            ...emptyItemColumns,
           });
         } else {
           for (const group of groups) {
             const items = await storage.getChecklistTemplateItems(group.id);
-            
+
             if (items.length === 0) {
               // Group with no items
               exportData.push({
@@ -24852,7 +24887,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 templateDescription: template.description || "",
                 type: template.type,
                 groupName: group.name,
-                itemDescription: "",
+                ...emptyItemColumns,
               });
             } else {
               for (const item of items) {
@@ -24862,6 +24897,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
                   type: template.type,
                   groupName: group.name,
                   itemDescription: item.description,
+                  // Emit the full item config so export → import round-trips
+                  // without flattening every question back to a checkbox.
+                  itemTooltip: item.tooltip || "",
+                  responseType: item.responseType || "checkbox",
+                  responseOptions: Array.isArray(item.responseOptions)
+                    ? (item.responseOptions as string[]).join(" | ")
+                    : "",
                 });
               }
             }
@@ -24973,6 +25015,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         name: `${originalTemplate.name} (Copy)`,
         description: originalTemplate.description,
         type: originalTemplate.type as "Task" | "Job" | "Estimation" | "Lead",
+        visibleToRoles: Array.isArray(originalTemplate.visibleToRoles)
+          ? (originalTemplate.visibleToRoles as string[])
+          : [],
+        defaultVisibility: (originalTemplate.defaultVisibility ?? "everyone") as
+          "everyone" | "assignee_only",
         companyId: (req.user as any)?.companyId,
       });
       
@@ -24989,10 +25036,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
         
         const items = await storage.getChecklistTemplateItems(group.id);
         for (const item of items) {
+          // Copy the whole item, not just description/order — a duplicate that
+          // silently drops response types, options, tooltips and role
+          // assignments isn't a duplicate.
           await storage.createChecklistTemplateItem({
             groupId: duplicateGroup.id,
             description: item.description,
+            tooltip: item.tooltip ?? null,
             order: item.order,
+            responseType: (item.responseType ?? "checkbox") as
+              "checkbox" | "text" | "single_choice" | "multiple_choice",
+            responseOptions: Array.isArray(item.responseOptions)
+              ? (item.responseOptions as string[])
+              : [],
+            assignedRoleId: item.assignedRoleId ?? null,
           });
         }
       }
@@ -25320,12 +25377,43 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return "Job"; // Default for unrecognized values
       };
 
+      type ResponseType = "checkbox" | "text" | "single_choice" | "multiple_choice";
+
+      // Accept the response-type column the export now emits, tolerating the
+      // spellings a human is likely to type in a spreadsheet. Anything
+      // unrecognised falls back to a plain checkbox.
+      const normalizeResponseType = (value: unknown): ResponseType => {
+        if (typeof value !== "string" || !value.trim()) return "checkbox";
+        const normalized = value.trim().toLowerCase().replace(/[\s-]+/g, "_");
+        if (normalized === "text" || normalized === "free_text") return "text";
+        if (normalized === "single_choice" || normalized === "single") return "single_choice";
+        if (normalized === "multiple_choice" || normalized === "multiple" || normalized === "multi") {
+          return "multiple_choice";
+        }
+        return "checkbox";
+      };
+
+      // Options arrive either as a real array or as a "A | B | C" string.
+      const parseResponseOptions = (value: unknown): string[] => {
+        if (Array.isArray(value)) return value.map(String).map(s => s.trim()).filter(Boolean);
+        if (typeof value !== "string") return [];
+        return value.split("|").map(s => s.trim()).filter(Boolean);
+      };
+
+      type ImportItem = {
+        description: string;
+        order: number;
+        tooltip: string | null;
+        responseType: ResponseType;
+        responseOptions: string[];
+      };
+
       // Group items by template name
       const templateMap = new Map<string, {
         name: string;
         description: string | null;
         type: "Task" | "Job" | "Estimation" | "Lead";
-        groups: Map<string, Array<{ description: string; order: number }>>;
+        groups: Map<string, ImportItem[]>;
       }>();
 
       // First pass: organize data structure
@@ -25362,9 +25450,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
         // Add item if provided
         if (row.itemDescription && row.itemDescription.trim()) {
+          let responseType = normalizeResponseType(row.responseType);
+          const isChoice = responseType === "single_choice" || responseType === "multiple_choice";
+          const responseOptions = isChoice ? parseResponseOptions(row.responseOptions) : [];
+          // A choice question with no options renders as an unanswerable empty
+          // list, so import it as a checkbox instead of a dead item.
+          if (isChoice && responseOptions.length === 0) {
+            responseType = "checkbox";
+            skippedReasons.push(`Row ${i + 1}: "${row.responseType}" had no options — imported as a checkbox`);
+          }
           template.groups.get(groupKey)!.push({
             description: row.itemDescription,
             order: template.groups.get(groupKey)!.length,
+            tooltip: (row.itemTooltip && String(row.itemTooltip).trim()) || null,
+            responseType,
+            responseOptions,
           });
         }
       }
@@ -25396,6 +25496,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
               groupId: group.id,
               description: item.description,
               order: item.order,
+              tooltip: item.tooltip,
+              responseType: item.responseType,
+              responseOptions: item.responseOptions,
             });
             itemsCreated++;
           }
@@ -25528,11 +25631,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               groupId: instanceGroup.id,
               groupName: group.name,
               groupOrder: group.order,
-              description: templateItem.description,
-              tooltip: templateItem.tooltip,
-              order: templateItem.order,
-              isRequired: templateItem.isRequired ?? false,
-              status: "pending",
+              ...instanceItemFieldsFromTemplate(templateItem),
             });
           }
         }
