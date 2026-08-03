@@ -26,7 +26,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
-import { centsToDollars, exGstFromInc, formatCents, toNumber } from "@shared/money";
+import { centsToDollars, dollarsToCents, exGstFromInc, formatCents, toNumber } from "@shared/money";
 
 const headCell =
   "text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2";
@@ -350,7 +350,16 @@ export function ImportAllowancesDialog({
               const item = a.item;
               const budgetedCents = item?.priceIncTax || 0;
               const actualCents = a.actualCost || 0;
-              const varianceCents: number = a.variance ?? actualCents - budgetedCents;
+              // An allowance marked "not included" is now budgeted at $0, so the
+              // plain variance (actual - budget) would be $0 with no spend —
+              // offering nothing to credit. What the client is owed is the
+              // ORIGINAL contracted amount back, as a deduction. The stash is
+              // dollars inc GST (estimate_items price fields are dollars).
+              const notIncludedCreditCents = item?.notIncluded
+                ? -dollarsToCents(item?.notIncludedOriginalPriceIncTax ?? 0)
+                : null;
+              const varianceCents: number =
+                notIncludedCreditCents ?? a.variance ?? actualCents - budgetedCents;
               const isOverBudget = varianceCents > 0;
               return (
                 <div
@@ -362,7 +371,9 @@ export function ImportAllowancesDialog({
                     // other line, so strip the GST here to keep the client
                     // total equal to the variance.
                     onSelect({
-                      description: `${item.name} — allowance adjustment`,
+                      description: item?.notIncluded
+                        ? `${item.name} — not included (credit)`
+                        : `${item.name} — allowance adjustment`,
                       amount: centsToDollars(exGstFromInc(varianceCents)),
                     });
                     onOpenChange(false);
