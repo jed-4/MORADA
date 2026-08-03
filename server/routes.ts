@@ -3499,14 +3499,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Field Settings are per company (migration 0037). Every route below resolves
+  // the caller's company and passes it into storage, so one customer can never
+  // read or edit another's units / statuses / rooms. Returns null and sends 401
+  // when there's no company on the session.
+  const fieldSettingsCompany = (req: any, res: any): string | null => {
+    const companyId = req.user?.companyId;
+    if (!companyId) {
+      res.status(401).json({ error: "Authentication required." });
+      return null;
+    }
+    return companyId;
+  };
+
   app.get("/api/field-categories", async (req, res) => {
     try {
-      const categories = await storage.getFieldCategories();
+      const companyId = fieldSettingsCompany(req, res);
+      if (!companyId) return;
+      const categories = await storage.getFieldCategories(companyId);
       
       // Fetch options for each category to return FieldCategoryWithOptions[]
       const categoriesWithOptions = await Promise.all(
         categories.map(async (category) => {
-          const options = await storage.getFieldOptions(category.id);
+          const options = await storage.getFieldOptions(category.id, companyId);
           return {
             ...category,
             options
@@ -3522,7 +3537,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/field-categories/by-key/:key", async (req, res) => {
     try {
-      const categoryWithOptions = await storage.getFieldCategoryWithOptions(req.params.key);
+      const companyId = fieldSettingsCompany(req, res);
+      if (!companyId) return;
+      const categoryWithOptions = await storage.getFieldCategoryWithOptions(req.params.key, companyId);
       if (!categoryWithOptions) {
         return res.status(404).json({ error: "Field category not found" });
       }
@@ -3539,7 +3556,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!name || typeof name !== "string" || !name.trim()) {
         return res.status(400).json({ error: "name is required" });
       }
-      const categoryWithOptions = await storage.getFieldCategoryWithOptions(req.params.key);
+      const companyId = fieldSettingsCompany(req, res);
+      if (!companyId) return;
+      const categoryWithOptions = await storage.getFieldCategoryWithOptions(req.params.key, companyId);
       if (!categoryWithOptions) {
         return res.status(404).json({ error: "Field category not found" });
       }
@@ -3548,6 +3567,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const maxSort = categoryWithOptions.options.reduce((m: number, o: any) => Math.max(m, o.sortOrder ?? 0), 0);
       const option = await storage.createFieldOption({
         categoryId: categoryWithOptions.id,
+        companyId,
         key: key || `custom_${Date.now()}`,
         name: trimmedName,
         isActive: true,
@@ -3564,7 +3584,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/field-categories/:id", async (req, res) => {
     try {
-      const category = await storage.getFieldCategory(req.params.id);
+      const companyId = fieldSettingsCompany(req, res);
+      if (!companyId) return;
+      const category = await storage.getFieldCategory(req.params.id, companyId);
       if (!category) {
         return res.status(404).json({ error: "Field category not found" });
       }
@@ -3584,7 +3606,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      const category = await storage.createFieldCategory(validationResult.data);
+      const companyId = fieldSettingsCompany(req, res);
+      if (!companyId) return;
+      // companyId comes from the session, never the body.
+      const category = await storage.createFieldCategory({ ...validationResult.data, companyId });
       res.status(201).json(category);
     } catch (error) {
       res.status(500).json({ error: "Failed to create field category" });
@@ -3603,7 +3628,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      const category = await storage.updateFieldCategory(req.params.id, validationResult.data);
+      const companyId = fieldSettingsCompany(req, res);
+      if (!companyId) return;
+      const category = await storage.updateFieldCategory(req.params.id, validationResult.data, companyId);
       if (!category) {
         return res.status(404).json({ error: "Field category not found" });
       }
@@ -3615,7 +3642,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/field-categories/:id", requireAuth, requireTeamMember, requirePermission("admin.company", "delete"), async (req, res) => {
     try {
-      const category = await storage.getFieldCategory(req.params.id);
+      const companyId = fieldSettingsCompany(req, res);
+      if (!companyId) return;
+      const category = await storage.getFieldCategory(req.params.id, companyId);
       if (!category) {
         return res.status(404).json({ error: "Field category not found" });
       }
@@ -3624,7 +3653,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "Cannot delete built-in field categories" });
       }
 
-      const success = await storage.deleteFieldCategory(req.params.id);
+      const success = await storage.deleteFieldCategory(req.params.id, companyId);
       if (!success) {
         return res.status(404).json({ error: "Field category not found" });
       }
@@ -3637,7 +3666,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Field Options API Routes
   app.get("/api/field-categories/:categoryId/options", async (req, res) => {
     try {
-      const options = await storage.getFieldOptions(req.params.categoryId);
+      const companyId = fieldSettingsCompany(req, res);
+      if (!companyId) return;
+      const options = await storage.getFieldOptions(req.params.categoryId, companyId);
       res.json(options);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch field options" });
@@ -3652,15 +3683,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "categoryKey query parameter is required" });
       }
       
+      const companyId = fieldSettingsCompany(req, res);
+      if (!companyId) return;
       // First get the category by key
-      const categories = await storage.getFieldCategories();
+      const categories = await storage.getFieldCategories(companyId);
       const category = categories.find((c: any) => c.key === categoryKey);
       if (!category) {
         return res.json([]); // Return empty array if category doesn't exist yet
       }
       
       // Then get options for that category
-      const options = await storage.getFieldOptions(category.id);
+      const options = await storage.getFieldOptions(category.id, companyId);
       res.json(options.filter((opt: any) => opt.isActive));
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch field options" });
@@ -3669,7 +3702,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/field-options/:id", async (req, res) => {
     try {
-      const option = await storage.getFieldOption(req.params.id);
+      const companyId = fieldSettingsCompany(req, res);
+      if (!companyId) return;
+      const option = await storage.getFieldOption(req.params.id, companyId);
       if (!option) {
         return res.status(404).json({ error: "Field option not found" });
       }
@@ -3689,7 +3724,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      const option = await storage.createFieldOption(validationResult.data);
+      const companyId = fieldSettingsCompany(req, res);
+      if (!companyId) return;
+      // The parent category must belong to the caller — otherwise an option
+      // could be hung off another company's category.
+      const parent = await storage.getFieldCategory(validationResult.data.categoryId, companyId);
+      if (!parent) {
+        return res.status(404).json({ error: "Field category not found" });
+      }
+      const option = await storage.createFieldOption({ ...validationResult.data, companyId });
       res.status(201).json(option);
     } catch (error) {
       res.status(500).json({ error: "Failed to create field option" });
@@ -3707,7 +3750,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      const option = await storage.updateFieldOption(req.params.id, validationResult.data);
+      const companyId = fieldSettingsCompany(req, res);
+      if (!companyId) return;
+      const option = await storage.updateFieldOption(req.params.id, validationResult.data, companyId);
       if (!option) {
         return res.status(404).json({ error: "Field option not found" });
       }
@@ -3719,7 +3764,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/field-options/:id", requireAuth, requireTeamMember, requirePermission("admin.company", "delete"), async (req, res) => {
     try {
-      const success = await storage.deleteFieldOption(req.params.id);
+      const companyId = fieldSettingsCompany(req, res);
+      if (!companyId) return;
+      const success = await storage.deleteFieldOption(req.params.id, companyId);
       if (!success) {
         return res.status(404).json({ error: "Field option not found" });
       }
@@ -3753,13 +3800,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
+      const companyId = fieldSettingsCompany(req, res);
+      if (!companyId) return;
       const categoryId = req.params.id;
-      const category = await storage.getFieldCategory(categoryId);
+      const category = await storage.getFieldCategory(categoryId, companyId);
       if (!category) {
         return res.status(404).json({ error: "Field category not found" });
       }
 
-      const options = await storage.setCategoryOptions(categoryId, validationResult.data);
+      const options = await storage.setCategoryOptions(categoryId, validationResult.data, companyId);
       res.json(options);
     } catch (error) {
       res.status(500).json({ error: "Failed to batch update field options" });
@@ -4554,7 +4603,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         try {
           const newSubStatus = validationResult.data.projectSubStatus;
           if (newSubStatus) {
-            const statusCategory = await storage.getFieldCategoryWithOptions("project.status");
+            const statusCategory = await storage.getFieldCategoryWithOptions("project.status", (req.user as any)?.companyId);
             if (statusCategory?.options) {
               const optionsById = new Map<string, any>();
               for (const opt of statusCategory.options) {
@@ -4834,7 +4883,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Get all status options with their systemPhase mappings
-      const statusCategory = await storage.getFieldCategoryWithOptions("project.status");
+      const statusCategory = await storage.getFieldCategoryWithOptions("project.status", (req.user as any)?.companyId);
       if (!statusCategory?.options) {
         return res.status(500).json({ error: "Could not load status options" });
       }

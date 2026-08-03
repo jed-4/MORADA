@@ -602,22 +602,25 @@ export interface IStorage {
   updateSystemConfiguration(config: Partial<InsertSystemConfiguration>): Promise<SystemConfiguration | undefined>;
 
   // Field Categories CRUD (Buildern-style)
-  getFieldCategories(): Promise<FieldCategory[]>;
-  getFieldCategory(id: string): Promise<FieldCategory | undefined>;
-  getFieldCategoryByKey(key: string): Promise<FieldCategory | undefined>;
-  getFieldCategoryWithOptions(key: string): Promise<FieldCategoryWithOptions | undefined>;
+  // Field Settings are per company (migration 0037) — companyId is REQUIRED on
+  // every read and write, so one customer can never see or edit another's
+  // units / statuses / rooms.
+  getFieldCategories(companyId: string): Promise<FieldCategory[]>;
+  getFieldCategory(id: string, companyId: string): Promise<FieldCategory | undefined>;
+  getFieldCategoryByKey(key: string, companyId: string): Promise<FieldCategory | undefined>;
+  getFieldCategoryWithOptions(key: string, companyId: string): Promise<FieldCategoryWithOptions | undefined>;
   seedMissingBuiltInCategories(): Promise<{ addedCategories: string[]; addedOptions: string[] }>;
   createFieldCategory(category: InsertFieldCategory): Promise<FieldCategory>;
-  updateFieldCategory(id: string, category: Partial<InsertFieldCategory>): Promise<FieldCategory | undefined>;
-  deleteFieldCategory(id: string): Promise<boolean>;
+  updateFieldCategory(id: string, category: Partial<InsertFieldCategory>, companyId: string): Promise<FieldCategory | undefined>;
+  deleteFieldCategory(id: string, companyId: string): Promise<boolean>;
 
   // Field Options CRUD
-  getFieldOptions(categoryId: string): Promise<FieldOption[]>;
-  getFieldOption(id: string): Promise<FieldOption | undefined>;
+  getFieldOptions(categoryId: string, companyId: string): Promise<FieldOption[]>;
+  getFieldOption(id: string, companyId: string): Promise<FieldOption | undefined>;
   createFieldOption(option: InsertFieldOption): Promise<FieldOption>;
-  updateFieldOption(id: string, option: Partial<InsertFieldOption>): Promise<FieldOption | undefined>;
-  deleteFieldOption(id: string): Promise<boolean>;
-  setCategoryOptions(categoryId: string, options: Array<Partial<FieldOption> & { key: string; name: string }>): Promise<FieldOption[]>;
+  updateFieldOption(id: string, option: Partial<InsertFieldOption>, companyId: string): Promise<FieldOption | undefined>;
+  deleteFieldOption(id: string, companyId: string): Promise<boolean>;
+  setCategoryOptions(categoryId: string, options: Array<Partial<FieldOption> & { key: string; name: string }>, companyId: string): Promise<FieldOption[]>;
 
   // Selections CRUD
   getSelections(projectId: string): Promise<Selection[]>;
@@ -1638,6 +1641,11 @@ function getDefaultActionsForRole(
   return result;
 }
 
+// MemStorage is the in-memory fallback and has no real company records,
+// but Field Settings are company-scoped since migration 0037, so its seeded
+// categories/options need a stable owner id to satisfy the schema.
+const MEM_COMPANY_ID = "mem-company";
+
 export class MemStorage implements IStorage {
   private users: Map<string, User>;
   private userRoles: Map<string, UserRole>;
@@ -1891,6 +1899,7 @@ export class MemStorage implements IStorage {
     // Task Status Category
     const taskStatusCategory: FieldCategory = {
       id: "cat-task-status",
+      companyId: MEM_COMPANY_ID,
       key: "task.status",
       label: "Task Statuses",
       entity: "task",
@@ -1906,6 +1915,7 @@ export class MemStorage implements IStorage {
     // Task Priority Category  
     const taskPriorityCategory: FieldCategory = {
       id: "cat-task-priority",
+      companyId: MEM_COMPANY_ID,
       key: "task.priority",
       label: "Task Priorities", 
       entity: "task",
@@ -1921,6 +1931,7 @@ export class MemStorage implements IStorage {
     // Task Labels Category
     const taskLabelsCategory: FieldCategory = {
       id: "cat-task-labels",
+      companyId: MEM_COMPANY_ID,
       key: "task.labels",
       label: "Task Labels",
       entity: "task",
@@ -1936,6 +1947,7 @@ export class MemStorage implements IStorage {
     // Trade Categories
     const tradeCategoriesCategory: FieldCategory = {
       id: "cat-trade-types",
+      companyId: MEM_COMPANY_ID,
       key: "task.trade",
       label: "Trade Categories",
       entity: "task", 
@@ -1959,6 +1971,7 @@ export class MemStorage implements IStorage {
     statusOptions.forEach((opt, index) => {
       const option: FieldOption = {
         id: `opt-status-${opt.key}`,
+        companyId: MEM_COMPANY_ID,
         categoryId: taskStatusCategory.id,
         key: opt.key,
         name: opt.name,
@@ -1984,6 +1997,7 @@ export class MemStorage implements IStorage {
     priorityOptions.forEach((opt, index) => {
       const option: FieldOption = {
         id: `opt-priority-${opt.key}`,
+        companyId: MEM_COMPANY_ID,
         categoryId: taskPriorityCategory.id,
         key: opt.key,
         name: opt.name,
@@ -2011,6 +2025,7 @@ export class MemStorage implements IStorage {
     labelOptions.forEach((opt, index) => {
       const option: FieldOption = {
         id: `opt-label-${opt.key}`,
+        companyId: MEM_COMPANY_ID,
         categoryId: taskLabelsCategory.id,
         key: opt.key,
         name: opt.name,
@@ -2039,6 +2054,7 @@ export class MemStorage implements IStorage {
     tradeOptions.forEach((opt, index) => {
       const option: FieldOption = {
         id: `opt-trade-${opt.key}`,
+        companyId: MEM_COMPANY_ID,
         categoryId: tradeCategoriesCategory.id,
         key: opt.key,
         name: opt.name,
@@ -2056,6 +2072,7 @@ export class MemStorage implements IStorage {
     // Estimate Item Status Category
     const estimateItemStatusCategory: FieldCategory = {
       id: "cat-estimate-item-status",
+      companyId: MEM_COMPANY_ID,
       key: "estimate_item.status",
       label: "Estimate Item Statuses",
       entity: "estimate_item",
@@ -2080,6 +2097,7 @@ export class MemStorage implements IStorage {
     estimateItemStatusOptions.forEach((opt, index) => {
       const option: FieldOption = {
         id: `opt-estimate-item-status-${opt.key}`,
+        companyId: MEM_COMPANY_ID,
         categoryId: estimateItemStatusCategory.id,
         key: opt.key,
         name: opt.name,
@@ -2097,6 +2115,7 @@ export class MemStorage implements IStorage {
     // Estimate Item Unit Category
     const estimateItemUnitCategory: FieldCategory = {
       id: "cat-estimate-item-unit",
+      companyId: MEM_COMPANY_ID,
       key: "estimate_item.unit",
       label: "Estimate Units",
       entity: "estimate_item",
@@ -2127,6 +2146,7 @@ export class MemStorage implements IStorage {
     estimateItemUnitOptions.forEach((opt, index) => {
       const option: FieldOption = {
         id: `opt-estimate-item-unit-${opt.key}`,
+        companyId: MEM_COMPANY_ID,
         categoryId: estimateItemUnitCategory.id,
         key: opt.key,
         name: opt.name,
@@ -2144,6 +2164,7 @@ export class MemStorage implements IStorage {
     // Selection Categories
     const selectionCategoriesCategory: FieldCategory = {
       id: "cat-selection-categories",
+      companyId: MEM_COMPANY_ID,
       key: "selection.category",
       label: "Selection Categories",
       entity: "selection",
@@ -2159,6 +2180,7 @@ export class MemStorage implements IStorage {
     // Location/Room Categories
     const locationCategory: FieldCategory = {
       id: "cat-locations",
+      companyId: MEM_COMPANY_ID,
       key: "selection.room",
       label: "Locations/Rooms",
       entity: "selection",
@@ -2188,6 +2210,7 @@ export class MemStorage implements IStorage {
     selectionCategoryOptions.forEach((opt, index) => {
       const option: FieldOption = {
         id: `opt-selection-category-${opt.key}`,
+        companyId: MEM_COMPANY_ID,
         categoryId: selectionCategoriesCategory.id,
         key: opt.key,
         name: opt.name,
@@ -2224,6 +2247,7 @@ export class MemStorage implements IStorage {
     locationOptions.forEach((opt, index) => {
       const option: FieldOption = {
         id: `opt-location-${opt.key}`,
+        companyId: MEM_COMPANY_ID,
         categoryId: locationCategory.id,
         key: opt.key,
         name: opt.name,
@@ -2241,6 +2265,7 @@ export class MemStorage implements IStorage {
     // Allowance Status Category
     const allowanceStatusCategory: FieldCategory = {
       id: "cat-allowance-status",
+      companyId: MEM_COMPANY_ID,
       key: "allowance.status",
       label: "Allowance Statuses",
       entity: "allowance",
@@ -2263,6 +2288,7 @@ export class MemStorage implements IStorage {
     allowanceStatusOptions.forEach((opt, index) => {
       const option: FieldOption = {
         id: `opt-allowance-status-${opt.key}`,
+        companyId: MEM_COMPANY_ID,
         categoryId: allowanceStatusCategory.id,
         key: opt.key,
         name: opt.name,
@@ -2280,6 +2306,7 @@ export class MemStorage implements IStorage {
     // Schedule Item Status Category
     const scheduleItemStatusCategory: FieldCategory = {
       id: "cat-schedule-item-status",
+      companyId: MEM_COMPANY_ID,
       key: "schedule_item.status",
       label: "Schedule Item Statuses",
       entity: "schedule_item",
@@ -2304,6 +2331,7 @@ export class MemStorage implements IStorage {
     scheduleItemStatusOptions.forEach((opt, index) => {
       const option: FieldOption = {
         id: `opt-schedule-item-status-${opt.key}`,
+        companyId: MEM_COMPANY_ID,
         categoryId: scheduleItemStatusCategory.id,
         key: opt.key,
         name: opt.name,
@@ -4229,10 +4257,16 @@ export class MemStorage implements IStorage {
 
   async createEstimate(insertEstimate: InsertEstimate): Promise<Estimate> {
     try {
-      // Get default status from field settings if not provided
+      // Get default status from field settings if not provided. Field settings
+      // are company-scoped, so resolve the owning company via the project.
       let defaultStatus = "draft";
       if (!insertEstimate.status) {
-        const statusCategory = await this.getFieldCategoryByKey('estimate.status');
+        const owningProject = insertEstimate.projectId
+          ? await this.getProject(insertEstimate.projectId)
+          : undefined;
+        const statusCategory = owningProject?.companyId
+          ? await this.getFieldCategoryByKey('estimate.status', owningProject.companyId)
+          : undefined;
         if (statusCategory) {
           const statusOptions = await db.select().from(schema.fieldOptions)
             .where(and(
@@ -5615,25 +5649,27 @@ export class MemStorage implements IStorage {
   }
 
   // Field Categories CRUD (Buildern-style)
-  async getFieldCategories(): Promise<FieldCategory[]> {
+  async getFieldCategories(companyId: string): Promise<FieldCategory[]> {
     return Array.from(this.fieldCategories.values())
+      .filter(cat => cat.companyId === companyId)
       .sort((a, b) => a.sortOrder - b.sortOrder);
   }
 
-  async getFieldCategory(id: string): Promise<FieldCategory | undefined> {
-    return this.fieldCategories.get(id);
+  async getFieldCategory(id: string, companyId: string): Promise<FieldCategory | undefined> {
+    const cat = this.fieldCategories.get(id);
+    return cat && cat.companyId === companyId ? cat : undefined;
   }
 
-  async getFieldCategoryByKey(key: string): Promise<FieldCategory | undefined> {
+  async getFieldCategoryByKey(key: string, companyId: string): Promise<FieldCategory | undefined> {
     return Array.from(this.fieldCategories.values())
-      .find(cat => cat.key === key);
+      .find(cat => cat.key === key && cat.companyId === companyId);
   }
 
-  async getFieldCategoryWithOptions(key: string): Promise<FieldCategoryWithOptions | undefined> {
-    const category = await this.getFieldCategoryByKey(key);
+  async getFieldCategoryWithOptions(key: string, companyId: string): Promise<FieldCategoryWithOptions | undefined> {
+    const category = await this.getFieldCategoryByKey(key, companyId);
     if (!category) return undefined;
 
-    const options = await this.getFieldOptions(category.id);
+    const options = await this.getFieldOptions(category.id, companyId);
     return {
       ...category,
       options
@@ -5664,9 +5700,9 @@ export class MemStorage implements IStorage {
     return category;
   }
 
-  async updateFieldCategory(id: string, updates: Partial<InsertFieldCategory>): Promise<FieldCategory | undefined> {
+  async updateFieldCategory(id: string, updates: Partial<InsertFieldCategory>, companyId: string): Promise<FieldCategory | undefined> {
     const existing = this.fieldCategories.get(id);
-    if (!existing) return undefined;
+    if (!existing || existing.companyId !== companyId) return undefined;
     
     const updated: FieldCategory = {
       ...existing,
@@ -5678,7 +5714,9 @@ export class MemStorage implements IStorage {
     return updated;
   }
 
-  async deleteFieldCategory(id: string): Promise<boolean> {
+  async deleteFieldCategory(id: string, companyId: string): Promise<boolean> {
+    const existing = this.fieldCategories.get(id);
+    if (!existing || existing.companyId !== companyId) return false;
     // Also delete all options for this category
     const options = Array.from(this.fieldOptions.values())
       .filter(opt => opt.categoryId === id);
@@ -5688,14 +5726,15 @@ export class MemStorage implements IStorage {
   }
 
   // Field Options CRUD
-  async getFieldOptions(categoryId: string): Promise<FieldOption[]> {
+  async getFieldOptions(categoryId: string, companyId: string): Promise<FieldOption[]> {
     return Array.from(this.fieldOptions.values())
-      .filter(opt => opt.categoryId === categoryId)
+      .filter(opt => opt.categoryId === categoryId && opt.companyId === companyId)
       .sort((a, b) => a.sortOrder - b.sortOrder);
   }
 
-  async getFieldOption(id: string): Promise<FieldOption | undefined> {
-    return this.fieldOptions.get(id);
+  async getFieldOption(id: string, companyId: string): Promise<FieldOption | undefined> {
+    const opt = this.fieldOptions.get(id);
+    return opt && opt.companyId === companyId ? opt : undefined;
   }
 
   async createFieldOption(insertOption: InsertFieldOption): Promise<FieldOption> {
@@ -5718,9 +5757,9 @@ export class MemStorage implements IStorage {
     return option;
   }
 
-  async updateFieldOption(id: string, updates: Partial<InsertFieldOption>): Promise<FieldOption | undefined> {
+  async updateFieldOption(id: string, updates: Partial<InsertFieldOption>, companyId: string): Promise<FieldOption | undefined> {
     const existing = this.fieldOptions.get(id);
-    if (!existing) return undefined;
+    if (!existing || existing.companyId !== companyId) return undefined;
     
     const updated: FieldOption = {
       ...existing,
@@ -5732,13 +5771,16 @@ export class MemStorage implements IStorage {
     return updated;
   }
 
-  async deleteFieldOption(id: string): Promise<boolean> {
+  async deleteFieldOption(id: string, companyId: string): Promise<boolean> {
+    const existing = this.fieldOptions.get(id);
+    if (!existing || existing.companyId !== companyId) return false;
     return this.fieldOptions.delete(id);
   }
 
   async setCategoryOptions(
     categoryId: string, 
-    options: Array<Partial<FieldOption> & { key: string; name: string }>
+    options: Array<Partial<FieldOption> & { key: string; name: string }>,
+    companyId: string,
   ): Promise<FieldOption[]> {
     const now = new Date();
     
@@ -7172,6 +7214,11 @@ export class DbStorage implements IStorage {
       if (existing.length === 0) {
         await db.insert(schema.fieldOptions).values({
           ...optionData,
+          // The definitions carry hardcoded ids ('opt-estimate-item-unit-ea').
+          // Those were fine when field settings were global; now that every
+          // company gets its own set they would collide on the primary key.
+          id: randomUUID(),
+          companyId: category.companyId,
           isActive: true,
           createdAt: now,
           updatedAt: now,
@@ -7214,6 +7261,8 @@ export class DbStorage implements IStorage {
       try {
         await db.insert(schema.fieldOptions).values({
           ...optionData,
+          id: randomUUID(),
+          companyId: category.companyId,
           parentId: resolvedParentId,
           isActive: true,
           createdAt: now,
@@ -7480,6 +7529,8 @@ export class DbStorage implements IStorage {
     if (optionsToInsert.length > 0) {
       const optionsWithTimestamps = optionsToInsert.map(option => ({
         ...option,
+        id: randomUUID(),
+        companyId: category.companyId,
         isActive: true,
         createdAt: now,
         updatedAt: now,
@@ -7489,10 +7540,11 @@ export class DbStorage implements IStorage {
     }
   }
 
-  private async seedDefaultFieldCategories(): Promise<void> {
-    const now = new Date();
-    
-    const defaultCategories = [
+  // The canonical built-in Field Settings categories. Extracted so a NEW
+  // company can be seeded with the same set — before migration 0037 these
+  // rows were global and seeded exactly once for the whole deployment.
+  private getDefaultCategoryDefinitions(now: Date): any[] {
+    return [
       {
         id: 'cat-task-status',
         key: 'task.status', 
@@ -7566,6 +7618,89 @@ export class DbStorage implements IStorage {
         updatedAt: now,
       },
     ];
+  }
+
+  // Give a brand-new company its own copy of every built-in category and its
+  // options. Ids are generated per company; the hardcoded ids in the
+  // definitions are only meaningful to the pre-0037 global rows.
+  async seedFieldSettingsForCompany(companyId: string): Promise<void> {
+    const now = new Date();
+    try {
+      // Prefer cloning the canonical set from an existing company. The
+      // code-defined defaults below cover only 6 of the 18 built-in categories
+      // that real deployments carry, so seeding purely from them would hand a
+      // new customer a thinner list than everyone else has.
+      // Any other company will do — post-0037 every one carries the same
+      // built-in set, so the first match is as canonical as any.
+      const template = await db
+        .select({ companyId: schema.fieldCategories.companyId })
+        .from(schema.fieldCategories)
+        .where(and(
+          ne(schema.fieldCategories.companyId, companyId),
+          eq(schema.fieldCategories.isBuiltIn, true),
+        ))
+        .limit(1);
+
+      if (template[0]?.companyId) {
+        await this.cloneFieldSettings(template[0].companyId, companyId, now);
+        return;
+      }
+
+      // First company on a fresh instance — fall back to the code definitions.
+      const defs = this.getDefaultCategoryDefinitions(now);
+      for (const def of defs) {
+        const [category] = await db.insert(schema.fieldCategories)
+          .values({ ...def, id: randomUUID(), companyId, createdAt: now, updatedAt: now })
+          .returning();
+        await this.ensureOptionsForCategory(category, now);
+      }
+    } catch (err: any) {
+      // Never block company creation on seeding — the settings screen can
+      // re-seed, and a company with no options is recoverable.
+      console.error(`[seed] field settings for company ${companyId} failed:`, err?.message || err);
+    }
+  }
+
+  /** Copy one company's field categories + options to another, with fresh ids. */
+  private async cloneFieldSettings(fromCompanyId: string, toCompanyId: string, now: Date): Promise<void> {
+    const categories = await db.select().from(schema.fieldCategories)
+      .where(eq(schema.fieldCategories.companyId, fromCompanyId));
+    if (categories.length === 0) return;
+
+    const categoryIdMap = new Map<string, string>();
+    for (const c of categories) categoryIdMap.set(c.id, randomUUID());
+
+    await db.insert(schema.fieldCategories).values(categories.map((c) => ({
+      ...c,
+      id: categoryIdMap.get(c.id)!,
+      companyId: toCompanyId,
+      createdAt: now,
+      updatedAt: now,
+    })));
+
+    const options = await db.select().from(schema.fieldOptions)
+      .where(eq(schema.fieldOptions.companyId, fromCompanyId));
+    if (options.length === 0) return;
+
+    // Remap ids first so parentId can point at the CLONE, not the source.
+    const optionIdMap = new Map<string, string>();
+    for (const o of options) optionIdMap.set(o.id, randomUUID());
+
+    await db.insert(schema.fieldOptions).values(options.map((o) => ({
+      ...o,
+      id: optionIdMap.get(o.id)!,
+      companyId: toCompanyId,
+      categoryId: categoryIdMap.get(o.categoryId) ?? o.categoryId,
+      parentId: o.parentId ? (optionIdMap.get(o.parentId) ?? null) : null,
+      createdAt: now,
+      updatedAt: now,
+    })));
+  }
+
+  private async seedDefaultFieldCategories(): Promise<void> {
+    const now = new Date();
+    
+    const defaultCategories = this.getDefaultCategoryDefinitions(now);
 
     await db.insert(schema.fieldCategories).values(defaultCategories);
     
@@ -13759,6 +13894,11 @@ export class DbStorage implements IStorage {
     
     // Seed default roles for the company and get General Manager roleId
     const generalManagerRoleId = await this.seedDefaultRolesForCompany(newCompany.id);
+
+    // Field Settings are per company (migration 0037) — a new company starts
+    // with its own copy of the built-in units / statuses / rooms rather than
+    // sharing one global set with every other customer.
+    await this.seedFieldSettingsForCompany(newCompany.id);
     
     // Update user's companyId and assign General Manager role
     await db.update(schema.users)
@@ -13956,50 +14096,96 @@ export class DbStorage implements IStorage {
       return created;
     }
   }
-  async getFieldCategories(): Promise<FieldCategory[]> {
+  // ── Field Settings (per company — migration 0037) ──────────────────────────
+  // Every method takes companyId and filters on it. Before 0037 these tables
+  // had no company column at all, so one shared list of units / statuses /
+  // rooms served every customer on the deployment.
+
+  async getFieldCategories(companyId: string): Promise<FieldCategory[]> {
     return await db.select().from(schema.fieldCategories)
-      .where(eq(schema.fieldCategories.isActive, true))
+      .where(and(
+        eq(schema.fieldCategories.companyId, companyId),
+        eq(schema.fieldCategories.isActive, true),
+      ))
       .orderBy(schema.fieldCategories.sortOrder);
   }
   
-  async getFieldCategory(id: string): Promise<FieldCategory | undefined> {
+  async getFieldCategory(id: string, companyId: string): Promise<FieldCategory | undefined> {
     const [category] = await db.select().from(schema.fieldCategories)
-      .where(eq(schema.fieldCategories.id, id))
+      .where(and(
+        eq(schema.fieldCategories.id, id),
+        eq(schema.fieldCategories.companyId, companyId),
+      ))
       .limit(1);
     return category;
   }
   
-  async getFieldCategoryByKey(key: string): Promise<FieldCategory | undefined> {
+  async getFieldCategoryByKey(key: string, companyId: string): Promise<FieldCategory | undefined> {
     const [category] = await db.select().from(schema.fieldCategories)
-      .where(eq(schema.fieldCategories.key, key))
+      .where(and(
+        eq(schema.fieldCategories.key, key),
+        eq(schema.fieldCategories.companyId, companyId),
+      ))
       .limit(1);
     return category;
   }
   
-  async getFieldCategoryWithOptions(key: string): Promise<FieldCategoryWithOptions | undefined> {
-    const category = await this.getFieldCategoryByKey(key);
+  async getFieldCategoryWithOptions(key: string, companyId: string): Promise<FieldCategoryWithOptions | undefined> {
+    const category = await this.getFieldCategoryByKey(key, companyId);
     if (!category) return undefined;
 
-    const options = await this.getFieldOptions(category.id);
+    const options = await this.getFieldOptions(category.id, companyId);
     return {
       ...category,
       options
     };
   }
-  async createFieldCategory(category: InsertFieldCategory): Promise<FieldCategory> { throw new Error("Not implemented"); }
-  async updateFieldCategory(id: string, category: Partial<InsertFieldCategory>): Promise<FieldCategory | undefined> { return undefined; }
-  async deleteFieldCategory(id: string): Promise<boolean> { return false; }
-  async getFieldOptions(categoryId: string): Promise<FieldOption[]> {
+
+  async createFieldCategory(category: InsertFieldCategory): Promise<FieldCategory> {
+    const [created] = await db.insert(schema.fieldCategories)
+      .values({ ...category, id: randomUUID(), createdAt: new Date(), updatedAt: new Date() })
+      .returning();
+    return created;
+  }
+
+  async updateFieldCategory(id: string, category: Partial<InsertFieldCategory>, companyId: string): Promise<FieldCategory | undefined> {
+    // companyId is part of the WHERE, not the SET — a caller can never move a
+    // category into another company, and can never edit one it doesn't own.
+    const { companyId: _ignored, ...safe } = category as any;
+    const [updated] = await db.update(schema.fieldCategories)
+      .set({ ...safe, updatedAt: new Date() })
+      .where(and(
+        eq(schema.fieldCategories.id, id),
+        eq(schema.fieldCategories.companyId, companyId),
+      ))
+      .returning();
+    return updated;
+  }
+
+  async deleteFieldCategory(id: string, companyId: string): Promise<boolean> {
+    const result = await db.delete(schema.fieldCategories)
+      .where(and(
+        eq(schema.fieldCategories.id, id),
+        eq(schema.fieldCategories.companyId, companyId),
+      ));
+    return result.rowCount ? result.rowCount > 0 : false;
+  }
+
+  async getFieldOptions(categoryId: string, companyId: string): Promise<FieldOption[]> {
     return await db.select().from(schema.fieldOptions)
       .where(and(
         eq(schema.fieldOptions.categoryId, categoryId),
+        eq(schema.fieldOptions.companyId, companyId),
         eq(schema.fieldOptions.isActive, true)
       ))
       .orderBy(schema.fieldOptions.sortOrder);
   }
-  async getFieldOption(id: string): Promise<FieldOption | undefined> {
+  async getFieldOption(id: string, companyId: string): Promise<FieldOption | undefined> {
     const [option] = await db.select().from(schema.fieldOptions)
-      .where(eq(schema.fieldOptions.id, id))
+      .where(and(
+        eq(schema.fieldOptions.id, id),
+        eq(schema.fieldOptions.companyId, companyId),
+      ))
       .limit(1);
     return option;
   }
@@ -14016,27 +14202,38 @@ export class DbStorage implements IStorage {
     return created;
   }
   
-  async updateFieldOption(id: string, option: Partial<InsertFieldOption>): Promise<FieldOption | undefined> {
+  async updateFieldOption(id: string, option: Partial<InsertFieldOption>, companyId: string): Promise<FieldOption | undefined> {
+    const { companyId: _ignored, ...safe } = option as any;
     const [updated] = await db.update(schema.fieldOptions)
       .set({
-        ...option,
+        ...safe,
         updatedAt: new Date(),
       })
-      .where(eq(schema.fieldOptions.id, id))
+      .where(and(
+        eq(schema.fieldOptions.id, id),
+        eq(schema.fieldOptions.companyId, companyId),
+      ))
       .returning();
     return updated;
   }
   
-  async deleteFieldOption(id: string): Promise<boolean> {
+  async deleteFieldOption(id: string, companyId: string): Promise<boolean> {
     const result = await db.delete(schema.fieldOptions)
-      .where(eq(schema.fieldOptions.id, id));
+      .where(and(
+        eq(schema.fieldOptions.id, id),
+        eq(schema.fieldOptions.companyId, companyId),
+      ));
     return result.rowCount ? result.rowCount > 0 : false;
   }
-  async setCategoryOptions(categoryId: string, options: Array<Partial<FieldOption> & { key: string; name: string }>): Promise<FieldOption[]> {
+  async setCategoryOptions(categoryId: string, options: Array<Partial<FieldOption> & { key: string; name: string }>, companyId: string): Promise<FieldOption[]> {
     try {
-      // First, delete existing options for this category
+      // Scoped to the company — a batch write must never clear or replace
+      // another company's options for a same-named category.
       await db.delete(schema.fieldOptions)
-        .where(eq(schema.fieldOptions.categoryId, categoryId));
+        .where(and(
+          eq(schema.fieldOptions.categoryId, categoryId),
+          eq(schema.fieldOptions.companyId, companyId),
+        ));
       
       if (options.length === 0) {
         return [];
@@ -14051,6 +14248,7 @@ export class DbStorage implements IStorage {
       const newOptions = options.map((optData, index) => ({
         id: optData.id || randomUUID(),
         categoryId,
+        companyId,
         key: optData.key,
         name: optData.name,
         description: optData.description ?? null,
