@@ -36,6 +36,7 @@ import {
   Columns3,
   Loader2,
   ExternalLink,
+  Eye,
   EyeOff,
   ImageIcon,
   FileIcon,
@@ -47,7 +48,9 @@ import {
   DataTableColumnPicker,
   type DataTableColumnMeta,
 } from "@/components/data-table/DataTable";
-import { type Rfq, type Project, type RfqQuote } from "@shared/schema";
+import { type Rfq, type Project, type RfqQuote, type RfqRecipient } from "@shared/schema";
+import { RFQ_STATUS_LABEL, RECIPIENT_STATUS_LABEL, summariseRecipients } from "@shared/rfqStatus";
+import { formatCents } from "@shared/money";
 import { ProjectIcon } from "@/components/ProjectIcon";
 import { StatusBadge } from "@/components/StatusBadge";
 import { format } from "date-fns";
@@ -76,42 +79,22 @@ function formatBytes(bytes?: number) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function formatCurrency(cents: number) {
-  return new Intl.NumberFormat("en-AU", {
-    style: "currency",
-    currency: "AUD",
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(cents / 100);
-}
-
 // ── Status chips ──────────────────────────────────────────────────────────────
 
+// Drawn from the rfq_status enum via shared/rfqStatus, not invented here. The
+// previous list filtered on "pending" — not a real status — and had no entry at
+// all for "confirmed" or "expired", so those rendered a badge with an undefined
+// label and could not be filtered for.
 const STATUS_OPTIONS = [
-  { key: "all",      label: "All" },
-  { key: "draft",    label: "Draft" },
-  { key: "sent",     label: "Sent" },
-  { key: "pending",  label: "Pending" },
-  { key: "quoted",   label: "Quoted" },
-  { key: "accepted", label: "Accepted" },
-  { key: "declined", label: "Declined" },
+  { key: "all", label: "All" },
+  ...(["draft", "sent", "quoted", "accepted", "declined", "expired"] as const).map((key) => ({
+    key,
+    label: RFQ_STATUS_LABEL[key],
+  })),
 ];
 
-const STATUS_LABEL: Record<string, string> = {
-  draft: "Draft", sent: "Sent", pending: "Pending",
-  quoted: "Quoted", accepted: "Accepted", declined: "Declined",
-};
-
 function StatusChip({ status }: { status: string }) {
-  return <StatusBadge status={status} label={STATUS_LABEL[status]} />;
-}
-
-const QUOTE_LABEL: Record<string, string> = {
-  pending: "Awaiting", accepted: "Accepted", declined: "Declined",
-};
-
-function QuoteStatusChip({ status }: { status: string }) {
-  return <StatusBadge status={status} label={QUOTE_LABEL[status] ?? "Awaiting"} />;
+  return <StatusBadge status={status} label={RFQ_STATUS_LABEL[status] ?? status} />;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -138,33 +121,26 @@ function RfqQuotesPanel({
   onOpenAttachments: (label: string, attachments: Attachment[]) => void;
   onNavigate: (rfqId: string) => void;
 }) {
-  const { data: quotes, isLoading } = useQuery<RfqQuote[]>({
-    queryKey: ["/api/rfqs", rfq.id, "quotes"],
-    queryFn: async () => {
-      const res = await fetch(`/api/rfqs/${rfq.id}/quotes`, { credentials: "include" });
-      if (!res.ok) return [];
-      return res.json();
-    },
+  const { data: recipients, isLoading: recipientsLoading } = useQuery<RfqRecipient[]>({
+    queryKey: ["/api/rfqs", rfq.id, "recipients"],
   });
 
-  const supplierRows = rfq.supplierNames.map((name, idx) => {
-    const supplierId = rfq.supplierIds[idx] ?? null;
-    const quote = quotes?.find(
-      (q) => (supplierId && q.supplierId === supplierId) || q.supplierName === name,
-    ) ?? null;
-    return { name, supplierId, quote };
+  const { data: quotes, isLoading: quotesLoading } = useQuery<RfqQuote[]>({
+    queryKey: ["/api/rfqs", rfq.id, "quotes"],
   });
+
+  const isLoading = recipientsLoading || quotesLoading;
 
   if (isLoading) {
     return (
       <div className="flex items-center gap-2 px-4 h-8 text-xs text-muted-foreground">
         <Loader2 className="w-3 h-3 animate-spin" />
-        Loading quotes…
+        Loading suppliers…
       </div>
     );
   }
 
-  if (supplierRows.length === 0) {
+  if (!recipients || recipients.length === 0) {
     return (
       <div className="flex items-center px-4 h-8 text-xs text-muted-foreground italic">
         No suppliers added to this RFQ
@@ -174,18 +150,28 @@ function RfqQuotesPanel({
 
   return (
     <div className="divide-y divide-border/30">
-      {supplierRows.map(({ name, quote }, idx) => {
+      {recipients.map((recipient) => {
+        // Each recipient carries its own quote link now, so this no longer has
+        // to guess by matching supplier names across two parallel arrays.
+        const quote = recipient.quoteId
+          ? quotes?.find((q) => q.id === recipient.quoteId) ?? null
+          : null;
         const files = (quote?.attachments as Attachment[] | undefined) ?? [];
         return (
           <div
-            key={idx}
+            key={recipient.id}
             className="flex items-center px-4 h-8 cursor-pointer hover-elevate"
             onClick={() => onNavigate(rfq.id)}
-            data-testid={`row-supplier-${rfq.id}-${idx}`}
+            data-testid={`row-supplier-${rfq.id}-${recipient.id}`}
           >
             {/* Supplier name */}
-            <div className="flex items-center min-w-[200px] flex-shrink-0 pr-3">
-              <span className="text-xs text-foreground truncate font-medium">{name}</span>
+            <div className="flex items-center gap-1.5 min-w-[200px] flex-shrink-0 pr-3">
+              <span className="text-xs text-foreground truncate font-medium">
+                {recipient.supplierName}
+              </span>
+              {recipient.isExternal && (
+                <span className="text-data text-muted-foreground/60 flex-shrink-0">ext</span>
+              )}
             </div>
             {/* Project */}
             {showProject && (
@@ -208,19 +194,25 @@ function RfqQuotesPanel({
                 {formatDate(rfq.dueDate) ?? <span className="text-muted-foreground/40">—</span>}
               </span>
             </div>
-            {/* Sent date */}
+            {/* Sent — per supplier, not per RFQ */}
             <div className="flex items-center min-w-[88px] flex-shrink-0 pr-3">
               <span className="text-xs text-muted-foreground">
-                {rfq.sentAt
-                  ? formatDate(rfq.sentAt)
+                {recipient.sentAt
+                  ? formatDate(recipient.sentAt)
                   : <span className="text-muted-foreground/30">Not sent</span>}
               </span>
             </div>
-            {/* Seen — placeholder for future email open tracking */}
+            {/* Viewed — real data now that the portal records it per recipient */}
             <div className="flex items-center justify-center min-w-[40px] flex-shrink-0">
-              <span title="Email open tracking — coming soon">
-                <EyeOff className="w-3 h-3 text-muted-foreground/25" />
-              </span>
+              {recipient.viewedAt ? (
+                <span title={`Viewed ${formatDate(recipient.viewedAt)}`}>
+                  <Eye className="w-3 h-3 text-status-info" />
+                </span>
+              ) : (
+                <span title="Not opened yet">
+                  <EyeOff className="w-3 h-3 text-muted-foreground/25" />
+                </span>
+              )}
             </div>
             {/* Attachments */}
             <div className="flex items-center justify-center min-w-[60px] flex-shrink-0">
@@ -233,18 +225,21 @@ function RfqQuotesPanel({
                   title={`${files.length} file${files.length !== 1 ? "s" : ""}`}
                   onClick={(e) => {
                     e.stopPropagation();
-                    onOpenAttachments(`${rfq.rfqNumber} — ${name}`, files);
+                    onOpenAttachments(`${rfq.rfqNumber} — ${recipient.supplierName}`, files);
                   }}
-                  data-testid={`button-attachments-${rfq.id}-${idx}`}
+                  data-testid={`button-attachments-${rfq.id}-${recipient.id}`}
                 >
                   <Paperclip className="w-3 h-3" />
                   <span className="text-data font-semibold">{files.length}</span>
                 </button>
               )}
             </div>
-            {/* Quote status */}
+            {/* Recipient status */}
             <div className="flex items-center min-w-[88px] flex-shrink-0 pr-3 pl-3">
-              <QuoteStatusChip status={quote?.status ?? "pending"} />
+              <StatusBadge
+                status={recipient.status}
+                label={RECIPIENT_STATUS_LABEL[recipient.status] ?? recipient.status}
+              />
             </div>
             {/* Quote amount */}
             <div className="flex items-center min-w-[96px] flex-shrink-0 pr-3">
@@ -252,7 +247,7 @@ function RfqQuotesPanel({
                 "text-xs tabular-nums font-medium",
                 quote && quote.totalAmount > 0 ? "text-foreground" : "text-muted-foreground/40"
               )}>
-                {quote && quote.totalAmount > 0 ? formatCurrency(quote.totalAmount) : "—"}
+                {quote && quote.totalAmount > 0 ? formatCents(quote.totalAmount) : "—"}
               </span>
             </div>
             <div className="flex items-center justify-center min-w-[24px] flex-shrink-0">
@@ -311,21 +306,47 @@ export default function RFQs({ embedded }: { embedded?: boolean } = {}) {
     queryKey: ["/api/projects"],
   });
 
+  // One batched request for every RFQ on screen rather than a query per row —
+  // Neon is us-east-1 and the app is used from AU, so per-row round trips cost
+  // ~400ms each.
+  const { data: allRecipients = [] } = useQuery<RfqRecipient[]>({
+    queryKey: projectIdFromUrl
+      ? ["/api/rfq-recipients", { projectId: projectIdFromUrl }]
+      : ["/api/rfq-recipients"],
+    queryFn: async () => {
+      const url = projectIdFromUrl
+        ? `/api/rfq-recipients?projectId=${encodeURIComponent(projectIdFromUrl)}`
+        : "/api/rfq-recipients";
+      const response = await fetch(url, { credentials: "include" });
+      if (!response.ok) return [];
+      return response.json();
+    },
+  });
+
+  const recipientsByRfq = useMemo(() => {
+    const map = new Map<string, RfqRecipient[]>();
+    for (const r of allRecipients) {
+      const list = map.get(r.rfqId);
+      if (list) list.push(r);
+      else map.set(r.rfqId, [r]);
+    }
+    return map;
+  }, [allRecipients]);
+
   const getProject = (projectId: string) => projects.find((p) => p.id === projectId);
   const currentProject = projectIdFromUrl ? getProject(projectIdFromUrl) : null;
 
   const getNavigationPath = (path: string) =>
     projectIdFromUrl ? `/projects/${projectIdFromUrl}${path}` : path;
 
-  const statusCounts = useMemo(() => ({
-    all:      rfqs.length,
-    draft:    rfqs.filter(r => r.status === "draft").length,
-    sent:     rfqs.filter(r => r.status === "sent").length,
-    pending:  rfqs.filter((r) => (r.status as string) === "pending").length,
-    quoted:   rfqs.filter(r => r.status === "quoted").length,
-    accepted: rfqs.filter(r => r.status === "accepted").length,
-    declined: rfqs.filter(r => r.status === "declined").length,
-  }), [rfqs]);
+  const statusCounts = useMemo(() => {
+    const counts: Record<string, number> = { all: rfqs.length };
+    for (const opt of STATUS_OPTIONS) {
+      if (opt.key === "all") continue;
+      counts[opt.key] = rfqs.filter((r) => r.status === opt.key).length;
+    }
+    return counts;
+  }, [rfqs]);
 
   const filteredRFQs = useMemo(() => {
     return rfqs.filter((rfq) => {
@@ -333,13 +354,13 @@ export default function RFQs({ embedded }: { embedded?: boolean } = {}) {
         searchQuery === "" ||
         rfq.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
         rfq.rfqNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        rfq.supplierNames.some((name) =>
-          name.toLowerCase().includes(searchQuery.toLowerCase())
+        (recipientsByRfq.get(rfq.id) ?? []).some((r) =>
+          r.supplierName.toLowerCase().includes(searchQuery.toLowerCase())
         );
       const matchesStatus = selectedStatus === "all" || rfq.status === selectedStatus;
       return matchesSearch && matchesStatus;
     });
-  }, [rfqs, searchQuery, selectedStatus]);
+  }, [rfqs, searchQuery, selectedStatus, recipientsByRfq]);
 
   const handleNavigate = (rfqId: string) => {
     setLocation(getNavigationPath(`/rfqs/${rfqId}`));
@@ -405,15 +426,30 @@ export default function RFQs({ embedded }: { embedded?: boolean } = {}) {
       {
         id: "suppliers",
         header: "Suppliers",
-        accessorFn: (r) => r.supplierNames.join(", "),
+        accessorFn: (r) => recipientsByRfq.get(r.id)?.length ?? 0,
         cell: ({ row }) => {
-          const names = row.original.supplierNames;
-          if (names.length === 0) {
+          const recipients = recipientsByRfq.get(row.original.id) ?? [];
+          if (recipients.length === 0) {
             return <span className="text-xs text-muted-foreground/40">—</span>;
           }
+          // "4 suppliers · 2 quoted" reads as pipeline state; the old version
+          // joined the names into a string you had to parse yourself.
+          const c = summariseRecipients(recipients);
+          const parts: string[] = [];
+          if (c.quoted) parts.push(`${c.quoted} quoted`);
+          if (c.sent + c.viewed) parts.push(`${c.sent + c.viewed} awaiting`);
+          if (c.declined) parts.push(`${c.declined} declined`);
+          if (c.notSent) parts.push(`${c.notSent} not sent`);
           return (
-            <span className="text-xs text-foreground truncate" data-testid={`cell-suppliers-${row.original.id}`}>
-              {names.join(", ")}
+            <span
+              className="text-xs text-foreground truncate"
+              title={recipients.map((r) => r.supplierName).join(", ")}
+              data-testid={`cell-suppliers-${row.original.id}`}
+            >
+              {c.total} supplier{c.total !== 1 ? "s" : ""}
+              {parts.length > 0 && (
+                <span className="text-muted-foreground"> · {parts.join(" · ")}</span>
+              )}
             </span>
           );
         },
@@ -509,16 +545,6 @@ export default function RFQs({ embedded }: { embedded?: boolean } = {}) {
                   <FileText className="mr-2 h-4 w-4" />
                   View Details
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={(e) => e.stopPropagation()}>
-                  <Download className="mr-2 h-4 w-4" />
-                  Download PDF
-                </DropdownMenuItem>
-                {row.original.status === "draft" && (
-                  <DropdownMenuItem onClick={(e) => e.stopPropagation()}>
-                    <Send className="mr-2 h-4 w-4" />
-                    Send RFQ
-                  </DropdownMenuItem>
-                )}
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
@@ -530,7 +556,7 @@ export default function RFQs({ embedded }: { embedded?: boolean } = {}) {
 
     return cols;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showProject, projects]);
+  }, [showProject, projects, recipientsByRfq]);
 
   const pickerColumns = useMemo(() => {
     return rfqColumns
@@ -574,7 +600,7 @@ export default function RFQs({ embedded }: { embedded?: boolean } = {}) {
           <div className="flex items-center gap-1 min-w-0 flex-1 overflow-x-auto">
             {STATUS_OPTIONS.map((status) => {
               const isActive = selectedStatus === status.key;
-              const count = statusCounts[status.key as keyof typeof statusCounts];
+              const count = statusCounts[status.key] ?? 0;
               return (
                 <button
                   key={status.key}

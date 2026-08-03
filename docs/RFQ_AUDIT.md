@@ -1,5 +1,14 @@
 # RFQ Section — Code Audit
 
+> **Status:** Tier 0 and most of Tier 1/2 are now fixed on this branch.
+> PR 1 (`fix(rfq): make the RFQ core loop work`) closed 0.1–0.4, 2.2, 2.3 and
+> most of 2.6. PR 2 (`feat(rfq): recipients + per-line quote pricing`) closed
+> 0.5, 1.5, 1.6, 2.1, 2.4 and the dead controls in 2.5, and introduced
+> `rfq_recipients` / `rfq_quote_items` plus derived status.
+> Still open: 1.1 (item editing), 1.2/1.3 (real attachment upload),
+> 1.4 (follow-up scheduler — PR 4), and the `/rfqs/:id/confirm` page.
+> The findings below are kept as written for the record.
+
 **Date:** 2026-08-02
 **Branch:** `feat/rfq` (off `origin/main` @ 7736dcef)
 **Scope:** `client/src/pages/RFQ*.tsx`, `client/src/pages/Rfq*.tsx`, `client/src/pages/CreateRFQ.tsx`,

@@ -1,9 +1,8 @@
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useRef } from "react";
 import { pdf } from "@react-pdf/renderer";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { EmptyState } from "@/components/EmptyState";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -42,8 +41,6 @@ import {
   Eye,
   EyeOff,
   Calendar as CalendarIcon,
-  Building2,
-  Save,
   Loader2,
   Plus,
   Trash2,
@@ -51,25 +48,28 @@ import {
   Upload,
   X,
   Clock,
-  Bell,
   ExternalLink,
   CheckCircle2,
   AlertCircle,
-  Search,
   ChevronDown,
   ChevronRight,
-  ChevronUp,
 } from "lucide-react";
 import { RFQDocument } from "@/components/rfq/pdf/RFQDocument";
 import { SendRFQDialog } from "@/components/rfq/SendRFQDialog";
 import { UploadQuoteDialog } from "@/components/rfq/UploadQuoteDialog";
 import { QuoteComparisonView } from "@/components/rfq/QuoteComparisonView";
-import type { Rfq, RfqItem, RfqQuote, Contact, RfqTemplate, CostCode, EstimateItem } from "@shared/schema";
+import type { Rfq, RfqItem, RfqQuote, RfqTemplate, CostCode, EstimateItem } from "@shared/schema";
 import { format } from "date-fns";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { dollarsToCents } from "@shared/money";
 import { useToast } from "@/hooks/use-toast";
 import { StatusBadge } from "@/components/StatusBadge";
 import { CostCodeSelect } from "@/components/CostCodeSelect";
+import { SectionCard, SectionSubHeader } from "@/components/detail/SectionCard";
+import { DetailPageHeader } from "@/components/detail/DetailPageHeader";
+import { DetailLayout } from "@/components/detail/DetailLayout";
+import { RfqRecipientsPanel } from "@/components/rfq/RfqRecipientsPanel";
+import { RFQ_STATUS_LABEL } from "@shared/rfqStatus";
 
 export default function RFQDetail() {
   const { id } = useParams<{ id: string }>();
@@ -96,8 +96,6 @@ export default function RFQDetail() {
     scope: "",
     dueDate: null as Date | null,
     deadline: null as Date | null,
-    supplierIds: [] as string[],
-    supplierNames: [] as string[],
     termsTemplateId: "",
     customTerms: "",
     internalNotes: "",
@@ -117,7 +115,6 @@ export default function RFQDetail() {
   });
   const [showImportDialog, setShowImportDialog] = useState(false);
   const [selectedEstimateItems, setSelectedEstimateItems] = useState<string[]>([]);
-  const [supplierSearch, setSupplierSearch] = useState("");
 
   const { data: rfq, isLoading: rfqLoading } = useQuery<Rfq>({
     queryKey: ["/api/rfqs", id],
@@ -134,20 +131,16 @@ export default function RFQDetail() {
     enabled: !!id,
   });
 
-  const { data: suppliers = [] } = useQuery<Contact[]>({
-    queryKey: ["/api/contacts?contactType=supplier"],
-  });
-
-  const filteredSuppliers = useMemo(() => {
-    const search = supplierSearch.toLowerCase();
-    return suppliers.filter((s) => (s.name ?? "").toLowerCase().includes(search));
-  }, [suppliers, supplierSearch]);
-
   const { data: rfqTemplates = [] } = useQuery<RfqTemplate[]>({
     queryKey: ["/api/rfq-templates"],
   });
 
-  const { data: companySettings } = useQuery({
+  const { data: companySettings } = useQuery<{
+    logo?: string | null;
+    companyName?: string | null;
+    email?: string | null;
+    phone?: string | null;
+  }>({
     queryKey: ["/api/company-settings"],
   });
 
@@ -168,8 +161,6 @@ export default function RFQDetail() {
         scope: rfq.scope || "",
         dueDate: rfq.dueDate ? new Date(rfq.dueDate) : null,
         deadline: rfq.deadline ? new Date(rfq.deadline) : null,
-        supplierIds: rfq.supplierIds || [],
-        supplierNames: rfq.supplierNames || [],
         termsTemplateId: rfq.termsTemplateId || "",
         customTerms: rfq.customTerms || "",
         internalNotes: rfq.internalNotes || "",
@@ -224,14 +215,20 @@ export default function RFQDetail() {
     mutationFn: async (estimateItemIds: string[]) => {
       const selectedItems = estimateItems.filter(ei => estimateItemIds.includes(ei.id));
       const promises = selectedItems.map((ei, index) =>
+        // Field names matter here: this read ei.costCodeId / ei.itemDescription
+        // / ei.unit / ei.unitPrice, none of which exist on estimate_items. Every
+        // import produced a blank description, unit forced to "each" and no
+        // price. The real columns are name / unitType / unitCostExTax, and
+        // costCode is a text code (not an id), so it can't populate costCodeId.
         apiRequest("/api/rfq-items", "POST", {
           rfqId: id,
           estimateItemId: ei.id,
-          costCodeId: ei.costCodeId || null,
-          description: ei.description || ei.itemDescription || "",
-          quantity: ei.quantity || 0,
-          unit: ei.unit || "each",
-          unitPrice: ei.unitPrice || null,
+          description: ei.name || ei.description || "Untitled item",
+          quantity: ei.quantity ?? 0,
+          unit: ei.unitType || null,
+          // estimate_items prices are dollars ex tax (doublePrecision);
+          // rfq_items.unitPrice is cents.
+          unitPrice: ei.unitCostExTax ? dollarsToCents(ei.unitCostExTax) : null,
           notes: "",
           displayOrder: items.length + index,
         })
@@ -260,6 +257,7 @@ export default function RFQDetail() {
     if (!rfq || !items.length) return;
 
     let isCancelled = false;
+    const rfqForPdf = rfq;
 
     async function generatePdf() {
       if (!showPreview) {
@@ -277,14 +275,14 @@ export default function RFQDetail() {
       try {
         const blob = await pdf(
           <RFQDocument
-            rfq={rfq}
+            rfq={rfqForPdf}
             items={items}
-            companyLogo={companySettings?.logo}
+            companyLogo={companySettings?.logo ?? undefined}
             companyName={companySettings?.companyName || "Morada"}
-            companyEmail={companySettings?.email}
-            companyPhone={companySettings?.phone}
+            companyEmail={companySettings?.email ?? undefined}
+            companyPhone={companySettings?.phone ?? undefined}
             primaryColor="#215E35"
-            confirmLink={`${window.location.origin}/rfqs/${rfq.id}/confirm`}
+            confirmLink={`${window.location.origin}/rfqs/${rfqForPdf.id}/confirm`}
           />
         ).toBlob();
 
@@ -334,17 +332,6 @@ export default function RFQDetail() {
     setHasChanges(true);
   };
 
-  const toggleSupplier = (supplierId: string, supplierName: string) => {
-    const isSelected = formData.supplierIds.includes(supplierId);
-    if (isSelected) {
-      handleFieldChange("supplierIds", formData.supplierIds.filter(id => id !== supplierId));
-      handleFieldChange("supplierNames", formData.supplierNames.filter(n => n !== supplierName));
-    } else {
-      handleFieldChange("supplierIds", [...formData.supplierIds, supplierId]);
-      handleFieldChange("supplierNames", [...formData.supplierNames, supplierName]);
-    }
-  };
-
   const handleTermsTemplateChange = (templateId: string) => {
     if (templateId === "custom") {
       handleFieldChange("termsTemplateId", "");
@@ -390,167 +377,188 @@ export default function RFQDetail() {
 
   return (
     <div className="flex flex-col h-full">
-      {/* Header Row */}
-      <div className="h-9 px-3 flex items-center justify-between border-b bg-background shrink-0">
-        <div className="flex items-center gap-3">
-          <button
-            onClick={goBack}
-            className="h-6 w-6 rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
-            data-testid="button-back"
-          >
-            <ArrowLeft className="w-4 h-4" />
-          </button>
-          <div className="flex items-center gap-2 flex-wrap">
-            <Input
-              value={formData.title}
-              onChange={(e) => handleFieldChange("title", e.target.value)}
-              className="h-7 text-sm font-semibold border-transparent hover:border-input focus:border-input w-[200px]"
-              data-testid="input-rfq-title"
+      <DetailPageHeader
+        backTo="/rfqs"
+        projectId={rfq.projectId}
+        title={formData.title}
+        onTitleChange={(v) => handleFieldChange("title", v)}
+        reference={rfq.rfqNumber}
+        badges={
+          <>
+            <StatusBadge
+              status={rfq.status}
+              label={RFQ_STATUS_LABEL[rfq.status] ?? rfq.status}
+              tone={rfq.status === "confirmed" ? "success" : undefined}
             />
-            <Badge variant="outline" className="text-xs font-mono">
-              {rfq.rfqNumber}
-            </Badge>
-            {/* "confirmed" isn't a known StatusBadge status — keep its emerald/success intent. */}
-            <StatusBadge status={rfq.status} tone={rfq.status === "confirmed" ? "success" : undefined} />
             {rfq.isExternal && (
               <Badge variant="outline" className="text-xs gap-1">
                 <ExternalLink className="w-3 h-3" />
                 External
               </Badge>
             )}
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2">
-          {hasChanges && (
+          </>
+        }
+        dirty={hasChanges}
+        saving={updateRfqMutation.isPending}
+        onSave={handleSave}
+        actions={
+          <>
             <Button
               size="sm"
               variant="outline"
-              onClick={handleSave}
-              disabled={updateRfqMutation.isPending}
+              onClick={() => setShowPreview(!showPreview)}
               className="h-7 text-xs"
-              data-testid="button-save"
+              data-testid="button-preview-pdf"
             >
-              {updateRfqMutation.isPending ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Save className="w-3 h-3 mr-1" />}
-              {updateRfqMutation.isPending ? "Saving..." : "Save"}
+              {showPreview ? <EyeOff className="w-3 h-3 mr-1" /> : <Eye className="w-3 h-3 mr-1" />}
+              {showPreview ? "Hide" : "Preview"}
             </Button>
-          )}
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => setShowPreview(!showPreview)}
-            className="h-7 text-xs"
-            data-testid="button-preview-pdf"
-          >
-            {showPreview ? <EyeOff className="w-3 h-3 mr-1" /> : <Eye className="w-3 h-3 mr-1" />}
-            {showPreview ? "Hide" : "Preview"}
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={handleDownloadPdf}
-            disabled={!pdfBlob}
-            className="h-7 text-xs"
-            data-testid="button-download-pdf"
-          >
-            <Download className="w-3 h-3 mr-1" />
-            PDF
-          </Button>
-          <Button
-            size="sm"
-            onClick={() => setShowSendDialog(true)}
-            className="h-7 text-xs bg-primary hover:bg-primary/90 text-white"
-            data-testid="button-send-rfq"
-          >
-            <Send className="w-3 h-3 mr-1" />
-            Send
-          </Button>
-        </div>
-      </div>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleDownloadPdf}
+              disabled={!pdfBlob}
+              title={!pdfBlob ? "Open Preview first to generate the PDF" : undefined}
+              className="h-7 text-xs"
+              data-testid="button-download-pdf"
+            >
+              <Download className="w-3 h-3 mr-1" />
+              PDF
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => setShowSendDialog(true)}
+              className="h-7 text-xs bg-primary hover:bg-primary/90 text-white"
+              data-testid="button-send-rfq"
+            >
+              <Send className="w-3 h-3 mr-1" />
+              Send
+            </Button>
+          </>
+        }
+      />
 
-      {/* Content - Two Column Layout */}
-      <div className="flex-1 overflow-hidden flex">
-        {/* Main Content (Left) */}
-        <div className="flex-1 overflow-auto p-3 space-y-2">
+      <DetailLayout
+        sidebar={
+          <>
+      <SectionCard
+        title="Track Only Mode"
+        accent="muted"
+        actions={
+          <Switch
+            checked={formData.isExternal}
+            onCheckedChange={(checked) => handleFieldChange("isExternal", checked)}
+          />
+        }
+      >
+            {formData.isExternal && (
+              <div className="p-3">
+                <Textarea
+                  value={formData.externalNotes}
+                  onChange={(e) => handleFieldChange("externalNotes", e.target.value)}
+                  placeholder="Where was this RFQ sent? (email, phone, etc.)"
+                  className="text-xs min-h-[60px]"
+                />
+              </div>
+            )}
+            {!formData.isExternal && (
+              <p className="text-data text-muted-foreground px-3 py-2">
+                Track RFQ sent outside Morada
+              </p>
+            )}
+      </SectionCard>
 
-          {/* RFQ Info Card — suppliers/dates + collapsible description + collapsible T&C */}
-          <Card className="overflow-hidden">
-            {/* Card header */}
-            <div className="h-8 flex items-center px-3 gap-2 border-b border-border/50 bg-muted/40">
-              <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-primary/80" />
-              <span className="text-xs font-medium">RFQ Info</span>
-            </div>
+      <SectionCard
+        title="Auto Follow-up"
+        accent="amber"
+        actions={
+          <Switch
+            checked={formData.followUpEnabled}
+            onCheckedChange={(checked) => handleFieldChange("followUpEnabled", checked)}
+          />
+        }
+      >
+            {formData.followUpEnabled ? (
+              <div className="p-3 space-y-2">
+                <Label className="text-xs text-muted-foreground">Days before due date</Label>
+                <Select
+                  value={formData.followUpDaysBefore.toString()}
+                  onValueChange={(v) => handleFieldChange("followUpDaysBefore", parseInt(v))}
+                >
+                  <SelectTrigger className="h-7 text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="1">1 day before</SelectItem>
+                    <SelectItem value="3">3 days before</SelectItem>
+                    <SelectItem value="5">5 days before</SelectItem>
+                    <SelectItem value="7">7 days before</SelectItem>
+                  </SelectContent>
+                </Select>
+                {rfq.followUpSentAt && (
+                  <p className="text-data text-status-success flex items-center gap-1">
+                    <CheckCircle2 className="w-3 h-3" />
+                    Sent {format(new Date(rfq.followUpSentAt), "MMM d")}
+                  </p>
+                )}
+              </div>
+            ) : (
+              <p className="text-data text-muted-foreground px-3 py-2">
+                Send reminder before due date
+              </p>
+            )}
+      </SectionCard>
 
-            {/* Suppliers & Dates — always visible */}
+      <SectionCard title="Internal Notes" accent="muted">
             <div className="p-3">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                {/* Suppliers */}
-                <div className="space-y-1.5">
-                  <Label className="text-xs text-muted-foreground">Suppliers</Label>
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <Button variant="outline" className="w-full justify-start text-sm font-normal">
-                        <Building2 className="w-4 h-4 mr-2 text-muted-foreground" />
-                        {formData.supplierIds.length > 0
-                          ? `${formData.supplierIds.length} selected`
-                          : "Select suppliers"}
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-64 p-2" align="start">
-                      <div className="relative mb-2">
-                        <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
-                        <Input
-                          value={supplierSearch}
-                          onChange={(e) => setSupplierSearch(e.target.value)}
-                          placeholder="Search suppliers..."
-                          className="h-7 pl-7 text-sm"
-                        />
-                      </div>
-                      <div className="space-y-1 max-h-[200px] overflow-y-auto">
-                        {suppliers.length === 0 ? (
-                          <p className="text-xs text-muted-foreground text-center py-4">
-                            No suppliers found. Add suppliers first.
-                          </p>
-                        ) : filteredSuppliers.length === 0 ? (
-                          <p className="text-xs text-muted-foreground text-center py-2">
-                            No suppliers match your search.
-                          </p>
-                        ) : (
-                          filteredSuppliers.map((supplier) => (
-                            <label
-                              key={supplier.id}
-                              className="flex items-center gap-2 p-2 rounded hover-elevate cursor-pointer"
-                            >
-                              <input
-                                type="checkbox"
-                                checked={formData.supplierIds.includes(supplier.id)}
-                                onChange={() => toggleSupplier(supplier.id, supplier.name ?? "")}
-                                className="rounded"
-                              />
-                              <span className="text-sm">{supplier.name}</span>
-                            </label>
-                          ))
-                        )}
-                      </div>
-                    </PopoverContent>
-                  </Popover>
-                  {formData.supplierNames.length > 0 && (
-                    <div className="flex flex-wrap gap-1">
-                      {formData.supplierNames.map((name, i) => (
-                        <Badge key={i} variant="secondary" className="text-xs">
-                          {name}
-                          <button
-                            onClick={() => toggleSupplier(formData.supplierIds[i], name)}
-                            className="ml-1 hover:text-destructive"
-                          >
-                            <X className="w-3 h-3" />
-                          </button>
-                        </Badge>
-                      ))}
-                    </div>
-                  )}
-                </div>
+              <p className="text-data text-muted-foreground mb-2">
+                Only visible to your team
+              </p>
+              <Textarea
+                value={formData.internalNotes}
+                onChange={(e) => handleFieldChange("internalNotes", e.target.value)}
+                placeholder="Notes for your team..."
+                className="text-xs min-h-[80px]"
+                data-testid="input-internal-notes"
+              />
+            </div>
+      </SectionCard>
 
+      <SectionCard title="Activity" accent="muted">
+            <div className="p-3 space-y-3">
+              <div className="flex items-start gap-2">
+                <CheckCircle2 className="w-3.5 h-3.5 text-muted-foreground mt-0.5 flex-shrink-0" />
+                <div>
+                  <p className="text-xs">Created</p>
+                  <p className="text-data text-muted-foreground">
+                    {rfq.createdByName} · {formatDate(rfq.createdAt)}
+                  </p>
+                </div>
+              </div>
+              {rfq.sentAt && (
+                <div className="flex items-start gap-2">
+                  <Send className="w-3.5 h-3.5 text-muted-foreground mt-0.5 flex-shrink-0" />
+                  <div>
+                    <p className="text-xs">Sent to suppliers</p>
+                    <p className="text-data text-muted-foreground">
+                      {formatDate(rfq.sentAt)}
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+      </SectionCard>
+          </>
+        }
+      >
+        {/* Suppliers — the main event. One row per request, each with its own
+            state, replacing the "3 selected" popover that hid them. */}
+        <RfqRecipientsPanel rfqId={rfq.id} quotes={quotes} />
+
+        <SectionCard title="RFQ Info" accent="primary">
+            {/* Dates */}
+            <div className="p-3">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 {/* Due Date */}
                 <div className="space-y-1.5">
                   <Label className="text-xs text-muted-foreground">Response Due</Label>
@@ -620,20 +628,12 @@ export default function RFQDetail() {
               )}
             </div>
 
-          </Card>
+        </SectionCard>
 
-          {/* Scope & Items Card */}
-          <Card className="overflow-hidden">
-            <div className="h-8 flex items-center px-3 gap-2 border-b border-border/50 bg-muted/40">
-              <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-amber/70" />
-              <span className="text-xs font-medium">Scope & Items</span>
-            </div>
-
+        <SectionCard title="Scope & Items" accent="amber">
             {/* Scope of Work — always visible */}
             <div className="border-b border-border/50">
-              <div className="h-8 flex items-center px-3 gap-2 border-b border-border/30 bg-muted/20">
-                <span className="text-xs text-muted-foreground font-medium">Scope of Work</span>
-              </div>
+              <SectionSubHeader title="Scope of Work" />
               <div className="p-3">
                 <Textarea
                   value={formData.scope}
@@ -755,47 +755,35 @@ export default function RFQDetail() {
               </Table>
             )}
             </div>{/* end Line Items section */}
-          </Card>
+        </SectionCard>
 
-          {/* Documentation Card — Terms & Conditions + Attachments */}
-          <Card className="overflow-hidden">
-
-            {/* Terms & Conditions — collapsible */}
-            <div className="border-b border-border/50">
-              <div
-                className="h-8 flex items-center justify-between px-3 gap-2 cursor-pointer bg-muted/20 border-b border-border/30 hover-elevate"
-                onClick={() => setTcCollapsed((v) => !v)}
-              >
-                <div className="flex items-center gap-2">
-                  <div className="w-1 h-1 rounded-full flex-shrink-0 bg-primary/70" />
-                  <span className="text-xs font-medium">Terms & Conditions</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  {!tcCollapsed && (
-                    <Select
-                      value={formData.termsTemplateId || "custom"}
-                      onValueChange={handleTermsTemplateChange}
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <SelectTrigger className="w-[140px] h-6 text-xs">
-                        <SelectValue placeholder="Select template" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="custom">Custom</SelectItem>
-                        {rfqTemplates.filter(t => t.termsAndConditions).map((template) => (
-                          <SelectItem key={template.id} value={template.id}>
-                            {template.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  )}
-                  {tcCollapsed
-                    ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
-                    : <ChevronUp className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />}
-                </div>
-              </div>
-              {!tcCollapsed && (
+        <SectionCard
+          title="Terms & Conditions"
+          accent="primary"
+          collapsible
+          collapsed={tcCollapsed}
+          onCollapsedChange={setTcCollapsed}
+          actions={
+            <Select
+              value={formData.termsTemplateId || "custom"}
+              onValueChange={handleTermsTemplateChange}
+            >
+              <SelectTrigger className="w-[140px] h-6 text-xs">
+                <SelectValue placeholder="Select template" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="custom">Custom</SelectItem>
+                {rfqTemplates.filter(t => t.termsAndConditions).map((template) => (
+                  <SelectItem key={template.id} value={template.id}>
+                    {template.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          }
+        >
+            <div>
+              {(
                 <div className="p-3">
                   <Textarea
                     value={formData.customTerms}
@@ -808,38 +796,31 @@ export default function RFQDetail() {
               )}
             </div>
 
-            {/* Attachments — collapsible */}
+        </SectionCard>
+
+        <SectionCard
+          title="Attachments"
+          accent="amber"
+          count={rfq.attachmentUrls?.length ?? 0}
+          collapsible
+          collapsed={attachCollapsed}
+          onCollapsedChange={setAttachCollapsed}
+          actions={
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-6 text-xs"
+              data-testid="button-add-attachment"
+              disabled
+              title="File upload is not wired up yet"
+            >
+              <Upload className="w-3 h-3 mr-1" />
+              Upload
+            </Button>
+          }
+        >
             <div>
-              <div
-                className="h-8 flex items-center justify-between px-3 gap-2 cursor-pointer bg-muted/20 border-b border-border/30 hover-elevate"
-                onClick={() => setAttachCollapsed((v) => !v)}
-              >
-                <div className="flex items-center gap-2">
-                  <div className="w-1 h-1 rounded-full flex-shrink-0 bg-amber/70" />
-                  <span className="text-xs font-medium">Attachments</span>
-                  {(rfq.attachmentUrls?.length ?? 0) > 0 && (
-                    <Badge variant="secondary" className="text-xs h-4 px-1.5">{rfq.attachmentUrls!.length}</Badge>
-                  )}
-                </div>
-                <div className="flex items-center gap-2">
-                  {!attachCollapsed && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="h-6 text-xs"
-                      data-testid="button-add-attachment"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <Upload className="w-3 h-3 mr-1" />
-                      Upload
-                    </Button>
-                  )}
-                  {attachCollapsed
-                    ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
-                    : <ChevronUp className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />}
-                </div>
-              </div>
-              {!attachCollapsed && (
+              {(
                 (!rfq.attachmentUrls || rfq.attachmentUrls.length === 0) ? (
                   <div className="border-2 border-dashed rounded-lg m-3 p-6 text-center text-muted-foreground text-sm">
                     <Paperclip className="w-6 h-6 mx-auto mb-2 opacity-50" />
@@ -861,42 +842,34 @@ export default function RFQDetail() {
                 )
               )}
             </div>
-          </Card>
+        </SectionCard>
 
-          {/* Quotes Received */}
-          <Card className="overflow-hidden">
-            <div className="h-8 flex items-center justify-between px-3 gap-2 border-b border-border/50 bg-muted/40">
-              <div className="flex items-center gap-2">
-                <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-sage/70" />
-                <span className="text-xs font-medium">Quotes Received</span>
-                {quotes.length > 0 && (
-                  <Badge variant="secondary" className="text-xs h-4 px-1.5">{quotes.length}</Badge>
-                )}
-              </div>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => setShowUploadQuoteDialog(true)}
-                className="h-6 text-xs"
-              >
-                <Upload className="w-3 h-3 mr-1" />
-                Upload Quote
-              </Button>
-            </div>
+        <SectionCard
+          title="Quotes Received"
+          accent="sage"
+          count={quotes.length}
+          actions={
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setShowUploadQuoteDialog(true)}
+              className="h-6 text-xs"
+              data-testid="button-upload-quote"
+            >
+              <Upload className="w-3 h-3 mr-1" />
+              Upload Quote
+            </Button>
+          }
+        >
             {quotes.length === 0 ? (
               <EmptyState variant="inline" title="No quotes received yet" className="py-8" />
             ) : (
               <QuoteComparisonView rfqId={rfq.id} quotes={quotes} rfq={rfq} />
             )}
-          </Card>
+        </SectionCard>
 
-          {/* PDF Preview */}
           {showPreview && (
-            <Card className="overflow-hidden">
-              <div className="h-8 flex items-center px-3 gap-2 border-b border-border/50 bg-muted/40">
-                <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-muted-foreground/40" />
-                <span className="text-xs font-medium">PDF Preview</span>
-              </div>
+            <SectionCard title="PDF Preview" accent="muted">
               {isGenerating ? (
                 <div className="flex items-center justify-center h-[500px] bg-muted/20">
                   <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
@@ -912,136 +885,10 @@ export default function RFQDetail() {
                   Failed to generate preview
                 </div>
               )}
-            </Card>
+            </SectionCard>
           )}
-        </div>
 
-        {/* Sidebar (Right) */}
-        <div className="w-72 border-l overflow-auto p-3 space-y-2 bg-muted/10">
-
-          {/* Track Only Mode */}
-          <Card className="overflow-hidden">
-            <div className="h-8 flex items-center justify-between px-3 gap-2 border-b border-border/50 bg-muted/40">
-              <div className="flex items-center gap-2">
-                <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-muted-foreground/40" />
-                <span className="text-xs font-medium">Track Only Mode</span>
-              </div>
-              <Switch
-                checked={formData.isExternal}
-                onCheckedChange={(checked) => handleFieldChange("isExternal", checked)}
-              />
-            </div>
-            {formData.isExternal && (
-              <div className="p-3">
-                <Textarea
-                  value={formData.externalNotes}
-                  onChange={(e) => handleFieldChange("externalNotes", e.target.value)}
-                  placeholder="Where was this RFQ sent? (email, phone, etc.)"
-                  className="text-xs min-h-[60px]"
-                />
-              </div>
-            )}
-            {!formData.isExternal && (
-              <p className="text-data text-muted-foreground px-3 py-2">
-                Track RFQ sent outside Morada
-              </p>
-            )}
-          </Card>
-
-          {/* Auto Follow-up */}
-          <Card className="overflow-hidden">
-            <div className="h-8 flex items-center justify-between px-3 gap-2 border-b border-border/50 bg-muted/40">
-              <div className="flex items-center gap-2">
-                <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-amber/70" />
-                <span className="text-xs font-medium">Auto Follow-up</span>
-              </div>
-              <Switch
-                checked={formData.followUpEnabled}
-                onCheckedChange={(checked) => handleFieldChange("followUpEnabled", checked)}
-              />
-            </div>
-            {formData.followUpEnabled ? (
-              <div className="p-3 space-y-2">
-                <Label className="text-xs text-muted-foreground">Days before due date</Label>
-                <Select
-                  value={formData.followUpDaysBefore.toString()}
-                  onValueChange={(v) => handleFieldChange("followUpDaysBefore", parseInt(v))}
-                >
-                  <SelectTrigger className="h-7 text-xs">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="1">1 day before</SelectItem>
-                    <SelectItem value="3">3 days before</SelectItem>
-                    <SelectItem value="5">5 days before</SelectItem>
-                    <SelectItem value="7">7 days before</SelectItem>
-                  </SelectContent>
-                </Select>
-                {rfq.followUpSentAt && (
-                  <p className="text-data text-status-success flex items-center gap-1">
-                    <CheckCircle2 className="w-3 h-3" />
-                    Sent {format(new Date(rfq.followUpSentAt), "MMM d")}
-                  </p>
-                )}
-              </div>
-            ) : (
-              <p className="text-data text-muted-foreground px-3 py-2">
-                Send reminder before due date
-              </p>
-            )}
-          </Card>
-
-          {/* Internal Notes */}
-          <Card className="overflow-hidden">
-            <div className="h-8 flex items-center px-3 gap-2 border-b border-border/50 bg-muted/40">
-              <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-muted-foreground/40" />
-              <span className="text-xs font-medium">Internal Notes</span>
-            </div>
-            <div className="p-3">
-              <p className="text-data text-muted-foreground mb-2">
-                Only visible to your team
-              </p>
-              <Textarea
-                value={formData.internalNotes}
-                onChange={(e) => handleFieldChange("internalNotes", e.target.value)}
-                placeholder="Notes for your team..."
-                className="text-xs min-h-[80px]"
-                data-testid="input-internal-notes"
-              />
-            </div>
-          </Card>
-
-          {/* Activity */}
-          <Card className="overflow-hidden">
-            <div className="h-8 flex items-center px-3 gap-2 border-b border-border/50 bg-muted/40">
-              <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-muted-foreground/40" />
-              <span className="text-xs font-medium">Activity</span>
-            </div>
-            <div className="p-3 space-y-3">
-              <div className="flex items-start gap-2">
-                <CheckCircle2 className="w-3.5 h-3.5 text-muted-foreground mt-0.5 flex-shrink-0" />
-                <div>
-                  <p className="text-xs">Created</p>
-                  <p className="text-data text-muted-foreground">
-                    {rfq.createdByName} · {formatDate(rfq.createdAt)}
-                  </p>
-                </div>
-              </div>
-              {rfq.sentAt && (
-                <div className="flex items-start gap-2">
-                  <Send className="w-3.5 h-3.5 text-muted-foreground mt-0.5 flex-shrink-0" />
-                  <div>
-                    <p className="text-xs">Sent to suppliers</p>
-                    <p className="text-data text-muted-foreground">
-                      {formatDate(rfq.sentAt)}
-                    </p>
-                  </div>
-                </div>
-              )}
-            </div>
-          </Card>
-        </div>
-      </div>
+        </DetailLayout>
 
       {/* Add Item Dialog */}
       <Dialog open={showAddItemDialog} onOpenChange={setShowAddItemDialog}>
@@ -1190,14 +1037,15 @@ export default function RFQDetail() {
                           />
                         </TableCell>
                         <TableCell className="text-sm">
-                          {item.description || item.itemDescription || "Untitled item"}
+                          {item.name || item.description || "Untitled item"}
                         </TableCell>
                         <TableCell className="text-sm text-right">
                           {item.quantity || "-"}
                         </TableCell>
-                        <TableCell className="text-sm">{item.unit || "-"}</TableCell>
+                        <TableCell className="text-sm">{item.unitType || "-"}</TableCell>
                         <TableCell className="text-sm text-right">
-                          {item.unitPrice ? `$${(item.unitPrice / 100).toFixed(2)}` : "-"}
+                          {/* estimate_items prices are dollars, not cents. */}
+                          {item.unitCostExTax ? `$${item.unitCostExTax.toFixed(2)}` : "-"}
                         </TableCell>
                       </TableRow>
                     ))
