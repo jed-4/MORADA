@@ -1,16 +1,42 @@
+import { useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Phone, Mail, Hammer } from "lucide-react";
+import { Phone, Mail, Hammer, ArrowRight } from "lucide-react";
 import type { Contact } from "@shared/schema";
 import type { WidgetProps } from "@/types/widgets";
 import { useProject } from "@/contexts/ProjectContext";
 import { WidgetSkeleton, WidgetEmpty, WidgetError } from "@/components/ui/widget-states";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useLocation } from "wouter";
 
-export default function SubcontractorsWidget({ widget }: WidgetProps) {
+export default function SubcontractorsWidget({ widget, onSetHeaderActions }: WidgetProps) {
   const { currentProject } = useProject();
   const [, setLocation] = useLocation();
+
+  // Header row: hover arrow to the contacts page
+  useEffect(() => {
+    onSetHeaderActions?.(
+      currentProject ? (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-6 w-6 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity"
+              onClick={() => setLocation("/contacts")}
+              data-testid="subcontractors-widget-open-contacts"
+              aria-label="Open contacts"
+            >
+              <ArrowRight className="h-3.5 w-3.5" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="top">All contacts</TooltipContent>
+        </Tooltip>
+      ) : null,
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentProject?.id]);
 
   const {
     data: contacts = [],
@@ -54,10 +80,7 @@ export default function SubcontractorsWidget({ widget }: WidgetProps) {
 
   return (
     <div className="flex flex-col h-full" data-testid="widget-subcontractors">
-      <div className="px-4 pt-3 pb-2 text-xs text-muted-foreground">
-        {projectSubs.length} subcontractor{projectSubs.length === 1 ? "" : "s"}
-      </div>
-      <div className="flex-1 overflow-auto px-2 pb-3 space-y-1">
+      <div className="flex-1 overflow-auto space-y-1">
         {visible.map((c) => {
           const initials = (c.name || "?")
             .split(/\s+/)
@@ -122,10 +145,10 @@ export default function SubcontractorsWidget({ widget }: WidgetProps) {
           <button
             type="button"
             onClick={() => setLocation("/contacts")}
-            className="w-full text-xs text-bp-purple font-medium pt-1 hover:underline"
+            className="w-full text-xs text-muted-foreground hover:text-foreground py-1.5 text-center"
             data-testid="button-view-all-subcontractors"
           >
-            View all {projectSubs.length}
+            Showing {visible.length} of {projectSubs.length} · View all
           </button>
         )}
       </div>

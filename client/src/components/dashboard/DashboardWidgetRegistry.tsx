@@ -12,7 +12,6 @@ import {
   Sparkles,
   Hammer,
   Inbox,
-  Newspaper,
   Wallet,
   GanttChart,
   FolderOpen,
@@ -34,6 +33,7 @@ import {
   Gauge,
   GitBranch,
   Rocket,
+  MessageSquare,
 } from "lucide-react";
 import { WidgetDefinition } from "@/types/widgets";
 
@@ -44,6 +44,7 @@ import NotesWidget from "@/components/widgets/NotesWidget";
 import ScheduleWidget from "@/components/widgets/ScheduleWidget";
 import ActivityWidget from "@/components/widgets/ActivityWidget";
 import ChecklistWidget from "@/components/widgets/ChecklistWidget";
+import MessagesWidget from "@/components/widgets/MessagesWidget";
 import BillsSummaryWidget from "@/components/widgets/BillsSummaryWidget";
 import VariationsSummaryWidget from "@/components/widgets/VariationsSummaryWidget";
 import InvoicesSummaryWidget from "@/components/widgets/InvoicesSummaryWidget";
@@ -52,7 +53,6 @@ import AlertsWidget from "@/components/widgets/AlertsWidget";
 import AISummaryWidget from "@/components/widgets/AISummaryWidget";
 import SubcontractorsWidget from "@/components/widgets/SubcontractorsWidget";
 import OpenItemsWidget from "@/components/widgets/OpenItemsWidget";
-import RecentActivityFeedWidget from "@/components/widgets/RecentActivityFeedWidget";
 import ProjectBudgetVsActualWidget from "@/components/widgets/ProjectBudgetVsActualWidget";
 import ProjectCashFlowWidget from "@/components/widgets/ProjectCashFlowWidget";
 import ClientActivityWidget from "@/components/widgets/ClientActivityWidget";
@@ -143,7 +143,16 @@ export const projectWidgetRegistry: Record<string, WidgetDefinition> = {
     icon: Activity,
     component: ActivityWidget,
     defaultSize: "md",
-    configurable: false,
+    configurable: true,
+  },
+  messages: {
+    type: "messages",
+    name: "Messages",
+    description: "Follow and reply to a project chat",
+    icon: MessageSquare,
+    component: MessagesWidget,
+    defaultSize: "md",
+    configurable: true,
   },
   checklist: {
     type: "checklist",
@@ -232,18 +241,6 @@ export const projectWidgetRegistry: Record<string, WidgetDefinition> = {
     defaultColumns: 3,
     defaultRowSpan: 2,
   },
-  recentActivityFeed: {
-    type: "recentActivityFeed",
-    name: "Recent Activity Feed",
-    description: "Latest activity across the project at a glance",
-    icon: Newspaper,
-    component: RecentActivityFeedWidget,
-    defaultSize: "md",
-    configurable: true,
-    accent: "purple",
-    defaultColumns: 3,
-    defaultRowSpan: 3,
-  },
   budgetVsActual: {
     type: "budgetVsActual",
     name: "Budget vs Actual",
@@ -311,7 +308,7 @@ export const projectWidgetRegistry: Record<string, WidgetDefinition> = {
   quickNotes: {
     type: "quickNotes",
     name: "Quick Notes",
-    description: "Notion-like quick blocks: heading, text, bullet, and to-do",
+    description: "Sticky pad for fast jots — promote any of them to a project note",
     icon: StickyNote,
     component: QuickNotesWidget,
     defaultSize: "md",
