@@ -206,6 +206,14 @@ export type ClientInvoiceChildren = {
   selections?: string[];
 };
 
+// Completion tallies for a set of checklist instances, resolved in one query.
+// Keyed by instance id and by group id; "done" counts both completed and n/a
+// items, matching how progress has always been presented in the UI.
+export type ChecklistItemCounts = {
+  byInstance: Record<string, { total: number; completed: number }>;
+  byGroup: Record<string, { total: number; completed: number }>;
+};
+
 export interface IStorage {
   // User operations
   getUser(id: string): Promise<User | undefined>;
@@ -1030,7 +1038,10 @@ export interface IStorage {
   deleteChecklistTemplateItem(id: string): Promise<boolean>;
 
   // Checklist Instances CRUD (these are "Checklist Groups" in user terminology)
-  getChecklistInstances(projectId?: string, userId?: string, isAdmin?: boolean): Promise<ChecklistInstance[]>;
+  getChecklistInstances(projectId?: string, userId?: string, isAdmin?: boolean, companyId?: string): Promise<ChecklistInstance[]>;
+  // Batched reads — the list endpoints used to fan out one query per instance.
+  getChecklistInstanceGroupsForInstances(instanceIds: string[]): Promise<ChecklistInstanceGroup[]>;
+  getChecklistItemCounts(instanceIds: string[]): Promise<ChecklistItemCounts>;
   getChecklistInstance(id: string): Promise<ChecklistInstance | undefined>;
   createChecklistInstance(instance: InsertChecklistInstance): Promise<ChecklistInstance>;
   updateChecklistInstance(id: string, instance: Partial<InsertChecklistInstance>): Promise<ChecklistInstance | undefined>;
@@ -6610,6 +6621,12 @@ export class MemStorage implements IStorage {
   }
   async updateSuggestion(id: string, updates: { status?: string; priority?: string | null; internalNote?: string | null }): Promise<Suggestion | undefined> {
     return undefined;
+  }
+  async getChecklistInstanceGroupsForInstances(instanceIds: string[]): Promise<ChecklistInstanceGroup[]> {
+    return [];
+  }
+  async getChecklistItemCounts(instanceIds: string[]): Promise<ChecklistItemCounts> {
+    return { byInstance: {}, byGroup: {} };
   }
   async createChecklistAuditEntry(entry: InsertChecklistAuditLog): Promise<ChecklistAuditLog> {
     return { id: '', ...entry, createdAt: new Date() } as ChecklistAuditLog;
@@ -18773,11 +18790,14 @@ export class DbStorage implements IStorage {
   }
 
   // Checklist Instances CRUD
-  async getChecklistInstances(projectId?: string, userId?: string, isAdmin?: boolean): Promise<ChecklistInstance[]> {
+  async getChecklistInstances(projectId?: string, userId?: string, isAdmin?: boolean, companyId?: string): Promise<ChecklistInstance[]> {
     try {
       const buildWhere = (projectFilter?: ReturnType<typeof eq>) => {
         const conditions = [];
         if (projectFilter) conditions.push(projectFilter);
+        // Tenant scoping in SQL. This used to be a JS filter applied after the
+        // fact, which meant every call read every instance in the database.
+        if (companyId) conditions.push(eq(schema.checklistInstances.companyId, companyId));
         // Visibility filter: hide assignee_only checklists from non-assignees (unless admin).
         // NULL visibility treated as 'everyone' for backwards-compat with pre-migration rows.
         if (!isAdmin) {
@@ -18891,6 +18911,21 @@ export class DbStorage implements IStorage {
     }
   }
 
+  // Batched sibling of getChecklistInstanceGroups: one query for many
+  // instances, so list endpoints don't fan out a query per instance.
+  async getChecklistInstanceGroupsForInstances(instanceIds: string[]): Promise<ChecklistInstanceGroup[]> {
+    if (instanceIds.length === 0) return [];
+    try {
+      return await db.select()
+        .from(schema.checklistInstanceGroups)
+        .where(inArray(schema.checklistInstanceGroups.instanceId, instanceIds))
+        .orderBy(schema.checklistInstanceGroups.order);
+    } catch (error) {
+      console.error("Database error in getChecklistInstanceGroupsForInstances:", error);
+      throw error;
+    }
+  }
+
   async getChecklistInstanceGroup(id: string): Promise<ChecklistInstanceGroup | undefined> {
     try {
       const result = await db.select()
@@ -18954,6 +18989,48 @@ export class DbStorage implements IStorage {
         .orderBy(schema.checklistInstanceItems.groupOrder, schema.checklistInstanceItems.order);
     } catch (error) {
       console.error("Database error in getChecklistInstanceItems:", error);
+      throw error;
+    }
+  }
+
+  // Completion tallies for many instances in a single grouped query, rather
+  // than pulling every item row back and counting them in JS.
+  async getChecklistItemCounts(instanceIds: string[]): Promise<ChecklistItemCounts> {
+    const empty: ChecklistItemCounts = { byInstance: {}, byGroup: {} };
+    if (instanceIds.length === 0) return empty;
+    try {
+      const rows = await db.select({
+        instanceId: schema.checklistInstanceItems.instanceId,
+        groupId: schema.checklistInstanceItems.groupId,
+        status: schema.checklistInstanceItems.status,
+        count: sql<number>`count(*)::int`,
+      })
+        .from(schema.checklistInstanceItems)
+        .where(inArray(schema.checklistInstanceItems.instanceId, instanceIds))
+        .groupBy(
+          schema.checklistInstanceItems.instanceId,
+          schema.checklistInstanceItems.groupId,
+          schema.checklistInstanceItems.status,
+        );
+
+      const bump = (bucket: Record<string, { total: number; completed: number }>, key: string, row: typeof rows[number]) => {
+        const entry = bucket[key] ?? (bucket[key] = { total: 0, completed: 0 });
+        entry.total += row.count;
+        // "na" counts as done, same as the completedCount the list endpoint
+        // has always returned and what the progress bars render.
+        if (row.status === "completed" || row.status === "na") entry.completed += row.count;
+      };
+
+      const counts: ChecklistItemCounts = { byInstance: {}, byGroup: {} };
+      for (const row of rows) {
+        bump(counts.byInstance, row.instanceId, row);
+        if (row.groupId) bump(counts.byGroup, row.groupId, row);
+      }
+      // Instances with no items at all still need a zero entry.
+      for (const id of instanceIds) counts.byInstance[id] ??= { total: 0, completed: 0 };
+      return counts;
+    } catch (error) {
+      console.error("Database error in getChecklistItemCounts:", error);
       throw error;
     }
   }

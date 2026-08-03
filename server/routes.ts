@@ -25615,25 +25615,45 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const currentUser = req.user as any;
       const userId = currentUser ? String(currentUser.id) : undefined;
       const isAdmin = currentUser?.role === 'admin' || currentUser?.isAdmin;
+      if (!currentUser?.companyId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
       if (projectId && !(await enforceProjectCompany(req, res, projectId, "Project not found"))) return;
-      const fetchedInstances = await storage.getChecklistInstances(projectId, userId, isAdmin);
-      // Tenant scoping: instances carry companyId directly.
-      const instances = fetchedInstances.filter((i: any) => i.companyId === currentUser?.companyId);
-      
-      // Get item counts for each instance
-      const instancesWithCounts = await Promise.all(
-        instances.map(async (instance) => {
-          const items = await storage.getChecklistInstanceItems(instance.id);
-          const completedCount = items.filter(i => i.status === "completed" || i.status === "na").length;
-          return {
-            ...instance,
-            completedCount,
-            totalCount: items.length,
-          };
-        })
-      );
-      
-      res.json(instancesWithCounts);
+
+      // `?include=groups` folds the per-instance groups request into this one,
+      // with each group carrying its own completion counts. Items stay lazy:
+      // most checklists render collapsed, so shipping every item row up front
+      // would trade one round trip for a much larger payload.
+      const wantsGroups = String(req.query.include || "")
+        .split(",").map(s => s.trim()).includes("groups");
+
+      const instances = await storage.getChecklistInstances(projectId, userId, isAdmin, currentUser.companyId);
+      const instanceIds = instances.map(i => i.id);
+
+      // One grouped query for every instance, instead of one query per instance.
+      const [counts, allGroups] = await Promise.all([
+        storage.getChecklistItemCounts(instanceIds),
+        wantsGroups ? storage.getChecklistInstanceGroupsForInstances(instanceIds) : Promise.resolve([]),
+      ]);
+      const zero = { total: 0, completed: 0 };
+
+      const groupsByInstance = new Map<string, any[]>();
+      for (const group of allGroups) {
+        const groupCounts = counts.byGroup[group.id] ?? zero;
+        const bucket = groupsByInstance.get(group.instanceId) ?? [];
+        bucket.push({ ...group, completedCount: groupCounts.completed, totalCount: groupCounts.total });
+        groupsByInstance.set(group.instanceId, bucket);
+      }
+
+      res.json(instances.map(instance => {
+        const instanceCounts = counts.byInstance[instance.id] ?? zero;
+        return {
+          ...instance,
+          completedCount: instanceCounts.completed,
+          totalCount: instanceCounts.total,
+          ...(wantsGroups ? { groups: groupsByInstance.get(instance.id) ?? [] } : {}),
+        };
+      }));
     } catch (error: any) {
       res.status(500).json({ 
         error: "Failed to fetch checklist instances",
@@ -25792,23 +25812,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(401).json({ error: "Not authenticated" });
       }
       
-      // Get all instances for the company first (filtered by companyId)
-      const allInstances = await storage.getChecklistInstances(undefined, String(user.id), user?.role === 'admin' || user?.isAdmin);
-      const companyInstances = allInstances.filter(i => i.companyId === user.companyId);
-      
-      // Get groups for each instance and flatten
-      const allGroups = await Promise.all(
-        companyInstances.map(async (instance) => {
-          const groups = await storage.getChecklistInstanceGroups(instance.id);
-          return groups.map(g => ({
-            ...g,
-            instanceName: instance.name, // Include parent instance name for context
-            projectId: instance.projectId, // Include projectId for filtering in task modal
-          }));
-        })
+      const instances = await storage.getChecklistInstances(
+        undefined, String(user.id), user?.role === 'admin' || user?.isAdmin, user.companyId,
       );
-      
-      res.json(allGroups.flat());
+      const instanceById = new Map(instances.map(i => [i.id, i]));
+
+      // One query for every group, rather than one per instance.
+      const groups = await storage.getChecklistInstanceGroupsForInstances(Array.from(instanceById.keys()));
+
+      res.json(groups.map(g => {
+        const instance = instanceById.get(g.instanceId);
+        return {
+          ...g,
+          instanceName: instance?.name, // Parent instance name for context
+          projectId: instance?.projectId, // For filtering in the task modal
+        };
+      }));
     } catch (error: any) {
       res.status(500).json({ 
         error: "Failed to fetch checklist groups",
@@ -25820,8 +25839,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/checklist-instances/:instanceId/groups", async (req, res) => {
     try {
       if (!(await getOwnedInstance(req, res, req.params.instanceId))) return;
-      const groups = await storage.getChecklistInstanceGroups(req.params.instanceId);
-      res.json(groups);
+      const [groups, counts] = await Promise.all([
+        storage.getChecklistInstanceGroups(req.params.instanceId),
+        // Counts travel with the groups so a collapsed checklist can still show
+        // its progress — previously the client only knew a group's totals once
+        // it had expanded it and fetched the items.
+        storage.getChecklistItemCounts([req.params.instanceId]),
+      ]);
+      res.json(groups.map(g => ({
+        ...g,
+        completedCount: counts.byGroup[g.id]?.completed ?? 0,
+        totalCount: counts.byGroup[g.id]?.total ?? 0,
+      })));
     } catch (error: any) {
       res.status(500).json({ 
         error: "Failed to fetch checklist groups",
@@ -26088,7 +26117,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
           if (allItemsDone && group && group.status !== "completed") {
             await storage.updateChecklistInstanceGroup(item.groupId, {
               status: "completed",
-              completedAt: new Date().toISOString(),
+              // A Date, not an ISO string: these go straight to a Drizzle
+              // timestamp column, which calls .toISOString() on the value. A
+              // string threw, and the throw was swallowed by the catch below —
+              // so checklists never actually auto-completed.
+              completedAt: new Date(),
               completedBy: actingUser?.id || null,
               completedByName: actingUser ? `${actingUser.firstName || ''} ${actingUser.lastName || ''}`.trim() : null,
             } as any);
@@ -26109,7 +26142,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             if (allGroupsDone && instance && instance.status !== "completed") {
               await storage.updateChecklistInstance(item.instanceId, {
                 status: "completed",
-                completedAt: new Date().toISOString(),
+                completedAt: new Date(),
                 completedBy: actingUser?.id || null,
                 completedByName: actingUser ? `${actingUser.firstName || ''} ${actingUser.lastName || ''}`.trim() : null,
               } as any);

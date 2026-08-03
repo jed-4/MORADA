@@ -804,6 +804,12 @@ function DrawerChecklist({
     },
   });
 
+  const hasLoadedItems = isExpanded && items.length > 0;
+  const progressTotal = hasLoadedItems ? items.length : (group.totalCount ?? 0);
+  const progressDone = hasLoadedItems
+    ? items.filter(i => i.status === "completed" || i.status === "na").length
+    : (group.completedCount ?? 0);
+
   const toggleItemComplete = (item: ChecklistInstanceItem) => {
     const isCompleting = item.status !== "completed";
     const newStatus = isCompleting ? "completed" : "pending";
@@ -834,6 +840,15 @@ function DrawerChecklist({
           <TaskTooltip content={group.name}>
             <span className="text-sm flex-1 min-w-0 truncate">{group.name}</span>
           </TaskTooltip>
+
+          {/* Counts come from the server, so progress shows while collapsed;
+              once expanded the loaded items drive it so an optimistic tick
+              moves the number straight away. */}
+          {progressTotal > 0 && (
+            <span className="text-2xs text-muted-foreground tabular-nums flex-shrink-0">
+              {progressDone}/{progressTotal}
+            </span>
+          )}
 
           <StatusBadge
             status={group.status}
