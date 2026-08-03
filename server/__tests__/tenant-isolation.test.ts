@@ -114,7 +114,9 @@ async function createTenant(label: string): Promise<Tenant> {
   const password = "TenantTest123!";
 
   const reg = await api("POST", "/api/auth/register", {
-    body: { email, password, firstName: label, lastName: "TenantTest" },
+    // agreeToTerms became mandatory on /api/auth/register with the signup
+    // overhaul; without it the harness 400s before any test runs.
+    body: { email, password, firstName: label, lastName: "TenantTest", agreeToTerms: true },
   });
   assert.strictEqual(reg.status, 200, `register ${label} failed: ${JSON.stringify(reg.body)}`);
   const userId = reg.body.user.id;

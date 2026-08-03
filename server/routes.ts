@@ -118,7 +118,8 @@ import {
   insertChannelSchema,
   insertChannelMemberSchema,
   insertMessageSchema,
-  insertRfqSchema,
+  insertRfqSchemaWithItems,
+  updateRfqSchema,
   insertRfqItemSchema,
   insertRfqQuoteSchema,
   insertRfqFollowUpSchema,
@@ -15386,32 +15387,81 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/rfqs", requireAuth, requireTeamMember, async (req, res) => {
     try {
-      const validationResult = insertRfqSchema.safeParse(req.body);
+      const validationResult = insertRfqSchemaWithItems.safeParse(req.body);
       if (!validationResult.success) {
-        return res.status(400).json({ 
-          error: "Validation failed", 
-          details: fromZodError(validationResult.error).toString() 
+        return res.status(400).json({
+          error: "Validation failed",
+          details: fromZodError(validationResult.error).toString()
         });
       }
 
       const companyId = req.user!.companyId!;
-      
-      // Generate RFQ number (format: PROJ-RFQ-001)
-      const project = await storage.getProject(validationResult.data.projectId);
-      const existingRFQs = await storage.getRFQs(companyId, validationResult.data.projectId);
-      const rfqCount = existingRFQs.length + 1;
-      const rfqNumber = `${project?.name.substring(0, 4).toUpperCase() || 'PROJ'}-RFQ-${String(rfqCount).padStart(3, '0')}`;
+      const { items: nestedItems, ...rfqFields } = validationResult.data;
 
-      const rfqData = {
-        ...validationResult.data,
+      // The target project must belong to the caller's company. Without this an
+      // RFQ could be created against another company's project and then stamped
+      // with the caller's companyId, which hides the mismatch from every later
+      // ownership check.
+      if (!(await enforceProjectCompany(req, res, rfqFields.projectId, "Project not found"))) return;
+
+      // Numbering comes from Settings (rfqPrefix/rfqStartNumber — previously
+      // dead config while the generator used the project name) off a monotonic
+      // per-company counter. Company-scoped rather than per-project because an
+      // RFQ number identifies a document sent to a supplier, and the registry
+      // spans projects. The counter never goes backwards, so deleting an RFQ
+      // does not free its number the way the old count-based scheme did.
+      const generateRfqNumber = async (): Promise<string> => {
+        const config = await storage.getSystemConfiguration().catch(() => undefined);
+        const prefix = (config as any)?.rfqPrefix || "RFQ-";
+        const startNumber = (config as any)?.rfqStartNumber ?? 1;
+        const seq = await storage.allocateRfqNumber(companyId, startNumber);
+        return `${prefix}${String(seq).padStart(3, "0")}`;
+      };
+
+      const baseData = {
+        ...rfqFields,
         companyId,
-        rfqNumber,
         createdBy: req.user!.id,
         createdByName: `${req.user!.firstName || ''} ${req.user!.lastName || ''}`.trim(),
         status: 'draft' as const,
       };
 
-      const rfq = await storage.createRFQ(rfqData);
+      let rfq;
+      for (let attempt = 0; ; attempt++) {
+        const rfqNumber = await generateRfqNumber();
+        // Assigned to a local first: rfqNumber is omitted from InsertRfq (the
+        // server owns it), so passing the literal inline trips TS's excess
+        // property check.
+        const payload = { ...baseData, rfqNumber };
+        try {
+          rfq = await storage.createRFQ(payload);
+          break;
+        } catch (err: any) {
+          // The counter makes collisions impossible for RFQs created after this
+          // change, but legacy rows carry project-name-derived numbers that
+          // could coincide with a generated one. Retry claims the next number.
+          if (err?.code === "23505" && attempt < 3) continue;
+          if (err?.code === "23505") {
+            return res.status(409).json({ error: `RFQ number ${rfqNumber} is already in use` });
+          }
+          throw err;
+        }
+      }
+
+      // Line items sent inline with the RFQ (the create page and the estimate
+      // bulk push both do this). These used to be stripped by Zod and lost.
+      if (nestedItems?.length) {
+        await Promise.all(
+          nestedItems.map((item, index) =>
+            storage.createRFQItem({
+              ...item,
+              rfqId: rfq!.id,
+              displayOrder: item.displayOrder ?? index,
+            } as any)
+          )
+        );
+      }
+
       res.status(201).json(rfq);
     } catch (error: any) {
       console.error("Error creating RFQ:", error);
@@ -15430,12 +15480,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ error: "Access denied" });
       }
 
-      const updateSchema = insertRfqSchema.partial();
-      const validationResult = updateSchema.safeParse(req.body);
+      const validationResult = updateRfqSchema.safeParse(req.body);
       if (!validationResult.success) {
-        return res.status(400).json({ 
-          error: "Validation failed", 
-          details: fromZodError(validationResult.error).toString() 
+        return res.status(400).json({
+          error: "Validation failed",
+          details: fromZodError(validationResult.error).toString()
         });
       }
 

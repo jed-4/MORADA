@@ -166,7 +166,18 @@ export default function CreateRFQ() {
         externalNotes: form.externalNotes,
         followUpEnabled: form.followUpEnabled,
         followUpDaysBefore: form.followUpDaysBefore,
-        items: form.items.filter(i => i.description),
+        // The server persists these as rfq_items (it used to strip them, and
+        // whatever the user typed here was silently discarded). Blank quantity
+        // has to go as null — "" is not a valid numeric.
+        items: form.items
+          .filter(i => i.description)
+          .map((i, index) => ({
+            description: i.description,
+            quantity: i.quantity === "" ? null : i.quantity,
+            unit: i.unit || null,
+            notes: i.notes || null,
+            displayOrder: index,
+          })),
       });
     },
     onSuccess: (rfq: any) => {

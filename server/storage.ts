@@ -728,6 +728,7 @@ export interface IStorage {
   getRFQs(companyId: string, projectId?: string): Promise<Rfq[]>;
   getRFQ(id: string): Promise<Rfq | undefined>;
   createRFQ(rfq: InsertRfq): Promise<Rfq>;
+  allocateRfqNumber(companyId: string, startNumber: number): Promise<number>;
   updateRFQ(id: string, rfq: Partial<InsertRfq>): Promise<Rfq | undefined>;
   deleteRFQ(id: string): Promise<boolean>;
 
@@ -14867,6 +14868,28 @@ export class DbStorage implements IStorage {
       return rfqs[0];
     } catch (error) {
       console.error("Database error in getRFQ:", error);
+      throw error;
+    }
+  }
+
+  // Claim the next RFQ sequence number for a company. Single atomic statement:
+  // concurrent creates each get their own number, and because the counter only
+  // ever moves forward a deleted RFQ's number is never handed out again.
+  // GREATEST pulls the counter up to the configured start number the first time
+  // (and if that setting is later raised).
+  async allocateRfqNumber(companyId: string, startNumber: number): Promise<number> {
+    try {
+      const result = await db.execute(sql`
+        UPDATE companies
+        SET rfq_last_number = GREATEST(rfq_last_number, ${startNumber - 1}) + 1
+        WHERE id = ${companyId}
+        RETURNING rfq_last_number
+      `);
+      const row = (result as any).rows?.[0];
+      if (!row) throw new Error(`Company ${companyId} not found`);
+      return Number(row.rfq_last_number);
+    } catch (error) {
+      console.error("Database error in allocateRfqNumber:", error);
       throw error;
     }
   }

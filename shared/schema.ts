@@ -29,7 +29,15 @@ export const companies = pgTable("companies", {
   logo: text("logo"),
   ownerId: varchar("owner_id"), // User who created/owns the company
   isActive: boolean("is_active").notNull().default(true),
-  
+
+  // Monotonic RFQ sequence. Held here rather than derived from max(existing)
+  // so deleting an RFQ never frees its number for reuse — an RFQ number is
+  // emailed to suppliers, so it has to keep meaning one document forever.
+  // Allocated with a single atomic UPDATE ... RETURNING, which also removes
+  // the create-race the old count-based generator had.
+  rfqLastNumber: integer("rfq_last_number").notNull().default(0),
+
+
   // Google Drive integration - company-level OAuth credentials
   googleDriveClientId: text("google_drive_client_id"), // Company's own OAuth Client ID
   googleDriveClientSecret: text("google_drive_client_secret"), // Company's own OAuth Client Secret (encrypted)
@@ -5030,8 +5038,12 @@ export const insertRfqSchema = createInsertSchema(rfqs).omit({
   title: z.string().min(1, "Title is required"),
   description: z.string().optional().nullable(),
   scope: z.string().optional().nullable(),
-  dueDate: z.string().optional().nullable(),
-  deadline: z.string().optional().nullable(),
+  // Coerced, not z.string(): the clients all send ISO strings, and Drizzle's
+  // timestamp mapper calls .toISOString() on whatever it is handed — so a bare
+  // string reached the driver and threw, 500-ing every create/save that carried
+  // a date. Coercing here keeps the wire format and hands Drizzle a Date.
+  dueDate: z.coerce.date().optional().nullable(),
+  deadline: z.coerce.date().optional().nullable(),
   supplierIds: z.array(z.string()).optional(),
   supplierNames: z.array(z.string()).optional(),
   attachmentUrls: z.array(z.string()).optional(),
@@ -5045,6 +5057,20 @@ export const insertRfqSchema = createInsertSchema(rfqs).omit({
   followUpDaysBefore: z.number().optional().nullable(),
 });
 
+// Update schema. insertRfqSchema deliberately omits the lifecycle fields so a
+// client can't set them at create time, but PATCH legitimately needs them —
+// and because Zod strips unknown keys rather than rejecting them, the send
+// flow's { status, sentAt } PATCH silently parsed to {} and every RFQ stayed
+// on "draft" forever. projectId stays out: an RFQ can't be moved between
+// projects (its number is scoped to one).
+export const updateRfqSchema = insertRfqSchema.partial().omit({ projectId: true }).extend({
+  status: z.enum(rfqStatusEnum.enumValues).optional(),
+  sentAt: z.coerce.date().optional().nullable(),
+  followUpSentAt: z.coerce.date().optional().nullable(),
+  pdfUrl: z.string().optional().nullable(),
+});
+
+export type UpdateRfq = z.infer<typeof updateRfqSchema>;
 export type InsertRfq = z.infer<typeof insertRfqSchema>;
 export type Rfq = typeof rfqs.$inferSelect;
 
@@ -5070,6 +5096,23 @@ export const insertRfqItemSchema = createInsertSchema(rfqItems).omit({
   id: true,
   createdAt: true,
   updatedAt: true,
+}).extend({
+  // quantity is numeric(10,2), which drizzle-zod types as a string, but every
+  // caller sends a JS number (parseFloat from the add-item form,
+  // estimate_items.quantity from the bulk push). That mismatch 400'd every
+  // single item create. Accept both and normalise to the string the driver
+  // wants.
+  quantity: z.union([z.string(), z.number()])
+    .transform((v) => (typeof v === "number" ? String(v) : v))
+    .nullable()
+    .optional(),
+});
+
+// Line items supplied inline when creating an RFQ. The create page and the
+// estimate bulk-push both send these nested under the RFQ; previously they
+// were stripped by Zod and the user's items were silently discarded.
+export const insertRfqSchemaWithItems = insertRfqSchema.extend({
+  items: z.array(insertRfqItemSchema.omit({ rfqId: true })).optional(),
 });
 
 export type InsertRfqItem = z.infer<typeof insertRfqItemSchema>;
@@ -5116,6 +5159,13 @@ export const insertRfqQuoteSchema = createInsertSchema(rfqQuotes).omit({
     url: z.string(),
     size: z.number().optional(),
   })).optional(),
+  // Same ISO-string-vs-z.date() mismatch as the RFQ dates: the accept/decline
+  // actions send timestamps as strings, which failed validation outright and
+  // made both buttons return 400.
+  validUntil: z.coerce.date().optional().nullable(),
+  acceptedAt: z.coerce.date().optional().nullable(),
+  declinedAt: z.coerce.date().optional().nullable(),
+  submittedAt: z.coerce.date().optional().nullable(),
 });
 
 export type InsertRfqQuote = z.infer<typeof insertRfqQuoteSchema>;
@@ -5140,6 +5190,9 @@ export const rfqFollowUps = pgTable("rfq_follow_ups", {
 export const insertRfqFollowUpSchema = createInsertSchema(rfqFollowUps).omit({
   id: true,
   createdAt: true,
+}).extend({
+  scheduledFor: z.coerce.date(),
+  sentAt: z.coerce.date().optional().nullable(),
 });
 
 export type InsertRfqFollowUp = z.infer<typeof insertRfqFollowUpSchema>;
@@ -5168,6 +5221,9 @@ export const rfqPortalTokens = pgTable("rfq_portal_tokens", {
 export const insertRfqPortalTokenSchema = createInsertSchema(rfqPortalTokens).omit({
   id: true,
   createdAt: true,
+}).extend({
+  expiresAt: z.coerce.date().optional().nullable(),
+  viewedAt: z.coerce.date().optional().nullable(),
 });
 
 export type InsertRfqPortalToken = z.infer<typeof insertRfqPortalTokenSchema>;

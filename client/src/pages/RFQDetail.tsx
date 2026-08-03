@@ -125,7 +125,7 @@ export default function RFQDetail() {
   });
 
   const { data: items = [], isLoading: itemsLoading } = useQuery<RfqItem[]>({
-    queryKey: ["/api/rfq-items", id],
+    queryKey: ["/api/rfqs", id, "items"],
     enabled: !!id,
   });
 
@@ -213,7 +213,7 @@ export default function RFQDetail() {
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/rfq-items", id] });
+      queryClient.invalidateQueries({ queryKey: ["/api/rfqs", id, "items"] });
       setShowAddItemDialog(false);
       setNewItem({ description: "", quantity: "", unit: "each", unitPrice: "", costCodeId: "", notes: "" });
       toast({ title: "Item added" });
@@ -239,7 +239,7 @@ export default function RFQDetail() {
       return Promise.all(promises);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/rfq-items", id] });
+      queryClient.invalidateQueries({ queryKey: ["/api/rfqs", id, "items"] });
       setShowImportDialog(false);
       setSelectedEstimateItems([]);
       toast({ title: `${selectedEstimateItems.length} items imported` });
@@ -251,7 +251,7 @@ export default function RFQDetail() {
       return await apiRequest(`/api/rfq-items/${itemId}`, "DELETE");
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/rfq-items", id] });
+      queryClient.invalidateQueries({ queryKey: ["/api/rfqs", id, "items"] });
       toast({ title: "Item deleted" });
     },
   });
