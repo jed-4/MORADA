@@ -1,6 +1,6 @@
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { pdf } from "@react-pdf/renderer";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/EmptyState";
@@ -48,6 +48,7 @@ import {
   Upload,
   X,
   Clock,
+  Bell,
   ExternalLink,
   CheckCircle2,
   AlertCircle,
@@ -58,7 +59,7 @@ import { RFQDocument } from "@/components/rfq/pdf/RFQDocument";
 import { SendRFQDialog } from "@/components/rfq/SendRFQDialog";
 import { UploadQuoteDialog } from "@/components/rfq/UploadQuoteDialog";
 import { QuoteComparisonView } from "@/components/rfq/QuoteComparisonView";
-import type { Rfq, RfqItem, RfqQuote, RfqTemplate, CostCode, EstimateItem, Project, User } from "@shared/schema";
+import type { Rfq, RfqItem, RfqQuote, RfqTemplate, CostCode, EstimateItem, Project, User, RfqRecipient, RfqReminderTemplate } from "@shared/schema";
 import { format } from "date-fns";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { dollarsToCents } from "@shared/money";
@@ -71,6 +72,8 @@ import { DetailLayout } from "@/components/detail/DetailLayout";
 import { RfqRecipientsPanel } from "@/components/rfq/RfqRecipientsPanel";
 import { RFQ_STATUS_LABEL } from "@shared/rfqStatus";
 import { RfqActivityFeed } from "@/components/rfq/RfqActivityFeed";
+import { RfqRemindersDialog } from "@/components/rfq/RfqRemindersDialog";
+import { reminderDueAt } from "@shared/rfqReminders";
 
 // Radix Select cannot hold an empty string value, so "no selection" needs a
 // sentinel rather than "".
@@ -87,6 +90,7 @@ export default function RFQDetail() {
   const [showPreview, setShowPreview] = useState(false);
   const [showSendDialog, setShowSendDialog] = useState(false);
   const [showUploadQuoteDialog, setShowUploadQuoteDialog] = useState(false);
+  const [showRemindersDialog, setShowRemindersDialog] = useState(false);
   const [showAddItemDialog, setShowAddItemDialog] = useState(false);
   const [editingItem, setEditingItem] = useState<RfqItem | null>(null);
   const [hasChanges, setHasChanges] = useState(false);
@@ -160,6 +164,38 @@ export default function RFQDetail() {
   const { data: teamUsers = [] } = useQuery<User[]>({
     queryKey: ["/api/users"],
   });
+
+  const { data: reminderTemplates = [] } = useQuery<RfqReminderTemplate[]>({
+    queryKey: ["/api/rfq-reminder-templates"],
+  });
+
+  const { data: recipients = [] } = useQuery<RfqRecipient[]>({
+    queryKey: ["/api/rfqs", id, "recipients"],
+    enabled: !!id,
+  });
+
+  // One line in the sidebar so you know what is coming without opening the
+  // modal. Only suppliers still awaiting a response are ever chased.
+  const nextReminderLabel = useMemo(() => {
+    const awaiting = recipients.filter(
+      (r) => !r.isExternal && (r.status === "sent" || r.status === "viewed"),
+    );
+    if (awaiting.length === 0) return "No suppliers are awaiting a response.";
+
+    const upcoming = reminderTemplates
+      .filter((t) => t.enabled)
+      .flatMap((t) =>
+        awaiting
+          .map((r) => reminderDueAt(t, { sentAt: r.sentAt, dueDate: rfq?.dueDate }))
+          .filter((d): d is Date => !!d && d > new Date()),
+      )
+      .sort((a, b) => a.getTime() - b.getTime());
+
+    if (upcoming.length === 0) {
+      return `Chasing ${awaiting.length} supplier${awaiting.length === 1 ? "" : "s"} — nothing scheduled.`;
+    }
+    return `Next: ${format(upcoming[0], "d MMM")} to ${awaiting.length} supplier${awaiting.length === 1 ? "" : "s"}.`;
+  }, [recipients, reminderTemplates, rfq?.dueDate]);
 
   // Owner and project assignment save immediately rather than joining the
   // dirty-form Save flow — they're registry bookkeeping, not document edits,
@@ -555,44 +591,42 @@ export default function RFQDetail() {
       </SectionCard>
 
       <SectionCard
-        title="Auto Follow-up"
+        title="Reminders"
         accent="amber"
         actions={
           <Switch
             checked={formData.followUpEnabled}
             onCheckedChange={(checked) => handleFieldChange("followUpEnabled", checked)}
+            aria-label="Chase suppliers who haven't responded"
           />
         }
       >
-            {formData.followUpEnabled ? (
-              <div className="p-3 space-y-2">
-                <Label className="text-xs text-muted-foreground">Days before due date</Label>
-                <Select
-                  value={formData.followUpDaysBefore.toString()}
-                  onValueChange={(v) => handleFieldChange("followUpDaysBefore", parseInt(v))}
-                >
-                  <SelectTrigger className="h-7 text-xs">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="1">1 day before</SelectItem>
-                    <SelectItem value="3">3 days before</SelectItem>
-                    <SelectItem value="5">5 days before</SelectItem>
-                    <SelectItem value="7">7 days before</SelectItem>
-                  </SelectContent>
-                </Select>
-                {rfq.followUpSentAt && (
-                  <p className="text-data text-status-success flex items-center gap-1">
-                    <CheckCircle2 className="w-3 h-3" />
-                    Sent {format(new Date(rfq.followUpSentAt), "MMM d")}
-                  </p>
-                )}
-              </div>
-            ) : (
-              <p className="text-data text-muted-foreground px-3 py-2">
-                Send reminder before due date
+        <div className="p-3 space-y-2">
+          {formData.followUpEnabled ? (
+            <>
+              <p className="text-data text-muted-foreground">
+                {nextReminderLabel}
               </p>
-            )}
+              {/* The schedule and wording are company-level — every RFQ chases
+                  the same way, so this is a link to the shared settings rather
+                  than a per-RFQ copy of them. */}
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-6 text-xs w-full"
+                onClick={() => setShowRemindersDialog(true)}
+                data-testid="button-manage-reminders"
+              >
+                <Bell className="w-3 h-3 mr-1" />
+                Manage reminders
+              </Button>
+            </>
+          ) : (
+            <p className="text-data text-muted-foreground">
+              Suppliers who don't respond won't be chased.
+            </p>
+          )}
+        </div>
       </SectionCard>
 
       <SectionCard title="Internal Notes" accent="muted">
@@ -1141,6 +1175,12 @@ export default function RFQDetail() {
           pdfBlob={pdfBlob}
         />
       )}
+
+      <RfqRemindersDialog
+        open={showRemindersDialog}
+        onOpenChange={setShowRemindersDialog}
+        rfq={rfq}
+      />
 
       {/* Upload Quote Dialog */}
       {rfq && (

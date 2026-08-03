@@ -122,6 +122,7 @@ import * as schema from "@shared/schema";
 import { computeEstimateItemPrice, computeEstimateSummary, estimateItemBuilderCostExTax, resolveEstimateStoredPrice } from "@shared/pricing";
 import { computeBillTotalsCents, billLineExGstCents } from "@shared/billTotals";
 import { deriveRfqStatus } from "@shared/rfqStatus";
+import { DEFAULT_RFQ_REMINDER_TEMPLATES } from "@shared/schema";
 import type { CircuitContext } from "@shared/schema";
 import type { AiConversation, InsertAiConversation, AiMessage, InsertAiMessage, AiBlockedItem, InsertAiBlockedItem } from "@shared/schema";
 
@@ -772,6 +773,17 @@ export interface IStorage {
   replaceRFQQuoteItems(quoteId: string, items: Omit<import("@shared/schema").InsertRfqQuoteItem, "quoteId">[]): Promise<import("@shared/schema").RfqQuoteItem[]>;
   updateRFQQuoteItem(id: string, item: Partial<import("@shared/schema").InsertRfqQuoteItem>): Promise<import("@shared/schema").RfqQuoteItem | undefined>;
   deleteRFQQuoteItem(id: string): Promise<boolean>;
+
+  // RFQ Reminder templates + log
+  getRFQReminderTemplates(companyId: string): Promise<import("@shared/schema").RfqReminderTemplate[]>;
+  getRFQReminderTemplate(id: string): Promise<import("@shared/schema").RfqReminderTemplate | undefined>;
+  createRFQReminderTemplate(companyId: string, template: import("@shared/schema").InsertRfqReminderTemplate): Promise<import("@shared/schema").RfqReminderTemplate>;
+  updateRFQReminderTemplate(id: string, template: Partial<import("@shared/schema").InsertRfqReminderTemplate>): Promise<import("@shared/schema").RfqReminderTemplate | undefined>;
+  deleteRFQReminderTemplate(id: string): Promise<boolean>;
+  getRFQReminderLog(rfqId: string): Promise<import("@shared/schema").RfqReminderLogEntry[]>;
+  getRfqsAwaitingReminders(): Promise<Rfq[]>;
+  claimRFQReminder(entry: import("@shared/schema").InsertRfqReminderLog): Promise<import("@shared/schema").RfqReminderLogEntry | null>;
+  markRFQReminderFailed(id: string, error: string): Promise<void>;
 
   // RFQ Portal Tokens CRUD
   getRFQPortalTokens(rfqId: string): Promise<RfqPortalToken[]>;
@@ -15444,6 +15456,111 @@ export class DbStorage implements IStorage {
       console.error("Database error in deleteRFQQuoteItem:", error);
       throw error;
     }
+  }
+
+  // ── RFQ Reminder Methods ─────────────────────────────────────────────────
+  // Templates are company-level and seeded lazily on first read, so a company
+  // never opens an empty reminders list and every RFQ chases the same way.
+  async getRFQReminderTemplates(companyId: string): Promise<schema.RfqReminderTemplate[]> {
+    try {
+      const existing = await db.select().from(schema.rfqReminderTemplates)
+        .where(eq(schema.rfqReminderTemplates.companyId, companyId))
+        .orderBy(asc(schema.rfqReminderTemplates.displayOrder), asc(schema.rfqReminderTemplates.createdAt));
+      if (existing.length > 0) return existing;
+
+      const seeded = await db.insert(schema.rfqReminderTemplates)
+        .values(DEFAULT_RFQ_REMINDER_TEMPLATES.map((t) => ({ ...t, companyId })))
+        .onConflictDoNothing()
+        .returning();
+      if (seeded.length > 0) return seeded;
+
+      // Lost a seeding race with a concurrent request — re-read.
+      return await db.select().from(schema.rfqReminderTemplates)
+        .where(eq(schema.rfqReminderTemplates.companyId, companyId))
+        .orderBy(asc(schema.rfqReminderTemplates.displayOrder), asc(schema.rfqReminderTemplates.createdAt));
+    } catch (error) {
+      console.error("Database error in getRFQReminderTemplates:", error);
+      throw error;
+    }
+  }
+
+  async getRFQReminderTemplate(id: string): Promise<schema.RfqReminderTemplate | undefined> {
+    const [row] = await db.select().from(schema.rfqReminderTemplates)
+      .where(eq(schema.rfqReminderTemplates.id, id)).limit(1);
+    return row;
+  }
+
+  async createRFQReminderTemplate(
+    companyId: string,
+    template: schema.InsertRfqReminderTemplate,
+  ): Promise<schema.RfqReminderTemplate> {
+    const [row] = await db.insert(schema.rfqReminderTemplates)
+      .values({ ...(template as any), companyId })
+      .returning();
+    return row;
+  }
+
+  async updateRFQReminderTemplate(
+    id: string,
+    template: Partial<schema.InsertRfqReminderTemplate>,
+  ): Promise<schema.RfqReminderTemplate | undefined> {
+    const [row] = await db.update(schema.rfqReminderTemplates)
+      .set({ ...(template as any), updatedAt: new Date() })
+      .where(eq(schema.rfqReminderTemplates.id, id))
+      .returning();
+    return row;
+  }
+
+  async deleteRFQReminderTemplate(id: string): Promise<boolean> {
+    const rows = await db.delete(schema.rfqReminderTemplates)
+      .where(eq(schema.rfqReminderTemplates.id, id))
+      .returning();
+    return rows.length > 0;
+  }
+
+  // The scheduler's work list: RFQs actually out with suppliers, with chasing
+  // switched on. Anything draft, awarded, declined or opted out has nothing to
+  // remind about, so it never reaches the sweep.
+  async getRfqsAwaitingReminders(): Promise<Rfq[]> {
+    try {
+      return await db.select().from(schema.rfqs)
+        .where(and(
+          eq(schema.rfqs.status, "sent"),
+          eq(schema.rfqs.followUpEnabled, true),
+        ))
+        .orderBy(asc(schema.rfqs.companyId));
+    } catch (error) {
+      console.error("Database error in getRfqsAwaitingReminders:", error);
+      throw error;
+    }
+  }
+
+  async getRFQReminderLog(rfqId: string): Promise<schema.RfqReminderLogEntry[]> {
+    return await db.select().from(schema.rfqReminderLog)
+      .where(eq(schema.rfqReminderLog.rfqId, rfqId))
+      .orderBy(desc(schema.rfqReminderLog.sentAt));
+  }
+
+  // Claim-then-send: the unique (recipient, template) index means the insert IS
+  // the lock. A second scheduler pass — or a second process — gets null here
+  // rather than emailing the supplier twice.
+  async claimRFQReminder(entry: schema.InsertRfqReminderLog): Promise<schema.RfqReminderLogEntry | null> {
+    try {
+      const [row] = await db.insert(schema.rfqReminderLog)
+        .values(entry as any)
+        .onConflictDoNothing()
+        .returning();
+      return row ?? null;
+    } catch (error) {
+      console.error("Database error in claimRFQReminder:", error);
+      throw error;
+    }
+  }
+
+  async markRFQReminderFailed(id: string, error: string): Promise<void> {
+    await db.update(schema.rfqReminderLog)
+      .set({ status: "failed", error: error.slice(0, 500) })
+      .where(eq(schema.rfqReminderLog.id, id));
   }
 
   // RFQ Portal Token Methods

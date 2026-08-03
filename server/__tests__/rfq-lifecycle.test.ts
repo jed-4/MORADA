@@ -618,6 +618,196 @@ async function main() {
     assert.notStrictEqual(res.body.ownerId, B.userId, "foreign user was assigned as owner");
   });
 
+  // =========================================================================
+  // Sending + reminders (PR 4)
+  // =========================================================================
+  let sendRfqId = "";
+  let sendRecipientId = "";
+  let externalRecipientId = "";
+
+  await test("sending mints a portal token and marks the recipient sent", async () => {
+    const created = await api("POST", "/api/rfqs", {
+      cookie: A.cookie,
+      body: {
+        title: "Send flow",
+        projectId: projectA.id,
+        dueDate: new Date(Date.now() + 10 * 86400000).toISOString(),
+      },
+    });
+    assert.strictEqual(created.status, 201, JSON.stringify(created.body));
+    sendRfqId = created.body.id;
+
+    // No supplierEmail: the send still tokenises and marks sent, it just can't
+    // email — which is the "copy the link yourself" path.
+    const recip = await api("POST", "/api/rfq-recipients", {
+      cookie: A.cookie,
+      body: { rfqId: sendRfqId, supplierId: contactA.id, supplierName: "Smith Concrete" },
+    });
+    assert.strictEqual(recip.status, 201, JSON.stringify(recip.body));
+    sendRecipientId = recip.body.id;
+
+    const res = await api("POST", `/api/rfqs/${sendRfqId}/send`, { cookie: A.cookie, body: {} });
+    assert.strictEqual(res.status, 200, JSON.stringify(res.body));
+
+    const after = await storage.getRFQRecipient(sendRecipientId);
+    assert.strictEqual(after!.status, "sent", `recipient status ${after!.status}`);
+    assert.ok(after!.sentAt, "sentAt not stamped");
+    assert.ok(after!.portalToken, "no portal token minted");
+  });
+
+  await test("the minted token actually opens the portal", async () => {
+    const recipient = await storage.getRFQRecipient(sendRecipientId);
+    const res = await api("GET", `/api/portal/rfq/${recipient!.portalToken}`);
+    assert.strictEqual(res.status, 200, JSON.stringify(res.body));
+    assert.strictEqual(res.body.supplierName, "Smith Concrete");
+  });
+
+  await test("sending derives the RFQ off draft", async () => {
+    const res = await api("GET", `/api/rfqs/${sendRfqId}`, { cookie: A.cookie });
+    assert.strictEqual(res.body.status, "sent", `status was ${res.body.status}`);
+    assert.ok(res.body.sentAt, "RFQ sentAt not stamped");
+  });
+
+  await test("re-sending keeps the same portal token", async () => {
+    const before = await storage.getRFQRecipient(sendRecipientId);
+    await api("POST", `/api/rfqs/${sendRfqId}/send`, { cookie: A.cookie, body: {} });
+    const after = await storage.getRFQRecipient(sendRecipientId);
+    assert.strictEqual(after!.portalToken, before!.portalToken, "supplier's link changed on re-send");
+  });
+
+  await test("an external recipient is marked sent but never emailed", async () => {
+    const recip = await api("POST", "/api/rfq-recipients", {
+      cookie: A.cookie,
+      body: {
+        rfqId: sendRfqId,
+        supplierName: "Phone-only Supplier",
+        supplierEmail: "someone@example.test",
+        isExternal: true,
+      },
+    });
+    assert.strictEqual(recip.status, 201);
+    externalRecipientId = recip.body.id;
+
+    const res = await api("POST", `/api/rfqs/${sendRfqId}/send`, {
+      cookie: A.cookie,
+      body: { recipientIds: [externalRecipientId] },
+    });
+    assert.strictEqual(res.status, 200, JSON.stringify(res.body));
+    assert.ok(
+      res.body.skipped.some((s: any) => s.reason === "external"),
+      "external recipient was not skipped",
+    );
+
+    const after = await storage.getRFQRecipient(externalRecipientId);
+    assert.strictEqual(after!.status, "sent");
+    assert.strictEqual(after!.portalToken, null, "external recipient should not get a portal token");
+  });
+
+  await test("sending with no suppliers is refused", async () => {
+    const empty = await api("POST", "/api/rfqs", {
+      cookie: A.cookie,
+      body: { title: "Nobody to send to", projectId: projectA.id },
+    });
+    const res = await api("POST", `/api/rfqs/${empty.body.id}/send`, { cookie: A.cookie, body: {} });
+    assert.strictEqual(res.status, 400, JSON.stringify(res.body));
+  });
+
+  await test("company B cannot send company A's RFQ", async () => {
+    const res = await api("POST", `/api/rfqs/${sendRfqId}/send`, { cookie: B.cookie, body: {} });
+    assert.ok(res.status === 403 || res.status === 404, `expected 403/404, got ${res.status}`);
+  });
+
+  await test("reminder templates are seeded per company on first read", async () => {
+    const res = await api("GET", "/api/rfq-reminder-templates", { cookie: A.cookie });
+    assert.strictEqual(res.status, 200);
+    assert.ok(res.body.length >= 3, `expected seeded defaults, got ${res.body.length}`);
+    assert.ok(res.body.every((t: any) => t.subject && t.body), "templates missing copy");
+  });
+
+  await test("a company only sees its own reminder templates", async () => {
+    const a = await api("GET", "/api/rfq-reminder-templates", { cookie: A.cookie });
+    const b = await api("GET", "/api/rfq-reminder-templates", { cookie: B.cookie });
+    const aIds = new Set(a.body.map((t: any) => t.id));
+    assert.ok(
+      b.body.every((t: any) => !aIds.has(t.id)),
+      "reminder templates leaked across companies",
+    );
+  });
+
+  await test("company B cannot edit company A's reminder template", async () => {
+    const a = await api("GET", "/api/rfq-reminder-templates", { cookie: A.cookie });
+    const res = await api("PATCH", `/api/rfq-reminder-templates/${a.body[0].id}`, {
+      cookie: B.cookie,
+      body: { name: "Hijacked" },
+    });
+    assert.strictEqual(res.status, 404, `expected 404, got ${res.status}`);
+  });
+
+  await test("a supplier who has quoted is no longer remindable", async () => {
+    const { remindableRecipients } = await import("../services/rfqReminderScheduler");
+    const recipients = await storage.getRFQRecipients(sendRfqId);
+    // Give the pending recipient an address so only status decides.
+    await storage.updateRFQRecipient(sendRecipientId, { supplierEmail: "smith@example.test" } as any);
+
+    const before = remindableRecipients(await storage.getRFQRecipients(sendRfqId));
+    assert.ok(before.some((r) => r.id === sendRecipientId), "expected the awaiting supplier to be remindable");
+
+    await api("POST", "/api/rfq-quotes", {
+      cookie: A.cookie,
+      body: { rfqId: sendRfqId, supplierId: contactA.id, supplierName: "Smith Concrete", totalAmount: 1000, status: "pending" },
+    });
+
+    const after = remindableRecipients(await storage.getRFQRecipients(sendRfqId));
+    assert.ok(
+      !after.some((r) => r.id === sendRecipientId),
+      "a supplier who already quoted would still be chased",
+    );
+    assert.ok(recipients.length > 0);
+  });
+
+  await test("external recipients are never remindable", async () => {
+    const { remindableRecipients } = await import("../services/rfqReminderScheduler");
+    const list = remindableRecipients(await storage.getRFQRecipients(sendRfqId));
+    assert.ok(
+      !list.some((r) => r.id === externalRecipientId),
+      "external recipient would be emailed a reminder",
+    );
+  });
+
+  await test("a reminder can only be claimed once per recipient", async () => {
+    const a = await api("GET", "/api/rfq-reminder-templates", { cookie: A.cookie });
+    const templateId = a.body[0].id;
+    const first = await storage.claimRFQReminder({
+      rfqId: sendRfqId,
+      recipientId: sendRecipientId,
+      templateId,
+      subject: "s",
+      body: "b",
+      toEmail: "smith@example.test",
+      status: "sent",
+    } as any);
+    assert.ok(first, "first claim should succeed");
+
+    const second = await storage.claimRFQReminder({
+      rfqId: sendRfqId,
+      recipientId: sendRecipientId,
+      templateId,
+      subject: "s",
+      body: "b",
+      toEmail: "smith@example.test",
+      status: "sent",
+    } as any);
+    assert.strictEqual(second, null, "duplicate claim should be refused — this is the double-send guard");
+  });
+
+  await test("the scheduler work list excludes draft and awarded RFQs", async () => {
+    const live = await storage.getRfqsAwaitingReminders();
+    assert.ok(
+      live.every((r) => r.status === "sent" && r.followUpEnabled),
+      "work list included an RFQ that should not be chased",
+    );
+  });
+
   await test("a revoked portal token is refused", async () => {
     const token = `revoked-token-${Date.now()}`;
     await storage.updateRFQRecipient(recipSmithId, {
@@ -637,6 +827,8 @@ async function main() {
 
 async function cleanup(companyIds: string[], userIds: string[]) {
   const stmts: [string, any[]][] = [
+    [`DELETE FROM rfq_reminder_log WHERE rfq_id IN (SELECT id FROM rfqs WHERE company_id = ANY($1))`, [companyIds]],
+    [`DELETE FROM rfq_reminder_templates WHERE company_id = ANY($1)`, [companyIds]],
     [`DELETE FROM rfq_quote_items WHERE quote_id IN (SELECT id FROM rfq_quotes WHERE rfq_id IN (SELECT id FROM rfqs WHERE company_id = ANY($1)))`, [companyIds]],
     [`DELETE FROM rfq_recipients WHERE rfq_id IN (SELECT id FROM rfqs WHERE company_id = ANY($1))`, [companyIds]],
     [`DELETE FROM rfq_quotes WHERE rfq_id IN (SELECT id FROM rfqs WHERE company_id = ANY($1))`, [companyIds]],

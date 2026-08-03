@@ -1,121 +1,132 @@
-import { useState } from "react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { useEffect, useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
-import { Send, Mail, Bell, CheckCircle2 } from "lucide-react";
+import { AlertCircle, Mail, MailX, Paperclip, Send } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import type { Rfq } from "@shared/schema";
+import type { Rfq, RfqRecipient } from "@shared/schema";
+import { cn } from "@/lib/utils";
 
-interface SendRFQDialogProps {
+/**
+ * Sends the RFQ. Actually sends it.
+ *
+ * The previous version orchestrated four calls from the browser, none of which
+ * emailed anything (there was a literal "TODO: implement actual email sending"),
+ * and its status PATCH was silently stripped by the server's schema — yet it
+ * still toasted "RFQ sent to N suppliers". One server call now mints a portal
+ * token per supplier, emails them with the PDF and their own link, and stamps
+ * the status.
+ */
+export function SendRFQDialog({
+  open,
+  onOpenChange,
+  rfq,
+  pdfBlob,
+}: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   rfq: Rfq;
   pdfBlob: Blob | null;
-}
-
-export function SendRFQDialog({ open, onOpenChange, rfq, pdfBlob }: SendRFQDialogProps) {
+}) {
   const { toast } = useToast();
   const [isSending, setIsSending] = useState(false);
-  const [sendEmail, setSendEmail] = useState(true);
-  const [sendInApp, setSendInApp] = useState(true);
-  const [emailSubject, setEmailSubject] = useState(
-    `RFQ ${rfq.rfqNumber}: ${rfq.title}`
+  const [attachPdf, setAttachPdf] = useState(true);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+
+  const { data: recipients = [] } = useQuery<RfqRecipient[]>({
+    queryKey: ["/api/rfqs", rfq.id, "recipients"],
+    enabled: open,
+  });
+
+  const [subject, setSubject] = useState("Request for quote: {{rfq_number}} — {{rfq_title}}");
+  const [message, setMessage] = useState(
+    "Hi {{supplier_name}},\n\n" +
+      "We'd like a price for {{rfq_title}}.\n\n" +
+      "You can review the details and send your quote back here: {{portal_link}}\n\n" +
+      "Thanks,\n{{sender_name}}\n{{company_name}}",
   );
-  const [emailMessage, setEmailMessage] = useState(
-    `Please review the attached Request for Quote and provide your quote by the due date.\n\nDue Date: ${rfq.dueDate ? new Date(rfq.dueDate).toLocaleDateString() : 'N/A'}\n\nThank you.`
+
+  // Default to everyone not already sent to, so re-opening after adding a
+  // supplier chases only the new one rather than spamming the rest.
+  useEffect(() => {
+    if (!open) return;
+    const unsent = recipients.filter((r) => r.status === "not_sent").map((r) => r.id);
+    setSelectedIds(unsent.length > 0 ? unsent : recipients.map((r) => r.id));
+  }, [open, recipients]);
+
+  const selected = useMemo(
+    () => recipients.filter((r) => selectedIds.includes(r.id)),
+    [recipients, selectedIds],
   );
+  const missingEmail = selected.filter((r) => !r.isExternal && !r.supplierEmail);
+  const externals = selected.filter((r) => r.isExternal);
+  const emailable = selected.filter((r) => !r.isExternal && r.supplierEmail);
+
+  const toggle = (id: string) =>
+    setSelectedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
 
   const handleSend = async () => {
-    if (!sendEmail && !sendInApp) {
-      toast({
-        title: "Select Send Method",
-        description: "Please select at least one send method (email or in-app)",
-        variant: "destructive",
-      });
+    if (selected.length === 0) {
+      toast({ title: "Select at least one supplier", variant: "destructive" });
       return;
     }
-
-    if (sendEmail && !pdfBlob) {
-      toast({
-        title: "PDF Not Ready",
-        description: "Please wait for the PDF to generate before sending",
-        variant: "destructive",
-      });
-      return;
-    }
-
     setIsSending(true);
-
     try {
-      const now = new Date();
-      
-      // Update RFQ status to sent
-      await apiRequest(`/api/rfqs/${rfq.id}`, "PATCH", {
-        status: "sent",
-        sentAt: now.toISOString(),
+      let pdfBase64: string | undefined;
+      if (attachPdf && pdfBlob) {
+        const buf = await pdfBlob.arrayBuffer();
+        // Chunked: String.fromCharCode(...bytes) blows the argument limit on a
+        // multi-page PDF.
+        const bytes = new Uint8Array(buf);
+        let binary = "";
+        for (let i = 0; i < bytes.length; i += 0x8000) {
+          binary += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + 0x8000)));
+        }
+        pdfBase64 = btoa(binary);
+      }
+
+      const result: any = await apiRequest(`/api/rfqs/${rfq.id}/send`, "POST", {
+        recipientIds: selectedIds,
+        subject,
+        message,
+        pdfBase64,
+        pdfFilename: `RFQ-${rfq.rfqNumber}.pdf`,
       });
-
-      // Fetch existing follow-ups to avoid duplicates
-      const existingFollowUps = await fetch(`/api/rfqs/${rfq.id}/follow-ups`).then(res => res.json());
-      
-      // Delete existing future/scheduled follow-ups to prevent duplicates
-      const deletePromises = existingFollowUps
-        .filter((fu: any) => fu.status === "scheduled" && new Date(fu.scheduledFor) > now)
-        .map((fu: any) => apiRequest(`/api/rfq-follow-ups/${fu.id}`, "DELETE"));
-      
-      await Promise.all(deletePromises);
-
-      // Schedule follow-up emails (Day 0, +3, +7, +14)
-      const followUpSchedule = [
-        { type: "initial" as const, days: 0, subject: "RFQ Sent", body: emailMessage },
-        { type: "reminder_3d" as const, days: 3, subject: "RFQ Reminder", body: "This is a friendly reminder about the RFQ we sent 3 days ago. Please submit your quote at your earliest convenience." },
-        { type: "reminder_7d" as const, days: 7, subject: "RFQ Follow-up", body: "Just checking in on the RFQ we sent last week. We're still awaiting your quote and would appreciate your response." },
-        { type: "reminder_14d" as const, days: 14, subject: "Final RFQ Reminder", body: "This is our final reminder regarding the RFQ sent 2 weeks ago. Please let us know if you're able to provide a quote." },
-      ];
-
-      // Create follow-up records for each schedule
-      const followUpPromises = followUpSchedule.map(async (schedule) => {
-        const scheduledDate = new Date(now);
-        scheduledDate.setDate(scheduledDate.getDate() + schedule.days);
-
-        return apiRequest("/api/rfq-follow-ups", "POST", {
-          rfqId: rfq.id,
-          followUpType: schedule.type,
-          scheduledFor: scheduledDate.toISOString(),
-          emailSubject: schedule.subject,
-          emailBody: schedule.body,
-          status: "scheduled",
-        });
-      });
-
-      await Promise.all(followUpPromises);
-
-      // TODO: Implement actual email sending and notification creation
-      // This would involve:
-      // - Converting pdfBlob to file and uploading
-      // - Calling email API with PDF attachment
-      // - Creating notification records for in-app
-      // - Processing scheduled follow-ups via background job
 
       queryClient.invalidateQueries({ queryKey: ["/api/rfqs"] });
       queryClient.invalidateQueries({ queryKey: ["/api/rfqs", rfq.id] });
+      queryClient.invalidateQueries({ queryKey: ["/api/rfqs", rfq.id, "recipients"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/rfq-recipients"] });
 
-      toast({
-        title: "RFQ Sent",
-        description: `RFQ sent to ${rfq.supplierNames?.length || 0} suppliers with ${followUpSchedule.length} follow-ups scheduled`,
-      });
-
+      // Report what actually happened, per supplier — the old dialog claimed
+      // success unconditionally.
+      const sentCount = result?.sent?.length ?? 0;
+      const failedList = result?.failed ?? [];
+      if (failedList.length > 0) {
+        toast({
+          title: sentCount > 0 ? "Sent with problems" : "Send failed",
+          description: `${sentCount} sent. Failed: ${failedList.map((f: any) => f.supplierName).join(", ")}`,
+          variant: "destructive",
+        });
+      } else {
+        const skipped = result?.skipped ?? [];
+        toast({
+          title: sentCount > 0 ? `RFQ sent to ${sentCount} supplier${sentCount === 1 ? "" : "s"}` : "RFQ marked as sent",
+          description:
+            skipped.length > 0
+              ? `${skipped.map((s: any) => s.supplierName).join(", ")} — link ready to copy instead.`
+              : undefined,
+        });
+      }
       onOpenChange(false);
     } catch (error: any) {
-      toast({
-        title: "Send Failed",
-        description: error.message || "Failed to send RFQ",
-        variant: "destructive",
-      });
+      toast({ title: "Send failed", description: error?.message, variant: "destructive" });
     } finally {
       setIsSending(false);
     }
@@ -123,135 +134,122 @@ export function SendRFQDialog({ open, onOpenChange, rfq, pdfBlob }: SendRFQDialo
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Send RFQ to Suppliers</DialogTitle>
+          <DialogTitle>Send {rfq.rfqNumber}</DialogTitle>
+          <DialogDescription>
+            Each supplier gets their own portal link so you can see who opened it and who came back.
+          </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-6">
-          {/* Suppliers List */}
+        <div className="space-y-4">
           <div>
-            <Label className="mb-2 block">Sending to:</Label>
-            <div className="space-y-2">
-              {rfq.supplierNames && rfq.supplierNames.length > 0 ? (
-                rfq.supplierNames.map((name, index) => (
-                  <div
-                    key={index}
-                    className="flex items-center justify-between p-3 rounded-lg bg-muted/50"
+            <Label className="mb-2 block text-xs">Send to</Label>
+            {recipients.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                No suppliers on this RFQ yet — add one first.
+              </p>
+            ) : (
+              <div className="border rounded-md divide-y divide-border/40 max-h-[200px] overflow-y-auto">
+                {recipients.map((recipient) => (
+                  <label
+                    key={recipient.id}
+                    className="flex items-center gap-2 px-3 py-2 cursor-pointer hover-elevate"
                   >
-                    <span className="font-medium">{name}</span>
-                    <Badge variant="outline">
-                      <CheckCircle2 className="h-3 w-3 mr-1" />
-                      Ready
-                    </Badge>
-                  </div>
-                ))
-              ) : (
-                <div className="text-sm text-muted-foreground">No suppliers selected</div>
-              )}
-            </div>
+                    <Checkbox
+                      checked={selectedIds.includes(recipient.id)}
+                      onCheckedChange={() => toggle(recipient.id)}
+                      data-testid={`checkbox-send-${recipient.id}`}
+                    />
+                    <span className="text-sm flex-1 truncate">{recipient.supplierName}</span>
+                    {recipient.isExternal ? (
+                      <Badge variant="outline" className="text-data">External</Badge>
+                    ) : recipient.supplierEmail ? (
+                      <span className="text-data text-muted-foreground truncate max-w-[200px]">
+                        {recipient.supplierEmail}
+                      </span>
+                    ) : (
+                      <span className="text-data text-coral flex items-center gap-1">
+                        <MailX className="w-3 h-3" />
+                        no email
+                      </span>
+                    )}
+                    {recipient.status !== "not_sent" && (
+                      <Badge variant="secondary" className="text-data">already sent</Badge>
+                    )}
+                  </label>
+                ))}
+              </div>
+            )}
           </div>
 
-          {/* Send Options */}
-          <div>
-            <Label className="mb-3 block">Send Method:</Label>
-            <div className="space-y-3">
-              <div className="flex items-start space-x-3">
-                <Checkbox
-                  id="send-email"
-                  checked={sendEmail}
-                  onCheckedChange={(checked) => setSendEmail(checked as boolean)}
-                  data-testid="checkbox-send-email"
-                />
-                <div className="flex-1">
-                  <label
-                    htmlFor="send-email"
-                    className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer flex items-center gap-2"
-                  >
-                    <Mail className="h-4 w-4" />
-                    Send via Email with PDF attachment
-                  </label>
-                  <p className="text-sm text-muted-foreground mt-1">
-                    Suppliers will receive an email with the RFQ PDF and a link to confirm receipt
+          {(missingEmail.length > 0 || externals.length > 0) && (
+            <div className="flex items-start gap-2 p-3 rounded-md bg-muted/40 border border-border/50">
+              <AlertCircle className="w-4 h-4 text-muted-foreground mt-0.5 flex-shrink-0" />
+              <div className="text-xs text-muted-foreground space-y-1">
+                {missingEmail.length > 0 && (
+                  <p>
+                    {missingEmail.map((r) => r.supplierName).join(", ")} —{" "}
+                    {missingEmail.length === 1 ? "has" : "have"} no email address. They'll be marked
+                    as sent and you can copy their portal link from the supplier row.
                   </p>
-                </div>
-              </div>
-
-              <div className="flex items-start space-x-3">
-                <Checkbox
-                  id="send-inapp"
-                  checked={sendInApp}
-                  onCheckedChange={(checked) => setSendInApp(checked as boolean)}
-                  data-testid="checkbox-send-inapp"
-                />
-                <div className="flex-1">
-                  <label
-                    htmlFor="send-inapp"
-                    className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer flex items-center gap-2"
-                  >
-                    <Bell className="h-4 w-4" />
-                    Send in-app notification
-                  </label>
-                  <p className="text-sm text-muted-foreground mt-1">
-                    Suppliers with accounts will receive an in-app notification
+                )}
+                {externals.length > 0 && (
+                  <p>
+                    {externals.map((r) => r.supplierName).join(", ")} —{" "}
+                    {externals.length === 1 ? "is" : "are"} tracked outside Morada, so nothing is
+                    emailed.
                   </p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Email Content (shown if email is selected) */}
-          {sendEmail && (
-            <div className="space-y-4 p-4 rounded-lg border bg-muted/20">
-              <div>
-                <Label htmlFor="email-subject">Email Subject</Label>
-                <input
-                  id="email-subject"
-                  type="text"
-                  value={emailSubject}
-                  onChange={(e) => setEmailSubject(e.target.value)}
-                  className="w-full px-3 py-2 rounded-md border bg-background mt-1"
-                  data-testid="input-email-subject"
-                />
-              </div>
-
-              <div>
-                <Label htmlFor="email-message">Email Message</Label>
-                <Textarea
-                  id="email-message"
-                  value={emailMessage}
-                  onChange={(e) => setEmailMessage(e.target.value)}
-                  className="mt-1 min-h-[120px]"
-                  data-testid="textarea-email-message"
-                />
-                <p className="text-xs text-muted-foreground mt-1">
-                  PDF will be attached automatically. A confirm receipt link will be included in the footer.
-                </p>
+                )}
               </div>
             </div>
           )}
 
-          {/* Info Box */}
-          <div className="p-4 rounded-lg bg-status-info-bg border border-status-info/30">
-            <p className="text-sm text-status-info">
-              <strong>Note:</strong> After sending, automatic follow-up emails will be scheduled for
-              Day 3, 7, and 14 if no response is received.
+          <div className="space-y-1.5">
+            <Label className="text-xs">Subject</Label>
+            <Input value={subject} onChange={(e) => setSubject(e.target.value)} data-testid="input-email-subject" />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label className="text-xs">Message</Label>
+            <Textarea
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              className="min-h-[140px] text-sm"
+              data-testid="textarea-email-message"
+            />
+            <p className="text-data text-muted-foreground">
+              {"{{supplier_name}}, {{rfq_number}}, {{rfq_title}}, {{due_date}}, {{portal_link}}, {{sender_name}}, {{company_name}} are filled in per supplier."}
             </p>
           </div>
+
+          <label className="flex items-center gap-2 cursor-pointer">
+            <Checkbox
+              checked={attachPdf}
+              onCheckedChange={(c) => setAttachPdf(c as boolean)}
+              disabled={!pdfBlob}
+              data-testid="checkbox-attach-pdf"
+            />
+            <span className={cn("text-sm flex items-center gap-1.5", !pdfBlob && "text-muted-foreground")}>
+              <Paperclip className="w-3.5 h-3.5" />
+              Attach the RFQ as a PDF
+            </span>
+            {!pdfBlob && (
+              <span className="text-data text-muted-foreground">
+                — open Preview first to generate it
+              </span>
+            )}
+          </label>
         </div>
 
         <DialogFooter>
-          <Button
-            variant="outline"
-            onClick={() => onOpenChange(false)}
-            disabled={isSending}
-            data-testid="button-cancel-send"
-          >
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isSending}>
             Cancel
           </Button>
           <Button
             onClick={handleSend}
-            disabled={isSending || (!sendEmail && !sendInApp)}
+            disabled={isSending || selected.length === 0}
+            className="bg-primary hover:bg-primary/90 text-white"
             data-testid="button-confirm-send"
           >
             {isSending ? (
@@ -259,7 +257,9 @@ export function SendRFQDialog({ open, onOpenChange, rfq, pdfBlob }: SendRFQDialo
             ) : (
               <>
                 <Send className="h-4 w-4 mr-2" />
-                Send RFQ
+                {emailable.length > 0
+                  ? `Send to ${emailable.length} supplier${emailable.length === 1 ? "" : "s"}`
+                  : "Mark as sent"}
               </>
             )}
           </Button>

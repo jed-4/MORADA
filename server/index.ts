@@ -427,6 +427,11 @@ app.use((req, res, next) => {
     const { startXeroReconcileScheduler } = await import("./services/xeroReconcileScheduler");
     startXeroReconcileScheduler();
 
+    // Chases suppliers who haven't answered an RFQ. Until now the app wrote
+    // follow-up rows that nothing ever read, so no reminder was ever sent.
+    const { startRfqReminderScheduler } = await import("./services/rfqReminderScheduler");
+    startRfqReminderScheduler();
+
     // Billing config audit: billing fails soft (no Stripe = no paywall), so
     // surface misconfiguration loudly at boot — console always, Sentry in
     // production — instead of discovering it when a customer's checkout fails.

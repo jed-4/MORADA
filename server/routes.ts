@@ -9,6 +9,7 @@ import QRCode from "qrcode";
 import { format, startOfISOWeek, startOfMonth, addDays, addMonths, subDays, subMonths, getISOWeek } from "date-fns";
 import { setupAuth, isAuthenticated, sessionMiddleware, ensureLegacySessionFields } from "./auth";
 import { sendInvitationEmail, sendClientPortalInviteEmail, initializeEmailServices, sendGenericEmail } from "./utils/email";
+import { renderReminderText } from "@shared/rfqReminders";
 import { sanitizeNoteHtml } from "./utils/sanitizeNoteHtml";
 import { GoogleOAuthService } from "./services/googleOAuthService";
 import { ObjectStorageService } from "./replit_integrations/object_storage";
@@ -125,6 +126,8 @@ import {
   insertRfqRecipientSchema,
   updateRfqRecipientSchema,
   insertRfqQuoteItemSchema,
+  insertRfqReminderTemplateSchema,
+  updateRfqReminderTemplateSchema,
   insertRfqFollowUpSchema,
   insertRfiSchema,
   insertScopeItemSchema,
@@ -15816,6 +15819,234 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: any) {
       console.error("Error deleting RFQ recipient:", error);
       res.status(500).json({ error: "Failed to remove supplier" });
+    }
+  });
+
+  // ── Send an RFQ ───────────────────────────────────────────────────────────
+  // One server-side operation: mint a portal token per recipient, email them
+  // with the PDF and their own link, and stamp sentAt. Previously the client
+  // orchestrated four separate calls, none of which sent anything — there was a
+  // literal "TODO: implement actual email sending" — while still toasting
+  // "RFQ sent to N suppliers".
+  app.post("/api/rfqs/:id/send", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const rfq = await getOwnedRFQ(req, res, req.params.id);
+      if (!rfq) return;
+
+      const bodySchema = z.object({
+        recipientIds: z.array(z.string()).optional(),
+        subject: z.string().optional(),
+        message: z.string().optional(),
+        pdfBase64: z.string().optional(),
+        pdfFilename: z.string().optional(),
+      });
+      const parsed = bodySchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({
+          error: "Validation failed",
+          details: fromZodError(parsed.error).toString(),
+        });
+      }
+
+      const allRecipients = await storage.getRFQRecipients(rfq.id);
+      const targets = parsed.data.recipientIds?.length
+        ? allRecipients.filter((r) => parsed.data.recipientIds!.includes(r.id))
+        : allRecipients;
+
+      if (targets.length === 0) {
+        return res.status(400).json({ error: "Add at least one supplier before sending" });
+      }
+
+      const settings = await storage.getCompanySettings(req.user!.companyId!);
+      const companyName = settings?.companyName || "Morada";
+      const senderName =
+        `${req.user!.firstName || ""} ${req.user!.lastName || ""}`.trim() || req.user!.email || "";
+      const project = rfq.projectId ? await storage.getProject(rfq.projectId) : undefined;
+      const baseUrl = `${req.get("x-forwarded-proto") || (req.secure ? "https" : "http")}://${req.get("host")}`;
+
+      const sent: string[] = [];
+      const failed: { supplierName: string; error: string }[] = [];
+      const skipped: { supplierName: string; reason: string }[] = [];
+
+      for (const recipient of targets) {
+        // External recipients are contacted outside Morada by definition — they
+        // get marked sent for tracking but never emailed or tokenised.
+        if (recipient.isExternal) {
+          await storage.updateRFQRecipient(recipient.id, {
+            status: "sent" as const,
+            sentAt: recipient.sentAt ?? new Date(),
+          });
+          skipped.push({ supplierName: recipient.supplierName, reason: "external" });
+          continue;
+        }
+
+        // One durable token per recipient, reused on re-send so a supplier's
+        // link keeps working rather than silently dying when you chase them.
+        const portalToken = recipient.portalToken ?? randomUUID().replace(/-/g, "");
+        const now = new Date();
+
+        try {
+          await storage.updateRFQRecipient(recipient.id, {
+            status: "sent" as const,
+            sentAt: recipient.sentAt ?? now,
+            portalToken,
+            portalTokenRevoked: false,
+          } as any);
+
+          if (recipient.supplierEmail) {
+            const ctx = {
+              rfq,
+              recipient: { ...recipient, portalToken },
+              senderName,
+              companyName,
+              projectName: project?.name ?? null,
+              baseUrl,
+            };
+            const subject = renderReminderText(
+              parsed.data.subject || "Request for quote: {{rfq_number}} — {{rfq_title}}",
+              ctx,
+            );
+            const message = renderReminderText(
+              parsed.data.message ||
+                "Hi {{supplier_name}},\n\nWe'd like a price for {{rfq_title}}.\n\n" +
+                  "You can review the details and send your quote back here: {{portal_link}}\n\n" +
+                  "Thanks,\n{{sender_name}}\n{{company_name}}",
+              ctx,
+            );
+
+            await sendGenericEmail({
+              to: recipient.supplierEmail,
+              subject,
+              html: message.replace(/\n/g, "<br>"),
+              from: `${companyName} via Morada <noreply@moradaco.com.au>`,
+              replyTo: req.user!.email,
+              userId: req.user!.id,
+              attachments: parsed.data.pdfBase64
+                ? [{
+                    filename: parsed.data.pdfFilename || `RFQ-${rfq.rfqNumber}.pdf`,
+                    content: parsed.data.pdfBase64,
+                    mimeType: "application/pdf",
+                  }]
+                : undefined,
+            });
+            sent.push(recipient.supplierName);
+          } else {
+            // No address on file: the token still exists, so the user can copy
+            // the portal link from the supplier row and send it themselves.
+            skipped.push({ supplierName: recipient.supplierName, reason: "no email address" });
+          }
+        } catch (err: any) {
+          console.error(`Failed to send RFQ ${rfq.rfqNumber} to ${recipient.supplierName}:`, err);
+          failed.push({ supplierName: recipient.supplierName, error: err?.message || "Send failed" });
+        }
+      }
+
+      await storage.updateRFQ(rfq.id, { sentAt: rfq.sentAt ?? new Date() } as any);
+      await storage.recomputeRfqStatus(rfq.id);
+
+      res.json({
+        sent,
+        failed,
+        skipped,
+        rfq: await storage.getRFQ(rfq.id),
+      });
+    } catch (error: any) {
+      console.error("Error sending RFQ:", error);
+      res.status(500).json({ error: "Failed to send RFQ", details: error.message });
+    }
+  });
+
+  // ── RFQ Reminder Templates (company-level) ───────────────────────────────
+  app.get("/api/rfq-reminder-templates", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      res.json(await storage.getRFQReminderTemplates(req.user!.companyId!));
+    } catch (error) {
+      console.error("Error fetching reminder templates:", error);
+      res.status(500).json({ error: "Failed to fetch reminder templates" });
+    }
+  });
+
+  app.post("/api/rfq-reminder-templates", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const parsed = insertRfqReminderTemplateSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Validation failed", details: fromZodError(parsed.error).toString() });
+      }
+      res.status(201).json(await storage.createRFQReminderTemplate(req.user!.companyId!, parsed.data));
+    } catch (error: any) {
+      console.error("Error creating reminder template:", error);
+      res.status(500).json({ error: "Failed to create reminder" });
+    }
+  });
+
+  app.patch("/api/rfq-reminder-templates/:id", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const parsed = updateRfqReminderTemplateSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Validation failed", details: fromZodError(parsed.error).toString() });
+      }
+      const existing = await storage.getRFQReminderTemplate(req.params.id);
+      if (!existing || existing.companyId !== req.user!.companyId) {
+        return res.status(404).json({ error: "Reminder not found" });
+      }
+      res.json(await storage.updateRFQReminderTemplate(req.params.id, parsed.data));
+    } catch (error: any) {
+      console.error("Error updating reminder template:", error);
+      res.status(500).json({ error: "Failed to update reminder" });
+    }
+  });
+
+  app.delete("/api/rfq-reminder-templates/:id", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const existing = await storage.getRFQReminderTemplate(req.params.id);
+      if (!existing || existing.companyId !== req.user!.companyId) {
+        return res.status(404).json({ error: "Reminder not found" });
+      }
+      await storage.deleteRFQReminderTemplate(req.params.id);
+      res.status(204).send();
+    } catch (error: any) {
+      console.error("Error deleting reminder template:", error);
+      res.status(500).json({ error: "Failed to delete reminder" });
+    }
+  });
+
+  // What has already gone out for this RFQ, so the modal can show state per row.
+  app.get("/api/rfqs/:rfqId/reminder-log", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const owned = await getOwnedRFQ(req, res, req.params.rfqId);
+      if (!owned) return;
+      res.json(await storage.getRFQReminderLog(req.params.rfqId));
+    } catch (error) {
+      console.error("Error fetching reminder log:", error);
+      res.status(500).json({ error: "Failed to fetch reminder history" });
+    }
+  });
+
+  // Fire one reminder now, for the "Send now" action on a reminder row.
+  app.post("/api/rfqs/:rfqId/reminders/:templateId/send", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const rfq = await getOwnedRFQ(req, res, req.params.rfqId);
+      if (!rfq) return;
+      const template = await storage.getRFQReminderTemplate(req.params.templateId);
+      if (!template || template.companyId !== req.user!.companyId) {
+        return res.status(404).json({ error: "Reminder not found" });
+      }
+
+      const { sendRfqReminder, remindableRecipients } = await import("./services/rfqReminderScheduler");
+      const recipients = remindableRecipients(await storage.getRFQRecipients(rfq.id));
+      if (recipients.length === 0) {
+        return res.status(400).json({ error: "No suppliers are still awaiting a response" });
+      }
+
+      const baseUrl = `${req.get("x-forwarded-proto") || (req.secure ? "https" : "http")}://${req.get("host")}`;
+      const results = [];
+      for (const recipient of recipients) {
+        results.push(await sendRfqReminder({ rfq, recipient, template, baseUrl, force: true }));
+      }
+      res.json({ results });
+    } catch (error: any) {
+      console.error("Error sending reminder:", error);
+      res.status(500).json({ error: "Failed to send reminder", details: error.message });
     }
   });
 

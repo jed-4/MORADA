@@ -5375,6 +5375,137 @@ export const insertRfqQuoteItemSchema = createInsertSchema(rfqQuoteItems).omit({
 export type InsertRfqQuoteItem = z.infer<typeof insertRfqQuoteItemSchema>;
 export type RfqQuoteItem = typeof rfqQuoteItems.$inferSelect;
 
+// ---------------------------------------------------------------------------
+// RFQ Reminder Templates — company-level, not per-RFQ.
+//
+// Every RFQ chases the same way, so the wording lives once per company and each
+// RFQ opts in or out. (The old design wrote four hard-coded follow-up rows per
+// RFQ at send time and nothing ever read them — there was no scheduler at all.)
+//
+// Two triggers, because both are natural: "chase 3 days after I sent it" works
+// even when there is no due date, and "chase 2 days before it's due" is how a
+// deadline actually gets managed.
+// ---------------------------------------------------------------------------
+export const rfqReminderTriggerEnum = pgEnum("rfq_reminder_trigger", ["after_send", "before_due"]);
+
+export const rfqReminderTemplates = pgTable("rfq_reminder_templates", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+
+  name: text("name").notNull(), // shown in the reminders list, e.g. "First chase"
+  trigger: rfqReminderTriggerEnum("trigger").notNull().default("after_send"),
+  offsetDays: integer("offset_days").notNull(),
+
+  subject: text("subject").notNull(),
+  body: text("body").notNull(),
+
+  enabled: boolean("enabled").notNull().default(true),
+  displayOrder: integer("display_order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertRfqReminderTemplateSchema = createInsertSchema(rfqReminderTemplates).omit({
+  id: true,
+  companyId: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  name: z.string().min(1, "Name is required"),
+  subject: z.string().min(1, "Subject is required"),
+  body: z.string().min(1, "Message is required"),
+  offsetDays: z.number().int().min(0).max(365),
+});
+
+export const updateRfqReminderTemplateSchema = insertRfqReminderTemplateSchema.partial();
+
+export type InsertRfqReminderTemplate = z.infer<typeof insertRfqReminderTemplateSchema>;
+export type RfqReminderTemplate = typeof rfqReminderTemplates.$inferSelect;
+
+// ---------------------------------------------------------------------------
+// RFQ Reminder Log — what was actually sent, to whom, off which template.
+//
+// The unique (recipient, template) index is what stops the scheduler double-
+// sending: a reminder is claimed by inserting its log row, so a second pass —
+// or a second process — hits the constraint instead of emailing twice.
+// ---------------------------------------------------------------------------
+export const rfqReminderLog = pgTable("rfq_reminder_log", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  rfqId: varchar("rfq_id").notNull().references(() => rfqs.id, { onDelete: "cascade" }),
+  recipientId: varchar("recipient_id").notNull().references(() => rfqRecipients.id, { onDelete: "cascade" }),
+  templateId: varchar("template_id").references(() => rfqReminderTemplates.id, { onDelete: "set null" }),
+
+  subject: text("subject"),
+  body: text("body"),
+  toEmail: text("to_email"),
+
+  status: text("status").notNull().default("sent"), // "sent" | "failed" | "skipped"
+  error: text("error"),
+  sentAt: timestamp("sent_at").notNull().defaultNow(),
+});
+
+export const insertRfqReminderLogSchema = createInsertSchema(rfqReminderLog).omit({
+  id: true,
+  sentAt: true,
+});
+
+export type InsertRfqReminderLog = z.infer<typeof insertRfqReminderLogSchema>;
+export type RfqReminderLogEntry = typeof rfqReminderLog.$inferSelect;
+
+/** Placeholders offered as chips in the reminder editor, and substituted on send. */
+export const RFQ_REMINDER_PLACEHOLDERS = [
+  { token: "{{supplier_name}}", label: "Supplier name" },
+  { token: "{{rfq_number}}", label: "RFQ number" },
+  { token: "{{rfq_title}}", label: "RFQ title" },
+  { token: "{{due_date}}", label: "Response due" },
+  { token: "{{days_remaining}}", label: "Days remaining" },
+  { token: "{{portal_link}}", label: "Portal link" },
+  { token: "{{sender_name}}", label: "Your name" },
+  { token: "{{company_name}}", label: "Company name" },
+  { token: "{{project_name}}", label: "Project name" },
+] as const;
+
+/** Defaults seeded for a company the first time its reminders are opened. */
+export const DEFAULT_RFQ_REMINDER_TEMPLATES = [
+  {
+    name: "First chase",
+    trigger: "after_send" as const,
+    offsetDays: 3,
+    subject: "Following up: {{rfq_number}} — {{rfq_title}}",
+    body:
+      "Hi {{supplier_name}},\n\n" +
+      "Just following up on the quote request we sent through for {{rfq_title}}.\n\n" +
+      "You can review it and send your price back here: {{portal_link}}\n\n" +
+      "Thanks,\n{{sender_name}}\n{{company_name}}",
+    displayOrder: 0,
+  },
+  {
+    name: "Due date approaching",
+    trigger: "before_due" as const,
+    offsetDays: 2,
+    subject: "Closing soon: {{rfq_number}} — {{rfq_title}}",
+    body:
+      "Hi {{supplier_name}},\n\n" +
+      "A reminder that quotes for {{rfq_title}} close on {{due_date}} ({{days_remaining}} days away).\n\n" +
+      "Send your price through here: {{portal_link}}\n\n" +
+      "Thanks,\n{{sender_name}}\n{{company_name}}",
+    displayOrder: 1,
+  },
+  {
+    name: "Final chase",
+    trigger: "after_send" as const,
+    offsetDays: 14,
+    subject: "Last call: {{rfq_number}} — {{rfq_title}}",
+    body:
+      "Hi {{supplier_name}},\n\n" +
+      "We haven't heard back on {{rfq_title}} and are about to award it.\n\n" +
+      "If you'd still like to quote, please send it through here: {{portal_link}}\n\n" +
+      "If it's not one for you, just let us know and we'll stop chasing.\n\n" +
+      "Thanks,\n{{sender_name}}\n{{company_name}}",
+    displayOrder: 2,
+  },
+];
+
 // ============================================
 // RFI (Request for Information) System
 // ============================================
