@@ -619,7 +619,9 @@ function InstanceDetail({
       });
       if (!response.ok) throw new Error("Failed to fetch groups");
       const data = await response.json();
-      return data.sort((a: ChecklistGroupWithItems, b: ChecklistGroupWithItems) => (a.name || '').localeCompare(b.name || ''));
+      // Authored order, with name as the tie-break for legacy rows.
+      return data.sort((a: ChecklistGroupWithItems, b: ChecklistGroupWithItems) =>
+        (a.order ?? 0) - (b.order ?? 0) || (a.name || '').localeCompare(b.name || ''));
     },
   });
 
@@ -739,7 +741,9 @@ function DrawerChecklist({
       });
       if (!response.ok) throw new Error("Failed to fetch items");
       const data = await response.json();
-      return data.sort((a: ChecklistInstanceItem, b: ChecklistInstanceItem) => (a.description || '').localeCompare(b.description || ''));
+      // Authored order, with description as the tie-break for legacy rows.
+      return data.sort((a: ChecklistInstanceItem, b: ChecklistInstanceItem) =>
+        (a.order ?? 0) - (b.order ?? 0) || (a.description || '').localeCompare(b.description || ''));
     },
     enabled: isExpanded,
   });
@@ -800,6 +804,12 @@ function DrawerChecklist({
     },
   });
 
+  const hasLoadedItems = isExpanded && items.length > 0;
+  const progressTotal = hasLoadedItems ? items.length : (group.totalCount ?? 0);
+  const progressDone = hasLoadedItems
+    ? items.filter(i => i.status === "completed" || i.status === "na").length
+    : (group.completedCount ?? 0);
+
   const toggleItemComplete = (item: ChecklistInstanceItem) => {
     const isCompleting = item.status !== "completed";
     const newStatus = isCompleting ? "completed" : "pending";
@@ -830,6 +840,15 @@ function DrawerChecklist({
           <TaskTooltip content={group.name}>
             <span className="text-sm flex-1 min-w-0 truncate">{group.name}</span>
           </TaskTooltip>
+
+          {/* Counts come from the server, so progress shows while collapsed;
+              once expanded the loaded items drive it so an optimistic tick
+              moves the number straight away. */}
+          {progressTotal > 0 && (
+            <span className="text-2xs text-muted-foreground tabular-nums flex-shrink-0">
+              {progressDone}/{progressTotal}
+            </span>
+          )}
 
           <StatusBadge
             status={group.status}

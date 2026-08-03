@@ -250,6 +250,42 @@ function isHoliday(d: Date, holidays: Set<string>): boolean {
 }
 
 /**
+ * Snapshot the answerable configuration of a checklist template item onto a new
+ * instance item. Every field the template author can set must be listed here —
+ * previously only description/tooltip/order were copied, so a template item
+ * configured as a text or choice question silently became a plain checkbox the
+ * moment it was instantiated, and the template editor's response-type UI had no
+ * effect on any live checklist.
+ *
+ * Not carried across: `assignedRoleId`. Template items name a *role*, instance
+ * items hold a concrete `assigneeId` (a user), and there is no column to keep
+ * the role on the instance — resolving role → user needs a product decision.
+ *
+ * Used by both instantiation paths (manual create, and status-trigger
+ * auto-create) so they can't drift apart again.
+ */
+function instanceItemFieldsFromTemplate(templateItem: {
+  description: string;
+  tooltip?: string | null;
+  order?: number | null;
+  responseType?: string | null;
+  responseOptions?: unknown;
+}) {
+  return {
+    description: templateItem.description,
+    tooltip: templateItem.tooltip ?? null,
+    order: templateItem.order ?? 0,
+    responseType: (templateItem.responseType ?? "checkbox") as
+      "checkbox" | "text" | "single_choice" | "multiple_choice",
+    responseOptions: Array.isArray(templateItem.responseOptions)
+      ? (templateItem.responseOptions as string[])
+      : [],
+    selectedResponses: [],
+    status: "pending" as const,
+  };
+}
+
+/**
  * Internal helper: push a bill to Xero (create or update) and update its sync status columns.
  * Returns a structured result so callers (HTTP route, auto-push, webhook) can handle uniformly.
  */
@@ -4801,6 +4837,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
                     name: group.name,
                     order: group.order,
                     status: "active",
+                    priority: "low",
                   });
 
                   const templateItems = await storage.getChecklistTemplateItems(group.id);
@@ -4810,11 +4847,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
                       groupId: instanceGroup.id,
                       groupName: group.name,
                       groupOrder: group.order,
-                      description: templateItem.description,
-                      tooltip: templateItem.tooltip,
-                      order: templateItem.order,
-                      isRequired: templateItem.isRequired ?? false,
-                      status: "pending",
+                      ...instanceItemFieldsFromTemplate(templateItem),
                     });
                   }
                 }
@@ -24843,6 +24876,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
     return item;
   };
 
+  // Instance-side ownership. checklist_instances carries companyId directly;
+  // instance groups and items reach it through instanceId. The instance CRUD
+  // routes already checked this inline, but the nested group/item/audit-log
+  // routes below had no check at all — any instance, group or item id was
+  // readable and writable across tenants, and (there being no global /api auth
+  // guard) without a session at all.
+  const getOwnedInstance = async (
+    req: any, res: any, instanceId: string, notFound = "Checklist instance not found",
+  ): Promise<any | null> => {
+    const instance = await storage.getChecklistInstance(instanceId);
+    if (!instance) { res.status(404).json({ error: notFound }); return null; }
+    const companyId = req.user?.companyId;
+    if (!companyId || instance.companyId !== companyId) {
+      // 404 (not 403) on company mismatch so existence isn't confirmed.
+      res.status(404).json({ error: notFound });
+      return null;
+    }
+    return instance;
+  };
+  const getOwnedInstanceGroup = async (
+    req: any, res: any, groupId: string,
+  ): Promise<any | null> => {
+    const group = await storage.getChecklistInstanceGroup(groupId);
+    if (!group) { res.status(404).json({ error: "Checklist group not found" }); return null; }
+    const instance = await getOwnedInstance(req, res, group.instanceId, "Checklist group not found");
+    if (!instance) return null;
+    return group;
+  };
+
   app.get("/api/checklist-templates", async (req, res) => {
     try {
       const { filterByRole } = req.query;
@@ -24869,6 +24931,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       for (const template of templates) {
         const groups = await storage.getChecklistTemplateGroups(template.id);
         
+        // Keep every row the same shape so the CSV has stable columns even when
+        // a template or group is empty.
+        const emptyItemColumns = { itemDescription: "", itemTooltip: "", responseType: "", responseOptions: "" };
+
         if (groups.length === 0) {
           // Template with no groups
           exportData.push({
@@ -24876,12 +24942,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
             templateDescription: template.description || "",
             type: template.type,
             groupName: "",
-            itemDescription: "",
+            ...emptyItemColumns,
           });
         } else {
           for (const group of groups) {
             const items = await storage.getChecklistTemplateItems(group.id);
-            
+
             if (items.length === 0) {
               // Group with no items
               exportData.push({
@@ -24889,7 +24955,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 templateDescription: template.description || "",
                 type: template.type,
                 groupName: group.name,
-                itemDescription: "",
+                ...emptyItemColumns,
               });
             } else {
               for (const item of items) {
@@ -24899,6 +24965,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
                   type: template.type,
                   groupName: group.name,
                   itemDescription: item.description,
+                  // Emit the full item config so export → import round-trips
+                  // without flattening every question back to a checkbox.
+                  itemTooltip: item.tooltip || "",
+                  responseType: item.responseType || "checkbox",
+                  responseOptions: Array.isArray(item.responseOptions)
+                    ? (item.responseOptions as string[]).join(" | ")
+                    : "",
                 });
               }
             }
@@ -25010,6 +25083,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         name: `${originalTemplate.name} (Copy)`,
         description: originalTemplate.description,
         type: originalTemplate.type as "Task" | "Job" | "Estimation" | "Lead",
+        visibleToRoles: Array.isArray(originalTemplate.visibleToRoles)
+          ? (originalTemplate.visibleToRoles as string[])
+          : [],
+        defaultVisibility: (originalTemplate.defaultVisibility ?? "everyone") as
+          "everyone" | "assignee_only",
         companyId: (req.user as any)?.companyId,
       });
       
@@ -25026,10 +25104,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
         
         const items = await storage.getChecklistTemplateItems(group.id);
         for (const item of items) {
+          // Copy the whole item, not just description/order — a duplicate that
+          // silently drops response types, options, tooltips and role
+          // assignments isn't a duplicate.
           await storage.createChecklistTemplateItem({
             groupId: duplicateGroup.id,
             description: item.description,
+            tooltip: item.tooltip ?? null,
             order: item.order,
+            responseType: (item.responseType ?? "checkbox") as
+              "checkbox" | "text" | "single_choice" | "multiple_choice",
+            responseOptions: Array.isArray(item.responseOptions)
+              ? (item.responseOptions as string[])
+              : [],
+            assignedRoleId: item.assignedRoleId ?? null,
           });
         }
       }
@@ -25078,7 +25166,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const ownedTemplate = await getOwnedTemplate(req, res, validationResult.data.templateId);
       if (!ownedTemplate) return;
 
-      const group = await storage.createChecklistTemplateGroup(validationResult.data);
+      // Append, same as items — the client used to send order 0, which put
+      // every newly created checklist at the top of the template.
+      const data = { ...validationResult.data };
+      if (req.body.order === undefined) {
+        const siblings = await storage.getChecklistTemplateGroups(validationResult.data.templateId);
+        data.order = siblings.reduce((max, s) => Math.max(max, s.order ?? 0), -1) + 1;
+      }
+
+      const group = await storage.createChecklistTemplateGroup(data);
       res.status(201).json(group);
     } catch (error: any) {
       res.status(500).json({ 
@@ -25269,7 +25365,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const ownedGroup = await getOwnedGroup(req, res, validationResult.data.groupId);
       if (!ownedGroup) return;
 
-      const item = await storage.createChecklistTemplateItem(validationResult.data);
+      // Append to the end of the group. The client used to hardcode order 0 on
+      // every item, so nothing in a checklist had a meaningful sequence and
+      // every surface fell back to sorting alphabetically. Assign the order
+      // server-side so it's right regardless of caller.
+      const data = { ...validationResult.data };
+      if (req.body.order === undefined) {
+        const siblings = await storage.getChecklistTemplateItems(validationResult.data.groupId);
+        data.order = siblings.reduce((max, s) => Math.max(max, s.order ?? 0), -1) + 1;
+      }
+
+      const item = await storage.createChecklistTemplateItem(data);
       res.status(201).json(item);
     } catch (error: any) {
       res.status(500).json({ 
@@ -25306,6 +25412,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ 
         error: "Failed to update item",
         details: error.message 
+      });
+    }
+  });
+
+  // Reorder items within a checklist template group.
+  app.post("/api/checklist-template-groups/:groupId/items/reorder", async (req, res) => {
+    try {
+      const { orderedItemIds } = req.body;
+      if (!Array.isArray(orderedItemIds) || orderedItemIds.length === 0) {
+        return res.status(400).json({ error: "orderedItemIds must be a non-empty array" });
+      }
+
+      const ownedGroup = await getOwnedGroup(req, res, req.params.groupId);
+      if (!ownedGroup) return;
+
+      // Only reorder items that actually belong to this (owned) group, so a
+      // cross-company item id can't be smuggled into the array.
+      const groupItems = await storage.getChecklistTemplateItems(req.params.groupId);
+      const ownedItemIds = new Set(groupItems.map(i => i.id));
+
+      for (let i = 0; i < orderedItemIds.length; i++) {
+        if (!ownedItemIds.has(orderedItemIds[i])) continue;
+        await storage.updateChecklistTemplateItem(orderedItemIds[i], { order: i });
+      }
+
+      res.json(await storage.getChecklistTemplateItems(req.params.groupId));
+    } catch (error: any) {
+      res.status(500).json({
+        error: "Failed to reorder items",
+        details: error.message
       });
     }
   });
@@ -25357,12 +25493,43 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return "Job"; // Default for unrecognized values
       };
 
+      type ResponseType = "checkbox" | "text" | "single_choice" | "multiple_choice";
+
+      // Accept the response-type column the export now emits, tolerating the
+      // spellings a human is likely to type in a spreadsheet. Anything
+      // unrecognised falls back to a plain checkbox.
+      const normalizeResponseType = (value: unknown): ResponseType => {
+        if (typeof value !== "string" || !value.trim()) return "checkbox";
+        const normalized = value.trim().toLowerCase().replace(/[\s-]+/g, "_");
+        if (normalized === "text" || normalized === "free_text") return "text";
+        if (normalized === "single_choice" || normalized === "single") return "single_choice";
+        if (normalized === "multiple_choice" || normalized === "multiple" || normalized === "multi") {
+          return "multiple_choice";
+        }
+        return "checkbox";
+      };
+
+      // Options arrive either as a real array or as a "A | B | C" string.
+      const parseResponseOptions = (value: unknown): string[] => {
+        if (Array.isArray(value)) return value.map(String).map(s => s.trim()).filter(Boolean);
+        if (typeof value !== "string") return [];
+        return value.split("|").map(s => s.trim()).filter(Boolean);
+      };
+
+      type ImportItem = {
+        description: string;
+        order: number;
+        tooltip: string | null;
+        responseType: ResponseType;
+        responseOptions: string[];
+      };
+
       // Group items by template name
       const templateMap = new Map<string, {
         name: string;
         description: string | null;
         type: "Task" | "Job" | "Estimation" | "Lead";
-        groups: Map<string, Array<{ description: string; order: number }>>;
+        groups: Map<string, ImportItem[]>;
       }>();
 
       // First pass: organize data structure
@@ -25399,9 +25566,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
         // Add item if provided
         if (row.itemDescription && row.itemDescription.trim()) {
+          let responseType = normalizeResponseType(row.responseType);
+          const isChoice = responseType === "single_choice" || responseType === "multiple_choice";
+          const responseOptions = isChoice ? parseResponseOptions(row.responseOptions) : [];
+          // A choice question with no options renders as an unanswerable empty
+          // list, so import it as a checkbox instead of a dead item.
+          if (isChoice && responseOptions.length === 0) {
+            responseType = "checkbox";
+            skippedReasons.push(`Row ${i + 1}: "${row.responseType}" had no options — imported as a checkbox`);
+          }
           template.groups.get(groupKey)!.push({
             description: row.itemDescription,
             order: template.groups.get(groupKey)!.length,
+            tooltip: (row.itemTooltip && String(row.itemTooltip).trim()) || null,
+            responseType,
+            responseOptions,
           });
         }
       }
@@ -25413,6 +25592,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           name: templateData.name,
           description: templateData.description,
           type: templateData.type,
+          visibleToRoles: [],
+          defaultVisibility: "everyone",
           companyId: (req.user as any)?.companyId,
         });
         templatesCreated++;
@@ -25433,6 +25614,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
               groupId: group.id,
               description: item.description,
               order: item.order,
+              tooltip: item.tooltip,
+              responseType: item.responseType,
+              responseOptions: item.responseOptions,
             });
             itemsCreated++;
           }
@@ -25468,25 +25652,45 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const currentUser = req.user as any;
       const userId = currentUser ? String(currentUser.id) : undefined;
       const isAdmin = currentUser?.role === 'admin' || currentUser?.isAdmin;
+      if (!currentUser?.companyId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
       if (projectId && !(await enforceProjectCompany(req, res, projectId, "Project not found"))) return;
-      const fetchedInstances = await storage.getChecklistInstances(projectId, userId, isAdmin);
-      // Tenant scoping: instances carry companyId directly.
-      const instances = fetchedInstances.filter((i: any) => i.companyId === currentUser?.companyId);
-      
-      // Get item counts for each instance
-      const instancesWithCounts = await Promise.all(
-        instances.map(async (instance) => {
-          const items = await storage.getChecklistInstanceItems(instance.id);
-          const completedCount = items.filter(i => i.status === "completed" || i.status === "na").length;
-          return {
-            ...instance,
-            completedCount,
-            totalCount: items.length,
-          };
-        })
-      );
-      
-      res.json(instancesWithCounts);
+
+      // `?include=groups` folds the per-instance groups request into this one,
+      // with each group carrying its own completion counts. Items stay lazy:
+      // most checklists render collapsed, so shipping every item row up front
+      // would trade one round trip for a much larger payload.
+      const wantsGroups = String(req.query.include || "")
+        .split(",").map(s => s.trim()).includes("groups");
+
+      const instances = await storage.getChecklistInstances(projectId, userId, isAdmin, currentUser.companyId);
+      const instanceIds = instances.map(i => i.id);
+
+      // One grouped query for every instance, instead of one query per instance.
+      const [counts, allGroups] = await Promise.all([
+        storage.getChecklistItemCounts(instanceIds),
+        wantsGroups ? storage.getChecklistInstanceGroupsForInstances(instanceIds) : Promise.resolve([]),
+      ]);
+      const zero = { total: 0, completed: 0 };
+
+      const groupsByInstance = new Map<string, any[]>();
+      for (const group of allGroups) {
+        const groupCounts = counts.byGroup[group.id] ?? zero;
+        const bucket = groupsByInstance.get(group.instanceId) ?? [];
+        bucket.push({ ...group, completedCount: groupCounts.completed, totalCount: groupCounts.total });
+        groupsByInstance.set(group.instanceId, bucket);
+      }
+
+      res.json(instances.map(instance => {
+        const instanceCounts = counts.byInstance[instance.id] ?? zero;
+        return {
+          ...instance,
+          completedCount: instanceCounts.completed,
+          totalCount: instanceCounts.total,
+          ...(wantsGroups ? { groups: groupsByInstance.get(instance.id) ?? [] } : {}),
+        };
+      }));
     } catch (error: any) {
       res.status(500).json({ 
         error: "Failed to fetch checklist instances",
@@ -25497,10 +25701,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/checklist-instances/:id", async (req, res) => {
     try {
-      const instance = await storage.getChecklistInstance(req.params.id);
-      if (!instance || (instance as any).companyId !== (req.user as any)?.companyId) {
-        return res.status(404).json({ error: "Checklist instance not found" });
-      }
+      const instance = await getOwnedInstance(req, res, req.params.id);
+      if (!instance) return;
       res.json(instance);
     } catch (error: any) {
       res.status(500).json({ 
@@ -25555,6 +25757,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             name: group.name,
             order: group.order,
             status: "active",
+            priority: "low",
           });
           
           // Create items linked to this group
@@ -25565,11 +25768,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               groupId: instanceGroup.id,
               groupName: group.name,
               groupOrder: group.order,
-              description: templateItem.description,
-              tooltip: templateItem.tooltip,
-              order: templateItem.order,
-              isRequired: templateItem.isRequired ?? false,
-              status: "pending",
+              ...instanceItemFieldsFromTemplate(templateItem),
             });
           }
         }
@@ -25597,11 +25796,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      // Ownership: instances carry companyId directly.
-      const ownedInstance = await storage.getChecklistInstance(req.params.id);
-      if (!ownedInstance || (ownedInstance as any).companyId !== currentUser?.companyId) {
-        return res.status(404).json({ error: "Checklist instance not found" });
-      }
+      const ownedInstance = await getOwnedInstance(req, res, req.params.id);
+      if (!ownedInstance) return;
 
       // Only admins or the instance creator/assignee can change visibility
       if (validationResult.data.visibility !== undefined && !isAdmin) {
@@ -25630,12 +25826,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/checklist-instances/:id", async (req, res) => {
     try {
-      // Ownership: instances carry companyId directly.
-      const ownedInstance = await storage.getChecklistInstance(req.params.id);
-      if (!ownedInstance || (ownedInstance as any).companyId !== (req.user as any)?.companyId) {
-        return res.status(404).json({ error: "Checklist instance not found" });
-      }
-
+      if (!(await getOwnedInstance(req, res, req.params.id))) return;
       const success = await storage.deleteChecklistInstance(req.params.id);
       if (!success) {
         return res.status(404).json({ error: "Checklist instance not found" });
@@ -25658,23 +25849,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(401).json({ error: "Not authenticated" });
       }
       
-      // Get all instances for the company first (filtered by companyId)
-      const allInstances = await storage.getChecklistInstances(undefined, String(user.id), user?.role === 'admin' || user?.isAdmin);
-      const companyInstances = allInstances.filter(i => i.companyId === user.companyId);
-      
-      // Get groups for each instance and flatten
-      const allGroups = await Promise.all(
-        companyInstances.map(async (instance) => {
-          const groups = await storage.getChecklistInstanceGroups(instance.id);
-          return groups.map(g => ({
-            ...g,
-            instanceName: instance.name, // Include parent instance name for context
-            projectId: instance.projectId, // Include projectId for filtering in task modal
-          }));
-        })
+      const instances = await storage.getChecklistInstances(
+        undefined, String(user.id), user?.role === 'admin' || user?.isAdmin, user.companyId,
       );
-      
-      res.json(allGroups.flat());
+      const instanceById = new Map(instances.map(i => [i.id, i]));
+
+      // One query for every group, rather than one per instance.
+      const groups = await storage.getChecklistInstanceGroupsForInstances(Array.from(instanceById.keys()));
+
+      res.json(groups.map(g => {
+        const instance = instanceById.get(g.instanceId);
+        return {
+          ...g,
+          instanceName: instance?.name, // Parent instance name for context
+          projectId: instance?.projectId, // For filtering in the task modal
+        };
+      }));
     } catch (error: any) {
       res.status(500).json({ 
         error: "Failed to fetch checklist groups",
@@ -25685,8 +25875,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/checklist-instances/:instanceId/groups", async (req, res) => {
     try {
-      const groups = await storage.getChecklistInstanceGroups(req.params.instanceId);
-      res.json(groups);
+      if (!(await getOwnedInstance(req, res, req.params.instanceId))) return;
+      const [groups, counts] = await Promise.all([
+        storage.getChecklistInstanceGroups(req.params.instanceId),
+        // Counts travel with the groups so a collapsed checklist can still show
+        // its progress — previously the client only knew a group's totals once
+        // it had expanded it and fetched the items.
+        storage.getChecklistItemCounts([req.params.instanceId]),
+      ]);
+      res.json(groups.map(g => ({
+        ...g,
+        completedCount: counts.byGroup[g.id]?.completed ?? 0,
+        totalCount: counts.byGroup[g.id]?.total ?? 0,
+      })));
     } catch (error: any) {
       res.status(500).json({ 
         error: "Failed to fetch checklist groups",
@@ -25697,10 +25898,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/checklist-instance-groups/:id", async (req, res) => {
     try {
-      const group = await storage.getChecklistInstanceGroup(req.params.id);
-      if (!group) {
-        return res.status(404).json({ error: "Checklist group not found" });
-      }
+      const group = await getOwnedInstanceGroup(req, res, req.params.id);
+      if (!group) return;
       res.json(group);
     } catch (error: any) {
       res.status(500).json({ 
@@ -25712,6 +25911,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/checklist-instances/:instanceId/groups", async (req, res) => {
     try {
+      if (!(await getOwnedInstance(req, res, req.params.instanceId))) return;
       const validationResult = insertChecklistInstanceGroupSchema.safeParse({
         ...req.body,
         instanceId: req.params.instanceId,
@@ -25743,7 +25943,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      const existingGroup = await storage.getChecklistInstanceGroup(req.params.id);
+      const existingGroup = await getOwnedInstanceGroup(req, res, req.params.id);
+      if (!existingGroup) return;
+      // Re-parenting a group to another instance must land on an owned instance.
+      if (validationResult.data.instanceId && validationResult.data.instanceId !== existingGroup.instanceId) {
+        if (!(await getOwnedInstance(req, res, validationResult.data.instanceId))) return;
+      }
+
       const group = await storage.updateChecklistInstanceGroup(req.params.id, validationResult.data);
       if (!group) {
         return res.status(404).json({ error: "Checklist group not found" });
@@ -25783,6 +25989,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/checklist-instance-groups/:id", async (req, res) => {
     try {
+      if (!(await getOwnedInstanceGroup(req, res, req.params.id))) return;
       const success = await storage.deleteChecklistInstanceGroup(req.params.id);
       if (!success) {
         return res.status(404).json({ error: "Checklist group not found" });
@@ -25798,6 +26005,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/checklist-instance-groups/:groupId/items", async (req, res) => {
     try {
+      if (!(await getOwnedInstanceGroup(req, res, req.params.groupId))) return;
       const items = await storage.getChecklistInstanceItemsByGroup(req.params.groupId);
       res.json(items);
     } catch (error: any) {
@@ -25811,6 +26019,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Checklist Instance Item routes
   app.get("/api/checklist-instances/:instanceId/items", async (req, res) => {
     try {
+      if (!(await getOwnedInstance(req, res, req.params.instanceId))) return;
       const items = await storage.getChecklistInstanceItems(req.params.instanceId);
       res.json(items);
     } catch (error: any) {
@@ -25823,15 +26032,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/checklist-instances/:instanceId/items", async (req, res) => {
     try {
+      if (!(await getOwnedInstance(req, res, req.params.instanceId))) return;
       const validationResult = insertChecklistInstanceItemSchema.safeParse({
         ...req.body,
         instanceId: req.params.instanceId,
       });
       if (!validationResult.success) {
-        return res.status(400).json({ 
-          error: "Validation failed", 
-          details: fromZodError(validationResult.error).toString() 
+        return res.status(400).json({
+          error: "Validation failed",
+          details: fromZodError(validationResult.error).toString()
         });
+      }
+      // The target group, when given, must belong to this same instance —
+      // otherwise an item could be filed into another tenant's checklist.
+      if (validationResult.data.groupId) {
+        const targetGroup = await getOwnedInstanceGroup(req, res, validationResult.data.groupId);
+        if (!targetGroup) return;
+        if (targetGroup.instanceId !== req.params.instanceId) {
+          return res.status(404).json({ error: "Checklist group not found" });
+        }
       }
 
       const item = await storage.createChecklistInstanceItem(validationResult.data);
@@ -25859,10 +26078,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: "Checklist instance item not found" });
       }
       // Ownership: item → instance → companyId.
-      const parentInstance = await storage.getChecklistInstance(existingItem.instanceId);
-      if (!parentInstance || (parentInstance as any).companyId !== (req.user as any)?.companyId) {
-        return res.status(404).json({ error: "Checklist instance item not found" });
-      }
+      if (!(await getOwnedInstance(req, res, existingItem.instanceId, "Checklist instance item not found"))) return;
 
       const item = await storage.updateChecklistInstanceItem(req.params.id, validationResult.data);
       if (!item) {
@@ -25938,7 +26154,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
           if (allItemsDone && group && group.status !== "completed") {
             await storage.updateChecklistInstanceGroup(item.groupId, {
               status: "completed",
-              completedAt: new Date().toISOString(),
+              // A Date, not an ISO string: these go straight to a Drizzle
+              // timestamp column, which calls .toISOString() on the value. A
+              // string threw, and the throw was swallowed by the catch below —
+              // so checklists never actually auto-completed.
+              completedAt: new Date(),
               completedBy: actingUser?.id || null,
               completedByName: actingUser ? `${actingUser.firstName || ''} ${actingUser.lastName || ''}`.trim() : null,
             } as any);
@@ -25959,7 +26179,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             if (allGroupsDone && instance && instance.status !== "completed") {
               await storage.updateChecklistInstance(item.instanceId, {
                 status: "completed",
-                completedAt: new Date().toISOString(),
+                completedAt: new Date(),
                 completedBy: actingUser?.id || null,
                 completedByName: actingUser ? `${actingUser.firstName || ''} ${actingUser.lastName || ''}`.trim() : null,
               } as any);
@@ -25993,10 +26213,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!existingItem) {
         return res.status(404).json({ error: "Checklist instance item not found" });
       }
-      const parentInstance = await storage.getChecklistInstance(existingItem.instanceId);
-      if (!parentInstance || (parentInstance as any).companyId !== (req.user as any)?.companyId) {
-        return res.status(404).json({ error: "Checklist instance item not found" });
-      }
+      if (!(await getOwnedInstance(req, res, existingItem.instanceId, "Checklist instance item not found"))) return;
 
       const success = await storage.deleteChecklistInstanceItem(req.params.id);
       if (!success) {
@@ -26091,6 +26308,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Checklist Audit Log
   app.get("/api/checklist-instances/:instanceId/audit-log", async (req, res) => {
     try {
+      if (!(await getOwnedInstance(req, res, req.params.instanceId))) return;
       const log = await storage.getChecklistAuditLog(req.params.instanceId);
       res.json(log);
     } catch (error: any) {

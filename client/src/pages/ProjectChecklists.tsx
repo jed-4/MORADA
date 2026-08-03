@@ -143,6 +143,13 @@ type ChecklistGroupWithCounts = ChecklistInstanceGroup & {
   totalCount?: number;
 };
 
+// GET /api/checklist-instances?include=groups
+type InstanceWithGroups = ChecklistInstance & {
+  completedCount?: number;
+  totalCount?: number;
+  groups?: ChecklistGroupWithCounts[];
+};
+
 function ActivityLogContent({ instanceId }: { instanceId: string }) {
   const { data: auditLog = [], isLoading } = useQuery<ChecklistAuditLog[]>({
     queryKey: ['/api/checklist-instances', instanceId, 'audit-log'],
@@ -273,11 +280,14 @@ export default function ProjectChecklists() {
     selectedGroupIds: [] as string[],
   });
 
-  // Fetch checklist instances (Groups > Checklists > Items hierarchy)
-  const { data: instances = [], isLoading } = useQuery<ChecklistInstance[]>({
-    queryKey: ["/api/checklist-instances", { projectId }],
+  // Instances and their checklists arrive together, each checklist already
+  // carrying its completion counts. This replaces an instances request followed
+  // by one groups request per instance — and because the counts no longer come
+  // from the items, a collapsed checklist can show its progress.
+  const { data: instances = [], isLoading } = useQuery<InstanceWithGroups[]>({
+    queryKey: ["/api/checklist-instances", { projectId, include: "groups" }],
     queryFn: async () => {
-      const res = await fetch(`/api/checklist-instances?projectId=${projectId}`, {
+      const res = await fetch(`/api/checklist-instances?projectId=${projectId}&include=groups`, {
         credentials: "include",
       });
       if (!res.ok) throw new Error("Failed to fetch checklist groups");
@@ -293,24 +303,10 @@ export default function ProjectChecklists() {
     enabled: !!projectId,
   });
 
-  // Fetch all groups for all instances
-  // Include instance IDs in queryKey so it refetches when instances change
-  const instanceIds = instances.map(i => i.id).sort().join(',');
-  const { data: allGroups = [] } = useQuery<ChecklistGroupWithCounts[]>({
-    queryKey: ["/api/checklist-instance-groups", { projectId, instanceIds }],
-    queryFn: async () => {
-      const groupPromises = instances.map(async (instance) => {
-        const res = await fetch(`/api/checklist-instances/${instance.id}/groups`, {
-          credentials: "include",
-        });
-        if (!res.ok) return [];
-        return res.json();
-      });
-      const groupArrays = await Promise.all(groupPromises);
-      return groupArrays.flat();
-    },
-    enabled: instances.length > 0,
-  });
+  const allGroups = useMemo<ChecklistGroupWithCounts[]>(
+    () => instances.flatMap(i => i.groups ?? []),
+    [instances],
+  );
 
   // Fetch items for expanded checklists - use stable key for invalidation
   const expandedChecklistIds = Array.from(expandedChecklists);
@@ -337,8 +333,11 @@ export default function ProjectChecklists() {
           });
         }
       }));
+      // Authored order, with description as the tie-break for legacy items
+      // that were all written with order 0.
       Object.keys(itemsMap).forEach(groupId => {
-        itemsMap[groupId].sort((a, b) => (a.description || '').localeCompare(b.description || ''));
+        itemsMap[groupId].sort((a, b) =>
+          (a.order ?? 0) - (b.order ?? 0) || (a.description || '').localeCompare(b.description || ''));
       });
       return itemsMap;
     },
@@ -458,7 +457,13 @@ export default function ProjectChecklists() {
       await apiRequest(`/api/checklist-instance-groups/${groupId}`, "PATCH", data);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/checklist-instance-groups", { projectId }] });
+      // Checklists now arrive inside the instances query, so that's the one to
+      // refresh. The standalone groups key is still invalidated for the
+      // cross-instance list other screens use for task linking.
+      queryClient.invalidateQueries({
+        predicate: (query) => Array.isArray(query.queryKey) &&
+          (query.queryKey[0] === "/api/checklist-instances" || query.queryKey[0] === "/api/checklist-instance-groups"),
+      });
       setOpenLinkPopover(null);
     },
     onError: () => {
@@ -1105,15 +1110,15 @@ export default function ProjectChecklists() {
             {groupedByInstance.map(({ instance, groups }, instanceIdx) => {
               const isCollapsed = collapsedInstances.has(instance.id);
 
-              // Aggregate items across all groups in this instance for the stage progress bar.
+              // Aggregate the server-supplied counts across this instance's
+              // checklists. Summing the groups rather than reading the
+              // instance's own totals keeps the bar consistent with the rows
+              // beneath it when a tab filters some checklists out.
               let stageTotalItems = 0;
               let stageCompletedItems = 0;
               groups.forEach((g) => {
-                const items = checklistItems[g.id] || [];
-                stageTotalItems += items.length;
-                stageCompletedItems += items.filter(
-                  (i) => i.status === "completed" || i.status === "na",
-                ).length;
+                stageTotalItems += g.totalCount ?? 0;
+                stageCompletedItems += g.completedCount ?? 0;
               });
               const stagePct = stageTotalItems > 0
                 ? Math.round((stageCompletedItems / stageTotalItems) * 100)
@@ -1264,9 +1269,15 @@ export default function ProjectChecklists() {
                       {groups.map((group) => {
                         const isExpanded = expandedChecklists.has(group.id);
                         const items = checklistItems[group.id] || [];
-                        const completedItems = items.filter(i => i.status === "completed" || i.status === "na").length;
-                        const groupPct = items.length > 0
-                          ? Math.round((completedItems / items.length) * 100)
+                        // Counts come from the server so they're right while
+                        // collapsed; once expanded, prefer the loaded items so
+                        // an optimistic tick updates the bar immediately.
+                        const totalItems = isExpanded && items.length > 0 ? items.length : (group.totalCount ?? 0);
+                        const completedItems = isExpanded && items.length > 0
+                          ? items.filter(i => i.status === "completed" || i.status === "na").length
+                          : (group.completedCount ?? 0);
+                        const groupPct = totalItems > 0
+                          ? Math.round((completedItems / totalItems) * 100)
                           : 0;
                         const accentClass = getStatusAccentClass(group.status, groupPct > 0 && group.status !== "completed");
                         
@@ -1306,7 +1317,7 @@ export default function ProjectChecklists() {
                                 </div>
                                 <div className="flex-1 min-w-0 flex items-center gap-3">
                                   <span className="text-sm font-medium truncate">{group.name}</span>
-                                  {items.length > 0 && (
+                                  {totalItems > 0 && (
                                     <>
                                       <div className="hidden sm:flex flex-1 max-w-[160px] h-1 rounded-full bg-muted/60 overflow-hidden flex-shrink-0">
                                         <div
@@ -1315,7 +1326,7 @@ export default function ProjectChecklists() {
                                         />
                                       </div>
                                       <span className="text-xs text-muted-foreground whitespace-nowrap flex-shrink-0">
-                                        {completedItems}/{items.length}
+                                        {completedItems}/{totalItems}
                                       </span>
                                     </>
                                   )}

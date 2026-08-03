@@ -538,15 +538,25 @@ export default function ChecklistInstanceDetail() {
       groups[groupName].push(item);
     });
     
+    // Authored order, with description as the tie-break for legacy items that
+    // were all written with order 0.
     Object.keys(groups).forEach(key => {
-      groups[key].sort((a, b) => (a.description || '').localeCompare(b.description || ''));
+      groups[key].sort((a, b) =>
+        (a.order ?? 0) - (b.order ?? 0) || (a.description || '').localeCompare(b.description || ''));
     });
-    
+
     return groups;
   }, [items]);
 
-  // Get current group names
-  const allGroupNames = useMemo(() => Object.keys(groupedItems).sort((a, b) => a.localeCompare(b)), [groupedItems]);
+  // Group names in the order their checklist was authored — items carry the
+  // parent group's position in groupOrder — rather than alphabetically.
+  const allGroupNames = useMemo(
+    () =>
+      Object.keys(groupedItems).sort((a, b) =>
+        (groupedItems[a][0]?.groupOrder ?? 0) - (groupedItems[b][0]?.groupOrder ?? 0) ||
+        a.localeCompare(b)),
+    [groupedItems],
+  );
 
   // Clean up stale collapsed groups when data changes
   useEffect(() => {
