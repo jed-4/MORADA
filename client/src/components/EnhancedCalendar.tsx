@@ -20,6 +20,7 @@ import {
   useSensors,
   useDraggable,
   useDroppable,
+  DragOverlay,
   pointerWithin,
   closestCenter,
   type CollisionDetection,
@@ -52,7 +53,7 @@ export interface CalendarEvent {
   projectName?: string | null;
   assigneeName?: string | null;
   assigneeId?: string | null;
-  type: "task" | "schedule" | "meeting" | "google-calendar" | "timesheet" | "site_diary";
+  type: "task" | "schedule" | "meeting" | "google-calendar" | "timesheet" | "site_diary" | "reminder";
   status?: string;
   isCompleted?: boolean;
   description?: string | null;
@@ -1740,6 +1741,10 @@ export function EnhancedCalendar({
       onDragStart={handleDragStart}
       onDragMove={handleDragMove}
       onDragEnd={handleDragEnd}
+      onDragCancel={() => {
+        setActiveEvent(null);
+        setResizePreview(null);
+      }}
     >
       <div className="flex flex-col h-full bg-background">
         {/* Header - Notion minimal style */}
@@ -1917,6 +1922,36 @@ export function EnhancedCalendar({
         {view === "roster" && renderWeekView()}
       </div>
 
+      {/* Drag preview. Without this the source chip just dims and nothing follows
+          the cursor, so dragging a task out of the tray feels like nothing is
+          happening until you let go. `dropAnimation={null}` because the chip
+          re-renders in its new slot immediately — animating it back to the
+          source first reads as the drop having failed. */}
+      <DragOverlay dropAnimation={null}>
+        {activeEvent ? (
+          (() => {
+            const dragColors = generateNotionColors(activeEvent.projectColor || activeEvent.color);
+            return (
+              <div
+                className="px-2 py-1.5 rounded shadow-lg cursor-grabbing select-none opacity-95"
+                style={{
+                  backgroundColor: dragColors.pastelBg,
+                  color: dragColors.darkText,
+                  borderLeft: `3px solid ${dragColors.originalHex}`,
+                  minWidth: 120,
+                  maxWidth: 220,
+                }}
+                data-testid="drag-overlay"
+              >
+                <div className="text-xs font-medium truncate leading-tight">{activeEvent.title}</div>
+                {activeEvent.startTime && (
+                  <div className="text-2xs opacity-70 leading-tight">{activeEvent.startTime}</div>
+                )}
+              </div>
+            );
+          })()
+        ) : null}
+      </DragOverlay>
     </DndContext>
   );
 }

@@ -79,7 +79,10 @@ function deterministicProjectColor(seed: string): string {
 }
 
 // Module-level constant — never changes, so safe as a useEffect dependency
-const DEFAULT_EVENT_TYPES = ["task", "schedule", "google-calendar"];
+const DEFAULT_EVENT_TYPES = ["task", "schedule", "google-calendar", "reminder"];
+
+/** Reminders draw in amber — distinct from tasks, and not tied to a project colour. */
+const REMINDER_COLOR = "#D4B670";
 
 /** Block length given to a task that had no time until it was dropped on the grid. */
 const DEFAULT_TIMEBOX_MINUTES = 30;
@@ -160,6 +163,19 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
   // Fetch task templates to filter out tasks from inactive templates
   const { data: taskTemplates = [] } = useQuery<any[]>({
     queryKey: ["/api/task-templates"],
+  });
+
+  // Active reminders for the displayed user.
+  //
+  // Only *one-time* reminders reach the calendar. A recurring reminder is a
+  // notification cadence ("chase the tiling quote at 16:30 every weekday"), not an
+  // appointment — drawing one on every matching day would re-create exactly the
+  // all-day flood that Phase 1 removed. They stay in the Reminders tab.
+  const { data: reminders = [] } = useQuery<any[]>({
+    queryKey: ["/api/reminders", "active", displayedUserId],
+    queryFn: () => apiRequest("/api/reminders?status=active", "GET").catch(() => []),
+    enabled: isOwnPage && !!displayedUserId,
+    staleTime: 60 * 1000,
   });
 
   // Focus blocks for the displayed user. The API takes ?userId= for admins viewing
@@ -505,6 +521,10 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
             // Ensure schedule is always included in eventTypes (backward compat for old saved views)
             normalizedFilters.eventTypes = [...normalizedFilters.eventTypes, "schedule"];
           }
+          if (!normalizedFilters.eventTypes.includes("reminder")) {
+            // Views saved before reminders existed would otherwise hide them for good
+            normalizedFilters.eventTypes = [...normalizedFilters.eventTypes, "reminder"];
+          }
         }
         setFilters(normalizedFilters);
       }
@@ -597,8 +617,39 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
       });
     }
 
+    // Add one-time reminders that have a due moment. Recurring ones are excluded
+    // deliberately — see the query comment.
+    reminders.forEach((reminder: any) => {
+      if (reminder.reminderType === "recurring" || !reminder.dueAt) return;
+      const dueAt = new Date(reminder.dueAt);
+      if (isNaN(dueAt.getTime())) return;
+
+      // A reminder is a moment, not a span: give it a start time and no end, so it
+      // draws as a short block rather than claiming an hour of the grid.
+      const hh = `${dueAt.getHours()}`.padStart(2, "0");
+      const mm = `${dueAt.getMinutes()}`.padStart(2, "0");
+      const isMidnight = dueAt.getHours() === 0 && dueAt.getMinutes() === 0;
+
+      events.push({
+        id: `reminder-${reminder.id}`,
+        title: reminder.title,
+        startDate: dueAt,
+        endDate: dueAt,
+        // Midnight almost always means "that day" rather than 00:00, so treat it as
+        // all-day instead of pinning it to the top of the grid.
+        startTime: isMidnight ? null : `${hh}:${mm}`,
+        endTime: null,
+        type: "reminder",
+        description: reminder.description,
+        color: REMINDER_COLOR,
+        projectId: reminder.linkedProjectId ?? null,
+        status: reminder.status,
+        isCompleted: reminder.status === "completed",
+      });
+    });
+
     return events;
-  }, [userTasks, scheduleItems, googleCalendarEvents, projects, taskTemplates]);
+  }, [userTasks, scheduleItems, googleCalendarEvents, reminders, projects, taskTemplates]);
 
   // Apply filters
   const filteredEvents = useMemo(() => {
@@ -750,6 +801,7 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
   const eventTypeOptions = [
     { key: "task", label: "Tasks", disabled: false },
     { key: "schedule", label: "Schedule Items", disabled: false },
+    { key: "reminder", label: "Reminders", disabled: false },
     { key: "google-calendar", label: "Google Calendar", disabled: !isGoogleCalendarConnected },
   ];
 
