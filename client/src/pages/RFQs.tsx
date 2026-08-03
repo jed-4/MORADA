@@ -53,6 +53,7 @@ import { RFQ_STATUS_LABEL, RECIPIENT_STATUS_LABEL, summariseRecipients } from "@
 import { formatCents } from "@shared/money";
 import { ProjectIcon } from "@/components/ProjectIcon";
 import { StatusBadge } from "@/components/StatusBadge";
+import { QuickCreateRfqDialog } from "@/components/rfq/QuickCreateRfqDialog";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 
@@ -102,6 +103,32 @@ function StatusChip({ status }: { status: string }) {
 function formatDate(date: Date | string | null | undefined) {
   if (!date) return null;
   return format(new Date(date), "d MMM yyyy");
+}
+
+/** Statuses where the RFQ is still waiting on somebody. */
+const LIVE_STATUSES = new Set(["sent", "quoted"]);
+
+/**
+ * Overdue treatment is visual rather than a filter the user has to remember —
+ * the point of a registry is that a stalled RFQ surfaces without being looked
+ * for. Only live RFQs can be late; an awarded one is finished.
+ */
+function dueUrgency(rfq: Rfq): "overdue" | "soon" | "none" {
+  if (!rfq.dueDate || !LIVE_STATUSES.has(rfq.status)) return "none";
+  const due = new Date(rfq.dueDate);
+  if (Number.isNaN(due.getTime())) return "none";
+  const days = Math.ceil((due.getTime() - Date.now()) / 86400000);
+  if (days < 0) return "overdue";
+  if (days <= 2) return "soon";
+  return "none";
+}
+
+/** Days since it went out to suppliers, for live RFQs only. */
+function daysOutstanding(rfq: Rfq): number | null {
+  if (!rfq.sentAt || !LIVE_STATUSES.has(rfq.status)) return null;
+  const sent = new Date(rfq.sentAt);
+  if (Number.isNaN(sent.getTime())) return null;
+  return Math.max(0, Math.floor((Date.now() - sent.getTime()) / 86400000));
 }
 
 // ── Expanded supplier-quote panel ────────────────────────────────────────────
@@ -270,6 +297,7 @@ export default function RFQs({ embedded }: { embedded?: boolean } = {}) {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedStatus, setSelectedStatus] = useState<string>("all");
   const [colPopoverOpen, setColPopoverOpen] = useState(false);
+  const [quickCreateOpen, setQuickCreateOpen] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
@@ -333,7 +361,8 @@ export default function RFQs({ embedded }: { embedded?: boolean } = {}) {
     return map;
   }, [allRecipients]);
 
-  const getProject = (projectId: string) => projects.find((p) => p.id === projectId);
+  const getProject = (projectId: string | null | undefined) =>
+    projectId ? projects.find((p) => p.id === projectId) : undefined;
   const currentProject = projectIdFromUrl ? getProject(projectIdFromUrl) : null;
 
   const getNavigationPath = (path: string) =>
@@ -402,8 +431,13 @@ export default function RFQs({ embedded }: { embedded?: boolean } = {}) {
       cols.push({
         id: "project",
         header: "Project",
-        accessorFn: (r) => getProject(r.projectId)?.name ?? "",
+        accessorFn: (r) => (r.projectId ? getProject(r.projectId)?.name ?? "" : "General"),
         cell: ({ row }) => {
+          if (!row.original.projectId) {
+            // A general enquiry logged against no job — the registry's whole
+            // point. Labelled rather than blank so it doesn't read as an error.
+            return <span className="text-xs text-muted-foreground/60 italic">General</span>;
+          }
           const project = getProject(row.original.projectId);
           if (!project) return <span className="text-xs text-muted-foreground">—</span>;
           return (
@@ -460,13 +494,61 @@ export default function RFQs({ embedded }: { embedded?: boolean } = {}) {
         id: "dueDate",
         header: "Due Date",
         accessorFn: (r) => (r.dueDate ? new Date(r.dueDate).getTime() : 0),
-        cell: ({ row }) => (
-          <span className="text-xs text-muted-foreground" data-testid={`cell-due-${row.original.id}`}>
-            {formatDate(row.original.dueDate) ?? <span className="text-muted-foreground/40">—</span>}
-          </span>
-        ),
+        cell: ({ row }) => {
+          const urgency = dueUrgency(row.original);
+          return (
+            <span
+              className={cn(
+                "text-xs",
+                urgency === "overdue" && "text-coral font-medium",
+                urgency === "soon" && "text-amber font-medium",
+                urgency === "none" && "text-muted-foreground",
+              )}
+              title={urgency === "overdue" ? "Past the response deadline" : undefined}
+              data-testid={`cell-due-${row.original.id}`}
+            >
+              {formatDate(row.original.dueDate) ?? <span className="text-muted-foreground/40">—</span>}
+            </span>
+          );
+        },
         size: 100,
         meta: { defaultWidth: 100, headerLabel: "Due Date" },
+      },
+      {
+        id: "outstanding",
+        header: "Open",
+        accessorFn: (r) => daysOutstanding(r) ?? -1,
+        cell: ({ row }) => {
+          const days = daysOutstanding(row.original);
+          if (days === null) {
+            return <span className="text-xs text-muted-foreground/40">—</span>;
+          }
+          // How long this has been sitting with suppliers. The single most
+          // useful thing to scan a procurement pipeline by.
+          return (
+            <span
+              className={cn("text-xs tabular-nums", days >= 14 ? "text-coral font-medium" : "text-muted-foreground")}
+              title={`Sent ${days} day${days === 1 ? "" : "s"} ago, still awaiting a response`}
+              data-testid={`cell-outstanding-${row.original.id}`}
+            >
+              {days}d
+            </span>
+          );
+        },
+        size: 64,
+        meta: { defaultWidth: 64, align: "center", headerLabel: "Open" },
+      },
+      {
+        id: "owner",
+        header: "Owner",
+        accessorFn: (r) => r.ownerName ?? "",
+        cell: ({ row }) => (
+          <span className="text-xs text-muted-foreground truncate" data-testid={`cell-owner-${row.original.id}`}>
+            {row.original.ownerName || <span className="text-muted-foreground/40">Unassigned</span>}
+          </span>
+        ),
+        size: 120,
+        meta: { defaultWidth: 120, headerLabel: "Owner" },
       },
       {
         id: "sentAt",
@@ -634,7 +716,7 @@ export default function RFQs({ embedded }: { embedded?: boolean } = {}) {
             <button
               type="button"
               className="h-6 w-auto px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-0.5"
-              onClick={() => setLocation(getNavigationPath("/rfqs/new"))}
+              onClick={() => setQuickCreateOpen(true)}
               data-testid="button-create-rfq"
             >
               <Plus className="h-3 w-3" />
@@ -709,8 +791,15 @@ export default function RFQs({ embedded }: { embedded?: boolean } = {}) {
                   <MoreVertical className="h-3 w-3" />
                 </button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-40">
-                <DropdownMenuItem disabled>No options</DropdownMenuItem>
+              <DropdownMenuContent align="end" className="w-52">
+                <DropdownMenuItem onClick={() => setLocation(getNavigationPath("/rfqs/new"))}>
+                  <FileText className="mr-2 h-4 w-4" />
+                  New RFQ with full details
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setLocation("/rfq-templates")}>
+                  <ClipboardList className="mr-2 h-4 w-4" />
+                  Manage templates
+                </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
@@ -732,16 +821,18 @@ export default function RFQs({ embedded }: { embedded?: boolean } = {}) {
               </div>
               <h3 className="text-xl font-semibold mb-2">No Requests for Quote yet</h3>
               <p className="text-muted-foreground text-center max-w-md mb-8 text-sm">
-                Request quotes from your suppliers to get competitive pricing on materials and services for your projects.
+                Track every quote request in one place — across projects, or as a general enquiry
+                before a job exists. Log who you asked and when you need an answer, and chase what
+                goes quiet.
               </p>
               <div className="flex flex-col sm:flex-row gap-3">
                 <Button
-                  onClick={() => setLocation(getNavigationPath("/rfqs/new"))}
+                  onClick={() => setQuickCreateOpen(true)}
                   className="bg-primary hover:bg-primary/90 text-white gap-2"
                   data-testid="button-create-rfq-empty"
                 >
                   <Plus className="w-4 h-4" />
-                  Create New RFQ
+                  Log an RFQ
                 </Button>
                 <Button
                   variant="outline"
@@ -778,6 +869,12 @@ export default function RFQs({ embedded }: { embedded?: boolean } = {}) {
           </div>
         )}
       </div>
+
+      <QuickCreateRfqDialog
+        open={quickCreateOpen}
+        onOpenChange={setQuickCreateOpen}
+        defaultProjectId={projectIdFromUrl || undefined}
+      />
 
       {/* ── Attachment preview modal ── */}
       <Dialog

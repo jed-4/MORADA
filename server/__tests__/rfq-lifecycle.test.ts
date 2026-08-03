@@ -524,6 +524,100 @@ async function main() {
     assert.ok(res.body.rfq.internalNotes === undefined, "internal notes leaked to the portal");
   });
 
+  // =========================================================================
+  // Registry: project-less RFQs and ownership (PR 3)
+  // =========================================================================
+  let registryRfqId = "";
+
+  await test("an RFQ can be created with no project at all", async () => {
+    const res = await api("POST", "/api/rfqs", {
+      cookie: A.cookie,
+      body: { title: "General enquiry — bulk timber pricing" },
+    });
+    assert.strictEqual(res.status, 201, JSON.stringify(res.body));
+    assert.strictEqual(res.body.projectId, null, `projectId was ${res.body.projectId}`);
+    assert.ok(res.body.rfqNumber, "project-less RFQ still needs a number");
+    registryRfqId = res.body.id;
+  });
+
+  await test("an empty-string projectId normalises to null", async () => {
+    const res = await api("POST", "/api/rfqs", {
+      cookie: A.cookie,
+      body: { title: "Empty project probe", projectId: "" },
+    });
+    assert.strictEqual(res.status, 201, JSON.stringify(res.body));
+    assert.strictEqual(res.body.projectId, null);
+  });
+
+  await test("a project-less RFQ appears in the company-wide list", async () => {
+    const res = await api("GET", "/api/rfqs", { cookie: A.cookie });
+    assert.strictEqual(res.status, 200);
+    assert.ok(
+      res.body.some((r: any) => r.id === registryRfqId),
+      "registry RFQ missing from the business-level list",
+    );
+  });
+
+  await test("owner defaults to the creator so no row is unowned", async () => {
+    const res = await api("GET", `/api/rfqs/${registryRfqId}`, { cookie: A.cookie });
+    assert.strictEqual(res.body.ownerId, A.userId, `owner was ${res.body.ownerId}`);
+    assert.ok(res.body.ownerName, "ownerName not stamped");
+  });
+
+  await test("a project-less RFQ can be attached to a project later", async () => {
+    const res = await api("PATCH", `/api/rfqs/${registryRfqId}`, {
+      cookie: A.cookie,
+      body: { projectId: projectA.id },
+    });
+    assert.strictEqual(res.status, 200, JSON.stringify(res.body));
+    assert.strictEqual(res.body.projectId, projectA.id, "attach did not take");
+  });
+
+  await test("but it cannot then be re-parented to another project", async () => {
+    const other = await storage.createProject({
+      name: "Second A Project",
+      companyId: A.companyId,
+      ownerId: A.userId,
+      projectSubStatus: "lead_new",
+    } as any);
+    const res = await api("PATCH", `/api/rfqs/${registryRfqId}`, {
+      cookie: A.cookie,
+      body: { projectId: other.id },
+    });
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.projectId, projectA.id, "RFQ was re-parented");
+  });
+
+  await test("attaching to another company's project is refused", async () => {
+    const fresh = await api("POST", "/api/rfqs", {
+      cookie: A.cookie,
+      body: { title: "Cross-tenant attach probe" },
+    });
+    const res = await api("PATCH", `/api/rfqs/${fresh.body.id}`, {
+      cookie: A.cookie,
+      body: { projectId: projectB.id },
+    });
+    assert.strictEqual(res.status, 404, `expected 404, got ${res.status}`);
+  });
+
+  await test("owner can be reassigned to another user in the company", async () => {
+    const res = await api("PATCH", `/api/rfqs/${registryRfqId}`, {
+      cookie: A.cookie,
+      body: { ownerId: A.userId },
+    });
+    assert.strictEqual(res.status, 200, JSON.stringify(res.body));
+    assert.strictEqual(res.body.ownerId, A.userId);
+  });
+
+  await test("an owner from another company is rejected, not stored", async () => {
+    const res = await api("PATCH", `/api/rfqs/${registryRfqId}`, {
+      cookie: A.cookie,
+      body: { ownerId: B.userId },
+    });
+    assert.strictEqual(res.status, 200);
+    assert.notStrictEqual(res.body.ownerId, B.userId, "foreign user was assigned as owner");
+  });
+
   await test("a revoked portal token is refused", async () => {
     const token = `revoked-token-${Date.now()}`;
     await storage.updateRFQRecipient(recipSmithId, {

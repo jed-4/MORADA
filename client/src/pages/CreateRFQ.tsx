@@ -154,7 +154,7 @@ export default function CreateRFQ() {
         title: form.title,
         description: form.description,
         scope: form.scope,
-        projectId: form.projectId,
+        projectId: form.projectId || null,
         supplierIds: form.supplierIds,
         supplierNames: form.supplierNames,
         dueDate: form.dueDate?.toISOString(),
@@ -194,10 +194,6 @@ export default function CreateRFQ() {
   const handleSubmit = () => {
     if (!form.title) {
       toast({ title: "Title is required", variant: "destructive" });
-      return;
-    }
-    if (!form.projectId) {
-      toast({ title: "Project is required", variant: "destructive" });
       return;
     }
     createRfqMutation.mutate();

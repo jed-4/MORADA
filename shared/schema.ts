@@ -4976,10 +4976,21 @@ export const rfqFollowUpTypeEnum = pgEnum("rfq_follow_up_type", ["initial", "rem
 // RFQs table
 export const rfqs = pgTable("rfqs", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  rfqNumber: text("rfq_number").notNull(), // e.g., "4504-RFQ-001"
-  projectId: varchar("project_id").notNull().references(() => projects.id),
+  rfqNumber: text("rfq_number").notNull(), // e.g., "RFQ-001"
+  // Nullable: the RFQ list is a company-wide registry, so a general supplier
+  // enquiry ("what would you charge for X?") can be logged and chased before
+  // there is a job to hang it off. Numbering is company-scoped, so an RFQ with
+  // no project still gets a stable number.
+  projectId: varchar("project_id").references(() => projects.id),
   companyId: varchar("company_id").notNull().references(() => companies.id),
-  
+
+  // Who is chasing this. Distinct from createdBy — the person who logs an RFQ
+  // is often not the person who owns getting an answer, and a registry the
+  // whole team reads needs a name against each row.
+  ownerId: varchar("owner_id").references(() => users.id, { onDelete: "set null" }),
+  ownerName: text("owner_name"),
+
+
   title: text("title").notNull(), // e.g., "Concrete Pour - Slab"
   description: text("description"), // Brief description
   scope: text("scope"), // Wunderbuild-style rich-text scope of work (6-line auto-grow)
@@ -5036,6 +5047,12 @@ export const insertRfqSchema = createInsertSchema(rfqs).omit({
   followUpSentAt: true,
 }).extend({
   title: z.string().min(1, "Title is required"),
+  // Optional so a registry entry can exist before there is a job. Empty string
+  // normalises to null — the project pickers emit "" for "no project", and a
+  // bare "" would fail the projects FK.
+  projectId: z.string().nullable().optional().transform((v) => v || null),
+  ownerId: z.string().nullable().optional().transform((v) => v || null),
+  ownerName: z.string().nullable().optional(),
   description: z.string().optional().nullable(),
   scope: z.string().optional().nullable(),
   // Coerced, not z.string(): the clients all send ISO strings, and Drizzle's
@@ -5061,9 +5078,13 @@ export const insertRfqSchema = createInsertSchema(rfqs).omit({
 // client can't set them at create time, but PATCH legitimately needs them —
 // and because Zod strips unknown keys rather than rejecting them, the send
 // flow's { status, sentAt } PATCH silently parsed to {} and every RFQ stayed
-// on "draft" forever. projectId stays out: an RFQ can't be moved between
-// projects (its number is scoped to one).
-export const updateRfqSchema = insertRfqSchema.partial().omit({ projectId: true }).extend({
+// on "draft" forever.
+//
+// projectId IS accepted here, but the route only honours it when the RFQ does
+// not have one yet: attaching a registry enquiry to a job once it becomes real
+// is a normal move, whereas re-parenting an RFQ that suppliers have already
+// quoted against is not.
+export const updateRfqSchema = insertRfqSchema.partial().extend({
   status: z.enum(rfqStatusEnum.enumValues).optional(),
   sentAt: z.coerce.date().optional().nullable(),
   followUpSentAt: z.coerce.date().optional().nullable(),

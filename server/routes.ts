@@ -15404,8 +15404,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // The target project must belong to the caller's company. Without this an
       // RFQ could be created against another company's project and then stamped
       // with the caller's companyId, which hides the mismatch from every later
-      // ownership check.
-      if (!(await enforceProjectCompany(req, res, rfqFields.projectId, "Project not found"))) return;
+      // ownership check. Skipped when there is no project: the registry allows
+      // an enquiry that isn't tied to a job yet.
+      if (rfqFields.projectId) {
+        if (!(await enforceProjectCompany(req, res, rfqFields.projectId, "Project not found"))) return;
+      }
 
       // Numbering comes from Settings (rfqPrefix/rfqStartNumber — previously
       // dead config while the generator used the project name) off a monotonic
@@ -15421,11 +15424,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return `${prefix}${String(seq).padStart(3, "0")}`;
       };
 
+      const callerName =
+        `${req.user!.firstName || ''} ${req.user!.lastName || ''}`.trim() || req.user!.email || 'Unknown';
+
+      // Owner defaults to the creator so no row in the registry is unowned —
+      // "who is chasing this" is the whole point of the column.
+      const ownerId = (await resolveTeamUserId(req, rfqFields.ownerId)) ?? req.user!.id;
+      const ownerName =
+        ownerId === req.user!.id ? callerName : rfqFields.ownerName || (await lookupUserName(req, ownerId));
+
       const baseData = {
         ...rfqFields,
         companyId,
+        ownerId,
+        ownerName,
         createdBy: req.user!.id,
-        createdByName: `${req.user!.firstName || ''} ${req.user!.lastName || ''}`.trim(),
+        createdByName: callerName,
         status: 'draft' as const,
       };
 
@@ -15522,7 +15536,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      const rfq = await storage.updateRFQ(req.params.id, validationResult.data);
+      const { projectId: requestedProjectId, ownerId: requestedOwnerId, ...rest } = validationResult.data;
+      const patch: Record<string, unknown> = { ...rest };
+
+      // Attaching a registry enquiry to a job is allowed once. Re-parenting an
+      // RFQ that already belongs to a project is not — suppliers have quoted
+      // against it in that context.
+      if (requestedProjectId && !existingRFQ.projectId) {
+        if (!(await enforceProjectCompany(req, res, requestedProjectId, "Project not found"))) return;
+        patch.projectId = requestedProjectId;
+      }
+
+      if (requestedOwnerId !== undefined) {
+        const ownerId = await resolveTeamUserId(req, requestedOwnerId);
+        patch.ownerId = ownerId;
+        patch.ownerName = ownerId ? await lookupUserName(req, ownerId) : null;
+      }
+
+      const rfq = await storage.updateRFQ(req.params.id, patch as any);
       if (!rfq) {
         return res.status(404).json({ error: "RFQ not found" });
       }
@@ -15643,6 +15674,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ error: "Failed to delete RFQ item" });
     }
   });
+
+  // Resolve an RFQ owner to a user in the caller's own company. Returns null
+  // for anything unknown or foreign, so a bad id falls back to a sensible
+  // default rather than assigning an RFQ to another tenant's user.
+  const resolveTeamUserId = async (req: any, userId?: string | null): Promise<string | null> => {
+    if (!userId) return null;
+    try {
+      const user = await storage.getUser(userId);
+      return user && user.companyId === req.user!.companyId ? userId : null;
+    } catch {
+      return null;
+    }
+  };
+
+  const lookupUserName = async (req: any, userId: string): Promise<string | null> => {
+    try {
+      const user = await storage.getUser(userId);
+      if (!user) return null;
+      return `${user.firstName || ""} ${user.lastName || ""}`.trim() || user.email || null;
+    } catch {
+      return null;
+    }
+  };
 
   // Resolve a supplier id to one the caller's company actually owns. Returns
   // null for anything unknown or foreign, so the recipient degrades to a

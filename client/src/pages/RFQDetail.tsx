@@ -58,7 +58,7 @@ import { RFQDocument } from "@/components/rfq/pdf/RFQDocument";
 import { SendRFQDialog } from "@/components/rfq/SendRFQDialog";
 import { UploadQuoteDialog } from "@/components/rfq/UploadQuoteDialog";
 import { QuoteComparisonView } from "@/components/rfq/QuoteComparisonView";
-import type { Rfq, RfqItem, RfqQuote, RfqTemplate, CostCode, EstimateItem } from "@shared/schema";
+import type { Rfq, RfqItem, RfqQuote, RfqTemplate, CostCode, EstimateItem, Project, User } from "@shared/schema";
 import { format } from "date-fns";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { dollarsToCents } from "@shared/money";
@@ -70,6 +70,11 @@ import { DetailPageHeader } from "@/components/detail/DetailPageHeader";
 import { DetailLayout } from "@/components/detail/DetailLayout";
 import { RfqRecipientsPanel } from "@/components/rfq/RfqRecipientsPanel";
 import { RFQ_STATUS_LABEL } from "@shared/rfqStatus";
+import { RfqActivityFeed } from "@/components/rfq/RfqActivityFeed";
+
+// Radix Select cannot hold an empty string value, so "no selection" needs a
+// sentinel rather than "".
+const UNASSIGNED = "__unassigned__";
 
 export default function RFQDetail() {
   const { id } = useParams<{ id: string }>();
@@ -146,6 +151,29 @@ export default function RFQDetail() {
 
   const { data: costCodes = [] } = useQuery<CostCode[]>({
     queryKey: ["/api/cost-codes"],
+  });
+
+  const { data: projects = [] } = useQuery<Project[]>({
+    queryKey: ["/api/projects"],
+  });
+
+  const { data: teamUsers = [] } = useQuery<User[]>({
+    queryKey: ["/api/users"],
+  });
+
+  // Owner and project assignment save immediately rather than joining the
+  // dirty-form Save flow — they're registry bookkeeping, not document edits,
+  // and a half-saved owner is worse than no owner.
+  const assignMutation = useMutation({
+    mutationFn: async (patch: { ownerId?: string | null; projectId?: string }) =>
+      apiRequest(`/api/rfqs/${id}`, "PATCH", patch),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/rfqs", id] });
+      queryClient.invalidateQueries({ queryKey: ["/api/rfqs"] });
+      toast({ title: "RFQ updated" });
+    },
+    onError: (error: any) =>
+      toast({ title: "Failed to update", description: error.message, variant: "destructive" }),
   });
 
   const { data: estimateItems = [] } = useQuery<EstimateItem[]>({
@@ -441,6 +469,64 @@ export default function RFQDetail() {
       <DetailLayout
         sidebar={
           <>
+      <SectionCard title="Registry" accent="primary">
+        <div className="p-3 space-y-3">
+          <div className="space-y-1.5">
+            <Label className="text-xs text-muted-foreground">Owner</Label>
+            <Select
+              value={rfq.ownerId ?? UNASSIGNED}
+              onValueChange={(value) =>
+                assignMutation.mutate({ ownerId: value === UNASSIGNED ? null : value })
+              }
+            >
+              <SelectTrigger className="h-7 text-xs" data-testid="select-rfq-owner">
+                <SelectValue placeholder="Unassigned" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={UNASSIGNED}>Unassigned</SelectItem>
+                {teamUsers.map((user) => (
+                  <SelectItem key={user.id} value={user.id}>
+                    {`${user.firstName ?? ""} ${user.lastName ?? ""}`.trim() || user.email}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-data text-muted-foreground">Who is chasing this</p>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label className="text-xs text-muted-foreground">Project</Label>
+            {rfq.projectId ? (
+              <p className="text-xs" data-testid="text-rfq-project">
+                {projects.find((p) => p.id === rfq.projectId)?.name ?? "—"}
+              </p>
+            ) : (
+              // Attach-once: a general enquiry can be pulled into a job when the
+              // job becomes real, but an RFQ suppliers have already quoted
+              // against is never re-parented.
+              <Select
+                value={UNASSIGNED}
+                onValueChange={(value) => {
+                  if (value !== UNASSIGNED) assignMutation.mutate({ projectId: value });
+                }}
+              >
+                <SelectTrigger className="h-7 text-xs" data-testid="select-rfq-project">
+                  <SelectValue placeholder="General — no project" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={UNASSIGNED}>General — no project</SelectItem>
+                  {projects.map((project) => (
+                    <SelectItem key={project.id} value={project.id}>
+                      {project.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+          </div>
+        </div>
+      </SectionCard>
+
       <SectionCard
         title="Track Only Mode"
         accent="muted"
@@ -525,28 +611,7 @@ export default function RFQDetail() {
       </SectionCard>
 
       <SectionCard title="Activity" accent="muted">
-            <div className="p-3 space-y-3">
-              <div className="flex items-start gap-2">
-                <CheckCircle2 className="w-3.5 h-3.5 text-muted-foreground mt-0.5 flex-shrink-0" />
-                <div>
-                  <p className="text-xs">Created</p>
-                  <p className="text-data text-muted-foreground">
-                    {rfq.createdByName} · {formatDate(rfq.createdAt)}
-                  </p>
-                </div>
-              </div>
-              {rfq.sentAt && (
-                <div className="flex items-start gap-2">
-                  <Send className="w-3.5 h-3.5 text-muted-foreground mt-0.5 flex-shrink-0" />
-                  <div>
-                    <p className="text-xs">Sent to suppliers</p>
-                    <p className="text-data text-muted-foreground">
-                      {formatDate(rfq.sentAt)}
-                    </p>
-                  </div>
-                </div>
-              )}
-            </div>
+        <RfqActivityFeed rfq={rfq} quotes={quotes} />
       </SectionCard>
           </>
         }
