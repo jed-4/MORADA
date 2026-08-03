@@ -25129,7 +25129,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const ownedTemplate = await getOwnedTemplate(req, res, validationResult.data.templateId);
       if (!ownedTemplate) return;
 
-      const group = await storage.createChecklistTemplateGroup(validationResult.data);
+      // Append, same as items — the client used to send order 0, which put
+      // every newly created checklist at the top of the template.
+      const data = { ...validationResult.data };
+      if (req.body.order === undefined) {
+        const siblings = await storage.getChecklistTemplateGroups(validationResult.data.templateId);
+        data.order = siblings.reduce((max, s) => Math.max(max, s.order ?? 0), -1) + 1;
+      }
+
+      const group = await storage.createChecklistTemplateGroup(data);
       res.status(201).json(group);
     } catch (error: any) {
       res.status(500).json({ 
@@ -25320,7 +25328,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const ownedGroup = await getOwnedGroup(req, res, validationResult.data.groupId);
       if (!ownedGroup) return;
 
-      const item = await storage.createChecklistTemplateItem(validationResult.data);
+      // Append to the end of the group. The client used to hardcode order 0 on
+      // every item, so nothing in a checklist had a meaningful sequence and
+      // every surface fell back to sorting alphabetically. Assign the order
+      // server-side so it's right regardless of caller.
+      const data = { ...validationResult.data };
+      if (req.body.order === undefined) {
+        const siblings = await storage.getChecklistTemplateItems(validationResult.data.groupId);
+        data.order = siblings.reduce((max, s) => Math.max(max, s.order ?? 0), -1) + 1;
+      }
+
+      const item = await storage.createChecklistTemplateItem(data);
       res.status(201).json(item);
     } catch (error: any) {
       res.status(500).json({ 
@@ -25357,6 +25375,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ 
         error: "Failed to update item",
         details: error.message 
+      });
+    }
+  });
+
+  // Reorder items within a checklist template group.
+  app.post("/api/checklist-template-groups/:groupId/items/reorder", async (req, res) => {
+    try {
+      const { orderedItemIds } = req.body;
+      if (!Array.isArray(orderedItemIds) || orderedItemIds.length === 0) {
+        return res.status(400).json({ error: "orderedItemIds must be a non-empty array" });
+      }
+
+      const ownedGroup = await getOwnedGroup(req, res, req.params.groupId);
+      if (!ownedGroup) return;
+
+      // Only reorder items that actually belong to this (owned) group, so a
+      // cross-company item id can't be smuggled into the array.
+      const groupItems = await storage.getChecklistTemplateItems(req.params.groupId);
+      const ownedItemIds = new Set(groupItems.map(i => i.id));
+
+      for (let i = 0; i < orderedItemIds.length; i++) {
+        if (!ownedItemIds.has(orderedItemIds[i])) continue;
+        await storage.updateChecklistTemplateItem(orderedItemIds[i], { order: i });
+      }
+
+      res.json(await storage.getChecklistTemplateItems(req.params.groupId));
+    } catch (error: any) {
+      res.status(500).json({
+        error: "Failed to reorder items",
+        details: error.message
       });
     }
   });

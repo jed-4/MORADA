@@ -619,7 +619,9 @@ function InstanceDetail({
       });
       if (!response.ok) throw new Error("Failed to fetch groups");
       const data = await response.json();
-      return data.sort((a: ChecklistGroupWithItems, b: ChecklistGroupWithItems) => (a.name || '').localeCompare(b.name || ''));
+      // Authored order, with name as the tie-break for legacy rows.
+      return data.sort((a: ChecklistGroupWithItems, b: ChecklistGroupWithItems) =>
+        (a.order ?? 0) - (b.order ?? 0) || (a.name || '').localeCompare(b.name || ''));
     },
   });
 
@@ -739,7 +741,9 @@ function DrawerChecklist({
       });
       if (!response.ok) throw new Error("Failed to fetch items");
       const data = await response.json();
-      return data.sort((a: ChecklistInstanceItem, b: ChecklistInstanceItem) => (a.description || '').localeCompare(b.description || ''));
+      // Authored order, with description as the tie-break for legacy rows.
+      return data.sort((a: ChecklistInstanceItem, b: ChecklistInstanceItem) =>
+        (a.order ?? 0) - (b.order ?? 0) || (a.description || '').localeCompare(b.description || ''));
     },
     enabled: isExpanded,
   });

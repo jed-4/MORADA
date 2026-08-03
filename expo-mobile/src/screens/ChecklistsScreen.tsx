@@ -48,6 +48,7 @@ interface ChecklistItem {
   instanceId: string;
   groupId?: string;
   groupName?: string;
+  groupOrder?: number;
   description: string;
   order: number;
   isRequired: boolean;
@@ -73,6 +74,16 @@ type Props = {
 // ties or missing values (previously sorted alphabetically, ignoring order).
 function compareItems(a: ChecklistItem, b: ChecklistItem): number {
   return (a.order ?? 0) - (b.order ?? 0) || (a.description || '').localeCompare(b.description || '');
+}
+
+// Groups render in the order their checklist was authored — each item carries
+// its parent's position in groupOrder — with the name as the tie-break for
+// legacy rows (previously sorted alphabetically, ignoring groupOrder).
+function compareGroupEntries(
+  [nameA, itemsA]: [string, ChecklistItem[]],
+  [nameB, itemsB]: [string, ChecklistItem[]],
+): number {
+  return (itemsA[0]?.groupOrder ?? 0) - (itemsB[0]?.groupOrder ?? 0) || nameA.localeCompare(nameB);
 }
 
 export default function ChecklistsScreen({ navigation, route }: Props) {
@@ -515,7 +526,7 @@ const colors = {
     return (
       <View style={[styles.itemsContainer, { borderTopColor: colors.border }]}>
         {ungrouped.length > 0 && ungrouped.map(renderItemRow)}
-        {Object.entries(groups).sort(([a], [b]) => a.localeCompare(b)).map(([groupName, grpItems]) => {
+        {Object.entries(groups).sort(compareGroupEntries).map(([groupName, grpItems]) => {
           const groupKey = `${instanceId}:${groupName}`;
           const isCollapsed = collapsedGroups[groupKey];
           const completedInGroup = grpItems.filter(i => i.status === 'completed' || i.status === 'na').length;

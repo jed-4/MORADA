@@ -337,8 +337,11 @@ export default function ProjectChecklists() {
           });
         }
       }));
+      // Authored order, with description as the tie-break for legacy items
+      // that were all written with order 0.
       Object.keys(itemsMap).forEach(groupId => {
-        itemsMap[groupId].sort((a, b) => (a.description || '').localeCompare(b.description || ''));
+        itemsMap[groupId].sort((a, b) =>
+          (a.order ?? 0) - (b.order ?? 0) || (a.description || '').localeCompare(b.description || ''));
       });
       return itemsMap;
     },
