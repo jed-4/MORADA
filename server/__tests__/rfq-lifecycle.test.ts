@@ -315,6 +315,226 @@ async function main() {
     assert.ok(res.status === 403 || res.status === 404, `expected 403/404, got ${res.status}`);
   });
 
+  // =========================================================================
+  // Recipients + derived status + per-line quote pricing (PR 2)
+  // =========================================================================
+  const contactA = await storage.createContact({
+    name: "Smith Concrete",
+    contactType: "supplier",
+    companyId: A.companyId,
+  } as any);
+  const contactB = await storage.createContact({
+    name: "Jones Concrete",
+    contactType: "supplier",
+    companyId: A.companyId,
+  } as any);
+
+  let recipRfqId = "";
+  let recipSmithId = "";
+  let recipJonesId = "";
+
+  await test("creating an RFQ with suppliers materialises recipient rows", async () => {
+    const res = await api("POST", "/api/rfqs", {
+      cookie: A.cookie,
+      body: {
+        title: "Slab pour",
+        projectId: projectA.id,
+        supplierIds: [contactA.id, contactB.id],
+        supplierNames: ["Smith Concrete", "Jones Concrete"],
+        items: [{ description: "N32 concrete", quantity: 24, unit: "m3" }],
+      },
+    });
+    assert.strictEqual(res.status, 201, JSON.stringify(res.body));
+    recipRfqId = res.body.id;
+
+    const recips = await api("GET", `/api/rfqs/${recipRfqId}/recipients`, { cookie: A.cookie });
+    assert.strictEqual(recips.status, 200);
+    assert.strictEqual(recips.body.length, 2);
+    assert.strictEqual(recips.body[0].supplierName, "Smith Concrete");
+    assert.strictEqual(recips.body[0].status, "not_sent");
+    recipSmithId = recips.body[0].id;
+    recipJonesId = recips.body[1].id;
+  });
+
+  await test("duplicate supplierIds collapse to one recipient", async () => {
+    const res = await api("POST", "/api/rfqs", {
+      cookie: A.cookie,
+      body: {
+        title: "Dupe probe",
+        projectId: projectA.id,
+        supplierIds: [contactA.id, contactA.id],
+        supplierNames: ["Smith Concrete", "Smith Concrete"],
+      },
+    });
+    assert.strictEqual(res.status, 201);
+    const recips = await api("GET", `/api/rfqs/${res.body.id}/recipients`, { cookie: A.cookie });
+    assert.strictEqual(recips.body.length, 1, `expected dedupe, got ${recips.body.length}`);
+  });
+
+  await test("adding the same supplier twice is rejected with a message", async () => {
+    const res = await api("POST", "/api/rfq-recipients", {
+      cookie: A.cookie,
+      body: { rfqId: recipRfqId, supplierId: contactA.id, supplierName: "Smith Concrete" },
+    });
+    assert.strictEqual(res.status, 409, JSON.stringify(res.body));
+    assert.ok(/already on this RFQ/i.test(res.body.error));
+  });
+
+  await test("all recipients unsent → RFQ derives to draft", async () => {
+    const res = await api("GET", `/api/rfqs/${recipRfqId}`, { cookie: A.cookie });
+    assert.strictEqual(res.body.status, "draft", `got ${res.body.status}`);
+  });
+
+  await test("marking a recipient sent derives the RFQ to sent", async () => {
+    const res = await api("PATCH", `/api/rfq-recipients/${recipSmithId}`, {
+      cookie: A.cookie,
+      body: { status: "sent", sentAt: new Date().toISOString() },
+    });
+    assert.strictEqual(res.status, 200, JSON.stringify(res.body));
+    const rfq = await api("GET", `/api/rfqs/${recipRfqId}`, { cookie: A.cookie });
+    assert.strictEqual(rfq.body.status, "sent", `got ${rfq.body.status}`);
+  });
+
+  await test("recipient edits keep the mirrored supplier arrays in sync", async () => {
+    const rfq = await api("GET", `/api/rfqs/${recipRfqId}`, { cookie: A.cookie });
+    assert.deepStrictEqual(rfq.body.supplierNames, ["Smith Concrete", "Jones Concrete"]);
+  });
+
+  let smithQuoteId = "";
+  let jonesQuoteId = "";
+
+  await test("a quote moves its recipient to quoted and the RFQ to quoted", async () => {
+    const res = await api("POST", "/api/rfq-quotes", {
+      cookie: A.cookie,
+      body: { rfqId: recipRfqId, supplierId: contactA.id, supplierName: "Smith Concrete", totalAmount: 480000, status: "pending" },
+    });
+    assert.strictEqual(res.status, 201, JSON.stringify(res.body));
+    smithQuoteId = res.body.id;
+
+    const recips = await api("GET", `/api/rfqs/${recipRfqId}/recipients`, { cookie: A.cookie });
+    const smith = recips.body.find((r: any) => r.id === recipSmithId);
+    assert.strictEqual(smith.status, "quoted", `recipient status ${smith.status}`);
+    assert.strictEqual(smith.quoteId, smithQuoteId, "quote not linked to recipient");
+
+    const rfq = await api("GET", `/api/rfqs/${recipRfqId}`, { cookie: A.cookie });
+    assert.strictEqual(rfq.body.status, "quoted", `got ${rfq.body.status}`);
+  });
+
+  await test("accepting a quote declines the others and awards the RFQ", async () => {
+    const second = await api("POST", "/api/rfq-quotes", {
+      cookie: A.cookie,
+      body: { rfqId: recipRfqId, supplierId: contactB.id, supplierName: "Jones Concrete", totalAmount: 510000, status: "pending" },
+    });
+    assert.strictEqual(second.status, 201);
+    jonesQuoteId = second.body.id;
+
+    const accept = await api("PATCH", `/api/rfq-quotes/${smithQuoteId}`, {
+      cookie: A.cookie,
+      body: { status: "accepted", acceptedAt: new Date().toISOString() },
+    });
+    assert.strictEqual(accept.status, 200, JSON.stringify(accept.body));
+
+    const quotes = await api("GET", `/api/rfqs/${recipRfqId}/quotes`, { cookie: A.cookie });
+    const jones = quotes.body.find((q: any) => q.id === jonesQuoteId);
+    assert.strictEqual(jones.status, "declined", `losing quote left as ${jones.status}`);
+
+    const rfq = await api("GET", `/api/rfqs/${recipRfqId}`, { cookie: A.cookie });
+    assert.strictEqual(rfq.body.status, "accepted", `got ${rfq.body.status}`);
+  });
+
+  await test("the losing recipient is marked declined, so reminders stop", async () => {
+    const recips = await api("GET", `/api/rfqs/${recipRfqId}/recipients`, { cookie: A.cookie });
+    const jones = recips.body.find((r: any) => r.id === recipJonesId);
+    assert.strictEqual(jones.status, "declined", `got ${jones.status}`);
+  });
+
+  await test("removing a recipient re-syncs the mirrored arrays", async () => {
+    const del = await api("DELETE", `/api/rfq-recipients/${recipJonesId}`, { cookie: A.cookie });
+    assert.strictEqual(del.status, 204);
+    const rfq = await api("GET", `/api/rfqs/${recipRfqId}`, { cookie: A.cookie });
+    assert.deepStrictEqual(rfq.body.supplierNames, ["Smith Concrete"]);
+  });
+
+  await test("company B cannot add a recipient to company A's RFQ", async () => {
+    const res = await api("POST", "/api/rfq-recipients", {
+      cookie: B.cookie,
+      body: { rfqId: recipRfqId, supplierName: "Intruder Supplies" },
+    });
+    assert.ok(res.status === 403 || res.status === 404, `expected 403/404, got ${res.status}`);
+  });
+
+  // --- per-line quote pricing ---------------------------------------------
+  await test("PUT quote items stores per-line pricing", async () => {
+    const items = await api("GET", `/api/rfqs/${recipRfqId}/items`, { cookie: A.cookie });
+    assert.strictEqual(items.status, 200);
+    const rfqItemId = items.body[0].id;
+
+    const res = await api("PUT", `/api/rfq-quotes/${smithQuoteId}/items`, {
+      cookie: A.cookie,
+      body: {
+        items: [
+          { rfqItemId, description: "N32 concrete supplied", quantity: 24, unit: "m3", unitPrice: 18000, lineTotal: 432000 },
+          { description: "Delivery", quantity: 1, unit: "each", unitPrice: 48000, lineTotal: 48000 },
+        ],
+      },
+    });
+    assert.strictEqual(res.status, 200, JSON.stringify(res.body));
+    assert.strictEqual(res.body.length, 2);
+    assert.strictEqual(res.body[0].rfqItemId, rfqItemId, "line not linked back to the RFQ item");
+  });
+
+  await test("PUT quote items replaces rather than appends", async () => {
+    const res = await api("PUT", `/api/rfq-quotes/${smithQuoteId}/items`, {
+      cookie: A.cookie,
+      body: { items: [{ description: "Revised all-in price", quantity: 1, unitPrice: 470000, lineTotal: 470000 }] },
+    });
+    assert.strictEqual(res.status, 200);
+    const items = await api("GET", `/api/rfq-quotes/${smithQuoteId}/items`, { cookie: A.cookie });
+    assert.strictEqual(items.body.length, 1, `expected replace, got ${items.body.length} lines`);
+  });
+
+  await test("a quote line cannot reference another RFQ's item", async () => {
+    const otherItems = await api("GET", `/api/rfqs/${rfqId}/items`, { cookie: A.cookie });
+    const foreignItemId = otherItems.body[0].id;
+    const res = await api("PUT", `/api/rfq-quotes/${smithQuoteId}/items`, {
+      cookie: A.cookie,
+      body: { items: [{ rfqItemId: foreignItemId, description: "Smuggled", quantity: 1 }] },
+    });
+    assert.strictEqual(res.status, 400, JSON.stringify(res.body));
+  });
+
+  await test("company B cannot read company A's quote lines", async () => {
+    const res = await api("GET", `/api/rfq-quotes/${smithQuoteId}/items`, { cookie: B.cookie });
+    assert.ok(res.status === 403 || res.status === 404, `expected 403/404, got ${res.status}`);
+  });
+
+  // --- portal --------------------------------------------------------------
+  await test("portal serves an RFQ by recipient token, including terms", async () => {
+    await api("PATCH", `/api/rfqs/${recipRfqId}`, {
+      cookie: A.cookie,
+      body: { customTerms: "Payment 30 days from invoice." },
+    });
+    const token = `test-token-${Date.now()}`;
+    await storage.updateRFQRecipient(recipSmithId, { portalToken: token } as any);
+
+    const res = await api("GET", `/api/portal/rfq/${token}`);
+    assert.strictEqual(res.status, 200, JSON.stringify(res.body));
+    assert.strictEqual(res.body.rfq.customTerms, "Payment 30 days from invoice.");
+    assert.strictEqual(res.body.supplierName, "Smith Concrete");
+    assert.ok(res.body.rfq.internalNotes === undefined, "internal notes leaked to the portal");
+  });
+
+  await test("a revoked portal token is refused", async () => {
+    const token = `revoked-token-${Date.now()}`;
+    await storage.updateRFQRecipient(recipSmithId, {
+      portalToken: token,
+      portalTokenRevoked: true,
+    } as any);
+    const res = await api("GET", `/api/portal/rfq/${token}`);
+    assert.strictEqual(res.status, 404, `revoked token still served (${res.status})`);
+    await storage.updateRFQRecipient(recipSmithId, { portalTokenRevoked: false } as any);
+  });
+
   console.log(`\n${passed} passed, ${failed} failed`);
   if (failures.length) console.log(`Failed: ${failures.join(", ")}`);
 
@@ -323,11 +543,14 @@ async function main() {
 
 async function cleanup(companyIds: string[], userIds: string[]) {
   const stmts: [string, any[]][] = [
+    [`DELETE FROM rfq_quote_items WHERE quote_id IN (SELECT id FROM rfq_quotes WHERE rfq_id IN (SELECT id FROM rfqs WHERE company_id = ANY($1)))`, [companyIds]],
+    [`DELETE FROM rfq_recipients WHERE rfq_id IN (SELECT id FROM rfqs WHERE company_id = ANY($1))`, [companyIds]],
     [`DELETE FROM rfq_quotes WHERE rfq_id IN (SELECT id FROM rfqs WHERE company_id = ANY($1))`, [companyIds]],
     [`DELETE FROM rfq_items WHERE rfq_id IN (SELECT id FROM rfqs WHERE company_id = ANY($1))`, [companyIds]],
     [`DELETE FROM rfq_follow_ups WHERE rfq_id IN (SELECT id FROM rfqs WHERE company_id = ANY($1))`, [companyIds]],
     [`DELETE FROM rfq_portal_tokens WHERE rfq_id IN (SELECT id FROM rfqs WHERE company_id = ANY($1))`, [companyIds]],
     [`DELETE FROM rfqs WHERE company_id = ANY($1)`, [companyIds]],
+    [`DELETE FROM contacts WHERE company_id = ANY($1)`, [companyIds]],
     [`DELETE FROM projects WHERE company_id = ANY($1)`, [companyIds]],
     [`DELETE FROM role_permissions WHERE role_id IN (SELECT id FROM user_roles WHERE company_id = ANY($1))`, [companyIds]],
     [`DELETE FROM sessions WHERE sess->>'userId' = ANY($1)`, [userIds]],

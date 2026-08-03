@@ -5229,6 +5229,131 @@ export const insertRfqPortalTokenSchema = createInsertSchema(rfqPortalTokens).om
 export type InsertRfqPortalToken = z.infer<typeof insertRfqPortalTokenSchema>;
 export type RfqPortalToken = typeof rfqPortalTokens.$inferSelect;
 
+// ---------------------------------------------------------------------------
+// RFQ Recipients — one row per supplier per RFQ.
+//
+// Replaces the index-coupled rfqs.supplierIds[] / rfqs.supplierNames[] pair and
+// absorbs rfq_portal_tokens. A supplier's participation previously lived in
+// three places at once (two parallel arrays, an optional token row, an optional
+// quote row) with nothing tying them together but array position — so removing
+// a supplier matched by *name* desynced the arrays permanently whenever two
+// suppliers shared a name.
+//
+// This is also what makes "one RFQ, several requests under it" representable:
+// the RFQ is the document, each recipient is a request with its own state.
+// ---------------------------------------------------------------------------
+export const rfqRecipientStatusEnum = pgEnum("rfq_recipient_status", [
+  "not_sent",
+  "sent",
+  "viewed",
+  "quoted",
+  "declined",
+  "no_response",
+]);
+
+export const rfqRecipients = pgTable("rfq_recipients", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  rfqId: varchar("rfq_id").notNull().references(() => rfqs.id, { onDelete: "cascade" }),
+
+  // supplierId is nullable so an ad-hoc recipient (someone not yet in Contacts)
+  // can still be tracked; supplierName is the display anchor either way.
+  supplierId: varchar("supplier_id").references(() => contacts.id, { onDelete: "set null" }),
+  supplierName: text("supplier_name").notNull(),
+  supplierEmail: text("supplier_email"),
+
+  status: rfqRecipientStatusEnum("status").notNull().default("not_sent"),
+
+  // Recipient contacted outside Morada (phone, personal email). Never gets a
+  // portal token or an automated reminder; the user drives its status by hand.
+  isExternal: boolean("is_external").notNull().default(false),
+
+  sentAt: timestamp("sent_at"),
+  viewedAt: timestamp("viewed_at"),
+  respondedAt: timestamp("responded_at"),
+
+  // Portal access, absorbed from rfq_portal_tokens so a supplier's link lives
+  // with the rest of their state instead of in a side table nothing created.
+  portalToken: text("portal_token").unique(),
+  portalTokenExpiresAt: timestamp("portal_token_expires_at"),
+  portalTokenRevoked: boolean("portal_token_revoked").notNull().default(false),
+
+  quoteId: varchar("quote_id"), // set when this recipient submits a quote
+
+  // Reminder bookkeeping (the scheduler lands in PR 4).
+  lastRemindedAt: timestamp("last_reminded_at"),
+  remindersSent: integer("reminders_sent").notNull().default(0),
+
+  notes: text("notes"),
+  displayOrder: integer("display_order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertRfqRecipientSchema = createInsertSchema(rfqRecipients).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  portalToken: true,
+  portalTokenExpiresAt: true,
+  remindersSent: true,
+}).extend({
+  supplierName: z.string().min(1, "Supplier name is required"),
+  sentAt: z.coerce.date().optional().nullable(),
+  viewedAt: z.coerce.date().optional().nullable(),
+  respondedAt: z.coerce.date().optional().nullable(),
+  lastRemindedAt: z.coerce.date().optional().nullable(),
+});
+
+export const updateRfqRecipientSchema = insertRfqRecipientSchema.partial().omit({ rfqId: true });
+
+export type InsertRfqRecipient = z.infer<typeof insertRfqRecipientSchema>;
+export type UpdateRfqRecipient = z.infer<typeof updateRfqRecipientSchema>;
+export type RfqRecipient = typeof rfqRecipients.$inferSelect;
+
+// ---------------------------------------------------------------------------
+// RFQ Quote Items — a supplier's price against each line of the RFQ.
+//
+// rfq_quotes only ever carried a single totalAmount, so "compare quotes line by
+// line" was unimplementable and an accepted quote could not be written back to
+// the estimate per line. rfqItemId is nullable because a supplier can quote
+// something we didn't ask for, and because AI extraction from a quote PDF
+// won't always match a line confidently.
+//
+// Money: cents, matching rfq_items.unitPrice and the dominant convention.
+// ---------------------------------------------------------------------------
+export const rfqQuoteItems = pgTable("rfq_quote_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  quoteId: varchar("quote_id").notNull().references(() => rfqQuotes.id, { onDelete: "cascade" }),
+  rfqItemId: varchar("rfq_item_id").references(() => rfqItems.id, { onDelete: "set null" }),
+
+  description: text("description").notNull(), // as quoted, may differ from ours
+  quantity: numeric("quantity", { precision: 10, scale: 2 }),
+  unit: text("unit"),
+  unitPrice: integer("unit_price"), // cents
+  lineTotal: integer("line_total"), // cents; stored rather than derived so a
+                                    // supplier's own rounding survives intact
+  notes: text("notes"),
+
+  displayOrder: integer("display_order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertRfqQuoteItemSchema = createInsertSchema(rfqQuoteItems).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  // Same numeric-column-vs-JS-number mismatch as rfq_items.quantity.
+  quantity: z.union([z.string(), z.number()])
+    .transform((v) => (typeof v === "number" ? String(v) : v))
+    .nullable()
+    .optional(),
+});
+
+export type InsertRfqQuoteItem = z.infer<typeof insertRfqQuoteItemSchema>;
+export type RfqQuoteItem = typeof rfqQuoteItems.$inferSelect;
+
 // ============================================
 // RFI (Request for Information) System
 // ============================================

@@ -122,6 +122,9 @@ import {
   updateRfqSchema,
   insertRfqItemSchema,
   insertRfqQuoteSchema,
+  insertRfqRecipientSchema,
+  updateRfqRecipientSchema,
+  insertRfqQuoteItemSchema,
   insertRfqFollowUpSchema,
   insertRfiSchema,
   insertScopeItemSchema,
@@ -15462,7 +15465,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
         );
       }
 
-      res.status(201).json(rfq);
+      // Turn the supplierIds/supplierNames the clients still send into recipient
+      // rows, which are now the source of truth. Deduped by id (and by name for
+      // ad-hoc entries) because the old array pair could hold repeats.
+      const names = rfqFields.supplierNames ?? [];
+      const ids = rfqFields.supplierIds ?? [];
+      const seen = new Set<string>();
+      const recipients = names
+        .map((name, index) => ({ name, supplierId: ids[index] || null }))
+        .filter(({ name, supplierId }) => {
+          const key = (supplierId || name || "").trim().toLowerCase();
+          if (!key || seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
+      for (let index = 0; index < recipients.length; index++) {
+        const { name, supplierId } = recipients[index];
+        await storage.createRFQRecipient({
+          rfqId: rfq!.id,
+          // Resolved rather than trusted: the arrays accepted any string, so a
+          // stale or foreign id would now hit the contacts FK and 500 the whole
+          // create. An unresolvable id degrades to an ad-hoc recipient carrying
+          // just the name, and a contact from another company never links.
+          supplierId: await resolveSupplierId(req, supplierId),
+          supplierName: name,
+          displayOrder: index,
+        } as any);
+      }
+
+      // createRFQRecipient re-syncs the mirrored arrays and the derived status,
+      // so re-read rather than returning the pre-recipient row.
+      const created = (await storage.getRFQ(rfq!.id)) ?? rfq;
+      res.status(201).json(created);
     } catch (error: any) {
       console.error("Error creating RFQ:", error);
       res.status(500).json({ error: "Failed to create RFQ", details: error.message });
@@ -15607,6 +15641,192 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: any) {
       console.error("Error deleting RFQ item:", error);
       res.status(500).json({ error: "Failed to delete RFQ item" });
+    }
+  });
+
+  // Resolve a supplier id to one the caller's company actually owns. Returns
+  // null for anything unknown or foreign, so the recipient degrades to a
+  // name-only entry rather than either 500-ing on the contacts FK or silently
+  // linking to another tenant's contact.
+  const resolveSupplierId = async (req: any, supplierId?: string | null): Promise<string | null> => {
+    if (!supplierId) return null;
+    try {
+      const contact = await storage.getContact(supplierId, req.user!.companyId!);
+      return contact ? supplierId : null;
+    } catch {
+      return null;
+    }
+  };
+
+  // ── RFQ Recipients API Routes ─────────────────────────────────────────────
+  // One row per supplier per RFQ. Replaces the supplierIds/supplierNames arrays
+  // on the RFQ, which the server now maintains as a derived mirror.
+  app.get("/api/rfqs/:rfqId/recipients", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const owned = await getOwnedRFQ(req, res, req.params.rfqId);
+      if (!owned) return;
+      res.json(await storage.getRFQRecipients(req.params.rfqId));
+    } catch (error) {
+      console.error("Error fetching RFQ recipients:", error);
+      res.status(500).json({ error: "Failed to fetch RFQ recipients" });
+    }
+  });
+
+  // Batched roll-up for the list page — one query for every RFQ on screen
+  // rather than one per row (Neon is us-east-1, the app is used from AU).
+  app.get("/api/rfq-recipients", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const { projectId } = req.query;
+      const rfqs = await storage.getRFQs(req.user!.companyId!, projectId as string | undefined);
+      const recipients = await storage.getRFQRecipientsForRfqs(rfqs.map((r) => r.id));
+      res.json(recipients);
+    } catch (error) {
+      console.error("Error fetching RFQ recipients:", error);
+      res.status(500).json({ error: "Failed to fetch RFQ recipients" });
+    }
+  });
+
+  app.post("/api/rfq-recipients", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const validationResult = insertRfqRecipientSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({
+          error: "Validation failed",
+          details: fromZodError(validationResult.error).toString(),
+        });
+      }
+      const owned = await getOwnedRFQ(req, res, validationResult.data.rfqId);
+      if (!owned) return;
+
+      // A supplier can only be on an RFQ once. Caught here so the user gets a
+      // sentence rather than a unique-violation 500.
+      const existing = await storage.getRFQRecipients(validationResult.data.rfqId);
+      const dupe = existing.find((r) =>
+        validationResult.data.supplierId
+          ? r.supplierId === validationResult.data.supplierId
+          : r.supplierName.trim().toLowerCase() ===
+            validationResult.data.supplierName.trim().toLowerCase(),
+      );
+      if (dupe) {
+        return res.status(409).json({ error: `${dupe.supplierName} is already on this RFQ` });
+      }
+
+      const recipient = await storage.createRFQRecipient({
+        ...validationResult.data,
+        supplierId: await resolveSupplierId(req, validationResult.data.supplierId),
+        displayOrder: validationResult.data.displayOrder ?? existing.length,
+      });
+      res.status(201).json(recipient);
+    } catch (error: any) {
+      console.error("Error creating RFQ recipient:", error);
+      res.status(500).json({ error: "Failed to add supplier", details: error.message });
+    }
+  });
+
+  app.patch("/api/rfq-recipients/:id", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const validationResult = updateRfqRecipientSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({
+          error: "Validation failed",
+          details: fromZodError(validationResult.error).toString(),
+        });
+      }
+      const existing = await storage.getRFQRecipient(req.params.id);
+      if (!existing) return res.status(404).json({ error: "Recipient not found" });
+      const owned = await getOwnedRFQ(req, res, existing.rfqId);
+      if (!owned) return;
+
+      const recipient = await storage.updateRFQRecipient(req.params.id, {
+        ...validationResult.data,
+        ...(validationResult.data.supplierId !== undefined
+          ? { supplierId: await resolveSupplierId(req, validationResult.data.supplierId) }
+          : {}),
+      });
+      res.json(recipient);
+    } catch (error: any) {
+      console.error("Error updating RFQ recipient:", error);
+      res.status(500).json({ error: "Failed to update supplier" });
+    }
+  });
+
+  app.delete("/api/rfq-recipients/:id", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const existing = await storage.getRFQRecipient(req.params.id);
+      if (!existing) return res.status(404).json({ error: "Recipient not found" });
+      const owned = await getOwnedRFQ(req, res, existing.rfqId);
+      if (!owned) return;
+
+      await storage.deleteRFQRecipient(req.params.id);
+      res.status(204).send();
+    } catch (error: any) {
+      console.error("Error deleting RFQ recipient:", error);
+      res.status(500).json({ error: "Failed to remove supplier" });
+    }
+  });
+
+  // ── RFQ Quote Items API Routes ────────────────────────────────────────────
+  app.get("/api/rfq-quotes/:quoteId/items", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const quote = await storage.getRFQQuote(req.params.quoteId);
+      if (!quote) return res.status(404).json({ error: "Quote not found" });
+      const owned = await getOwnedRFQ(req, res, quote.rfqId);
+      if (!owned) return;
+      res.json(await storage.getRFQQuoteItems(req.params.quoteId));
+    } catch (error) {
+      console.error("Error fetching quote items:", error);
+      res.status(500).json({ error: "Failed to fetch quote items" });
+    }
+  });
+
+  // Batched: the comparison view needs every quote's lines at once.
+  app.get("/api/rfqs/:rfqId/quote-items", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const owned = await getOwnedRFQ(req, res, req.params.rfqId);
+      if (!owned) return;
+      const quotes = await storage.getRFQQuotes(req.params.rfqId);
+      res.json(await storage.getRFQQuoteItemsForQuotes(quotes.map((q) => q.id)));
+    } catch (error) {
+      console.error("Error fetching quote items:", error);
+      res.status(500).json({ error: "Failed to fetch quote items" });
+    }
+  });
+
+  // Whole-set replace: a quote's lines always arrive complete (typed in, or
+  // extracted from a document), and a partial apply would leave it half priced.
+  app.put("/api/rfq-quotes/:quoteId/items", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const quote = await storage.getRFQQuote(req.params.quoteId);
+      if (!quote) return res.status(404).json({ error: "Quote not found" });
+      const owned = await getOwnedRFQ(req, res, quote.rfqId);
+      if (!owned) return;
+
+      const bodySchema = z.object({
+        items: z.array(insertRfqQuoteItemSchema.omit({ quoteId: true })),
+      });
+      const validationResult = bodySchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({
+          error: "Validation failed",
+          details: fromZodError(validationResult.error).toString(),
+        });
+      }
+
+      // Every referenced rfqItemId must belong to this quote's RFQ — otherwise
+      // a caller could staple their pricing onto another company's line.
+      const rfqItems = await storage.getRFQItems(quote.rfqId);
+      const validItemIds = new Set(rfqItems.map((i) => i.id));
+      for (const item of validationResult.data.items) {
+        if (item.rfqItemId && !validItemIds.has(item.rfqItemId)) {
+          return res.status(400).json({ error: "Quote line references an item from a different RFQ" });
+        }
+      }
+
+      const items = await storage.replaceRFQQuoteItems(req.params.quoteId, validationResult.data.items);
+      res.json(items);
+    } catch (error: any) {
+      console.error("Error replacing quote items:", error);
+      res.status(500).json({ error: "Failed to save quote lines", details: error.message });
     }
   });
 
@@ -16299,29 +16519,73 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Public RFQ Portal (no auth required for suppliers)
+  // Resolve a portal token to its recipient. Falls back to the legacy
+  // rfq_portal_tokens table for any token issued before recipients existed.
+  const resolvePortalToken = async (token: string) => {
+    const recipient = await storage.getRFQRecipientByToken(token);
+    if (recipient) {
+      return {
+        rfqId: recipient.rfqId,
+        recipientId: recipient.id,
+        supplierEmail: recipient.supplierEmail,
+        supplierName: recipient.supplierName,
+        expiresAt: recipient.portalTokenExpiresAt,
+        revoked: recipient.portalTokenRevoked,
+        viewedAt: recipient.viewedAt,
+        alreadySubmitted: !!recipient.quoteId,
+      };
+    }
+    const legacy = await storage.getRFQPortalTokenByToken(token);
+    if (!legacy) return null;
+    return {
+      rfqId: legacy.rfqId,
+      recipientId: null as string | null,
+      legacyTokenId: legacy.id,
+      supplierEmail: legacy.supplierEmail,
+      supplierName: null as string | null,
+      expiresAt: legacy.expiresAt,
+      // isActive was never checked, so deactivating a token did nothing.
+      revoked: !legacy.isActive,
+      viewedAt: legacy.viewedAt,
+      alreadySubmitted: !!legacy.quoteSubmittedId,
+    };
+  };
+
   app.get("/api/portal/rfq/:token", async (req, res) => {
     try {
-      const portalToken = await storage.getRFQPortalTokenByToken(req.params.token);
-      if (!portalToken) {
+      const portal = await resolvePortalToken(req.params.token);
+      if (!portal || portal.revoked) {
         return res.status(404).json({ error: "Invalid or expired link" });
       }
-      if (portalToken.expiresAt && new Date(portalToken.expiresAt) < new Date()) {
+      if (portal.expiresAt && new Date(portal.expiresAt) < new Date()) {
         return res.status(410).json({ error: "This link has expired" });
       }
 
-      // Mark as viewed if first time
-      if (!portalToken.viewedAt) {
-        await storage.updateRFQPortalToken(portalToken.id, { viewedAt: new Date() });
+      // First view moves the recipient from "sent" to "viewed", which is what
+      // the list page's per-supplier state reads.
+      if (!portal.viewedAt) {
+        const now = new Date();
+        if (portal.recipientId) {
+          const recipient = await storage.getRFQRecipient(portal.recipientId);
+          await storage.updateRFQRecipient(portal.recipientId, {
+            viewedAt: now,
+            ...(recipient?.status === "sent" ? { status: "viewed" as const } : {}),
+          });
+        } else if ((portal as any).legacyTokenId) {
+          await storage.updateRFQPortalToken((portal as any).legacyTokenId, { viewedAt: now });
+        }
       }
 
-      const rfq = await storage.getRFQ(portalToken.rfqId);
+      const rfq = await storage.getRFQ(portal.rfqId);
       if (!rfq) {
         return res.status(404).json({ error: "RFQ not found" });
       }
 
       const items = await storage.getRFQItems(rfq.id);
-      
-      // Return limited RFQ info for supplier
+
+      // Return limited RFQ info for supplier. internalNotes and externalNotes
+      // stay out by design; customTerms is included because the supplier is
+      // being asked to quote against them.
       res.json({
         rfq: {
           id: rfq.id,
@@ -16330,12 +16594,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
           description: rfq.description,
           scope: rfq.scope,
           dueDate: rfq.dueDate,
+          customTerms: rfq.customTerms,
           attachmentUrls: rfq.attachmentUrls,
           attachmentFileNames: rfq.attachmentFileNames,
         },
         items,
-        supplierEmail: portalToken.supplierEmail,
-        alreadySubmitted: !!portalToken.quoteSubmittedId,
+        supplierName: portal.supplierName,
+        supplierEmail: portal.supplierEmail,
+        alreadySubmitted: portal.alreadySubmitted,
       });
     } catch (error) {
       console.error("Error fetching portal RFQ:", error);
@@ -16345,40 +16611,42 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/portal/rfq/:token/submit-quote", async (req, res) => {
     try {
-      const portalToken = await storage.getRFQPortalTokenByToken(req.params.token);
-      if (!portalToken) {
+      const portal = await resolvePortalToken(req.params.token);
+      if (!portal || portal.revoked) {
         return res.status(404).json({ error: "Invalid or expired link" });
       }
-      if (portalToken.expiresAt && new Date(portalToken.expiresAt) < new Date()) {
+      if (portal.expiresAt && new Date(portal.expiresAt) < new Date()) {
         return res.status(410).json({ error: "This link has expired" });
       }
-      if (portalToken.quoteSubmittedId) {
+      if (portal.alreadySubmitted) {
         return res.status(400).json({ error: "Quote already submitted via this link" });
       }
 
       const { totalAmount, leadTime, validUntil, notes, supplierName, supplierEmail } = req.body;
-      
+
       if (!totalAmount || totalAmount <= 0) {
         return res.status(400).json({ error: "Quote amount is required" });
       }
 
-      const quote = await storage.createRFQQuote({
-        rfqId: portalToken.rfqId,
-        supplierId: portalToken.supplierId || null,
-        supplierName: supplierName || "",
-        supplierEmail: supplierEmail || portalToken.supplierEmail || "",
-        totalAmount: Math.round(totalAmount * 100), // Convert to cents
+      const recipient = portal.recipientId
+        ? await storage.getRFQRecipient(portal.recipientId)
+        : undefined;
+
+      // createRFQQuote links the quote to its recipient, moves that recipient
+      // to "quoted" and recomputes the RFQ status — so a portal submission now
+      // advances the RFQ instead of leaving it stuck where it was.
+      await storage.createRFQQuote({
+        rfqId: portal.rfqId,
+        supplierId: recipient?.supplierId || null,
+        supplierName: supplierName || recipient?.supplierName || "",
+        supplierEmail: supplierEmail || portal.supplierEmail || "",
+        totalAmount: Math.round(totalAmount * 100), // dollars → cents
         leadTime: leadTime || null,
         validUntil: validUntil ? new Date(validUntil) : null,
         notes: notes || null,
         submittedViaPortal: true,
         submittedAt: new Date(),
         status: "pending",
-      });
-
-      // Mark token as used
-      await storage.updateRFQPortalToken(portalToken.id, { 
-        quoteSubmittedId: quote.id 
       });
 
       res.status(201).json({ success: true, message: "Quote submitted successfully" });
