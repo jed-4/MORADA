@@ -130,6 +130,111 @@ function getInitials(name: string) {
     .slice(0, 2);
 }
 
+// ---------------------------------------------------------------------------
+// Shared data hooks — the drawer and the inline accordion read the same groups
+// query and tick items through the same optimistic mutation.
+// ---------------------------------------------------------------------------
+
+function useInstanceGroups(instanceId: string) {
+  return useQuery<ChecklistGroupWithItems[]>({
+    queryKey: ["/api/checklist-instances", instanceId, "groups"],
+    queryFn: async () => {
+      const response = await fetch(`/api/checklist-instances/${instanceId}/groups`, {
+        credentials: "include",
+      });
+      if (!response.ok) throw new Error("Failed to fetch groups");
+      const data = await response.json();
+      // Authored order, with name as the tie-break for legacy rows.
+      return data.sort((a: ChecklistGroupWithItems, b: ChecklistGroupWithItems) =>
+        (a.order ?? 0) - (b.order ?? 0) || (a.name || '').localeCompare(b.name || ''));
+    },
+  });
+}
+
+type ToggleItemVars = { itemId: string; groupId: string | null; data: Record<string, any> };
+
+// Optimistic toggle: the tick flips instantly and every progress count that
+// shows it — the item list, the group row, the instance row — follows in the
+// same pass, so the ~400ms Neon round trip settles in the background.
+// `itemsKey` is whichever item cache the caller reads from: the drawer's
+// per-group list, or the inline accordion's whole-instance list.
+function useChecklistItemToggle({
+  itemsKey,
+  instanceId,
+  projectId,
+}: {
+  itemsKey: unknown[];
+  instanceId: string;
+  projectId: string;
+}) {
+  return useMutation({
+    mutationFn: async ({ itemId, data }: ToggleItemVars) => {
+      return apiRequest(`/api/checklist-instance-items/${itemId}`, "PATCH", data);
+    },
+    onMutate: async ({ itemId, groupId, data }) => {
+      const groupsKey = ["/api/checklist-instances", instanceId, "groups"];
+      const instancesKey = ["/api/checklist-instances", projectId];
+      await queryClient.cancelQueries({ queryKey: itemsKey });
+      const prevItems = queryClient.getQueryData<ChecklistInstanceItem[]>(itemsKey);
+      const prevGroups = queryClient.getQueryData<ChecklistGroupWithItems[]>(groupsKey);
+      const prevInstances = queryClient.getQueryData<ChecklistInstanceWithCounts[]>(instancesKey);
+
+      const oldItem = prevItems?.find(i => i.id === itemId);
+      const wasDone = oldItem?.status === "completed" || oldItem?.status === "na";
+      const isDone = data.status === "completed" || data.status === "na";
+      const delta = isDone === wasDone ? 0 : isDone ? 1 : -1;
+
+      queryClient.setQueryData<ChecklistInstanceItem[]>(itemsKey, old =>
+        (old || []).map(i => (i.id === itemId ? { ...i, ...data } : i)),
+      );
+      if (delta !== 0) {
+        queryClient.setQueryData<ChecklistGroupWithItems[]>(groupsKey, old =>
+          old?.map(g => g.id === groupId && g.completedCount != null
+            ? { ...g, completedCount: g.completedCount + delta }
+            : g),
+        );
+        queryClient.setQueryData<ChecklistInstanceWithCounts[]>(instancesKey, old =>
+          old?.map(c => c.id === instanceId
+            ? { ...c, completedCount: c.completedCount + delta }
+            : c),
+        );
+      }
+      return { prevItems, prevGroups, prevInstances, itemsKey, groupsKey, instancesKey };
+    },
+    onError: (_err, _vars, ctx) => {
+      if (!ctx) return;
+      if (ctx.prevItems) queryClient.setQueryData(ctx.itemsKey, ctx.prevItems);
+      if (ctx.prevGroups) queryClient.setQueryData(ctx.groupsKey, ctx.prevGroups);
+      if (ctx.prevInstances) queryClient.setQueryData(ctx.instancesKey, ctx.prevInstances);
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: itemsKey });
+      queryClient.invalidateQueries({ queryKey: ["/api/checklist-instances"] });
+      queryClient.invalidateQueries({
+        predicate: (query) => Array.isArray(query.queryKey) && query.queryKey[0] === "/api/checklist-items"
+      });
+    },
+  });
+}
+
+// The tick payload, shared so the drawer and the inline rows write identical rows.
+function toggleItemPayload(
+  item: ChecklistInstanceItem,
+  currentUser?: { id: string; name?: string | null } | null,
+): ToggleItemVars {
+  const isCompleting = item.status !== "completed";
+  return {
+    itemId: item.id,
+    groupId: item.groupId,
+    data: {
+      status: isCompleting ? "completed" : "pending",
+      completedAt: isCompleting ? new Date().toISOString() : null,
+      completedBy: isCompleting ? currentUser?.id : null,
+      completedByName: isCompleting ? currentUser?.name : null,
+    },
+  };
+}
+
 export default function ChecklistWidget({ widget, onUpdate, isConfiguring, onCloseConfig, onSetHeaderActions }: WidgetProps) {
   const { user: currentUser } = useAuth();
   const maxChecklists = widget.config?.maxChecklists || 10;
@@ -156,6 +261,10 @@ export default function ChecklistWidget({ widget, onUpdate, isConfiguring, onClo
   const [activeInstanceId, setActiveInstanceId] = useState<string | null>(null);
 
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+
+  // Inline accordion in the widget body. Deliberately not persisted — a
+  // dashboard should come back collapsed, unlike the drawer's saved state.
+  const [expandedInstances, setExpandedInstances] = useState<Set<string>>(new Set());
 
   const { currentProject } = useProject();
   const [, setLocation] = useLocation();
@@ -230,6 +339,15 @@ export default function ChecklistWidget({ widget, onUpdate, isConfiguring, onClo
   const openList = () => {
     setActiveInstanceId(null);
     setDrawerOpen(true);
+  };
+
+  const toggleInstance = (instanceId: string) => {
+    setExpandedInstances(prev => {
+      const next = new Set(prev);
+      if (next.has(instanceId)) next.delete(instanceId);
+      else next.add(instanceId);
+      return next;
+    });
   };
 
   const handleToggleGroup = (groupId: string) => {
@@ -454,13 +572,22 @@ export default function ChecklistWidget({ widget, onUpdate, isConfiguring, onClo
     const progressPercent = checklist.totalCount > 0
       ? Math.round((checklist.completedCount / checklist.totalCount) * 100)
       : 0;
-    return (
+    // In the widget body the row is an accordion header; in the drawer list it
+    // still opens the detail pane, which is the only thing it can do there.
+    const isExpanded = !inDrawer && expandedInstances.has(checklist.id);
+    const row = (
       <div
-        key={checklist.id}
-        className={`flex items-center gap-2 rounded-md hover:bg-muted/60 cursor-pointer ${inDrawer ? "px-2 py-2" : "px-1.5 py-1.5"}`}
+        className={`group/row flex items-center gap-2 rounded-md hover:bg-muted/60 cursor-pointer ${inDrawer ? "px-2 py-2" : "px-1.5 py-1.5"}`}
         data-testid={`checklist-widget-item-${checklist.id}`}
-        onClick={() => openDetail(checklist.id)}
+        onClick={() => (inDrawer ? openDetail(checklist.id) : toggleInstance(checklist.id))}
+        aria-expanded={inDrawer ? undefined : isExpanded}
       >
+        {!inDrawer && (
+          <ChevronRight
+            className={`h-3 w-3 text-muted-foreground flex-shrink-0 transition-transform ${isExpanded ? "rotate-90" : ""}`}
+          />
+        )}
+
         <TaskTooltip content={checklist.name}>
           <span className={`text-sm flex-1 min-w-0 ${wrapText && !inDrawer ? "" : "truncate"}`}>
             {checklist.name}
@@ -497,6 +624,44 @@ export default function ChecklistWidget({ widget, onUpdate, isConfiguring, onClo
             {checklist.completedCount}/{checklist.totalCount}
           </span>
         </div>
+
+        {/* The drawer used to be a plain row click; now the row expands, so the
+            detail pane moves to a hover affordance. */}
+        {!inDrawer && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                size="icon"
+                variant="ghost"
+                className="h-5 w-5 flex-shrink-0 opacity-0 group-hover/row:opacity-100 focus-visible:opacity-100 transition-opacity"
+                onClick={(e) => { e.stopPropagation(); openDetail(checklist.id); }}
+                data-testid={`checklist-widget-open-${checklist.id}`}
+                aria-label={`Open ${checklist.name}`}
+              >
+                <ArrowRight className="h-3 w-3" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="top">Open</TooltipContent>
+          </Tooltip>
+        )}
+      </div>
+    );
+
+    if (inDrawer) return <div key={checklist.id}>{row}</div>;
+
+    return (
+      <div key={checklist.id}>
+        {row}
+        {isExpanded && (
+          <InlineInstanceContent
+            instanceId={checklist.id}
+            projectId={currentProject.id}
+            wrapText={wrapText}
+            hideCompletedChecklists={hideCompletedChecklists}
+            hideCompletedItems={hideCompletedItems}
+            currentUser={currentUser as { id: string; name?: string | null } | null}
+          />
+        )}
       </div>
     );
   };
@@ -584,6 +749,153 @@ export default function ChecklistWidget({ widget, onUpdate, isConfiguring, onClo
 }
 
 // ---------------------------------------------------------------------------
+// Inline accordion body: the expanded contents of one instance, rendered in
+// the widget itself. Both queries are lazy — this only mounts once its row is
+// expanded, so a collapsed dashboard still fetches nothing but the counts.
+// One request covers every item in the instance, rather than the drawer's
+// request-per-checklist.
+// ---------------------------------------------------------------------------
+function InlineInstanceContent({
+  instanceId,
+  projectId,
+  wrapText,
+  hideCompletedChecklists,
+  hideCompletedItems,
+  currentUser,
+}: {
+  instanceId: string;
+  projectId: string;
+  wrapText: boolean;
+  hideCompletedChecklists: boolean;
+  hideCompletedItems: boolean;
+  currentUser?: { id: string; name?: string | null } | null;
+}) {
+  const { data: groups = [] } = useInstanceGroups(instanceId);
+
+  const itemsKey = useMemo(
+    () => ["/api/checklist-instances", instanceId, "items"],
+    [instanceId],
+  );
+
+  const { data: items = [], isLoading, isError, refetch } = useQuery<ChecklistInstanceItem[]>({
+    queryKey: itemsKey,
+    queryFn: async () => {
+      const response = await fetch(`/api/checklist-instances/${instanceId}/items`, {
+        credentials: "include",
+      });
+      if (!response.ok) throw new Error("Failed to fetch items");
+      return response.json();
+    },
+  });
+
+  const updateItemMutation = useChecklistItemToggle({ itemsKey, instanceId, projectId });
+
+  // Items arrive already ordered by groupOrder then order, so bucketing by
+  // group preserves the authored sequence. Rows whose group is missing (legacy
+  // items, or ones filed straight on the instance) fall back to the copied
+  // group name and sit after the real groups.
+  const sections = useMemo(() => {
+    const known = new Map(groups.map(g => [g.id, g]));
+    const buckets = new Map<string, { key: string; name: string; items: ChecklistInstanceItem[] }>();
+
+    for (const item of items) {
+      const group = item.groupId ? known.get(item.groupId) : undefined;
+      const key = group ? group.id : `orphan:${item.groupName || ""}`;
+      const bucket = buckets.get(key)
+        ?? { key, name: group?.name ?? item.groupName ?? "", items: [] };
+      bucket.items.push(item);
+      buckets.set(key, bucket);
+    }
+
+    // Real groups first, in authored order, then whatever's left over.
+    const ordered = groups
+      .map(g => buckets.get(g.id))
+      .filter((b): b is NonNullable<typeof b> => !!b);
+    const leftovers = Array.from(buckets.values()).filter(b => !known.has(b.key));
+
+    return [...ordered, ...leftovers].filter(section => {
+      if (!hideCompletedChecklists) return true;
+      return known.get(section.key)?.status !== "completed";
+    });
+  }, [groups, items, hideCompletedChecklists]);
+
+  const toggleItemComplete = (item: ChecklistInstanceItem) => {
+    updateItemMutation.mutate(toggleItemPayload(item, currentUser));
+  };
+
+  return (
+    <div
+      className="ml-3 pl-2.5 border-l border-border space-y-1 py-1"
+      data-testid={`checklist-widget-expanded-${instanceId}`}
+    >
+      {isLoading ? (
+        <div className="text-2xs text-muted-foreground py-1 animate-pulse">Loading…</div>
+      ) : isError ? (
+        <button
+          className="text-2xs text-muted-foreground hover:text-foreground py-1"
+          onClick={() => refetch()}
+        >
+          Couldn't load — tap to retry
+        </button>
+      ) : sections.length === 0 ? (
+        <div className="text-2xs text-muted-foreground py-1">No items</div>
+      ) : (
+        sections.map(section => {
+          const done = section.items.filter(i => i.status === "completed" || i.status === "na").length;
+          const visible = section.items.filter(
+            item => !hideCompletedItems || (item.status !== "completed" && item.status !== "na"),
+          );
+          if (visible.length === 0) return null;
+          return (
+            <div key={section.key} data-testid={`checklist-widget-section-${section.key}`}>
+              {section.name && (
+                <div className="flex items-center gap-1.5 px-1 pt-0.5">
+                  <span className="text-2xs font-medium text-muted-foreground uppercase tracking-wide truncate">
+                    {section.name}
+                  </span>
+                  <span className="text-2xs text-muted-foreground tabular-nums flex-shrink-0 ml-auto">
+                    {done}/{section.items.length}
+                  </span>
+                </div>
+              )}
+              {visible.map(item => (
+                <div
+                  key={item.id}
+                  className="group/item flex items-start gap-1.5 px-1 py-0.5 rounded hover:bg-muted/50"
+                  data-testid={`checklist-widget-inline-item-${item.id}`}
+                >
+                  <button
+                    onClick={() => toggleItemComplete(item)}
+                    className="flex-shrink-0 mt-px hover:scale-110 transition-transform"
+                    data-testid={`checklist-widget-inline-toggle-${item.id}`}
+                    aria-label={item.status === "completed" ? `Untick ${item.description}` : `Tick ${item.description}`}
+                  >
+                    {item.status === "completed" ? (
+                      <Check className="h-3 w-3 text-status-success" />
+                    ) : item.status === "na" ? (
+                      <X className="h-3 w-3 text-muted" />
+                    ) : (
+                      <Circle className="h-3 w-3 text-muted-foreground group-hover/item:text-primary" />
+                    )}
+                  </button>
+                  <span
+                    className={`text-xs leading-snug flex-1 min-w-0 ${wrapText ? "" : "truncate"} ${
+                      item.status === "completed" ? "line-through text-muted-foreground" : ""
+                    }`}
+                  >
+                    {item.description}
+                  </span>
+                </div>
+              ))}
+            </div>
+          );
+        })
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Drawer detail: one checklist group with its checklists and items
 // ---------------------------------------------------------------------------
 function InstanceDetail({
@@ -611,19 +923,12 @@ function InstanceDetail({
     ? Math.round((instance.completedCount / instance.totalCount) * 100)
     : 0;
 
-  const { data: groups = [], isLoading: groupsLoading, isError: groupsError, refetch: refetchGroups } = useQuery<ChecklistGroupWithItems[]>({
-    queryKey: ["/api/checklist-instances", instance.id, "groups"],
-    queryFn: async () => {
-      const response = await fetch(`/api/checklist-instances/${instance.id}/groups`, {
-        credentials: "include",
-      });
-      if (!response.ok) throw new Error("Failed to fetch groups");
-      const data = await response.json();
-      // Authored order, with name as the tie-break for legacy rows.
-      return data.sort((a: ChecklistGroupWithItems, b: ChecklistGroupWithItems) =>
-        (a.order ?? 0) - (b.order ?? 0) || (a.name || '').localeCompare(b.name || ''));
-    },
-  });
+  const {
+    data: groups = [],
+    isLoading: groupsLoading,
+    isError: groupsError,
+    refetch: refetchGroups,
+  } = useInstanceGroups(instance.id);
 
   return (
     <>
@@ -733,8 +1038,13 @@ function DrawerChecklist({
     },
   });
 
+  const itemsKey = useMemo(
+    () => ["/api/checklist-instance-groups", group.id, "items"],
+    [group.id],
+  );
+
   const { data: items = [], isLoading: itemsLoading, isError: itemsError, refetch: refetchItems } = useQuery<ChecklistInstanceItem[]>({
-    queryKey: ["/api/checklist-instance-groups", group.id, "items"],
+    queryKey: itemsKey,
     queryFn: async () => {
       const response = await fetch(`/api/checklist-instance-groups/${group.id}/items`, {
         credentials: "include",
@@ -751,58 +1061,7 @@ function DrawerChecklist({
   const completedCount = items.filter(i => i.status === "completed" || i.status === "na").length;
   const totalCount = items.length;
 
-  // Optimistic toggle: tick flips instantly and progress counts follow;
-  // the ~400ms Neon round trip settles in the background.
-  const updateItemMutation = useMutation({
-    mutationFn: async ({ itemId, data }: { itemId: string; data: Record<string, any> }) => {
-      return apiRequest(`/api/checklist-instance-items/${itemId}`, "PATCH", data);
-    },
-    onMutate: async ({ itemId, data }) => {
-      const itemsKey = ["/api/checklist-instance-groups", group.id, "items"];
-      const groupsKey = ["/api/checklist-instances", instanceId, "groups"];
-      const instancesKey = ["/api/checklist-instances", projectId];
-      await queryClient.cancelQueries({ queryKey: itemsKey });
-      const prevItems = queryClient.getQueryData<ChecklistInstanceItem[]>(itemsKey);
-      const prevGroups = queryClient.getQueryData<ChecklistGroupWithItems[]>(groupsKey);
-      const prevInstances = queryClient.getQueryData<ChecklistInstanceWithCounts[]>(instancesKey);
-
-      const oldItem = prevItems?.find(i => i.id === itemId);
-      const wasDone = oldItem?.status === "completed" || oldItem?.status === "na";
-      const isDone = data.status === "completed" || data.status === "na";
-      const delta = isDone === wasDone ? 0 : isDone ? 1 : -1;
-
-      queryClient.setQueryData<ChecklistInstanceItem[]>(itemsKey, old =>
-        (old || []).map(i => (i.id === itemId ? { ...i, ...data } : i)),
-      );
-      if (delta !== 0) {
-        queryClient.setQueryData<ChecklistGroupWithItems[]>(groupsKey, old =>
-          old?.map(g => g.id === group.id && g.completedCount != null
-            ? { ...g, completedCount: g.completedCount + delta }
-            : g),
-        );
-        queryClient.setQueryData<ChecklistInstanceWithCounts[]>(instancesKey, old =>
-          old?.map(c => c.id === instanceId
-            ? { ...c, completedCount: c.completedCount + delta }
-            : c),
-        );
-      }
-      return { prevItems, prevGroups, prevInstances, itemsKey, groupsKey, instancesKey };
-    },
-    onError: (_err, _vars, ctx) => {
-      if (!ctx) return;
-      if (ctx.prevItems) queryClient.setQueryData(ctx.itemsKey, ctx.prevItems);
-      if (ctx.prevGroups) queryClient.setQueryData(ctx.groupsKey, ctx.prevGroups);
-      if (ctx.prevInstances) queryClient.setQueryData(ctx.instancesKey, ctx.prevInstances);
-    },
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/checklist-instance-groups", group.id, "items"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/checklist-instances", instanceId, "groups"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/checklist-instances"] });
-      queryClient.invalidateQueries({
-        predicate: (query) => Array.isArray(query.queryKey) && query.queryKey[0] === "/api/checklist-items"
-      });
-    },
-  });
+  const updateItemMutation = useChecklistItemToggle({ itemsKey, instanceId, projectId });
 
   const hasLoadedItems = isExpanded && items.length > 0;
   const progressTotal = hasLoadedItems ? items.length : (group.totalCount ?? 0);
@@ -811,17 +1070,7 @@ function DrawerChecklist({
     : (group.completedCount ?? 0);
 
   const toggleItemComplete = (item: ChecklistInstanceItem) => {
-    const isCompleting = item.status !== "completed";
-    const newStatus = isCompleting ? "completed" : "pending";
-    updateItemMutation.mutate({
-      itemId: item.id,
-      data: {
-        status: newStatus,
-        completedAt: isCompleting ? new Date().toISOString() : null,
-        completedBy: isCompleting ? currentUser?.id : null,
-        completedByName: isCompleting ? currentUser?.name : null,
-      }
-    });
+    updateItemMutation.mutate(toggleItemPayload(item, currentUser));
   };
 
   return (
