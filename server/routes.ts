@@ -38299,10 +38299,14 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
       const [invoiceRows, billRows, variationRows, timesheetRows] = await Promise.all([
         db.select().from(invoicesTbl).where(eq(invoicesTbl.projectId, projectId)),
         db.select().from(billsTbl).where(eq(billsTbl.projectId, projectId)),
+        // "Approved" for contract purposes means approved OR released — see
+        // isApprovedVariationStatus, the single definition every other surface
+        // uses. Filtering to "approved" alone silently dropped released
+        // variations from the contract + variations ceiling.
         db
           .select()
           .from(variationsTbl)
-          .where(and(eq(variationsTbl.projectId, projectId), eq(variationsTbl.status, "approved"))),
+          .where(eq(variationsTbl.projectId, projectId)),
         db
           .select()
           .from(timesheetsTbl)
@@ -38469,7 +38473,7 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
         }
       }
       const approvedVarTotal = (variationRows as any[]).reduce(
-        (s, v) => s + (Number(v.totalAmount) || 0),
+        (s, v) => (isApprovedVariationStatus(v.status) ? s + (Number(v.totalAmount) || 0) : s),
         0,
       );
       const contractPlusVariationsCeiling = contractCeiling + approvedVarTotal;
