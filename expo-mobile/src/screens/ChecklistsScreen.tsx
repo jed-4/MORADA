@@ -70,10 +70,18 @@ type Props = {
   route: RouteProp<any>;
 };
 
+// Numeric-aware name comparison, so "2. Slab" sorts before "10. Frame" and
+// "ITP3" before "ITP20". A plain localeCompare is lexicographic and reads
+// "10" as "1" then "0". Mirrors compareNames in shared/utils.ts — mobile
+// can't reach the web app's @shared alias, so it keeps its own copy.
+function compareNames(a: string | null | undefined, b: string | null | undefined): number {
+  return (a || '').localeCompare(b || '', undefined, { numeric: true });
+}
+
 // Items render in their authored `order`, falling back to description for
 // ties or missing values (previously sorted alphabetically, ignoring order).
 function compareItems(a: ChecklistItem, b: ChecklistItem): number {
-  return (a.order ?? 0) - (b.order ?? 0) || (a.description || '').localeCompare(b.description || '');
+  return (a.order ?? 0) - (b.order ?? 0) || compareNames(a.description, b.description);
 }
 
 // Groups render in the order their checklist was authored — each item carries
@@ -83,7 +91,7 @@ function compareGroupEntries(
   [nameA, itemsA]: [string, ChecklistItem[]],
   [nameB, itemsB]: [string, ChecklistItem[]],
 ): number {
-  return (itemsA[0]?.groupOrder ?? 0) - (itemsB[0]?.groupOrder ?? 0) || nameA.localeCompare(nameB);
+  return (itemsA[0]?.groupOrder ?? 0) - (itemsB[0]?.groupOrder ?? 0) || compareNames(nameA, nameB);
 }
 
 export default function ChecklistsScreen({ navigation, route }: Props) {
@@ -141,7 +149,7 @@ const colors = {
       const filterPid = projectId || selectedProjectId;
       const query = filterPid ? `?projectId=${filterPid}` : '';
       const data = await apiFetch<ChecklistInstance[]>(`/api/checklist-instances${query}`);
-      const sorted = (data || []).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+      const sorted = (data || []).sort((a, b) => compareNames(a.name, b.name));
       setInstances(sorted);
     } catch {
       setInstances([]);

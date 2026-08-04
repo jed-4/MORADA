@@ -18,6 +18,7 @@ import {
   type User,
   type ScheduleItem,
 } from "@shared/schema";
+import { compareNames } from "@shared/utils";
 
 type Task = {
   id: string;
@@ -337,7 +338,7 @@ export default function ProjectChecklists() {
       // that were all written with order 0.
       Object.keys(itemsMap).forEach(groupId => {
         itemsMap[groupId].sort((a, b) =>
-          (a.order ?? 0) - (b.order ?? 0) || (a.description || '').localeCompare(b.description || ''));
+          (a.order ?? 0) - (b.order ?? 0) || compareNames(a.description, b.description));
       });
       return itemsMap;
     },
@@ -774,8 +775,11 @@ export default function ProjectChecklists() {
     // Start from instances so even those with no groups are included
     const result = instances.map(instance => {
       const groups = groupsByInstanceId[instance.id] || [];
-      // Sort groups by order
-      groups.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+      // Authored order, with name as the tie-break for legacy rows — matching
+      // the widget, the instance detail page and mobile. This used to sort by
+      // name alone, so a checklist's groups came out alphabetically here and
+      // in template order everywhere else.
+      groups.sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || compareNames(a.name, b.name));
       return { instance, groups };
     });
     
@@ -791,8 +795,8 @@ export default function ProjectChecklists() {
       filtered = filtered.filter(({ instance }) => instance.scopeStageId === scopeStageFilter);
     }
     
-    return filtered.sort((a, b) => 
-      a.instance.name.localeCompare(b.instance.name)
+    return filtered.sort((a, b) =>
+      compareNames(a.instance.name, b.instance.name)
     );
   }, [filteredGroups, instances, activeTab, searchTerm, assigneeFilter, scopeStageFilter]);
 
@@ -2118,7 +2122,7 @@ export default function ProjectChecklists() {
                         <CommandEmpty>No template found.</CommandEmpty>
                         <CommandGroup>
                           {[...templates]
-                            .sort((a, b) => a.name.localeCompare(b.name))
+                            .sort((a, b) => compareNames(a.name, b.name))
                             .map((template) => (
                               <CommandItem
                                 key={template.id}
