@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useProject } from "@/contexts/ProjectContext";
 import type { Estimate, Bill, Variation, ClientInvoice } from "@shared/schema";
-import { computeContractMetrics, isPendingVariationStatus, type ContractMetrics } from "@shared/projectMetrics";
+import { computeContractMetrics, frozenContractTotalFrom, isPendingVariationStatus, type ContractMetrics } from "@shared/projectMetrics";
 import { timesheetTotalExGstCents, exGstFromInc } from "@shared/money";
 
 export interface ProjectMetric {
@@ -351,6 +351,10 @@ export function useProjectMetrics() {
       }),
       projectMarkupPercent,
       taxRate,
+      // Contracted job: the frozen sum replaces the estimate recomputation
+      // above as the original contract, matching /api/projects/:id/contract-
+      // metrics exactly. The columns ride along on the project row.
+      frozenContractTotalFrom(currentProject as any),
     );
 
     // Contract Price (legacy alias — inc-GST dollars)

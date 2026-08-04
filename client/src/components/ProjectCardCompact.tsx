@@ -4,6 +4,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Calendar, Pencil } from "lucide-react";
 import { type Project, type FieldOption } from "@shared/schema";
+import { frozenContractTotalFrom } from "@shared/projectMetrics";
 import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { ProjectIcon } from "./ProjectIcon";
@@ -117,11 +118,17 @@ export default function ProjectCardCompact({
 
   const statusOption = allStatusOptions.find(opt => opt.key === project.projectSubStatus);
   // Prefer the revised contract price (original + approved variations) when
-  // the parent has computed it; fall back to the contractPrice snapshot,
-  // then clientBudget / budget. Fetching variations per individual card would
-  // be too expensive, so the parent (e.g. ProjectBoard) computes a single
-  // map up-front and forwards the revised total via this prop.
-  const costValue = revisedContractPriceCents ?? project.contractPrice ?? project.clientBudget ?? project.budget;
+  // the parent has computed it; fall back to the frozen contract sum on a
+  // contracted job, then the contractPrice live cache, then clientBudget /
+  // budget. Fetching variations per individual card would be too expensive, so
+  // the parent (e.g. ProjectBoard) computes a single map up-front and forwards
+  // the revised total via this prop.
+  const costValue =
+    revisedContractPriceCents
+    ?? frozenContractTotalFrom(project as any)?.incGstCents
+    ?? project.contractPrice
+    ?? project.clientBudget
+    ?? project.budget;
 
   const showBudgetRow = (visibleFields.budget && !!costValue) || (visibleFields.progress && project.progress != null);
   const showClientRow = !!project.clientName || visibleFields.foreman;
