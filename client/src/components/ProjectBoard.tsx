@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { type Project, type FieldOption, type Variation } from "@shared/schema";
-import { isApprovedVariationStatus } from "@shared/projectMetrics";
+import { isApprovedVariationStatus, frozenContractTotalFrom } from "@shared/projectMetrics";
 import { useLocation } from "wouter";
 import { ChevronLeft, ChevronRight, Columns3, Settings2, Settings, GripVertical, Sparkles } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -411,7 +411,13 @@ function DroppableColumn({
     // Prefer the revised contract price (original + approved variations) when
     // available; fall back to the snapshot, clientBudget, or budget.
     const revised = revisedByProject?.get(project.id);
-    const value = revised || project.contractPrice || project.clientBudget || project.budget || 0;
+    const value =
+      revised
+      || frozenContractTotalFrom(project as any)?.incGstCents
+      || project.contractPrice
+      || project.clientBudget
+      || project.budget
+      || 0;
     return sum + value;
   }, 0);
 
@@ -635,7 +641,8 @@ export function ProjectBoard({
   );
 
   // Fetch all variations once and build a map of projectId → revised contract
-  // price in inc-GST cents (project.contractPrice + sum of approved variations
+  // price in inc-GST cents (frozen contract sum once contracted, else the
+  // project.contractPrice live cache, + sum of approved variations
   // totalAmount). This avoids per-card fetches and keeps cards in sync with
   // approved variation status changes.
   const { data: allVariations = [] } = useQuery<Array<Variation & { projectId: string; status: string | null; totalAmount: number | null }>>({
@@ -654,7 +661,7 @@ export function ProjectBoard({
     }
     const out = new Map<string, number>();
     for (const p of projects) {
-      const base = p.contractPrice ?? 0;
+      const base = frozenContractTotalFrom(p as any)?.incGstCents ?? p.contractPrice ?? 0;
       const approved = sumByProject.get(p.id) ?? 0;
       out.set(p.id, base + approved);
     }

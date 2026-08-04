@@ -595,8 +595,30 @@ app.use((req, res, next) => {
       if (snap.updated > 0) {
         log(`Contract price snapshots recomputed: corrected ${snap.updated} of ${snap.scanned} project(s)`);
       }
+      if (snap.skippedContracted > 0) {
+        log(`Contract price snapshots: skipped ${snap.skippedContracted} contracted project(s) (sum is frozen)`);
+      }
     } catch (error) {
       console.error('Failed to recompute contract price snapshots:', error);
+    }
+
+    // Backfill the frozen contract sum for jobs contracted BEFORE the freeze
+    // existed (migration 0042). Captures the current canonical total, so
+    // nothing on screen changes at deploy — the figures simply stop moving
+    // afterwards. Idempotent and self-disabling: it only matches projects with
+    // a contracted estimate and no frozen sum, and always sets contracted_at,
+    // so the second boot matches nothing.
+    //
+    // Runs after recomputeContractPriceSnapshots so that on the first boot both
+    // land on the same canonical figure (each computes it from the estimate
+    // summary independently, so contract_price and the frozen sum agree).
+    try {
+      const frozen = await storage.backfillContractedTotals();
+      if (frozen.filled > 0) {
+        log(`Contract sums frozen: backfilled ${frozen.filled} of ${frozen.scanned} contracted project(s)`);
+      }
+    } catch (error) {
+      console.error('Failed to backfill contracted totals:', error);
     }
   });
 })();

@@ -184,7 +184,7 @@ import { AI_MODEL, buildSystemPrompt, buildCircuitStartMessage } from "./ai/prom
 import { executeTool } from "./ai/executor";
 import { computeBillTotalsCents, billLineExGstCents, clampRoundingCents } from "@shared/billTotals";
 import { computeVariationTotals, computeVariationLinePriceCents } from "@shared/variationTotals";
-import { PENDING_VARIATION_STATUSES } from "@shared/projectMetrics";
+import { PENDING_VARIATION_STATUSES, isApprovedVariationStatus, frozenContractTotalFrom } from "@shared/projectMetrics";
 import { matchSupplier } from "@shared/supplierMatcher";
 import {
   fuzzyMatchTimesheetCostCode,
@@ -4337,7 +4337,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // and any consumer that needs the revised contract price server-side).
   app.get("/api/projects/:id/contract-metrics", requireAuth, async (req, res) => {
     try {
-      const { computeContractMetrics } = await import("@shared/projectMetrics");
+      const { computeContractMetrics, frozenContractTotalFrom } = await import("@shared/projectMetrics");
       const project = await storage.getProject(req.params.id);
       if (!project) return res.status(404).json({ error: "Project not found" });
 
@@ -4359,6 +4359,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         (selectedEstimate as any)?.projectMarkupPercent ?? 0;
       const taxRate = (selectedEstimate as any)?.taxRate ?? 10;
 
+      // Once contracted, the original contract is the FROZEN sum — the estimate
+      // items below no longer influence it. Approved variations still apply on
+      // top, so Revised = frozen + approved variations.
       const metrics = computeContractMetrics(
         items.map((i: any) => ({
           priceIncTax: i.priceIncTax,
@@ -4374,6 +4377,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         })),
         projectMarkupPercent,
         taxRate,
+        frozenContractTotalFrom(project as any),
       );
       res.json(metrics);
     } catch (error) {
@@ -4741,6 +4745,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // arbitrary value bypass the canonical-summary stamping + recalc.
       if ('selectedEstimateId' in updateData) delete (updateData as any).selectedEstimateId;
       if ('contractPrice' in updateData) delete (updateData as any).contractPrice;
+      // Same door, and money-critical: the FROZEN contract sum is what the
+      // client owes. Only Mark as Contract may set it and only Revert may clear
+      // it — a generic project PATCH must never be able to rewrite the contract.
+      if ('contractedTotalExGstCents' in updateData) delete (updateData as any).contractedTotalExGstCents;
+      if ('contractedTotalIncGstCents' in updateData) delete (updateData as any).contractedTotalIncGstCents;
+      if ('contractedAt' in updateData) delete (updateData as any).contractedAt;
+      if ('contractedEstimateId' in updateData) delete (updateData as any).contractedEstimateId;
 
       const projectBefore = await storage.getProject(req.params.id);
       const project = await storage.updateProject(req.params.id, updateData);
@@ -7378,6 +7389,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         : { status: "draft", isLocked: false, approvedAt: null, approvedById: null, contractedAt: null, contractedById: null };
       const updated = await storage.updateEstimateStatus(req.params.id, patch);
 
+      // Reverting a contract is the explicit "we are renegotiating" act, so the
+      // frozen contract sum is released — the project reads live again until the
+      // next Mark as Contract re-freezes it. Applies to BOTH revert targets:
+      // an approved (unlocked, editable) estimate must not keep presenting a
+      // frozen sum it no longer matches.
+      const clearFreeze =
+        current === "contract" && project.contractedEstimateId === req.params.id;
+
       // Revert to Draft: if this estimate was the project's selected estimate,
       // clear the selection + cached contract price so a draft can never act
       // as the live contract.
@@ -7385,6 +7404,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
         await storage.updateProject(existing.projectId, {
           selectedEstimateId: null,
           contractPrice: null,
+          contractedTotalExGstCents: null,
+          contractedTotalIncGstCents: null,
+          contractedAt: null,
+          contractedEstimateId: null,
+        } as any);
+      } else if (clearFreeze) {
+        await storage.updateProject(existing.projectId, {
+          contractedTotalExGstCents: null,
+          contractedTotalIncGstCents: null,
+          contractedAt: null,
+          contractedEstimateId: null,
         } as any);
       }
       res.json(updated);
@@ -20482,9 +20512,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // silently change a claim on an invoice the client has already received.
   const computeProjectContractPriceCents = async (projectId: string): Promise<number | null> => {
     try {
-      const { computeContractMetrics } = await import("@shared/projectMetrics");
+      const { computeContractMetrics, frozenContractTotalFrom } = await import("@shared/projectMetrics");
       const project = await storage.getProject(projectId);
       if (!project) return null;
+      // Contracted job: the frozen sum IS the contract price, with no estimate
+      // read at all. Locking an invoice to it is then a no-op in practice —
+      // which is the point: the base can no longer drift under a sent claim.
+      const frozenForLock = frozenContractTotalFrom(project as any);
+      if (frozenForLock) return frozenForLock.incGstCents;
       if (!project.selectedEstimateId) return (project as any)?.contractPrice ?? null;
       const items = await storage.getEstimateItems(project.selectedEstimateId);
       const variations = await storage.getVariations(projectId);
@@ -38264,10 +38299,14 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
       const [invoiceRows, billRows, variationRows, timesheetRows] = await Promise.all([
         db.select().from(invoicesTbl).where(eq(invoicesTbl.projectId, projectId)),
         db.select().from(billsTbl).where(eq(billsTbl.projectId, projectId)),
+        // "Approved" for contract purposes means approved OR released — see
+        // isApprovedVariationStatus, the single definition every other surface
+        // uses. Filtering to "approved" alone silently dropped released
+        // variations from the contract + variations ceiling.
         db
           .select()
           .from(variationsTbl)
-          .where(and(eq(variationsTbl.projectId, projectId), eq(variationsTbl.status, "approved"))),
+          .where(eq(variationsTbl.projectId, projectId)),
         db
           .select()
           .from(timesheetsTbl)
@@ -38390,8 +38429,14 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
         addToBucket((ts as any).date, "labourOut", timesheetTotalExGstCents(ts as any));
       }
 
+      // The frozen contract sum wins outright on a contracted job — the ceiling
+      // is what the client agreed to pay, not what the estimate currently says.
+      const frozenCeiling = frozenContractTotalFrom(project as any);
       let contractCeiling =
-        Number((project as any).contractPrice) || Number((project as any).contractCost) || 0;
+        frozenCeiling?.incGstCents
+        || Number((project as any).contractPrice)
+        || Number((project as any).contractCost)
+        || 0;
 
       // Fallback: when the project's contractPrice/contractCost isn't set,
       // derive the ceiling from the selected estimate or any contract-status
@@ -38428,7 +38473,7 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
         }
       }
       const approvedVarTotal = (variationRows as any[]).reduce(
-        (s, v) => s + (Number(v.totalAmount) || 0),
+        (s, v) => (isApprovedVariationStatus(v.status) ? s + (Number(v.totalAmount) || 0) : s),
         0,
       );
       const contractPlusVariationsCeiling = contractCeiling + approvedVarTotal;
