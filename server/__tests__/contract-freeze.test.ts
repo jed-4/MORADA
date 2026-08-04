@@ -115,7 +115,8 @@ async function createContext(): Promise<Ctx> {
   const password = "FreezeTest123!";
 
   const reg = await api("POST", "/api/auth/register", {
-    body: { email, password, firstName: "Freeze", lastName: "Test" },
+    // agreeToTerms is required since the signup overhaul — registration 400s without it.
+    body: { email, password, firstName: "Freeze", lastName: "Test", agreeToTerms: true },
   });
   assert.strictEqual(reg.status, 200, `register failed: ${JSON.stringify(reg.body)}`);
   const userId = reg.body.user.id;
@@ -187,11 +188,17 @@ async function integrationTests(ctx: Ctx) {
     assert.strictEqual(before.status, 200);
     assert.strictEqual(before.body.originalContractPriceIncGstCents, EXPECTED_INC);
 
-    // Edit the contracted estimate behind the lock — exactly what the allowance
-    // "not included" flow does, and what used to move the client's number.
+    // Edit the contracted estimate BEHIND the lock.
+    //
+    // storage.updateEstimateItem refuses to touch a locked estimate, which is
+    // correct — but the lock is not what protects the contract sum. The
+    // allowance "not included" flow exists precisely to bypass it (a
+    // contracted allowance sits on a locked estimate, so the flag is the only
+    // way to zero it), and it writes the estimate_items row directly. That is
+    // the threat this test reproduces, so it writes at the same level.
     const items = await storage.getEstimateItems(ctx.estimateId);
     assert.ok(items.length > 0, "precondition: estimate has a line");
-    await storage.updateEstimateItem(items[0].id, { quantity: 0 } as any);
+    await pool.query(`UPDATE estimate_items SET quantity = 0 WHERE id = $1`, [items[0].id]);
 
     // The live summary really has moved...
     const summary = await storage.getEstimateSummary(ctx.estimateId);
@@ -209,7 +216,7 @@ async function integrationTests(ctx: Ctx) {
     assert.strictEqual(after.body.revisedContractPriceIncGstCents, EXPECTED_INC);
 
     // Restore so the later recompute/backfill checks read a sane estimate.
-    await storage.updateEstimateItem(items[0].id, { quantity: 1 } as any);
+    await pool.query(`UPDATE estimate_items SET quantity = 1 WHERE id = $1`, [items[0].id]);
   });
 
   await test("recomputeContractPriceSnapshots skips contracted jobs", async () => {
