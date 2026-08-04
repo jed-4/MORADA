@@ -10,6 +10,7 @@ import {
   type ChecklistTemplate,
   type UserRole,
 } from "@shared/schema";
+import { compareNames } from "@shared/utils";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -158,7 +159,7 @@ export default function ChecklistTemplates() {
           template.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
           template.type.toLowerCase().includes(searchTerm.toLowerCase())
         )
-        .sort((a, b) => a.name.localeCompare(b.name)),
+        .sort((a, b) => compareNames(a.name, b.name)),
     [templates, searchTerm],
   );
 

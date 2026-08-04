@@ -13,6 +13,7 @@ import {
   type Task,
   type ScheduleItem,
 } from "@shared/schema";
+import { compareNames } from "@shared/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -542,7 +543,7 @@ export default function ChecklistInstanceDetail() {
     // were all written with order 0.
     Object.keys(groups).forEach(key => {
       groups[key].sort((a, b) =>
-        (a.order ?? 0) - (b.order ?? 0) || (a.description || '').localeCompare(b.description || ''));
+        (a.order ?? 0) - (b.order ?? 0) || compareNames(a.description, b.description));
     });
 
     return groups;
@@ -554,7 +555,7 @@ export default function ChecklistInstanceDetail() {
     () =>
       Object.keys(groupedItems).sort((a, b) =>
         (groupedItems[a][0]?.groupOrder ?? 0) - (groupedItems[b][0]?.groupOrder ?? 0) ||
-        a.localeCompare(b)),
+        compareNames(a, b)),
     [groupedItems],
   );
 

@@ -31,6 +31,7 @@ import { WidgetProps } from "@/types/widgets";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { type ChecklistInstance, type ChecklistInstanceGroup, type ChecklistInstanceItem } from "@shared/schema";
+import { compareNames } from "@shared/utils";
 import { useProject } from "@/contexts/ProjectContext";
 import { useAuth } from "@/hooks/use-auth";
 import { useLocation } from "wouter";
@@ -146,7 +147,7 @@ function useInstanceGroups(instanceId: string) {
       const data = await response.json();
       // Authored order, with name as the tie-break for legacy rows.
       return data.sort((a: ChecklistGroupWithItems, b: ChecklistGroupWithItems) =>
-        (a.order ?? 0) - (b.order ?? 0) || (a.name || '').localeCompare(b.name || ''));
+        (a.order ?? 0) - (b.order ?? 0) || compareNames(a.name, b.name));
     },
   });
 }
@@ -320,7 +321,7 @@ export default function ChecklistWidget({ widget, onUpdate, isConfiguring, onClo
         if (assigneeFilter !== "all" && checklist.assigneeId !== assigneeFilter) return false;
         return true;
       })
-      .sort((a, b) => a.name.localeCompare(b.name));
+      .sort((a, b) => compareNames(a.name, b.name));
   }, [checklists, statusFilter, assigneeFilter, hideCompletedGroups]);
 
   const displayChecklists = useMemo(
@@ -1053,7 +1054,7 @@ function DrawerChecklist({
       const data = await response.json();
       // Authored order, with description as the tie-break for legacy rows.
       return data.sort((a: ChecklistInstanceItem, b: ChecklistInstanceItem) =>
-        (a.order ?? 0) - (b.order ?? 0) || (a.description || '').localeCompare(b.description || ''));
+        (a.order ?? 0) - (b.order ?? 0) || compareNames(a.description, b.description));
     },
     enabled: isExpanded,
   });
