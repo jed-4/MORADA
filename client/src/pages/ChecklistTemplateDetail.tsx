@@ -9,6 +9,7 @@ import {
   type ChecklistTemplateItem,
   type UserRole,
 } from "@shared/schema";
+import { compareNames } from "@shared/utils";
 import {
   DndContext,
   closestCenter,
@@ -264,7 +265,7 @@ export default function ChecklistTemplateDetail() {
     () =>
       allItems
         .filter(item => item.groupId === selectedGroupId)
-        .sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || a.description.localeCompare(b.description)),
+        .sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || compareNames(a.description, b.description)),
     [allItems, selectedGroupId],
   );
 
