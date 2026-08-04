@@ -179,9 +179,8 @@ import {
 // a ReferenceError at runtime (every selections-portal request 500ed).
 import * as schema from "@shared/schema";
 import Anthropic from "@anthropic-ai/sdk";
-import { AI_TOOLS } from "./ai/tools";
 import { AI_MODEL, buildSystemPrompt, buildCircuitStartMessage } from "./ai/prompts";
-import { executeTool } from "./ai/executor";
+import { aiAssistantContext, executeTool, toAnthropicTools } from "./tools";
 import { computeBillTotalsCents, billLineExGstCents, clampRoundingCents } from "@shared/billTotals";
 import { computeVariationTotals, computeVariationLinePriceCents } from "@shared/variationTotals";
 import { PENDING_VARIATION_STATUSES } from "@shared/projectMetrics";
@@ -24490,7 +24489,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           model: AI_MODEL,
           max_tokens: 1024,
           system: systemPrompt,
-          tools: AI_TOOLS as any,
+          tools: toAnthropicTools(),
           messages: claudeMessages,
         });
 
@@ -24505,7 +24504,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         for (const block of response.content) {
           if ((block as any).type === "tool_use") {
             const tb = block as any;
-            const result = await executeTool(tb.name, tb.input || {}, companyId, userId, conversationId);
+            const result = await executeTool(
+              tb.name,
+              tb.input || {},
+              aiAssistantContext(companyId, userId, conversationId),
+            );
             toolResults.push({
               type: "tool_result",
               tool_use_id: tb.id,
@@ -24644,7 +24647,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           model: AI_MODEL,
           max_tokens: 1024,
           system: systemPrompt,
-          tools: AI_TOOLS as any,
+          tools: toAnthropicTools(),
           messages: claudeMessages,
         });
 
@@ -24659,7 +24662,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         for (const block of response.content) {
           if ((block as any).type === "tool_use") {
             const tb = block as any;
-            const result = await executeTool(tb.name, tb.input || {}, companyId, userId, conv.id);
+            const result = await executeTool(
+              tb.name,
+              tb.input || {},
+              aiAssistantContext(companyId, userId, conv.id),
+            );
             toolResults.push({
               type: "tool_result",
               tool_use_id: tb.id,
