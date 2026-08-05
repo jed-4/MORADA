@@ -41,6 +41,19 @@ export interface MoreTile {
   showUnreadBadge?: boolean;
   /** Render in the destructive (statusDanger) style. */
   destructive?: boolean;
+  /** Hidden on the subbie tier (builder-team feature that doesn't apply solo). */
+  hideForSubbie?: boolean;
+  /** Shown ONLY on the subbie tier. */
+  subbieOnly?: boolean;
+}
+
+/** Drop tiles that don't apply to the current tier. */
+export function filterMoreTiles(tiles: MoreTile[], isSubbie: boolean): MoreTile[] {
+  return tiles.filter((t) => {
+    if (t.subbieOnly && !isSubbie) return false;
+    if (t.hideForSubbie && isSubbie) return false;
+    return true;
+  });
 }
 
 export const workspaceItems: MoreTile[] = [
@@ -48,9 +61,10 @@ export const workspaceItems: MoreTile[] = [
   { id: 'site-diary', label: 'Site Diary', icon: 'book', color: 'primary', action: { type: 'more-screen', screen: 'SiteDiaryList' } },
   { id: 'tasks', label: 'My Tasks', icon: 'checkbox', color: 'lavender', action: { type: 'more-screen', screen: 'Tasks' } },
   { id: 'timesheets', label: 'Timesheets', icon: 'time', color: 'amber', action: { type: 'more-screen', screen: 'Timesheets' } },
-  { id: 'checklists', label: 'Checklists', icon: 'checkmark-done', color: 'sage', action: { type: 'more-screen', screen: 'Checklists' } },
-  { id: 'schedule', label: 'Schedule', icon: 'calendar', color: 'rose', action: { type: 'more-screen', screen: 'Schedule' } },
-  { id: 'messages', label: 'Messages', icon: 'chatbubbles', color: 'teal', action: { type: 'tab', tab: 'Messages' }, showUnreadBadge: true },
+  { id: 'create-invoice', label: 'Create Invoice', icon: 'receipt', color: 'teal', action: { type: 'more-screen', screen: 'SubbieInvoice' }, subbieOnly: true },
+  { id: 'checklists', label: 'Checklists', icon: 'checkmark-done', color: 'sage', action: { type: 'more-screen', screen: 'Checklists' }, hideForSubbie: true },
+  { id: 'schedule', label: 'Schedule', icon: 'calendar', color: 'rose', action: { type: 'more-screen', screen: 'Schedule' }, hideForSubbie: true },
+  { id: 'messages', label: 'Messages', icon: 'chatbubbles', color: 'teal', action: { type: 'tab', tab: 'Messages' }, showUnreadBadge: true, hideForSubbie: true },
 ];
 
 export const createItems: MoreTile[] = [

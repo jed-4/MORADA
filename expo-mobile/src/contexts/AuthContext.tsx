@@ -17,12 +17,14 @@ interface User {
   roleName?: string;
   userCategory?: string;
   profileImageUrl?: string;
+  chosenPlan?: string;
 }
 
 interface AuthContextType {
   user: User | null;
   isLoading: boolean;
   isAuthenticated: boolean;
+  isSubbie: boolean;
   login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
   loginWithSession: (sessionId: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => Promise<void>;
@@ -132,6 +134,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         user,
         isLoading,
         isAuthenticated: !!user,
+        isSubbie: user?.chosenPlan === 'subbie',
         login,
         loginWithSession,
         logout,

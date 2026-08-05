@@ -17,6 +17,8 @@ import { navigationIntegration } from '../lib/sentry';
 import { useAuth } from '../contexts/AuthContext';
 import LoginScreen from '../screens/LoginScreen';
 import ForgotPasswordScreen from '../screens/ForgotPasswordScreen';
+import SubbieOnboardingScreen from '../screens/SubbieOnboardingScreen';
+import SubbieCreateInvoiceScreen from '../screens/SubbieCreateInvoiceScreen';
 import DashboardScreen from '../screens/DashboardScreen';
 import BusinessDashboardScreen from '../screens/BusinessDashboardScreen';
 import ProjectsScreen from '../screens/ProjectsScreen';
@@ -168,6 +170,7 @@ function MoreStack() {
       <Stack.Screen name="Checklists" component={ChecklistsScreen} options={{ headerShown: true, title: 'Checklists' }} />
       <Stack.Screen name="Tasks" component={TasksScreen} options={{ headerShown: false }} />
       <Stack.Screen name="Timesheets" component={TimesheetsScreen} options={{ headerShown: false }} />
+      <Stack.Screen name="SubbieInvoice" component={SubbieCreateInvoiceScreen} options={{ headerShown: true, title: 'Create Invoice' }} />
       <Stack.Screen name="MyCalendar" component={CalendarScreen} options={{ headerShown: false }} />
       <Stack.Screen name="Notes" component={NotesListScreen} options={{ headerShown: true, title: 'Notes' }} />
       <Stack.Screen name="NoteEditor" component={NoteEditorScreen} options={{ headerShown: false }} />
@@ -370,6 +373,7 @@ export default function AppNavigator() {
           <>
             <Stack.Screen name="Login" component={LoginScreen} />
             <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
+            <Stack.Screen name="SubbieOnboarding" component={SubbieOnboardingScreen} />
           </>
         )}
       </Stack.Navigator>

@@ -13,6 +13,7 @@ import { PressableScale } from './ui/PressableScale';
 import {
   workspaceItems,
   createItems,
+  filterMoreTiles,
   MORE_COLOR_BG,
   type MoreTile,
 } from './more/items';
@@ -81,7 +82,7 @@ const MorePanel = forwardRef<MorePanelHandle, MorePanelProps>(function MorePanel
 }, ref) {
   const theme = useTheme();
   const toast = useToast();
-  const { user } = useAuth();
+  const { user, isSubbie } = useAuth();
 
   const sheetRef = useRef<SheetRef>(null);
   const taskSheetRef = useRef<SheetRef>(null);
@@ -195,7 +196,7 @@ const MorePanel = forwardRef<MorePanelHandle, MorePanelProps>(function MorePanel
         <Animated.View entering={FadeInDown.duration(300).delay(60)} style={styles.section}>
           <SectionHeader title="Workspace" />
           <View style={styles.grid}>
-            {workspaceItems.map((tile) => (
+            {filterMoreTiles(workspaceItems, isSubbie).map((tile) => (
               <Tile
                 key={tile.id}
                 tile={tile}
@@ -209,7 +210,7 @@ const MorePanel = forwardRef<MorePanelHandle, MorePanelProps>(function MorePanel
         <Animated.View entering={FadeInDown.duration(300).delay(120)} style={styles.section}>
           <SectionHeader title="Create" />
           <View style={styles.grid}>
-            {createItems.map((tile) => (
+            {filterMoreTiles(createItems, isSubbie).map((tile) => (
               <Tile key={tile.id} tile={tile} onPress={() => runAction(tile)} />
             ))}
           </View>
