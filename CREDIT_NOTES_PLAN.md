@@ -82,7 +82,9 @@ This is what makes raise-only work end to end: raise in Morada → push → allo
 
 ## 2. Data model
 
-### Migration `0038_credit_notes.sql`
+### Migration `0040_credit_notes.sql`
+
+> **Number checked 2026-08-04.** `0036` is claimed by `feat/allowances`, `0037` is in main (checklist), and **`0038` + `0039` are claimed by `feat/rfq`** — all unmerged. `0040` is the first free number today. **Re-check before writing the file**, because whichever of those branches merges first shifts the landscape; `git ls-tree --name-only origin/<branch> migrations/` across the remote branches is the way to confirm.
 
 ```sql
 -- Xero keeps credit allocations separate from payments:
@@ -117,7 +119,7 @@ CREATE INDEX bill_credit_allocations_target_idx ON bill_credit_allocations(targe
 
 No change to `bills` columns. `billTypeEnum` already has `credit`.
 
-**Prod:** migrations 0034/0035/0036/0037 are already prod-pending per the runbook. Apply this one manually via `psql` against `ep-delicate-flower`, in order, **before** deploying the code. Never `db:push`.
+**Prod:** several migrations (0032–0037 across merged and unmerged branches) are already prod-pending per the runbook — confirm the real applied state against prod before adding to the queue. Apply this one manually via `psql` against `ep-delicate-flower` (**real prod** — the Replit Shell DB is dev), in order, **before** deploying the code. Never `db:push`.
 
 ### Drizzle (`shared/schema.ts`)
 
@@ -376,9 +378,9 @@ If any bogus invoice has already been **paid or reconciled** in Xero, stop and h
 | Phase | Scope | Migration | Ship as |
 |---|---|---|---|
 | **0** | Push guard rejecting credits (§8) + the D5 PO fix | none | hotfix, straight to main |
-| **1** | `createCreditNote`/`updateCreditNote`/`getCreditNote`/`getXeroDocument`, push dispatch, attachments resource param, sync + webhook fixes, **`creditedAmount` read + due math (§1.5.1)**, client copy + type lock, §6 audit fixes | `0038` | `feat/xero-credit-notes` |
+| **1** | `createCreditNote`/`updateCreditNote`/`getCreditNote`/`getXeroDocument`, push dispatch, attachments resource param, sync + webhook fixes, **`creditedAmount` read + due math (§1.5.1)**, client copy + type lock, §6 audit fixes | `0040` (verify) | `feat/xero-credit-notes` |
 | **2** | `listCreditNotes`, import preview union + typed import payload, reconcile union, surprise-detection tuning | none | stacked on Phase 1 |
-| **3** | **NOT BUILT** — allocation-from-Morada. Retained in §3.7 / §7.5 / §2 as an option. Decided against 2026-08-04 (§1.5). | table half of `0038` | — |
+| **3** | **NOT BUILT** — allocation-from-Morada. Retained in §3.7 / §7.5 / §2 as an option. Decided against 2026-08-04 (§1.5). | table half of `0040` | — |
 
 Phases 1 and 2 are independently deployable, and together are the complete feature under the raise-only decision.
 
