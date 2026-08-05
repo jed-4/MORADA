@@ -276,6 +276,13 @@ export default function LoginScreen({ navigation }: { navigation: any }) {
           >
             <Text style={styles.forgotText}>Forgot password?</Text>
           </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.forgotButton}
+            onPress={() => navigation.navigate('SubbieOnboarding')}
+          >
+            <Text style={styles.forgotText}>New here? Set up as a subbie</Text>
+          </TouchableOpacity>
         </View>
       </View>
     </KeyboardAvoidingView>
