@@ -12,6 +12,7 @@ import { useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
+import { markWelcomeEmailBannerPending } from "@/components/WelcomeEmailBanner";
 
 const userProfileSchema = z.object({
   firstName: z.string().min(1, "First name is required"),
@@ -160,6 +161,9 @@ export default function OnboardingPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/auth/user'] });
+      // Arm the "check your inbox" banner for the first app load. Set only
+      // here, so it can only ever fire for a brand-new signup.
+      markWelcomeEmailBannerPending();
       toast({
         title: "You're all set!",
         description: "Your 14-day free trial has started.",
@@ -209,14 +213,14 @@ export default function OnboardingPage() {
               ? "Welcome to Morada!"
               : step === 2
                 ? (needsProfile ? "Create Your Company" : "Welcome to Morada!")
-                : "Choose Your Plan"}
+                : "Start your 14-day free trial"}
           </h1>
           <p className="text-muted-foreground mb-1" data-testid="text-onboarding-subtitle">
             {step === 1
               ? "Let's start by completing your profile"
               : step === 2
                 ? "Let's set up your company details"
-                : "Start with a 14-day free trial. No charge today — pick the plan that fits."}
+                : "No card required. Pick the plan that fits — you can change it any time."}
           </p>
           <p className="text-xs text-muted-foreground" data-testid="text-step-indicator">
             Step {displayStep} of {totalSteps}
@@ -442,6 +446,34 @@ export default function OnboardingPage() {
 
         {step === 3 && (
           <div className="space-y-6">
+            {/* The trial is the offer — say so before the price cards, not in
+                fine print underneath them. Truthful as built: no card is
+                collected anywhere in this flow. */}
+            <div
+              className="rounded-lg border-2 border-primary bg-[hsl(var(--primary-light))] px-5 py-4 text-center"
+              data-testid="banner-trial-offer"
+            >
+              <p className="text-lg font-semibold text-foreground sm:text-xl">
+                Start your 14-day free trial — no card required
+              </p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Nothing is charged today and you won't be asked for card details to start.
+                Pick a plan below so we know what to set you up with.
+              </p>
+              <div className="flex justify-center pt-3">
+                <Button
+                  type="button"
+                  size="lg"
+                  className="w-full sm:w-auto"
+                  onClick={() => selectPlanMutation.mutate()}
+                  disabled={selectPlanMutation.isPending}
+                  data-testid="button-start-trial-top"
+                >
+                  {selectPlanMutation.isPending ? "Starting your trial..." : "Start 14-day free trial"}
+                </Button>
+              </div>
+            </div>
+
             <div className="flex items-center justify-center">
               <div className="inline-flex items-center gap-1 rounded-md border p-1" role="tablist" aria-label="Billing cycle">
                 <Button
@@ -517,7 +549,7 @@ export default function OnboardingPage() {
             </div>
 
             <p className="text-center text-xs text-muted-foreground">
-              Your card won't be charged during the 14-day trial. You can change or cancel your plan anytime.
+              Nothing is charged during the 14-day trial and no card is needed to start. You can change or cancel your plan anytime.
               {selectedPlan === "subbie"
                 ? " Your trial runs on the Subbie tier."
                 : " Your trial includes full Studio access, so you can try everything."}
@@ -527,6 +559,7 @@ export default function OnboardingPage() {
               <Button
                 type="button"
                 size="lg"
+                className="w-full sm:w-auto"
                 onClick={() => selectPlanMutation.mutate()}
                 disabled={selectPlanMutation.isPending}
                 data-testid="button-start-trial"
