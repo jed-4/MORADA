@@ -9392,8 +9392,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post('/api/bill-inbox/poll-now', requireAuth, async (req: any, res) => {
     try {
+      const companyId = getSessionCompanyId(req);
+      if (!companyId) {
+        return res.status(400).json({ message: 'No company context' });
+      }
       const { pollBillInbox } = await import('./services/gmailBillPoller');
-      const result = await pollBillInbox();
+      const result = await pollBillInbox(companyId);
       res.json({ success: true, ...result });
     } catch (error: any) {
       console.error('[BillInbox] Manual poll error:', error.message);

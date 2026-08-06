@@ -605,6 +605,12 @@ export interface IStorage {
   // Company Settings
   getCompanySettings(companyId?: string): Promise<CompanySettings | undefined>;
   updateCompanySettings(settings: Partial<InsertCompanySettings>, companyId?: string): Promise<CompanySettings | undefined>;
+  /**
+   * Every company's settings row. Deliberately cross-tenant — only for
+   * background workers that must fan out over all companies (the bill inbox
+   * poller). Never reachable from a request path.
+   */
+  getAllCompanySettings(): Promise<CompanySettings[]>;
 
   // System Configuration
   getSystemConfiguration(): Promise<SystemConfiguration | undefined>;
@@ -5533,6 +5539,10 @@ export class MemStorage implements IStorage {
   // Company Settings
   async getCompanySettings(): Promise<CompanySettings | undefined> {
     return this.companySettings;
+  }
+
+  async getAllCompanySettings(): Promise<CompanySettings[]> {
+    return this.companySettings ? [this.companySettings] : [];
   }
 
   async updateCompanySettings(settings: Partial<InsertCompanySettings>): Promise<CompanySettings | undefined> {
@@ -13816,6 +13826,10 @@ export class DbStorage implements IStorage {
     // Legacy: first (historically only) company settings record
     const [settings] = await db.select().from(schema.companySettings).limit(1);
     return settings;
+  }
+
+  async getAllCompanySettings(): Promise<CompanySettings[]> {
+    return await db.select().from(schema.companySettings);
   }
 
   async getFirstCompanyId(): Promise<string | undefined> {
