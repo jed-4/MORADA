@@ -43,6 +43,21 @@ export function toSafeUser(user: User): SafeUser {
 }
 
 /**
+ * The caller's owning company, or undefined when the session has none.
+ *
+ * Two shapes have to be handled: production sets `req.user` to the full DB user
+ * via requireAuth, while the development bypass in routes.ts injects a lighter
+ * object plus the legacy `req.session.companyId` fields. Reading both keeps
+ * tenancy scoping identical in dev and prod.
+ */
+export function getSessionCompanyId(req: Request): string | undefined {
+  const fromUser = (req.user as any)?.companyId;
+  if (fromUser) return String(fromUser);
+  const fromSession = (req.session as any)?.companyId;
+  return fromSession ? String(fromSession) : undefined;
+}
+
+/**
  * Session-based authentication middleware
  * Validates user session and loads user data
  */

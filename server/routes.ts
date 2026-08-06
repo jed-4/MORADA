@@ -196,7 +196,7 @@ import { z } from "zod";
 import { fromZodError } from "zod-validation-error";
 import { eq, and, asc, desc, or, isNull, isNotNull, sql, min, max, gte, lte, inArray, gt, ne, notExists } from "drizzle-orm";
 import { PasswordUtils } from "./utils/auth";
-import { requireAuth, requireAdmin, requireTeamMember, requireTeamMemberOrClient, requirePermission, requirePlatformStaff, toSafeUser, isAdminRole } from "./middleware/auth";
+import { requireAuth, requireAdmin, requireTeamMember, requireTeamMemberOrClient, requirePermission, requirePlatformStaff, toSafeUser, isAdminRole, getSessionCompanyId } from "./middleware/auth";
 import { clientAccessGate } from "./middleware/clientAccess";
 import { requireActivePlan } from "./middleware/plan";
 import { getStripe, isStripeConfigured } from "./stripe";
@@ -9232,7 +9232,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get('/api/bill-inbox/status', requireAuth, async (req: any, res) => {
     try {
-      const settings = await storage.getCompanySettings();
+      const companyId = getSessionCompanyId(req);
+      if (!companyId) {
+        return res.status(400).json({ message: 'No company context' });
+      }
+      const settings = await storage.getCompanySettings(companyId);
       if (!settings) {
         return res.json({ connected: false, pollingEnabled: false, email: null, lastPolledAt: null });
       }
@@ -9252,9 +9256,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get('/api/bill-inbox/auth-url', requireAuth, async (req: any, res) => {
     try {
-      const { GoogleOAuthService } = await import('./services/googleOAuthService');
+      const companyId = getSessionCompanyId(req);
+      if (!companyId) {
+        return res.status(400).json({ message: 'No company context' });
+      }
+      const { GoogleOAuthService, signOAuthState } = await import('./services/googleOAuthService');
       const oauthService = new GoogleOAuthService(storage);
-      const state = Buffer.from(JSON.stringify({ action: 'bill-inbox', timestamp: Date.now() })).toString('base64');
+      // The callback is unauthenticated, so the signed state is what carries
+      // the owning company across the Google round trip.
+      const state = signOAuthState({
+        action: 'bill-inbox',
+        companyId,
+        userId: String(req.user?.id ?? ''),
+      });
       const authUrl = oauthService.generateBillInboxAuthUrl(state);
       res.json({ authUrl });
     } catch (error) {
@@ -9265,14 +9279,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get('/api/bill-inbox/callback', async (req: any, res) => {
     try {
-      const { code, error } = req.query;
+      const { code, error, state } = req.query;
       if (error) {
         return res.redirect(`/settings?tab=integrations&bill_inbox_error=${encodeURIComponent(error)}`);
       }
       if (!code) {
         return res.redirect('/settings?tab=integrations&bill_inbox_error=missing_code');
       }
-      const { GoogleOAuthService } = await import('./services/googleOAuthService');
+
+      const { GoogleOAuthService, verifyOAuthState } = await import('./services/googleOAuthService');
+
+      // This route has no requireAuth (Google redirects the browser here), so
+      // the signed state is the authority on which company the consent is for.
+      // An unverifiable state means someone handed the user this URL — bind
+      // nothing.
+      const verified = verifyOAuthState(state, 'bill-inbox');
+      if (!verified) {
+        console.warn('[BillInbox] Rejected callback with missing/invalid state');
+        return res.redirect('/settings?tab=integrations&bill_inbox_error=invalid_state');
+      }
+      const companyId = verified.companyId;
+
+      // Belt and braces: the session cookie survives Google's top-level
+      // redirect, so when one is present it must agree with the state.
+      const sessionCompanyId = getSessionCompanyId(req);
+      if (sessionCompanyId && sessionCompanyId !== companyId) {
+        console.warn('[BillInbox] Callback state/session company mismatch — rejecting');
+        return res.redirect('/settings?tab=integrations&bill_inbox_error=invalid_state');
+      }
+
       const oauthService = new GoogleOAuthService(storage);
       const result = await oauthService.handleBillInboxCallback(code as string);
 
@@ -9286,7 +9321,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         billInboxStatus: null,
         billInboxLastError: null,
         billInboxLastErrorAt: null,
-      });
+      }, companyId);
 
       console.log('[BillInbox] Connected Gmail account:', result.email);
       res.redirect('/settings?tab=integrations&bill_inbox_success=true');
@@ -9298,6 +9333,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post('/api/bill-inbox/disconnect', requireAuth, async (req: any, res) => {
     try {
+      const companyId = getSessionCompanyId(req);
+      if (!companyId) {
+        return res.status(400).json({ message: 'No company context' });
+      }
       await storage.updateCompanySettings({
         billInboxGmailEmail: null,
         billInboxGmailAccessToken: null,
@@ -9306,7 +9345,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         billInboxGmailConnectedAt: null,
         billInboxPollingEnabled: false,
         billInboxLastPolledAt: null,
-      });
+      }, companyId);
       res.json({ success: true });
     } catch (error) {
       console.error('[BillInbox] Error disconnecting:', error);
@@ -9316,8 +9355,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post('/api/bill-inbox/toggle-polling', requireAuth, async (req: any, res) => {
     try {
+      const companyId = getSessionCompanyId(req);
+      if (!companyId) {
+        return res.status(400).json({ message: 'No company context' });
+      }
       const { enabled } = req.body;
-      await storage.updateCompanySettings({ billInboxPollingEnabled: !!enabled });
+      await storage.updateCompanySettings({ billInboxPollingEnabled: !!enabled }, companyId);
       res.json({ success: true, pollingEnabled: !!enabled });
     } catch (error) {
       console.error('[BillInbox] Error toggling polling:', error);
@@ -9327,8 +9370,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post('/api/bill-inbox/set-default-user', requireAuth, async (req: any, res) => {
     try {
+      const companyId = getSessionCompanyId(req);
+      if (!companyId) {
+        return res.status(400).json({ message: 'No company context' });
+      }
       const { userId } = req.body;
-      await storage.updateCompanySettings({ billInboxDefaultUserId: userId || null });
+      // Don't let a company point its bill inbox at a user it doesn't own.
+      if (userId) {
+        const target = await storage.getUser(userId);
+        if (!target || target.companyId !== companyId) {
+          return res.status(404).json({ message: 'User not found' });
+        }
+      }
+      await storage.updateCompanySettings({ billInboxDefaultUserId: userId || null }, companyId);
       res.json({ success: true });
     } catch (error) {
       console.error('[BillInbox] Error setting default user:', error);
