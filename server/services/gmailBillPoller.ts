@@ -52,7 +52,7 @@ export async function pollBillInbox(companyId: string): Promise<{ processed: num
       billInboxGmailAccessToken: settings.billInboxGmailAccessToken,
       billInboxGmailRefreshToken: settings.billInboxGmailRefreshToken,
       billInboxGmailTokenExpiry: settings.billInboxGmailTokenExpiry,
-    });
+    }, companyId);
     console.log('[BillInbox] Gmail client obtained successfully');
   } catch (err: any) {
     console.error('[BillInbox] Failed to get Gmail client (token error):', err.message);

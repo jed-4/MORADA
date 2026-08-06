@@ -632,7 +632,7 @@ export async function pushBillToXeroInternal(
     // required" 400s as a friendly pre-flight error instead of a Xero round-trip.
     let companyDefaultAccountCode: string | undefined;
     try {
-      const settings = await storage.getCompanySettings();
+      const settings = await storage.getCompanySettings(companyId);
       companyDefaultAccountCode = settings?.billDefaultXeroAccount || undefined;
     } catch {}
 
@@ -5883,7 +5883,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // didn't specify one (checked on the raw body, since the insert schema
       // defaults an omitted value to 0 and we couldn't otherwise tell them apart).
       if (req.body.projectMarkupPercent === undefined || req.body.projectMarkupPercent === null) {
-        const settings = await storage.getCompanySettings();
+        const settings = await storage.getCompanySettings(getSessionCompanyId(req));
         const def = (settings as any)?.defaultBuilderMarginPercent;
         if (typeof def === "number" && def > 0) {
           validationResult.data.projectMarkupPercent = def;
@@ -11350,7 +11350,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
     let fyStartMonth = 7;
     try {
-      const settings = await storage.getCompanySettings();
+      const settings = await storage.getCompanySettings(companyId);
       const raw = (settings as any)?.fiscalYearStart;
       if (typeof raw === "string") {
         const m = parseInt(raw.split("-")[0] || "", 10);
@@ -17748,7 +17748,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const companyId = (req as any).user?.companyId;
 
       const bills = await storage.getBills(projectId, undefined, companyId || undefined);
-      const settings = await storage.getCompanySettings();
+      const settings = await storage.getCompanySettings(companyId);
       const taxRate = Number(settings?.taxRate ?? 10) || 10;
 
       const changes: Array<{
@@ -18923,17 +18923,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const [variation] = await db.select().from(variations).where(eq(variations.portalToken, token));
       if (!variation) return res.status(404).json({ error: "Portal link not found" });
 
-      const [projectRows, items, bills, timesheets, settings] = await Promise.all([
+      const [projectRows, items, bills, timesheets] = await Promise.all([
         variation.projectId
           ? db.select().from(projects).where(eq(projects.id, variation.projectId))
           : Promise.resolve([] as any[]),
         storage.getVariationItems(variation.id),
         storage.getVariationBills(variation.id),
         storage.getVariationTimesheets(variation.id),
-        storage.getCompanySettings().catch(() => undefined),
       ]);
       const project: any = projectRows[0];
       const company = project ? await storage.getCompany(project.companyId) : undefined;
+      // No session here — the portal token is the only credential — so the
+      // branding/terms shown to the client come from the company that owns the
+      // variation's project, never from whichever settings row came back first.
+      const settings = project?.companyId
+        ? await storage.getCompanySettings(project.companyId).catch(() => undefined)
+        : undefined;
 
       // Lines the builder marked "hide from client" are dropped server-side;
       // remaining lines expose only client-price fields.
@@ -19161,7 +19166,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         mimeType: "application/pdf",
       }] : undefined;
 
-      const settings = await storage.getCompanySettings();
+      const settings = await storage.getCompanySettings(getSessionCompanyId(req));
       const fromName = settings?.companyName || "Morada";
 
       await sendGenericEmail({
@@ -19522,7 +19527,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       };
 
       if (to) {
-        const settings = await storage.getCompanySettings();
+        const settings = await storage.getCompanySettings(req.user.companyId);
         const fromName = settings?.companyName || "Morada";
 
         await sendGenericEmail({
@@ -21531,7 +21536,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         mimeType: "application/pdf",
       }] : undefined;
 
-      const settings = await storage.getCompanySettings();
+      const settings = await storage.getCompanySettings(getSessionCompanyId(req));
       const fromName = settings?.companyName || "Morada";
 
       await sendGenericEmail({
@@ -21941,7 +21946,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         storage.getProposalSections(req.params.id),
         storage.getProposalItems(req.params.id),
         storage.getProposalPaymentMilestones(req.params.id),
-        storage.getCompanySettings(),
+        storage.getCompanySettings(getSessionCompanyId(req)),
       ]);
 
       const sentDate = sentAt ? new Date(sentAt) : new Date();
@@ -27852,7 +27857,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!ownedTimesheet) return;
 
       if (req.user.companyId) {
-        const settings = await storage.getCompanySettings();
+        const settings = await storage.getCompanySettings(getSessionCompanyId(req));
         if (settings?.timesheetAutoRound) {
           const existing = await storage.getTimesheet(req.params.id);
           if (existing) {
@@ -34703,7 +34708,7 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
         storage.getActiveTimesheet(userId).catch(() => null),
         storage.getTimesheets(undefined, { userId }).catch(() => []),
         storage.getAllScheduleItems(companyId, scheduleRange).catch(() => []),
-        storage.getCompanySettings().catch(() => null),
+        storage.getCompanySettings(companyId).catch(() => null),
         storage.getCostCodes(companyId).then(codes => codes.filter(c => c.availableInTimesheets === true)).catch(() => []),
         storage.getActivities({ userId, companyId, limit: 20 }).catch(() => []),
       ]);
@@ -35538,7 +35543,7 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
 
       let companyDefaultAccountCode: string | undefined;
       try {
-        const settings = await storage.getCompanySettings();
+        const settings = await storage.getCompanySettings(getSessionCompanyId(req));
         companyDefaultAccountCode = (settings as any)?.billDefaultXeroAccount || undefined;
       } catch {}
 
@@ -35712,9 +35717,12 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
   // Fallback Xero revenue account for client-invoice lines with no account code:
   // company default (Settings → clientInvoiceDefaultXeroAccount) → the Xero
   // account named "Sales". Shared by the push and update routes.
-  const resolveClientInvoiceFallbackAccount = async (connectionId: string): Promise<string | undefined> => {
+  const resolveClientInvoiceFallbackAccount = async (
+    connectionId: string,
+    companyId: string | undefined,
+  ): Promise<string | undefined> => {
     try {
-      const settings = await storage.getCompanySettings();
+      const settings = await storage.getCompanySettings(companyId);
       const configured = (settings as any)?.clientInvoiceDefaultXeroAccount;
       if (configured) return configured;
     } catch {}
@@ -35853,7 +35861,7 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
       //   line.accountCode -> company default -> Xero account named "Sales".
       // Xero rejects AUTHORISED invoices whose lines have no account code, so we
       // pre-flight this rather than let the push 400.
-      const fallbackAccountCode = await resolveClientInvoiceFallbackAccount(connection.id);
+      const fallbackAccountCode = await resolveClientInvoiceFallbackAccount(connection.id, getSessionCompanyId(req));
 
       const lineTracking: any[] = [];
       if (projectXeroTrackingOptionId && connection.trackingCategory2Id) {
@@ -36013,7 +36021,7 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
         return date.toISOString().split("T")[0];
       };
 
-      const fallbackAccountCode = await resolveClientInvoiceFallbackAccount(connection.id);
+      const fallbackAccountCode = await resolveClientInvoiceFallbackAccount(connection.id, getSessionCompanyId(req));
 
       const lineTracking: any[] = [];
       if (projectXeroTrackingOptionId && connection.trackingCategory2Id) {

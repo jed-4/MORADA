@@ -13888,10 +13888,14 @@ export class DbStorage implements IStorage {
 
   async syncCompanyName(): Promise<{ synced: boolean; name?: string }> {
     try {
-      const settings = await this.getCompanySettings();
-      if (!settings?.companyName) return { synced: false };
+      // Legacy startup heal for the original single-tenant install. It only
+      // ever targets the primary company, so it must read that company's own
+      // settings — reading an unscoped row would stamp a second tenant's
+      // company name onto the primary company on the next boot.
       const primaryId = await this.getFirstCompanyId();
       if (!primaryId) return { synced: false };
+      const settings = await this.getCompanySettings(primaryId);
+      if (!settings?.companyName) return { synced: false };
       await db.update(schema.companies)
         .set({ name: settings.companyName })
         .where(and(
@@ -15983,7 +15987,9 @@ export class DbStorage implements IStorage {
         .where(eq(schema.billLineItems.billId, billId));
       if (lines.length === 0) return false;
 
-      const settings = await this.getCompanySettings();
+      // Tax rate comes from the bill's own company — recomputing a bill must
+      // never pick up another tenant's configured rate.
+      const settings = await this.getCompanySettings(bill.companyId ?? undefined);
       const taxRate = Number(settings?.taxRate ?? 10) || 10;
       const taxMode = bill.taxMode === "inclusive" ? "inclusive" : "exclusive";
       const { subtotal, tax, total } = computeBillTotalsCents(

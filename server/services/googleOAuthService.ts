@@ -520,11 +520,21 @@ export class GoogleOAuthService {
     };
   }
 
+  /**
+   * The companyId is required because a successful refresh writes the new
+   * access token straight back to company_settings. Without it that write went
+   * through the unscoped fallback and could land a live Gmail token in another
+   * company's settings row.
+   */
   async getBillInboxGmailClient(settings: {
     billInboxGmailAccessToken: string;
     billInboxGmailRefreshToken: string;
     billInboxGmailTokenExpiry?: Date | null;
-  }): Promise<any> {
+  }, companyId: string): Promise<any> {
+    if (!companyId) {
+      throw new Error('getBillInboxGmailClient requires a companyId');
+    }
+
     let accessToken: string;
     let refreshToken: string;
 
@@ -562,7 +572,7 @@ export class GoogleOAuthService {
           await this.storage.updateCompanySettings({
             billInboxGmailAccessToken: encryptedNew,
             billInboxGmailTokenExpiry: newExpiry,
-          });
+          }, companyId);
         }
       } catch (err: any) {
         console.log('[BillInbox] Token refresh failed, using existing credentials:', err.message);
