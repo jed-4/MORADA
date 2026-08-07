@@ -10774,6 +10774,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/users/:id", requireAuth, requirePermission("admin.users", "edit"), async (req, res) => {
     try {
+      // Tenancy: admin.users:edit says the caller may edit users, not that they
+      // may edit THIS user. Without this an admin in company A could edit any
+      // company B user by id — including their email, role and password.
+      // 404 rather than 403, matching the other ownership guards.
+      const callerCompanyId = getSessionCompanyId(req);
+      const target = await storage.getUser(req.params.id);
+      if (!callerCompanyId || !target || target.companyId !== callerCompanyId) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
       // Validate password strength if password is being updated
       if (req.body.password) {
         const passwordValidation = PasswordUtils.validatePasswordStrength(req.body.password);
@@ -10813,6 +10823,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "New password is required" });
       }
 
+      // Same gap as PATCH /api/users/:id, but the consequence is worse: without
+      // this, an admin in company A could set the password of any company B
+      // user and log in as them.
+      const callerCompanyId = getSessionCompanyId(req);
+      const pwTarget = await storage.getUser(req.params.id);
+      if (!callerCompanyId || !pwTarget || pwTarget.companyId !== callerCompanyId) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
       const user = await storage.changeUserPassword(req.params.id, newPassword);
       if (!user) {
         return res.status(404).json({ error: "User not found" });
@@ -10829,8 +10848,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Send password reset link to user (manager-initiated)
   app.post("/api/users/:id/send-password-reset", requireAuth, requirePermission("admin.users", "edit"), async (req, res) => {
     try {
+      const callerCompanyId = getSessionCompanyId(req);
       const targetUser = await storage.getUser(req.params.id);
-      if (!targetUser || !targetUser.email) {
+      // Ownership before anything else: unchecked, this mints a password-reset
+      // token for another company's user and emails it to them.
+      if (!callerCompanyId || !targetUser || targetUser.companyId !== callerCompanyId) {
+        return res.status(404).json({ error: "User not found" });
+      }
+      if (!targetUser.email) {
         return res.status(404).json({ error: "User not found or has no email" });
       }
       
