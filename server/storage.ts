@@ -603,8 +603,10 @@ export interface IStorage {
   expireLapsedTrials(): Promise<{ expired: number }>;
   
   // Company Settings
-  getCompanySettings(companyId?: string): Promise<CompanySettings | undefined>;
-  updateCompanySettings(settings: Partial<InsertCompanySettings>, companyId?: string): Promise<CompanySettings | undefined>;
+  // companyId is required on both, so tsc rejects any caller that would fall
+  // back to reading or writing an arbitrary tenant's settings row.
+  getCompanySettings(companyId: string): Promise<CompanySettings | undefined>;
+  updateCompanySettings(settings: Partial<InsertCompanySettings>, companyId: string): Promise<CompanySettings | undefined>;
   /**
    * Every company's settings row. Deliberately cross-tenant — only for
    * background workers that must fan out over all companies (the bill inbox
@@ -1680,7 +1682,9 @@ export class MemStorage implements IStorage {
   private costCategories: Map<string, CostCategory>;
   private costCodes: Map<string, CostCode>;
   private companies: Map<string, import("@shared/schema").Company>;
-  private companySettings: CompanySettings | undefined;
+  // Keyed by companyId. A single shared row here would make the in-memory
+  // store behave exactly like the cross-tenant bug this replaced.
+  private companySettings: Map<string, CompanySettings> = new Map();
   private systemConfiguration: SystemConfiguration | undefined;
   private fieldCategories: Map<string, FieldCategory>;
   private fieldOptions: Map<string, FieldOption>;
@@ -5537,46 +5541,56 @@ export class MemStorage implements IStorage {
   }
 
   // Company Settings
-  async getCompanySettings(): Promise<CompanySettings | undefined> {
-    return this.companySettings;
+  async getCompanySettings(companyId: string): Promise<CompanySettings | undefined> {
+    if (!companyId) {
+      throw new Error('getCompanySettings requires a companyId');
+    }
+    return this.companySettings.get(companyId);
   }
 
   async getAllCompanySettings(): Promise<CompanySettings[]> {
-    return this.companySettings ? [this.companySettings] : [];
+    return Array.from(this.companySettings.values());
   }
 
-  async updateCompanySettings(settings: Partial<InsertCompanySettings>): Promise<CompanySettings | undefined> {
-    if (!this.companySettings) {
-      // Create new company settings if none exist
-      this.companySettings = ({
-        id: randomUUID(),
-        companyName: null,
-        email: null,
-        phone: null,
-        taxRate: "10.00",
-        website: null,
-        address: null,
-        logoUrl: null,
-        facebook: null,
-        linkedin: null,
-        twitter: null,
-        instagram: null,
-        googleMyBusiness: null,
-        yelp: null,
-        isActive: true,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-        ...settings,
-      } as unknown) as CompanySettings;
-    } else {
-      // Update existing settings
-      this.companySettings = ({
-        ...this.companySettings,
-        ...settings,
-        updatedAt: new Date(),
-      } as unknown) as CompanySettings;
+  async updateCompanySettings(settings: Partial<InsertCompanySettings>, companyId: string): Promise<CompanySettings | undefined> {
+    if (!companyId) {
+      throw new Error('updateCompanySettings requires a companyId');
     }
-    return this.companySettings;
+    // The body must never re-point the row at another company.
+    const { companyId: _ignored, ...safeSettings } = settings as any;
+    const existing = this.companySettings.get(companyId);
+
+    const next = existing
+      ? (({
+          ...existing,
+          ...safeSettings,
+          companyId,
+          updatedAt: new Date(),
+        } as unknown) as CompanySettings)
+      : (({
+          id: randomUUID(),
+          companyId,
+          companyName: null,
+          email: null,
+          phone: null,
+          taxRate: "10.00",
+          website: null,
+          address: null,
+          logoUrl: null,
+          facebook: null,
+          linkedin: null,
+          twitter: null,
+          instagram: null,
+          googleMyBusiness: null,
+          yelp: null,
+          isActive: true,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          ...safeSettings,
+        } as unknown) as CompanySettings);
+
+    this.companySettings.set(companyId, next);
+    return next;
   }
 
   // System Configuration
@@ -13796,36 +13810,19 @@ export class DbStorage implements IStorage {
     return { expired: result.rowCount ?? 0 };
   }
 
-  async getCompanySettings(companyId?: string): Promise<CompanySettings | undefined> {
-    // Per-company row when a companyId is supplied (the /api/company-settings
-    // routes always pass the caller's). Without one (internal service callers),
-    // fall back to the legacy first-row behaviour — single-tenant compatible.
-    if (companyId) {
-      const [scoped] = await db.select().from(schema.companySettings)
-        .where(eq(schema.companySettings.companyId, companyId))
-        .limit(1);
-      if (scoped) return scoped;
-      // Self-heal: claim the legacy unowned (pre-multi-tenant) row for the
-      // first company that reads it; every other company strictly misses and
-      // gets its own row created on first save.
-      const [legacy] = await db.select().from(schema.companySettings)
-        .where(isNull(schema.companySettings.companyId))
-        .limit(1);
-      if (legacy) {
-        const [claimed] = await db.update(schema.companySettings)
-          .set({ companyId, updatedAt: new Date() } as any)
-          .where(and(
-            eq(schema.companySettings.id, legacy.id),
-            isNull(schema.companySettings.companyId),
-          ))
-          .returning();
-        return claimed ?? undefined;
-      }
-      return undefined;
+  async getCompanySettings(companyId: string): Promise<CompanySettings | undefined> {
+    // Fails closed. There used to be an unscoped `LIMIT 1` fallback here for
+    // callers that had no companyId, which returned an arbitrary tenant's row —
+    // including its Gmail OAuth credentials. The parameter is now required, so
+    // tsc rejects a caller that omits it; this guard covers the paths types
+    // can't see (`any`, dynamic dispatch).
+    if (!companyId) {
+      throw new Error('getCompanySettings requires a companyId');
     }
-    // Legacy: first (historically only) company settings record
-    const [settings] = await db.select().from(schema.companySettings).limit(1);
-    return settings;
+    const [scoped] = await db.select().from(schema.companySettings)
+      .where(eq(schema.companySettings.companyId, companyId))
+      .limit(1);
+    return scoped;
   }
 
   async getAllCompanySettings(): Promise<CompanySettings[]> {
@@ -13909,10 +13906,13 @@ export class DbStorage implements IStorage {
     }
   }
 
-  async updateCompanySettings(settings: Partial<InsertCompanySettings>, companyId?: string): Promise<CompanySettings | undefined> {
-    // Per-company row when a companyId is supplied — an admin of company B can
-    // no longer edit the row every other company reads. Never allow the body
+  async updateCompanySettings(settings: Partial<InsertCompanySettings>, companyId: string): Promise<CompanySettings | undefined> {
+    // Required for the same reason as the read: an unscoped write let an admin
+    // of company B edit the row every other company reads. Never allow the body
     // to re-point the row at another company.
+    if (!companyId) {
+      throw new Error('updateCompanySettings requires a companyId');
+    }
     const { companyId: _ignored, ...safeSettings } = settings as any;
     const existing = await this.getCompanySettings(companyId);
 
@@ -13924,9 +13924,9 @@ export class DbStorage implements IStorage {
         .returning();
       return updated;
     } else {
-      // Create new record (stamped with the owning company when known)
+      // Create new record, always stamped with the owning company
       const [created] = await db.insert(schema.companySettings)
-        .values({ ...safeSettings, ...(companyId ? { companyId } : {}) } as any)
+        .values({ ...safeSettings, companyId } as any)
         .returning();
       return created;
     }
