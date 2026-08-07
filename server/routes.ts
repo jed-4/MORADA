@@ -201,6 +201,7 @@ import { clientAccessGate } from "./middleware/clientAccess";
 import { requireActivePlan } from "./middleware/plan";
 import { requireCompany } from "./middleware/requireCompany";
 import { serveUpload } from "./middleware/uploadsAccess";
+import { signUploadGrant, verifyUploadGrant } from "./utils/signedGrant";
 import { getStripe, isStripeConfigured } from "./stripe";
 import {
   isPlanKey,
@@ -9992,12 +9993,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const uploadURL = await objectStorageService.getObjectEntityUploadURL();
       const rawObjectPath = objectStorageService.normalizeObjectEntityPath(uploadURL);
       
-      // Prefix with company ID for access control
+      // NOTE: this prefix is NOT access control, despite how it reads. The
+      // bucket is flat and every consumer strips the segment back off before
+      // the storage lookup, so a caller can put their own company id in front
+      // of another tenant's UUID and the path still resolves. Enforcement comes
+      // from the signed grant below (and, for the serving route, from the
+      // bucket partitioning tracked as PR2 phase 2).
       const objectPath = `/objects/company/${companyId}${rawObjectPath.replace('/objects', '')}`;
+
+      // Binds this exact path to this exact company, unforgeably. Consumers
+      // that have no row to authorise against yet — bill OCR runs before the
+      // bill exists — require it instead of trusting the path.
+      const uploadGrant = signUploadGrant(objectPath, companyId);
 
       res.json({
         uploadURL,
         objectPath,
+        uploadGrant,
         metadata: { name, size, contentType },
       });
     } catch (error) {
@@ -10029,7 +10041,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
           mimetype || "application/octet-stream",
           companyId,
         );
-        res.json({ objectPath, name: originalname, contentType: mimetype });
+        // Same grant as the presigned path, so either upload route can feed OCR.
+        // This route additionally writes companyId into the object's GCS
+        // metadata (uploadObjectEntity does), which the presigned route cannot.
+        const uploadGrant = signUploadGrant(objectPath, companyId);
+        res.json({ objectPath, uploadGrant, name: originalname, contentType: mimetype });
       } catch (error) {
         console.error("[upload/file] Error:", error);
         res.status(500).json({ error: "Failed to upload file" });
@@ -22625,6 +22641,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           filename: fileName,
           mimeType,
           size: buffer.length,
+          // Lets the client re-run OCR on this attachment before the bill row
+          // exists; ocr-from-path no longer trusts the path alone.
+          ...(companyId ? { uploadGrant: signUploadGrant(objectPath, companyId) } : {}),
         };
       } catch (uploadErr: any) {
         console.error("OCR file upload failed:", uploadErr);
@@ -22659,12 +22678,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // and already has an attachment but ocrProcessed is still false.
   app.post("/api/bills/ocr-from-path", requireAuth, async (req, res) => {
     try {
-      const { objectPath, mimeType: mimeHint, filename: filenameHint } = req.body;
+      const { objectPath, mimeType: mimeHint, filename: filenameHint, uploadGrant } = req.body;
       if (!objectPath) return res.status(400).json({ error: "objectPath required" });
 
       const userCompanyId = (req as any).user?.companyId;
-      const expectedPrefix = `/objects/company/${userCompanyId}/`;
-      if (!objectPath.startsWith(expectedPrefix)) {
+      if (!userCompanyId) return res.status(403).json({ error: "Forbidden" });
+
+      // The company segment of objectPath is NOT proof of anything: the bucket
+      // is flat and the segment is stripped below, so putting your own company
+      // id in front of another tenant's UUID used to pass this check and return
+      // their invoice, AI-extracted. The grant is issued by the upload route
+      // for one exact path and company, and is unforgeable.
+      if (!verifyUploadGrant(uploadGrant, objectPath, userCompanyId)) {
         return res.status(403).json({ error: "Forbidden" });
       }
 
@@ -22702,7 +22727,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const dataUrl = `data:${mimeType};base64,${base64}`;
 
       const { processInvoiceWithAI } = await import("./services/aiBillReader");
-      const attachmentMeta = { objectPath, filename, mimeType, size: fileBuffer.length };
+      // Re-issued so a retry of this same OCR call still authorises.
+      const attachmentMeta = {
+        objectPath, filename, mimeType, size: fileBuffer.length,
+        uploadGrant: signUploadGrant(objectPath, userCompanyId),
+      };
       try {
         const result = await processInvoiceWithAI(dataUrl, filename);
         res.json({ ...result, attachment: attachmentMeta });
@@ -22952,7 +22981,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const dataUrl = `data:${mimeType};base64,${base64}`;
 
       const { processInvoiceWithAI } = await import("./services/aiBillReader");
-      const attachmentMeta = { objectPath, filename, mimeType, size: fileBuffer.length };
+      // Re-issued so a retry of this same OCR call still authorises.
+      const attachmentMeta = {
+        objectPath, filename, mimeType, size: fileBuffer.length,
+        uploadGrant: signUploadGrant(objectPath, userCompanyId),
+      };
 
       // Skip re-extraction if this bill was already successfully processed and
       // the user did not explicitly force a re-run. The auto-OCR trigger on

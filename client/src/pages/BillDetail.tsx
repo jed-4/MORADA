@@ -265,7 +265,7 @@ export default function BillDetail() {
   const [ocrPreviewOpen, setOcrPreviewOpen] = useState(false);
   const [addSupplierDialogOpen, setAddSupplierDialogOpen] = useState(false);
   const [attachmentUrls, setAttachmentUrls] = useState<string[]>([]);
-  const [attachmentMeta, setAttachmentMeta] = useState<Record<string, { filename: string; mimeType?: string }>>({});
+  const [attachmentMeta, setAttachmentMeta] = useState<Record<string, { filename: string; mimeType?: string; uploadGrant?: string }>>({});
   const [sheetPreviewUrl, setSheetPreviewUrl] = useState<string | null>(null);
   const [sheetPreviewFilename, setSheetPreviewFilename] = useState<string>("");
   const [modalPreviewFile, setModalPreviewFile] = useState<PreviewFile | null>(null);
@@ -1615,7 +1615,7 @@ export default function BillDetail() {
   // it into pendingAttachments + attachmentUrls (the create payload picks it
   // up); for existing bills we POST it through the dedicated endpoint.
   const persistOcrAttachment = async (
-    attachment: { objectPath: string; filename?: string; mimeType?: string; size?: number },
+    attachment: { objectPath: string; filename?: string; mimeType?: string; size?: number; uploadGrant?: string },
     file: File | null,
   ): Promise<{ ok: boolean }> => {
     const filename = attachment.filename || file?.name || "invoice";
@@ -1638,7 +1638,7 @@ export default function BillDetail() {
       }
     }
     setAttachmentUrls((prev) => (prev.includes(attachment.objectPath) ? prev : [...prev, attachment.objectPath]));
-    if (filename) setAttachmentMeta(prev => ({ ...prev, [attachment.objectPath]: { filename, mimeType } }));
+    if (filename) setAttachmentMeta(prev => ({ ...prev, [attachment.objectPath]: { filename, mimeType, uploadGrant: attachment.uploadGrant } }));
     setPendingAttachments((prev) =>
       prev.some((p) => p.objectPath === attachment.objectPath)
         ? prev
@@ -1718,6 +1718,9 @@ export default function BillDetail() {
         objectPath,
         mimeType: meta?.mimeType,
         filename: meta?.filename,
+        // Proves this company uploaded this path; the server no longer trusts
+        // the company segment of objectPath, which any caller can forge.
+        uploadGrant: meta?.uploadGrant,
       });
     },
     onSuccess: (data: any) => {
@@ -1890,7 +1893,7 @@ export default function BillDetail() {
         const uploadResult = await uploadFile(file);
         if (uploadResult?.objectPath) {
           recordPendingAttachment(uploadResult.objectPath, file, "manual");
-          setAttachmentMeta(prev => ({ ...prev, [uploadResult.objectPath]: { filename: file.name, mimeType: file.type } }));
+          setAttachmentMeta(prev => ({ ...prev, [uploadResult.objectPath]: { filename: file.name, mimeType: file.type, uploadGrant: uploadResult.uploadGrant } }));
         }
         if (uploadResult?.objectPath && isEditMode && id) {
           // Persist immediately on existing bills via the dedicated endpoint
