@@ -5549,6 +5549,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
     return item;
   };
 
+  // enote → estimate → project → company. The DELETE attachment route already
+  // walked this chain by hand; the read and upload routes did not, which is how
+  // one company's attachment list (and its file URLs) reached another.
+  const getOwnedEnote = async (
+    req: any, res: any, enoteId: string, notFound = "Note not found",
+  ): Promise<any | null> => {
+    if (!enoteId) { res.status(404).json({ error: notFound }); return null; }
+    const { estimateEnotes: estimateEnotesTbl } = await import("@shared/schema");
+    const [enote] = await db.select().from(estimateEnotesTbl)
+      .where(eq(estimateEnotesTbl.id, enoteId)).limit(1);
+    if (!enote) { res.status(404).json({ error: notFound }); return null; }
+    if (!(await getOwnedEstimate(req, res, (enote as any).estimateId, notFound))) return null;
+    return enote;
+  };
+
   const getOwnedEstimateGroup = async (
     req: any, res: any, groupId: string, notFound = "Group not found",
   ): Promise<any | null> => {
@@ -7591,7 +7606,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/estimate-enotes/:rowId/attachments", requireAuth, async (req, res) => {
     try {
-      const attachments = await storage.getEnoteAttachments(req.params.rowId);
+      // Without this the list — including every fileUrl — was returned to any
+      // logged-in user for any company's note.
+      if (!(await getOwnedEnote(req, res, req.params.rowId, "Attachments not found"))) return;
+      const attachments = await storage.getEnoteAttachments(
+        req.params.rowId,
+        getSessionCompanyId(req)!,
+      );
       res.json(attachments);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch attachments" });
@@ -7601,6 +7622,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/estimate-enotes/:rowId/attachments", requireAuth, enoteAttachmentUpload.single("file"), async (req: any, res) => {
     try {
       if (!req.file) return res.status(400).json({ error: "No file uploaded" });
+      // multer has already written the file to disk by the time this runs, so
+      // a rejected upload has to clean up after itself or it orphans up to
+      // 50 MB that nothing will ever reference or serve.
+      const owned = await getOwnedEnote(req, res, req.params.rowId, "Note not found");
+      if (!owned) {
+        try { (await import('fs')).unlinkSync(req.file.path); } catch (_) {}
+        return;
+      }
       const fileUrl = `/uploads/enote-attachments/${req.file.filename}`;
       const attachment = await storage.createEnoteAttachment({
         enoteId: req.params.rowId,
