@@ -200,6 +200,7 @@ import { requireAuth, requireAdmin, requireTeamMember, requireTeamMemberOrClient
 import { clientAccessGate } from "./middleware/clientAccess";
 import { requireActivePlan } from "./middleware/plan";
 import { requireCompany } from "./middleware/requireCompany";
+import { serveUpload } from "./middleware/uploadsAccess";
 import { getStripe, isStripeConfigured } from "./stripe";
 import {
   isPlanKey,
@@ -1453,7 +1454,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Compatibility bridge: sync Passport user to legacy session fields
   // This allows old routes checking req.session.userId to work with Replit Auth
   app.use('/api', ensureLegacySessionFields);
-  
+
+  // Uploaded files. Mounted HERE — below setupAuth — and not in index.ts,
+  // where it was an unauthenticated express.static mount.
+  //
+  // requireAuth is explicit because this path is not under /api, so none of
+  // the /api middleware below (auth, clientAccessGate, requireCompany) ever
+  // sees it. serveUpload then resolves the file's owning company from the
+  // table that references it and 404s on any mismatch, unknown subtree, or
+  // path that escapes the uploads root.
+  app.get('/uploads/*', requireAuth, serveUpload);
+
   // put application routes here
   // prefix all routes with /api
 

@@ -114,8 +114,12 @@ app.use('/api', (_req, res, next) => {
   next();
 });
 
-// Serve uploaded files (avatars, gear photos, etc.)
-app.use('/uploads', express.static(path.resolve(import.meta.dirname, '..', 'uploads')));
+// NOTE: uploaded files are NOT served here. This mount used to be
+// `express.static('/uploads', ...)` at this point in the file — above
+// setupAuth — which made every estimate-note attachment, gear photo and
+// contact avatar readable by anyone who knew a path, with no session.
+// Serving now happens inside registerRoutes, after auth, with a per-file
+// ownership check. See server/middleware/uploadsAccess.ts.
 
 // Set Content Security Policy — frame-ancestors * allows canvas/iframe embedding
 app.use((req, res, next) => {
