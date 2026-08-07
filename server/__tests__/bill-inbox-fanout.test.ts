@@ -26,8 +26,12 @@
 // every Google call is intercepted below. The db.ts production guards that
 // hard-block specific hosts only fire when NODE_ENV === "production".
 process.env.NODE_ENV = "test";
-process.env.DATABASE_URL =
-  process.env.BILL_INBOX_FANOUT_TEST_DB_URL || "postgres://fake:fake@127.0.0.1:1/faketestdb";
+// Overwritten unconditionally, never defaulted from the environment: importing
+// server/storage.ts fires `dbStorage.initialize()` at module load, which runs
+// ensure*Exist / migrate* / backfill* — all WRITES. Pointing this at a real
+// database would run those against it. The loopback port refuses instantly and
+// the failure is caught and logged by storage.ts itself.
+process.env.DATABASE_URL = "postgres://fake:fake@127.0.0.1:1/faketestdb";
 process.env.GOOGLE_OAUTH_CLIENT_ID = process.env.GOOGLE_OAUTH_CLIENT_ID || "fake-client-id";
 process.env.GOOGLE_OAUTH_CLIENT_SECRET = process.env.GOOGLE_OAUTH_CLIENT_SECRET || "fake-client-secret";
 
