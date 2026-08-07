@@ -199,6 +199,7 @@ import { PasswordUtils } from "./utils/auth";
 import { requireAuth, requireAdmin, requireTeamMember, requireTeamMemberOrClient, requirePermission, requirePlatformStaff, toSafeUser, isAdminRole, getSessionCompanyId } from "./middleware/auth";
 import { clientAccessGate } from "./middleware/clientAccess";
 import { requireActivePlan } from "./middleware/plan";
+import { requireCompany } from "./middleware/requireCompany";
 import { getStripe, isStripeConfigured } from "./stripe";
 import {
   isPlanKey,
@@ -1550,6 +1551,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // No-op when Stripe is not configured (billing not live) and skips auth,
   // public, billing and stripe endpoints via its own allowlist.
   app.use('/api', requireActivePlan);
+
+  // Tenancy floor. A session with no companyId can't be scoped to a tenant, so
+  // it gets nothing but the onboarding surface — this closes the list endpoints
+  // that silently skipped their company filter when companyId was undefined.
+  app.use('/api', requireCompany);
 
   // ---- Billing: select a plan (starts the 14-day trial) ----
   // Called at the end of onboarding once the company exists. Sets the chosen
