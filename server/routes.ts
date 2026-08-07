@@ -9227,7 +9227,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { GoogleOAuthService } = await import('./services/googleOAuthService');
       const oauthService = new GoogleOAuthService(storage);
-      const authUrl = oauthService.generateAuthUrl(req.user.id);
+      const calCompanyId = getSessionCompanyId(req);
+      if (!calCompanyId) {
+        return res.status(400).json({ message: 'No company context' });
+      }
+      const authUrl = oauthService.generateAuthUrl(req.user.id, calCompanyId);
       res.json({ authUrl });
     } catch (error: any) {
       console.error("Error generating Google OAuth URL:", error);
