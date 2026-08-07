@@ -34290,6 +34290,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       const projectId = req.params.projectId;
+      // The companyId check above only proves the caller HAS a company, not
+      // that they own this project — so any project's tasks, RFIs, RFQs and
+      // estimates were summarised for any logged-in user.
+      if (!(await enforceProjectCompany(req, res, projectId, "Project not found"))) return;
+
       const today = new Date();
       today.setHours(0, 0, 0, 0);
       const tomorrow = new Date(today);
