@@ -23144,13 +23144,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const projectId = req.query.projectId as string | undefined;
       const userId = req.query.userId as string | undefined;
-      const companyId = req.query.companyId as string | undefined;
       const limit = req.query.limit ? parseInt(req.query.limit as string) : 50;
 
-      // At least one filter is required
-      if (!projectId && !userId && !companyId) {
-        return res.status(400).json({ error: "At least one of projectId, userId, or companyId is required" });
+      // companyId comes from the session, never the query. It used to be read
+      // straight off req.query, so naming another company returned its
+      // activity feed — who did what, on which project, when.
+      const companyId = getSessionCompanyId(req);
+      if (!companyId) {
+        return res.status(403).json({ error: "No company context" });
       }
+
+      // A project filter must also belong to the caller; otherwise the
+      // company scope below is bypassed by naming a foreign project.
+      if (projectId && !(await enforceProjectCompany(req, res, projectId, "Project not found"))) return;
 
       const activities = await storage.getActivities({ projectId, userId, companyId, limit });
       res.json(activities);
@@ -23172,7 +23178,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         userName: user.firstName && user.lastName 
           ? `${user.firstName} ${user.lastName}` 
           : user.email,
-        companyId: req.body.companyId || user.companyId,
+        // Session only: a companyId in the body used to win, which let a
+        // caller write activity entries into another company's feed.
+        companyId: getSessionCompanyId(req),
       });
       const activity = await storage.createActivity(activityData);
       res.json(activity);
