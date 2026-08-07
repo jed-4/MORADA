@@ -8910,7 +8910,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       let isAdminLike = false;
       if (user.roleId) {
         try {
-          const role = await storage.getUserRole(user.roleId);
+          const role = user.companyId ? await storage.getUserRole(user.roleId, user.companyId) : undefined;
           if (role) {
             const roleName = (role.name ?? '').toLowerCase();
             isAdminLike =
@@ -11122,7 +11122,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       // Check if user has permission - must be creator or admin/manager
-      const userRole = await storage.getUserRole(user.roleId);
+      const userRole = user.companyId ? await storage.getUserRole(user.roleId, user.companyId) : undefined;
       const isAdminOrManager = userRole && (userRole.name === "Admin" || userRole.name === "Manager");
       const isCreator = existingView.creatorId === user.id;
       
@@ -13010,8 +13010,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // client/supplier users are free/unlimited). Only enforced once billing
       // is live (Stripe configured). -1 = unlimited.
       if (isStripeConfigured() && validationResult.data.userCategory === 'team') {
-        const invitedRole = validationResult.data.roleId
-          ? await storage.getUserRole(validationResult.data.roleId)
+        // Scoped to the inviting company: an invitation must never resolve a
+        // role belonging to someone else's company.
+        const invitedRole = validationResult.data.roleId && companyId
+          ? await storage.getUserRole(validationResult.data.roleId, companyId)
           : null;
         const isMobileOnly = !!(invitedRole as any)?.isMobileOnly;
         if (!isMobileOnly) {
@@ -13770,7 +13772,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const approver = await resolveApprover(req);
     if (!approver) return false;
     const user = await storage.getUser(approver.id);
-    const role = user?.roleId ? await storage.getUserRole(user.roleId) : null;
+    const role = user?.roleId && user.companyId ? await storage.getUserRole(user.roleId, user.companyId) : null;
     if (role && isAdminRole(role)) return true;
     return await storage.checkUserPermission(approver.id, "projects.selections", "approve");
   }
@@ -19277,7 +19279,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (req.user.userCategory !== 'team') {
         workerUserId = req.user.id;
       } else if (req.user.roleId) {
-        const role = await storage.getUserRole(req.user.roleId);
+        const role = req.user.companyId ? await storage.getUserRole(req.user.roleId, req.user.companyId) : undefined;
         if (!role || !isAdminRole(role)) {
           workerUserId = req.user.id;
         }
@@ -19371,7 +19373,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // Verify project access for non-admin workers
         let isAdmin = false;
         if (req.user.userCategory === 'team' && req.user.roleId) {
-          const role = await storage.getUserRole(req.user.roleId);
+          const role = req.user.companyId ? await storage.getUserRole(req.user.roleId, req.user.companyId) : undefined;
           if (role && isAdminRole(role)) isAdmin = true;
         }
         if (!isAdmin) {
@@ -27028,7 +27030,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     if (process.env.NODE_ENV === "development") return true;
     if (!user?.roleId) return false;
     try {
-      const role = await storage.getUserRole(user.roleId);
+      const role = user.companyId ? await storage.getUserRole(user.roleId, user.companyId) : undefined;
       if (role && isAdminRole(role)) return true;
       // Batch, don't look each permission up in the loop (N+1 — see the
       // effectivePermissions comment in /api/auth/user).

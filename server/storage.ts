@@ -243,7 +243,10 @@ export interface IStorage {
 
   // User Role operations  
   getUserRoles(category?: UserCategory, companyId?: string): Promise<UserRole[]>;
-  getUserRole(id: string, companyId?: string): Promise<UserRole | undefined>;
+  // companyId required: a role is only meaningful inside its own company, and
+  // resolving a roleId that points at another company's role grants that
+  // company's permissions.
+  getUserRole(id: string, companyId: string): Promise<UserRole | undefined>;
   createUserRole(role: InsertUserRole): Promise<UserRole>;
   updateUserRole(id: string, role: Partial<InsertUserRole>, companyId?: string): Promise<UserRole | undefined>;
   deleteUserRole(id: string, companyId?: string): Promise<boolean>;
@@ -7822,7 +7825,7 @@ export class DbStorage implements IStorage {
     
     let role;
     if (user.roleId) {
-      role = await this.getUserRole(user.roleId);
+      role = user.companyId ? await this.getUserRole(user.roleId, user.companyId) : undefined;
     }
     
     return { ...user, role };
@@ -8547,12 +8550,15 @@ export class DbStorage implements IStorage {
     }
   }
 
-  async getUserRole(id: string, companyId?: string): Promise<UserRole | undefined> {
+  async getUserRole(id: string, companyId: string): Promise<UserRole | undefined> {
+    if (!companyId) {
+      throw new Error('getUserRole requires a companyId');
+    }
     try {
-      const conditions = [eq(schema.userRoles.id, id)];
-      if (companyId) {
-        conditions.push(eq(schema.userRoles.companyId, companyId));
-      }
+      const conditions = [
+        eq(schema.userRoles.id, id),
+        eq(schema.userRoles.companyId, companyId),
+      ];
       
       const results = await db.select()
         .from(schema.userRoles)
@@ -8981,7 +8987,7 @@ export class DbStorage implements IStorage {
       if (!user || !user.roleId) return false;
 
       // Check if user has an admin-level built-in role (bypass permission check)
-      const role = await this.getUserRole(user.roleId);
+      const role = user.companyId ? await this.getUserRole(user.roleId, user.companyId) : undefined;
       if (role && role.isBuiltIn) {
         const roleName = role.name?.toLowerCase() || '';
         const isAdminRole = 

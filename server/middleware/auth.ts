@@ -82,7 +82,7 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     // or when a role was assigned without updating the cached column.
     if (!user.roleName && user.roleId) {
       try {
-        const role = await storage.getUserRole(user.roleId);
+        const role = user.companyId ? await storage.getUserRole(user.roleId, user.companyId) : undefined;
         if (role?.name) {
           (user as any).roleName = role.name;
         }
@@ -121,7 +121,7 @@ export async function requireAdmin(req: Request, res: Response, next: NextFuncti
     return;
   }
 
-  const role = await storage.getUserRole(req.user.roleId);
+  const role = req.user.companyId ? await storage.getUserRole(req.user.roleId, req.user.companyId) : undefined;
   if (!role || !isAdminRole(role)) {
     res.status(403).json({ error: 'Admin role required' });
     return;
@@ -162,7 +162,7 @@ export function requirePermission(permissionKey: string, action: 'view' | 'add' 
 
     try {
       // Check if user has an admin-level role (bypass permission check for admins)
-      const role = await storage.getUserRole(req.user.roleId);
+      const role = req.user.companyId ? await storage.getUserRole(req.user.roleId, req.user.companyId) : undefined;
       if (role && isAdminRole(role)) {
         next();
         return;
