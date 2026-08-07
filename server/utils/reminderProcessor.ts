@@ -466,15 +466,19 @@ export async function processRecurringTaskTemplates() {
 
 export async function processTimesheetOvertimeReminders() {
   try {
-    const settings = await storage.getCompanySettings();
-    if (!settings || !settings.timesheetReminderEnabled) {
-      return;
-    }
-
-    const thresholdHours = parseFloat(settings.timesheetReminderThresholdHours as string) || 10;
     const activeTimesheets = await storage.getAllActiveTimesheets();
-    
+
     if (activeTimesheets.length === 0) return;
+
+    // getAllActiveTimesheets is global, so the reminder settings have to be
+    // resolved per timesheet-owner. Reading a single unscoped settings row let
+    // one company's "reminders off" switch (or its threshold) silently govern
+    // every other company's clocked-in users. One query, indexed by company.
+    const settingsByCompany = new Map(
+      (await storage.getAllCompanySettings())
+        .filter((s) => s.companyId)
+        .map((s) => [s.companyId as string, s]),
+    );
 
     const now = new Date();
     let notified = 0;
@@ -485,8 +489,6 @@ export async function processTimesheetOvertimeReminders() {
       const clockIn = new Date(ts.clockInTime);
       const hoursElapsed = (now.getTime() - clockIn.getTime()) / (1000 * 60 * 60);
 
-      if (hoursElapsed < thresholdHours) continue;
-
       const lastNotified = timesheetReminderSent.get(ts.id);
       if (lastNotified && (now.getTime() - lastNotified) < 60 * 60 * 1000) {
         continue;
@@ -495,6 +497,13 @@ export async function processTimesheetOvertimeReminders() {
       try {
         const user = await storage.getUser(ts.userId);
         if (!user?.companyId) continue;
+
+        // Each company's own reminder switch and threshold.
+        const settings = settingsByCompany.get(user.companyId);
+        if (!settings || !settings.timesheetReminderEnabled) continue;
+
+        const thresholdHours = parseFloat(settings.timesheetReminderThresholdHours as string) || 10;
+        if (hoursElapsed < thresholdHours) continue;
 
         const hoursStr = Math.floor(hoursElapsed).toString();
 

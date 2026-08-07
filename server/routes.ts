@@ -196,9 +196,10 @@ import { z } from "zod";
 import { fromZodError } from "zod-validation-error";
 import { eq, and, asc, desc, or, isNull, isNotNull, sql, min, max, gte, lte, inArray, gt, ne, notExists } from "drizzle-orm";
 import { PasswordUtils } from "./utils/auth";
-import { requireAuth, requireAdmin, requireTeamMember, requireTeamMemberOrClient, requirePermission, requirePlatformStaff, toSafeUser, isAdminRole } from "./middleware/auth";
+import { requireAuth, requireAdmin, requireTeamMember, requireTeamMemberOrClient, requirePermission, requirePlatformStaff, toSafeUser, isAdminRole, getSessionCompanyId } from "./middleware/auth";
 import { clientAccessGate } from "./middleware/clientAccess";
 import { requireActivePlan } from "./middleware/plan";
+import { requireCompany } from "./middleware/requireCompany";
 import { getStripe, isStripeConfigured } from "./stripe";
 import {
   isPlanKey,
@@ -632,7 +633,7 @@ export async function pushBillToXeroInternal(
     // required" 400s as a friendly pre-flight error instead of a Xero round-trip.
     let companyDefaultAccountCode: string | undefined;
     try {
-      const settings = await storage.getCompanySettings();
+      const settings = await storage.getCompanySettings(companyId);
       companyDefaultAccountCode = settings?.billDefaultXeroAccount || undefined;
     } catch {}
 
@@ -1550,6 +1551,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // No-op when Stripe is not configured (billing not live) and skips auth,
   // public, billing and stripe endpoints via its own allowlist.
   app.use('/api', requireActivePlan);
+
+  // Tenancy floor. A session with no companyId can't be scoped to a tenant, so
+  // it gets nothing but the onboarding surface — this closes the list endpoints
+  // that silently skipped their company filter when companyId was undefined.
+  app.use('/api', requireCompany);
 
   // ---- Billing: select a plan (starts the 14-day trial) ----
   // Called at the end of onboarding once the company exists. Sets the chosen
@@ -5883,7 +5889,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // didn't specify one (checked on the raw body, since the insert schema
       // defaults an omitted value to 0 and we couldn't otherwise tell them apart).
       if (req.body.projectMarkupPercent === undefined || req.body.projectMarkupPercent === null) {
-        const settings = await storage.getCompanySettings();
+        const settings = await storage.getCompanySettings(getSessionCompanyId(req));
         const def = (settings as any)?.defaultBuilderMarginPercent;
         if (typeof def === "number" && def > 0) {
           validationResult.data.projectMarkupPercent = def;
@@ -9232,7 +9238,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get('/api/bill-inbox/status', requireAuth, async (req: any, res) => {
     try {
-      const settings = await storage.getCompanySettings();
+      const companyId = getSessionCompanyId(req);
+      if (!companyId) {
+        return res.status(400).json({ message: 'No company context' });
+      }
+      const settings = await storage.getCompanySettings(companyId);
       if (!settings) {
         return res.json({ connected: false, pollingEnabled: false, email: null, lastPolledAt: null });
       }
@@ -9252,9 +9262,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get('/api/bill-inbox/auth-url', requireAuth, async (req: any, res) => {
     try {
-      const { GoogleOAuthService } = await import('./services/googleOAuthService');
+      const companyId = getSessionCompanyId(req);
+      if (!companyId) {
+        return res.status(400).json({ message: 'No company context' });
+      }
+      const { GoogleOAuthService, signOAuthState } = await import('./services/googleOAuthService');
       const oauthService = new GoogleOAuthService(storage);
-      const state = Buffer.from(JSON.stringify({ action: 'bill-inbox', timestamp: Date.now() })).toString('base64');
+      // The callback is unauthenticated, so the signed state is what carries
+      // the owning company across the Google round trip.
+      const state = signOAuthState({
+        action: 'bill-inbox',
+        companyId,
+        userId: String(req.user?.id ?? ''),
+      });
       const authUrl = oauthService.generateBillInboxAuthUrl(state);
       res.json({ authUrl });
     } catch (error) {
@@ -9265,14 +9285,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get('/api/bill-inbox/callback', async (req: any, res) => {
     try {
-      const { code, error } = req.query;
+      const { code, error, state } = req.query;
       if (error) {
         return res.redirect(`/settings?tab=integrations&bill_inbox_error=${encodeURIComponent(error)}`);
       }
       if (!code) {
         return res.redirect('/settings?tab=integrations&bill_inbox_error=missing_code');
       }
-      const { GoogleOAuthService } = await import('./services/googleOAuthService');
+
+      const { GoogleOAuthService, verifyOAuthState } = await import('./services/googleOAuthService');
+
+      // This route has no requireAuth (Google redirects the browser here), so
+      // the signed state is the authority on which company the consent is for.
+      // An unverifiable state means someone handed the user this URL — bind
+      // nothing.
+      const verified = verifyOAuthState(state, 'bill-inbox');
+      if (!verified) {
+        console.warn('[BillInbox] Rejected callback with missing/invalid state');
+        return res.redirect('/settings?tab=integrations&bill_inbox_error=invalid_state');
+      }
+      const companyId = verified.companyId;
+
+      // Belt and braces: the session cookie survives Google's top-level
+      // redirect, so when one is present it must agree with the state.
+      const sessionCompanyId = getSessionCompanyId(req);
+      if (sessionCompanyId && sessionCompanyId !== companyId) {
+        console.warn('[BillInbox] Callback state/session company mismatch — rejecting');
+        return res.redirect('/settings?tab=integrations&bill_inbox_error=invalid_state');
+      }
+
       const oauthService = new GoogleOAuthService(storage);
       const result = await oauthService.handleBillInboxCallback(code as string);
 
@@ -9286,7 +9327,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         billInboxStatus: null,
         billInboxLastError: null,
         billInboxLastErrorAt: null,
-      });
+      }, companyId);
 
       console.log('[BillInbox] Connected Gmail account:', result.email);
       res.redirect('/settings?tab=integrations&bill_inbox_success=true');
@@ -9298,6 +9339,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post('/api/bill-inbox/disconnect', requireAuth, async (req: any, res) => {
     try {
+      const companyId = getSessionCompanyId(req);
+      if (!companyId) {
+        return res.status(400).json({ message: 'No company context' });
+      }
       await storage.updateCompanySettings({
         billInboxGmailEmail: null,
         billInboxGmailAccessToken: null,
@@ -9306,7 +9351,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         billInboxGmailConnectedAt: null,
         billInboxPollingEnabled: false,
         billInboxLastPolledAt: null,
-      });
+      }, companyId);
       res.json({ success: true });
     } catch (error) {
       console.error('[BillInbox] Error disconnecting:', error);
@@ -9316,8 +9361,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post('/api/bill-inbox/toggle-polling', requireAuth, async (req: any, res) => {
     try {
+      const companyId = getSessionCompanyId(req);
+      if (!companyId) {
+        return res.status(400).json({ message: 'No company context' });
+      }
       const { enabled } = req.body;
-      await storage.updateCompanySettings({ billInboxPollingEnabled: !!enabled });
+      await storage.updateCompanySettings({ billInboxPollingEnabled: !!enabled }, companyId);
       res.json({ success: true, pollingEnabled: !!enabled });
     } catch (error) {
       console.error('[BillInbox] Error toggling polling:', error);
@@ -9327,8 +9376,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post('/api/bill-inbox/set-default-user', requireAuth, async (req: any, res) => {
     try {
+      const companyId = getSessionCompanyId(req);
+      if (!companyId) {
+        return res.status(400).json({ message: 'No company context' });
+      }
       const { userId } = req.body;
-      await storage.updateCompanySettings({ billInboxDefaultUserId: userId || null });
+      // Don't let a company point its bill inbox at a user it doesn't own.
+      if (userId) {
+        const target = await storage.getUser(userId);
+        if (!target || target.companyId !== companyId) {
+          return res.status(404).json({ message: 'User not found' });
+        }
+      }
+      await storage.updateCompanySettings({ billInboxDefaultUserId: userId || null }, companyId);
       res.json({ success: true });
     } catch (error) {
       console.error('[BillInbox] Error setting default user:', error);
@@ -9338,8 +9398,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post('/api/bill-inbox/poll-now', requireAuth, async (req: any, res) => {
     try {
+      const companyId = getSessionCompanyId(req);
+      if (!companyId) {
+        return res.status(400).json({ message: 'No company context' });
+      }
       const { pollBillInbox } = await import('./services/gmailBillPoller');
-      const result = await pollBillInbox();
+      const result = await pollBillInbox(companyId);
       res.json({ success: true, ...result });
     } catch (error: any) {
       console.error('[BillInbox] Manual poll error:', error.message);
@@ -11292,7 +11356,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
     let fyStartMonth = 7;
     try {
-      const settings = await storage.getCompanySettings();
+      const settings = await storage.getCompanySettings(companyId);
       const raw = (settings as any)?.fiscalYearStart;
       if (typeof raw === "string") {
         const m = parseInt(raw.split("-")[0] || "", 10);
@@ -17690,7 +17754,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const companyId = (req as any).user?.companyId;
 
       const bills = await storage.getBills(projectId, undefined, companyId || undefined);
-      const settings = await storage.getCompanySettings();
+      const settings = await storage.getCompanySettings(companyId);
       const taxRate = Number(settings?.taxRate ?? 10) || 10;
 
       const changes: Array<{
@@ -18865,17 +18929,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const [variation] = await db.select().from(variations).where(eq(variations.portalToken, token));
       if (!variation) return res.status(404).json({ error: "Portal link not found" });
 
-      const [projectRows, items, bills, timesheets, settings] = await Promise.all([
+      const [projectRows, items, bills, timesheets] = await Promise.all([
         variation.projectId
           ? db.select().from(projects).where(eq(projects.id, variation.projectId))
           : Promise.resolve([] as any[]),
         storage.getVariationItems(variation.id),
         storage.getVariationBills(variation.id),
         storage.getVariationTimesheets(variation.id),
-        storage.getCompanySettings().catch(() => undefined),
       ]);
       const project: any = projectRows[0];
       const company = project ? await storage.getCompany(project.companyId) : undefined;
+      // No session here — the portal token is the only credential — so the
+      // branding/terms shown to the client come from the company that owns the
+      // variation's project, never from whichever settings row came back first.
+      const settings = project?.companyId
+        ? await storage.getCompanySettings(project.companyId).catch(() => undefined)
+        : undefined;
 
       // Lines the builder marked "hide from client" are dropped server-side;
       // remaining lines expose only client-price fields.
@@ -19103,7 +19172,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         mimeType: "application/pdf",
       }] : undefined;
 
-      const settings = await storage.getCompanySettings();
+      const settings = await storage.getCompanySettings(getSessionCompanyId(req));
       const fromName = settings?.companyName || "Morada";
 
       await sendGenericEmail({
@@ -19464,7 +19533,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       };
 
       if (to) {
-        const settings = await storage.getCompanySettings();
+        const settings = await storage.getCompanySettings(req.user.companyId);
         const fromName = settings?.companyName || "Morada";
 
         await sendGenericEmail({
@@ -21473,7 +21542,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         mimeType: "application/pdf",
       }] : undefined;
 
-      const settings = await storage.getCompanySettings();
+      const settings = await storage.getCompanySettings(getSessionCompanyId(req));
       const fromName = settings?.companyName || "Morada";
 
       await sendGenericEmail({
@@ -21883,7 +21952,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         storage.getProposalSections(req.params.id),
         storage.getProposalItems(req.params.id),
         storage.getProposalPaymentMilestones(req.params.id),
-        storage.getCompanySettings(),
+        storage.getCompanySettings(getSessionCompanyId(req)),
       ]);
 
       const sentDate = sentAt ? new Date(sentAt) : new Date();
@@ -27794,7 +27863,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!ownedTimesheet) return;
 
       if (req.user.companyId) {
-        const settings = await storage.getCompanySettings();
+        const settings = await storage.getCompanySettings(getSessionCompanyId(req));
         if (settings?.timesheetAutoRound) {
           const existing = await storage.getTimesheet(req.params.id);
           if (existing) {
@@ -34645,7 +34714,7 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
         storage.getActiveTimesheet(userId).catch(() => null),
         storage.getTimesheets(undefined, { userId }).catch(() => []),
         storage.getAllScheduleItems(companyId, scheduleRange).catch(() => []),
-        storage.getCompanySettings().catch(() => null),
+        storage.getCompanySettings(companyId).catch(() => null),
         storage.getCostCodes(companyId).then(codes => codes.filter(c => c.availableInTimesheets === true)).catch(() => []),
         storage.getActivities({ userId, companyId, limit: 20 }).catch(() => []),
       ]);
@@ -35480,7 +35549,7 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
 
       let companyDefaultAccountCode: string | undefined;
       try {
-        const settings = await storage.getCompanySettings();
+        const settings = await storage.getCompanySettings(getSessionCompanyId(req));
         companyDefaultAccountCode = (settings as any)?.billDefaultXeroAccount || undefined;
       } catch {}
 
@@ -35654,9 +35723,12 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
   // Fallback Xero revenue account for client-invoice lines with no account code:
   // company default (Settings → clientInvoiceDefaultXeroAccount) → the Xero
   // account named "Sales". Shared by the push and update routes.
-  const resolveClientInvoiceFallbackAccount = async (connectionId: string): Promise<string | undefined> => {
+  const resolveClientInvoiceFallbackAccount = async (
+    connectionId: string,
+    companyId: string | undefined,
+  ): Promise<string | undefined> => {
     try {
-      const settings = await storage.getCompanySettings();
+      const settings = await storage.getCompanySettings(companyId);
       const configured = (settings as any)?.clientInvoiceDefaultXeroAccount;
       if (configured) return configured;
     } catch {}
@@ -35795,7 +35867,7 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
       //   line.accountCode -> company default -> Xero account named "Sales".
       // Xero rejects AUTHORISED invoices whose lines have no account code, so we
       // pre-flight this rather than let the push 400.
-      const fallbackAccountCode = await resolveClientInvoiceFallbackAccount(connection.id);
+      const fallbackAccountCode = await resolveClientInvoiceFallbackAccount(connection.id, getSessionCompanyId(req));
 
       const lineTracking: any[] = [];
       if (projectXeroTrackingOptionId && connection.trackingCategory2Id) {
@@ -35955,7 +36027,7 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
         return date.toISOString().split("T")[0];
       };
 
-      const fallbackAccountCode = await resolveClientInvoiceFallbackAccount(connection.id);
+      const fallbackAccountCode = await resolveClientInvoiceFallbackAccount(connection.id, getSessionCompanyId(req));
 
       const lineTracking: any[] = [];
       if (projectXeroTrackingOptionId && connection.trackingCategory2Id) {
