@@ -179,22 +179,79 @@ through a user subquery. No change needed.
 
 ---
 
-## Part 2 — Still open (PR 2)
+## Part 2 — Fixed on branch `feat/tenant-isolation-pr2`
 
-Not yet investigated in depth; line references are current as of `4ee73058` plus
-this branch.
+All re-verified against `main` @ `dae1e9c0` before fixing; every line number in
+the original Part 2 list had moved.
 
-| # | Finding | Location |
+| # | Finding | Status |
 |---|---|---|
-| A3 | Object storage validate-then-strip — bill OCR accepts a caller-supplied bucket path. Partition the path per company, or verify the `companyId` GCS metadata written at upload | `POST /api/bills/ocr-from-path` (`routes.ts:22620`) and the object-storage service |
-| A4 | `/uploads` is mounted with `express.static` **before** any auth runs — every uploaded file is world-readable to anyone who can guess a path. Move below `setupAuth` and add an ownership check | `server/index.ts:118` |
-| A5 | `getEnoteAttachments(enoteId)` has no company predicate | `server/storage.ts:11044` |
-| A6 | `/api/activities` takes companyId from the query/body instead of the session — a caller can name another company | `routes.ts:23070` (GET), `:23089` (POST) |
-| A7 | AI summary does not check the project belongs to the caller's company | `GET /api/ai-summary/:projectId` (`routes.ts:34204`) |
-| A8 | `getUserRole(id, companyId?)` — the companyId is optional and most callers omit it | `server/storage.ts:2773`, `:8548` |
-| — | **`PATCH /api/users/:id` IDOR** (found while building the requireCompany allowlist, not in either audit): has `requirePermission("admin.users","edit")` but **no tenancy check** — calls `storage.updateUser` on any id supplied, so an admin in company A can edit company B's users, including email, role and password. Check the siblings at `:10595` (`/xero-link`) and `:10688` (`/timezone`) for the same gap | `routes.ts:10713` |
-| — | Delete two dead files: `server/replit_integrations/object_storage/routes.ts` (unauthenticated wildcard bucket read) and `server/messaging/socket.ts` | — |
-| — | **Sign the Google Calendar OAuth state.** `generateState`/`parseState` are unsigned base64 with only a timestamp check — the same class of forgery fixed for the bill inbox, on the calendar flow. Deliberately left alone in this branch to keep the change scoped | `googleOAuthService.ts:132`, `:145` |
+| A3 | Object-storage validate-then-strip | **Phase 1 done**, phase 2 open — see below |
+| A4 | `/uploads` served by `express.static` above `setupAuth` — every uploaded file readable with no session | **Fixed.** Now `app.get('/uploads/*', requireAuth, serveUpload)` inside `registerRoutes`, resolving each file's owner through the table that references it |
+| A5 | `getEnoteAttachments` had no company predicate | **Fixed.** Route uses a new `getOwnedEnote` guard; storage takes a required companyId and enforces it as a join |
+| A6 | `/api/activities` took companyId from query/body | **Fixed.** Session only, on both GET and POST; GET also verifies a supplied `projectId` |
+| A7 | AI summary never checked the project | **Fixed** via `enforceProjectCompany` |
+| A8 | `getUserRole(id, companyId?)` optional and mostly omitted | **Fixed.** Required on the interface and implementation; all 17 call sites thread the owning company |
+| — | `PATCH /api/users/:id` IDOR | **Fixed**, plus two worse siblings — see below |
+| — | Two dead files | **Deleted** (`object_storage/routes.ts`, `messaging/socket.ts`) |
+| — | Unsigned Google Calendar OAuth state | **Fixed** — reuses `signOAuthState`/`verifyOAuthState`, action-scoped to `calendar` |
+
+### Found while fixing, not in either audit
+
+- **`POST /api/users/:id/change-password` and `/send-password-reset` had the same
+  gap as `PATCH /api/users/:id`, with worse consequences** — both took the id
+  straight from the URL after the permission gate, so an admin in one company
+  could set the password of, or mint a reset token for, a user in another. Fixing
+  only the flagged route would have left the two that actually hand over the
+  account. All three now 404 unless the target is in the caller's company.
+- **`POST /api/estimate-enotes/:rowId/attachments`** never checked the note
+  belonged to the caller, so a user could attach files into another company's
+  estimate note. Fixed alongside A5. Because multer writes to disk before the
+  handler runs, the rejection path now unlinks the file — otherwise a refused
+  upload orphaned up to 50 MB.
+- **The serving route's comment was wrong.** `/objects/company/:companyId/*`
+  carries a comment claiming it fixes tenant isolation. It does not, for exactly
+  the A3 reason. Left in place with a corrected comment; closing it is phase 2.
+
+### A3 — why it split
+
+The bucket is **flat**: every object lives at `${PRIVATE_OBJECT_DIR}/uploads/<uuid>`,
+and the `/objects/company/<id>/` segment exists only in app-level strings. Both
+consumers validate that segment against the session and then **strip it** before
+the storage lookup, so the check only stops you typing someone else's id — not
+putting your **own** id in front of their UUID.
+
+Neither fix the original audit suggested is free:
+
+- Partitioning the bucket needs every existing object copied and every stored
+  path rewritten.
+- Enforcing the `companyId` GCS metadata does not work as written:
+  `uploadObjectEntity` (server-side) writes it, but `getObjectEntityUploadURL`
+  — the **primary** client path — takes no companyId and writes no metadata.
+  Enforcing on read would 403 nearly every existing file.
+
+**Phase 1 (this branch, no migration):** bill OCR — the leg that returns document
+*contents*, and the one with no DB row to authorise against, since OCR runs
+before the bill exists — now requires an HMAC-signed grant binding one exact
+path to one exact company, issued at upload. Generalised into
+`server/utils/signedGrant.ts`.
+
+**Phase 2 (tracked separately, needs a GCS backfill):** partition the bucket,
+migrate existing objects, then enforce on `/objects/company/:companyId/*`.
+
+**Blocked, needs a decision:** "start writing companyId metadata on presign"
+could not be implemented. `signObjectURL` goes through the Replit sidecar with a
+fixed request shape (`bucket_name`, `object_name`, `method`, `expires_at`) — there
+is no way to sign `x-goog-meta-*` headers into the presigned PUT. Options are
+(a) route uploads through the server (`/api/uploads/file` already writes the
+metadata, but puts upload bandwidth through the app), or (b) add a post-upload
+finalize endpoint that stamps metadata server-side. Phase 2 needs a backfill
+either way.
+
+**Severity calibration:** exploiting either A3 leg requires already knowing a
+target UUID. These are random v4 and not enumerable, so this is "reachable *if*
+you learn a UUID", not "any file is reachable". A5 was exactly the kind of
+endpoint that leaks them, which is part of why it mattered.
 
 ---
 
@@ -206,8 +263,15 @@ this branch.
 | `tsc` — errors on any changed line | none |
 | `server/__tests__/oauth-state.test.ts` (no DB) | 8/8 pass |
 | `server/__tests__/bill-inbox-fanout.test.ts` (no DB, no network) | 10/10 pass |
+| `server/__tests__/require-company.test.ts` (no DB) | 12/12 pass |
+| `server/__tests__/uploads-access.test.ts` (no DB) | 8/8 pass |
+| `server/__tests__/signed-grant.test.ts` (no DB) | 9/9 pass |
 | `server/__tests__/tenant-isolation.test.ts` (needs DB) | **not run** |
 | `scripts/check-company-settings-duplicates.mjs` on dev / prod | **not run** |
+
+PR2 adds no migrations. One behaviour change to watch on deploy: a file under
+`uploads/` that no table references (orphaned by a failed write or a deleted
+parent) used to serve and now 404s.
 
 `npx tsc --noEmit` is **non-deterministic on this repo** — the same checkout
 produced both 1365 and 1439 errors across runs, with the swing landing in files
