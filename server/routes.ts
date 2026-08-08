@@ -200,6 +200,8 @@ import { requireAuth, requireAdmin, requireTeamMember, requireTeamMemberOrClient
 import { clientAccessGate } from "./middleware/clientAccess";
 import { requireActivePlan } from "./middleware/plan";
 import { requireCompany } from "./middleware/requireCompany";
+import { serveUpload } from "./middleware/uploadsAccess";
+import { signUploadGrant, verifyUploadGrant } from "./utils/signedGrant";
 import { getStripe, isStripeConfigured } from "./stripe";
 import {
   isPlanKey,
@@ -1453,7 +1455,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Compatibility bridge: sync Passport user to legacy session fields
   // This allows old routes checking req.session.userId to work with Replit Auth
   app.use('/api', ensureLegacySessionFields);
-  
+
+  // Uploaded files. Mounted HERE — below setupAuth — and not in index.ts,
+  // where it was an unauthenticated express.static mount.
+  //
+  // requireAuth is explicit because this path is not under /api, so none of
+  // the /api middleware below (auth, clientAccessGate, requireCompany) ever
+  // sees it. serveUpload then resolves the file's owning company from the
+  // table that references it and 404s on any mismatch, unknown subtree, or
+  // path that escapes the uploads root.
+  app.get('/uploads/*', requireAuth, serveUpload);
+
   // put application routes here
   // prefix all routes with /api
 
@@ -5549,6 +5561,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
     return item;
   };
 
+  // enote → estimate → project → company. The DELETE attachment route already
+  // walked this chain by hand; the read and upload routes did not, which is how
+  // one company's attachment list (and its file URLs) reached another.
+  const getOwnedEnote = async (
+    req: any, res: any, enoteId: string, notFound = "Note not found",
+  ): Promise<any | null> => {
+    if (!enoteId) { res.status(404).json({ error: notFound }); return null; }
+    const { estimateEnotes: estimateEnotesTbl } = await import("@shared/schema");
+    const [enote] = await db.select().from(estimateEnotesTbl)
+      .where(eq(estimateEnotesTbl.id, enoteId)).limit(1);
+    if (!enote) { res.status(404).json({ error: notFound }); return null; }
+    if (!(await getOwnedEstimate(req, res, (enote as any).estimateId, notFound))) return null;
+    return enote;
+  };
+
   const getOwnedEstimateGroup = async (
     req: any, res: any, groupId: string, notFound = "Group not found",
   ): Promise<any | null> => {
@@ -7591,7 +7618,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/estimate-enotes/:rowId/attachments", requireAuth, async (req, res) => {
     try {
-      const attachments = await storage.getEnoteAttachments(req.params.rowId);
+      // Without this the list — including every fileUrl — was returned to any
+      // logged-in user for any company's note.
+      if (!(await getOwnedEnote(req, res, req.params.rowId, "Attachments not found"))) return;
+      const attachments = await storage.getEnoteAttachments(
+        req.params.rowId,
+        getSessionCompanyId(req)!,
+      );
       res.json(attachments);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch attachments" });
@@ -7601,6 +7634,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/estimate-enotes/:rowId/attachments", requireAuth, enoteAttachmentUpload.single("file"), async (req: any, res) => {
     try {
       if (!req.file) return res.status(400).json({ error: "No file uploaded" });
+      // multer has already written the file to disk by the time this runs, so
+      // a rejected upload has to clean up after itself or it orphans up to
+      // 50 MB that nothing will ever reference or serve.
+      const owned = await getOwnedEnote(req, res, req.params.rowId, "Note not found");
+      if (!owned) {
+        try { (await import('fs')).unlinkSync(req.file.path); } catch (_) {}
+        return;
+      }
       const fileUrl = `/uploads/enote-attachments/${req.file.filename}`;
       const attachment = await storage.createEnoteAttachment({
         enoteId: req.params.rowId,
@@ -8869,7 +8910,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       let isAdminLike = false;
       if (user.roleId) {
         try {
-          const role = await storage.getUserRole(user.roleId);
+          const role = user.companyId ? await storage.getUserRole(user.roleId, user.companyId) : undefined;
           if (role) {
             const roleName = (role.name ?? '').toLowerCase();
             isAdminLike =
@@ -9186,7 +9227,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { GoogleOAuthService } = await import('./services/googleOAuthService');
       const oauthService = new GoogleOAuthService(storage);
-      const authUrl = oauthService.generateAuthUrl(req.user.id);
+      const calCompanyId = getSessionCompanyId(req);
+      if (!calCompanyId) {
+        return res.status(400).json({ message: 'No company context' });
+      }
+      const authUrl = oauthService.generateAuthUrl(req.user.id, calCompanyId);
       res.json({ authUrl });
     } catch (error: any) {
       console.error("Error generating Google OAuth URL:", error);
@@ -9952,12 +9997,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const uploadURL = await objectStorageService.getObjectEntityUploadURL();
       const rawObjectPath = objectStorageService.normalizeObjectEntityPath(uploadURL);
       
-      // Prefix with company ID for access control
+      // NOTE: this prefix is NOT access control, despite how it reads. The
+      // bucket is flat and every consumer strips the segment back off before
+      // the storage lookup, so a caller can put their own company id in front
+      // of another tenant's UUID and the path still resolves. Enforcement comes
+      // from the signed grant below (and, for the serving route, from the
+      // bucket partitioning tracked as PR2 phase 2).
       const objectPath = `/objects/company/${companyId}${rawObjectPath.replace('/objects', '')}`;
+
+      // Binds this exact path to this exact company, unforgeably. Consumers
+      // that have no row to authorise against yet — bill OCR runs before the
+      // bill exists — require it instead of trusting the path.
+      const uploadGrant = signUploadGrant(objectPath, companyId);
 
       res.json({
         uploadURL,
         objectPath,
+        uploadGrant,
         metadata: { name, size, contentType },
       });
     } catch (error) {
@@ -9989,7 +10045,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
           mimetype || "application/octet-stream",
           companyId,
         );
-        res.json({ objectPath, name: originalname, contentType: mimetype });
+        // Same grant as the presigned path, so either upload route can feed OCR.
+        // This route additionally writes companyId into the object's GCS
+        // metadata (uploadObjectEntity does), which the presigned route cannot.
+        const uploadGrant = signUploadGrant(objectPath, companyId);
+        res.json({ objectPath, uploadGrant, name: originalname, contentType: mimetype });
       } catch (error) {
         console.error("[upload/file] Error:", error);
         res.status(500).json({ error: "Failed to upload file" });
@@ -10718,6 +10778,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/users/:id", requireAuth, requirePermission("admin.users", "edit"), async (req, res) => {
     try {
+      // Tenancy: admin.users:edit says the caller may edit users, not that they
+      // may edit THIS user. Without this an admin in company A could edit any
+      // company B user by id — including their email, role and password.
+      // 404 rather than 403, matching the other ownership guards.
+      const callerCompanyId = getSessionCompanyId(req);
+      const target = await storage.getUser(req.params.id);
+      if (!callerCompanyId || !target || target.companyId !== callerCompanyId) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
       // Validate password strength if password is being updated
       if (req.body.password) {
         const passwordValidation = PasswordUtils.validatePasswordStrength(req.body.password);
@@ -10757,6 +10827,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "New password is required" });
       }
 
+      // Same gap as PATCH /api/users/:id, but the consequence is worse: without
+      // this, an admin in company A could set the password of any company B
+      // user and log in as them.
+      const callerCompanyId = getSessionCompanyId(req);
+      const pwTarget = await storage.getUser(req.params.id);
+      if (!callerCompanyId || !pwTarget || pwTarget.companyId !== callerCompanyId) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
       const user = await storage.changeUserPassword(req.params.id, newPassword);
       if (!user) {
         return res.status(404).json({ error: "User not found" });
@@ -10773,8 +10852,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Send password reset link to user (manager-initiated)
   app.post("/api/users/:id/send-password-reset", requireAuth, requirePermission("admin.users", "edit"), async (req, res) => {
     try {
+      const callerCompanyId = getSessionCompanyId(req);
       const targetUser = await storage.getUser(req.params.id);
-      if (!targetUser || !targetUser.email) {
+      // Ownership before anything else: unchecked, this mints a password-reset
+      // token for another company's user and emails it to them.
+      if (!callerCompanyId || !targetUser || targetUser.companyId !== callerCompanyId) {
+        return res.status(404).json({ error: "User not found" });
+      }
+      if (!targetUser.email) {
         return res.status(404).json({ error: "User not found or has no email" });
       }
       
@@ -11066,7 +11151,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       // Check if user has permission - must be creator or admin/manager
-      const userRole = await storage.getUserRole(user.roleId);
+      const userRole = user.companyId ? await storage.getUserRole(user.roleId, user.companyId) : undefined;
       const isAdminOrManager = userRole && (userRole.name === "Admin" || userRole.name === "Manager");
       const isCreator = existingView.creatorId === user.id;
       
@@ -12954,8 +13039,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // client/supplier users are free/unlimited). Only enforced once billing
       // is live (Stripe configured). -1 = unlimited.
       if (isStripeConfigured() && validationResult.data.userCategory === 'team') {
-        const invitedRole = validationResult.data.roleId
-          ? await storage.getUserRole(validationResult.data.roleId)
+        // Scoped to the inviting company: an invitation must never resolve a
+        // role belonging to someone else's company.
+        const invitedRole = validationResult.data.roleId && companyId
+          ? await storage.getUserRole(validationResult.data.roleId, companyId)
           : null;
         const isMobileOnly = !!(invitedRole as any)?.isMobileOnly;
         if (!isMobileOnly) {
@@ -13714,7 +13801,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const approver = await resolveApprover(req);
     if (!approver) return false;
     const user = await storage.getUser(approver.id);
-    const role = user?.roleId ? await storage.getUserRole(user.roleId) : null;
+    const role = user?.roleId && user.companyId ? await storage.getUserRole(user.roleId, user.companyId) : null;
     if (role && isAdminRole(role)) return true;
     return await storage.checkUserPermission(approver.id, "projects.selections", "approve");
   }
@@ -19221,7 +19308,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (req.user.userCategory !== 'team') {
         workerUserId = req.user.id;
       } else if (req.user.roleId) {
-        const role = await storage.getUserRole(req.user.roleId);
+        const role = req.user.companyId ? await storage.getUserRole(req.user.roleId, req.user.companyId) : undefined;
         if (!role || !isAdminRole(role)) {
           workerUserId = req.user.id;
         }
@@ -19315,7 +19402,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // Verify project access for non-admin workers
         let isAdmin = false;
         if (req.user.userCategory === 'team' && req.user.roleId) {
-          const role = await storage.getUserRole(req.user.roleId);
+          const role = req.user.companyId ? await storage.getUserRole(req.user.roleId, req.user.companyId) : undefined;
           if (role && isAdminRole(role)) isAdmin = true;
         }
         if (!isAdmin) {
@@ -22585,6 +22672,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           filename: fileName,
           mimeType,
           size: buffer.length,
+          // Lets the client re-run OCR on this attachment before the bill row
+          // exists; ocr-from-path no longer trusts the path alone.
+          ...(companyId ? { uploadGrant: signUploadGrant(objectPath, companyId) } : {}),
         };
       } catch (uploadErr: any) {
         console.error("OCR file upload failed:", uploadErr);
@@ -22619,12 +22709,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // and already has an attachment but ocrProcessed is still false.
   app.post("/api/bills/ocr-from-path", requireAuth, async (req, res) => {
     try {
-      const { objectPath, mimeType: mimeHint, filename: filenameHint } = req.body;
+      const { objectPath, mimeType: mimeHint, filename: filenameHint, uploadGrant } = req.body;
       if (!objectPath) return res.status(400).json({ error: "objectPath required" });
 
       const userCompanyId = (req as any).user?.companyId;
-      const expectedPrefix = `/objects/company/${userCompanyId}/`;
-      if (!objectPath.startsWith(expectedPrefix)) {
+      if (!userCompanyId) return res.status(403).json({ error: "Forbidden" });
+
+      // The company segment of objectPath is NOT proof of anything: the bucket
+      // is flat and the segment is stripped below, so putting your own company
+      // id in front of another tenant's UUID used to pass this check and return
+      // their invoice, AI-extracted. The grant is issued by the upload route
+      // for one exact path and company, and is unforgeable.
+      if (!verifyUploadGrant(uploadGrant, objectPath, userCompanyId)) {
         return res.status(403).json({ error: "Forbidden" });
       }
 
@@ -22662,7 +22758,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const dataUrl = `data:${mimeType};base64,${base64}`;
 
       const { processInvoiceWithAI } = await import("./services/aiBillReader");
-      const attachmentMeta = { objectPath, filename, mimeType, size: fileBuffer.length };
+      // Re-issued so a retry of this same OCR call still authorises.
+      const attachmentMeta = {
+        objectPath, filename, mimeType, size: fileBuffer.length,
+        uploadGrant: signUploadGrant(objectPath, userCompanyId),
+      };
       try {
         const result = await processInvoiceWithAI(dataUrl, filename);
         res.json({ ...result, attachment: attachmentMeta });
@@ -22912,7 +23012,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const dataUrl = `data:${mimeType};base64,${base64}`;
 
       const { processInvoiceWithAI } = await import("./services/aiBillReader");
-      const attachmentMeta = { objectPath, filename, mimeType, size: fileBuffer.length };
+      // Re-issued so a retry of this same OCR call still authorises.
+      const attachmentMeta = {
+        objectPath, filename, mimeType, size: fileBuffer.length,
+        uploadGrant: signUploadGrant(objectPath, userCompanyId),
+      };
 
       // Skip re-extraction if this bill was already successfully processed and
       // the user did not explicitly force a re-run. The auto-OCR trigger on
@@ -23071,13 +23175,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const projectId = req.query.projectId as string | undefined;
       const userId = req.query.userId as string | undefined;
-      const companyId = req.query.companyId as string | undefined;
       const limit = req.query.limit ? parseInt(req.query.limit as string) : 50;
 
-      // At least one filter is required
-      if (!projectId && !userId && !companyId) {
-        return res.status(400).json({ error: "At least one of projectId, userId, or companyId is required" });
+      // companyId comes from the session, never the query. It used to be read
+      // straight off req.query, so naming another company returned its
+      // activity feed — who did what, on which project, when.
+      const companyId = getSessionCompanyId(req);
+      if (!companyId) {
+        return res.status(403).json({ error: "No company context" });
       }
+
+      // A project filter must also belong to the caller; otherwise the
+      // company scope below is bypassed by naming a foreign project.
+      if (projectId && !(await enforceProjectCompany(req, res, projectId, "Project not found"))) return;
 
       const activities = await storage.getActivities({ projectId, userId, companyId, limit });
       res.json(activities);
@@ -23099,7 +23209,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         userName: user.firstName && user.lastName 
           ? `${user.firstName} ${user.lastName}` 
           : user.email,
-        companyId: req.body.companyId || user.companyId,
+        // Session only: a companyId in the body used to win, which let a
+        // caller write activity entries into another company's feed.
+        companyId: getSessionCompanyId(req),
       });
       const activity = await storage.createActivity(activityData);
       res.json(activity);
@@ -26947,7 +27059,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     if (process.env.NODE_ENV === "development") return true;
     if (!user?.roleId) return false;
     try {
-      const role = await storage.getUserRole(user.roleId);
+      const role = user.companyId ? await storage.getUserRole(user.roleId, user.companyId) : undefined;
       if (role && isAdminRole(role)) return true;
       // Batch, don't look each permission up in the loop (N+1 — see the
       // effectivePermissions comment in /api/auth/user).
@@ -34209,6 +34321,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       const projectId = req.params.projectId;
+      // The companyId check above only proves the caller HAS a company, not
+      // that they own this project — so any project's tasks, RFIs, RFQs and
+      // estimates were summarised for any logged-in user.
+      if (!(await enforceProjectCompany(req, res, projectId, "Project not found"))) return;
+
       const today = new Date();
       today.setHours(0, 0, 0, 0);
       const tomorrow = new Date(today);

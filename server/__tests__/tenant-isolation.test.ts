@@ -881,6 +881,125 @@ async function main() {
         "pollBillInbox ran with no company — it would poll an arbitrary tenant's mailbox",
       );
     });
+
+    // -----------------------------------------------------------------------
+    // PR2: estimate-note attachments (A5) and the activity feed (A6).
+    // -----------------------------------------------------------------------
+
+    await test("company B cannot list company A's estimate-note attachments", async () => {
+      const enoteA = await storage.createEstimateEnote({
+        estimateId: estimateA.id,
+        groupName: "G",
+        categoryName: "C",
+      } as any);
+      await storage.createEnoteAttachment({
+        enoteId: enoteA.id,
+        fileName: "secret-quote.pdf",
+        fileUrl: "/uploads/enote-attachments/tenant-test-secret.pdf",
+        fileSize: 123,
+        mimeType: "application/pdf",
+      });
+
+      const res = await api("GET", `/api/estimate-enotes/${enoteA.id}/attachments`, { cookie: B.cookie });
+      assert.strictEqual(res.status, 404, `expected 404, got ${res.status}: ${JSON.stringify(res.body)}`);
+      assert.ok(
+        !JSON.stringify(res.body ?? "").includes("tenant-test-secret.pdf"),
+        "company B received company A's attachment fileUrl — the index for the /uploads hole",
+      );
+
+      // The owner still gets their own list.
+      const own = await api("GET", `/api/estimate-enotes/${enoteA.id}/attachments`, { cookie: A.cookie });
+      assert.strictEqual(own.status, 200, `owner blocked from their own attachments: ${JSON.stringify(own.body)}`);
+      assert.ok(
+        JSON.stringify(own.body).includes("tenant-test-secret.pdf"),
+        "owner did not receive their own attachment",
+      );
+
+      // Storage-level backstop.
+      const scoped = await storage.getEnoteAttachments(enoteA.id, B.companyId);
+      assert.strictEqual(scoped.length, 0, "getEnoteAttachments returned another company's rows");
+      await assert.rejects(
+        async () => await (storage as any).getEnoteAttachments(enoteA.id),
+        /requires a companyId/,
+        "no-arg getEnoteAttachments did not throw",
+      );
+    });
+
+    await test("company B cannot attach a file to company A's estimate note", async () => {
+      const [enoteA] = await db.select().from((await import("@shared/schema")).estimateEnotes)
+        .where(eq((await import("@shared/schema")).estimateEnotes.estimateId, estimateA.id)).limit(1);
+      if (!enoteA) return; // previous test creates it; skip if it did not run
+      const res = await api("POST", `/api/estimate-enotes/${enoteA.id}/attachments`, { cookie: B.cookie });
+      assert.ok(
+        res.status === 404 || res.status === 400,
+        `company B's upload into company A's note returned ${res.status}`,
+      );
+    });
+
+    await test("/api/activities ignores a companyId from the query", async () => {
+      await storage.createActivity({
+        companyId: A.companyId,
+        userId: A.userId,
+        userName: "Tenant A",
+        action: "created",
+        entityType: "project",
+        entityId: projectA.id,
+        description: "TENANT-A-ACTIVITY-MARKER",
+      } as any);
+
+      const res = await api("GET", `/api/activities?companyId=${A.companyId}`, { cookie: B.cookie });
+      assert.ok(res.status === 200 || res.status === 403, `unexpected status ${res.status}`);
+      assert.ok(
+        !JSON.stringify(res.body ?? "").includes("TENANT-A-ACTIVITY-MARKER"),
+        "naming company A in the query returned company A's activity feed",
+      );
+    });
+
+    await test("/api/activities ignores a companyId in the POST body", async () => {
+      const res = await api("POST", "/api/activities", {
+        cookie: B.cookie,
+        body: {
+          companyId: A.companyId,
+          action: "created",
+          entityType: "project",
+          entityId: projectA.id,
+          description: "B-WROTE-INTO-A",
+        },
+      });
+      if (res.status === 200 || res.status === 201) {
+        assert.strictEqual(
+          res.body?.companyId,
+          B.companyId,
+          "the body's companyId won — company B wrote into company A's activity feed",
+        );
+      }
+      const aFeed = await storage.getActivities({ companyId: A.companyId, limit: 100 });
+      assert.ok(
+        !JSON.stringify(aFeed).includes("B-WROTE-INTO-A"),
+        "company B's entry landed in company A's feed",
+      );
+    });
+
+    await test("company B cannot summarise company A's project", async () => {
+      const res = await api("GET", `/api/ai-summary/${projectA.id}`, { cookie: B.cookie });
+      assert.strictEqual(res.status, 404, `expected 404, got ${res.status}`);
+    });
+
+    await test("company B cannot edit, repassword or reset company A's user", async () => {
+      for (const [method, path, body] of [
+        ["PATCH", `/api/users/${A.userId}`, { firstName: "Hijacked" }],
+        ["POST", `/api/users/${A.userId}/change-password`, { newPassword: "NotYours123!" }],
+        ["POST", `/api/users/${A.userId}/send-password-reset`, {}],
+      ] as const) {
+        const res = await api(method, path, { cookie: B.cookie, body });
+        assert.ok(
+          res.status === 404 || res.status === 403,
+          `${method} ${path} returned ${res.status} — company B reached company A's user`,
+        );
+      }
+      const stillA = await storage.getUser(A.userId);
+      assert.notStrictEqual((stillA as any)?.firstName, "Hijacked", "company B edited company A's user");
+    });
   } finally {
     await cleanup([A.companyId, B.companyId], [A.userId, B.userId]);
   }
@@ -913,6 +1032,9 @@ async function cleanup(companyIds: string[], userIds: string[]) {
     [`DELETE FROM variations WHERE project_id IN (SELECT id FROM projects WHERE company_id = ANY($1))`, [companyIds]],
     [`DELETE FROM client_invoices WHERE project_id IN (SELECT id FROM projects WHERE company_id = ANY($1))`, [companyIds]],
     [`DELETE FROM proposals WHERE project_id IN (SELECT id FROM projects WHERE company_id = ANY($1))`, [companyIds]],
+    [`DELETE FROM enote_attachments WHERE enote_id IN (SELECT e.id FROM estimate_enotes e JOIN estimates es ON e.estimate_id = es.id WHERE es.project_id IN (SELECT id FROM projects WHERE company_id = ANY($1)))`, [companyIds]],
+    [`DELETE FROM estimate_enotes WHERE estimate_id IN (SELECT id FROM estimates WHERE project_id IN (SELECT id FROM projects WHERE company_id = ANY($1)))`, [companyIds]],
+    [`DELETE FROM activities WHERE company_id = ANY($1)`, [companyIds]],
     [`DELETE FROM estimates WHERE project_id IN (SELECT id FROM projects WHERE company_id = ANY($1))`, [companyIds]],
     [`DELETE FROM schedules WHERE project_id IN (SELECT id FROM projects WHERE company_id = ANY($1))`, [companyIds]],
     [`DELETE FROM selections WHERE project_id IN (SELECT id FROM projects WHERE company_id = ANY($1))`, [companyIds]],

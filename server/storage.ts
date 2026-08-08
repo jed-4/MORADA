@@ -243,7 +243,10 @@ export interface IStorage {
 
   // User Role operations  
   getUserRoles(category?: UserCategory, companyId?: string): Promise<UserRole[]>;
-  getUserRole(id: string, companyId?: string): Promise<UserRole | undefined>;
+  // companyId required: a role is only meaningful inside its own company, and
+  // resolving a roleId that points at another company's role grants that
+  // company's permissions.
+  getUserRole(id: string, companyId: string): Promise<UserRole | undefined>;
   createUserRole(role: InsertUserRole): Promise<UserRole>;
   updateUserRole(id: string, role: Partial<InsertUserRole>, companyId?: string): Promise<UserRole | undefined>;
   deleteUserRole(id: string, companyId?: string): Promise<boolean>;
@@ -423,7 +426,9 @@ export interface IStorage {
 
   // E-Note Attachments
   getEnoteAttachmentCounts(estimateId: string): Promise<Record<string, number>>;
-  getEnoteAttachments(enoteId: string): Promise<any[]>;
+  // companyId required: ownership is a join through enote → estimate → project,
+  // so the compiler is what stops a caller reading another tenant's list.
+  getEnoteAttachments(enoteId: string, companyId: string): Promise<any[]>;
   createEnoteAttachment(data: any): Promise<any>;
   deleteEnoteAttachment(id: string): Promise<boolean>;
 
@@ -7820,7 +7825,7 @@ export class DbStorage implements IStorage {
     
     let role;
     if (user.roleId) {
-      role = await this.getUserRole(user.roleId);
+      role = user.companyId ? await this.getUserRole(user.roleId, user.companyId) : undefined;
     }
     
     return { ...user, role };
@@ -8545,12 +8550,15 @@ export class DbStorage implements IStorage {
     }
   }
 
-  async getUserRole(id: string, companyId?: string): Promise<UserRole | undefined> {
+  async getUserRole(id: string, companyId: string): Promise<UserRole | undefined> {
+    if (!companyId) {
+      throw new Error('getUserRole requires a companyId');
+    }
     try {
-      const conditions = [eq(schema.userRoles.id, id)];
-      if (companyId) {
-        conditions.push(eq(schema.userRoles.companyId, companyId));
-      }
+      const conditions = [
+        eq(schema.userRoles.id, id),
+        eq(schema.userRoles.companyId, companyId),
+      ];
       
       const results = await db.select()
         .from(schema.userRoles)
@@ -8979,7 +8987,7 @@ export class DbStorage implements IStorage {
       if (!user || !user.roleId) return false;
 
       // Check if user has an admin-level built-in role (bypass permission check)
-      const role = await this.getUserRole(user.roleId);
+      const role = user.companyId ? await this.getUserRole(user.roleId, user.companyId) : undefined;
       if (role && role.isBuiltIn) {
         const roleName = role.name?.toLowerCase() || '';
         const isAdminRole = 
@@ -11041,12 +11049,40 @@ export class DbStorage implements IStorage {
     }
   }
 
-  async getEnoteAttachments(enoteId: string): Promise<any[]> {
+  /**
+   * Attachments for one estimate note, scoped to the owning company.
+   *
+   * enote_attachments has no companyId of its own — ownership runs
+   * attachment → enote → estimate → project → company — so the scope is a
+   * join, not a column filter. The route also checks ownership before calling
+   * this; the predicate here is the backstop, so a future caller that forgets
+   * cannot re-open the leak.
+   */
+  async getEnoteAttachments(enoteId: string, companyId: string): Promise<any[]> {
+    if (!companyId) {
+      throw new Error('getEnoteAttachments requires a companyId');
+    }
     try {
       return await db
-        .select()
+        .select({
+          id: schema.enoteAttachments.id,
+          enoteId: schema.enoteAttachments.enoteId,
+          fileName: schema.enoteAttachments.fileName,
+          fileUrl: schema.enoteAttachments.fileUrl,
+          fileSize: schema.enoteAttachments.fileSize,
+          mimeType: schema.enoteAttachments.mimeType,
+          uploadedAt: schema.enoteAttachments.uploadedAt,
+          thumbnailX: schema.enoteAttachments.thumbnailX,
+          thumbnailY: schema.enoteAttachments.thumbnailY,
+        })
         .from(schema.enoteAttachments)
-        .where(eq(schema.enoteAttachments.enoteId, enoteId))
+        .innerJoin(schema.estimateEnotes, eq(schema.estimateEnotes.id, schema.enoteAttachments.enoteId))
+        .innerJoin(schema.estimates, eq(schema.estimates.id, schema.estimateEnotes.estimateId))
+        .innerJoin(schema.projects, eq(schema.projects.id, schema.estimates.projectId))
+        .where(and(
+          eq(schema.enoteAttachments.enoteId, enoteId),
+          eq(schema.projects.companyId, companyId),
+        ))
         .orderBy(schema.enoteAttachments.uploadedAt);
     } catch (error) {
       console.error("Database error in getEnoteAttachments:", error);

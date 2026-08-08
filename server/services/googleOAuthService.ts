@@ -116,8 +116,13 @@ export class GoogleOAuthService {
     return 'https://buildpro4.replit.app/api/google-calendar/callback';
   }
   
-  generateAuthUrl(userId: string): string {
-    const state = this.generateState(userId);
+  generateAuthUrl(userId: string, companyId: string): string {
+    // Signed, for the same reason the bill-inbox state is: the callback is
+    // unauthenticated (Google redirects the browser to it) and the state is
+    // the only thing saying whose account this consent belongs to. Unsigned,
+    // anyone could hand a user a callback URL naming another user id and bind
+    // their own Google Calendar into that account.
+    const state = signOAuthState({ action: 'calendar', companyId, userId });
     
     const authUrl = this.oauth2Client.generateAuthUrl({
       access_type: 'offline',
@@ -129,11 +134,6 @@ export class GoogleOAuthService {
     return authUrl;
   }
   
-  private generateState(userId: string): string {
-    const nonce = randomBytes(16).toString('hex');
-    return Buffer.from(JSON.stringify({ userId, nonce, timestamp: Date.now() })).toString('base64');
-  }
-  
   private generateCodeVerifier(): string {
     return randomBytes(32).toString('base64url');
   }
@@ -142,24 +142,12 @@ export class GoogleOAuthService {
     return createHash('sha256').update(verifier).digest('base64url');
   }
   
-  parseState(state: string): { userId: string; nonce: string; timestamp: number } {
-    try {
-      const decoded = Buffer.from(state, 'base64').toString('utf8');
-      const parsed = JSON.parse(decoded);
-      
-      if (!parsed.userId || !parsed.nonce || !parsed.timestamp) {
-        throw new Error('Invalid state format');
-      }
-      
-      const age = Date.now() - parsed.timestamp;
-      if (age > 10 * 60 * 1000) {
-        throw new Error('State expired (older than 10 minutes)');
-      }
-      
-      return parsed;
-    } catch (error) {
+  parseState(state: string): { userId: string; companyId: string } {
+    const verified = verifyOAuthState(state, 'calendar');
+    if (!verified) {
       throw new Error('Invalid state parameter');
     }
+    return { userId: verified.userId, companyId: verified.companyId };
   }
   
   async handleCallback(code: string, state: string): Promise<User> {
