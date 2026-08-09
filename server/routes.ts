@@ -202,6 +202,7 @@ import { requireActivePlan } from "./middleware/plan";
 import { requireCompany } from "./middleware/requireCompany";
 import { serveUpload } from "./middleware/uploadsAccess";
 import { createScopeOwnershipGuards } from "./middleware/scopeOwnership";
+import { makeOwnedByCompany, makeOwnedViaParent, makeOwnsAllByIds, makeOwnsAllVia } from "./middleware/tenantGuards";
 import { signUploadGrant, verifyUploadGrant } from "./utils/signedGrant";
 import { getStripe, isStripeConfigured } from "./stripe";
 import {
@@ -3057,7 +3058,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Ownership BEFORE any write: every id in the batch must be the
       // caller's task. The ids used to go straight into getTask/updateTask/
       // deleteTask, all of which filter on id alone. Resolved in parallel.
-      if (!(await ownsAll(req, res, ids, "Task not found", getOwnedTask))) return;
+      if (!(await ownsAllTasks(req, res, ids))) return;
       // copyToProject writes into the supplied project — verify it too.
       if (projectId && !(await enforceProjectCompany(req, res, projectId, "Project not found"))) return;
       
@@ -5755,116 +5756,73 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // file for nested sub-resources.
   // -------------------------------------------------------------------------
 
-  /** Compares a directly-owned record's companyId to the caller's. */
-  const ownedByCompany = async (
-    req: any, res: any, id: string, notFound: string,
-    load: (id: string) => Promise<any | undefined>,
-  ): Promise<any | null> => {
-    if (!id) { res.status(404).json({ error: notFound }); return null; }
-    const companyId = req.user?.companyId;
-    if (!companyId) { res.status(404).json({ error: notFound }); return null; }
-    const record = await load(id);
-    if (!record || (record as any).companyId !== companyId) {
-      res.status(404).json({ error: notFound }); return null;
-    }
-    return record;
+  const loadDocFolder = async (id: string) => {
+    const { docFolders } = await import("@shared/schema");
+    const [row] = await db.select().from(docFolders).where(eq(docFolders.id, id)).limit(1);
+    return row;
+  };
+  const loadEnoteTemplateSet = async (id: string) => {
+    const { enoteTemplateSets } = await import("@shared/schema");
+    const [row] = await db.select().from(enoteTemplateSets).where(eq(enoteTemplateSets.id, id)).limit(1);
+    return row;
+  };
+  const loadBudget = async (id: string) => {
+    const { budgets } = await import("@shared/schema");
+    const [row] = await db.select().from(budgets).where(eq(budgets.id, id)).limit(1);
+    return row;
+  };
+  const loadBaseline = async (id: string) => {
+    const { scheduleBaselines } = await import("@shared/schema");
+    const [row] = await db.select().from(scheduleBaselines).where(eq(scheduleBaselines.id, id)).limit(1);
+    return row;
+  };
+  const loadScheduleItemStep = async (id: string) => {
+    const { scheduleItemSteps: t } = await import("@shared/schema");
+    const [row] = await db.select().from(t).where(eq(t.id, id)).limit(1);
+    return row;
+  };
+  const loadActivityNote = async (id: string) => {
+    const { activityNotes: t } = await import("@shared/schema");
+    const [row] = await db.select().from(t).where(eq(t.id, id)).limit(1);
+    return row;
   };
 
-  const getOwnedDocFolder = async (req: any, res: any, id: string, notFound = "Folder not found") =>
-    ownedByCompany(req, res, id, notFound, async (folderId) => {
-      const { docFolders } = await import("@shared/schema");
-      const [row] = await db.select().from(docFolders).where(eq(docFolders.id, folderId)).limit(1);
-      return row;
-    });
+  // --- direct companyId ---
+  const getOwnedDocFolder = makeOwnedByCompany(loadDocFolder, "Folder not found");
+  const getOwnedEnoteTemplateSet = makeOwnedByCompany(loadEnoteTemplateSet, "Template set not found");
+  const getOwnedSiteDiaryTemplate = makeOwnedByCompany(
+    (id) => storage.getSiteDiaryTemplate(id), "Template not found");
 
-  const getOwnedEnoteTemplateSet = async (req: any, res: any, id: string, notFound = "Template set not found") =>
-    ownedByCompany(req, res, id, notFound, async (setId) => {
-      const { enoteTemplateSets } = await import("@shared/schema");
-      const [row] = await db.select().from(enoteTemplateSets).where(eq(enoteTemplateSets.id, setId)).limit(1);
-      return row;
-    });
-
-  const getOwnedSiteDiaryTemplate = async (req: any, res: any, id: string, notFound = "Template not found") =>
-    ownedByCompany(req, res, id, notFound, (tid) => storage.getSiteDiaryTemplate(tid));
-
-  const getOwnedChannel = async (req: any, res: any, id: string, notFound = "Channel not found") => {
+  // --- channel: getChannel already takes and filters on companyId ---
+  const getOwnedChannel: any = async (req: any, res: any, id: string, notFound = "Channel not found") => {
     if (!id) { res.status(404).json({ error: notFound }); return null; }
     const companyId = req.user?.companyId;
     if (!companyId) { res.status(404).json({ error: notFound }); return null; }
-    // getChannel already takes companyId and filters on it.
     const channel = await storage.getChannel(id, companyId);
     if (!channel) { res.status(404).json({ error: notFound }); return null; }
     return channel;
   };
 
-  /** message → channel → company */
-  const getOwnedMessage = async (req: any, res: any, id: string, notFound = "Message not found") => {
-    if (!id) { res.status(404).json({ error: notFound }); return null; }
-    const message = await storage.getMessage(id);
-    if (!message) { res.status(404).json({ error: notFound }); return null; }
-    if (!(await getOwnedChannel(req, res, (message as any).channelId, notFound))) return null;
-    return message;
-  };
+  // --- via parent ---
+  const projectGuard: any = async (req: any, res: any, projectId: string, notFound: string) =>
+    (await enforceProjectCompany(req, res, projectId, notFound)) ? { id: projectId } : null;
 
-  /** budget → project → company */
-  const getOwnedBudget = async (req: any, res: any, id: string, notFound = "Budget not found") => {
-    if (!id) { res.status(404).json({ error: notFound }); return null; }
-    const { budgets } = await import("@shared/schema");
-    const [budget] = await db.select().from(budgets).where(eq(budgets.id, id)).limit(1);
-    if (!budget) { res.status(404).json({ error: notFound }); return null; }
-    if (!(await enforceProjectCompany(req, res, (budget as any).projectId, notFound))) return null;
-    return budget;
-  };
+  const getOwnedMessage = makeOwnedViaParent(
+    (id) => storage.getMessage(id), (m) => m?.channelId, getOwnedChannel, "Message not found");
+  const getOwnedBudget = makeOwnedViaParent(
+    loadBudget, (b) => b?.projectId, projectGuard, "Budget not found");
+  const getOwnedBudgetLineItem = makeOwnedViaParent(
+    (id) => storage.getBudgetLineItem(id), (i) => i?.budgetId, getOwnedBudget, "Budget line item not found");
+  const getOwnedSchedule = makeOwnedViaParent(
+    (id) => storage.getScheduleById(id), (sc) => sc?.projectId, projectGuard, "Schedule not found");
+  const getOwnedBaseline = makeOwnedViaParent(
+    loadBaseline, (b) => b?.scheduleId, getOwnedSchedule, "Baseline not found");
+  const getOwnedScheduleItemStep = makeOwnedViaParent(
+    loadScheduleItemStep, (st) => st?.scheduleItemId, getOwnedScheduleItem as any, "Step not found");
+  const getOwnedActivityNote = makeOwnedViaParent(
+    loadActivityNote, (n) => n?.scheduleItemId, getOwnedScheduleItem as any, "Note not found");
 
-  /** budget line item → budget → project → company */
-  const getOwnedBudgetLineItem = async (req: any, res: any, id: string, notFound = "Budget line item not found") => {
-    if (!id) { res.status(404).json({ error: notFound }); return null; }
-    const item = await storage.getBudgetLineItem(id);
-    if (!item) { res.status(404).json({ error: notFound }); return null; }
-    if (!(await getOwnedBudget(req, res, (item as any).budgetId, notFound))) return null;
-    return item;
-  };
-
-  /** schedule → project → company */
-  const getOwnedSchedule = async (req: any, res: any, id: string, notFound = "Schedule not found") => {
-    if (!id) { res.status(404).json({ error: notFound }); return null; }
-    const schedule = await storage.getScheduleById(id);
-    if (!schedule) { res.status(404).json({ error: notFound }); return null; }
-    if (!(await enforceProjectCompany(req, res, (schedule as any).projectId, notFound))) return null;
-    return schedule;
-  };
-
-  /** baseline → schedule → project → company */
-  const getOwnedBaseline = async (req: any, res: any, id: string, notFound = "Baseline not found") => {
-    if (!id) { res.status(404).json({ error: notFound }); return null; }
-    const { scheduleBaselines } = await import("@shared/schema");
-    const [baseline] = await db.select().from(scheduleBaselines).where(eq(scheduleBaselines.id, id)).limit(1);
-    if (!baseline) { res.status(404).json({ error: notFound }); return null; }
-    if (!(await getOwnedSchedule(req, res, (baseline as any).scheduleId, notFound))) return null;
-    return baseline;
-  };
-
-  /** step → schedule item → (getOwnedScheduleItem resolves the rest) */
-  const getOwnedScheduleItemStep = async (req: any, res: any, id: string, notFound = "Step not found") => {
-    if (!id) { res.status(404).json({ error: notFound }); return null; }
-    const { scheduleItemSteps } = await import("@shared/schema");
-    const [step] = await db.select().from(scheduleItemSteps).where(eq(scheduleItemSteps.id, id)).limit(1);
-    if (!step) { res.status(404).json({ error: notFound }); return null; }
-    if (!(await getOwnedScheduleItem(req, res, (step as any).scheduleItemId, notFound))) return null;
-    return step;
-  };
-
-  /** activity note → schedule item → … */
-  const getOwnedActivityNote = async (req: any, res: any, id: string, notFound = "Note not found") => {
-    if (!id) { res.status(404).json({ error: notFound }); return null; }
-    const { activityNotes } = await import("@shared/schema");
-    const [note] = await db.select().from(activityNotes).where(eq(activityNotes.id, id)).limit(1);
-    if (!note) { res.status(404).json({ error: notFound }); return null; }
-    if (!(await getOwnedScheduleItem(req, res, (note as any).scheduleItemId, notFound))) return null;
-    return note;
-  };
-
-  /** labour estimate category → labour estimate → project → company */
+  /** category → labour estimate → project → company */
   const getOwnedLabourEstimateCategory = async (req: any, res: any, id: string, notFound = "Category not found") => {
     if (!id) { res.status(404).json({ error: notFound }); return null; }
     const { labourEstimateCategories, labourEstimates } = await import("@shared/schema");
@@ -5878,58 +5836,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
     return cat;
   };
 
+  // --- batches ---
   /**
-   * Ownership for a batch of schedule item ids in ONE round trip.
-   * schedule_items → schedules → projects.company_id. Returns true only when
-   * every id resolves and belongs to the caller's company; a single foreign or
-   * missing id rejects the whole batch, because a partial accept on a
-   * multi-row write is worse than a refusal.
-   *
-   * Deliberately one query, not one per id: the previous code in batch-sort
-   * notes that O(N) sequential lookups caused production timeouts on large
-   * schedules, and at ~400ms per Neon round trip that is not a fix worth
-   * shipping.
+   * Every schedule item id resolved in ONE round trip:
+   * schedule_items → schedules → projects.company_id. The batch-sort route
+   * records that per-item lookups caused production timeouts on large
+   * schedules, so this must not become N queries.
    */
-  const ownsAllScheduleItems = async (
-    req: any, res: any, ids: string[], notFound = "Schedule item not found",
-  ): Promise<boolean> => {
-    const unique = Array.from(new Set(ids.filter(Boolean)));
-    if (unique.length === 0) return true;
-    const companyId = req.user?.companyId;
-    if (!companyId) { res.status(404).json({ error: notFound }); return false; }
-
+  const ownsAllScheduleItems = makeOwnsAllByIds(async (ids, companyId) => {
     const { scheduleItems: siTbl, schedules: schTbl, projects: projTbl } = await import("@shared/schema");
     const rows = await db
       .select({ id: siTbl.id })
       .from(siTbl)
       .innerJoin(schTbl, eq(siTbl.scheduleId, schTbl.id))
       .innerJoin(projTbl, eq(schTbl.projectId, projTbl.id))
-      .where(and(inArray(siTbl.id, unique), eq(projTbl.companyId, companyId)));
+      .where(and(inArray(siTbl.id, ids), eq(projTbl.companyId, companyId)));
+    return rows.map((r: any) => r.id);
+  }, "Schedule item not found");
 
-    if (rows.length !== unique.length) {
-      res.status(404).json({ error: notFound });
-      return false;
-    }
-    return true;
-  };
-
-  /**
-   * Batch guard for bulk routes: every id must resolve to a record the caller
-   * owns, and one foreign or missing id rejects the whole batch — a partial
-   * accept on a multi-row write is worse than a refusal. Resolved in parallel;
-   * a sequential loop would cost a full database round trip per id.
-   */
-  const ownsAll = async (
-    req: any, res: any, ids: Array<string | undefined | null>, notFound: string,
-    resolve: (req: any, res: any, id: string, notFound: string) => Promise<any | null>,
-  ): Promise<boolean> => {
-    if (ids.some((id) => !id)) { res.status(404).json({ error: notFound }); return false; }
-    // A silent res so the per-id resolver cannot write 404 mid-loop; we send one.
-    const quiet = { status: () => ({ json: () => undefined }) } as any;
-    const results = await Promise.all(ids.map((id) => resolve(req, quiet, id as string, notFound)));
-    if (results.some((r) => !r)) { res.status(404).json({ error: notFound }); return false; }
-    return true;
-  };
+  const ownsAllTasks = makeOwnsAllVia(getOwnedTask as any, "Task not found");
 
   // ---- Task activity (audit lines merged into the comment feed) ----
   const taskStatusLabel = (s?: string | null): string => {
