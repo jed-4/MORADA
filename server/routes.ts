@@ -3339,8 +3339,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Minutes API Routes
   app.get("/api/minutes", async (req, res) => {
     try {
+      const companyId = (req.user as any)?.companyId;
+      if (!companyId) return res.status(403).json({ error: "No company context" });
+      // A bare GET /api/minutes used to return every tenant's meeting minutes.
+      // If a projectId is supplied it must also be the caller's.
       const { projectId } = req.query;
-      const minutes = await storage.getMinutes(projectId as string | undefined);
+      if (projectId && !(await enforceProjectCompany(req, res, projectId as string, "Project not found"))) return;
+      const minutes = await storage.getMinutes(companyId, projectId as string | undefined);
       res.json(minutes);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch minutes" });
@@ -5256,6 +5261,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const granter = req.user as any;
       const grantedBy = granter?.id || "";
       const { projectId, userId } = req.params;
+
+      // requirePermission("admin.users","edit") is a ROLE gate — it says the
+      // caller may edit users, not whose. Both the project and the target user
+      // must be in the caller's company; user_project_access has no companyId
+      // of its own, so this is the only place it can be enforced.
+      if (!(await enforceProjectCompany(req, res, projectId, "Project not found"))) return;
+      const targetUser = await storage.getUser(userId);
+      if (!targetUser || (targetUser as any).companyId !== granter?.companyId) {
+        return res.status(404).json({ error: "User not found" });
+      }
 
       const access = await storage.grantProjectAccess(userId, projectId, accessLevel, grantedBy);
 
@@ -13000,6 +13015,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/user-roles/:roleId/permissions", requireAuth, requireTeamMember, requirePermission("admin.roles", "edit"), async (req, res) => {
     try {
+      // setRolePermissions DELETEs every role_permissions row for the roleId
+      // and re-inserts the payload — so an unguarded id rewrote another
+      // company's entire role matrix. user_roles is company-scoped and
+      // getUserRole already takes companyId; it simply was not called here.
+      const roleCompanyId = (req.user as any)?.companyId;
+      const targetRole = roleCompanyId
+        ? await storage.getUserRole(req.params.roleId, roleCompanyId)
+        : null;
+      if (!targetRole) return res.status(404).json({ error: "User role not found" });
+
       const { permissions } = req.body;
       if (!Array.isArray(permissions)) {
         return res.status(400).json({ error: "Permissions must be an array" });
@@ -23453,7 +23478,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Site Diary Template routes
   app.get("/api/site-diary-templates", async (req, res) => {
     try {
-      const templates = await storage.getSiteDiaryTemplates();
+      const companyId = (req.user as any)?.companyId;
+      if (!companyId) return res.status(403).json({ error: "No company context" });
+      const templates = await storage.getSiteDiaryTemplates(companyId);
       res.json(templates);
     } catch (error: any) {
       res.status(500).json({ 
@@ -23752,8 +23779,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(401).json({ error: "Not authenticated" });
       }
 
-      const templates = await storage.getSiteDiaryTemplates();
-      const companyTemplates = templates.filter((t: any) => t.companyId === user.companyId && !t.isArchived);
+      const companyTemplates = await storage.getSiteDiaryTemplates(user.companyId);
 
       const XLSX = await import("xlsx");
       const rows: any[] = [];
@@ -23819,8 +23845,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(401).json({ error: "Not authenticated" });
       }
 
-      const templates = await storage.getSiteDiaryTemplates();
-      const companyTemplates = templates.filter((t: any) => t.companyId === user.companyId && !t.isArchived);
+      const companyTemplates = await storage.getSiteDiaryTemplates(user.companyId);
 
       const exportData = companyTemplates.map((t: any) => ({
         name: t.name,

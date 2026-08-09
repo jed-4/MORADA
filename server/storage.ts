@@ -1006,7 +1006,7 @@ export interface IStorage {
   updateActivity(id: string, activity: Partial<schema.InsertActivity & { pinned?: boolean; pinnedAt?: Date; pinnedBy?: string }>): Promise<schema.Activity | undefined>;
 
   // Site Diary Templates CRUD (company-wide)
-  getSiteDiaryTemplates(): Promise<schema.SiteDiaryTemplate[]>;
+  getSiteDiaryTemplates(companyId: string): Promise<schema.SiteDiaryTemplate[]>;
   getSiteDiaryTemplate(id: string): Promise<schema.SiteDiaryTemplate | undefined>;
   getDefaultSiteDiaryTemplate(companyId: string): Promise<schema.SiteDiaryTemplate | undefined>;
   setDefaultSiteDiaryTemplate(id: string, companyId: string): Promise<schema.SiteDiaryTemplate | undefined>;
@@ -1242,7 +1242,7 @@ export interface IStorage {
   deleteDefect(id: string): Promise<void>;
 
   // Minutes CRUD operations
-  getMinutes(projectId?: string): Promise<Minute[]>;
+  getMinutes(companyId: string, projectId?: string): Promise<Minute[]>;
   getMinute(id: string): Promise<Minute | undefined>;
   createMinute(minute: InsertMinute): Promise<Minute>;
   updateMinute(id: string, minute: Partial<InsertMinute>): Promise<Minute | undefined>;
@@ -6098,9 +6098,9 @@ export class MemStorage implements IStorage {
   }
 
   // Site Diary Templates CRUD
-  async getSiteDiaryTemplates(): Promise<schema.SiteDiaryTemplate[]> {
+  async getSiteDiaryTemplates(companyId: string): Promise<schema.SiteDiaryTemplate[]> {
     return Array.from(this.siteDiaryTemplates.values())
-      .filter(t => !t.isArchived)
+      .filter(t => !t.isArchived && t.companyId === companyId)
       .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())
       .map(t => structuredClone(t)); // Return clones to prevent mutation
   }
@@ -18219,11 +18219,18 @@ export class DbStorage implements IStorage {
   }
 
   // Site Diary Templates CRUD
-  async getSiteDiaryTemplates(): Promise<schema.SiteDiaryTemplate[]> {
+  async getSiteDiaryTemplates(companyId: string): Promise<schema.SiteDiaryTemplate[]> {
+    // companyId is required, not optional: this used to return every tenant's
+    // templates to any caller. Making it required means tsc finds any caller
+    // that forgets it, the same fail-closed move used for getCompanySettings.
+    if (!companyId) throw new Error('getSiteDiaryTemplates requires a companyId');
     try {
       return await db.select()
         .from(schema.siteDiaryTemplates)
-        .where(eq(schema.siteDiaryTemplates.isArchived, false))
+        .where(and(
+          eq(schema.siteDiaryTemplates.isArchived, false),
+          eq(schema.siteDiaryTemplates.companyId, companyId),
+        ))
         .orderBy(desc(schema.siteDiaryTemplates.updatedAt));
     } catch (error) {
       console.error("Database error in getSiteDiaryTemplates:", error);
@@ -21527,16 +21534,30 @@ export class DbStorage implements IStorage {
   }
 
   // Minutes CRUD operations
-  async getMinutes(projectId?: string): Promise<Minute[]> {
+  async getMinutes(companyId: string, projectId?: string): Promise<Minute[]> {
+    // companyId is required: a bare GET /api/minutes returned every tenant's
+    // meeting minutes — title, attendees, full HTML body, AI summary.
+    if (!companyId) throw new Error('getMinutes requires a companyId');
     try {
-      let query = db.select().from(schema.minutes).orderBy(desc(schema.minutes.meetingDate));
-      
-      if (projectId) {
-        query = query.where(eq(schema.minutes.projectId, projectId)) as any;
-      }
-      
-      const minutes = await query;
-      return minutes as Minute[];
+      // Minutes are either project-scoped or business-level (ownerId only),
+      // mirroring getOwnedMinute. Both legs are resolved here in one query
+      // rather than filtering in JS.
+      const conds = [
+        or(
+          eq(schema.projects.companyId, companyId),
+          eq(schema.users.companyId, companyId),
+        ),
+      ];
+      if (projectId) conds.push(eq(schema.minutes.projectId, projectId));
+
+      const rows = await db
+        .select({ m: schema.minutes })
+        .from(schema.minutes)
+        .leftJoin(schema.projects, eq(schema.minutes.projectId, schema.projects.id))
+        .leftJoin(schema.users, eq(schema.minutes.ownerId, schema.users.id))
+        .where(and(...conds))
+        .orderBy(desc(schema.minutes.meetingDate));
+      return rows.map((r: any) => r.m) as Minute[];
     } catch (error) {
       console.error("Database error in getMinutes:", error);
       throw error;
