@@ -85,6 +85,16 @@ const ownsAllScheduleItems = makeOwnsAllByIds(async (ids, companyId) =>
 
 const ownsAllTasks = makeOwnsAllVia(getOwnedTask, "Task not found");
 
+// Batched project ownership — the shape PUT project-access/bulk uses.
+const ownsAllProjects = makeOwnsAllByIds(async (ids, companyId) =>
+  ids.filter((id) => projects[id]?.companyId === companyId), "Project not found");
+
+// Stand-in for storage.getDefaultSiteDiaryTemplate(companyId).
+const defaultTemplates: Record<string, any> = {
+  [A]: { id: "tpl-a", companyId: A },
+  [B]: { id: "tpl-b", companyId: B },
+};
+
 // ---------------------------------------------------------------------------
 const app = express();
 app.use(express.json());
@@ -110,6 +120,15 @@ app.post("/api/schedule-items/batch-sort", async (req, res) => {
 });
 app.post("/api/tasks/bulk-action", async (req, res) => {
   if (!(await ownsAllTasks(req, res, req.body?.ids ?? []))) return; res.json(OK);
+});
+app.put("/api/users/:userId/project-access/bulk", async (req, res) => {
+  if (!(await ownsAllProjects(req, res, req.body?.projectIds ?? []))) return; res.json(OK);
+});
+// companyId from the SESSION; the :companyId path param must be ignored.
+app.get("/api/site-diary-templates/default/:companyId", async (req: any, res) => {
+  const companyId = req.user?.companyId;
+  if (!companyId) return res.status(403).json({ error: "No company context" });
+  res.json(defaultTemplates[companyId] ?? null);
 });
 
 let baseUrl = ""; let server: Server;
@@ -212,6 +231,46 @@ async function main() {
     assert.strictEqual(res.status, 404);
     assert.deepStrictEqual(res.body, { error: "Task not found" });
   });
+
+  console.log("\nBatched project ownership (PUT project-access/bulk)\n");
+
+  await test("projects batch — all-owned allowed", async () =>
+    assert.strictEqual((await api("PUT", "/api/users/u2/project-access/bulk", {
+      company: A, body: { projectIds: ["proj-a"] } })).status, 200));
+
+  await test("projects batch — one foreign project id rejects the batch", async () => {
+    projects["proj-b"] = { id: "proj-b", companyId: B };
+    assert.strictEqual((await api("PUT", "/api/users/u2/project-access/bulk", {
+      company: A, body: { projectIds: ["proj-a", "proj-b"] } })).status, 404);
+  });
+
+  await test("projects batch — nonexistent project id rejects the batch", async () =>
+    assert.strictEqual((await api("PUT", "/api/users/u2/project-access/bulk", {
+      company: A, body: { projectIds: ["proj-a", MISSING] } })).status, 404));
+
+  await test("projects batch — empty list allowed (revoke-all)", async () =>
+    assert.strictEqual((await api("PUT", "/api/users/u2/project-access/bulk", {
+      company: A, body: { projectIds: [] } })).status, 200));
+
+  console.log("\nSession-sourced companyId ignores a hostile path param\n");
+
+  await test("default template — own company returns own template", async () => {
+    const res = await api("GET", `/api/site-diary-templates/default/${A}`, { company: A });
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body?.companyId, A);
+  });
+
+  await test("default template — naming ANOTHER company still returns your own", async () => {
+    // The path param is the attack surface: it used to be passed to storage.
+    const res = await api("GET", `/api/site-diary-templates/default/${B}`, { company: A });
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body?.companyId, A, "must ignore the path param, not honour it");
+    assert.notStrictEqual(res.body?.id, "tpl-b");
+  });
+
+  await test("default template — company-less caller is refused", async () =>
+    assert.strictEqual((await api("GET", `/api/site-diary-templates/default/${A}`,
+      { company: "none" })).status, 403));
 
   console.log("\nRefusals are indistinguishable\n");
   await test("foreign and missing produce identical responses", async () => {

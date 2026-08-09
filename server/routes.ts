@@ -5856,6 +5856,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   const ownsAllTasks = makeOwnsAllVia(getOwnedTask as any, "Task not found");
 
+  /**
+   * Every project id in one round trip. Used by the bulk project-access route,
+   * which would otherwise call enforceProjectCompany in a loop — N sequential
+   * round trips at ~400ms each is ~8s for a 20-project grant.
+   */
+  const ownsAllProjects = makeOwnsAllByIds(async (ids, companyId) => {
+    const { projects: projTbl } = await import("@shared/schema");
+    const rows = await db
+      .select({ id: projTbl.id })
+      .from(projTbl)
+      .where(and(inArray(projTbl.id, ids), eq(projTbl.companyId, companyId)));
+    return rows.map((r: any) => r.id);
+  }, "Project not found");
+
   // ---- Task activity (audit lines merged into the comment feed) ----
   const taskStatusLabel = (s?: string | null): string => {
     switch (s) {
@@ -13097,9 +13111,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!targetUser || (targetUser as any).companyId !== callerCompanyId) {
         return res.status(404).json({ error: "User not found" });
       }
-      for (const pid of projectIds as string[]) {
-        if (!(await enforceProjectCompany(req, res, pid, "Project not found"))) return;
-      }
+      if (!(await ownsAllProjects(req, res, projectIds as string[]))) return;
 
       const currentAccess = await storage.getUserProjectAccess(targetUserId);
       const currentProjectIds = new Set(currentAccess.map(a => a.projectId));
@@ -23425,7 +23437,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get default site diary template for company (must be before :id route)
   app.get("/api/site-diary-templates/default/:companyId", async (req, res) => {
     try {
-      const template = await storage.getDefaultSiteDiaryTemplate(req.params.companyId);
+      // companyId comes from the SESSION. The :companyId path param is
+      // vestigial and deliberately ignored — it used to be passed straight to
+      // storage, so naming another tenant returned their default template.
+      // Both mobile callers already send their own user.companyId, so reading
+      // the session instead is a no-op for them.
+      const companyId = (req.user as any)?.companyId;
+      if (!companyId) return res.status(403).json({ error: "No company context" });
+      const template = await storage.getDefaultSiteDiaryTemplate(companyId);
       if (!template) {
         // Return null if no default set - not an error
         return res.json(null);
