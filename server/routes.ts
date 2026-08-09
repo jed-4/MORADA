@@ -3053,6 +3053,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!action || !["changeStatus", "delete", "copyToProject", "copyToBusiness"].includes(action)) {
         return res.status(400).json({ error: "Invalid action" });
       }
+
+      // Ownership BEFORE any write: every id in the batch must be the
+      // caller's task. The ids used to go straight into getTask/updateTask/
+      // deleteTask, all of which filter on id alone. Resolved in parallel.
+      if (!(await ownsAll(req, res, ids, "Task not found", getOwnedTask))) return;
+      // copyToProject writes into the supplied project — verify it too.
+      if (projectId && !(await enforceProjectCompany(req, res, projectId, "Project not found"))) return;
       
       // Check permissions based on action
       const hasDeletePermission = await storage.checkUserPermission(user.id, "tasks.manage", "delete");
@@ -5854,6 +5861,41 @@ export async function registerRoutes(app: Express): Promise<Server> {
     if (!est) { res.status(404).json({ error: notFound }); return null; }
     if (!(await enforceProjectCompany(req, res, (est as any).projectId, notFound))) return null;
     return cat;
+  };
+
+  /**
+   * Ownership for a batch of schedule item ids in ONE round trip.
+   * schedule_items → schedules → projects.company_id. Returns true only when
+   * every id resolves and belongs to the caller's company; a single foreign or
+   * missing id rejects the whole batch, because a partial accept on a
+   * multi-row write is worse than a refusal.
+   *
+   * Deliberately one query, not one per id: the previous code in batch-sort
+   * notes that O(N) sequential lookups caused production timeouts on large
+   * schedules, and at ~400ms per Neon round trip that is not a fix worth
+   * shipping.
+   */
+  const ownsAllScheduleItems = async (
+    req: any, res: any, ids: string[], notFound = "Schedule item not found",
+  ): Promise<boolean> => {
+    const unique = Array.from(new Set(ids.filter(Boolean)));
+    if (unique.length === 0) return true;
+    const companyId = req.user?.companyId;
+    if (!companyId) { res.status(404).json({ error: notFound }); return false; }
+
+    const { scheduleItems: siTbl, schedules: schTbl, projects: projTbl } = await import("@shared/schema");
+    const rows = await db
+      .select({ id: siTbl.id })
+      .from(siTbl)
+      .innerJoin(schTbl, eq(siTbl.scheduleId, schTbl.id))
+      .innerJoin(projTbl, eq(schTbl.projectId, projTbl.id))
+      .where(and(inArray(siTbl.id, unique), eq(projTbl.companyId, companyId)));
+
+    if (rows.length !== unique.length) {
+      res.status(404).json({ error: notFound });
+      return false;
+    }
+    return true;
   };
 
   /**
@@ -13094,6 +13136,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       if (!Array.isArray(projectIds)) {
         return res.status(400).json({ error: "projectIds must be an array" });
+      }
+
+      // Both sides were unchecked: requireTeamMember is a role gate, and
+      // neither the target user nor the project ids were tied to the caller's
+      // company. user_project_access carries no companyId, so the route is the
+      // only place this can be enforced.
+      const callerCompanyId = (currentUser as any)?.companyId;
+      const targetUser = callerCompanyId ? await storage.getUser(targetUserId) : null;
+      if (!targetUser || (targetUser as any).companyId !== callerCompanyId) {
+        return res.status(404).json({ error: "User not found" });
+      }
+      for (const pid of projectIds as string[]) {
+        if (!(await enforceProjectCompany(req, res, pid, "Project not found"))) return;
       }
 
       const currentAccess = await storage.getUserProjectAccess(targetUserId);
@@ -29721,7 +29776,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!Array.isArray(items)) {
         return res.status(400).json({ error: "Expected items array" });
       }
-      
+
+      // Ownership for the whole batch in one query, before any write.
+      if (!(await ownsAllScheduleItems(req, res, items.map((i: any) => i?.id).filter(Boolean)))) return;
+
       // Get original items to track changes
       const originalItemsMap = new Map<string, any>();
       for (const item of items) {
@@ -29878,6 +29936,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
+      // The schedule check above proves the caller owns the schedule they
+      // NAMED — it says nothing about the item ids they supplied. Verify every
+      // id (and any parentItemId being set) in one round trip before writing.
+      const touchedIds = [
+        ...updates.map((u: any) => u?.id),
+        ...updates.map((u: any) => u?.parentItemId),
+      ].filter(Boolean);
+      if (!(await ownsAllScheduleItems(req, res, touchedIds))) return;
+
       // Apply all updates in parallel now that ownership is confirmed
       const updatedItems = await Promise.all(
         updates
@@ -29912,10 +29979,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "items array is required and must not be empty" });
       }
 
-      const schedule = await storage.getScheduleById(scheduleId);
-      if (!schedule) {
-        return res.status(404).json({ error: "Schedule not found" });
-      }
+      // The schedule was fetched and used (its weekend flags, its project's
+      // holidays) but never checked against the caller's company.
+      const schedule = await getOwnedSchedule(req, res, scheduleId);
+      if (!schedule) return;
 
       // Get existing items count for sort order offset
       const existingItems = await storage.getScheduleItems(scheduleId);
