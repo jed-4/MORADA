@@ -15,6 +15,7 @@ import { ObjectStorageService } from "./replit_integrations/object_storage";
 import { xeroService, XeroValidationError, type XeroValidationIssue, encryptXeroToken, summarizeXeroError } from "./services/xeroService";
 import { enqueueXeroPush } from "./services/xeroPushQueue";
 import { recomputePOStatusFromBills, recomputePOStatusForLinks } from "./services/poStatusFromBills";
+import { isVendorCredit, CREDIT_NOT_SUPPORTED, CREDIT_NOT_SUPPORTED_MESSAGE } from "./services/xeroCreditGuard";
 import { applyPOSuggestionsToBill } from "./services/poSuggestions";
 import { dedupXeroBills } from "./services/xeroBillDedup";
 import { 
@@ -501,6 +502,19 @@ export async function pushBillToXeroInternal(
       await writeSyncStatus("failed", msg);
       logOutcome({ ok: false, reason: "FORBIDDEN", message: msg });
       return { ok: false, status: 403, error: "FORBIDDEN", message: msg };
+    }
+
+    // Vendor credits must not go down this path — it would create a positive
+    // ACCPAY bill in Xero (see server/services/xeroCreditGuard.ts). Checked
+    // after the ownership guard so a cross-tenant probe still gets FORBIDDEN.
+    if (isVendorCredit((bill as any).billType)) {
+      logOutcome({ ok: false, reason: CREDIT_NOT_SUPPORTED, message: CREDIT_NOT_SUPPORTED_MESSAGE });
+      return {
+        ok: false,
+        status: 422,
+        error: CREDIT_NOT_SUPPORTED,
+        message: CREDIT_NOT_SUPPORTED_MESSAGE,
+      };
     }
 
     // A Xero invoice with a payment allocated is locked by Xero: it rejects any
