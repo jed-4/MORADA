@@ -2590,6 +2590,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/doc-folders/:id", requireAuth, async (req, res) => {
     try {
+      // Ownership: doc folders carry companyId directly. Without this any
+      // folder was deletable by id, and docs.folder_id is ON DELETE SET NULL —
+      // so the victim's documents were silently unfiled as collateral.
+      if (!(await getOwnedDocFolder(req, res, req.params.id))) return;
       await storage.deleteDocFolder(req.params.id);
       res.status(204).end();
     } catch (error) {
@@ -5718,6 +5722,158 @@ export async function registerRoutes(app: Express): Promise<Server> {
     return task;
   };
 
+  // -------------------------------------------------------------------------
+  // Ownership guards added by the critical-tenancy fix. Same contract as the
+  // helpers above: load the record, resolve it to a company, 404 (never 403)
+  // when it is not the caller's. Records that carry companyId are compared
+  // directly; the rest are resolved through their parent chain.
+  //
+  // Several of these tables have no single-record getter in IStorage, so the
+  // lookup is an inline db query — the pattern already used elsewhere in this
+  // file for nested sub-resources.
+  // -------------------------------------------------------------------------
+
+  /** Compares a directly-owned record's companyId to the caller's. */
+  const ownedByCompany = async (
+    req: any, res: any, id: string, notFound: string,
+    load: (id: string) => Promise<any | undefined>,
+  ): Promise<any | null> => {
+    if (!id) { res.status(404).json({ error: notFound }); return null; }
+    const companyId = req.user?.companyId;
+    if (!companyId) { res.status(404).json({ error: notFound }); return null; }
+    const record = await load(id);
+    if (!record || (record as any).companyId !== companyId) {
+      res.status(404).json({ error: notFound }); return null;
+    }
+    return record;
+  };
+
+  const getOwnedDocFolder = async (req: any, res: any, id: string, notFound = "Folder not found") =>
+    ownedByCompany(req, res, id, notFound, async (folderId) => {
+      const { docFolders } = await import("@shared/schema");
+      const [row] = await db.select().from(docFolders).where(eq(docFolders.id, folderId)).limit(1);
+      return row;
+    });
+
+  const getOwnedEnoteTemplateSet = async (req: any, res: any, id: string, notFound = "Template set not found") =>
+    ownedByCompany(req, res, id, notFound, async (setId) => {
+      const { enoteTemplateSets } = await import("@shared/schema");
+      const [row] = await db.select().from(enoteTemplateSets).where(eq(enoteTemplateSets.id, setId)).limit(1);
+      return row;
+    });
+
+  const getOwnedSiteDiaryTemplate = async (req: any, res: any, id: string, notFound = "Template not found") =>
+    ownedByCompany(req, res, id, notFound, (tid) => storage.getSiteDiaryTemplate(tid));
+
+  const getOwnedChannel = async (req: any, res: any, id: string, notFound = "Channel not found") => {
+    if (!id) { res.status(404).json({ error: notFound }); return null; }
+    const companyId = req.user?.companyId;
+    if (!companyId) { res.status(404).json({ error: notFound }); return null; }
+    // getChannel already takes companyId and filters on it.
+    const channel = await storage.getChannel(id, companyId);
+    if (!channel) { res.status(404).json({ error: notFound }); return null; }
+    return channel;
+  };
+
+  /** message → channel → company */
+  const getOwnedMessage = async (req: any, res: any, id: string, notFound = "Message not found") => {
+    if (!id) { res.status(404).json({ error: notFound }); return null; }
+    const message = await storage.getMessage(id);
+    if (!message) { res.status(404).json({ error: notFound }); return null; }
+    if (!(await getOwnedChannel(req, res, (message as any).channelId, notFound))) return null;
+    return message;
+  };
+
+  /** budget → project → company */
+  const getOwnedBudget = async (req: any, res: any, id: string, notFound = "Budget not found") => {
+    if (!id) { res.status(404).json({ error: notFound }); return null; }
+    const { budgets } = await import("@shared/schema");
+    const [budget] = await db.select().from(budgets).where(eq(budgets.id, id)).limit(1);
+    if (!budget) { res.status(404).json({ error: notFound }); return null; }
+    if (!(await enforceProjectCompany(req, res, (budget as any).projectId, notFound))) return null;
+    return budget;
+  };
+
+  /** budget line item → budget → project → company */
+  const getOwnedBudgetLineItem = async (req: any, res: any, id: string, notFound = "Budget line item not found") => {
+    if (!id) { res.status(404).json({ error: notFound }); return null; }
+    const item = await storage.getBudgetLineItem(id);
+    if (!item) { res.status(404).json({ error: notFound }); return null; }
+    if (!(await getOwnedBudget(req, res, (item as any).budgetId, notFound))) return null;
+    return item;
+  };
+
+  /** schedule → project → company */
+  const getOwnedSchedule = async (req: any, res: any, id: string, notFound = "Schedule not found") => {
+    if (!id) { res.status(404).json({ error: notFound }); return null; }
+    const schedule = await storage.getScheduleById(id);
+    if (!schedule) { res.status(404).json({ error: notFound }); return null; }
+    if (!(await enforceProjectCompany(req, res, (schedule as any).projectId, notFound))) return null;
+    return schedule;
+  };
+
+  /** baseline → schedule → project → company */
+  const getOwnedBaseline = async (req: any, res: any, id: string, notFound = "Baseline not found") => {
+    if (!id) { res.status(404).json({ error: notFound }); return null; }
+    const { scheduleBaselines } = await import("@shared/schema");
+    const [baseline] = await db.select().from(scheduleBaselines).where(eq(scheduleBaselines.id, id)).limit(1);
+    if (!baseline) { res.status(404).json({ error: notFound }); return null; }
+    if (!(await getOwnedSchedule(req, res, (baseline as any).scheduleId, notFound))) return null;
+    return baseline;
+  };
+
+  /** step → schedule item → (getOwnedScheduleItem resolves the rest) */
+  const getOwnedScheduleItemStep = async (req: any, res: any, id: string, notFound = "Step not found") => {
+    if (!id) { res.status(404).json({ error: notFound }); return null; }
+    const { scheduleItemSteps } = await import("@shared/schema");
+    const [step] = await db.select().from(scheduleItemSteps).where(eq(scheduleItemSteps.id, id)).limit(1);
+    if (!step) { res.status(404).json({ error: notFound }); return null; }
+    if (!(await getOwnedScheduleItem(req, res, (step as any).scheduleItemId, notFound))) return null;
+    return step;
+  };
+
+  /** activity note → schedule item → … */
+  const getOwnedActivityNote = async (req: any, res: any, id: string, notFound = "Note not found") => {
+    if (!id) { res.status(404).json({ error: notFound }); return null; }
+    const { activityNotes } = await import("@shared/schema");
+    const [note] = await db.select().from(activityNotes).where(eq(activityNotes.id, id)).limit(1);
+    if (!note) { res.status(404).json({ error: notFound }); return null; }
+    if (!(await getOwnedScheduleItem(req, res, (note as any).scheduleItemId, notFound))) return null;
+    return note;
+  };
+
+  /** labour estimate category → labour estimate → project → company */
+  const getOwnedLabourEstimateCategory = async (req: any, res: any, id: string, notFound = "Category not found") => {
+    if (!id) { res.status(404).json({ error: notFound }); return null; }
+    const { labourEstimateCategories, labourEstimates } = await import("@shared/schema");
+    const [cat] = await db.select().from(labourEstimateCategories)
+      .where(eq(labourEstimateCategories.id, id)).limit(1);
+    if (!cat) { res.status(404).json({ error: notFound }); return null; }
+    const [est] = await db.select().from(labourEstimates)
+      .where(eq(labourEstimates.id, (cat as any).labourEstimateId)).limit(1);
+    if (!est) { res.status(404).json({ error: notFound }); return null; }
+    if (!(await enforceProjectCompany(req, res, (est as any).projectId, notFound))) return null;
+    return cat;
+  };
+
+  /**
+   * Batch guard for bulk routes: every id must resolve to a record the caller
+   * owns, and one foreign or missing id rejects the whole batch — a partial
+   * accept on a multi-row write is worse than a refusal. Resolved in parallel;
+   * a sequential loop would cost a full database round trip per id.
+   */
+  const ownsAll = async (
+    req: any, res: any, ids: Array<string | undefined | null>, notFound: string,
+    resolve: (req: any, res: any, id: string, notFound: string) => Promise<any | null>,
+  ): Promise<boolean> => {
+    if (ids.some((id) => !id)) { res.status(404).json({ error: notFound }); return false; }
+    // A silent res so the per-id resolver cannot write 404 mid-loop; we send one.
+    const quiet = { status: () => ({ json: () => undefined }) } as any;
+    const results = await Promise.all(ids.map((id) => resolve(req, quiet, id as string, notFound)));
+    if (results.some((r) => !r)) { res.status(404).json({ error: notFound }); return false; }
+    return true;
+  };
+
   // ---- Task activity (audit lines merged into the comment feed) ----
   const taskStatusLabel = (s?: string | null): string => {
     switch (s) {
@@ -7506,6 +7662,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/estimates/:id/enotes", requireAuth, async (req, res) => {
     try {
+      // Ownership: unguarded this both read a foreign estimate's notes and,
+      // when the estimate had no rows, SEEDED ~90 default rows into it.
+      if (!(await getOwnedEstimate(req, res, req.params.id, "Estimate not found"))) return;
       const rows = await storage.getEstimateEnotes(req.params.id);
       res.json(rows);
     } catch (error) {
@@ -7734,6 +7893,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/labour-estimate-categories/:catId", requireAuth, async (req, res) => {
     try {
+      // Ownership: category → labour estimate → project → company.
+      if (!(await getOwnedLabourEstimateCategory(req, res, req.params.catId))) return;
       await storage.deleteLabourEstimateCategory(req.params.catId);
       res.status(204).send();
     } catch (error) {
@@ -7912,6 +8073,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/enote-template-sets/:id", requireAuth, async (req, res) => {
     try {
+      // Ownership: template sets carry companyId. This deletes every
+      // enote_templates row in the set, so an unguarded id destroyed another
+      // tenant's whole template library entry.
+      if (!(await getOwnedEnoteTemplateSet(req, res, req.params.id))) return;
       await storage.deleteEnoteTemplateSet(req.params.id);
       res.status(204).send();
     } catch (error) {
@@ -7946,6 +8111,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const companyId = (req.user as any)?.companyId;
       if (!companyId) return res.status(401).json({ error: "No company" });
       const { replaceExisting } = req.body;
+      // BOTH ids must be owned: replaceExisting runs a DELETE across the
+      // target estimate's notes before inserting the source set's rows.
+      if (!(await getOwnedEstimate(req, res, req.params.id, "Estimate not found"))) return;
+      if (!(await getOwnedEnoteTemplateSet(req, res, req.params.templateSetId))) return;
       const rows = await storage.applyEnoteTemplateSetToEstimate(req.params.templateSetId, req.params.id, companyId, !!replaceExisting);
       res.json(rows);
     } catch (error) {
@@ -23259,6 +23428,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(401).json({ error: "Not authenticated" });
       }
       
+      // Ownership: site diary templates carry companyId directly.
+      if (!(await getOwnedSiteDiaryTemplate(req, res, req.params.id))) return;
       const template = await storage.setDefaultSiteDiaryTemplate(req.params.id, user.companyId);
       if (!template) {
         return res.status(404).json({ error: "Template not found" });
@@ -23336,6 +23507,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/site-diary-templates/:id", async (req, res) => {
     try {
+      // Ownership: site diary templates carry companyId directly.
+      if (!(await getOwnedSiteDiaryTemplate(req, res, req.params.id))) return;
       const success = await storage.deleteSiteDiaryTemplate(req.params.id);
       if (!success) {
         return res.status(404).json({ error: "Template not found" });

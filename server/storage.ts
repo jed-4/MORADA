@@ -18275,10 +18275,16 @@ export class DbStorage implements IStorage {
           )
         );
       
-      // Then set the new default and update companyId
+      // Then set the new default. companyId is a WHERE predicate, never a SET:
+      // it used to be written into the row, so calling this with another
+      // tenant's template id TRANSFERRED that template into the caller's
+      // company. The id alone is not an ownership proof.
       const result = await db.update(schema.siteDiaryTemplates)
-        .set({ isDefault: true, companyId, updatedAt: new Date() })
-        .where(eq(schema.siteDiaryTemplates.id, id))
+        .set({ isDefault: true, updatedAt: new Date() })
+        .where(and(
+          eq(schema.siteDiaryTemplates.id, id),
+          eq(schema.siteDiaryTemplates.companyId, companyId),
+        ))
         .returning();
       return result[0];
     } catch (error) {
