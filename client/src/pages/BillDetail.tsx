@@ -173,6 +173,11 @@ function isXeroPushError(e: unknown): e is XeroPushError {
   return e instanceof Error;
 }
 
+// Fallback copy for the server's CREDIT_NOT_SUPPORTED response (the server
+// sends its own message; this only covers an empty body).
+const CREDIT_NOT_SUPPORTED_COPY =
+  "Vendor credits can't sync to Xero yet — record the credit note in Xero directly.";
+
 /**
  * Build a human-readable description for a failed Xero push. When the server
  * returned a structured `validationErrors` list (XeroValidationException, or
@@ -1211,6 +1216,13 @@ export default function BillDetail() {
               toast({ title: "Bill created", description: "Supplier not linked to Xero — select the matching contact below to complete the sync." });
               return; // stay on page for mapping
             }
+            if (errData.error === "CREDIT_NOT_SUPPORTED") {
+              // A vendor credit is saved and correct in Morada; it just can't
+              // be mirrored to Xero yet (it would post as a positive bill).
+              // A limitation, not a failure — no red toast.
+              toast({ title: "Credit created", description: errData.message || CREDIT_NOT_SUPPORTED_COPY });
+              return;
+            }
             const err: XeroPushError = Object.assign(
               new Error(errData.message || errData.error || "Xero sync failed"),
               { validationErrors: errData.validationErrors as XeroValidationIssue[] | undefined },
@@ -1386,6 +1398,13 @@ export default function BillDetail() {
                 title: "Bill saved",
                 description: errData.message || "This bill is paid in Xero, so its line items can't be changed there.",
               });
+              if (!stayOnPage) setLocation(projectId ? `/projects/${projectId}/bills` : "/bills");
+              return;
+            }
+            if (errData.error === "CREDIT_NOT_SUPPORTED") {
+              // As above: the credit saved fine, only the Xero mirror is
+              // unavailable. Same calm treatment as INVOICE_LOCKED.
+              toast({ title: "Credit saved", description: errData.message || CREDIT_NOT_SUPPORTED_COPY });
               if (!stayOnPage) setLocation(projectId ? `/projects/${projectId}/bills` : "/bills");
               return;
             }
