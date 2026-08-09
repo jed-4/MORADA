@@ -26669,6 +26669,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/projects/:projectId/budget/calculate", requireAuth, requirePermission("financial.budget_actuals", "view"), async (req, res) => {
     try {
+      // Ownership: requirePermission is a role gate, not a tenant gate.
+      // calculateBudget CREATES or OVERWRITES the budget for the project.
+      if (!(await enforceProjectCompany(req, res, req.params.projectId, "Project not found"))) return;
       const budget = await storage.calculateBudget(req.params.projectId);
       res.json(budget);
     } catch (error: any) {
@@ -26681,6 +26684,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/budgets/:id", async (req, res) => {
     try {
+      // Ownership: budget → project → company. This route had no middleware
+      // at all beyond the global auth/requireCompany mount.
+      if (!(await getOwnedBudget(req, res, req.params.id))) return;
       const validationResult = updateBudgetSchema.safeParse(req.body);
       if (!validationResult.success) {
         return res.status(400).json({ 
@@ -26704,6 +26710,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/budgets/:id", async (req, res) => {
     try {
+      if (!(await getOwnedBudget(req, res, req.params.id))) return;
       const success = await storage.deleteBudget(req.params.id);
       if (!success) {
         return res.status(404).json({ error: "Budget not found" });
@@ -26732,6 +26739,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/budgets/:budgetId/line-items/recalculate", requireAuth, requirePermission("financial.budget_actuals", "view"), async (req, res) => {
     try {
+      if (!(await getOwnedBudget(req, res, req.params.budgetId))) return;
       const lineItems = await storage.recalculateBudgetLineItems(req.params.budgetId);
       res.json(lineItems);
     } catch (error: any) {
@@ -26744,6 +26752,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/budget-line-items/:id", async (req, res) => {
     try {
+      // Ownership: line item → budget → project → company.
+      if (!(await getOwnedBudgetLineItem(req, res, req.params.id))) return;
       const validationResult = updateBudgetLineItemSchema.safeParse(req.body);
       if (!validationResult.success) {
         return res.status(400).json({ 
@@ -26780,6 +26790,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/projects/:projectId/labour-hours-budget/recalculate", requireAuth, requirePermission("financial.budget_labour", "view"), async (req, res) => {
     try {
+      if (!(await enforceProjectCompany(req, res, req.params.projectId, "Project not found"))) return;
       const labourHours = await storage.recalculateLabourHoursBudget(req.params.projectId);
       res.json(labourHours);
     } catch (error: any) {
