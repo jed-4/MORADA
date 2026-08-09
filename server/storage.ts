@@ -10069,14 +10069,16 @@ export class DbStorage implements IStorage {
   }
   async getTaskViews(companyId: string, userId?: string): Promise<TaskView[]> {
     try {
-      let query = db.select().from(schema.taskViews)
-        .where(eq(schema.taskViews.companyId, companyId));
-      
-      if (userId) {
-        query = query.where(eq(schema.taskViews.userId, userId)) as any;
-      }
-      
-      const views = await query.orderBy(schema.taskViews.sortOrder, desc(schema.taskViews.createdAt));
+      // Predicates are collected and applied as ONE .where(and(...)).
+      // Chaining a second .where() REPLACES the first in Drizzle rather than
+      // ANDing it, so the optional filter below used to silently delete the
+      // companyId predicate and return every tenant's rows.
+      const conds: any[] = [eq(schema.taskViews.companyId, companyId)];
+      if (userId) conds.push(eq(schema.taskViews.userId, userId));
+
+      const views = await db.select().from(schema.taskViews)
+        .where(and(...conds))
+        .orderBy(schema.taskViews.sortOrder, desc(schema.taskViews.createdAt));
       return views;
     } catch (error) {
       console.error("Database error in getTaskViews:", error);
@@ -21618,18 +21620,21 @@ export class DbStorage implements IStorage {
 
   async getSystemFolders(companyId: string, parentId?: string | null): Promise<SystemFolder[]> {
     try {
-      let query = db.select()
-        .from(schema.systemFolders)
-        .where(eq(schema.systemFolders.companyId, companyId))
-        .orderBy(asc(schema.systemFolders.displayOrder));
-
+      // Predicates are collected and applied as ONE .where(and(...)).
+      // Chaining a second .where() REPLACES the first in Drizzle rather than
+      // ANDing it, so the optional filter below used to silently delete the
+      // companyId predicate and return every tenant's rows.
+      const conds: any[] = [eq(schema.systemFolders.companyId, companyId)];
       if (parentId === null) {
-        query = query.where(sql`${schema.systemFolders.parentId} IS NULL`) as any;
+        conds.push(sql`${schema.systemFolders.parentId} IS NULL`);
       } else if (parentId) {
-        query = query.where(eq(schema.systemFolders.parentId, parentId)) as any;
+        conds.push(eq(schema.systemFolders.parentId, parentId));
       }
 
-      const folders = await query;
+      const folders = await db.select()
+        .from(schema.systemFolders)
+        .where(and(...conds))
+        .orderBy(asc(schema.systemFolders.displayOrder));
       return folders as SystemFolder[];
     } catch (error) {
       console.error("Database error in getSystemFolders:", error);
@@ -21716,20 +21721,21 @@ export class DbStorage implements IStorage {
 
   async getSystemDocuments(companyId: string, folderId?: string | null): Promise<SystemDocument[]> {
     try {
-      let query = db.select()
-        .from(schema.systemDocuments)
-        .where(eq(schema.systemDocuments.companyId, companyId))
-        .orderBy(desc(schema.systemDocuments.createdAt));
-
+      // Predicates are collected and applied as ONE .where(and(...)).
+      // Chaining a second .where() REPLACES the first in Drizzle rather than
+      // ANDing it, so the optional filter below used to silently delete the
+      // companyId predicate and return every tenant's rows.
+      const conds: any[] = [eq(schema.systemDocuments.companyId, companyId)];
       if (folderId !== undefined) {
-        if (folderId === null) {
-          query = query.where(sql`${schema.systemDocuments.folderId} IS NULL`) as any;
-        } else {
-          query = query.where(eq(schema.systemDocuments.folderId, folderId)) as any;
-        }
+        conds.push(folderId === null
+          ? sql`${schema.systemDocuments.folderId} IS NULL`
+          : eq(schema.systemDocuments.folderId, folderId));
       }
 
-      const documents = await query;
+      const documents = await db.select()
+        .from(schema.systemDocuments)
+        .where(and(...conds))
+        .orderBy(desc(schema.systemDocuments.createdAt));
       return documents as SystemDocument[];
     } catch (error) {
       console.error("Database error in getSystemDocuments:", error);
@@ -21820,16 +21826,17 @@ export class DbStorage implements IStorage {
 
   async getTaskTemplates(companyId: string, isActive?: boolean): Promise<TaskTemplate[]> {
     try {
-      let query = db.select()
+      // Predicates are collected and applied as ONE .where(and(...)).
+      // Chaining a second .where() REPLACES the first in Drizzle rather than
+      // ANDing it, so the optional filter below used to silently delete the
+      // companyId predicate and return every tenant's rows.
+      const conds: any[] = [eq(schema.taskTemplates.companyId, companyId)];
+      if (isActive !== undefined) conds.push(eq(schema.taskTemplates.isActive, isActive));
+
+      const templates = await db.select()
         .from(schema.taskTemplates)
-        .where(eq(schema.taskTemplates.companyId, companyId))
+        .where(and(...conds))
         .orderBy(asc(schema.taskTemplates.title));
-
-      if (isActive !== undefined) {
-        query = query.where(eq(schema.taskTemplates.isActive, isActive)) as any;
-      }
-
-      const templates = await query;
       return templates as TaskTemplate[];
     } catch (error) {
       console.error("Database error in getTaskTemplates:", error);
@@ -22612,16 +22619,17 @@ export class DbStorage implements IStorage {
 
   async getWorkflowTemplates(companyId: string, isActive?: boolean): Promise<WorkflowTemplate[]> {
     try {
-      let query = db.select()
+      // Predicates are collected and applied as ONE .where(and(...)).
+      // Chaining a second .where() REPLACES the first in Drizzle rather than
+      // ANDing it, so the optional filter below used to silently delete the
+      // companyId predicate and return every tenant's rows.
+      const conds: any[] = [eq(schema.workflowTemplates.companyId, companyId)];
+      if (isActive !== undefined) conds.push(eq(schema.workflowTemplates.isActive, isActive));
+
+      const templates = await db.select()
         .from(schema.workflowTemplates)
-        .where(eq(schema.workflowTemplates.companyId, companyId))
+        .where(and(...conds))
         .orderBy(asc(schema.workflowTemplates.name));
-
-      if (isActive !== undefined) {
-        query = query.where(eq(schema.workflowTemplates.isActive, isActive)) as any;
-      }
-
-      const templates = await query;
       return templates as WorkflowTemplate[];
     } catch (error) {
       console.error("Database error in getWorkflowTemplates:", error);
