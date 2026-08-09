@@ -1,0 +1,60 @@
+# NOT YET ACTIVE — this file must live at .github/workflows/tenancy.yml.
+#
+# It is parked here because the push token for this branch lacks GitHub's
+# `workflow` OAuth scope, so it cannot create files under .github/workflows/.
+# To activate, either:
+#   gh auth refresh -h github.com -s workflow
+#   git mv scripts/ci/tenancy.workflow.yml .github/workflows/tenancy.yml
+# or paste this file in via the GitHub web UI (which does not need the scope).
+#
+name: Tenancy
+
+# The tenant-isolation ratchet plus the no-DB security suites.
+#
+# Deliberately narrow: this repo has no CI, and a first workflow that tries to
+# build and typecheck everything would be red on arrival (tsc currently reports
+# ~1,440 pre-existing errors). This runs only checks that pass today, so a red
+# result always means "you broke something".
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  tenancy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      # The ratchet. Fails on a new unscoped route, a new create-schema that
+      # accepts a tenancy FK from the body, a Drizzle chained .where() that
+      # drops a companyId predicate, or a stale baseline entry.
+      - name: Tenancy ratchet
+        run: npm run check:tenancy
+
+      # No database, no network. These are the suites that prove the guards.
+      - name: Tenant guard tests
+        run: NODE_ENV=test npx tsx server/__tests__/tenant-guards.test.ts
+
+      - name: Scope tenancy tests
+        run: NODE_ENV=test npx tsx server/__tests__/scope-tenancy.test.ts
+
+      - name: requireCompany tests
+        run: NODE_ENV=test npx tsx server/__tests__/require-company.test.ts
+
+      - name: Uploads access tests
+        run: NODE_ENV=test npx tsx server/__tests__/uploads-access.test.ts
+
+      - name: OAuth state tests
+        run: NODE_ENV=test npx tsx server/__tests__/oauth-state.test.ts
+
+      - name: Signed grant tests
+        run: NODE_ENV=test npx tsx server/__tests__/signed-grant.test.ts
