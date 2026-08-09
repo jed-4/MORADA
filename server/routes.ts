@@ -23359,18 +23359,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
         attachmentCount: parsedEmail.attachments.length,
       });
 
-      // Get default user (system user or first admin)
-      const users = await storage.getUsers("team");
-      const defaultUser = users.find(u => u.username === "admin") || users[0];
-
-      if (!defaultUser) {
-        return res.status(500).json({ error: "No system user found" });
+      // Bills are created in the CALLER's company, attributed to the caller.
+      //
+      // This used to be `storage.getUsers("team")` — every team user on the
+      // platform — then `find(username === "admin") || users[0]`. Whichever
+      // company happened to own that row received every emailed invoice,
+      // regardless of who submitted it: a cross-tenant write, and the reason
+      // the feature only ever worked for one company.
+      //
+      // The route is behind requireAuth, so there is a real session to use.
+      const caller = req.user as any;
+      const callerCompanyId = caller?.companyId;
+      if (!callerCompanyId) {
+        return res.status(403).json({ error: "No company context" });
       }
 
       // Process email and create bills
       const results = await autoBillCreator.processEmailInvoices(parsedEmail, {
-        defaultUserId: defaultUser.id,
-        companyId: defaultUser.companyId || undefined,
+        defaultUserId: caller.id,
+        companyId: callerCompanyId,
         autoMatch: true, // Auto-match suppliers and projects
       });
 
@@ -35574,7 +35581,11 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
       if (!companyId) {
         return res.status(401).json({ error: "Unauthorized - no company context" });
       }
-      const state = Buffer.from(JSON.stringify({ companyId })).toString("base64");
+      // Signed, action-scoped state — the same helper the Google Calendar
+      // flow uses. An unsigned base64 blob let a crafted state name any
+      // company on the callback.
+      const { signOAuthState } = await import('./services/googleOAuthService');
+      const state = signOAuthState({ action: 'xero', companyId, userId: user.id });
       const authUrl = xeroService.getAuthUrl(state);
       res.json({ authUrl });
     } catch (error: any) {
@@ -35590,19 +35601,22 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
         return res.status(400).json({ error: "Missing authorization code" });
       }
 
-      let companyId: string | undefined;
-      if (state && typeof state === "string") {
-        try {
-          const stateData = JSON.parse(Buffer.from(state, "base64").toString());
-          companyId = stateData.companyId;
-        } catch {}
-      }
-
+      // The state must verify AND name the caller's own company. It used to be
+      // unsigned base64 and was PREFERRED over the session
+      // (`companyId = stateData.companyId || user?.companyId`), so a crafted
+      // state overwrote another tenant's Xero connection with the caller's
+      // tokens. Same class as the Calendar fix in PR #34.
+      const { verifyOAuthState } = await import('./services/googleOAuthService');
       const user = req.user as any;
-      companyId = companyId || user?.companyId;
-      if (!companyId) {
+      const sessionCompanyId = user?.companyId;
+      if (!sessionCompanyId) {
         return res.status(401).json({ error: "Unauthorized - no company context" });
       }
+      const verified = verifyOAuthState(state, 'xero');
+      if (!verified || verified.companyId !== sessionCompanyId) {
+        return res.status(400).json({ error: "Invalid or expired OAuth state" });
+      }
+      const companyId = sessionCompanyId;
 
       const tokenData = await xeroService.exchangeCodeForTokens(code);
       const tenants = await xeroService.getTenants(tokenData.access_token);
