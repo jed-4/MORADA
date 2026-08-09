@@ -202,6 +202,7 @@ import { requireActivePlan } from "./middleware/plan";
 import { requireCompany } from "./middleware/requireCompany";
 import { serveUpload } from "./middleware/uploadsAccess";
 import { createScopeOwnershipGuards } from "./middleware/scopeOwnership";
+import { makeOwnedByCompany, makeOwnedViaParent, makeOwnsAllByIds, makeOwnsAllVia } from "./middleware/tenantGuards";
 import { signUploadGrant, verifyUploadGrant } from "./utils/signedGrant";
 import { getStripe, isStripeConfigured } from "./stripe";
 import {
@@ -2590,6 +2591,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/doc-folders/:id", requireAuth, async (req, res) => {
     try {
+      // Ownership: doc folders carry companyId directly. Without this any
+      // folder was deletable by id, and docs.folder_id is ON DELETE SET NULL —
+      // so the victim's documents were silently unfiled as collateral.
+      if (!(await getOwnedDocFolder(req, res, req.params.id))) return;
       await storage.deleteDocFolder(req.params.id);
       res.status(204).end();
     } catch (error) {
@@ -3049,6 +3054,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!action || !["changeStatus", "delete", "copyToProject", "copyToBusiness"].includes(action)) {
         return res.status(400).json({ error: "Invalid action" });
       }
+
+      // Ownership BEFORE any write: every id in the batch must be the
+      // caller's task. The ids used to go straight into getTask/updateTask/
+      // deleteTask, all of which filter on id alone. Resolved in parallel.
+      if (!(await ownsAllTasks(req, res, ids))) return;
+      // copyToProject writes into the supplied project — verify it too.
+      if (projectId && !(await enforceProjectCompany(req, res, projectId, "Project not found"))) return;
       
       // Check permissions based on action
       const hasDeletePermission = await storage.checkUserPermission(user.id, "tasks.manage", "delete");
@@ -3328,8 +3340,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Minutes API Routes
   app.get("/api/minutes", async (req, res) => {
     try {
+      const companyId = (req.user as any)?.companyId;
+      if (!companyId) return res.status(403).json({ error: "No company context" });
+      // A bare GET /api/minutes used to return every tenant's meeting minutes.
+      // If a projectId is supplied it must also be the caller's.
       const { projectId } = req.query;
-      const minutes = await storage.getMinutes(projectId as string | undefined);
+      if (projectId && !(await enforceProjectCompany(req, res, projectId as string, "Project not found"))) return;
+      const minutes = await storage.getMinutes(companyId, projectId as string | undefined);
       res.json(minutes);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch minutes" });
@@ -5246,6 +5263,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const grantedBy = granter?.id || "";
       const { projectId, userId } = req.params;
 
+      // requirePermission("admin.users","edit") is a ROLE gate — it says the
+      // caller may edit users, not whose. Both the project and the target user
+      // must be in the caller's company; user_project_access has no companyId
+      // of its own, so this is the only place it can be enforced.
+      if (!(await enforceProjectCompany(req, res, projectId, "Project not found"))) return;
+      const targetUser = await storage.getUser(userId);
+      if (!targetUser || (targetUser as any).companyId !== granter?.companyId) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
       const access = await storage.grantProjectAccess(userId, projectId, accessLevel, grantedBy);
 
       // Notify the added user
@@ -5717,6 +5744,131 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
     return task;
   };
+
+  // -------------------------------------------------------------------------
+  // Ownership guards added by the critical-tenancy fix. Same contract as the
+  // helpers above: load the record, resolve it to a company, 404 (never 403)
+  // when it is not the caller's. Records that carry companyId are compared
+  // directly; the rest are resolved through their parent chain.
+  //
+  // Several of these tables have no single-record getter in IStorage, so the
+  // lookup is an inline db query — the pattern already used elsewhere in this
+  // file for nested sub-resources.
+  // -------------------------------------------------------------------------
+
+  const loadDocFolder = async (id: string) => {
+    const { docFolders } = await import("@shared/schema");
+    const [row] = await db.select().from(docFolders).where(eq(docFolders.id, id)).limit(1);
+    return row;
+  };
+  const loadEnoteTemplateSet = async (id: string) => {
+    const { enoteTemplateSets } = await import("@shared/schema");
+    const [row] = await db.select().from(enoteTemplateSets).where(eq(enoteTemplateSets.id, id)).limit(1);
+    return row;
+  };
+  const loadBudget = async (id: string) => {
+    const { budgets } = await import("@shared/schema");
+    const [row] = await db.select().from(budgets).where(eq(budgets.id, id)).limit(1);
+    return row;
+  };
+  const loadBaseline = async (id: string) => {
+    const { scheduleBaselines } = await import("@shared/schema");
+    const [row] = await db.select().from(scheduleBaselines).where(eq(scheduleBaselines.id, id)).limit(1);
+    return row;
+  };
+  const loadScheduleItemStep = async (id: string) => {
+    const { scheduleItemSteps: t } = await import("@shared/schema");
+    const [row] = await db.select().from(t).where(eq(t.id, id)).limit(1);
+    return row;
+  };
+  const loadActivityNote = async (id: string) => {
+    const { activityNotes: t } = await import("@shared/schema");
+    const [row] = await db.select().from(t).where(eq(t.id, id)).limit(1);
+    return row;
+  };
+
+  // --- direct companyId ---
+  const getOwnedDocFolder = makeOwnedByCompany(loadDocFolder, "Folder not found");
+  const getOwnedEnoteTemplateSet = makeOwnedByCompany(loadEnoteTemplateSet, "Template set not found");
+  const getOwnedSiteDiaryTemplate = makeOwnedByCompany(
+    (id) => storage.getSiteDiaryTemplate(id), "Template not found");
+
+  // --- channel: getChannel already takes and filters on companyId ---
+  const getOwnedChannel: any = async (req: any, res: any, id: string, notFound = "Channel not found") => {
+    if (!id) { res.status(404).json({ error: notFound }); return null; }
+    const companyId = req.user?.companyId;
+    if (!companyId) { res.status(404).json({ error: notFound }); return null; }
+    const channel = await storage.getChannel(id, companyId);
+    if (!channel) { res.status(404).json({ error: notFound }); return null; }
+    return channel;
+  };
+
+  // --- via parent ---
+  const projectGuard: any = async (req: any, res: any, projectId: string, notFound: string) =>
+    (await enforceProjectCompany(req, res, projectId, notFound)) ? { id: projectId } : null;
+
+  const getOwnedMessage = makeOwnedViaParent(
+    (id) => storage.getMessage(id), (m) => m?.channelId, getOwnedChannel, "Message not found");
+  const getOwnedBudget = makeOwnedViaParent(
+    loadBudget, (b) => b?.projectId, projectGuard, "Budget not found");
+  const getOwnedBudgetLineItem = makeOwnedViaParent(
+    (id) => storage.getBudgetLineItem(id), (i) => i?.budgetId, getOwnedBudget, "Budget line item not found");
+  const getOwnedSchedule = makeOwnedViaParent(
+    (id) => storage.getScheduleById(id), (sc) => sc?.projectId, projectGuard, "Schedule not found");
+  const getOwnedBaseline = makeOwnedViaParent(
+    loadBaseline, (b) => b?.scheduleId, getOwnedSchedule, "Baseline not found");
+  const getOwnedScheduleItemStep = makeOwnedViaParent(
+    loadScheduleItemStep, (st) => st?.scheduleItemId, getOwnedScheduleItem as any, "Step not found");
+  const getOwnedActivityNote = makeOwnedViaParent(
+    loadActivityNote, (n) => n?.scheduleItemId, getOwnedScheduleItem as any, "Note not found");
+
+  /** category → labour estimate → project → company */
+  const getOwnedLabourEstimateCategory = async (req: any, res: any, id: string, notFound = "Category not found") => {
+    if (!id) { res.status(404).json({ error: notFound }); return null; }
+    const { labourEstimateCategories, labourEstimates } = await import("@shared/schema");
+    const [cat] = await db.select().from(labourEstimateCategories)
+      .where(eq(labourEstimateCategories.id, id)).limit(1);
+    if (!cat) { res.status(404).json({ error: notFound }); return null; }
+    const [est] = await db.select().from(labourEstimates)
+      .where(eq(labourEstimates.id, (cat as any).labourEstimateId)).limit(1);
+    if (!est) { res.status(404).json({ error: notFound }); return null; }
+    if (!(await enforceProjectCompany(req, res, (est as any).projectId, notFound))) return null;
+    return cat;
+  };
+
+  // --- batches ---
+  /**
+   * Every schedule item id resolved in ONE round trip:
+   * schedule_items → schedules → projects.company_id. The batch-sort route
+   * records that per-item lookups caused production timeouts on large
+   * schedules, so this must not become N queries.
+   */
+  const ownsAllScheduleItems = makeOwnsAllByIds(async (ids, companyId) => {
+    const { scheduleItems: siTbl, schedules: schTbl, projects: projTbl } = await import("@shared/schema");
+    const rows = await db
+      .select({ id: siTbl.id })
+      .from(siTbl)
+      .innerJoin(schTbl, eq(siTbl.scheduleId, schTbl.id))
+      .innerJoin(projTbl, eq(schTbl.projectId, projTbl.id))
+      .where(and(inArray(siTbl.id, ids), eq(projTbl.companyId, companyId)));
+    return rows.map((r: any) => r.id);
+  }, "Schedule item not found");
+
+  const ownsAllTasks = makeOwnsAllVia(getOwnedTask as any, "Task not found");
+
+  /**
+   * Every project id in one round trip. Used by the bulk project-access route,
+   * which would otherwise call enforceProjectCompany in a loop — N sequential
+   * round trips at ~400ms each is ~8s for a 20-project grant.
+   */
+  const ownsAllProjects = makeOwnsAllByIds(async (ids, companyId) => {
+    const { projects: projTbl } = await import("@shared/schema");
+    const rows = await db
+      .select({ id: projTbl.id })
+      .from(projTbl)
+      .where(and(inArray(projTbl.id, ids), eq(projTbl.companyId, companyId)));
+    return rows.map((r: any) => r.id);
+  }, "Project not found");
 
   // ---- Task activity (audit lines merged into the comment feed) ----
   const taskStatusLabel = (s?: string | null): string => {
@@ -7506,6 +7658,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/estimates/:id/enotes", requireAuth, async (req, res) => {
     try {
+      // Ownership: unguarded this both read a foreign estimate's notes and,
+      // when the estimate had no rows, SEEDED ~90 default rows into it.
+      if (!(await getOwnedEstimate(req, res, req.params.id, "Estimate not found"))) return;
       const rows = await storage.getEstimateEnotes(req.params.id);
       res.json(rows);
     } catch (error) {
@@ -7734,6 +7889,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/labour-estimate-categories/:catId", requireAuth, async (req, res) => {
     try {
+      // Ownership: category → labour estimate → project → company.
+      if (!(await getOwnedLabourEstimateCategory(req, res, req.params.catId))) return;
       await storage.deleteLabourEstimateCategory(req.params.catId);
       res.status(204).send();
     } catch (error) {
@@ -7912,6 +8069,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/enote-template-sets/:id", requireAuth, async (req, res) => {
     try {
+      // Ownership: template sets carry companyId. This deletes every
+      // enote_templates row in the set, so an unguarded id destroyed another
+      // tenant's whole template library entry.
+      if (!(await getOwnedEnoteTemplateSet(req, res, req.params.id))) return;
       await storage.deleteEnoteTemplateSet(req.params.id);
       res.status(204).send();
     } catch (error) {
@@ -7946,6 +8107,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const companyId = (req.user as any)?.companyId;
       if (!companyId) return res.status(401).json({ error: "No company" });
       const { replaceExisting } = req.body;
+      // BOTH ids must be owned: replaceExisting runs a DELETE across the
+      // target estimate's notes before inserting the source set's rows.
+      if (!(await getOwnedEstimate(req, res, req.params.id, "Estimate not found"))) return;
+      if (!(await getOwnedEnoteTemplateSet(req, res, req.params.templateSetId))) return;
       const rows = await storage.applyEnoteTemplateSetToEstimate(req.params.templateSetId, req.params.id, companyId, !!replaceExisting);
       res.json(rows);
     } catch (error) {
@@ -8313,7 +8478,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Update a scope stage (for inline editing)
   app.patch("/api/scope-stages/:id", requireAuth, requireTeamMember, async (req, res) => {
     try {
-      const updateSchema = insertScopeStageSchema.partial();
+      // projectId is omitted: a stage never changes project via PATCH, and
+      // accepting it let a caller re-parent a stage they legitimately own onto
+      // another tenant's project — after which the isCompleted cascade below
+      // calls bulkUpdateScopeItemsInStage against THAT project. (Residual from
+      // the PR #35 guard, which checks the stage but not where it moves to.)
+      const updateSchema = insertScopeStageSchema.omit({ projectId: true }).partial();
       const validationResult = updateSchema.safeParse(req.body);
       if (!validationResult.success) {
         return res.status(400).json({
@@ -12784,6 +12954,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/user-roles/:roleId/permissions", requireAuth, requireTeamMember, requirePermission("admin.roles", "edit"), async (req, res) => {
     try {
+      // setRolePermissions DELETEs every role_permissions row for the roleId
+      // and re-inserts the payload — so an unguarded id rewrote another
+      // company's entire role matrix. user_roles is company-scoped and
+      // getUserRole already takes companyId; it simply was not called here.
+      const roleCompanyId = (req.user as any)?.companyId;
+      const targetRole = roleCompanyId
+        ? await storage.getUserRole(req.params.roleId, roleCompanyId)
+        : null;
+      if (!targetRole) return res.status(404).json({ error: "User role not found" });
+
       const { permissions } = req.body;
       if (!Array.isArray(permissions)) {
         return res.status(400).json({ error: "Permissions must be an array" });
@@ -12922,6 +13102,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "projectIds must be an array" });
       }
 
+      // Both sides were unchecked: requireTeamMember is a role gate, and
+      // neither the target user nor the project ids were tied to the caller's
+      // company. user_project_access carries no companyId, so the route is the
+      // only place this can be enforced.
+      const callerCompanyId = (currentUser as any)?.companyId;
+      const targetUser = callerCompanyId ? await storage.getUser(targetUserId) : null;
+      if (!targetUser || (targetUser as any).companyId !== callerCompanyId) {
+        return res.status(404).json({ error: "User not found" });
+      }
+      if (!(await ownsAllProjects(req, res, projectIds as string[]))) return;
+
       const currentAccess = await storage.getUserProjectAccess(targetUserId);
       const currentProjectIds = new Set(currentAccess.map(a => a.projectId));
       const desiredProjectIds = new Set(projectIds as string[]);
@@ -12977,16 +13168,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/invitations", requireAuth, requirePermission("admin.users", "add"), async (req, res) => {
     try {
-      const validationResult = insertUserInvitationSchema.safeParse(req.body);
+      // companyId is omitted from the accepted body and taken from the
+      // session. It used to be read straight off req.body, so an admin in one
+      // company could mint an invitation into another — and, controlling the
+      // invited address, accept it into a real account there.
+      const sessionCompanyId = (req.user as any)?.companyId;
+      if (!sessionCompanyId) return res.status(403).json({ error: "No company context" });
+      const validationResult = insertUserInvitationSchema
+        .omit({ companyId: true })
+        .safeParse(req.body);
       if (!validationResult.success) {
-        return res.status(400).json({ 
-          error: "Validation failed", 
-          details: fromZodError(validationResult.error).toString() 
+        return res.status(400).json({
+          error: "Validation failed",
+          details: fromZodError(validationResult.error).toString()
         });
       }
+      (validationResult.data as any).companyId = sessionCompanyId;
 
       // Get company name to store in invitation for display on accept page
-      const companyId = validationResult.data.companyId;
+      const companyId = sessionCompanyId;
       const company = await storage.getCompany(companyId);
       const companyDisplayName = company?.nickname || company?.name || null;
 
@@ -16875,11 +17075,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/bills", requireAuth, async (req, res) => {
     try {
-      const billData = { ...req.body };
       const currentUser = (req as any).user;
+      // companyId is never accepted from the body — it was only *defaulted*
+      // from the session, so a supplied one won and the bill was created
+      // inside another tenant (visible in their bill list, rewriting their
+      // project budget). projectId is accepted but must be verified below.
+      const { companyId: _ignoredCompanyId, ...bodyWithoutCompany } = req.body ?? {};
+      const billData: any = { ...bodyWithoutCompany };
       billData.createdById = currentUser.id;
-      if (!billData.companyId && currentUser.companyId) {
-        billData.companyId = currentUser.companyId;
+      billData.companyId = currentUser.companyId;
+      if (billData.projectId) {
+        if (!(await enforceProjectCompany(req, res, billData.projectId, "Project not found"))) return;
       }
 
       if (!billData.billNumber || billData.billNumber.startsWith("BILL-") && /BILL-\d{13,}/.test(billData.billNumber)) {
@@ -23090,18 +23296,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
         attachmentCount: parsedEmail.attachments.length,
       });
 
-      // Get default user (system user or first admin)
-      const users = await storage.getUsers("team");
-      const defaultUser = users.find(u => u.username === "admin") || users[0];
-
-      if (!defaultUser) {
-        return res.status(500).json({ error: "No system user found" });
+      // Bills are created in the CALLER's company, attributed to the caller.
+      //
+      // This used to be `storage.getUsers("team")` — every team user on the
+      // platform — then `find(username === "admin") || users[0]`. Whichever
+      // company happened to own that row received every emailed invoice,
+      // regardless of who submitted it: a cross-tenant write, and the reason
+      // the feature only ever worked for one company.
+      //
+      // The route is behind requireAuth, so there is a real session to use.
+      const caller = req.user as any;
+      const callerCompanyId = caller?.companyId;
+      if (!callerCompanyId) {
+        return res.status(403).json({ error: "No company context" });
       }
 
       // Process email and create bills
       const results = await autoBillCreator.processEmailInvoices(parsedEmail, {
-        defaultUserId: defaultUser.id,
-        companyId: defaultUser.companyId || undefined,
+        defaultUserId: caller.id,
+        companyId: callerCompanyId,
         autoMatch: true, // Auto-match suppliers and projects
       });
 
@@ -23209,7 +23422,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Site Diary Template routes
   app.get("/api/site-diary-templates", async (req, res) => {
     try {
-      const templates = await storage.getSiteDiaryTemplates();
+      const companyId = (req.user as any)?.companyId;
+      if (!companyId) return res.status(403).json({ error: "No company context" });
+      const templates = await storage.getSiteDiaryTemplates(companyId);
       res.json(templates);
     } catch (error: any) {
       res.status(500).json({ 
@@ -23222,7 +23437,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get default site diary template for company (must be before :id route)
   app.get("/api/site-diary-templates/default/:companyId", async (req, res) => {
     try {
-      const template = await storage.getDefaultSiteDiaryTemplate(req.params.companyId);
+      // companyId comes from the SESSION. The :companyId path param is
+      // vestigial and deliberately ignored — it used to be passed straight to
+      // storage, so naming another tenant returned their default template.
+      // Both mobile callers already send their own user.companyId, so reading
+      // the session instead is a no-op for them.
+      const companyId = (req.user as any)?.companyId;
+      if (!companyId) return res.status(403).json({ error: "No company context" });
+      const template = await storage.getDefaultSiteDiaryTemplate(companyId);
       if (!template) {
         // Return null if no default set - not an error
         return res.json(null);
@@ -23259,6 +23481,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(401).json({ error: "Not authenticated" });
       }
       
+      // Ownership: site diary templates carry companyId directly.
+      if (!(await getOwnedSiteDiaryTemplate(req, res, req.params.id))) return;
       const template = await storage.setDefaultSiteDiaryTemplate(req.params.id, user.companyId);
       if (!template) {
         return res.status(404).json({ error: "Template not found" });
@@ -23336,6 +23560,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/site-diary-templates/:id", async (req, res) => {
     try {
+      // Ownership: site diary templates carry companyId directly.
+      if (!(await getOwnedSiteDiaryTemplate(req, res, req.params.id))) return;
       const success = await storage.deleteSiteDiaryTemplate(req.params.id);
       if (!success) {
         return res.status(404).json({ error: "Template not found" });
@@ -23504,8 +23730,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(401).json({ error: "Not authenticated" });
       }
 
-      const templates = await storage.getSiteDiaryTemplates();
-      const companyTemplates = templates.filter((t: any) => t.companyId === user.companyId && !t.isArchived);
+      const companyTemplates = await storage.getSiteDiaryTemplates(user.companyId);
 
       const XLSX = await import("xlsx");
       const rows: any[] = [];
@@ -23571,8 +23796,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(401).json({ error: "Not authenticated" });
       }
 
-      const templates = await storage.getSiteDiaryTemplates();
-      const companyTemplates = templates.filter((t: any) => t.companyId === user.companyId && !t.isArchived);
+      const companyTemplates = await storage.getSiteDiaryTemplates(user.companyId);
 
       const exportData = companyTemplates.map((t: any) => ({
         name: t.name,
@@ -26496,6 +26720,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/projects/:projectId/budget/calculate", requireAuth, requirePermission("financial.budget_actuals", "view"), async (req, res) => {
     try {
+      // Ownership: requirePermission is a role gate, not a tenant gate.
+      // calculateBudget CREATES or OVERWRITES the budget for the project.
+      if (!(await enforceProjectCompany(req, res, req.params.projectId, "Project not found"))) return;
       const budget = await storage.calculateBudget(req.params.projectId);
       res.json(budget);
     } catch (error: any) {
@@ -26508,6 +26735,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/budgets/:id", async (req, res) => {
     try {
+      // Ownership: budget → project → company. This route had no middleware
+      // at all beyond the global auth/requireCompany mount.
+      if (!(await getOwnedBudget(req, res, req.params.id))) return;
       const validationResult = updateBudgetSchema.safeParse(req.body);
       if (!validationResult.success) {
         return res.status(400).json({ 
@@ -26531,6 +26761,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/budgets/:id", async (req, res) => {
     try {
+      if (!(await getOwnedBudget(req, res, req.params.id))) return;
       const success = await storage.deleteBudget(req.params.id);
       if (!success) {
         return res.status(404).json({ error: "Budget not found" });
@@ -26559,6 +26790,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/budgets/:budgetId/line-items/recalculate", requireAuth, requirePermission("financial.budget_actuals", "view"), async (req, res) => {
     try {
+      if (!(await getOwnedBudget(req, res, req.params.budgetId))) return;
       const lineItems = await storage.recalculateBudgetLineItems(req.params.budgetId);
       res.json(lineItems);
     } catch (error: any) {
@@ -26571,6 +26803,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/budget-line-items/:id", async (req, res) => {
     try {
+      // Ownership: line item → budget → project → company.
+      if (!(await getOwnedBudgetLineItem(req, res, req.params.id))) return;
       const validationResult = updateBudgetLineItemSchema.safeParse(req.body);
       if (!validationResult.success) {
         return res.status(400).json({ 
@@ -26607,6 +26841,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/projects/:projectId/labour-hours-budget/recalculate", requireAuth, requirePermission("financial.budget_labour", "view"), async (req, res) => {
     try {
+      if (!(await enforceProjectCompany(req, res, req.params.projectId, "Project not found"))) return;
       const labourHours = await storage.recalculateLabourHoursBudget(req.params.projectId);
       res.json(labourHours);
     } catch (error: any) {
@@ -28482,12 +28717,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const validationResult = insertScheduleSchema.safeParse(req.body);
       if (!validationResult.success) {
-        return res.status(400).json({ 
-          error: "Validation failed", 
-          details: fromZodError(validationResult.error).toString() 
+        return res.status(400).json({
+          error: "Validation failed",
+          details: fromZodError(validationResult.error).toString()
         });
       }
-      
+
+      // projectId arrives in the body (there is no path param here) and was
+      // inserted verbatim — a schedule could be created on another tenant's
+      // project. It must be owned.
+      if (!(await enforceProjectCompany(req, res, (validationResult.data as any).projectId, "Project not found"))) return;
+
       const schedule = await storage.createSchedule(validationResult.data);
       res.status(201).json(schedule);
     } catch (error: any) {
@@ -28947,6 +29187,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
       
+      // scheduleId arrives in the body and drives both the sibling-sortOrder
+      // query and the insert — it must belong to the caller's company.
+      if (!(await getOwnedSchedule(req, res, (validationResult.data as any).scheduleId))) return;
+
       // Handle business assignee (company:xxx format)
       const createData = { ...validationResult.data } as any;
       if (createData.assignedToId && createData.assignedToId.startsWith('company:')) {
@@ -29508,7 +29752,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!Array.isArray(items)) {
         return res.status(400).json({ error: "Expected items array" });
       }
-      
+
+      // Ownership for the whole batch in one query, before any write.
+      if (!(await ownsAllScheduleItems(req, res, items.map((i: any) => i?.id).filter(Boolean)))) return;
+
       // Get original items to track changes
       const originalItemsMap = new Map<string, any>();
       for (const item of items) {
@@ -29665,6 +29912,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
+      // The schedule check above proves the caller owns the schedule they
+      // NAMED — it says nothing about the item ids they supplied. Verify every
+      // id (and any parentItemId being set) in one round trip before writing.
+      const touchedIds = [
+        ...updates.map((u: any) => u?.id),
+        ...updates.map((u: any) => u?.parentItemId),
+      ].filter(Boolean);
+      if (!(await ownsAllScheduleItems(req, res, touchedIds))) return;
+
       // Apply all updates in parallel now that ownership is confirmed
       const updatedItems = await Promise.all(
         updates
@@ -29699,10 +29955,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "items array is required and must not be empty" });
       }
 
-      const schedule = await storage.getScheduleById(scheduleId);
-      if (!schedule) {
-        return res.status(404).json({ error: "Schedule not found" });
-      }
+      // The schedule was fetched and used (its weekend flags, its project's
+      // holidays) but never checked against the caller's company.
+      const schedule = await getOwnedSchedule(req, res, scheduleId);
+      if (!schedule) return;
 
       // Get existing items count for sort order offset
       const existingItems = await storage.getScheduleItems(scheduleId);
@@ -29875,6 +30131,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/schedule-items/:itemId/steps", async (req, res) => {
     if (!req.user) return res.status(401).json({ error: "Not authenticated" });
+    // Ownership: step → schedule item → schedule → project → company.
+    // `if (!req.user)` is an authentication check, not a tenancy one.
+    if (!(await getOwnedScheduleItem(req, res, req.params.itemId, "Schedule item not found"))) return;
     const data = insertScheduleItemStepSchema.parse({
       ...req.body,
       scheduleItemId: req.params.itemId,
@@ -29885,6 +30144,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/schedule-item-steps/:id", async (req, res) => {
     if (!req.user) return res.status(401).json({ error: "Not authenticated" });
+    if (!(await getOwnedScheduleItemStep(req, res, req.params.id))) return;
     const { isCompleted, name, sortOrder } = req.body;
     const updates: any = {};
     if (isCompleted !== undefined) updates.isCompleted = isCompleted;
@@ -29899,6 +30159,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/schedule-item-steps/:id", async (req, res) => {
     if (!req.user) return res.status(401).json({ error: "Not authenticated" });
+    if (!(await getOwnedScheduleItemStep(req, res, req.params.id))) return;
     await db.delete(scheduleItemSteps).where(eq(scheduleItemSteps.id, req.params.id));
     res.json({ success: true });
   });
@@ -29913,6 +30174,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/schedules/:scheduleId/baselines", async (req, res) => {
     if (!req.user) return res.status(401).json({ error: "Not authenticated" });
+    // Ownership: baseline → schedule → project → company. Unguarded this
+    // snapshotted every schedule_item of a foreign schedule into a row the
+    // caller could then read back.
+    if (!(await getOwnedSchedule(req, res, req.params.scheduleId))) return;
     const user = req.user as any;
     const { name, description } = req.body;
 
@@ -29955,6 +30220,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/baselines/:id", async (req, res) => {
     if (!req.user) return res.status(401).json({ error: "Not authenticated" });
+    if (!(await getOwnedBaseline(req, res, req.params.id))) return;
     await db.delete(scheduleBaselines).where(eq(scheduleBaselines.id, req.params.id));
     res.json({ success: true });
   });
@@ -30370,6 +30636,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/schedule-items/:scheduleItemId/activity-notes", requireAuth, async (req, res) => {
     try {
+      // Ownership: stamping the caller's own userId onto the row is NOT an
+      // ownership check — the note still lands on the target schedule item.
+      if (!(await getOwnedScheduleItem(req, res, req.params.scheduleItemId, "Schedule item not found"))) return;
       const validationResult = insertActivityNoteSchema.safeParse({
         ...req.body,
         scheduleItemId: req.params.scheduleItemId,
@@ -30428,10 +30697,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/activity-notes/:id", requireAuth, async (req, res) => {
     try {
+      // Ownership first: note → schedule item → schedule → project → company.
+      // The isAdmin branch below skips the author check, and an admin of
+      // ANOTHER company is still an admin — so without this the branch was a
+      // cross-tenant delete.
+      if (!(await getOwnedActivityNote(req, res, req.params.id))) return;
+
       // Check if user is admin or the note author
       const canDelete = await storage.canEditActivityNote(req.params.id, req.user!.id);
       const isAdmin = req.user!.roleName === 'Admin' || req.user!.roleName === 'Owner';
-      
+
       if (!canDelete && !isAdmin) {
         return res.status(403).json({ 
           error: "Cannot delete note. Only the author (within 5 minutes) or admins can delete notes." 
@@ -33028,6 +33303,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/channels/:channelId/members", requireAuth, async (req, res) => {
     try {
+      // Ownership: channels carry companyId and storage.getChannel already
+      // filters on it — this route simply never called it.
+      if (!(await getOwnedChannel(req, res, req.params.channelId))) return;
       const validationResult = insertChannelMemberSchema.omit({ channelId: true }).safeParse(req.body);
       if (!validationResult.success) {
         return res.status(400).json({ 
@@ -33048,6 +33326,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/channels/:channelId/members/:userId", requireAuth, async (req, res) => {
     try {
+      // Ownership: the channel must be the caller's. The handler was a single
+      // storage call with no checks of any kind.
+      if (!(await getOwnedChannel(req, res, req.params.channelId))) return;
       await storage.removeChannelMember(req.params.channelId, req.params.userId);
       res.status(204).send();
     } catch (error) {
@@ -33209,7 +33490,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const userId = req.user!.id;
       const channelId = req.params.channelId;
-      
+
+      // Ownership: post into another tenant's channel was possible with only
+      // the channel id.
+      if (!(await getOwnedChannel(req, res, channelId))) return;
+
       const validationResult = insertMessageSchema.omit({ channelId: true, userId: true }).safeParse(req.body);
       if (!validationResult.success) {
         return res.status(400).json({ 
@@ -33360,6 +33645,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/messages/:id", requireAuth, async (req, res) => {
     try {
+      // Ownership: message → channel → company.
+      if (!(await getOwnedMessage(req, res, req.params.id))) return;
       await storage.deleteMessage(req.params.id);
       res.status(204).send();
     } catch (error) {
@@ -35238,7 +35525,11 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
       if (!companyId) {
         return res.status(401).json({ error: "Unauthorized - no company context" });
       }
-      const state = Buffer.from(JSON.stringify({ companyId })).toString("base64");
+      // Signed, action-scoped state — the same helper the Google Calendar
+      // flow uses. An unsigned base64 blob let a crafted state name any
+      // company on the callback.
+      const { signOAuthState } = await import('./services/googleOAuthService');
+      const state = signOAuthState({ action: 'xero', companyId, userId: user.id });
       const authUrl = xeroService.getAuthUrl(state);
       res.json({ authUrl });
     } catch (error: any) {
@@ -35254,19 +35545,22 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
         return res.status(400).json({ error: "Missing authorization code" });
       }
 
-      let companyId: string | undefined;
-      if (state && typeof state === "string") {
-        try {
-          const stateData = JSON.parse(Buffer.from(state, "base64").toString());
-          companyId = stateData.companyId;
-        } catch {}
-      }
-
+      // The state must verify AND name the caller's own company. It used to be
+      // unsigned base64 and was PREFERRED over the session
+      // (`companyId = stateData.companyId || user?.companyId`), so a crafted
+      // state overwrote another tenant's Xero connection with the caller's
+      // tokens. Same class as the Calendar fix in PR #34.
+      const { verifyOAuthState } = await import('./services/googleOAuthService');
       const user = req.user as any;
-      companyId = companyId || user?.companyId;
-      if (!companyId) {
+      const sessionCompanyId = user?.companyId;
+      if (!sessionCompanyId) {
         return res.status(401).json({ error: "Unauthorized - no company context" });
       }
+      const verified = verifyOAuthState(state, 'xero');
+      if (!verified || verified.companyId !== sessionCompanyId) {
+        return res.status(400).json({ error: "Invalid or expired OAuth state" });
+      }
+      const companyId = sessionCompanyId;
 
       const tokenData = await xeroService.exchangeCodeForTokens(code);
       const tenants = await xeroService.getTenants(tokenData.access_token);
