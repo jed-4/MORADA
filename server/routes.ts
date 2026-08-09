@@ -8482,7 +8482,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Update a scope stage (for inline editing)
   app.patch("/api/scope-stages/:id", requireAuth, requireTeamMember, async (req, res) => {
     try {
-      const updateSchema = insertScopeStageSchema.partial();
+      // projectId is omitted: a stage never changes project via PATCH, and
+      // accepting it let a caller re-parent a stage they legitimately own onto
+      // another tenant's project — after which the isCompleted cascade below
+      // calls bulkUpdateScopeItemsInStage against THAT project. (Residual from
+      // the PR #35 guard, which checks the stage but not where it moves to.)
+      const updateSchema = insertScopeStageSchema.omit({ projectId: true }).partial();
       const validationResult = updateSchema.safeParse(req.body);
       if (!validationResult.success) {
         return res.status(400).json({
@@ -13146,16 +13151,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/invitations", requireAuth, requirePermission("admin.users", "add"), async (req, res) => {
     try {
-      const validationResult = insertUserInvitationSchema.safeParse(req.body);
+      // companyId is omitted from the accepted body and taken from the
+      // session. It used to be read straight off req.body, so an admin in one
+      // company could mint an invitation into another — and, controlling the
+      // invited address, accept it into a real account there.
+      const sessionCompanyId = (req.user as any)?.companyId;
+      if (!sessionCompanyId) return res.status(403).json({ error: "No company context" });
+      const validationResult = insertUserInvitationSchema
+        .omit({ companyId: true })
+        .safeParse(req.body);
       if (!validationResult.success) {
-        return res.status(400).json({ 
-          error: "Validation failed", 
-          details: fromZodError(validationResult.error).toString() 
+        return res.status(400).json({
+          error: "Validation failed",
+          details: fromZodError(validationResult.error).toString()
         });
       }
+      (validationResult.data as any).companyId = sessionCompanyId;
 
       // Get company name to store in invitation for display on accept page
-      const companyId = validationResult.data.companyId;
+      const companyId = sessionCompanyId;
       const company = await storage.getCompany(companyId);
       const companyDisplayName = company?.nickname || company?.name || null;
 
@@ -17044,11 +17058,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/bills", requireAuth, async (req, res) => {
     try {
-      const billData = { ...req.body };
       const currentUser = (req as any).user;
+      // companyId is never accepted from the body — it was only *defaulted*
+      // from the session, so a supplied one won and the bill was created
+      // inside another tenant (visible in their bill list, rewriting their
+      // project budget). projectId is accepted but must be verified below.
+      const { companyId: _ignoredCompanyId, ...bodyWithoutCompany } = req.body ?? {};
+      const billData: any = { ...bodyWithoutCompany };
       billData.createdById = currentUser.id;
-      if (!billData.companyId && currentUser.companyId) {
-        billData.companyId = currentUser.companyId;
+      billData.companyId = currentUser.companyId;
+      if (billData.projectId) {
+        if (!(await enforceProjectCompany(req, res, billData.projectId, "Project not found"))) return;
       }
 
       if (!billData.billNumber || billData.billNumber.startsWith("BILL-") && /BILL-\d{13,}/.test(billData.billNumber)) {
@@ -28666,12 +28686,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const validationResult = insertScheduleSchema.safeParse(req.body);
       if (!validationResult.success) {
-        return res.status(400).json({ 
-          error: "Validation failed", 
-          details: fromZodError(validationResult.error).toString() 
+        return res.status(400).json({
+          error: "Validation failed",
+          details: fromZodError(validationResult.error).toString()
         });
       }
-      
+
+      // projectId arrives in the body (there is no path param here) and was
+      // inserted verbatim — a schedule could be created on another tenant's
+      // project. It must be owned.
+      if (!(await enforceProjectCompany(req, res, (validationResult.data as any).projectId, "Project not found"))) return;
+
       const schedule = await storage.createSchedule(validationResult.data);
       res.status(201).json(schedule);
     } catch (error: any) {
@@ -29131,6 +29156,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
       
+      // scheduleId arrives in the body and drives both the sibling-sortOrder
+      // query and the insert — it must belong to the caller's company.
+      if (!(await getOwnedSchedule(req, res, (validationResult.data as any).scheduleId))) return;
+
       // Handle business assignee (company:xxx format)
       const createData = { ...validationResult.data } as any;
       if (createData.assignedToId && createData.assignedToId.startsWith('company:')) {
