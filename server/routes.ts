@@ -201,6 +201,7 @@ import { clientAccessGate } from "./middleware/clientAccess";
 import { requireActivePlan } from "./middleware/plan";
 import { requireCompany } from "./middleware/requireCompany";
 import { serveUpload } from "./middleware/uploadsAccess";
+import { createScopeOwnershipGuards } from "./middleware/scopeOwnership";
 import { signUploadGrant, verifyUploadGrant } from "./utils/signedGrant";
 import { getStripe, isStripeConfigured } from "./stripe";
 import {
@@ -219,6 +220,7 @@ import {
 import { foundingSpotsLeft } from "./foundingMembers";
 import { ensureCompanyReferralCode, getCompanyIdByReferralCode, getReferralStats } from "./referrals";
 import multer from "multer";
+import { promises as fsPromises } from "node:fs";
 import * as XLSX from "xlsx";
 import { initializeSocketManager, emitTaskCreated, emitTaskUpdated, emitTaskDeleted, emitNotification, emitReactionUpdated, emitMessagesRead, getIO, getConnectedUserIdsForCompany } from "./socketManager";
 import { dispatchChatMessageNotifications } from "./utils/chatNotifications";
@@ -5470,37 +5472,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Cross-tenant ownership guard for indirectly-scoped resources (estimates,
-  // selections, schedules) that are isolated only via project_id. Loads the
-  // owning project and verifies it belongs to the caller's company. Returns
-  // true when access is allowed; otherwise writes the 404/403 response and
-  // returns false so the caller can `return` immediately. 404 when the
-  // resource/project is missing, 403 on a company mismatch.
-  const enforceProjectCompany = async (
-    req: any,
-    res: any,
-    projectId: string | null | undefined,
-    notFoundMessage = "Not found",
-  ): Promise<boolean> => {
-    if (!projectId) {
-      res.status(404).json({ error: notFoundMessage });
-      return false;
-    }
-    const project = await storage.getProject(projectId);
-    if (!project) {
-      res.status(404).json({ error: notFoundMessage });
-      return false;
-    }
-    const companyId = req.user?.companyId;
-    if (!companyId || project.companyId !== companyId) {
-      // Return 404 (not 403) on a company mismatch so we don't confirm the
-      // record's existence to an unauthorized caller. Unauthenticated requests
-      // are already handled upstream by the auth middleware (401).
-      res.status(404).json({ error: notFoundMessage });
-      return false;
-    }
-    return true;
-  };
+  // Cross-tenant ownership guards. Each loads a record by id and verifies it
+  // belongs to the caller's company, returning the record (or true) when owned
+  // and sending a 404 otherwise — 404 rather than 403 so the existence of
+  // another tenant's record is never confirmed to an unauthorized caller.
+  // Unauthenticated requests are already handled upstream (401).
+  //
+  // The implementations live in middleware/scopeOwnership.ts with the record
+  // lookups injected, so they can be tested without a database. Behaviour is
+  // unchanged for existing enforceProjectCompany call sites.
+  const {
+    enforceProjectCompany,
+    getOwnedScopeItem,
+    getOwnedScopeStage,
+    getOwnedGearPhoto,
+    ownsAllScopeStages,
+  } = createScopeOwnershipGuards({
+    getProject: (id) => storage.getProject(id),
+    getScopeItem: (id) => storage.getScopeItem(id),
+    getScopeStage: (id) => storage.getScopeStage(id),
+    getScopeGearPhoto: (id) => storage.getScopeGearPhoto(id),
+  });
 
   // -------------------------------------------------------------------------
   // Tenant-isolation ownership helpers. Each loads a record by id and verifies
@@ -8135,10 +8127,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Create a new scope item
   app.post("/api/projects/:projectId/scope", requireAuth, requireTeamMember, async (req, res) => {
     try {
-      console.log('POST /api/projects/:projectId/scope - req.params:', req.params);
-      console.log('POST /api/projects/:projectId/scope - req.body:', req.body);
-      console.log('POST /api/projects/:projectId/scope - req.user:', req.user);
-      
       if (!(await enforceProjectCompany(req, res, req.params.projectId, "Project not found"))) return;
       const validationResult = insertScopeItemSchema.omit({ projectId: true, companyId: true }).safeParse(req.body);
       if (!validationResult.success) {
@@ -8328,11 +8316,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const updateSchema = insertScopeStageSchema.partial();
       const validationResult = updateSchema.safeParse(req.body);
       if (!validationResult.success) {
-        return res.status(400).json({ 
-          error: "Validation failed", 
+        return res.status(400).json({
+          error: "Validation failed",
           details: fromZodError(validationResult.error).toString()
         });
       }
+
+      // Ownership: scope stages carry companyId directly. Without this an
+      // outside caller could rename a stage, swap its attachments, or flip
+      // isCompleted — which cascades a bulk write across every scope item in
+      // the victim's stage.
+      if (!(await getOwnedScopeStage(req, res, req.params.id))) return;
 
       let updatedStage;
       try {
@@ -8382,6 +8376,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Delete a scope stage
   app.delete("/api/scope-stages/:id", requireAuth, requireTeamMember, async (req, res) => {
     try {
+      // Ownership: scope stages carry companyId directly.
+      if (!(await getOwnedScopeStage(req, res, req.params.id))) return;
+
       const success = await storage.deleteScopeStage(req.params.id);
       if (!success) {
         return res.status(404).json({ error: "Scope stage not found" });
@@ -8401,6 +8398,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "Updates must be an array" });
       }
 
+      // Per-record ownership before writing any order changes — mirrors
+      // POST /api/scope/reorder.
+      if (!(await ownsAllScopeStages(req, res, updates.map((u: any) => u?.id)))) return;
+
       await storage.reorderScopeStages(updates);
       res.status(204).send();
     } catch (error) {
@@ -8412,15 +8413,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Initialize default stages for a project
   app.post("/api/projects/:projectId/scope-stages/initialize", requireAuth, requireTeamMember, async (req, res) => {
     try {
-      const companyId = req.user!.companyId!;
       const projectId = req.params.projectId;
-      
-      // Verify project exists before initializing stages
-      const project = await storage.getProject(projectId);
-      if (!project) {
-        return res.status(404).json({ error: "Project not found" });
-      }
-      
+
+      // Ownership: existence alone is not enough — an unguarded check let a
+      // caller seed default stages into another company's project.
+      if (!(await enforceProjectCompany(req, res, projectId, "Project not found"))) return;
+
+      const companyId = req.user!.companyId!;
       const stages = await storage.initializeDefaultStages(projectId, companyId);
       res.status(201).json(stages);
     } catch (error) {
@@ -8527,15 +8526,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Apply a template to a project
   app.post("/api/scope-templates/:id/apply", requireAuth, requireTeamMember, async (req, res) => {
     try {
+      const companyId = req.user!.companyId!;
       const { projectId } = req.body;
       if (!projectId) {
         return res.status(400).json({ error: "Project ID is required" });
       }
 
-      const items = await storage.applyScopeTemplate(req.params.id, projectId);
+      // Both the template read and the project write are scoped to the caller's
+      // company inside applyScopeTemplate — same contract as apply-stage below.
+      const items = await storage.applyScopeTemplate(req.params.id, projectId, companyId);
       res.status(201).json(items);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error applying scope template:", error);
+      if (error.message?.includes("not found") || error.message?.includes("Access denied")) {
+        return res.status(404).json({ error: error.message });
+      }
       res.status(500).json({ error: "Failed to apply scope template" });
     }
   });
@@ -8607,9 +8612,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
     limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
   });
 
+  // Discards a multer-written upload. The file lands on disk before any
+  // handler runs, so every rejection path has to clean up after itself or a
+  // refused cross-tenant POST still costs 10 MB.
+  const discardUpload = async (file?: Express.Multer.File) => {
+    if (!file?.path) return;
+    try {
+      await fsPromises.unlink(file.path);
+    } catch (err: any) {
+      if (err?.code !== 'ENOENT') {
+        console.error("Failed to remove rejected gear photo upload:", err);
+      }
+    }
+  };
+
   // Get gear photos for a scope item
   app.get("/api/scope/:scopeItemId/gear-photos", requireAuth, requireTeamMember, async (req, res) => {
     try {
+      // Ownership: photos are reachable only through their scope item, which
+      // carries companyId directly.
+      if (!(await getOwnedScopeItem(req, res, req.params.scopeItemId))) return;
+
       const photos = await storage.getScopeGearPhotos(req.params.scopeItemId);
       res.json(photos);
     } catch (error) {
@@ -8625,6 +8648,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "No photo uploaded" });
       }
 
+      // Ownership: the row is stamped with the CALLER's companyId, so without
+      // this check a caller could hang their own photo off another tenant's
+      // scope item — getScopeGearPhotos filters by scopeItemId alone, so the
+      // victim would render it.
+      if (!(await getOwnedScopeItem(req, res, req.params.scopeItemId))) {
+        await discardUpload(req.file);
+        return;
+      }
+
       const companyId = req.user!.companyId!;
       const photoData = {
         scopeItemId: req.params.scopeItemId,
@@ -8635,8 +8667,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const validationResult = insertScopeGearPhotoSchema.safeParse(photoData);
       if (!validationResult.success) {
-        return res.status(400).json({ 
-          error: "Validation failed", 
+        await discardUpload(req.file);
+        return res.status(400).json({
+          error: "Validation failed",
           details: fromZodError(validationResult.error).toString()
         });
       }
@@ -8645,6 +8678,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(201).json(newPhoto);
     } catch (error) {
       console.error("Error uploading gear photo:", error);
+      await discardUpload(req.file);
       res.status(500).json({ error: "Failed to upload gear photo" });
     }
   });
@@ -8652,6 +8686,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Delete a gear photo
   app.delete("/api/gear-photos/:id", requireAuth, requireTeamMember, async (req, res) => {
     try {
+      // Ownership: gear photo rows carry companyId directly.
+      if (!(await getOwnedGearPhoto(req, res, req.params.id))) return;
+
       const success = await storage.deleteScopeGearPhoto(req.params.id);
       if (!success) {
         return res.status(404).json({ error: "Photo not found" });
@@ -8660,87 +8697,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error deleting gear photo:", error);
       res.status(500).json({ error: "Failed to delete gear photo" });
-    }
-  });
-
-  // ============================================================
-  // SCOPE INTEGRATION HELPERS
-  // ============================================================
-
-  // Push scope items to estimate
-  app.post("/api/scope/push-to-estimate", requireAuth, requireTeamMember, async (req, res) => {
-    try {
-      const { scopeItemIds, estimateId } = req.body;
-      if (!scopeItemIds || !Array.isArray(scopeItemIds)) {
-        return res.status(400).json({ error: "Scope item IDs must be an array" });
-      }
-      if (!estimateId) {
-        return res.status(400).json({ error: "Estimate ID is required" });
-      }
-
-      const estimateItems = await storage.pushScopeToEstimate(scopeItemIds, estimateId);
-      res.status(201).json(estimateItems);
-    } catch (error) {
-      console.error("Error pushing scope to estimate:", error);
-      res.status(500).json({ error: "Failed to push scope to estimate" });
-    }
-  });
-
-  // Create RFQ from scope items
-  app.post("/api/scope/create-rfq", requireAuth, requireTeamMember, async (req, res) => {
-    try {
-      const { scopeItemIds, projectId } = req.body;
-      if (!scopeItemIds || !Array.isArray(scopeItemIds)) {
-        return res.status(400).json({ error: "Scope item IDs must be an array" });
-      }
-      if (!projectId) {
-        return res.status(400).json({ error: "Project ID is required" });
-      }
-
-      const rfq = await storage.createRfqFromScope(scopeItemIds, projectId);
-      res.status(201).json(rfq);
-    } catch (error) {
-      console.error("Error creating RFQ from scope:", error);
-      res.status(500).json({ error: "Failed to create RFQ from scope" });
-    }
-  });
-
-  // Create PO from scope items
-  app.post("/api/scope/create-po", requireAuth, requireTeamMember, async (req, res) => {
-    try {
-      const { scopeItemIds, projectId } = req.body;
-      if (!scopeItemIds || !Array.isArray(scopeItemIds)) {
-        return res.status(400).json({ error: "Scope item IDs must be an array" });
-      }
-      if (!projectId) {
-        return res.status(400).json({ error: "Project ID is required" });
-      }
-
-      const po = await storage.createPoFromScope(scopeItemIds, projectId);
-      res.status(201).json(po);
-    } catch (error) {
-      console.error("Error creating PO from scope:", error);
-      res.status(500).json({ error: "Failed to create PO from scope" });
-    }
-  });
-
-  // Link scope item to schedule item
-  app.post("/api/scope/:scopeItemId/link-schedule", requireAuth, requireTeamMember, async (req, res) => {
-    try {
-      const { scheduleItemId } = req.body;
-      if (!scheduleItemId) {
-        return res.status(400).json({ error: "Schedule item ID is required" });
-      }
-
-      const updatedItem = await storage.linkScopeToScheduleItem(req.params.scopeItemId, scheduleItemId);
-      if (!updatedItem) {
-        return res.status(404).json({ error: "Scope item not found" });
-      }
-
-      res.json(updatedItem);
-    } catch (error) {
-      console.error("Error linking scope to schedule:", error);
-      res.status(500).json({ error: "Failed to link scope to schedule" });
     }
   });
 

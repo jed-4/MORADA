@@ -20,8 +20,18 @@ interface ScopeTemplateForm {
   category: string;
 }
 
+// templateData is a union: the legacy shape is a bare item array, the current
+// shape is { stages, items }, and some live rows are double-nested inside a
+// further templateData key. Reading .length off the object form silently
+// reported 0 items for every non-legacy template. Mirrors parseTemplateData in
+// ScopeTemplateDetail.tsx.
 const getItemCount = (template: ScopeTemplate) => {
-  return (template.templateData as unknown[])?.length || 0;
+  let raw = template.templateData as any;
+  if (raw?.templateData && typeof raw.templateData === "object") {
+    raw = raw.templateData;
+  }
+  if (Array.isArray(raw)) return raw.length;
+  return raw?.items?.length ?? 0;
 };
 
 const getCategoryColor = (category: string) => {

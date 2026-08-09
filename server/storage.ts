@@ -586,19 +586,14 @@ export interface IStorage {
   createScopeTemplate(template: InsertScopeTemplate): Promise<ScopeTemplate>;
   updateScopeTemplate(id: string, template: Partial<InsertScopeTemplate>, companyId: string): Promise<ScopeTemplate | undefined>;
   deleteScopeTemplate(id: string, companyId: string): Promise<boolean>;
-  applyScopeTemplate(templateId: string, projectId: string): Promise<ScopeItem[]>;
+  applyScopeTemplate(templateId: string, projectId: string, companyId: string): Promise<ScopeItem[]>;
   addItemToScopeTemplate(templateId: string, scopeItem: any, companyId: string): Promise<ScopeTemplate | undefined>;
   
   // Scope Gear Photos CRUD
   getScopeGearPhotos(scopeItemId: string): Promise<ScopeGearPhoto[]>;
+  getScopeGearPhoto(id: string): Promise<ScopeGearPhoto | undefined>;
   createScopeGearPhoto(photo: InsertScopeGearPhoto): Promise<ScopeGearPhoto>;
   deleteScopeGearPhoto(id: string): Promise<boolean>;
-  
-  // Scope Integration Helpers
-  pushScopeToEstimate(scopeItemIds: string[], estimateId: string): Promise<EstimateItem[]>;
-  createRfqFromScope(scopeItemIds: string[], projectId: string): Promise<import("@shared/schema").Rfq>;
-  createPoFromScope(scopeItemIds: string[], projectId: string): Promise<import("@shared/schema").PurchaseOrder>;
-  linkScopeToScheduleItem(scopeItemId: string, scheduleItemId: string): Promise<ScopeItem | undefined>;
 
   // Company CRUD
   getCompany(id: string): Promise<import("@shared/schema").Company | undefined>;
@@ -13248,23 +13243,30 @@ export class DbStorage implements IStorage {
     }
   }
 
-  async applyScopeTemplate(templateId: string, projectId: string): Promise<ScopeItem[]> {
+  async applyScopeTemplate(templateId: string, projectId: string, companyId: string): Promise<ScopeItem[]> {
     try {
-      // Get the template
+      // Scope template lookup to caller's company — prevents cross-tenant template reads
       const [template] = await db.select().from(schema.scopeTemplates)
-        .where(eq(schema.scopeTemplates.id, templateId))
+        .where(and(
+          eq(schema.scopeTemplates.id, templateId),
+          eq(schema.scopeTemplates.companyId, companyId),
+        ))
         .limit(1);
-      
+
       if (!template) {
         throw new Error("Template not found");
       }
 
-      // Get project to get companyId
+      // Scope project lookup to caller's company — prevents cross-tenant writes.
+      // companyId used to be read off the project itself, so applying a template
+      // to another tenant's project stamped the new items with THEIR company.
       const project = await this.getProject(projectId);
       if (!project) {
         throw new Error("Project not found");
       }
-      const companyId = project.companyId;
+      if (project.companyId !== companyId) {
+        throw new Error("Access denied");
+      }
 
       // Get existing stages for this project. Track them in a name-keyed
       // map so collisions during template apply re-use the existing row
@@ -13564,6 +13566,21 @@ export class DbStorage implements IStorage {
     }
   }
 
+  // Single-row lookup. Exists so DELETE /api/gear-photos/:id can verify the
+  // photo belongs to the caller's company before removing it — the row carries
+  // companyId directly.
+  async getScopeGearPhoto(id: string): Promise<ScopeGearPhoto | undefined> {
+    try {
+      const [photo] = await db.select().from(schema.scopeGearPhotos)
+        .where(eq(schema.scopeGearPhotos.id, id))
+        .limit(1);
+      return photo;
+    } catch (error) {
+      console.error("Database error in getScopeGearPhoto:", error);
+      return undefined;
+    }
+  }
+
   async createScopeGearPhoto(photo: InsertScopeGearPhoto): Promise<ScopeGearPhoto> {
     const [newPhoto] = await db.insert(schema.scopeGearPhotos)
       .values(photo)
@@ -13579,207 +13596,6 @@ export class DbStorage implements IStorage {
     } catch (error) {
       console.error("Database error in deleteScopeGearPhoto:", error);
       return false;
-    }
-  }
-
-  // Scope Integration Helpers
-  async pushScopeToEstimate(scopeItemIds: string[], estimateId: string): Promise<EstimateItem[]> {
-    try {
-      // Get the scope items
-      const scopeItems = await db.select().from(schema.scopeItems)
-        .where(inArray(schema.scopeItems.id, scopeItemIds));
-
-      // Get the estimate to check if it exists
-      const [estimate] = await db.select().from(schema.estimates)
-        .where(eq(schema.estimates.id, estimateId))
-        .limit(1);
-      
-      if (!estimate) {
-        throw new Error("Estimate not found");
-      }
-
-      // Create estimate items from scope items
-      const estimateItems: InsertEstimateItem[] = scopeItems.map((scopeItem, index) => ({
-        estimateId,
-        groupId: null,
-        description: scopeItem.description || scopeItem.title,
-        costCodeId: scopeItem.costCodeId,
-        costCodeTitle: scopeItem.costCodeTitle,
-        quantity: 1,
-        unit: 'item',
-        unitCost: 0,
-        builderCost: 0,
-        markup: estimate.markupPercentage || 0,
-        clientPrice: 0,
-        taxAmount: 0,
-        displayOrder: index,
-      }));
-
-      const newItems = await this.bulkCreateEstimateItems(estimateItems);
-
-      // Update scope items to link to estimate items
-      for (let i = 0; i < scopeItems.length; i++) {
-        await db.update(schema.scopeItems)
-          .set({ estimateItemId: newItems[i].id })
-          .where(eq(schema.scopeItems.id, scopeItems[i].id));
-      }
-
-      return newItems;
-    } catch (error) {
-      console.error("Database error in pushScopeToEstimate:", error);
-      return [];
-    }
-  }
-
-  async createRfqFromScope(scopeItemIds: string[], projectId: string): Promise<import("@shared/schema").Rfq> {
-    try {
-      // Get project to verify company ownership
-      const [project] = await db.select().from(schema.projects)
-        .where(eq(schema.projects.id, projectId))
-        .limit(1);
-
-      if (!project) {
-        throw new Error('Project not found');
-      }
-
-      // Get scope items and validate they all belong to this project/company
-      const scopeItems = await db.select().from(schema.scopeItems)
-        .where(inArray(schema.scopeItems.id, scopeItemIds));
-
-      // Security: Verify ALL scope items belong to the target project and company
-      for (const item of scopeItems) {
-        if (item.projectId !== projectId || item.companyId !== project.companyId) {
-          throw new Error('Unauthorized: Scope item does not belong to this project/company');
-        }
-      }
-
-      if (scopeItems.length !== scopeItemIds.length) {
-        throw new Error('Some scope items not found');
-      }
-
-      // Create a combined description from scope items
-      const description = scopeItems.map(item => item.title).join('\n');
-      const scope = scopeItems.map(item => `${item.title}\n${item.description || ''}`).join('\n\n');
-
-      // Create RFQ
-      const [rfq] = await db.insert(schema.rfqs)
-        .values({
-          projectId,
-          title: 'RFQ from Scope',
-          description,
-          scope,
-          status: 'draft',
-          dueDate: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000), // 2 weeks from now
-        })
-        .returning();
-
-      // Link scope items to RFQ
-      for (const scopeItem of scopeItems) {
-        await db.update(schema.scopeItems)
-          .set({ rfqId: rfq.id })
-          .where(eq(schema.scopeItems.id, scopeItem.id));
-      }
-
-      return rfq;
-    } catch (error) {
-      console.error("Database error in createRfqFromScope:", error);
-      throw error;
-    }
-  }
-
-  async createPoFromScope(scopeItemIds: string[], projectId: string): Promise<import("@shared/schema").PurchaseOrder> {
-    try {
-      // Get project to verify company ownership
-      const [project] = await db.select().from(schema.projects)
-        .where(eq(schema.projects.id, projectId))
-        .limit(1);
-
-      if (!project) {
-        throw new Error('Project not found');
-      }
-
-      // Get scope items and validate they all belong to this project/company
-      const scopeItems = await db.select().from(schema.scopeItems)
-        .where(inArray(schema.scopeItems.id, scopeItemIds));
-
-      // Security: Verify ALL scope items belong to the target project and company
-      for (const item of scopeItems) {
-        if (item.projectId !== projectId || item.companyId !== project.companyId) {
-          throw new Error('Unauthorized: Scope item does not belong to this project/company');
-        }
-      }
-
-      if (scopeItems.length !== scopeItemIds.length) {
-        throw new Error('Some scope items not found');
-      }
-
-      // Generate PO number atomically using advisory lock
-      const result = await db.transaction(async (tx) => {
-        // Use PostgreSQL advisory lock to prevent concurrent PO creation for same company
-        // Use hashtext to convert UUID to deterministic bigint for advisory lock
-        await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${project.companyId}))`);
-
-        // Now safely get the highest PO number for this company
-        const existingPos = await tx.select({ poNumber: schema.purchaseOrders.poNumber })
-          .from(schema.purchaseOrders)
-          .where(eq(schema.purchaseOrders.companyId, project.companyId))
-          .orderBy(sql`${schema.purchaseOrders.poNumber} DESC`)
-          .limit(1);
-
-        // Extract number from PO-XXXX format and increment
-        let nextNumber = 1;
-        if (existingPos.length > 0 && existingPos[0].poNumber) {
-          const match = existingPos[0].poNumber.match(/PO-(\d+)/);
-          if (match) {
-            nextNumber = parseInt(match[1], 10) + 1;
-          }
-        }
-        const poNumber = `PO-${String(nextNumber).padStart(4, '0')}`;
-
-        // Create a combined description from scope items
-        const description = scopeItems.map(item => `${item.title}\n${item.description || ''}`).join('\n\n');
-
-        // Create Purchase Order within transaction
-        const [po] = await tx.insert(schema.purchaseOrders)
-          .values({
-            projectId,
-            companyId: project.companyId,
-            poNumber,
-            title: 'PO from Scope',
-            description,
-            status: 'draft',
-            total: 0,
-          })
-          .returning();
-
-        // Link scope items to PO
-        for (const scopeItem of scopeItems) {
-          await tx.update(schema.scopeItems)
-            .set({ poId: po.id })
-            .where(eq(schema.scopeItems.id, scopeItem.id));
-        }
-
-        // Advisory lock is automatically released at transaction end
-        return po;
-      });
-
-      return result;
-    } catch (error) {
-      console.error("Database error in createPoFromScope:", error);
-      throw error;
-    }
-  }
-
-  async linkScopeToScheduleItem(scopeItemId: string, scheduleItemId: string): Promise<ScopeItem | undefined> {
-    try {
-      const [updated] = await db.update(schema.scopeItems)
-        .set({ scheduleItemId })
-        .where(eq(schema.scopeItems.id, scopeItemId))
-        .returning();
-      return updated;
-    } catch (error) {
-      console.error("Database error in linkScopeToScheduleItem:", error);
-      return undefined;
     }
   }
 
