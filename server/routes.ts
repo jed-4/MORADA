@@ -33231,6 +33231,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/channels/:channelId/members", requireAuth, async (req, res) => {
     try {
+      // Ownership: channels carry companyId and storage.getChannel already
+      // filters on it — this route simply never called it.
+      if (!(await getOwnedChannel(req, res, req.params.channelId))) return;
       const validationResult = insertChannelMemberSchema.omit({ channelId: true }).safeParse(req.body);
       if (!validationResult.success) {
         return res.status(400).json({ 
@@ -33251,6 +33254,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/channels/:channelId/members/:userId", requireAuth, async (req, res) => {
     try {
+      // Ownership: the channel must be the caller's. The handler was a single
+      // storage call with no checks of any kind.
+      if (!(await getOwnedChannel(req, res, req.params.channelId))) return;
       await storage.removeChannelMember(req.params.channelId, req.params.userId);
       res.status(204).send();
     } catch (error) {
@@ -33412,7 +33418,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const userId = req.user!.id;
       const channelId = req.params.channelId;
-      
+
+      // Ownership: post into another tenant's channel was possible with only
+      // the channel id.
+      if (!(await getOwnedChannel(req, res, channelId))) return;
+
       const validationResult = insertMessageSchema.omit({ channelId: true, userId: true }).safeParse(req.body);
       if (!validationResult.success) {
         return res.status(400).json({ 
@@ -33563,6 +33573,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/messages/:id", requireAuth, async (req, res) => {
     try {
+      // Ownership: message → channel → company.
+      if (!(await getOwnedMessage(req, res, req.params.id))) return;
       await storage.deleteMessage(req.params.id);
       res.status(204).send();
     } catch (error) {
