@@ -30048,6 +30048,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/schedule-items/:itemId/steps", async (req, res) => {
     if (!req.user) return res.status(401).json({ error: "Not authenticated" });
+    // Ownership: step → schedule item → schedule → project → company.
+    // `if (!req.user)` is an authentication check, not a tenancy one.
+    if (!(await getOwnedScheduleItem(req, res, req.params.itemId, "Schedule item not found"))) return;
     const data = insertScheduleItemStepSchema.parse({
       ...req.body,
       scheduleItemId: req.params.itemId,
@@ -30058,6 +30061,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/schedule-item-steps/:id", async (req, res) => {
     if (!req.user) return res.status(401).json({ error: "Not authenticated" });
+    if (!(await getOwnedScheduleItemStep(req, res, req.params.id))) return;
     const { isCompleted, name, sortOrder } = req.body;
     const updates: any = {};
     if (isCompleted !== undefined) updates.isCompleted = isCompleted;
@@ -30072,6 +30076,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/schedule-item-steps/:id", async (req, res) => {
     if (!req.user) return res.status(401).json({ error: "Not authenticated" });
+    if (!(await getOwnedScheduleItemStep(req, res, req.params.id))) return;
     await db.delete(scheduleItemSteps).where(eq(scheduleItemSteps.id, req.params.id));
     res.json({ success: true });
   });
@@ -30086,6 +30091,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/schedules/:scheduleId/baselines", async (req, res) => {
     if (!req.user) return res.status(401).json({ error: "Not authenticated" });
+    // Ownership: baseline → schedule → project → company. Unguarded this
+    // snapshotted every schedule_item of a foreign schedule into a row the
+    // caller could then read back.
+    if (!(await getOwnedSchedule(req, res, req.params.scheduleId))) return;
     const user = req.user as any;
     const { name, description } = req.body;
 
@@ -30128,6 +30137,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/baselines/:id", async (req, res) => {
     if (!req.user) return res.status(401).json({ error: "Not authenticated" });
+    if (!(await getOwnedBaseline(req, res, req.params.id))) return;
     await db.delete(scheduleBaselines).where(eq(scheduleBaselines.id, req.params.id));
     res.json({ success: true });
   });
@@ -30543,6 +30553,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/schedule-items/:scheduleItemId/activity-notes", requireAuth, async (req, res) => {
     try {
+      // Ownership: stamping the caller's own userId onto the row is NOT an
+      // ownership check — the note still lands on the target schedule item.
+      if (!(await getOwnedScheduleItem(req, res, req.params.scheduleItemId, "Schedule item not found"))) return;
       const validationResult = insertActivityNoteSchema.safeParse({
         ...req.body,
         scheduleItemId: req.params.scheduleItemId,
@@ -30601,10 +30614,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/activity-notes/:id", requireAuth, async (req, res) => {
     try {
+      // Ownership first: note → schedule item → schedule → project → company.
+      // The isAdmin branch below skips the author check, and an admin of
+      // ANOTHER company is still an admin — so without this the branch was a
+      // cross-tenant delete.
+      if (!(await getOwnedActivityNote(req, res, req.params.id))) return;
+
       // Check if user is admin or the note author
       const canDelete = await storage.canEditActivityNote(req.params.id, req.user!.id);
       const isAdmin = req.user!.roleName === 'Admin' || req.user!.roleName === 'Owner';
-      
+
       if (!canDelete && !isAdmin) {
         return res.status(403).json({ 
           error: "Cannot delete note. Only the author (within 5 minutes) or admins can delete notes." 
