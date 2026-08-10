@@ -1,0 +1,30 @@
+name: Tenancy
+on:
+  pull_request:
+  push:
+    branches: [main]
+jobs:
+  tenancy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Tenancy ratchet
+        run: npm run check:tenancy
+      - name: Tenant guard tests
+        run: NODE_ENV=test npx tsx server/__tests__/tenant-guards.test.ts
+      - name: Scope tenancy tests
+        run: NODE_ENV=test npx tsx server/__tests__/scope-tenancy.test.ts
+      - name: requireCompany tests
+        run: NODE_ENV=test npx tsx server/__tests__/require-company.test.ts
+      - name: Uploads access tests
+        run: NODE_ENV=test npx tsx server/__tests__/uploads-access.test.ts
+      - name: OAuth state tests
+        run: NODE_ENV=test npx tsx server/__tests__/oauth-state.test.ts
+      - name: Signed grant tests
+        run: NODE_ENV=test npx tsx server/__tests__/signed-grant.test.ts
+        
