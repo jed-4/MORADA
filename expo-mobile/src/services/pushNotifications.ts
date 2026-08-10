@@ -3,6 +3,7 @@ import Constants from 'expo-constants';
 import * as Device from 'expo-device';
 import * as Notifications from 'expo-notifications';
 import { apiRequest } from './api';
+import { Sentry } from '../lib/sentry';
 
 let registeredToken: string | null = null;
 
@@ -56,13 +57,25 @@ export async function registerForPushNotifications(): Promise<void> {
     if (!token) return;
 
     registeredToken = token;
+    // Registration failures are reported to Sentry but never rethrown — a device
+    // that can't register must still run the app. Without this the failure was
+    // invisible, and a silently unregistered device is indistinguishable from a
+    // delivery problem further down the chain.
     await apiRequest('/api/notifications/register-device', 'POST', {
       token,
       platform: Platform.OS,
       deviceName: Device.deviceName || undefined,
-    }).catch(() => {});
+    }).catch((err) => {
+      console.warn('Push token registration request failed:', err);
+      Sentry.captureException(err, {
+        tags: { feature: 'push', stage: 'register-device' },
+      });
+    });
   } catch (err) {
     console.warn('Push registration failed:', err);
+    Sentry.captureException(err, {
+      tags: { feature: 'push', stage: 'register-for-push' },
+    });
   }
 }
 
