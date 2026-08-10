@@ -63,6 +63,7 @@ interface ChecklistInstance {
   status: 'active' | 'in_progress' | 'completed' | 'cancelled';
   completedCount: number;
   totalCount: number;
+  createdAt?: string;
 }
 
 interface ChecklistItem {
@@ -143,7 +144,11 @@ const colors = {
       setProject(projectData);
       setTasks((tasksData || []).filter((t: Task) => (t as any).type === 'task'));
       setScheduleItems(scheduleData || []);
-      setChecklistInstances(checklistData || []);
+      // Oldest first, so the checklists sit in the order they were added —
+      // the API returns them newest first. Matches the web checklists page,
+      // the dashboard widget and the mobile Checklists screen.
+      setChecklistInstances([...(checklistData || [])].sort((a: ChecklistInstance, b: ChecklistInstance) =>
+        (a.createdAt ? new Date(a.createdAt).getTime() : 0) - (b.createdAt ? new Date(b.createdAt).getTime() : 0)));
       setSiteDiaryEntries((diaryData || []).slice(0, 8));
       if (collapsedPrefs?.preferences) {
         setCollapsed(prev => ({ ...prev, ...collapsedPrefs.preferences }));

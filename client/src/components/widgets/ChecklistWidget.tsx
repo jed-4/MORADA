@@ -31,7 +31,7 @@ import { WidgetProps } from "@/types/widgets";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { type ChecklistInstance, type ChecklistInstanceGroup, type ChecklistInstanceItem } from "@shared/schema";
-import { compareNames } from "@shared/utils";
+import { compareCreatedAt } from "@shared/utils";
 import { useProject } from "@/contexts/ProjectContext";
 import { useAuth } from "@/hooks/use-auth";
 import { useLocation } from "wouter";
@@ -145,9 +145,10 @@ function useInstanceGroups(instanceId: string) {
       });
       if (!response.ok) throw new Error("Failed to fetch groups");
       const data = await response.json();
-      // Authored order, with name as the tie-break for legacy rows.
+      // Authored order only. Ties keep the server's (deterministic) sequence
+      // rather than being alphabetised out of it.
       return data.sort((a: ChecklistGroupWithItems, b: ChecklistGroupWithItems) =>
-        (a.order ?? 0) - (b.order ?? 0) || compareNames(a.name, b.name));
+        (a.order ?? 0) - (b.order ?? 0));
     },
   });
 }
@@ -321,7 +322,9 @@ export default function ChecklistWidget({ widget, onUpdate, isConfiguring, onClo
         if (assigneeFilter !== "all" && checklist.assigneeId !== assigneeFilter) return false;
         return true;
       })
-      .sort((a, b) => compareNames(a.name, b.name));
+      // Checklists have no order column of their own, so they hold the order
+      // they were added in — same as the checklists page and mobile.
+      .sort(compareCreatedAt);
   }, [checklists, statusFilter, assigneeFilter, hideCompletedGroups]);
 
   const displayChecklists = useMemo(
@@ -1052,9 +1055,9 @@ function DrawerChecklist({
       });
       if (!response.ok) throw new Error("Failed to fetch items");
       const data = await response.json();
-      // Authored order, with description as the tie-break for legacy rows.
+      // Authored order only — see the group query above.
       return data.sort((a: ChecklistInstanceItem, b: ChecklistInstanceItem) =>
-        (a.order ?? 0) - (b.order ?? 0) || compareNames(a.description, b.description));
+        (a.order ?? 0) - (b.order ?? 0));
     },
     enabled: isExpanded,
   });

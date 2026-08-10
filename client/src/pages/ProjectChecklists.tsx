@@ -18,7 +18,7 @@ import {
   type User,
   type ScheduleItem,
 } from "@shared/schema";
-import { compareNames } from "@shared/utils";
+import { compareNames, compareCreatedAt } from "@shared/utils";
 
 type Task = {
   id: string;
@@ -334,11 +334,11 @@ export default function ProjectChecklists() {
           });
         }
       }));
-      // Authored order, with description as the tie-break for legacy items
-      // that were all written with order 0.
+      // Authored order only. Ties keep the sequence the server sent (Array.sort
+      // is stable), which the server makes deterministic. Sorting ties by
+      // description alphabetised whole checklists whose items shared an order.
       Object.keys(itemsMap).forEach(groupId => {
-        itemsMap[groupId].sort((a, b) =>
-          (a.order ?? 0) - (b.order ?? 0) || compareNames(a.description, b.description));
+        itemsMap[groupId].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
       });
       return itemsMap;
     },
@@ -526,7 +526,9 @@ export default function ProjectChecklists() {
         groupId,
         description,
         responseType: "checkbox",
-        order: 9999,
+        // No order: the server appends to the end of the group. Sending a
+        // fixed 9999 gave every hand-added item the same order, so they tied
+        // and came back alphabetised instead of in the order they were typed.
       });
     },
     onSuccess: () => {
@@ -775,11 +777,9 @@ export default function ProjectChecklists() {
     // Start from instances so even those with no groups are included
     const result = instances.map(instance => {
       const groups = groupsByInstanceId[instance.id] || [];
-      // Authored order, with name as the tie-break for legacy rows — matching
-      // the widget, the instance detail page and mobile. This used to sort by
-      // name alone, so a checklist's groups came out alphabetically here and
-      // in template order everywhere else.
-      groups.sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || compareNames(a.name, b.name));
+      // Authored order only — matching the widget, the instance detail page
+      // and mobile. Ties keep the server's (deterministic) sequence.
+      groups.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
       return { instance, groups };
     });
     
@@ -795,9 +795,9 @@ export default function ProjectChecklists() {
       filtered = filtered.filter(({ instance }) => instance.scopeStageId === scopeStageFilter);
     }
     
-    return filtered.sort((a, b) =>
-      compareNames(a.instance.name, b.instance.name)
-    );
+    // Checklists have no order column of their own, so they hold the order
+    // they were added in rather than being alphabetised out of it.
+    return filtered.sort((a, b) => compareCreatedAt(a.instance, b.instance));
   }, [filteredGroups, instances, activeTab, searchTerm, assigneeFilter, scopeStageFilter]);
 
   const allCount = allGroups.length;

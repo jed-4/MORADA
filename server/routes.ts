@@ -26420,15 +26420,41 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       // The target group, when given, must belong to this same instance —
       // otherwise an item could be filed into another tenant's checklist.
-      if (validationResult.data.groupId) {
-        const targetGroup = await getOwnedInstanceGroup(req, res, validationResult.data.groupId);
+      const data = { ...validationResult.data };
+      if (data.groupId) {
+        const targetGroup = await getOwnedInstanceGroup(req, res, data.groupId);
         if (!targetGroup) return;
         if (targetGroup.instanceId !== req.params.instanceId) {
           return res.status(404).json({ error: "Checklist group not found" });
         }
+        // The item sits in its group's section, so it inherits the group's
+        // position. Callers used to hardcode groupOrder 0, which shunted every
+        // hand-added item up into the first section.
+        data.groupOrder = targetGroup.order ?? 0;
+
+        // Append to the end of the group, the same way template items do.
+        // One caller sent order 9999 for every item and another counted items
+        // across the whole instance, so hand-added items all tied on order and
+        // the display sort fell back to alphabetical.
+        if (req.body.order === undefined) {
+          const siblings = await storage.getChecklistInstanceItemsByGroup(data.groupId);
+          data.order = siblings.reduce((max, s) => Math.max(max, s.order ?? 0), -1) + 1;
+        }
+      } else if (req.body.order === undefined || req.body.groupOrder === undefined) {
+        // The instance-detail dialog files items by groupName rather than
+        // groupId, so match on the name and append to that section instead.
+        const all = await storage.getChecklistInstanceItems(req.params.instanceId);
+        const siblings = all.filter(i => (i.groupName || "") === (data.groupName || ""));
+        if (req.body.order === undefined) {
+          data.order = siblings.reduce((max, s) => Math.max(max, s.order ?? 0), -1) + 1;
+        }
+        if (req.body.groupOrder === undefined) {
+          data.groupOrder = siblings[0]?.groupOrder
+            ?? all.reduce((max, s) => Math.max(max, s.groupOrder ?? 0), -1) + 1;
+        }
       }
 
-      const item = await storage.createChecklistInstanceItem(validationResult.data);
+      const item = await storage.createChecklistInstanceItem(data);
       res.status(201).json(item);
     } catch (error: any) {
       res.status(500).json({ 
