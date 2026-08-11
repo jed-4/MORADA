@@ -17,6 +17,21 @@ Notifications.setNotificationHandler({
   }),
 });
 
+/**
+ * Report a non-throwing exit from push registration. These paths return early
+ * on purpose, so nothing ever threw and nothing was ever logged — which is why
+ * an unregistered device looked identical to a healthy one for months. Every
+ * exit now leaves a record; none of them change control flow.
+ */
+function reportPushExit(stage: string, message: string, extra?: Record<string, unknown>): void {
+  console.warn(`[Push] ${message}`);
+  Sentry.captureMessage(message, {
+    level: 'warning',
+    tags: { feature: 'push', stage },
+    extra,
+  });
+}
+
 function getProjectId(): string | undefined {
   const fromExtra = (Constants.expoConfig?.extra as any)?.eas?.projectId;
   const fromEasConfig = (Constants as any)?.easConfig?.projectId;
@@ -32,7 +47,10 @@ function getProjectId(): string | undefined {
 export async function registerForPushNotifications(): Promise<void> {
   try {
     // Push tokens are only available on physical devices, not simulators.
-    if (!Device.isDevice) return;
+    if (!Device.isDevice) {
+      reportPushExit('not-a-device', 'Push registration skipped: not a physical device');
+      return;
+    }
 
     if (Platform.OS === 'android') {
       await Notifications.setNotificationChannelAsync('default', {
@@ -47,14 +65,43 @@ export async function registerForPushNotifications(): Promise<void> {
       const { status } = await Notifications.requestPermissionsAsync();
       finalStatus = status;
     }
-    if (finalStatus !== 'granted') return;
+    if (finalStatus !== 'granted') {
+      reportPushExit('permission-denied', `Push registration stopped: permission "${finalStatus}"`);
+      return;
+    }
 
     const projectId = getProjectId();
-    const tokenResponse = await Notifications.getExpoPushTokenAsync(
-      projectId ? { projectId } : ({} as any),
-    );
+    Sentry.addBreadcrumb({
+      category: 'push',
+      level: 'info',
+      message: 'Requesting Expo push token',
+      data: { projectId: projectId ?? '(none resolved)' },
+    });
+
+    // Isolated from the outer catch so a throw here is attributable to the
+    // token exchange specifically, rather than to registration in general.
+    let tokenResponse: Awaited<ReturnType<typeof Notifications.getExpoPushTokenAsync>> | undefined;
+    try {
+      tokenResponse = await Notifications.getExpoPushTokenAsync(
+        projectId ? { projectId } : ({} as any),
+      );
+    } catch (err) {
+      console.warn('Push token fetch failed:', err);
+      Sentry.captureException(err, {
+        tags: { feature: 'push', stage: 'token-fetch' },
+        extra: { projectId: projectId ?? null },
+      });
+      return;
+    }
+
     const token = tokenResponse?.data;
-    if (!token) return;
+    if (!token) {
+      reportPushExit('empty-token', 'Push registration stopped: token fetch returned no token', {
+        projectId: projectId ?? null,
+        tokenResponse: JSON.stringify(tokenResponse ?? null),
+      });
+      return;
+    }
 
     registeredToken = token;
     // Registration failures are reported to Sentry but never rethrown — a device
