@@ -881,7 +881,18 @@ export const projects = pgTable("projects", {
   isArchived: boolean("is_archived").notNull().default(false), // Archived projects are hidden from main lists
   isBusiness: boolean("is_business").notNull().default(false), // Business-level project (vs construction project)
   invoicingMethod: text("invoicing_method").notNull().default("progress_payments"), // "progress_payments" | "cost_plus"
-  contractPrice: integer("contract_price"), // Locked agreed contract price in cents (set when project transitions to construction)
+  contractPrice: integer("contract_price"), // Live cached estimate total in cents (stamped at Approve; tracks estimate edits until contracted)
+
+  // ── Frozen contract sum ───────────────────────────────────────────────────
+  // Captured when an estimate is marked as the contract. Once set, these are
+  // the client's contract price — the live estimate no longer moves it, so an
+  // approved variation is the ONLY instrument that can change what is owed.
+  // Cleared when the contract is reverted (renegotiation), re-stamped on the
+  // next Mark as Contract. contractedAt is the "is frozen" predicate.
+  contractedTotalExGstCents: integer("contracted_total_ex_gst_cents"),
+  contractedTotalIncGstCents: integer("contracted_total_inc_gst_cents"),
+  contractedAt: timestamp("contracted_at"),
+  contractedEstimateId: varchar("contracted_estimate_id"), // Audit: which revision was signed
   percentComplete: integer("percent_complete").notNull().default(0), // Construction completion % (0-100); used by OH predictor for remaining revenue
   
   // Google Drive integration

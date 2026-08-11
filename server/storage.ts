@@ -529,15 +529,20 @@ export interface IStorage {
     estimateId: string,
     userId: string,
   ): Promise<{ estimate: Estimate; project: Project; recalcWarnings: string[] } | undefined>;
-  // Stage 2: lock an approved estimate as the contract — freezes the price,
-  // sets isLocked + contracted audit fields, demotes any prior contract.
+  // Stage 2: lock an approved estimate as the contract — snapshots the frozen
+  // contract sum (ex + inc GST) onto the project, sets isLocked + contracted
+  // audit fields, demotes any prior contract.
   markEstimateAsContract(
     estimateId: string,
     userId: string,
   ): Promise<{ estimate: Estimate; project: Project; recalcWarnings: string[] } | undefined>;
   // Idempotent backfill: recompute projects.contractPrice from the selected
   // estimate's canonical total wherever the cached snapshot has drifted.
-  recomputeContractPriceSnapshots(): Promise<{ scanned: number; updated: number }>;
+  // Skips contracted projects — their sum is frozen, not a live cache.
+  recomputeContractPriceSnapshots(): Promise<{ scanned: number; updated: number; skippedContracted: number }>;
+  // One-time backfill for jobs contracted before the freeze existed: captures
+  // the current canonical total as the frozen sum. Self-disabling.
+  backfillContractedTotals(): Promise<{ scanned: number; filled: number }>;
   
   // Summary calculations
   getEstimateSummary(estimateId: string): Promise<{
@@ -5365,6 +5370,9 @@ export class MemStorage implements IStorage {
       const projectId = target.projectId;
       const summary = await this.getEstimateSummary(estimateId);
       const contractPriceCents = Math.round((summary.total || 0) * 100);
+      const contractedExGstCents = Math.round((summary.totalExTax || 0) * 100);
+      const contractedIncGstCents = contractPriceCents;
+      const contractedAt = new Date();
       return await db.transaction(async (tx) => {
         await tx.update(schema.estimates)
           .set({
@@ -5383,7 +5391,7 @@ export class MemStorage implements IStorage {
           .set({
             status: "contract",
             isLocked: true,
-            contractedAt: new Date(),
+            contractedAt,
             contractedById: userId,
             approvedAt: target.approvedAt ?? new Date(),
             approvedById: target.approvedById ?? userId,
@@ -5397,6 +5405,10 @@ export class MemStorage implements IStorage {
           .set({
             selectedEstimateId: estimateId,
             contractPrice: contractPriceCents > 0 ? contractPriceCents : null,
+            contractedTotalExGstCents: contractedIncGstCents > 0 ? contractedExGstCents : null,
+            contractedTotalIncGstCents: contractedIncGstCents > 0 ? contractedIncGstCents : null,
+            contractedAt: contractedIncGstCents > 0 ? contractedAt : null,
+            contractedEstimateId: contractedIncGstCents > 0 ? estimateId : null,
             updatedAt: new Date(),
           })
           .where(eq(schema.projects.id, projectId))
@@ -5412,20 +5424,28 @@ export class MemStorage implements IStorage {
     }
   }
 
-  async recomputeContractPriceSnapshots(): Promise<{ scanned: number; updated: number }> {
+  // Mirrors DbStorage.recomputeContractPriceSnapshots — contracted projects are
+  // skipped so a frozen contract sum is never walked back to the live estimate.
+  async recomputeContractPriceSnapshots(): Promise<{ scanned: number; updated: number; skippedContracted: number }> {
     let scanned = 0;
     let updated = 0;
+    let skippedContracted = 0;
     try {
       const rows = await db
         .select({
           id: schema.projects.id,
           selectedEstimateId: schema.projects.selectedEstimateId,
           contractPrice: schema.projects.contractPrice,
+          contractedAt: schema.projects.contractedAt,
         })
         .from(schema.projects)
         .where(isNotNull(schema.projects.selectedEstimateId));
       for (const row of rows) {
         if (!row.selectedEstimateId) continue;
+        if (row.contractedAt) {
+          skippedContracted++;
+          continue;
+        }
         scanned++;
         try {
           const summary = await this.getEstimateSummary(row.selectedEstimateId);
@@ -5445,7 +5465,60 @@ export class MemStorage implements IStorage {
     } catch (err) {
       console.error("[recomputeContractPriceSnapshots] (MemStorage) failed:", err);
     }
-    return { scanned, updated };
+    return { scanned, updated, skippedContracted };
+  }
+
+  // Mirrors DbStorage.backfillContractedTotals. See there for the rationale.
+  async backfillContractedTotals(): Promise<{ scanned: number; filled: number }> {
+    let scanned = 0;
+    let filled = 0;
+    try {
+      const rows = await db
+        .select({
+          id: schema.projects.id,
+          selectedEstimateId: schema.projects.selectedEstimateId,
+          estimateContractedAt: schema.estimates.contractedAt,
+        })
+        .from(schema.projects)
+        .innerJoin(
+          schema.estimates,
+          eq(schema.projects.selectedEstimateId, schema.estimates.id),
+        )
+        .where(and(
+          isNull(schema.projects.contractedAt),
+          eq(schema.estimates.status, "contract"),
+        ));
+
+      for (const row of rows) {
+        if (!row.selectedEstimateId) continue;
+        scanned++;
+        try {
+          const summary = await this.getEstimateSummary(row.selectedEstimateId);
+          const incCents = Math.round((summary.total || 0) * 100);
+          const exCents = Math.round((summary.totalExTax || 0) * 100);
+          if (incCents <= 0) continue;
+          const contractedAt = row.estimateContractedAt ?? new Date();
+          const result = await db.update(schema.projects)
+            .set({
+              contractedTotalExGstCents: exCents,
+              contractedTotalIncGstCents: incCents,
+              contractedAt,
+              contractedEstimateId: row.selectedEstimateId,
+              updatedAt: new Date(),
+            })
+            .where(and(
+              eq(schema.projects.id, row.id),
+              isNull(schema.projects.contractedAt),
+            ));
+          if (((result as any)?.rowCount ?? 1) > 0) filled++;
+        } catch (err) {
+          console.error(`[backfillContractedTotals] project ${row.id} failed:`, err);
+        }
+      }
+    } catch (err) {
+      console.error("[backfillContractedTotals] (MemStorage) failed:", err);
+    }
+    return { scanned, filled };
   }
 
   // Summary calculations
@@ -12542,6 +12615,11 @@ export class DbStorage implements IStorage {
   // isLocked + contracted audit fields, and demotes any prior contract back to
   // approved. Budget + labour-hours recalcs run inside the same transaction so
   // everything commits or rolls back together.
+  //
+  // THIS IS THE FREEZE POINT. The canonical total is snapshotted (ex AND inc
+  // GST) onto projects.contracted_total_*_cents together with contracted_at,
+  // and from here on that snapshot — not the live estimate — is the client's
+  // contract price everywhere. Only an approved variation can move it.
   async markEstimateAsContract(
     estimateId: string,
     userId: string,
@@ -12551,9 +12629,14 @@ export class DbStorage implements IStorage {
       if (!target || !target.projectId) return undefined;
       const projectId = target.projectId;
 
-      // Freeze the canonical estimate total (cents).
+      // Freeze the canonical estimate total (cents). Both sides of GST are
+      // stored so no read site ever has to derive one from the other — GST is
+      // applied once at the estimate subtotal, so gst = inc - ex exactly.
       const summary = await this.getEstimateSummary(estimateId);
       const contractPriceCents = Math.round((summary.total || 0) * 100);
+      const contractedExGstCents = Math.round((summary.totalExTax || 0) * 100);
+      const contractedIncGstCents = contractPriceCents;
+      const contractedAt = new Date();
 
       return await db.transaction(async (tx) => {
         // Demote any prior contract on this project (and unlock it).
@@ -12576,7 +12659,7 @@ export class DbStorage implements IStorage {
           .set({
             status: "contract",
             isLocked: true,
-            contractedAt: new Date(),
+            contractedAt,
             contractedById: userId,
             approvedAt: target.approvedAt ?? new Date(),
             approvedById: target.approvedById ?? userId,
@@ -12589,11 +12672,17 @@ export class DbStorage implements IStorage {
           throw new Error("Failed to promote estimate to contract");
         }
 
-        // Update project selectedEstimateId + frozen contractPrice in the same tx.
+        // Update project selectedEstimateId + the FROZEN contract sum in the
+        // same tx. Re-contracting a different revision overwrites the freeze,
+        // which is the intended "contract replaced" path.
         const updatedProjectRows = await tx.update(schema.projects)
           .set({
             selectedEstimateId: estimateId,
             contractPrice: contractPriceCents > 0 ? contractPriceCents : null,
+            contractedTotalExGstCents: contractedIncGstCents > 0 ? contractedExGstCents : null,
+            contractedTotalIncGstCents: contractedIncGstCents > 0 ? contractedIncGstCents : null,
+            contractedAt: contractedIncGstCents > 0 ? contractedAt : null,
+            contractedEstimateId: contractedIncGstCents > 0 ? estimateId : null,
             updatedAt: new Date(),
           })
           .where(eq(schema.projects.id, projectId))
@@ -12621,20 +12710,32 @@ export class DbStorage implements IStorage {
   // recompute the canonical estimate total and update projects.contractPrice
   // when the cached snapshot has drifted. Non-destructive (only corrects a
   // derived cache) — safe to run on every startup.
-  async recomputeContractPriceSnapshots(): Promise<{ scanned: number; updated: number }> {
+  //
+  // CONTRACTED JOBS ARE SKIPPED. contractPrice is a live cache of the selected
+  // estimate, which is exactly the right thing for an approved-but-not-yet
+  // contracted job and exactly the wrong thing once the contract is signed —
+  // this job used to walk a frozen contract sum back to the live estimate total
+  // on every single boot.
+  async recomputeContractPriceSnapshots(): Promise<{ scanned: number; updated: number; skippedContracted: number }> {
     let scanned = 0;
     let updated = 0;
+    let skippedContracted = 0;
     try {
       const rows = await db
         .select({
           id: schema.projects.id,
           selectedEstimateId: schema.projects.selectedEstimateId,
           contractPrice: schema.projects.contractPrice,
+          contractedAt: schema.projects.contractedAt,
         })
         .from(schema.projects)
         .where(isNotNull(schema.projects.selectedEstimateId));
       for (const row of rows) {
         if (!row.selectedEstimateId) continue;
+        if (row.contractedAt) {
+          skippedContracted++;
+          continue;
+        }
         scanned++;
         try {
           const summary = await this.getEstimateSummary(row.selectedEstimateId);
@@ -12654,7 +12755,81 @@ export class DbStorage implements IStorage {
     } catch (err) {
       console.error("[recomputeContractPriceSnapshots] failed:", err);
     }
-    return { scanned, updated };
+    return { scanned, updated, skippedContracted };
+  }
+
+  // One-time backfill for jobs contracted BEFORE the contract sum was frozen
+  // (migration 0042). For every project whose selected estimate is already at
+  // status "contract" but which carries no frozen sum, capture the CURRENT
+  // canonical total as the frozen one.
+  //
+  // Backfilling from the current live total is deliberate: every figure on
+  // screen the moment after deploy equals the figure the moment before. What
+  // changes is that they stop moving afterwards. A job whose live total has
+  // already drifted from its signed amount needs a manual correction — see the
+  // verification query in the PR body.
+  //
+  // Idempotent by construction: it only ever writes rows where contractedAt IS
+  // NULL and always sets contractedAt, so the second boot matches nothing and
+  // writes nothing. Never overwrites an existing freeze.
+  async backfillContractedTotals(): Promise<{ scanned: number; filled: number }> {
+    let scanned = 0;
+    let filled = 0;
+    try {
+      const rows = await db
+        .select({
+          id: schema.projects.id,
+          selectedEstimateId: schema.projects.selectedEstimateId,
+          estimateContractedAt: schema.estimates.contractedAt,
+        })
+        .from(schema.projects)
+        .innerJoin(
+          schema.estimates,
+          eq(schema.projects.selectedEstimateId, schema.estimates.id),
+        )
+        .where(and(
+          isNull(schema.projects.contractedAt),
+          eq(schema.estimates.status, "contract"),
+        ));
+
+      for (const row of rows) {
+        if (!row.selectedEstimateId) continue;
+        scanned++;
+        try {
+          const summary = await this.getEstimateSummary(row.selectedEstimateId);
+          const incCents = Math.round((summary.total || 0) * 100);
+          const exCents = Math.round((summary.totalExTax || 0) * 100);
+          // A zero/failed total must not freeze a job at $0 — leave it unfrozen
+          // so it keeps reading live and stays visible as needing attention.
+          if (incCents <= 0) continue;
+
+          // Prefer the estimate's own contractedAt so the frozen-at timestamp
+          // reflects when the contract was actually signed, not deploy time.
+          const contractedAt = row.estimateContractedAt ?? new Date();
+
+          // Re-assert the IS NULL predicate in the UPDATE so a concurrent
+          // Mark as Contract during boot can never be clobbered by the backfill.
+          const result = await db.update(schema.projects)
+            .set({
+              contractedTotalExGstCents: exCents,
+              contractedTotalIncGstCents: incCents,
+              contractedAt,
+              contractedEstimateId: row.selectedEstimateId,
+              updatedAt: new Date(),
+            })
+            .where(and(
+              eq(schema.projects.id, row.id),
+              isNull(schema.projects.contractedAt),
+            ));
+          if (((result as any)?.rowCount ?? 1) > 0) filled++;
+        } catch (err) {
+          console.error(`[backfillContractedTotals] project ${row.id} failed:`, err);
+        }
+      }
+    } catch (err) {
+      console.error("[backfillContractedTotals] failed:", err);
+    }
+    return { scanned, filled };
   }
 
   async getEstimateSummary(estimateId: string): Promise<{
