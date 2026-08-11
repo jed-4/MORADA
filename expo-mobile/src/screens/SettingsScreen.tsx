@@ -15,6 +15,7 @@ import { apiFetch, apiRequest } from '../services/api';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
 import { useTheme } from '../theme';
+import { buildLabel } from '../lib/sentry';
 
 type Props = {
   navigation: NativeStackNavigationProp<any>;
@@ -189,6 +190,13 @@ export default function SettingsScreen({ navigation }: Props) {
             );
           })}
         </View>
+
+        {/* Build identity. Every build so far has reported version "1.0.2", so
+            nothing on screen distinguished build 13 from build 16 — which made
+            "is the new build actually running?" unanswerable from the device. */}
+        <Text style={[styles.buildInfo, { color: colors.secondary }]}>
+          Morada {buildLabel}
+        </Text>
       </ScrollView>
     </View>
   );
@@ -197,6 +205,12 @@ export default function SettingsScreen({ navigation }: Props) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  buildInfo: {
+    fontSize: 12,
+    textAlign: 'center',
+    marginTop: 24,
+    marginBottom: 8,
   },
   center: {
     justifyContent: 'center',
