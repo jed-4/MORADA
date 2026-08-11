@@ -4,8 +4,9 @@
  * There is no psql on this machine, so migrations are applied via the same
  * @neondatabase/serverless driver the app uses.
  *
- * Refuses to run against anything but the known dev endpoint — the real
- * production database is ep-delicate-flower and must never be touched by this.
+ * Refuses to run against anything but the known dev endpoint. Verify the
+ * target DB by data content (row counts), never by host name — see the
+ * 11 Aug push investigation.
  *
  * Run with:  node --env-file=../MORADA/.env scripts/apply-migration-0042.mjs
  */
@@ -19,8 +20,9 @@ neonConfig.webSocketConstructor = ws;
 const url = new URL(process.env.DATABASE_URL);
 console.log(`[migrate] target host=${url.hostname} db=${url.pathname.slice(1)}`);
 
-// Hard allow-list. Anything else — prod (ep-delicate-flower), the Replit dev
+// Hard allow-list. Anything else — the live production DB, the Replit dev
 // proxy (helium), the retired ep-muddy-sunset — aborts before any write.
+// Production migrations are run by hand in the Replit Shell, not from here.
 if (!url.hostname.startsWith("ep-jolly-tooth-")) {
   console.error(`[migrate] ABORT: ${url.hostname} is not the dev endpoint (expected ep-jolly-tooth-*).`);
   process.exit(1);
