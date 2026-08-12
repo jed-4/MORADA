@@ -18966,7 +18966,11 @@ export class DbStorage implements IStorage {
       return await db.select()
         .from(schema.checklistInstanceGroups)
         .where(eq(schema.checklistInstanceGroups.instanceId, instanceId))
-        .orderBy(schema.checklistInstanceGroups.order);
+        .orderBy(
+          schema.checklistInstanceGroups.order,
+          schema.checklistInstanceGroups.createdAt,
+          schema.checklistInstanceGroups.id,
+        );
     } catch (error) {
       console.error("Database error in getChecklistInstanceGroups:", error);
       throw error;
@@ -18981,7 +18985,11 @@ export class DbStorage implements IStorage {
       return await db.select()
         .from(schema.checklistInstanceGroups)
         .where(inArray(schema.checklistInstanceGroups.instanceId, instanceIds))
-        .orderBy(schema.checklistInstanceGroups.order);
+        .orderBy(
+          schema.checklistInstanceGroups.order,
+          schema.checklistInstanceGroups.createdAt,
+          schema.checklistInstanceGroups.id,
+        );
     } catch (error) {
       console.error("Database error in getChecklistInstanceGroupsForInstances:", error);
       throw error;
@@ -19048,7 +19056,16 @@ export class DbStorage implements IStorage {
       return await db.select()
         .from(schema.checklistInstanceItems)
         .where(eq(schema.checklistInstanceItems.instanceId, instanceId))
-        .orderBy(schema.checklistInstanceItems.groupOrder, schema.checklistInstanceItems.order);
+        // createdAt/id are only ever reached by rows that tie on `order` —
+        // legacy items written before the order column was populated. Without
+        // them Postgres is free to return ties in a different sequence on every
+        // read, so a checklist visibly reshuffles between refreshes.
+        .orderBy(
+          schema.checklistInstanceItems.groupOrder,
+          schema.checklistInstanceItems.order,
+          schema.checklistInstanceItems.createdAt,
+          schema.checklistInstanceItems.id,
+        );
     } catch (error) {
       console.error("Database error in getChecklistInstanceItems:", error);
       throw error;
@@ -19102,7 +19119,12 @@ export class DbStorage implements IStorage {
       return await db.select()
         .from(schema.checklistInstanceItems)
         .where(eq(schema.checklistInstanceItems.groupId, groupId))
-        .orderBy(schema.checklistInstanceItems.order);
+        // Same deterministic tie-break as getChecklistInstanceItems.
+        .orderBy(
+          schema.checklistInstanceItems.order,
+          schema.checklistInstanceItems.createdAt,
+          schema.checklistInstanceItems.id,
+        );
     } catch (error) {
       console.error("Database error in getChecklistInstanceItemsByGroup:", error);
       throw error;

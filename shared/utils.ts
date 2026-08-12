@@ -18,6 +18,23 @@ export function compareNames(a: string | null | undefined, b: string | null | un
 }
 
 /**
+ * Oldest first, i.e. the order the rows were created in.
+ *
+ * Use this for lists the user builds up by hand but which have no `order`
+ * column to drag against — the checklists on a project, for one. Sorting those
+ * by name reshuffles them away from the sequence they were entered in, which
+ * is the sequence the work actually happens in.
+ */
+export function compareCreatedAt(
+  a: { createdAt?: Date | string | null } | null | undefined,
+  b: { createdAt?: Date | string | null } | null | undefined,
+): number {
+  const at = a?.createdAt ? new Date(a.createdAt).getTime() : 0;
+  const bt = b?.createdAt ? new Date(b.createdAt).getTime() : 0;
+  return at - bt;
+}
+
+/**
  * Format currency for Australian dollars
  */
 export function formatCurrency(amount: number): string {
