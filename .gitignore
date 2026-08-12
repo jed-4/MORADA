@@ -5,6 +5,11 @@ server/public
 vite.config.ts.*
 *.tar.gz
 dist
+
+# Database dumps. Backups are taken in the Replit Shell before a hand-applied
+# migration and downloaded off the box — they must never be committed, and
+# never sit anywhere a build could publish them as a static asset.
+*.dump
 .expo/
 attached_assets
 
