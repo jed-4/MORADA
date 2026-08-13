@@ -30,6 +30,7 @@ const Proposals = lazy(() => import("@/pages/Proposals"));
 const Bills = lazy(() => import("@/pages/Bills"));
 const Budget = lazy(() => import("@/pages/Budget"));
 const Selections = lazy(() => import("@/pages/Selections"));
+const SelectionDetail = lazy(() => import("@/pages/SelectionDetail"));
 const RFQs = lazy(() => import("@/pages/RFQs"));
 const RFIs = lazy(() => import("@/pages/RFIs"));
 const Allowances = lazy(() => import("@/pages/Allowances"));
@@ -824,15 +825,23 @@ export default function CustomizableProjectOverview() {
     );
   }
 
-  // Show loading state if no project is selected
+  // No project selected yet — guide the user instead of dead-ending.
   if (!currentProject) {
     return (
       <div className="flex flex-col flex-1 min-h-0" data-testid="customizable-project-overview">
-        <div className="flex-1 flex items-center justify-center text-muted-foreground">
-          <div className="text-center">
-            <h2 className="text-xl font-medium mb-2">No Project Selected</h2>
-            <p>Please select a project from the dropdown to view its dashboard.</p>
-          </div>
+        <div className="flex-1 flex items-center justify-center">
+          <EmptyState
+            icon={FolderOpen}
+            title="No project selected"
+            description="Pick a project from the dropdown above to see its dashboard, or head to Projects to create one."
+            action={{
+              label: "Go to Projects",
+              onClick: () => navigate("/business/projects"),
+              "data-testid": "button-go-to-projects",
+            }}
+            variant="inline"
+            data-testid="empty-state-no-project"
+          />
         </div>
       </div>
     );
@@ -960,8 +969,13 @@ export default function CustomizableProjectOverview() {
             className="h-full"
           />
         );
-      case "selections":
-        return <Selections />;
+      case "selections": {
+        // /selections/<id> renders the detail INSIDE the project shell so it
+        // keeps the project header + section tabs like every other section
+        const selectionsPath = currentLocation.split(`/projects/${currentProject.id}/selections`)[1] || "";
+        const detailId = selectionsPath.split("/").filter(Boolean)[0];
+        return detailId ? <SelectionDetail /> : <Selections />;
+      }
       case "rfqs":
         return <RFQs embedded />;
       case "rfis":

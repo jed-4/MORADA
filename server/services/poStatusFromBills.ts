@@ -1,6 +1,6 @@
 import { db } from "../db";
 import * as schema from "@shared/schema";
-import { eq } from "drizzle-orm";
+import { and, eq, ne } from "drizzle-orm";
 
 /**
  * Source of truth for PO status when bills are linked.
@@ -13,6 +13,9 @@ import { eq } from "drizzle-orm";
  *     - some linked bills have paidAmount > 0 → partially_paid
  *     - every linked bill status === "paid"   → paid
  *       (and sum of paidAmount ≥ PO total when total > 0)
+ * - Linked vendor credits (billType "credit") are ignored entirely — they are a
+ *   negative document and must not drive a PO toward invoiced/paid. A PO whose
+ *   only link is a credit therefore counts as having 0 linked bills.
  * - With 0 linked bills, an "invoiced/partially_paid/paid" PO drops back to "sent"
  *   (i.e. previously linked bill was removed/unlinked).
  *
@@ -40,7 +43,12 @@ export async function recomputePOStatusFromBills(poId: string): Promise<string |
       total: schema.bills.total,
     })
     .from(schema.bills)
-    .where(eq(schema.bills.matchedSitePOId, poId));
+    // Vendor credits are excluded. Amounts are stored positive and negated at
+    // read time, so a credit linked to a PO used to add its paidAmount to sumPaid
+    // and its "paid" status to allPaid — driving the PO toward paid on a
+    // document that *reduces* what's owed. `ne(billType, 'credit')` and not
+    // `eq(billType, 'bill')`: a receipt is a genuine payable and still counts.
+    .where(and(eq(schema.bills.matchedSitePOId, poId), ne(schema.bills.billType, "credit")));
 
   let nextStatus: string;
   if (linkedBills.length === 0) {

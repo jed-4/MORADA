@@ -1681,10 +1681,10 @@ function XeroProjectMapping({ project }: { project: Project }) {
             onValueChange={setSelectedOptionId}
           >
             <SelectTrigger>
-              <SelectValue placeholder="None (auto-create on bill push)" />
+              <SelectValue placeholder="Not linked" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="__none__">None (auto-create on bill push)</SelectItem>
+              <SelectItem value="__none__">Not linked</SelectItem>
               {trackingOptions.map((opt: any) => (
                 <SelectItem key={opt.trackingOptionId} value={opt.trackingOptionId}>
                   {opt.name}
@@ -1693,7 +1693,7 @@ function XeroProjectMapping({ project }: { project: Project }) {
             </SelectContent>
           </Select>
           <p className="text-xs text-muted-foreground">
-            Select an existing Xero tracking option to link this project, or leave empty to auto-create when pushing bills.
+            Link this project to an existing Xero tracking option. If unlinked, Morada will match by project name when pushing; if nothing matches, bills push without job tracking and show a warning.
           </p>
         </div>
         <Button

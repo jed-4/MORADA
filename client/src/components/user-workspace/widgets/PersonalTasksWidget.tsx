@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { getWorkspacePreferences } from "@/lib/workspacePreferences";
-import { getPriorityStyle } from "@/lib/priorityConfig";
+import { generateNotionColors } from "@/lib/taskColors";
+import { TaskRow, TaskCard } from "@/components/widgets/shared/TaskRow";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -10,6 +11,8 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { TaskTooltip } from "@/components/ui/task-tooltip";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { useLocation } from "wouter";
 import { 
   CheckSquare, 
   Clock, 
@@ -20,7 +23,8 @@ import {
   ChevronRight,
   Folder,
   ChevronsUpDown,
-  ChevronsDownUp
+  ChevronsDownUp,
+  ArrowRight
 } from "lucide-react";
 import { WidgetProps } from "@/types/widgets";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -34,8 +38,24 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
 import { useTimezone, formatInTimezone } from "@/hooks/useTimezone";
 
-type FilterType = 'all' | 'overdue' | 'today' | 'tomorrow' | 'next-3-days' | 'this-week' | 'next-week' | 'next-2-weeks' | 'this-month' | 'no-date' | 'high-priority';
+// Every value here is offered in the config dropdown AND handled in the filter
+// switch below. (It previously declared seven date filters that existed in
+// neither, while omitting 'upcoming' — which the dropdown actually sets.)
+type FilterType = 'all' | 'overdue' | 'today' | 'upcoming' | 'high-priority';
 type GroupByType = 'none' | 'project' | 'dueDate' | 'priority';
+type ViewType = 'list' | 'board';
+
+/**
+ * `scope` is marked legacy in shared/schema.ts and defaults to "project", so a
+ * business task saved without an explicit scope reads as a project task with no
+ * project — which rendered a blank label. taskContextType is the field the
+ * server actually derives, so trust it first.
+ */
+function isBusinessTask(task: Task): boolean {
+  if ((task as any).taskContextType === 'business') return true;
+  if (task.scope === 'business') return true;
+  return !task.projectId && !task.scope;
+}
 
 interface WidgetConfig {
   maxTasks?: number;
@@ -43,10 +63,12 @@ interface WidgetConfig {
   groupBy?: GroupByType;
   showCompleted?: boolean;
   projectFilter?: string;
+  view?: ViewType;
 }
 
-export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, onCloseConfig, userId }: WidgetProps) {
+export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, onCloseConfig, onSetHeaderActions, userId }: WidgetProps) {
   const { user } = useAuth();
+  const [, navigate] = useLocation();
   const { effectiveTimezone } = useTimezone();
   const businessLabel = (user as any)?.companyNickname || "Business";
   
@@ -56,6 +78,10 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
   const groupBy = config.groupBy ?? 'none';
   const showCompleted = config.showCompleted ?? false;
   const projectFilter = config.projectFilter ?? 'all';
+  const view = config.view ?? 'list';
+  // A board with one column is just a list with extra chrome.
+  const effectiveGroupBy: GroupByType =
+    view === 'board' && groupBy === 'none' ? 'project' : groupBy;
 
   const [editingTitle, setEditingTitle] = useState(widget.title);
   const [configMaxTasks, setConfigMaxTasks] = useState(maxTasks);
@@ -63,6 +89,7 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
   const [configGroupBy, setConfigGroupBy] = useState<GroupByType>(groupBy);
   const [configShowCompleted, setConfigShowCompleted] = useState(showCompleted);
   const [configProjectFilter, setConfigProjectFilter] = useState(projectFilter);
+  const [configView, setConfigView] = useState<ViewType>(view);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
@@ -77,19 +104,63 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
     setConfigGroupBy(config.groupBy ?? 'none');
     setConfigShowCompleted(config.showCompleted ?? false);
     setConfigProjectFilter(config.projectFilter ?? 'all');
+    setConfigView(config.view ?? 'list');
   }, [widget.title, widget.config]);
 
-  const { data: tasks = [], isLoading } = useQuery<Task[]>({
+  const { data: tasks = [], isLoading, isError, refetch } = useQuery<Task[]>({
     queryKey: ["/api/tasks/my"],
     enabled: !!userId,
   });
 
+  // Supplies project colours for grouping and labels for the filter dropdown.
+  // Shared cache key, so this is deduped with every other widget that needs it.
   const { data: projects = [] } = useQuery<Project[]>({
     queryKey: ["/api/projects"],
   });
 
+  // Header row: + new task, hover arrow through to the full Tasks page
+  useEffect(() => {
+    onSetHeaderActions?.(
+      <>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              size="icon"
+              variant="default"
+              className="h-6 w-6"
+              onClick={() => setShowCreateDialog(true)}
+              data-testid="button-add-task-widget"
+              aria-label="New task"
+            >
+              <Plus className="h-3.5 w-3.5" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="top">New task</TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-6 w-6 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity"
+              onClick={() => navigate("/tasks")}
+              data-testid="personal-tasks-open-full"
+              aria-label="Open tasks"
+            >
+              <ArrowRight className="h-3.5 w-3.5" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="top">All tasks</TooltipContent>
+        </Tooltip>
+      </>
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const projectMap = useMemo(() => new Map(projects.map(p => [p.id, p])), [projects]);
-  const today = startOfDay(new Date());
+  // Stable per-day value: rebuilding this every render made every filter memo
+  // below recompute continuously.
+  const today = useMemo(() => startOfDay(new Date()), []);
 
   const toggleTaskMutation = useMutation({
     mutationFn: async (task: Task) => {
@@ -121,7 +192,7 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
 
     if (projectFilter === 'business') {
       // Include scope='business' OR legacy tasks (no scope + no projectId)
-      result = result.filter(t => t.scope === 'business' || (!t.scope && !t.projectId));
+      result = result.filter(t => isBusinessTask(t));
     } else if (projectFilter !== 'all') {
       result = result.filter(t => t.projectId === projectFilter);
     }
@@ -155,7 +226,7 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
       base = base.filter(t => t.status !== 'done' && t.status !== 'complete');
     }
     if (projectFilter === 'business') {
-      base = base.filter(t => t.scope === 'business' || (!t.scope && !t.projectId));
+      base = base.filter(t => isBusinessTask(t));
     } else if (projectFilter !== 'all') {
       base = base.filter(t => t.projectId === projectFilter);
     }
@@ -172,7 +243,7 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
   }, [tasks, showCompleted, projectFilter, today]);
 
   const groupedTasks = useMemo(() => {
-    if (groupBy === 'none') {
+    if (effectiveGroupBy === 'none') {
       return [{ key: 'all', label: '', tasks: filteredTasks }];
     }
 
@@ -183,10 +254,10 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
       let label: string;
       let color: string | undefined;
 
-      switch (groupBy) {
+      switch (effectiveGroupBy) {
         case 'project':
           // Include scope='business' OR legacy tasks (no scope + no projectId) as business
-          if (task.scope === 'business' || (!task.scope && !task.projectId)) {
+          if (isBusinessTask(task)) {
             key = 'business';
             label = businessLabel;
             color = undefined;
@@ -231,54 +302,63 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
     });
 
     return Array.from(groups.entries()).map(([key, value]) => ({ key, ...value }));
-  }, [filteredTasks, groupBy, projectMap, today]);
+  }, [filteredTasks, effectiveGroupBy, projectMap, today]);
 
-  const [prevGroupBy, setPrevGroupBy] = useState(groupBy);
+  const [prevGroupBy, setPrevGroupBy] = useState(effectiveGroupBy);
   useEffect(() => {
-    if (groupBy !== prevGroupBy) {
-      setPrevGroupBy(groupBy);
+    if (effectiveGroupBy !== prevGroupBy) {
+      setPrevGroupBy(effectiveGroupBy);
       setGroupsInitialized(false);
       setCollapsedGroups(new Set());
     }
-  }, [groupBy, prevGroupBy]);
+  }, [effectiveGroupBy, prevGroupBy]);
 
   useEffect(() => {
-    if (!groupsInitialized && groupBy !== 'none' && groupedTasks.length > 0) {
+    if (!groupsInitialized && effectiveGroupBy !== 'none' && groupedTasks.length > 0) {
       const { defaultExpanded } = getWorkspacePreferences();
       if (!defaultExpanded) {
         setCollapsedGroups(new Set(groupedTasks.map(g => g.key)));
       }
       setGroupsInitialized(true);
     }
-  }, [groupedTasks, groupBy, groupsInitialized]);
+  }, [groupedTasks, effectiveGroupBy, groupsInitialized]);
 
-  const getTaskDueInfo = (task: Task) => {
-    if (!task.dueDate) return null;
-    const dueDate = new Date(task.dueDate);
-    
-    if (isBefore(dueDate, today)) {
-      return { label: formatInTimezone(dueDate, effectiveTimezone, { month: 'short', day: 'numeric' }), color: 'text-bp-coral bg-bp-coral/10' };
-    }
-    if (isToday(dueDate)) {
-      return { label: 'Today', color: 'text-bp-amber bg-bp-amber/10' };
-    }
-    if (isTomorrow(dueDate)) {
-      return { label: 'Tomorrow', color: 'text-bp-teal bg-bp-teal/10' };
-    }
-    return { label: formatInTimezone(dueDate, effectiveTimezone, { month: 'short', day: 'numeric' }), color: 'text-bp-muted bg-bp-subtle' };
-  };
+  /**
+   * Every task row in this widget goes through here so the grouped and
+   * ungrouped branches can't drift apart again. The accent carries the
+   * project's own colour (or lavender for business-scope tasks), which is
+   * the one thing a cross-project list needs that a per-project list doesn't.
+   */
+  const renderTaskRow = (
+    task: Task,
+    opts: { hideDue?: boolean; hideAccent?: boolean } = {},
+  ) => {
+    const project = task.projectId ? projectMap.get(task.projectId) : null;
+    const isBusiness = isBusinessTask(task);
 
-  // Left-border accent from the shared Morada priority scale; transparent when unset.
-  const getPriorityBorderColor = (priority: string | null | undefined) => {
-    switch (priority) {
-      case 'urgent':
-      case 'high':
-      case 'medium':
-      case 'low':
-        return getPriorityStyle(priority).color;
-      default:
-        return 'transparent';
+    let accentColor: string | null = null;
+    let accentLabel: string | null = null;
+    if (!opts.hideAccent) {
+      if (project) {
+        accentColor = generateNotionColors(project.color).originalHex;
+        accentLabel = project.name;
+      } else if (isBusiness) {
+        accentColor = 'hsl(var(--primary))';
+        accentLabel = businessLabel;
+      }
     }
+
+    return (
+      <TaskRow
+        key={task.id}
+        task={{ ...task, dueDate: opts.hideDue ? null : task.dueDate } as any}
+        accentColor={accentColor}
+        accentLabel={accentLabel}
+        onToggle={() => toggleTaskMutation.mutate(task)}
+        onClick={() => setSelectedTaskId(task.id)}
+        testIdPrefix="personal-task"
+      />
+    );
   };
 
   const toggleGroup = (key: string) => {
@@ -293,6 +373,14 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
     });
   };
 
+  // Must sit above the isConfiguring early return — a hook after it changes the
+  // hook count between renders and crashes with "Rendered fewer hooks than
+  // expected" the moment the config panel opens.
+  const allCollapsed = useMemo(() => {
+    if (effectiveGroupBy === 'none') return false;
+    return groupedTasks.every(g => collapsedGroups.has(g.key));
+  }, [groupedTasks, collapsedGroups, effectiveGroupBy]);
+
   if (isConfiguring) {
     const handleSaveConfig = () => {
       if (onUpdate) {
@@ -304,6 +392,7 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
             maxTasks: configMaxTasks,
             showFilter: configShowFilter,
             groupBy: configGroupBy,
+            view: configView,
             showCompleted: configShowCompleted,
             projectFilter: configProjectFilter,
           }
@@ -319,6 +408,7 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
       setConfigGroupBy(config.groupBy ?? 'none');
       setConfigShowCompleted(config.showCompleted ?? false);
       setConfigProjectFilter(config.projectFilter ?? 'all');
+      setConfigView(config.view ?? 'list');
       onCloseConfig?.();
     };
 
@@ -370,20 +460,39 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
         </div>
 
         <div className="space-y-2">
-          <Label className="text-xs">Group By</Label>
+          <Label className="text-xs">View</Label>
+          <Select value={configView} onValueChange={(v) => setConfigView(v as ViewType)}>
+            <SelectTrigger className="h-7 text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="list">List</SelectItem>
+              <SelectItem value="board">Board</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="space-y-2">
+          <Label className="text-xs">{configView === 'board' ? 'Columns' : 'Group By'}</Label>
           <Select value={configGroupBy} onValueChange={(v) => setConfigGroupBy(v as GroupByType)}>
             <SelectTrigger className="h-7 text-xs">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="none">No Grouping</SelectItem>
+              {/* A board needs an axis, so "no grouping" isn't offered for it. */}
+              {configView !== 'board' && <SelectItem value="none">No Grouping</SelectItem>}
               <SelectItem value="project">Project</SelectItem>
               <SelectItem value="dueDate">Due Date</SelectItem>
               <SelectItem value="priority">Priority</SelectItem>
             </SelectContent>
           </Select>
+          {configView === 'board' && (
+            <p className="text-[11px] text-muted-foreground">
+              Each {configGroupBy === 'none' ? 'group' : configGroupBy === 'dueDate' ? 'due date' : configGroupBy} becomes a column.
+            </p>
+          )}
         </div>
-        
+
         <div className="space-y-2">
           <Label className="text-xs">Max Tasks</Label>
           <Input 
@@ -416,13 +525,8 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
     );
   }
 
-  const allCollapsed = useMemo(() => {
-    if (groupBy === 'none') return false;
-    return groupedTasks.every(g => collapsedGroups.has(g.key));
-  }, [groupedTasks, collapsedGroups, groupBy]);
-
   const toggleAllGroups = () => {
-    if (groupBy === 'none') return;
+    if (effectiveGroupBy === 'none') return;
     if (allCollapsed) {
       setCollapsedGroups(new Set());
     } else {
@@ -467,11 +571,10 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
             );
           })}
         </div>
-        <div className="flex items-center gap-1">
-        {groupBy !== 'none' && groupedTasks.length > 1 && (
-          <Button 
-            size="icon" 
-            variant="ghost" 
+        {view !== 'board' && effectiveGroupBy !== 'none' && groupedTasks.length > 1 && (
+          <Button
+            size="icon"
+            variant="ghost"
             className="h-5 w-5"
             onClick={toggleAllGroups}
             data-testid="button-toggle-all-tasks"
@@ -484,16 +587,6 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
             )}
           </Button>
         )}
-        <Button 
-          size="icon" 
-          variant="ghost" 
-          className="h-5 w-5"
-          onClick={() => setShowCreateDialog(true)}
-          data-testid="button-add-task-widget"
-        >
-          <Plus className="h-3 w-3" />
-        </Button>
-        </div>
       </div>
       
       <TaskEditModal
@@ -519,69 +612,67 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
         <div className="space-y-2 pr-2">
           {isLoading ? (
             <WidgetSkeleton rows={3} />
+          ) : isError ? (
+            <div className="flex flex-col items-center gap-2 py-6 text-sm text-muted-foreground">
+              <AlertCircle className="h-4 w-4 text-destructive" />
+              Couldn't load your tasks
+              <Button size="sm" variant="outline" className="h-6 px-2 text-xs" onClick={() => refetch()}>
+                Retry
+              </Button>
+            </div>
           ) : filteredTasks.length === 0 ? (
             <WidgetEmpty icon={CheckSquare} message="No tasks match your filters" />
-          ) : groupBy === 'none' ? (
-            <div className="space-y-0.5">
-              {filteredTasks.map((task) => {
-                const dueInfo = getTaskDueInfo(task);
-                const project = task.projectId ? projectMap.get(task.projectId) : null;
-                const isCompleted = task.status === 'done' || task.status === 'complete';
-                
-                return (
-                  <div 
-                    key={task.id}
-                    className={`flex items-center gap-2 py-1.5 px-2 rounded border-l-2 hover-elevate cursor-pointer ${isCompleted ? 'opacity-50' : ''}`}
-                    style={{ borderLeftColor: getPriorityBorderColor(task.priority) }}
-                    onClick={() => setSelectedTaskId(task.id)}
-                    data-testid={`personal-task-${task.id}`}
-                  >
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        toggleTaskMutation.mutate(task);
-                      }}
-                      className="flex-shrink-0"
-                    >
-                      {isCompleted ? (
-                        <CheckSquare className="h-3.5 w-3.5 text-bp-green" />
-                      ) : (
-                        <Circle className="h-3.5 w-3.5 text-muted-foreground" />
-                      )}
-                    </button>
-                    
-                    <TaskTooltip content={task.title}>
-                      <span className={`text-table flex-1 truncate cursor-default ${isCompleted ? 'line-through' : ''}`}>
-                        {task.title}
-                      </span>
-                    </TaskTooltip>
-                    
-                    <div className="flex items-center gap-1 flex-shrink-0">
-                      {dueInfo && (
-                        <span className={`text-label px-1.5 py-0.5 rounded font-medium w-14 text-center ${dueInfo.color}`}>
-                          {dueInfo.label}
-                        </span>
-                      )}
-                      {project && (
-                        <span 
-                          className="text-label px-1.5 py-0.5 rounded bg-muted text-muted-foreground w-20 text-center truncate"
-                          title={project.name}
-                        >
-                          {project.name}
-                        </span>
-                      )}
-                      {(task.scope === 'business' || (!task.scope && !task.projectId)) && (
-                        <span 
-                          className="text-label px-1.5 py-0.5 rounded bg-bp-purple/15 text-bp-purple w-20 text-center truncate"
-                          title={businessLabel}
-                        >
-                          {businessLabel}
-                        </span>
-                      )}
-                    </div>
+          ) : view === 'board' ? (
+            // Columns scroll sideways; each column scrolls on its own vertically
+            // so one busy project can't stretch the whole widget.
+            <div className="flex gap-2 overflow-x-auto pb-1">
+              {groupedTasks.map((group) => (
+                <div
+                  key={group.key}
+                  className="flex-shrink-0 w-[190px] flex flex-col"
+                  data-testid={`personal-tasks-column-${group.key}`}
+                >
+                  <div className="flex items-center gap-1.5 px-1 pb-1.5">
+                    {group.color && (
+                      <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: group.color }} />
+                    )}
+                    <span className="text-[10px] font-semibold uppercase tracking-wider truncate" title={group.label}>
+                      {group.label}
+                    </span>
+                    <span className="text-[10px] text-muted-foreground tabular-nums">{group.tasks.length}</span>
                   </div>
-                );
-              })}
+                  <div className="space-y-1 max-h-[320px] overflow-y-auto pr-0.5">
+                    {group.tasks.map((task) => {
+                      const project = task.projectId ? projectMap.get(task.projectId) : null;
+                      const isBusiness = isBusinessTask(task);
+                      const showAccent = effectiveGroupBy !== 'project';
+                      return (
+                        <TaskCard
+                          key={task.id}
+                          task={{ ...task, dueDate: effectiveGroupBy === 'dueDate' ? null : task.dueDate } as any}
+                          accentColor={
+                            !showAccent ? null
+                              : project ? generateNotionColors(project.color).originalHex
+                              : isBusiness ? 'hsl(var(--primary))' : null
+                          }
+                          accentLabel={
+                            !showAccent ? null
+                              : project ? project.name
+                              : isBusiness ? businessLabel : null
+                          }
+                          onToggle={() => toggleTaskMutation.mutate(task)}
+                          onClick={() => setSelectedTaskId(task.id)}
+                          testIdPrefix="personal-task-card"
+                        />
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : effectiveGroupBy === 'none' ? (
+            <div className="space-y-0.5">
+              {filteredTasks.map((task) => renderTaskRow(task))}
             </div>
           ) : (
             groupedTasks.map((group) => (
@@ -599,7 +690,7 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
                   {group.color && (
                     <div className="w-2 h-2 rounded-full" style={{ backgroundColor: group.color }} />
                   )}
-                  {!group.color && groupBy === 'project' && (
+                  {!group.color && effectiveGroupBy === 'project' && (
                     <Folder className="h-3 w-3 text-muted-foreground" />
                   )}
                   <span className="text-table font-medium flex-1 text-left">{group.label}</span>
@@ -608,66 +699,11 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
                   </Badge>
                 </CollapsibleTrigger>
                 <CollapsibleContent className="pt-1 space-y-0.5 ml-2">
-                  {group.tasks.map((task) => {
-                    const dueInfo = getTaskDueInfo(task);
-                    const project = task.projectId ? projectMap.get(task.projectId) : null;
-                    const isCompleted = task.status === 'done' || task.status === 'complete';
-                    
-                    return (
-                      <div 
-                        key={task.id}
-                        className={`flex items-center gap-2 py-1.5 px-2 rounded border-l-2 hover-elevate cursor-pointer ${isCompleted ? 'opacity-50' : ''}`}
-                        style={{ borderLeftColor: getPriorityBorderColor(task.priority) }}
-                        onClick={() => setSelectedTaskId(task.id)}
-                        data-testid={`personal-task-${task.id}`}
-                      >
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            toggleTaskMutation.mutate(task);
-                          }}
-                          className="flex-shrink-0"
-                        >
-                          {isCompleted ? (
-                            <CheckSquare className="h-3.5 w-3.5 text-bp-green" />
-                          ) : (
-                            <Circle className="h-3.5 w-3.5 text-muted-foreground" />
-                          )}
-                        </button>
-                        
-                        
-                        <TaskTooltip content={task.title}>
-                          <span className={`text-table flex-1 truncate cursor-default ${isCompleted ? 'line-through' : ''}`}>
-                            {task.title}
-                          </span>
-                        </TaskTooltip>
-                        
-                        <div className="flex items-center gap-1 flex-shrink-0">
-                          {groupBy !== 'dueDate' && dueInfo && (
-                            <span className={`text-label px-1.5 py-0.5 rounded font-medium w-14 text-center ${dueInfo.color}`}>
-                              {dueInfo.label}
-                            </span>
-                          )}
-                          {groupBy !== 'project' && project && (
-                            <span 
-                              className="text-label px-1.5 py-0.5 rounded bg-muted text-muted-foreground w-20 text-center truncate"
-                              title={project.name}
-                            >
-                              {project.name}
-                            </span>
-                          )}
-                          {groupBy !== 'project' && (task.scope === 'business' || (!task.scope && !task.projectId)) && (
-                            <span 
-                              className="text-label px-1.5 py-0.5 rounded bg-primary/10 text-primary w-20 text-center truncate"
-                              title={businessLabel}
-                            >
-                              {businessLabel}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
+                  {/* Inside a group, don't repeat what the group heading already says. */}
+                  {group.tasks.map((task) => renderTaskRow(task, {
+                    hideDue: effectiveGroupBy === 'dueDate',
+                    hideAccent: effectiveGroupBy === 'project',
+                  }))}
                 </CollapsibleContent>
               </Collapsible>
             ))

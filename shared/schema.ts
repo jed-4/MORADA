@@ -45,7 +45,8 @@ export const companies = pgTable("companies", {
 
   // Trial / plan / billing tracking.
   // chosenPlan = tier picked at signup; plan = effective tier for gating
-  // (always 'builder' during trial, switches to chosenPlan at expiry);
+  // (during trial: 'subbie' for Subbie signups, 'studio' for everyone else;
+  // switches to chosenPlan at expiry/subscription);
   // planStatus = trialing | active | expired | cancelled (legacy: 'trial').
   trialEndsAt: timestamp("trial_ends_at"),
   planStatus: varchar("plan_status").default("trial"),
@@ -103,6 +104,11 @@ export const users = pgTable("users", {
   // Authentication fields
   passwordHash: text("password_hash"), // For email/password login (bcrypt)
   googleId: varchar("google_id").unique(), // For Google OAuth login
+
+  // Terms of Service acceptance — proof of agreement at registration.
+  // Null on accounts created before this was recorded (or via invite/OAuth).
+  termsAcceptedAt: timestamp("terms_accepted_at"),
+  termsVersion: text("terms_version"),
   
   // Application fields
   phone: text("phone"),
@@ -369,6 +375,19 @@ export const referralCredits = pgTable("referral_credits", {
 });
 
 export type ReferralCredit = typeof referralCredits.$inferSelect;
+
+// Trial lifecycle emails already sent, one row per (company, email). The
+// UNIQUE(company_id, email_key) index — see migration 0033 — is what makes
+// each send once-only; the sweep claims by inserting before calling Resend.
+export const onboardingEmailLog = pgTable("onboarding_email_log", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull(),
+  emailKey: varchar("email_key", { length: 40 }).notNull(), // welcome | tips_day3 | trial_ending | trial_ended
+  toEmail: text("to_email").notNull(),
+  sentAt: timestamp("sent_at").notNull().defaultNow(),
+});
+
+export type OnboardingEmailLogEntry = typeof onboardingEmailLog.$inferSelect;
 
 // Schema for user creation/updates (Replit Auth compatible)
 export const upsertUserSchema = z.object({
@@ -864,7 +883,18 @@ export const projects = pgTable("projects", {
   isArchived: boolean("is_archived").notNull().default(false), // Archived projects are hidden from main lists
   isBusiness: boolean("is_business").notNull().default(false), // Business-level project (vs construction project)
   invoicingMethod: text("invoicing_method").notNull().default("progress_payments"), // "progress_payments" | "cost_plus"
-  contractPrice: integer("contract_price"), // Locked agreed contract price in cents (set when project transitions to construction)
+  contractPrice: integer("contract_price"), // Live cached estimate total in cents (stamped at Approve; tracks estimate edits until contracted)
+
+  // ── Frozen contract sum ───────────────────────────────────────────────────
+  // Captured when an estimate is marked as the contract. Once set, these are
+  // the client's contract price — the live estimate no longer moves it, so an
+  // approved variation is the ONLY instrument that can change what is owed.
+  // Cleared when the contract is reverted (renegotiation), re-stamped on the
+  // next Mark as Contract. contractedAt is the "is frozen" predicate.
+  contractedTotalExGstCents: integer("contracted_total_ex_gst_cents"),
+  contractedTotalIncGstCents: integer("contracted_total_inc_gst_cents"),
+  contractedAt: timestamp("contracted_at"),
+  contractedEstimateId: varchar("contracted_estimate_id"), // Audit: which revision was signed
   percentComplete: integer("percent_complete").notNull().default(0), // Construction completion % (0-100); used by OH predictor for remaining revenue
   
   // Google Drive integration
@@ -1958,6 +1988,12 @@ export const bills = pgTable("bills", {
   tax: integer("tax").notNull().default(0), // Tax amount in cents
   total: integer("total").notNull().default(0), // Total amount in cents
   roundingCents: integer("rounding_cents").notNull().default(0), // Manual rounding adjustment (cents), applied to total to match supplier invoice
+  // The total printed on the supplier's invoice document (cents inc GST), as
+  // typed by the user or extracted by the AI reader. When set it is the ANCHOR:
+  // roundingCents is re-derived from it whenever lines/taxMode change, so the
+  // bill total tracks the document instead of drifting with a stale delta.
+  // Null = no anchor captured (totals are purely line-derived).
+  documentTotalCents: integer("document_total_cents"),
   paidAmount: integer("paid_amount").notNull().default(0), // Paid amount in cents
   taxMode: text("tax_mode").notNull().default("exclusive"), // "inclusive" or "exclusive" — line totals interpretation
   sendToXero: boolean("send_to_xero").notNull().default(false), // Checkbox for Xero sync
@@ -2040,6 +2076,7 @@ export const billLineItems = pgTable("bill_line_items", {
   costCodeId: varchar("cost_code_id").references(() => costCodes.id),
   priceListItemId: varchar("price_list_item_id").references(() => priceListItems.id, { onDelete: "set null" }), // Link to price list
   quantity: doublePrecision("quantity").notNull().default(1),
+  unit: text("unit"), // Unit of measure, from Field Settings `estimate_item.unit`
   unitPrice: integer("unit_price").notNull().default(0), // Price in cents
   tax: taxTypeEnum("tax").notNull().default("GST on expenses"),
   account: text("account"), // Xero account code
@@ -2286,8 +2323,12 @@ export const variations = pgTable("variations", {
   // Client portal (T003)
   portalToken: text("portal_token").unique(),
   portalSentAt: timestamp("portal_sent_at"),
+  portalViewedAt: timestamp("portal_viewed_at"), // First time the client opened the portal link
+  createdById: varchar("created_by_id").references(() => users.id, { onDelete: "set null" }), // Who raised the variation
   clientSignedName: text("client_signed_name"),
   clientSignedDate: timestamp("client_signed_date"),
+  clientSignedIp: text("client_signed_ip"), // Audit: request IP captured at portal sign time
+  clientSignedUserAgent: text("client_signed_user_agent"), // Audit: request user-agent at portal sign time
   builderSignedName: text("builder_signed_name"),
   builderSignedDate: timestamp("builder_signed_date"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -3184,6 +3225,7 @@ export const checklistInstanceGroups = pgTable("checklist_instance_groups", {
   priority: text("priority").default("low"), // "low" | "medium" | "high" | "urgent"
   assigneeId: varchar("assignee_id").references(() => users.id, { onDelete: "set null" }),
   assigneeName: text("assignee_name"),
+  dueDate: timestamp("due_date"),
   linkedTaskId: varchar("linked_task_id"),
   linkedScheduleItemId: varchar("linked_schedule_item_id"),
   completedAt: timestamp("completed_at"),
@@ -3203,6 +3245,7 @@ export const insertChecklistInstanceGroupSchema = createInsertSchema(checklistIn
   priority: z.enum(["low", "medium", "high", "urgent"]).default("low"),
   assigneeId: z.string().nullish(),
   assigneeName: z.string().nullish(),
+  dueDate: z.coerce.date().optional().nullable(),
   linkedTaskId: z.string().nullish(),
   linkedScheduleItemId: z.string().nullish(),
   completedAt: z.coerce.date().nullish(),

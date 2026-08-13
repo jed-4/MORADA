@@ -4,6 +4,10 @@ import { format } from "date-fns";
 import { DocBrandedHeader } from "@/components/pdf/shared/DocBrandedHeader";
 import { DocProjectBar } from "@/components/pdf/shared/DocProjectBar";
 import { DocFooter } from "@/components/pdf/shared/DocFooter";
+import {
+  buildVariationDocumentModel,
+  variationStatusPresentation,
+} from "../variationDocumentModel";
 
 interface Company {
   name: string;
@@ -39,6 +43,8 @@ interface VariationDocumentProps {
   };
   items: VariationItem[];
   bills?: Bill[];
+  /** On-charged labour total in ex-GST cents (aggregated; timesheet detail stays internal). */
+  labourTotalCents?: number;
   company?: Company | null;
   project?: Project | null;
   brandColor?: string;
@@ -47,23 +53,6 @@ interface VariationDocumentProps {
   originalContractCents?: number;
   revisedContractCents?: number;
 }
-
-const TYPE_LABELS: Record<string, string> = {
-  material: "Materials",
-  labour: "Labour",
-  subcontractor: "Subcontractor",
-  fee: "Fee / Overhead",
-  allowance: "Allowances",
-  other: "Other",
-};
-
-const STATUS_CONFIG: Record<string, { label: string; bg: string; text: string }> = {
-  draft:    { label: "Draft",            bg: "#f3f4f6", text: "#6b7280" },
-  action:   { label: "Action Required",  bg: "#fff7ed", text: "#c2410c" },
-  pending:  { label: "Awaiting Approval",bg: "#fef3c7", text: "#d97706" },
-  approved: { label: "Approved",         bg: "#dcfce7", text: "#15803d" },
-  rejected: { label: "Rejected",         bg: "#fee2e2", text: "#dc2626" },
-};
 
 function formatAUD(dollars: number): string {
   return new Intl.NumberFormat("en-AU", {
@@ -77,6 +66,7 @@ export function VariationDocument({
   variation,
   items,
   bills = [],
+  labourTotalCents = 0,
   company,
   project,
   brandColor = "#3B82F6",
@@ -92,22 +82,24 @@ export function VariationDocument({
   const accentBg = isS2 ? brandColor + "14" : "#f3f4f6";
   const docBarBorderColor = isS2 ? brandColor + "26" : "#e5e7eb";
 
-  const statusCfg = STATUS_CONFIG[variation.status ?? "draft"] || STATUS_CONFIG.draft;
+  const statusCfg = variationStatusPresentation(variation.status);
 
-  const subtotalCents = variation.subtotal ?? 0;
-  const gstCents = variation.gstAmount ?? 0;
-  const totalCents = variation.totalAmount ?? 0;
+  // Shared with the portal page so both documents group, label and total
+  // identically (they previously diverged on both wording and grouping).
+  const docModel = buildVariationDocumentModel({
+    variation,
+    items,
+    bills,
+    labourExCents: labourTotalCents,
+  });
 
-  const costItems = items.filter((i) => (i as any).itemType !== "allowance");
-  const allowanceItems = items.filter((i) => (i as any).itemType === "allowance");
-  const visibleCostItems = costItems.filter((i) => (i as any).showInPdf !== false);
+  const subtotalCents = docModel.subtotalCents;
+  const gstCents = docModel.gstCents;
+  const totalCents = docModel.totalCents;
 
-  const typeGroups = visibleCostItems.reduce<Record<string, VariationItem[]>>((acc, item) => {
-    const type = ((item as any).type || "other").toLowerCase();
-    if (!acc[type]) acc[type] = [];
-    acc[type].push(item);
-    return acc;
-  }, {});
+  const attachmentList: Array<{ name?: string }> = Array.isArray((variation as any).attachments)
+    ? ((variation as any).attachments as any[])
+    : [];
 
   const showContractCard =
     originalContractCents !== undefined && originalContractCents > 0;
@@ -351,7 +343,7 @@ export function VariationDocument({
           ) : null}
 
           {/* Cost lines */}
-          {Object.keys(typeGroups).length > 0 && (
+          {docModel.costGroups.length > 0 && (
             <View style={{ marginBottom: 12 }}>
               <Text
                 style={{
@@ -380,98 +372,97 @@ export function VariationDocument({
                 <Text style={{ fontSize: 8, color: thTextColor, fontFamily: "Helvetica-Bold", width: 50, textAlign: "right" }}>
                   Qty
                 </Text>
-                <Text style={{ fontSize: 8, color: thTextColor, fontFamily: "Helvetica-Bold", width: 65, textAlign: "right" }}>
-                  Unit Cost
+                <Text style={{ fontSize: 8, color: thTextColor, fontFamily: "Helvetica-Bold", width: 75, textAlign: "right" }}>
+                  Unit Price
                 </Text>
-                <Text style={{ fontSize: 8, color: thTextColor, fontFamily: "Helvetica-Bold", width: 45, textAlign: "right" }}>
-                  Markup
-                </Text>
-                <Text style={{ fontSize: 8, color: thTextColor, fontFamily: "Helvetica-Bold", width: 65, textAlign: "right" }}>
+                <Text style={{ fontSize: 8, color: thTextColor, fontFamily: "Helvetica-Bold", width: 75, textAlign: "right" }}>
                   Amt inc. GST
                 </Text>
               </View>
 
-              {Object.entries(typeGroups).map(([type, typeItems]) => {
-                const typeTotal = typeItems.reduce((sum, item) => {
-                  const unitCost = item.unitCostExTax ?? (item.unitPrice ?? 0) / 100;
-                  const qty = item.quantity ?? 1;
-                  const exTax = qty * unitCost * (1 + ((item.markupPercent ?? 0) / 100));
-                  return sum + ((item as any).taxable !== false ? exTax * 1.1 : exTax);
-                }, 0);
-
-                return (
-                  <View key={type}>
+              {docModel.costGroups.map((group) => (
+                <View key={group.type}>
+                  <View
+                    style={{
+                      flexDirection: "row",
+                      justifyContent: "space-between",
+                      paddingHorizontal: 8,
+                      paddingVertical: 4,
+                      backgroundColor: "#f3f4f6",
+                      borderBottomWidth: 1,
+                      borderBottomColor: "#e5e7eb",
+                    }}
+                  >
+                    <Text style={{ fontSize: 8, fontFamily: "Helvetica-Bold", color: "#6b7280" }}>
+                      {group.label}
+                    </Text>
+                    <Text style={{ fontSize: 8, fontFamily: "Helvetica-Bold", color: "#6b7280" }}>
+                      {formatAUD(group.totalIncCents / 100)}
+                    </Text>
+                  </View>
+                  {group.lines.map((line, idx) => (
                     <View
+                      key={line.id}
                       style={{
                         flexDirection: "row",
-                        justifyContent: "space-between",
                         paddingHorizontal: 8,
                         paddingVertical: 4,
-                        backgroundColor: "#f3f4f6",
                         borderBottomWidth: 1,
-                        borderBottomColor: "#e5e7eb",
+                        borderBottomColor: "#f3f4f6",
+                        backgroundColor: idx % 2 === 1 ? altRowBg : "#ffffff",
                       }}
                     >
-                      <Text style={{ fontSize: 8, fontFamily: "Helvetica-Bold", color: "#6b7280" }}>
-                        {TYPE_LABELS[type] ?? type}
+                      <View style={{ flex: 1 }}>
+                        {line.name ? (
+                          <Text style={{ fontSize: 9, fontFamily: "Helvetica-Bold", color: "#111827" }}>
+                            {line.name}
+                          </Text>
+                        ) : null}
+                        {line.description ? (
+                          <Text style={{ fontSize: 8, color: "#6b7280" }}>{line.description}</Text>
+                        ) : null}
+                        {!line.name && !line.description ? (
+                          <Text style={{ fontSize: 9, color: "#374151" }}>—</Text>
+                        ) : null}
+                      </View>
+                      <Text style={{ fontSize: 9, color: "#374151", width: 50, textAlign: "right" }}>
+                        {line.quantity} {line.unitType || ""}
                       </Text>
-                      <Text style={{ fontSize: 8, fontFamily: "Helvetica-Bold", color: "#6b7280" }}>
-                        {formatAUD(typeTotal)}
+                      <Text style={{ fontSize: 9, color: "#374151", width: 75, textAlign: "right" }}>
+                        {formatAUD(line.unitPriceExCents / 100)}
+                      </Text>
+                      <Text style={{ fontSize: 9, color: "#374151", width: 75, textAlign: "right" }}>
+                        {formatAUD(line.amountIncCents / 100)}
                       </Text>
                     </View>
-                    {typeItems.map((item, idx) => {
-                      const unitCost = item.unitCostExTax ?? (item.unitPrice ?? 0) / 100;
-                      const qty = item.quantity ?? 1;
-                      const exTax = qty * unitCost * (1 + ((item.markupPercent ?? 0) / 100));
-                      const incTax = (item as any).taxable !== false ? exTax * 1.1 : exTax;
-                      return (
-                        <View
-                          key={item.id}
-                          style={{
-                            flexDirection: "row",
-                            paddingHorizontal: 8,
-                            paddingVertical: 4,
-                            borderBottomWidth: 1,
-                            borderBottomColor: "#f3f4f6",
-                            backgroundColor: idx % 2 === 1 ? altRowBg : "#ffffff",
-                          }}
-                        >
-                          <View style={{ flex: 1 }}>
-                            {(item as any).name ? (
-                              <Text style={{ fontSize: 9, fontFamily: "Helvetica-Bold", color: "#111827" }}>
-                                {(item as any).name}
-                              </Text>
-                            ) : null}
-                            {item.description ? (
-                              <Text style={{ fontSize: 8, color: "#6b7280" }}>{item.description}</Text>
-                            ) : null}
-                            {!(item as any).name && !item.description ? (
-                              <Text style={{ fontSize: 9, color: "#374151" }}>—</Text>
-                            ) : null}
-                          </View>
-                          <Text style={{ fontSize: 9, color: "#374151", width: 50, textAlign: "right" }}>
-                            {qty} {(item as any).unitType || ""}
-                          </Text>
-                          <Text style={{ fontSize: 9, color: "#374151", width: 65, textAlign: "right" }}>
-                            {formatAUD(unitCost)}
-                          </Text>
-                          <Text style={{ fontSize: 9, color: "#374151", width: 45, textAlign: "right" }}>
-                            {item.markupPercent ? `${item.markupPercent}%` : "—"}
-                          </Text>
-                          <Text style={{ fontSize: 9, color: "#374151", width: 65, textAlign: "right" }}>
-                            {formatAUD(incTax)}
-                          </Text>
-                        </View>
-                      );
-                    })}
-                  </View>
-                );
-              })}
+                  ))}
+                </View>
+              ))}
+
+              {/* Value not itemised for the client, shown so the rows above
+                  still reconcile with the Total. */}
+              {docModel.notItemisedIncCents !== 0 && (
+                <View
+                  style={{
+                    flexDirection: "row",
+                    justifyContent: "space-between",
+                    paddingHorizontal: 8,
+                    paddingVertical: 4,
+                    borderBottomWidth: 1,
+                    borderBottomColor: "#f3f4f6",
+                  }}
+                >
+                  <Text style={{ fontSize: 9, color: "#374151" }}>Additional works (not itemised)</Text>
+                  <Text style={{ fontSize: 9, color: "#374151" }}>
+                    {formatAUD(docModel.notItemisedIncCents / 100)}
+                  </Text>
+                </View>
+              )}
             </View>
           )}
 
           {/* Allowances */}
-          {allowanceItems.length > 0 && (
+          {docModel.allowanceLines.length > 0 && (
             <View style={{ marginBottom: 12 }}>
               <Text
                 style={{
@@ -485,9 +476,9 @@ export function VariationDocument({
               >
                 Allowances
               </Text>
-              {allowanceItems.map((item, idx) => (
+              {docModel.allowanceLines.map((line, idx) => (
                 <View
-                  key={item.id}
+                  key={line.id}
                   style={{
                     flexDirection: "row",
                     paddingHorizontal: 8,
@@ -497,9 +488,9 @@ export function VariationDocument({
                     backgroundColor: idx % 2 === 1 ? altRowBg : "#ffffff",
                   }}
                 >
-                  <Text style={{ fontSize: 9, color: "#374151", flex: 1 }}>{item.description}</Text>
+                  <Text style={{ fontSize: 9, color: "#374151", flex: 1 }}>{line.description}</Text>
                   <Text style={{ fontSize: 9, color: "#374151", width: 80, textAlign: "right" }}>
-                    {formatAUD((item.unitPrice ?? 0) / 100)}
+                    {formatAUD(line.amountIncCents / 100)}
                   </Text>
                 </View>
               ))}
@@ -507,7 +498,7 @@ export function VariationDocument({
           )}
 
           {/* Bills */}
-          {bills.length > 0 && (
+          {docModel.bills.length > 0 && (
             <View style={{ marginBottom: 12 }}>
               <Text
                 style={{
@@ -542,8 +533,8 @@ export function VariationDocument({
                   Total
                 </Text>
               </View>
-              {bills.map((bill, idx) => {
-                const total = (bill.totalAmountCents ?? bill.totalAmount ?? 0) / 100;
+              {docModel.bills.map((bill, idx) => {
+                const total = bill.totalIncCents / 100;
                 return (
                   <View
                     key={bill.id}
@@ -573,6 +564,76 @@ export function VariationDocument({
                   </View>
                 );
               })}
+            </View>
+          )}
+
+          {/* On-charged site labour (aggregated) */}
+          {docModel.labourIncCents > 0 && (
+            <View style={{ marginBottom: 12 }}>
+              <Text
+                style={{
+                  fontSize: 8,
+                  fontFamily: "Helvetica-Bold",
+                  color: "#9ca3af",
+                  textTransform: "uppercase",
+                  letterSpacing: 0.5,
+                  marginBottom: 6,
+                }}
+              >
+                Site Labour
+              </Text>
+              <View
+                style={{
+                  flexDirection: "row",
+                  justifyContent: "space-between",
+                  paddingHorizontal: 8,
+                  paddingVertical: 4,
+                  borderBottomWidth: 1,
+                  borderBottomColor: "#f3f4f6",
+                }}
+              >
+                <Text style={{ fontSize: 9, color: "#374151" }}>Labour</Text>
+                <Text style={{ fontSize: 9, color: "#374151" }}>{formatAUD(docModel.labourIncCents / 100)}</Text>
+              </View>
+            </View>
+          )}
+
+          {/* Attachments — listed by name; the files themselves are available
+              through the client portal link. */}
+          {attachmentList.length > 0 && (
+            <View style={{ marginBottom: 12 }}>
+              <Text
+                style={{
+                  fontSize: 8,
+                  fontFamily: "Helvetica-Bold",
+                  color: "#9ca3af",
+                  textTransform: "uppercase",
+                  letterSpacing: 0.5,
+                  marginBottom: 6,
+                }}
+              >
+                Attachments
+              </Text>
+              {attachmentList.map((att, idx) => (
+                <View
+                  key={idx}
+                  style={{
+                    flexDirection: "row",
+                    paddingHorizontal: 8,
+                    paddingVertical: 3,
+                    borderBottomWidth: 1,
+                    borderBottomColor: "#f3f4f6",
+                    backgroundColor: idx % 2 === 1 ? altRowBg : "#ffffff",
+                  }}
+                >
+                  <Text style={{ fontSize: 9, color: "#374151" }}>
+                    {att?.name || `Attachment ${idx + 1}`}
+                  </Text>
+                </View>
+              ))}
+              <Text style={{ fontSize: 7, color: "#9ca3af", marginTop: 4 }}>
+                Attached files can be downloaded from your variation link.
+              </Text>
             </View>
           )}
 

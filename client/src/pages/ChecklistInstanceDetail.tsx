@@ -302,11 +302,11 @@ export default function ChecklistInstanceDetail() {
 
   const createItemMutation = useMutation({
     mutationFn: async (data: typeof itemForm) => {
-      return await apiRequest(`/api/checklist-instances/${checklistId}/items`, "POST", {
-        ...data,
-        order: items.length,
-        groupOrder: 0,
-      });
+      // No order/groupOrder: the server appends to the end of the named
+      // section. This used to count items across the whole instance and pin
+      // groupOrder to 0, which tied hand-added items together and dragged them
+      // up into the first section.
+      return await apiRequest(`/api/checklist-instances/${checklistId}/items`, "POST", data);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/checklist-instances", checklistId, "items"] });
@@ -538,15 +538,25 @@ export default function ChecklistInstanceDetail() {
       groups[groupName].push(item);
     });
     
+    // Authored order only. Ties keep the sequence the server sent (Array.sort
+    // is stable), which the server makes deterministic. Sorting ties by
+    // description alphabetised whole checklists whose items shared an order.
     Object.keys(groups).forEach(key => {
-      groups[key].sort((a, b) => (a.description || '').localeCompare(b.description || ''));
+      groups[key].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
     });
-    
+
     return groups;
   }, [items]);
 
-  // Get current group names
-  const allGroupNames = useMemo(() => Object.keys(groupedItems).sort((a, b) => a.localeCompare(b)), [groupedItems]);
+  // Group names in the order their checklist was authored — items carry the
+  // parent group's position in groupOrder — rather than alphabetically. Ties
+  // keep insertion order, which follows the server's item order.
+  const allGroupNames = useMemo(
+    () =>
+      Object.keys(groupedItems).sort((a, b) =>
+        (groupedItems[a][0]?.groupOrder ?? 0) - (groupedItems[b][0]?.groupOrder ?? 0)),
+    [groupedItems],
+  );
 
   // Clean up stale collapsed groups when data changes
   useEffect(() => {

@@ -8,6 +8,7 @@ import { SidebarProvider } from "@/components/ui/sidebar";
 import { ThemeProvider, useTheme } from "@/contexts/ThemeContext";
 import { ProjectProvider } from "@/contexts/ProjectContext";
 import Header from "@/components/Header";
+import { DemoDataBanner } from "@/components/DemoDataBanner";
 import { SidebarNav } from "@/components/SidebarNav";
 import { ClientRouteGuard } from "@/components/ClientRouteGuard";
 import { useState, useEffect, lazy, Suspense } from "react";
@@ -222,7 +223,7 @@ function Router() {
       <Route path="/projects/:projectId/estimates/:estimateId" component={EstimateDetail} />
       <Route path="/projects/:projectId/labour-estimate" component={LabourEstimate} />
       <Route path="/projects/:projectId/costings" component={ProjectCostings} />
-      <Route path="/projects/:projectId/selections/:id" component={SelectionDetail} />
+      <Route path="/projects/:projectId/selections/:id" component={Dashboard} />
       <Route path="/projects/:projectId/rfqs/new" component={CreateRFQ} />
       <Route path="/projects/:projectId/rfqs/:id" component={RFQDetail} />
       <Route path="/projects/:projectId/rfis/new" component={CreateRFI} />
@@ -547,7 +548,10 @@ function AuthWrapper() {
             )}
             {/* Header in its own floating bar */}
             <Header />
-            
+
+            {/* Sample-data notice while the signup demo dataset is present */}
+            <DemoDataBanner />
+
             {/* Sidebar and main content below header */}
             <div className="flex flex-1 overflow-hidden gap-2">
               <SidebarNav />

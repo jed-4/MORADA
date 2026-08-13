@@ -1,6 +1,7 @@
 import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
-import { storage, InvalidProposalStateError } from "./storage";
+import { storage, InvalidProposalStateError, calendarDateMidnightUtcInTz } from "./storage";
+import { timesheetHours, timesheetTotalExGstCents, exGstFromInc, incGstFromEx, gstSplit } from "@shared/money";
 import { db, pool } from "./db";
 import { google } from "googleapis";
 import { randomBytes, randomUUID } from "crypto";
@@ -14,6 +15,7 @@ import { ObjectStorageService } from "./replit_integrations/object_storage";
 import { xeroService, XeroValidationError, type XeroValidationIssue, encryptXeroToken, summarizeXeroError } from "./services/xeroService";
 import { enqueueXeroPush } from "./services/xeroPushQueue";
 import { recomputePOStatusFromBills, recomputePOStatusForLinks } from "./services/poStatusFromBills";
+import { isVendorCredit, CREDIT_NOT_SUPPORTED, CREDIT_NOT_SUPPORTED_MESSAGE } from "./services/xeroCreditGuard";
 import { applyPOSuggestionsToBill } from "./services/poSuggestions";
 import { dedupXeroBills } from "./services/xeroBillDedup";
 import { 
@@ -173,11 +175,17 @@ import {
   insertSuggestionSchema,
   type CircuitContext
 } from "@shared/schema";
+// Namespace import for table references (schema.selections etc.). Several
+// existing routes already referenced `schema.` without this import and threw
+// a ReferenceError at runtime (every selections-portal request 500ed).
+import * as schema from "@shared/schema";
 import Anthropic from "@anthropic-ai/sdk";
 import { AI_TOOLS } from "./ai/tools";
 import { AI_MODEL, buildSystemPrompt, buildCircuitStartMessage } from "./ai/prompts";
 import { executeTool } from "./ai/executor";
 import { computeBillTotalsCents, billLineExGstCents, clampRoundingCents } from "@shared/billTotals";
+import { computeVariationTotals, computeVariationLinePriceCents } from "@shared/variationTotals";
+import { PENDING_VARIATION_STATUSES, isApprovedVariationStatus, frozenContractTotalFrom } from "@shared/projectMetrics";
 import { matchSupplier } from "@shared/supplierMatcher";
 import {
   fuzzyMatchTimesheetCostCode,
@@ -189,11 +197,16 @@ import { scheduleItemTier, computeProjectBands } from "@shared/scheduleVisibilit
 import { reflowLinkedTasks, scheduleDatesChanged, SCHEDULE_BOOKING_REFERENCE } from "./utils/scheduleTaskLinks";
 import { z } from "zod";
 import { fromZodError } from "zod-validation-error";
-import { eq, and, asc, desc, or, isNull, isNotNull, sql, min, max, gte, lte, inArray, gt } from "drizzle-orm";
+import { eq, and, asc, desc, or, isNull, isNotNull, sql, min, max, gte, lte, inArray, gt, ne, notExists } from "drizzle-orm";
 import { PasswordUtils } from "./utils/auth";
-import { requireAuth, requireAdmin, requireTeamMember, requireTeamMemberOrClient, requirePermission, requirePlatformStaff, toSafeUser, isAdminRole } from "./middleware/auth";
+import { requireAuth, requireAdmin, requireTeamMember, requireTeamMemberOrClient, requirePermission, requirePlatformStaff, toSafeUser, isAdminRole, getSessionCompanyId } from "./middleware/auth";
 import { clientAccessGate } from "./middleware/clientAccess";
 import { requireActivePlan } from "./middleware/plan";
+import { requireCompany } from "./middleware/requireCompany";
+import { serveUpload } from "./middleware/uploadsAccess";
+import { createScopeOwnershipGuards } from "./middleware/scopeOwnership";
+import { makeOwnedByCompany, makeOwnedViaParent, makeOwnsAllByIds, makeOwnsAllVia } from "./middleware/tenantGuards";
+import { signUploadGrant, verifyUploadGrant } from "./utils/signedGrant";
 import { getStripe, isStripeConfigured } from "./stripe";
 import {
   isPlanKey,
@@ -211,6 +224,7 @@ import {
 import { foundingSpotsLeft } from "./foundingMembers";
 import { ensureCompanyReferralCode, getCompanyIdByReferralCode, getReferralStats } from "./referrals";
 import multer from "multer";
+import { promises as fsPromises } from "node:fs";
 import * as XLSX from "xlsx";
 import { initializeSocketManager, emitTaskCreated, emitTaskUpdated, emitTaskDeleted, emitNotification, emitReactionUpdated, emitMessagesRead, getIO, getConnectedUserIdsForCompany } from "./socketManager";
 import { dispatchChatMessageNotifications } from "./utils/chatNotifications";
@@ -245,6 +259,42 @@ function isHoliday(d: Date, holidays: Set<string>): boolean {
 }
 
 /**
+ * Snapshot the answerable configuration of a checklist template item onto a new
+ * instance item. Every field the template author can set must be listed here —
+ * previously only description/tooltip/order were copied, so a template item
+ * configured as a text or choice question silently became a plain checkbox the
+ * moment it was instantiated, and the template editor's response-type UI had no
+ * effect on any live checklist.
+ *
+ * Not carried across: `assignedRoleId`. Template items name a *role*, instance
+ * items hold a concrete `assigneeId` (a user), and there is no column to keep
+ * the role on the instance — resolving role → user needs a product decision.
+ *
+ * Used by both instantiation paths (manual create, and status-trigger
+ * auto-create) so they can't drift apart again.
+ */
+function instanceItemFieldsFromTemplate(templateItem: {
+  description: string;
+  tooltip?: string | null;
+  order?: number | null;
+  responseType?: string | null;
+  responseOptions?: unknown;
+}) {
+  return {
+    description: templateItem.description,
+    tooltip: templateItem.tooltip ?? null,
+    order: templateItem.order ?? 0,
+    responseType: (templateItem.responseType ?? "checkbox") as
+      "checkbox" | "text" | "single_choice" | "multiple_choice",
+    responseOptions: Array.isArray(templateItem.responseOptions)
+      ? (templateItem.responseOptions as string[])
+      : [],
+    selectedResponses: [],
+    status: "pending" as const,
+  };
+}
+
+/**
  * Internal helper: push a bill to Xero (create or update) and update its sync status columns.
  * Returns a structured result so callers (HTTP route, auto-push, webhook) can handle uniformly.
  */
@@ -256,6 +306,7 @@ type PushBillResult = {
   updated?: boolean;
   error?: string; // 'UNMAPPED_CONTACT' | 'NOT_CONNECTED' | 'NOT_FOUND' | 'XERO_VALIDATION' | 'MISSING_ACCOUNT_CODE' | 'INVALID_TAX_TYPE' | other
   message?: string;
+  warning?: string; // non-fatal, e.g. pushed without job tracking
   supplierId?: string | null;
   supplierName?: string;
   validationErrors?: XeroValidationIssue[];
@@ -373,6 +424,19 @@ async function pushBillAttachmentsToXero(
   }
 }
 
+// The tracking-category selects in Settings use the literal string "none" as
+// their empty sentinel, and PATCH /api/xero/settings used to persist it as-is
+// (`"none" || null` is `"none"`). A connection saved that way looks configured
+// but points at a category ID Xero has never heard of, so every push resolved
+// no tracking option and the document went across untagged. Treat the sentinel
+// as unset on read so already-affected connections behave correctly without
+// needing the settings re-saved.
+const trackingCategoryId = (raw: unknown): string | undefined => {
+  const v = typeof raw === "string" ? raw.trim() : "";
+  if (!v || v === "none" || v === "__none__") return undefined;
+  return v;
+};
+
 export async function pushBillToXeroInternal(
   billId: string,
   companyId: string,
@@ -440,6 +504,19 @@ export async function pushBillToXeroInternal(
       await writeSyncStatus("failed", msg);
       logOutcome({ ok: false, reason: "FORBIDDEN", message: msg });
       return { ok: false, status: 403, error: "FORBIDDEN", message: msg };
+    }
+
+    // Vendor credits must not go down this path — it would create a positive
+    // ACCPAY bill in Xero (see server/services/xeroCreditGuard.ts). Checked
+    // after the ownership guard so a cross-tenant probe still gets FORBIDDEN.
+    if (isVendorCredit((bill as any).billType)) {
+      logOutcome({ ok: false, reason: CREDIT_NOT_SUPPORTED, message: CREDIT_NOT_SUPPORTED_MESSAGE });
+      return {
+        ok: false,
+        status: 422,
+        error: CREDIT_NOT_SUPPORTED,
+        message: CREDIT_NOT_SUPPORTED_MESSAGE,
+      };
     }
 
     // A Xero invoice with a payment allocated is locked by Xero: it rejects any
@@ -515,35 +592,55 @@ export async function pushBillToXeroInternal(
       return date.toISOString().split("T")[0];
     };
 
+    // Project → job tracking (TC2). Xero owns the option list — we never
+    // create options, only link to an existing one: the saved mapping first,
+    // else a name match. When nothing lines up the push proceeds without job
+    // tracking and carries a warning (stored via writeSyncStatus and returned
+    // to the caller) instead of failing or silently dropping it.
+    const tc1Id = trackingCategoryId((connection as any).trackingCategory1Id);
+    const tc2Id = trackingCategoryId((connection as any).trackingCategory2Id);
+
     let projectXeroTrackingOptionId: string | undefined;
-    if (bill.projectId && (connection as any).trackingCategory2Id) {
+    let trackingWarning: string | undefined;
+    if (bill.projectId && !tc2Id) {
+      // The connection has no job tracking category chosen, so every bill on a
+      // project pushes with no job tracking at all. This used to be entirely
+      // silent — the whole block below was skipped and nothing was recorded.
+      trackingWarning =
+        "Pushed without job tracking — no Xero job tracking category is selected for this organisation. Choose one in Settings → Integrations → Xero → Tracking Categories.";
+    } else if (bill.projectId && tc2Id) {
       try {
         const project = await storage.getProject(bill.projectId);
         if (project) {
           if ((project as any).xeroTrackingOptionId) {
             projectXeroTrackingOptionId = (project as any).xeroTrackingOptionId;
           } else {
-            const option = await xeroService.createTrackingOption(
+            const option = await xeroService.findTrackingOptionByName(
               connection.id,
-              (connection as any).trackingCategory2Id,
+              tc2Id,
               project.name,
             );
             if (option?.TrackingOptionID) {
               projectXeroTrackingOptionId = option.TrackingOptionID;
               await storage.updateProject(bill.projectId, {
                 xeroTrackingOptionId: option.TrackingOptionID,
-                xeroTrackingOptionName: project.name,
+                xeroTrackingOptionName: option.Name || project.name,
               } as any);
+            } else {
+              trackingWarning = `Pushed without job tracking — no Xero tracking option matches project "${project.name}". Create the option in Xero or link one in Project Settings → Xero Integration.`;
             }
           }
         }
       } catch (e) {
-        console.error("Failed to create/get Xero tracking option for project:", e);
+        // A lookup failure (expired token, Xero 5xx, missing scope) also means
+        // the bill goes across untracked — warn rather than only logging.
+        console.error("Failed to resolve Xero tracking option for project:", e);
+        trackingWarning = `Pushed without job tracking — couldn't read tracking options from Xero (${(e as any)?.message || "unknown error"}).`;
       }
     }
 
     let costCodeMap: Record<string, any> = {};
-    if ((connection as any).trackingCategory1Id) {
+    if (tc1Id) {
       try {
         const allCostCodes = await storage.getCostCodes(companyId);
         for (const cc of allCostCodes) costCodeMap[cc.id] = cc;
@@ -557,7 +654,7 @@ export async function pushBillToXeroInternal(
     // required" 400s as a friendly pre-flight error instead of a Xero round-trip.
     let companyDefaultAccountCode: string | undefined;
     try {
-      const settings = await storage.getCompanySettings();
+      const settings = await storage.getCompanySettings(companyId);
       companyDefaultAccountCode = settings?.billDefaultXeroAccount || undefined;
     } catch {}
 
@@ -566,18 +663,18 @@ export async function pushBillToXeroInternal(
       if (item.tax === "No GST" || item.tax === "NONE") taxType = "NONE";
 
       const tracking: any[] = [];
-      if (item.costCodeId && (connection as any).trackingCategory1Id) {
+      if (item.costCodeId && tc1Id) {
         const costCode = costCodeMap[item.costCodeId];
         if (costCode?.xeroTrackingOptionId) {
           tracking.push({
-            TrackingCategoryID: (connection as any).trackingCategory1Id,
+            TrackingCategoryID: tc1Id,
             TrackingOptionID: costCode.xeroTrackingOptionId,
           });
         }
       }
-      if (projectXeroTrackingOptionId && (connection as any).trackingCategory2Id) {
+      if (projectXeroTrackingOptionId && tc2Id) {
         tracking.push({
-          TrackingCategoryID: (connection as any).trackingCategory2Id,
+          TrackingCategoryID: tc2Id,
           TrackingOptionID: projectXeroTrackingOptionId,
         });
       }
@@ -735,8 +832,10 @@ export async function pushBillToXeroInternal(
       }
     }
 
-    await writeSyncStatus("success");
-    logOutcome({ ok: true, reason: "OK", xeroInvoiceId: xeroBill?.InvoiceID });
+    // On success the error column doubles as a warning carrier (e.g. pushed
+    // without job tracking) — the UI renders it as a warning, not a failure.
+    await writeSyncStatus("success", trackingWarning);
+    logOutcome({ ok: true, reason: "OK", xeroInvoiceId: xeroBill?.InvoiceID, message: trackingWarning });
 
     return {
       ok: true,
@@ -744,6 +843,7 @@ export async function pushBillToXeroInternal(
       xeroInvoiceId: xeroBill?.InvoiceID,
       xeroInvoiceNumber: xeroBill?.InvoiceNumber,
       updated: !!bill.xeroInvoiceId,
+      warning: trackingWarning,
     };
   } catch (error: any) {
     if (error instanceof XeroValidationError) {
@@ -1143,70 +1243,192 @@ async function reconcileBillsWithXero(
 export { reconcileBillsWithXero };
 export type { ReconcileReport };
 
-// ── PDF helper — generates a Selections Schedule PDF via puppeteer ────────────
-async function generateSelectionPdf(selections: any[], projectName?: string): Promise<Buffer> {
+// Client price for a selection option in cents INC GST. Derived from
+// unitCost/gstInclusive/markupPercent — NEVER from totalCost, whose GST-ness
+// is unreliable (see syncSelectionCostingToAllowance). Returns null when the
+// option has no cost entered.
+function selectionOptionClientPriceCents(opt: any): number | null {
+  const rawUnit = opt?.unitCost;
+  if (rawUnit == null) return null;
+  const qty = Number(opt.quantity) || 1;
+  const markup = Number(opt.markupPercent) || 0;
+  const unitEx = opt.gstInclusive ? exGstFromInc(rawUnit) : rawUnit;
+  const totalEx = Math.round(unitEx * qty * (1 + markup / 100));
+  return incGstFromEx(totalEx);
+}
+
+// Inline an object-storage image as a data URI so it renders inside
+// Puppeteer's about:blank page (relative /objects paths never resolved there,
+// so PDFs have historically been image-less). Cached per render; oversized or
+// missing files degrade to no image.
+async function objectPathToDataUri(
+  filePath: string | null | undefined,
+  cache: Map<string, string | null>,
+): Promise<string | null> {
+  if (!filePath) return null;
+  if (cache.has(filePath)) return cache.get(filePath)!;
+  let result: string | null = null;
+  try {
+    const { ObjectStorageService } = await import("./replit_integrations/object_storage/objectStorage");
+    const svc = new ObjectStorageService();
+    const normalised = filePath.replace(/^\/objects\/company\/[^/]+\//, "/objects/");
+    const file = await svc.getObjectEntityFile(normalised);
+    const [meta] = await file.getMetadata();
+    const size = Number(meta.size || 0);
+    if (size > 0 && size <= 4 * 1024 * 1024) {
+      const [buf] = await file.download();
+      result = `data:${meta.contentType || "image/jpeg"};base64,${buf.toString("base64")}`;
+    }
+  } catch {
+    result = null;
+  }
+  cache.set(filePath, result);
+  return result;
+}
+
+function escapeHtml(s: unknown): string {
+  return String(s ?? "")
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+
+// ── PDF helper — branded, image-forward Selections Schedule via puppeteer ────
+// Morada design tokens: lavender #A890D4 accent, ink #2C2825, sage #82C8A2
+// (under allowance / selected), coral #DA988A (over allowance).
+async function generateSelectionPdf(
+  selections: any[],
+  opts: { projectName?: string; companyName?: string; companyLogoDataUri?: string | null } = {},
+): Promise<Buffer> {
   const puppeteer = await import("puppeteer");
-  const formatCents = (c: number | null | undefined) =>
+  const fmt = (c: number | null | undefined) =>
     c == null ? "—" : `$${(c / 100).toLocaleString("en-AU", { minimumFractionDigits: 2 })}`;
+  const imageCache = new Map<string, string | null>();
 
-  const selectionRows = selections.map((sel: any) => {
-    const selectedOpt = sel.options?.find((o: any) => o.isSelectedByClient);
-    const optionRows = (sel.options || []).map((o: any) => {
-      const isSelected = o.isSelectedByClient;
-      const firstImg = (o.attachments || [])[0];
-      return `
-        <tr style="background:${isSelected ? "#f0f9f0" : "white"}">
-          <td style="padding:6px;border:1px solid #e2e8f0">
-            ${firstImg ? `<img src="${firstImg.filePath}" style="width:40px;height:40px;object-fit:cover;border-radius:4px" />` : ""}
-          </td>
-          <td style="padding:6px;border:1px solid #e2e8f0">${isSelected ? "✓" : ""}</td>
-          <td style="padding:6px;border:1px solid #e2e8f0"><b>${o.name}</b>${o.brand ? `<br/><span style="color:#64748b;font-size:11px">${o.brand}${o.sku ? ` · ${o.sku}` : ""}</span>` : ""}</td>
-          <td style="padding:6px;border:1px solid #e2e8f0;text-align:right">${formatCents(o.totalCost)}</td>
-        </tr>`;
-    }).join("");
+  // Group by room, preserving incoming order
+  const rooms = new Map<string, any[]>();
+  for (const sel of selections) {
+    const room = sel.room?.trim() || "General";
+    if (!rooms.has(room)) rooms.set(room, []);
+    rooms.get(room)!.push(sel);
+  }
 
-    const allowance = sel.allowance ? formatCents(sel.allowance) : "—";
-    const actual = selectedOpt ? formatCents(selectedOpt.totalCost) : "—";
-    const variance = sel.allowance && selectedOpt?.totalCost
-      ? formatCents(selectedOpt.totalCost - sel.allowance) : "—";
+  // Budget summary across selections that carry an allowance
+  let totalAllowance = 0, totalSelected = 0;
+  for (const sel of selections) {
+    const chosen = sel.options?.find((o: any) => o.isSelectedByClient);
+    const price = chosen ? selectionOptionClientPriceCents(chosen) : null;
+    if (sel.allowance) {
+      totalAllowance += sel.allowance;
+      if (price != null) totalSelected += price;
+    }
+  }
+  const totalVariance = totalSelected - totalAllowance;
 
-    const approvedRow = sel.options?.find((o: any) => o.approvedAt);
-    const approvalText = approvedRow
-      ? `Approved by ${approvedRow.approvedBy || "Admin"} on ${new Date(approvedRow.approvedAt).toLocaleDateString("en-AU")}`
-      : "";
+  const roomBlocks: string[] = [];
+  for (const [room, roomSelections] of Array.from(rooms.entries())) {
+    const selectionBlocks: string[] = [];
+    for (const sel of roomSelections) {
+      const chosen = sel.options?.find((o: any) => o.isSelectedByClient);
+      const chosenPrice = chosen ? selectionOptionClientPriceCents(chosen) : null;
+      const varianceCents = sel.allowance && chosenPrice != null ? chosenPrice - sel.allowance : null;
 
-    return `
-      <div style="page-break-inside:avoid;margin-bottom:24px">
-        <h3 style="margin:0 0 4px;font-size:14px;color:#1e293b">${sel.name}</h3>
-        <div style="font-size:11px;color:#64748b;margin-bottom:8px">${[sel.category, sel.room].filter(Boolean).join(" · ")}</div>
-        <div style="display:flex;gap:20px;font-size:11px;margin-bottom:8px">
-          <span>Allowance: <b>${allowance}</b></span>
-          <span>Selected: <b>${actual}</b></span>
-          <span>Variance: <b>${variance}</b></span>
-          ${sel.deadline ? `<span>Deadline: <b>${new Date(sel.deadline).toLocaleDateString("en-AU")}</b></span>` : ""}
-        </div>
-        <table style="width:100%;border-collapse:collapse;font-size:12px">
-          <thead>
-            <tr style="background:#f8fafc">
-              <th style="padding:6px;border:1px solid #e2e8f0;width:50px">Img</th>
-              <th style="padding:6px;border:1px solid #e2e8f0;width:30px">✓</th>
-              <th style="padding:6px;border:1px solid #e2e8f0;text-align:left">Product</th>
-              <th style="padding:6px;border:1px solid #e2e8f0;text-align:right">Price</th>
-            </tr>
-          </thead>
-          <tbody>${optionRows}</tbody>
-        </table>
-        ${approvalText ? `<div style="font-size:11px;color:#64748b;margin-top:6px">${approvalText}</div>` : ""}
-      </div>`;
-  }).join("");
+      const optionCards: string[] = [];
+      for (const o of sel.options || []) {
+        const price = selectionOptionClientPriceCents(o);
+        const isSelected = !!o.isSelectedByClient;
+        const isApproved = !!o.approvedAt;
+        const firstImage = (o.attachments || []).find((a: any) =>
+          a.fileType === "image" || /\.(jpe?g|png|gif|webp|avif)$/i.test(a.fileName || ""));
+        const imgUri = await objectPathToDataUri(firstImage?.filePath, imageCache);
+        const focal = firstImage ? `${firstImage.thumbnailX ?? 50}% ${firstImage.thumbnailY ?? 50}%` : "50% 50%";
+        optionCards.push(`
+          <td style="width:${Math.max(25, Math.floor(100 / Math.max(sel.options.length, 1)))}%;vertical-align:top;padding:0 6px 0 0">
+            <div style="border:1.5px solid ${isSelected ? "#82C8A2" : "#EAEAE8"};border-radius:8px;overflow:hidden;background:${isSelected ? "#F4FBF7" : "#fff"}">
+              <div style="height:96px;background:#F5F4F0;text-align:center;overflow:hidden">
+                ${imgUri
+                  ? `<img src="${imgUri}" style="width:100%;height:96px;object-fit:cover;object-position:${focal}"/>`
+                  : `<div style="padding-top:40px;color:#B9B4AE;font-size:10px">no image</div>`}
+              </div>
+              <div style="padding:7px 8px 8px">
+                <div style="font-size:10.5px;font-weight:700;color:#2C2825;line-height:1.25">${escapeHtml(o.name)}</div>
+                ${o.brand || o.sku ? `<div style="font-size:9px;color:#6B6560;margin-top:1px">${escapeHtml([o.brand, o.sku].filter(Boolean).join(" · "))}</div>` : ""}
+                <div style="margin-top:5px;font-size:10px">
+                  ${price != null ? `<b>${fmt(price)}</b> <span style="color:#6B6560;font-size:8.5px">inc GST</span>` : `<span style="color:#6B6560">POA</span>`}
+                </div>
+                ${isApproved
+                  ? `<div style="display:inline-block;margin-top:4px;background:#E0F5E9;color:#3E7A58;border-radius:99px;padding:1px 7px;font-size:8.5px;font-weight:700">APPROVED</div>`
+                  : isSelected
+                    ? `<div style="display:inline-block;margin-top:4px;background:#F2EEF9;color:#7A5FA8;border-radius:99px;padding:1px 7px;font-size:8.5px;font-weight:700">CLIENT CHOICE</div>`
+                    : ""}
+              </div>
+            </div>
+          </td>`);
+      }
 
+      const approvedRow = sel.options?.find((o: any) => o.approvedAt);
+      selectionBlocks.push(`
+        <div style="page-break-inside:avoid;margin:0 0 18px;border:1px solid #EAEAE8;border-left:3px solid #A890D4;border-radius:8px;padding:12px 14px;background:#fff">
+          <table style="width:100%;border-collapse:collapse"><tr>
+            <td style="vertical-align:top">
+              <div style="font-size:13px;font-weight:700;color:#2C2825">${escapeHtml(sel.name)}</div>
+              <div style="font-size:9.5px;color:#6B6560;margin-top:1px">
+                ${escapeHtml([sel.category, sel.deadline ? `Due ${new Date(sel.deadline).toLocaleDateString("en-AU")}` : null].filter(Boolean).join(" · "))}
+              </div>
+            </td>
+            <td style="vertical-align:top;text-align:right;font-size:9.5px;color:#6B6560;white-space:nowrap">
+              ${sel.allowance ? `Allowance <b style="color:#2C2825">${fmt(sel.allowance)}</b>` : ""}
+              ${chosenPrice != null ? ` &nbsp; Selected <b style="color:#2C2825">${fmt(chosenPrice)}</b>` : ""}
+              ${varianceCents != null ? ` &nbsp; <b style="color:${varianceCents > 0 ? "#B4685A" : "#3E7A58"}">${varianceCents > 0 ? "+" : ""}${fmt(varianceCents)}</b>` : ""}
+            </td>
+          </tr></table>
+          <table style="width:100%;border-collapse:collapse;margin-top:9px"><tr>${optionCards.join("")}</tr></table>
+          ${approvedRow ? `<div style="font-size:9px;color:#6B6560;margin-top:7px">Approved by ${escapeHtml(approvedRow.approvedBy || "Admin")} on ${new Date(approvedRow.approvedAt).toLocaleDateString("en-AU")}</div>` : ""}
+        </div>`);
+    }
+    roomBlocks.push(`
+      <div style="margin-bottom:6px">
+        <div style="font-size:11px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#7A5FA8;margin:14px 0 8px">${escapeHtml(room)}</div>
+        ${selectionBlocks.join("")}
+      </div>`);
+  }
+
+  const hasBudget = totalAllowance > 0;
   const html = `<!DOCTYPE html><html><head><meta charset="utf-8"/>
-    <style>body{font-family:Arial,sans-serif;color:#1e293b;padding:24px;max-width:800px;margin:auto}
-    h1{font-size:20px;margin-bottom:4px}h2{font-size:15px;color:#64748b;margin:0 0 20px}</style>
+    <style>
+      body{font-family:Helvetica,Arial,sans-serif;color:#2C2825;margin:0;padding:26px 30px;background:#FAFAF8}
+      *{box-sizing:border-box}
+    </style>
   </head><body>
-    <h1>Selections Schedule${projectName ? ` — ${projectName}` : ""}</h1>
-    <h2>Generated ${new Date().toLocaleDateString("en-AU", { day: "numeric", month: "long", year: "numeric" })} · ${selections.length} selection(s)</h2>
-    ${selectionRows}
+    <table style="width:100%;border-collapse:collapse;margin-bottom:4px"><tr>
+      <td style="vertical-align:middle">
+        <div style="font-size:21px;font-weight:800;color:#2C2825">Selections Schedule</div>
+        ${opts.projectName ? `<div style="font-size:12px;color:#6B6560;margin-top:2px">${escapeHtml(opts.projectName)}</div>` : ""}
+      </td>
+      <td style="vertical-align:middle;text-align:right">
+        ${opts.companyLogoDataUri
+          ? `<img src="${opts.companyLogoDataUri}" style="max-height:44px;max-width:170px;object-fit:contain"/>`
+          : opts.companyName ? `<div style="font-size:14px;font-weight:700;color:#7A5FA8">${escapeHtml(opts.companyName)}</div>` : ""}
+      </td>
+    </tr></table>
+    <div style="font-size:9.5px;color:#6B6560;margin-bottom:14px">
+      Generated ${new Date().toLocaleDateString("en-AU", { day: "numeric", month: "long", year: "numeric" })} · ${selections.length} selection${selections.length === 1 ? "" : "s"} · All prices inc GST
+    </div>
+    ${hasBudget ? `
+    <table style="width:100%;border-collapse:separate;border-spacing:8px 0;margin:0 -8px 8px"><tr>
+      <td style="width:33%;background:#fff;border:1px solid #EAEAE8;border-radius:8px;padding:9px 12px">
+        <div style="font-size:8.5px;letter-spacing:0.08em;text-transform:uppercase;color:#6B6560">Total allowance</div>
+        <div style="font-size:15px;font-weight:800;margin-top:1px">${fmt(totalAllowance)}</div>
+      </td>
+      <td style="width:33%;background:#fff;border:1px solid #EAEAE8;border-radius:8px;padding:9px 12px">
+        <div style="font-size:8.5px;letter-spacing:0.08em;text-transform:uppercase;color:#6B6560">Total selected</div>
+        <div style="font-size:15px;font-weight:800;margin-top:1px">${fmt(totalSelected)}</div>
+      </td>
+      <td style="width:33%;background:${totalVariance > 0 ? "#F7E5E2" : "#E0F5E9"};border:1px solid #EAEAE8;border-radius:8px;padding:9px 12px">
+        <div style="font-size:8.5px;letter-spacing:0.08em;text-transform:uppercase;color:#6B6560">Variance</div>
+        <div style="font-size:15px;font-weight:800;margin-top:1px;color:${totalVariance > 0 ? "#B4685A" : "#3E7A58"}">${totalVariance > 0 ? "+" : ""}${fmt(totalVariance)}</div>
+      </td>
+    </tr></table>` : ""}
+    ${roomBlocks.join("")}
   </body></html>`;
 
   const browser = await puppeteer.default.launch({
@@ -1215,8 +1437,10 @@ async function generateSelectionPdf(selections: any[], projectName?: string): Pr
   });
   try {
     const page = await browser.newPage();
-    await page.setContent(html, { waitUntil: "networkidle0" });
-    const pdf = await page.pdf({ format: "A4", margin: { top: "20mm", bottom: "20mm", left: "20mm", right: "20mm" } });
+    // Images are inlined data URIs, so "load" is sufficient (and
+    // "networkidle0" isn't in this puppeteer version's setContent types)
+    await page.setContent(html, { waitUntil: "load" });
+    const pdf = await page.pdf({ format: "A4", printBackground: true, margin: { top: "12mm", bottom: "14mm", left: "10mm", right: "10mm" } });
     return Buffer.from(pdf);
   } finally {
     await browser.close();
@@ -1250,7 +1474,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Compatibility bridge: sync Passport user to legacy session fields
   // This allows old routes checking req.session.userId to work with Replit Auth
   app.use('/api', ensureLegacySessionFields);
-  
+
+  // Uploaded files. Mounted HERE — below setupAuth — and not in index.ts,
+  // where it was an unauthenticated express.static mount.
+  //
+  // requireAuth is explicit because this path is not under /api, so none of
+  // the /api middleware below (auth, clientAccessGate, requireCompany) ever
+  // sees it. serveUpload then resolves the file's owning company from the
+  // table that references it and 404s on any mismatch, unknown subtree, or
+  // path that escapes the uploads root.
+  app.get('/uploads/*', requireAuth, serveUpload);
+
   // put application routes here
   // prefix all routes with /api
 
@@ -1349,6 +1583,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // public, billing and stripe endpoints via its own allowlist.
   app.use('/api', requireActivePlan);
 
+  // Tenancy floor. A session with no companyId can't be scoped to a tenant, so
+  // it gets nothing but the onboarding surface — this closes the list endpoints
+  // that silently skipped their company filter when companyId was undefined.
+  app.use('/api', requireCompany);
+
   // ---- Billing: select a plan (starts the 14-day trial) ----
   // Called at the end of onboarding once the company exists. Sets the chosen
   // tier, keeps the effective plan at 'builder' for the trial, stamps a 14-day
@@ -1396,9 +1635,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         : null;
       const trialEndsAt = existingTrialEndsAt ?? new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
       const nextStatus = (company as any).planStatus === 'active' ? 'active' : 'trialing';
+      // Effective tier during the trial: Subbie signups trial Subbie (it's a
+      // genuinely different, mobile-first product), everyone else trials
+      // Studio so they experience full value before choosing. An active
+      // subscription keeps its current plan — plan changes for subscribers go
+      // through Stripe, not this endpoint.
+      const trialPlan = planKey === 'subbie' ? 'subbie' : 'studio';
+      const nextPlan = nextStatus === 'active' ? (company as any).plan : trialPlan;
       await storage.updateCompany(companyId, {
         chosenPlan: planKey,
-        plan: 'builder',
+        plan: nextPlan,
         planStatus: nextStatus,
         billingCycle: cycle,
         trialEndsAt,
@@ -2361,6 +2607,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/doc-folders/:id", requireAuth, async (req, res) => {
     try {
+      // Ownership: doc folders carry companyId directly. Without this any
+      // folder was deletable by id, and docs.folder_id is ON DELETE SET NULL —
+      // so the victim's documents were silently unfiled as collateral.
+      if (!(await getOwnedDocFolder(req, res, req.params.id))) return;
       await storage.deleteDocFolder(req.params.id);
       res.status(204).end();
     } catch (error) {
@@ -2479,6 +2729,44 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const tasks = await storage.getTasksByUser(user.id, user.companyId);
       res.json(tasks);
     } catch (error) {
+      res.status(500).json({ error: "Failed to fetch user tasks" });
+    }
+  });
+
+  // MUST stay above /api/tasks/:id — Express matches in registration order,
+  // so a later /my is swallowed by :id and 404s as "Task not found".
+  app.get("/api/tasks/my", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.companyId) return res.status(401).json({ error: "Unauthorized" });
+      const tasks = await storage.getTasksByUser(user.id, user.companyId);
+
+      // Enrich each task with the project display name (when applicable) so
+      // widgets can render context without a second projects fetch.
+      const projectIds = Array.from(new Set(
+        tasks
+          .map((t: any) => t.projectId || (t.taskContextType === "project" ? t.taskContextId : null))
+          .filter((id: string | null): id is string => Boolean(id)),
+      ));
+
+      let projectNameMap = new Map<string, string>();
+      if (projectIds.length > 0) {
+        const allProjects = await storage.getProjects();
+        projectNameMap = new Map(
+          allProjects
+            .filter((p: any) => projectIds.includes(p.id))
+            .map((p: any) => [p.id, p.name as string]),
+        );
+      }
+
+      const enriched = tasks.map((t: any) => {
+        const pid = t.projectId || (t.taskContextType === "project" ? t.taskContextId : null);
+        return { ...t, projectName: pid ? projectNameMap.get(pid) ?? null : null };
+      });
+
+      res.json(enriched);
+    } catch (error: any) {
+      console.error("[GET /api/tasks/my] error:", error);
       res.status(500).json({ error: "Failed to fetch user tasks" });
     }
   });
@@ -2784,6 +3072,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!action || !["changeStatus", "delete", "copyToProject", "copyToBusiness"].includes(action)) {
         return res.status(400).json({ error: "Invalid action" });
       }
+
+      // Ownership BEFORE any write: every id in the batch must be the
+      // caller's task. The ids used to go straight into getTask/updateTask/
+      // deleteTask, all of which filter on id alone. Resolved in parallel.
+      if (!(await ownsAllTasks(req, res, ids))) return;
+      // copyToProject writes into the supplied project — verify it too.
+      if (projectId && !(await enforceProjectCompany(req, res, projectId, "Project not found"))) return;
       
       // Check permissions based on action
       const hasDeletePermission = await storage.checkUserPermission(user.id, "tasks.manage", "delete");
@@ -3063,8 +3358,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Minutes API Routes
   app.get("/api/minutes", async (req, res) => {
     try {
+      const companyId = (req.user as any)?.companyId;
+      if (!companyId) return res.status(403).json({ error: "No company context" });
+      // A bare GET /api/minutes used to return every tenant's meeting minutes.
+      // If a projectId is supplied it must also be the caller's.
       const { projectId } = req.query;
-      const minutes = await storage.getMinutes(projectId as string | undefined);
+      if (projectId && !(await enforceProjectCompany(req, res, projectId as string, "Project not found"))) return;
+      const minutes = await storage.getMinutes(companyId, projectId as string | undefined);
       res.json(minutes);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch minutes" });
@@ -4092,7 +4392,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // and any consumer that needs the revised contract price server-side).
   app.get("/api/projects/:id/contract-metrics", requireAuth, async (req, res) => {
     try {
-      const { computeContractMetrics } = await import("@shared/projectMetrics");
+      const { computeContractMetrics, frozenContractTotalFrom } = await import("@shared/projectMetrics");
       const project = await storage.getProject(req.params.id);
       if (!project) return res.status(404).json({ error: "Project not found" });
 
@@ -4114,6 +4414,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         (selectedEstimate as any)?.projectMarkupPercent ?? 0;
       const taxRate = (selectedEstimate as any)?.taxRate ?? 10;
 
+      // Once contracted, the original contract is the FROZEN sum — the estimate
+      // items below no longer influence it. Approved variations still apply on
+      // top, so Revised = frozen + approved variations.
       const metrics = computeContractMetrics(
         items.map((i: any) => ({
           priceIncTax: i.priceIncTax,
@@ -4129,6 +4432,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         })),
         projectMarkupPercent,
         taxRate,
+        frozenContractTotalFrom(project as any),
       );
       res.json(metrics);
     } catch (error) {
@@ -4496,6 +4800,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // arbitrary value bypass the canonical-summary stamping + recalc.
       if ('selectedEstimateId' in updateData) delete (updateData as any).selectedEstimateId;
       if ('contractPrice' in updateData) delete (updateData as any).contractPrice;
+      // Same door, and money-critical: the FROZEN contract sum is what the
+      // client owes. Only Mark as Contract may set it and only Revert may clear
+      // it — a generic project PATCH must never be able to rewrite the contract.
+      if ('contractedTotalExGstCents' in updateData) delete (updateData as any).contractedTotalExGstCents;
+      if ('contractedTotalIncGstCents' in updateData) delete (updateData as any).contractedTotalIncGstCents;
+      if ('contractedAt' in updateData) delete (updateData as any).contractedAt;
+      if ('contractedEstimateId' in updateData) delete (updateData as any).contractedEstimateId;
 
       const projectBefore = await storage.getProject(req.params.id);
       const project = await storage.updateProject(req.params.id, updateData);
@@ -4592,6 +4903,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
                     name: group.name,
                     order: group.order,
                     status: "active",
+                    priority: "low",
                   });
 
                   const templateItems = await storage.getChecklistTemplateItems(group.id);
@@ -4601,11 +4913,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
                       groupId: instanceGroup.id,
                       groupName: group.name,
                       groupOrder: group.order,
-                      description: templateItem.description,
-                      tooltip: templateItem.tooltip,
-                      order: templateItem.order,
-                      isRequired: templateItem.isRequired ?? false,
-                      status: "pending",
+                      ...instanceItemFieldsFromTemplate(templateItem),
                     });
                   }
                 }
@@ -4984,6 +5292,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const grantedBy = granter?.id || "";
       const { projectId, userId } = req.params;
 
+      // requirePermission("admin.users","edit") is a ROLE gate — it says the
+      // caller may edit users, not whose. Both the project and the target user
+      // must be in the caller's company; user_project_access has no companyId
+      // of its own, so this is the only place it can be enforced.
+      if (!(await enforceProjectCompany(req, res, projectId, "Project not found"))) return;
+      const targetUser = await storage.getUser(userId);
+      if (!targetUser || (targetUser as any).companyId !== granter?.companyId) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
       const access = await storage.grantProjectAccess(userId, projectId, accessLevel, grantedBy);
 
       // Notify the added user
@@ -5210,37 +5528,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Cross-tenant ownership guard for indirectly-scoped resources (estimates,
-  // selections, schedules) that are isolated only via project_id. Loads the
-  // owning project and verifies it belongs to the caller's company. Returns
-  // true when access is allowed; otherwise writes the 404/403 response and
-  // returns false so the caller can `return` immediately. 404 when the
-  // resource/project is missing, 403 on a company mismatch.
-  const enforceProjectCompany = async (
-    req: any,
-    res: any,
-    projectId: string | null | undefined,
-    notFoundMessage = "Not found",
-  ): Promise<boolean> => {
-    if (!projectId) {
-      res.status(404).json({ error: notFoundMessage });
-      return false;
-    }
-    const project = await storage.getProject(projectId);
-    if (!project) {
-      res.status(404).json({ error: notFoundMessage });
-      return false;
-    }
-    const companyId = req.user?.companyId;
-    if (!companyId || project.companyId !== companyId) {
-      // Return 404 (not 403) on a company mismatch so we don't confirm the
-      // record's existence to an unauthorized caller. Unauthenticated requests
-      // are already handled upstream by the auth middleware (401).
-      res.status(404).json({ error: notFoundMessage });
-      return false;
-    }
-    return true;
-  };
+  // Cross-tenant ownership guards. Each loads a record by id and verifies it
+  // belongs to the caller's company, returning the record (or true) when owned
+  // and sending a 404 otherwise — 404 rather than 403 so the existence of
+  // another tenant's record is never confirmed to an unauthorized caller.
+  // Unauthenticated requests are already handled upstream (401).
+  //
+  // The implementations live in middleware/scopeOwnership.ts with the record
+  // lookups injected, so they can be tested without a database. Behaviour is
+  // unchanged for existing enforceProjectCompany call sites.
+  const {
+    enforceProjectCompany,
+    getOwnedScopeItem,
+    getOwnedScopeStage,
+    getOwnedGearPhoto,
+    ownsAllScopeStages,
+  } = createScopeOwnershipGuards({
+    getProject: (id) => storage.getProject(id),
+    getScopeItem: (id) => storage.getScopeItem(id),
+    getScopeStage: (id) => storage.getScopeStage(id),
+    getScopeGearPhoto: (id) => storage.getScopeGearPhoto(id),
+  });
 
   // -------------------------------------------------------------------------
   // Tenant-isolation ownership helpers. Each loads a record by id and verifies
@@ -5299,6 +5607,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
     if (!item) { res.status(404).json({ error: notFound }); return null; }
     if (!(await getOwnedEstimate(req, res, (item as any).estimateId, notFound))) return null;
     return item;
+  };
+
+  // enote → estimate → project → company. The DELETE attachment route already
+  // walked this chain by hand; the read and upload routes did not, which is how
+  // one company's attachment list (and its file URLs) reached another.
+  const getOwnedEnote = async (
+    req: any, res: any, enoteId: string, notFound = "Note not found",
+  ): Promise<any | null> => {
+    if (!enoteId) { res.status(404).json({ error: notFound }); return null; }
+    const { estimateEnotes: estimateEnotesTbl } = await import("@shared/schema");
+    const [enote] = await db.select().from(estimateEnotesTbl)
+      .where(eq(estimateEnotesTbl.id, enoteId)).limit(1);
+    if (!enote) { res.status(404).json({ error: notFound }); return null; }
+    if (!(await getOwnedEstimate(req, res, (enote as any).estimateId, notFound))) return null;
+    return enote;
   };
 
   const getOwnedEstimateGroup = async (
@@ -5450,6 +5773,131 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
     return task;
   };
+
+  // -------------------------------------------------------------------------
+  // Ownership guards added by the critical-tenancy fix. Same contract as the
+  // helpers above: load the record, resolve it to a company, 404 (never 403)
+  // when it is not the caller's. Records that carry companyId are compared
+  // directly; the rest are resolved through their parent chain.
+  //
+  // Several of these tables have no single-record getter in IStorage, so the
+  // lookup is an inline db query — the pattern already used elsewhere in this
+  // file for nested sub-resources.
+  // -------------------------------------------------------------------------
+
+  const loadDocFolder = async (id: string) => {
+    const { docFolders } = await import("@shared/schema");
+    const [row] = await db.select().from(docFolders).where(eq(docFolders.id, id)).limit(1);
+    return row;
+  };
+  const loadEnoteTemplateSet = async (id: string) => {
+    const { enoteTemplateSets } = await import("@shared/schema");
+    const [row] = await db.select().from(enoteTemplateSets).where(eq(enoteTemplateSets.id, id)).limit(1);
+    return row;
+  };
+  const loadBudget = async (id: string) => {
+    const { budgets } = await import("@shared/schema");
+    const [row] = await db.select().from(budgets).where(eq(budgets.id, id)).limit(1);
+    return row;
+  };
+  const loadBaseline = async (id: string) => {
+    const { scheduleBaselines } = await import("@shared/schema");
+    const [row] = await db.select().from(scheduleBaselines).where(eq(scheduleBaselines.id, id)).limit(1);
+    return row;
+  };
+  const loadScheduleItemStep = async (id: string) => {
+    const { scheduleItemSteps: t } = await import("@shared/schema");
+    const [row] = await db.select().from(t).where(eq(t.id, id)).limit(1);
+    return row;
+  };
+  const loadActivityNote = async (id: string) => {
+    const { activityNotes: t } = await import("@shared/schema");
+    const [row] = await db.select().from(t).where(eq(t.id, id)).limit(1);
+    return row;
+  };
+
+  // --- direct companyId ---
+  const getOwnedDocFolder = makeOwnedByCompany(loadDocFolder, "Folder not found");
+  const getOwnedEnoteTemplateSet = makeOwnedByCompany(loadEnoteTemplateSet, "Template set not found");
+  const getOwnedSiteDiaryTemplate = makeOwnedByCompany(
+    (id) => storage.getSiteDiaryTemplate(id), "Template not found");
+
+  // --- channel: getChannel already takes and filters on companyId ---
+  const getOwnedChannel: any = async (req: any, res: any, id: string, notFound = "Channel not found") => {
+    if (!id) { res.status(404).json({ error: notFound }); return null; }
+    const companyId = req.user?.companyId;
+    if (!companyId) { res.status(404).json({ error: notFound }); return null; }
+    const channel = await storage.getChannel(id, companyId);
+    if (!channel) { res.status(404).json({ error: notFound }); return null; }
+    return channel;
+  };
+
+  // --- via parent ---
+  const projectGuard: any = async (req: any, res: any, projectId: string, notFound: string) =>
+    (await enforceProjectCompany(req, res, projectId, notFound)) ? { id: projectId } : null;
+
+  const getOwnedMessage = makeOwnedViaParent(
+    (id) => storage.getMessage(id), (m) => m?.channelId, getOwnedChannel, "Message not found");
+  const getOwnedBudget = makeOwnedViaParent(
+    loadBudget, (b) => b?.projectId, projectGuard, "Budget not found");
+  const getOwnedBudgetLineItem = makeOwnedViaParent(
+    (id) => storage.getBudgetLineItem(id), (i) => i?.budgetId, getOwnedBudget, "Budget line item not found");
+  const getOwnedSchedule = makeOwnedViaParent(
+    (id) => storage.getScheduleById(id), (sc) => sc?.projectId, projectGuard, "Schedule not found");
+  const getOwnedBaseline = makeOwnedViaParent(
+    loadBaseline, (b) => b?.scheduleId, getOwnedSchedule, "Baseline not found");
+  const getOwnedScheduleItemStep = makeOwnedViaParent(
+    loadScheduleItemStep, (st) => st?.scheduleItemId, getOwnedScheduleItem as any, "Step not found");
+  const getOwnedActivityNote = makeOwnedViaParent(
+    loadActivityNote, (n) => n?.scheduleItemId, getOwnedScheduleItem as any, "Note not found");
+
+  /** category → labour estimate → project → company */
+  const getOwnedLabourEstimateCategory = async (req: any, res: any, id: string, notFound = "Category not found") => {
+    if (!id) { res.status(404).json({ error: notFound }); return null; }
+    const { labourEstimateCategories, labourEstimates } = await import("@shared/schema");
+    const [cat] = await db.select().from(labourEstimateCategories)
+      .where(eq(labourEstimateCategories.id, id)).limit(1);
+    if (!cat) { res.status(404).json({ error: notFound }); return null; }
+    const [est] = await db.select().from(labourEstimates)
+      .where(eq(labourEstimates.id, (cat as any).labourEstimateId)).limit(1);
+    if (!est) { res.status(404).json({ error: notFound }); return null; }
+    if (!(await enforceProjectCompany(req, res, (est as any).projectId, notFound))) return null;
+    return cat;
+  };
+
+  // --- batches ---
+  /**
+   * Every schedule item id resolved in ONE round trip:
+   * schedule_items → schedules → projects.company_id. The batch-sort route
+   * records that per-item lookups caused production timeouts on large
+   * schedules, so this must not become N queries.
+   */
+  const ownsAllScheduleItems = makeOwnsAllByIds(async (ids, companyId) => {
+    const { scheduleItems: siTbl, schedules: schTbl, projects: projTbl } = await import("@shared/schema");
+    const rows = await db
+      .select({ id: siTbl.id })
+      .from(siTbl)
+      .innerJoin(schTbl, eq(siTbl.scheduleId, schTbl.id))
+      .innerJoin(projTbl, eq(schTbl.projectId, projTbl.id))
+      .where(and(inArray(siTbl.id, ids), eq(projTbl.companyId, companyId)));
+    return rows.map((r: any) => r.id);
+  }, "Schedule item not found");
+
+  const ownsAllTasks = makeOwnsAllVia(getOwnedTask as any, "Task not found");
+
+  /**
+   * Every project id in one round trip. Used by the bulk project-access route,
+   * which would otherwise call enforceProjectCompany in a loop — N sequential
+   * round trips at ~400ms each is ~8s for a 20-project grant.
+   */
+  const ownsAllProjects = makeOwnsAllByIds(async (ids, companyId) => {
+    const { projects: projTbl } = await import("@shared/schema");
+    const rows = await db
+      .select({ id: projTbl.id })
+      .from(projTbl)
+      .where(and(inArray(projTbl.id, ids), eq(projTbl.companyId, companyId)));
+    return rows.map((r: any) => r.id);
+  }, "Project not found");
 
   // ---- Task activity (audit lines merged into the comment feed) ----
   const taskStatusLabel = (s?: string | null): string => {
@@ -5641,7 +6089,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // didn't specify one (checked on the raw body, since the insert schema
       // defaults an omitted value to 0 and we couldn't otherwise tell them apart).
       if (req.body.projectMarkupPercent === undefined || req.body.projectMarkupPercent === null) {
-        const settings = await storage.getCompanySettings();
+        const settings = await storage.getCompanySettings(getSessionCompanyId(req));
         const def = (settings as any)?.defaultBuilderMarginPercent;
         if (typeof def === "number" && def > 0) {
           validationResult.data.projectMarkupPercent = def;
@@ -7136,6 +7584,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         : { status: "draft", isLocked: false, approvedAt: null, approvedById: null, contractedAt: null, contractedById: null };
       const updated = await storage.updateEstimateStatus(req.params.id, patch);
 
+      // Reverting a contract is the explicit "we are renegotiating" act, so the
+      // frozen contract sum is released — the project reads live again until the
+      // next Mark as Contract re-freezes it. Applies to BOTH revert targets:
+      // an approved (unlocked, editable) estimate must not keep presenting a
+      // frozen sum it no longer matches.
+      const clearFreeze =
+        current === "contract" && project.contractedEstimateId === req.params.id;
+
       // Revert to Draft: if this estimate was the project's selected estimate,
       // clear the selection + cached contract price so a draft can never act
       // as the live contract.
@@ -7143,6 +7599,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
         await storage.updateProject(existing.projectId, {
           selectedEstimateId: null,
           contractPrice: null,
+          contractedTotalExGstCents: null,
+          contractedTotalIncGstCents: null,
+          contractedAt: null,
+          contractedEstimateId: null,
+        } as any);
+      } else if (clearFreeze) {
+        await storage.updateProject(existing.projectId, {
+          contractedTotalExGstCents: null,
+          contractedTotalIncGstCents: null,
+          contractedAt: null,
+          contractedEstimateId: null,
         } as any);
       }
       res.json(updated);
@@ -7239,6 +7706,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/estimates/:id/enotes", requireAuth, async (req, res) => {
     try {
+      // Ownership: unguarded this both read a foreign estimate's notes and,
+      // when the estimate had no rows, SEEDED ~90 default rows into it.
+      if (!(await getOwnedEstimate(req, res, req.params.id, "Estimate not found"))) return;
       const rows = await storage.getEstimateEnotes(req.params.id);
       res.json(rows);
     } catch (error) {
@@ -7343,7 +7813,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/estimate-enotes/:rowId/attachments", requireAuth, async (req, res) => {
     try {
-      const attachments = await storage.getEnoteAttachments(req.params.rowId);
+      // Without this the list — including every fileUrl — was returned to any
+      // logged-in user for any company's note.
+      if (!(await getOwnedEnote(req, res, req.params.rowId, "Attachments not found"))) return;
+      const attachments = await storage.getEnoteAttachments(
+        req.params.rowId,
+        getSessionCompanyId(req)!,
+      );
       res.json(attachments);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch attachments" });
@@ -7353,6 +7829,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/estimate-enotes/:rowId/attachments", requireAuth, enoteAttachmentUpload.single("file"), async (req: any, res) => {
     try {
       if (!req.file) return res.status(400).json({ error: "No file uploaded" });
+      // multer has already written the file to disk by the time this runs, so
+      // a rejected upload has to clean up after itself or it orphans up to
+      // 50 MB that nothing will ever reference or serve.
+      const owned = await getOwnedEnote(req, res, req.params.rowId, "Note not found");
+      if (!owned) {
+        try { (await import('fs')).unlinkSync(req.file.path); } catch (_) {}
+        return;
+      }
       const fileUrl = `/uploads/enote-attachments/${req.file.filename}`;
       const attachment = await storage.createEnoteAttachment({
         enoteId: req.params.rowId,
@@ -7453,6 +7937,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/labour-estimate-categories/:catId", requireAuth, async (req, res) => {
     try {
+      // Ownership: category → labour estimate → project → company.
+      if (!(await getOwnedLabourEstimateCategory(req, res, req.params.catId))) return;
       await storage.deleteLabourEstimateCategory(req.params.catId);
       res.status(204).send();
     } catch (error) {
@@ -7631,6 +8117,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/enote-template-sets/:id", requireAuth, async (req, res) => {
     try {
+      // Ownership: template sets carry companyId. This deletes every
+      // enote_templates row in the set, so an unguarded id destroyed another
+      // tenant's whole template library entry.
+      if (!(await getOwnedEnoteTemplateSet(req, res, req.params.id))) return;
       await storage.deleteEnoteTemplateSet(req.params.id);
       res.status(204).send();
     } catch (error) {
@@ -7665,6 +8155,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const companyId = (req.user as any)?.companyId;
       if (!companyId) return res.status(401).json({ error: "No company" });
       const { replaceExisting } = req.body;
+      // BOTH ids must be owned: replaceExisting runs a DELETE across the
+      // target estimate's notes before inserting the source set's rows.
+      if (!(await getOwnedEstimate(req, res, req.params.id, "Estimate not found"))) return;
+      if (!(await getOwnedEnoteTemplateSet(req, res, req.params.templateSetId))) return;
       const rows = await storage.applyEnoteTemplateSetToEstimate(req.params.templateSetId, req.params.id, companyId, !!replaceExisting);
       res.json(rows);
     } catch (error) {
@@ -7846,10 +8340,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Create a new scope item
   app.post("/api/projects/:projectId/scope", requireAuth, requireTeamMember, async (req, res) => {
     try {
-      console.log('POST /api/projects/:projectId/scope - req.params:', req.params);
-      console.log('POST /api/projects/:projectId/scope - req.body:', req.body);
-      console.log('POST /api/projects/:projectId/scope - req.user:', req.user);
-      
       if (!(await enforceProjectCompany(req, res, req.params.projectId, "Project not found"))) return;
       const validationResult = insertScopeItemSchema.omit({ projectId: true, companyId: true }).safeParse(req.body);
       if (!validationResult.success) {
@@ -8036,14 +8526,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Update a scope stage (for inline editing)
   app.patch("/api/scope-stages/:id", requireAuth, requireTeamMember, async (req, res) => {
     try {
-      const updateSchema = insertScopeStageSchema.partial();
+      // projectId is omitted: a stage never changes project via PATCH, and
+      // accepting it let a caller re-parent a stage they legitimately own onto
+      // another tenant's project — after which the isCompleted cascade below
+      // calls bulkUpdateScopeItemsInStage against THAT project. (Residual from
+      // the PR #35 guard, which checks the stage but not where it moves to.)
+      const updateSchema = insertScopeStageSchema.omit({ projectId: true }).partial();
       const validationResult = updateSchema.safeParse(req.body);
       if (!validationResult.success) {
-        return res.status(400).json({ 
-          error: "Validation failed", 
+        return res.status(400).json({
+          error: "Validation failed",
           details: fromZodError(validationResult.error).toString()
         });
       }
+
+      // Ownership: scope stages carry companyId directly. Without this an
+      // outside caller could rename a stage, swap its attachments, or flip
+      // isCompleted — which cascades a bulk write across every scope item in
+      // the victim's stage.
+      if (!(await getOwnedScopeStage(req, res, req.params.id))) return;
 
       let updatedStage;
       try {
@@ -8093,6 +8594,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Delete a scope stage
   app.delete("/api/scope-stages/:id", requireAuth, requireTeamMember, async (req, res) => {
     try {
+      // Ownership: scope stages carry companyId directly.
+      if (!(await getOwnedScopeStage(req, res, req.params.id))) return;
+
       const success = await storage.deleteScopeStage(req.params.id);
       if (!success) {
         return res.status(404).json({ error: "Scope stage not found" });
@@ -8112,6 +8616,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "Updates must be an array" });
       }
 
+      // Per-record ownership before writing any order changes — mirrors
+      // POST /api/scope/reorder.
+      if (!(await ownsAllScopeStages(req, res, updates.map((u: any) => u?.id)))) return;
+
       await storage.reorderScopeStages(updates);
       res.status(204).send();
     } catch (error) {
@@ -8123,15 +8631,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Initialize default stages for a project
   app.post("/api/projects/:projectId/scope-stages/initialize", requireAuth, requireTeamMember, async (req, res) => {
     try {
-      const companyId = req.user!.companyId!;
       const projectId = req.params.projectId;
-      
-      // Verify project exists before initializing stages
-      const project = await storage.getProject(projectId);
-      if (!project) {
-        return res.status(404).json({ error: "Project not found" });
-      }
-      
+
+      // Ownership: existence alone is not enough — an unguarded check let a
+      // caller seed default stages into another company's project.
+      if (!(await enforceProjectCompany(req, res, projectId, "Project not found"))) return;
+
+      const companyId = req.user!.companyId!;
       const stages = await storage.initializeDefaultStages(projectId, companyId);
       res.status(201).json(stages);
     } catch (error) {
@@ -8238,15 +8744,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Apply a template to a project
   app.post("/api/scope-templates/:id/apply", requireAuth, requireTeamMember, async (req, res) => {
     try {
+      const companyId = req.user!.companyId!;
       const { projectId } = req.body;
       if (!projectId) {
         return res.status(400).json({ error: "Project ID is required" });
       }
 
-      const items = await storage.applyScopeTemplate(req.params.id, projectId);
+      // Both the template read and the project write are scoped to the caller's
+      // company inside applyScopeTemplate — same contract as apply-stage below.
+      const items = await storage.applyScopeTemplate(req.params.id, projectId, companyId);
       res.status(201).json(items);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error applying scope template:", error);
+      if (error.message?.includes("not found") || error.message?.includes("Access denied")) {
+        return res.status(404).json({ error: error.message });
+      }
       res.status(500).json({ error: "Failed to apply scope template" });
     }
   });
@@ -8318,9 +8830,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
     limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
   });
 
+  // Discards a multer-written upload. The file lands on disk before any
+  // handler runs, so every rejection path has to clean up after itself or a
+  // refused cross-tenant POST still costs 10 MB.
+  const discardUpload = async (file?: Express.Multer.File) => {
+    if (!file?.path) return;
+    try {
+      await fsPromises.unlink(file.path);
+    } catch (err: any) {
+      if (err?.code !== 'ENOENT') {
+        console.error("Failed to remove rejected gear photo upload:", err);
+      }
+    }
+  };
+
   // Get gear photos for a scope item
   app.get("/api/scope/:scopeItemId/gear-photos", requireAuth, requireTeamMember, async (req, res) => {
     try {
+      // Ownership: photos are reachable only through their scope item, which
+      // carries companyId directly.
+      if (!(await getOwnedScopeItem(req, res, req.params.scopeItemId))) return;
+
       const photos = await storage.getScopeGearPhotos(req.params.scopeItemId);
       res.json(photos);
     } catch (error) {
@@ -8336,6 +8866,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "No photo uploaded" });
       }
 
+      // Ownership: the row is stamped with the CALLER's companyId, so without
+      // this check a caller could hang their own photo off another tenant's
+      // scope item — getScopeGearPhotos filters by scopeItemId alone, so the
+      // victim would render it.
+      if (!(await getOwnedScopeItem(req, res, req.params.scopeItemId))) {
+        await discardUpload(req.file);
+        return;
+      }
+
       const companyId = req.user!.companyId!;
       const photoData = {
         scopeItemId: req.params.scopeItemId,
@@ -8346,8 +8885,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const validationResult = insertScopeGearPhotoSchema.safeParse(photoData);
       if (!validationResult.success) {
-        return res.status(400).json({ 
-          error: "Validation failed", 
+        await discardUpload(req.file);
+        return res.status(400).json({
+          error: "Validation failed",
           details: fromZodError(validationResult.error).toString()
         });
       }
@@ -8356,6 +8896,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(201).json(newPhoto);
     } catch (error) {
       console.error("Error uploading gear photo:", error);
+      await discardUpload(req.file);
       res.status(500).json({ error: "Failed to upload gear photo" });
     }
   });
@@ -8363,6 +8904,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Delete a gear photo
   app.delete("/api/gear-photos/:id", requireAuth, requireTeamMember, async (req, res) => {
     try {
+      // Ownership: gear photo rows carry companyId directly.
+      if (!(await getOwnedGearPhoto(req, res, req.params.id))) return;
+
       const success = await storage.deleteScopeGearPhoto(req.params.id);
       if (!success) {
         return res.status(404).json({ error: "Photo not found" });
@@ -8375,87 +8919,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // ============================================================
-  // SCOPE INTEGRATION HELPERS
-  // ============================================================
-
-  // Push scope items to estimate
-  app.post("/api/scope/push-to-estimate", requireAuth, requireTeamMember, async (req, res) => {
-    try {
-      const { scopeItemIds, estimateId } = req.body;
-      if (!scopeItemIds || !Array.isArray(scopeItemIds)) {
-        return res.status(400).json({ error: "Scope item IDs must be an array" });
-      }
-      if (!estimateId) {
-        return res.status(400).json({ error: "Estimate ID is required" });
-      }
-
-      const estimateItems = await storage.pushScopeToEstimate(scopeItemIds, estimateId);
-      res.status(201).json(estimateItems);
-    } catch (error) {
-      console.error("Error pushing scope to estimate:", error);
-      res.status(500).json({ error: "Failed to push scope to estimate" });
-    }
-  });
-
-  // Create RFQ from scope items
-  app.post("/api/scope/create-rfq", requireAuth, requireTeamMember, async (req, res) => {
-    try {
-      const { scopeItemIds, projectId } = req.body;
-      if (!scopeItemIds || !Array.isArray(scopeItemIds)) {
-        return res.status(400).json({ error: "Scope item IDs must be an array" });
-      }
-      if (!projectId) {
-        return res.status(400).json({ error: "Project ID is required" });
-      }
-
-      const rfq = await storage.createRfqFromScope(scopeItemIds, projectId);
-      res.status(201).json(rfq);
-    } catch (error) {
-      console.error("Error creating RFQ from scope:", error);
-      res.status(500).json({ error: "Failed to create RFQ from scope" });
-    }
-  });
-
-  // Create PO from scope items
-  app.post("/api/scope/create-po", requireAuth, requireTeamMember, async (req, res) => {
-    try {
-      const { scopeItemIds, projectId } = req.body;
-      if (!scopeItemIds || !Array.isArray(scopeItemIds)) {
-        return res.status(400).json({ error: "Scope item IDs must be an array" });
-      }
-      if (!projectId) {
-        return res.status(400).json({ error: "Project ID is required" });
-      }
-
-      const po = await storage.createPoFromScope(scopeItemIds, projectId);
-      res.status(201).json(po);
-    } catch (error) {
-      console.error("Error creating PO from scope:", error);
-      res.status(500).json({ error: "Failed to create PO from scope" });
-    }
-  });
-
-  // Link scope item to schedule item
-  app.post("/api/scope/:scopeItemId/link-schedule", requireAuth, requireTeamMember, async (req, res) => {
-    try {
-      const { scheduleItemId } = req.body;
-      if (!scheduleItemId) {
-        return res.status(400).json({ error: "Schedule item ID is required" });
-      }
-
-      const updatedItem = await storage.linkScopeToScheduleItem(req.params.scopeItemId, scheduleItemId);
-      if (!updatedItem) {
-        return res.status(404).json({ error: "Scope item not found" });
-      }
-
-      res.json(updatedItem);
-    } catch (error) {
-      console.error("Error linking scope to schedule:", error);
-      res.status(500).json({ error: "Failed to link scope to schedule" });
-    }
-  });
-
-  // ============================================================
   // USER ROLE SYSTEM API ROUTES
   // ============================================================
 
@@ -8463,113 +8926,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // EMAIL/PASSWORD AUTHENTICATION ROUTES
   // ============================================================
   
-  // Register new user
-  app.post('/api/auth/register', async (req, res) => {
-    try {
-      const { email, password, name, companyName } = req.body;
-      
-      if (!email || !password) {
-        return res.status(400).json({ message: "Email and password are required" });
-      }
-      
-      if (!name || !companyName) {
-        return res.status(400).json({ message: "Name and company name are required" });
-      }
-      
-      // Check if user already exists
-      const existingUser = await storage.getUserByEmail(email);
-      if (existingUser) {
-        return res.status(400).json({ message: "User already exists" });
-      }
-      
-      // Split name into first and last name
-      const nameParts = name.trim().split(/\s+/);
-      const firstName = nameParts[0] || name;
-      const lastName = nameParts.slice(1).join(' ') || '';
-      
-      // Hash password
-      const hashedPassword = await bcrypt.hash(password, 10);
-      
-      // Step 1: Create user without company
-      const user = await storage.createUser({
-        email,
-        password: hashedPassword,
-        firstName,
-        lastName,
-        userCategory: "team",
-      });
-      
-      // Step 2: Create company with user as owner
-      const company = await storage.createCompany({
-        name: companyName,
-      }, user.id);
-      
-      // Step 3: Update user with companyId
-      await storage.updateUser(user.id, {
-        companyId: company.id,
-      });
-      
-      // Step 4: Fetch updated user with companyId
-      const updatedUser = await storage.getUser(user.id);
-      if (!updatedUser) {
-        return res.status(500).json({ message: "Failed to retrieve updated user" });
-      }
-      
-      // Create session and explicitly save it
-      (req.session as any).userId = user.id;
-      
-      // Force save session before responding
-      req.session.save((err) => {
-        if (err) {
-          console.error("Session save error:", err);
-          return res.status(500).json({ message: "Failed to save session" });
-        }
-        res.status(201).json({ user: toSafeUser(updatedUser) });
-      });
-    } catch (error) {
-      console.error("Registration error:", error);
-      res.status(500).json({ message: "Failed to register user" });
-    }
-  });
-  
-  // Login
-  app.post('/api/auth/login', async (req, res) => {
-    try {
-      const { email, password } = req.body;
-      
-      if (!email || !password) {
-        return res.status(400).json({ message: "Email and password are required" });
-      }
-      
-      // Get user
-      const user = await storage.getUserByEmail(email);
-      if (!user || !user.password) {
-        return res.status(401).json({ message: "Invalid credentials" });
-      }
-      
-      // Verify password
-      const isValid = await bcrypt.compare(password, user.password);
-      if (!isValid) {
-        return res.status(401).json({ message: "Invalid credentials" });
-      }
-      
-      // Create session and explicitly save it
-      (req.session as any).userId = user.id;
-      
-      // Force save session before responding
-      req.session.save((err) => {
-        if (err) {
-          console.error("Session save error:", err);
-          return res.status(500).json({ message: "Failed to save session" });
-        }
-        res.json({ user: toSafeUser(user) });
-      });
-    } catch (error) {
-      console.error("Login error:", error);
-      res.status(500).json({ message: "Failed to login" });
-    }
-  });
-  
+  // Register/login live in server/auth.ts (setupAuth) — registered earlier, so
+  // any duplicates added here would be shadowed and never execute.
+
   // Logout
   app.post('/api/auth/logout', (req, res) => {
     req.session.destroy((err) => {
@@ -8725,7 +9084,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       let isAdminLike = false;
       if (user.roleId) {
         try {
-          const role = await storage.getUserRole(user.roleId);
+          const role = user.companyId ? await storage.getUserRole(user.roleId, user.companyId) : undefined;
           if (role) {
             const roleName = (role.name ?? '').toLowerCase();
             isAdminLike =
@@ -9042,7 +9401,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { GoogleOAuthService } = await import('./services/googleOAuthService');
       const oauthService = new GoogleOAuthService(storage);
-      const authUrl = oauthService.generateAuthUrl(req.user.id);
+      const calCompanyId = getSessionCompanyId(req);
+      if (!calCompanyId) {
+        return res.status(400).json({ message: 'No company context' });
+      }
+      const authUrl = oauthService.generateAuthUrl(req.user.id, calCompanyId);
       res.json({ authUrl });
     } catch (error: any) {
       console.error("Error generating Google OAuth URL:", error);
@@ -9094,7 +9457,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get('/api/bill-inbox/status', requireAuth, async (req: any, res) => {
     try {
-      const settings = await storage.getCompanySettings();
+      const companyId = getSessionCompanyId(req);
+      if (!companyId) {
+        return res.status(400).json({ message: 'No company context' });
+      }
+      const settings = await storage.getCompanySettings(companyId);
       if (!settings) {
         return res.json({ connected: false, pollingEnabled: false, email: null, lastPolledAt: null });
       }
@@ -9114,9 +9481,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get('/api/bill-inbox/auth-url', requireAuth, async (req: any, res) => {
     try {
-      const { GoogleOAuthService } = await import('./services/googleOAuthService');
+      const companyId = getSessionCompanyId(req);
+      if (!companyId) {
+        return res.status(400).json({ message: 'No company context' });
+      }
+      const { GoogleOAuthService, signOAuthState } = await import('./services/googleOAuthService');
       const oauthService = new GoogleOAuthService(storage);
-      const state = Buffer.from(JSON.stringify({ action: 'bill-inbox', timestamp: Date.now() })).toString('base64');
+      // The callback is unauthenticated, so the signed state is what carries
+      // the owning company across the Google round trip.
+      const state = signOAuthState({
+        action: 'bill-inbox',
+        companyId,
+        userId: String(req.user?.id ?? ''),
+      });
       const authUrl = oauthService.generateBillInboxAuthUrl(state);
       res.json({ authUrl });
     } catch (error) {
@@ -9127,14 +9504,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get('/api/bill-inbox/callback', async (req: any, res) => {
     try {
-      const { code, error } = req.query;
+      const { code, error, state } = req.query;
       if (error) {
         return res.redirect(`/settings?tab=integrations&bill_inbox_error=${encodeURIComponent(error)}`);
       }
       if (!code) {
         return res.redirect('/settings?tab=integrations&bill_inbox_error=missing_code');
       }
-      const { GoogleOAuthService } = await import('./services/googleOAuthService');
+
+      const { GoogleOAuthService, verifyOAuthState } = await import('./services/googleOAuthService');
+
+      // This route has no requireAuth (Google redirects the browser here), so
+      // the signed state is the authority on which company the consent is for.
+      // An unverifiable state means someone handed the user this URL — bind
+      // nothing.
+      const verified = verifyOAuthState(state, 'bill-inbox');
+      if (!verified) {
+        console.warn('[BillInbox] Rejected callback with missing/invalid state');
+        return res.redirect('/settings?tab=integrations&bill_inbox_error=invalid_state');
+      }
+      const companyId = verified.companyId;
+
+      // Belt and braces: the session cookie survives Google's top-level
+      // redirect, so when one is present it must agree with the state.
+      const sessionCompanyId = getSessionCompanyId(req);
+      if (sessionCompanyId && sessionCompanyId !== companyId) {
+        console.warn('[BillInbox] Callback state/session company mismatch — rejecting');
+        return res.redirect('/settings?tab=integrations&bill_inbox_error=invalid_state');
+      }
+
       const oauthService = new GoogleOAuthService(storage);
       const result = await oauthService.handleBillInboxCallback(code as string);
 
@@ -9148,7 +9546,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         billInboxStatus: null,
         billInboxLastError: null,
         billInboxLastErrorAt: null,
-      });
+      }, companyId);
 
       console.log('[BillInbox] Connected Gmail account:', result.email);
       res.redirect('/settings?tab=integrations&bill_inbox_success=true');
@@ -9160,6 +9558,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post('/api/bill-inbox/disconnect', requireAuth, async (req: any, res) => {
     try {
+      const companyId = getSessionCompanyId(req);
+      if (!companyId) {
+        return res.status(400).json({ message: 'No company context' });
+      }
       await storage.updateCompanySettings({
         billInboxGmailEmail: null,
         billInboxGmailAccessToken: null,
@@ -9168,7 +9570,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         billInboxGmailConnectedAt: null,
         billInboxPollingEnabled: false,
         billInboxLastPolledAt: null,
-      });
+      }, companyId);
       res.json({ success: true });
     } catch (error) {
       console.error('[BillInbox] Error disconnecting:', error);
@@ -9178,8 +9580,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post('/api/bill-inbox/toggle-polling', requireAuth, async (req: any, res) => {
     try {
+      const companyId = getSessionCompanyId(req);
+      if (!companyId) {
+        return res.status(400).json({ message: 'No company context' });
+      }
       const { enabled } = req.body;
-      await storage.updateCompanySettings({ billInboxPollingEnabled: !!enabled });
+      await storage.updateCompanySettings({ billInboxPollingEnabled: !!enabled }, companyId);
       res.json({ success: true, pollingEnabled: !!enabled });
     } catch (error) {
       console.error('[BillInbox] Error toggling polling:', error);
@@ -9189,8 +9595,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post('/api/bill-inbox/set-default-user', requireAuth, async (req: any, res) => {
     try {
+      const companyId = getSessionCompanyId(req);
+      if (!companyId) {
+        return res.status(400).json({ message: 'No company context' });
+      }
       const { userId } = req.body;
-      await storage.updateCompanySettings({ billInboxDefaultUserId: userId || null });
+      // Don't let a company point its bill inbox at a user it doesn't own.
+      if (userId) {
+        const target = await storage.getUser(userId);
+        if (!target || target.companyId !== companyId) {
+          return res.status(404).json({ message: 'User not found' });
+        }
+      }
+      await storage.updateCompanySettings({ billInboxDefaultUserId: userId || null }, companyId);
       res.json({ success: true });
     } catch (error) {
       console.error('[BillInbox] Error setting default user:', error);
@@ -9200,8 +9617,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post('/api/bill-inbox/poll-now', requireAuth, async (req: any, res) => {
     try {
+      const companyId = getSessionCompanyId(req);
+      if (!companyId) {
+        return res.status(400).json({ message: 'No company context' });
+      }
       const { pollBillInbox } = await import('./services/gmailBillPoller');
-      const result = await pollBillInbox();
+      const result = await pollBillInbox(companyId);
       res.json({ success: true, ...result });
     } catch (error: any) {
       console.error('[BillInbox] Manual poll error:', error.message);
@@ -9847,12 +10268,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const uploadURL = await objectStorageService.getObjectEntityUploadURL();
       const rawObjectPath = objectStorageService.normalizeObjectEntityPath(uploadURL);
       
-      // Prefix with company ID for access control
+      // NOTE: this prefix is NOT access control, despite how it reads. The
+      // bucket is flat and every consumer strips the segment back off before
+      // the storage lookup, so a caller can put their own company id in front
+      // of another tenant's UUID and the path still resolves. Enforcement comes
+      // from the signed grant below (and, for the serving route, from the
+      // bucket partitioning tracked as PR2 phase 2).
       const objectPath = `/objects/company/${companyId}${rawObjectPath.replace('/objects', '')}`;
+
+      // Binds this exact path to this exact company, unforgeably. Consumers
+      // that have no row to authorise against yet — bill OCR runs before the
+      // bill exists — require it instead of trusting the path.
+      const uploadGrant = signUploadGrant(objectPath, companyId);
 
       res.json({
         uploadURL,
         objectPath,
+        uploadGrant,
         metadata: { name, size, contentType },
       });
     } catch (error) {
@@ -9884,7 +10316,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
           mimetype || "application/octet-stream",
           companyId,
         );
-        res.json({ objectPath, name: originalname, contentType: mimetype });
+        // Same grant as the presigned path, so either upload route can feed OCR.
+        // This route additionally writes companyId into the object's GCS
+        // metadata (uploadObjectEntity does), which the presigned route cannot.
+        const uploadGrant = signUploadGrant(objectPath, companyId);
+        res.json({ objectPath, uploadGrant, name: originalname, contentType: mimetype });
       } catch (error) {
         console.error("[upload/file] Error:", error);
         res.status(500).json({ error: "Failed to upload file" });
@@ -9909,7 +10345,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         base64Body = dataUrlMatch[2];
       }
       const buffer = Buffer.from(base64Body, "base64");
-      const objectPath = await objectStorage.uploadObjectEntity(buffer, resolvedMime, "templates");
+      // Third arg must be the company id (baked into the served URL) — the
+      // old "templates" label made the serving route 404 every image
+      const objectPath = await objectStorage.uploadObjectEntity(buffer, resolvedMime, req.user?.companyId ?? req.user?.dbUser?.companyId);
       res.json({ url: objectPath });
     } catch (error: any) {
       res.status(500).json({ error: error?.message || "Failed to upload image" });
@@ -10297,6 +10735,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const updated = await storage.updateCompany(company.id, {
             planStatus: 'trialing',
             trialEndsAt,
+            // Trial on Studio limits until the plan step records a choice
+            // (select-plan maps Subbie signups back down to Subbie).
+            plan: 'studio',
           } as any);
           if (updated) created = updated;
         }
@@ -10312,10 +10753,53 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .then((result) => console.log(`[demo] seeded demo data for new company ${company.id}:`, JSON.stringify(result)))
         .catch((seedErr) => console.error(`[demo] failed to seed demo data for new company ${company.id}:`, seedErr));
 
+      // Day-0 welcome email. Background + once-only (unique index on
+      // company/email key), so a failure here never blocks signup and the
+      // hourly sweep won't double-send.
+      import("./services/onboardingEmails")
+        .then(({ sendWelcomeEmail }) => sendWelcomeEmail(company.id))
+        .catch((mailErr) => console.error(`[onboarding-email] welcome failed for company ${company.id}:`, mailErr));
+
       res.status(201).json(created);
     } catch (error) {
       console.error("Error creating company:", error);
       res.status(500).json({ message: "Failed to create company" });
+    }
+  });
+
+  // Demo data: whether the sample dataset (seeded at signup) is still present.
+  // Drives the first-run "this is sample data" banner.
+  app.get('/api/demo-data/status', requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      const companyId = req.user?.companyId;
+      if (!companyId) return res.json({ seeded: false });
+      const { isDemoSeeded, DEMO_PROJECT_NAMES, DEMO_CONTACT_NAMES } = await import("./seed-lenny");
+      // Names let the client tell real data apart from sample data (e.g. the
+      // getting-started checklist only ticks "create a project" for a real one).
+      res.json({
+        seeded: await isDemoSeeded(companyId),
+        demoProjectNames: DEMO_PROJECT_NAMES,
+        demoContactNames: DEMO_CONTACT_NAMES,
+      });
+    } catch (error) {
+      console.error("[demo] status check failed:", error);
+      res.json({ seeded: false });
+    }
+  });
+
+  // Demo data: remove the sample dataset once the user is ready to work with
+  // real data. Keeps the useful defaults (cost codes, payment terms).
+  app.post('/api/demo-data/clear', requireAuth, requireTeamMember, requirePermission("admin.company", "delete"), async (req: any, res) => {
+    try {
+      const companyId = req.user?.companyId;
+      if (!companyId) return res.status(401).json({ message: "No company context" });
+      const { clearLennyDemo } = await import("./seed-lenny");
+      const result = await clearLennyDemo(companyId);
+      console.log(`[demo] cleared demo data for company ${companyId}:`, JSON.stringify(result));
+      res.json(result);
+    } catch (error) {
+      console.error("[demo] clear failed:", error);
+      res.status(500).json({ message: "Failed to clear demo data" });
     }
   });
 
@@ -10565,6 +11049,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/users/:id", requireAuth, requirePermission("admin.users", "edit"), async (req, res) => {
     try {
+      // Tenancy: admin.users:edit says the caller may edit users, not that they
+      // may edit THIS user. Without this an admin in company A could edit any
+      // company B user by id — including their email, role and password.
+      // 404 rather than 403, matching the other ownership guards.
+      const callerCompanyId = getSessionCompanyId(req);
+      const target = await storage.getUser(req.params.id);
+      if (!callerCompanyId || !target || target.companyId !== callerCompanyId) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
       // Validate password strength if password is being updated
       if (req.body.password) {
         const passwordValidation = PasswordUtils.validatePasswordStrength(req.body.password);
@@ -10604,6 +11098,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "New password is required" });
       }
 
+      // Same gap as PATCH /api/users/:id, but the consequence is worse: without
+      // this, an admin in company A could set the password of any company B
+      // user and log in as them.
+      const callerCompanyId = getSessionCompanyId(req);
+      const pwTarget = await storage.getUser(req.params.id);
+      if (!callerCompanyId || !pwTarget || pwTarget.companyId !== callerCompanyId) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
       const user = await storage.changeUserPassword(req.params.id, newPassword);
       if (!user) {
         return res.status(404).json({ error: "User not found" });
@@ -10620,8 +11123,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Send password reset link to user (manager-initiated)
   app.post("/api/users/:id/send-password-reset", requireAuth, requirePermission("admin.users", "edit"), async (req, res) => {
     try {
+      const callerCompanyId = getSessionCompanyId(req);
       const targetUser = await storage.getUser(req.params.id);
-      if (!targetUser || !targetUser.email) {
+      // Ownership before anything else: unchecked, this mints a password-reset
+      // token for another company's user and emails it to them.
+      if (!callerCompanyId || !targetUser || targetUser.companyId !== callerCompanyId) {
+        return res.status(404).json({ error: "User not found" });
+      }
+      if (!targetUser.email) {
         return res.status(404).json({ error: "User not found or has no email" });
       }
       
@@ -10913,7 +11422,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       // Check if user has permission - must be creator or admin/manager
-      const userRole = await storage.getUserRole(user.roleId);
+      const userRole = user.companyId ? await storage.getUserRole(user.roleId, user.companyId) : undefined;
       const isAdminOrManager = userRole && (userRole.name === "Admin" || userRole.name === "Manager");
       const isCreator = existingView.creatorId === user.id;
       
@@ -11203,7 +11712,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
     let fyStartMonth = 7;
     try {
-      const settings = await storage.getCompanySettings();
+      const settings = await storage.getCompanySettings(companyId);
       const raw = (settings as any)?.fiscalYearStart;
       if (typeof raw === "string") {
         const m = parseInt(raw.split("-")[0] || "", 10);
@@ -11286,7 +11795,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .from(variationsTbl)
         .where(
           and(
-            inArray(variationsTbl.status, ["pending", "action"]),
+            inArray(variationsTbl.status, [...PENDING_VARIATION_STATUSES]),
             inArray(variationsTbl.projectId, Array.from(companyProjectIds)),
           ),
         );
@@ -12162,25 +12671,43 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!companyId) return res.status(401).json({ error: "Unauthorized" });
 
       const { projects: projectsTbl, variations: variationsTbl, users: usersTbl } = await import("@shared/schema");
-      const [projectRows, variationRows, userRows] = await Promise.all([
-        db.select({ id: projectsTbl.id, name: projectsTbl.name }).from(projectsTbl).where(eq(projectsTbl.companyId, companyId)),
-        db.select().from(variationsTbl),
-        db.select({ id: usersTbl.id, firstName: usersTbl.firstName, lastName: usersTbl.lastName, email: usersTbl.email }).from(usersTbl),
+      // Scoped to this company's projects and users in SQL — previously both
+      // tables were read in full and filtered in JS, so the query grew with
+      // every other tenant's data.
+      const projectRows = await db
+        .select({ id: projectsTbl.id, name: projectsTbl.name })
+        .from(projectsTbl)
+        .where(eq(projectsTbl.companyId, companyId));
+      const projectsMap = new Map(projectRows.map((p: any) => [p.id, p.name as string]));
+      if (projectsMap.size === 0) return res.json({ variations: [], totalValue: 0, count: 0 });
+
+      const [variationRows, userRows] = await Promise.all([
+        db
+          .select()
+          .from(variationsTbl)
+          .where(
+            and(
+              inArray(variationsTbl.status, [...PENDING_VARIATION_STATUSES]),
+              inArray(variationsTbl.projectId, Array.from(projectsMap.keys())),
+            ),
+          ),
+        db
+          .select({ id: usersTbl.id, firstName: usersTbl.firstName, lastName: usersTbl.lastName, email: usersTbl.email })
+          .from(usersTbl)
+          .where(eq(usersTbl.companyId, companyId)),
       ]);
 
-      const projectsMap = new Map(projectRows.map((p: any) => [p.id, p.name as string]));
       const usersMap = new Map(userRows.map((u: any) => [u.id, u]));
       const now = Date.now();
 
-      const pending = variationRows
-        .filter((v: any) =>
-          (v.status === "pending" || v.status === "action") &&
-          projectsMap.has(v.projectId),
-        )
-        .sort((a: any, b: any) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+      const pending = [...variationRows].sort(
+        (a: any, b: any) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+      );
 
       const variations = pending.map((v: any) => {
-        const u = (v as any).approvedBy ? usersMap.get((v as any).approvedBy) : null;
+        // Who raised it. Was read from approvedBy — always null on a pending
+        // variation, so this rendered "—" for every row.
+        const u = (v as any).createdById ? usersMap.get((v as any).createdById) : null;
         const submittedBy = u
           ? `${(u as any).firstName || ""} ${(u as any).lastName || ""}`.trim() || (u as any).email
           : "—";
@@ -12572,6 +13099,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/user-roles/:roleId/permissions", requireAuth, requireTeamMember, requirePermission("admin.roles", "edit"), async (req, res) => {
     try {
+      // setRolePermissions DELETEs every role_permissions row for the roleId
+      // and re-inserts the payload — so an unguarded id rewrote another
+      // company's entire role matrix. user_roles is company-scoped and
+      // getUserRole already takes companyId; it simply was not called here.
+      const roleCompanyId = (req.user as any)?.companyId;
+      const targetRole = roleCompanyId
+        ? await storage.getUserRole(req.params.roleId, roleCompanyId)
+        : null;
+      if (!targetRole) return res.status(404).json({ error: "User role not found" });
+
       const { permissions } = req.body;
       if (!Array.isArray(permissions)) {
         return res.status(400).json({ error: "Permissions must be an array" });
@@ -12710,6 +13247,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "projectIds must be an array" });
       }
 
+      // Both sides were unchecked: requireTeamMember is a role gate, and
+      // neither the target user nor the project ids were tied to the caller's
+      // company. user_project_access carries no companyId, so the route is the
+      // only place this can be enforced.
+      const callerCompanyId = (currentUser as any)?.companyId;
+      const targetUser = callerCompanyId ? await storage.getUser(targetUserId) : null;
+      if (!targetUser || (targetUser as any).companyId !== callerCompanyId) {
+        return res.status(404).json({ error: "User not found" });
+      }
+      if (!(await ownsAllProjects(req, res, projectIds as string[]))) return;
+
       const currentAccess = await storage.getUserProjectAccess(targetUserId);
       const currentProjectIds = new Set(currentAccess.map(a => a.projectId));
       const desiredProjectIds = new Set(projectIds as string[]);
@@ -12765,16 +13313,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/invitations", requireAuth, requirePermission("admin.users", "add"), async (req, res) => {
     try {
-      const validationResult = insertUserInvitationSchema.safeParse(req.body);
+      // companyId is omitted from the accepted body and taken from the
+      // session. It used to be read straight off req.body, so an admin in one
+      // company could mint an invitation into another — and, controlling the
+      // invited address, accept it into a real account there.
+      const sessionCompanyId = (req.user as any)?.companyId;
+      if (!sessionCompanyId) return res.status(403).json({ error: "No company context" });
+      const validationResult = insertUserInvitationSchema
+        .omit({ companyId: true })
+        .safeParse(req.body);
       if (!validationResult.success) {
-        return res.status(400).json({ 
-          error: "Validation failed", 
-          details: fromZodError(validationResult.error).toString() 
+        return res.status(400).json({
+          error: "Validation failed",
+          details: fromZodError(validationResult.error).toString()
         });
       }
+      (validationResult.data as any).companyId = sessionCompanyId;
 
       // Get company name to store in invitation for display on accept page
-      const companyId = validationResult.data.companyId;
+      const companyId = sessionCompanyId;
       const company = await storage.getCompany(companyId);
       const companyDisplayName = company?.nickname || company?.name || null;
 
@@ -12783,8 +13340,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // client/supplier users are free/unlimited). Only enforced once billing
       // is live (Stripe configured). -1 = unlimited.
       if (isStripeConfigured() && validationResult.data.userCategory === 'team') {
-        const invitedRole = validationResult.data.roleId
-          ? await storage.getUserRole(validationResult.data.roleId)
+        // Scoped to the inviting company: an invitation must never resolve a
+        // role belonging to someone else's company.
+        const invitedRole = validationResult.data.roleId && companyId
+          ? await storage.getUserRole(validationResult.data.roleId, companyId)
           : null;
         const isMobileOnly = !!(invitedRole as any)?.isMobileOnly;
         if (!isMobileOnly) {
@@ -13167,26 +13726,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "estimateItemId is required" });
       }
 
+      // Look up the estimate item, then its estimate for the projectId
+      const estimateItem = await storage.getEstimateItem(estimateItemId);
+      if (!estimateItem) {
+        return res.status(404).json({ error: "Estimate item not found" });
+      }
+      const estimate = await storage.getEstimate(estimateItem.estimateId);
+      if (!estimate) {
+        return res.status(404).json({ error: "Estimate not found" });
+      }
+      // Tenant isolation — before any data (including an existing selection)
+      // is returned to the caller
+      if (!(await enforceProjectCompany(req, res, estimate.projectId, "Estimate item not found"))) return;
+
       // Check if a selection already exists for this estimate item
       const existing = await storage.getSelectionByEstimateItemId(estimateItemId);
       if (existing) {
         return res.json({ selection: existing, created: false });
       }
 
-      // Look up the estimate item
-      const estimateItem = await storage.getEstimateItem(estimateItemId);
-      if (!estimateItem) {
-        return res.status(404).json({ error: "Estimate item not found" });
-      }
-
-      // Look up the estimate to get the projectId
-      const estimate = await storage.getEstimate(estimateItem.estimateId);
-      if (!estimate) {
-        return res.status(404).json({ error: "Estimate not found" });
-      }
-
-      // Convert priceIncTax (dollars) to cents, rounded to 2dp first
-      const allowanceCents = Math.round(Number(Number(estimateItem.priceIncTax || 0).toFixed(2)) * 100);
+      // Allowance = the line's pre-margin inc-GST amount. Recompute via
+      // resolveEstimateStoredPrice rather than trusting the priceIncTax cache
+      // (stale for priced lines; only fixed-price lines trust the typed value).
+      const { priceIncTax } = resolveEstimateStoredPrice({
+        unitCostExTax: estimateItem.unitCostExTax,
+        quantity: estimateItem.quantity,
+        markupPercent: estimateItem.markupPercent,
+        projectMarkupPercent: (estimate as any).projectMarkupPercent,
+        taxRate: (estimate as any).taxRate,
+        wastagePercent: (estimateItem as any).wastagePercent,
+        existingPriceIncTax: estimateItem.priceIncTax,
+      });
+      const allowanceCents = Math.round(priceIncTax * 100);
 
       const selectionData = {
         projectId: estimate.projectId,
@@ -13220,6 +13791,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!Array.isArray(updates) || updates.some((u: any) => !u.id || typeof u.sortOrder !== "number")) {
         return res.status(400).json({ error: "updates must be an array of {id, sortOrder}" });
       }
+      // Tenant isolation: every referenced selection must belong to the
+      // caller's company
+      const companyId = (req.user as any)?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Not authenticated" });
+      const ids = updates.map((u: any) => u.id);
+      const owned = await db.select({ id: schema.selections.id })
+        .from(schema.selections)
+        .innerJoin(schema.projects, eq(schema.selections.projectId, schema.projects.id))
+        .where(and(inArray(schema.selections.id, ids), eq(schema.projects.companyId, companyId)));
+      if (owned.length !== new Set(ids).size) {
+        return res.status(404).json({ error: "Selection not found" });
+      }
       await storage.batchUpdateSelectionSortOrder(updates);
       res.json({ ok: true });
     } catch (error) {
@@ -13238,6 +13821,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!Array.isArray(selectionIds) || selectionIds.length === 0 || !projectId) {
         return res.status(400).json({ error: "selectionIds (array) and projectId are required" });
       }
+      if (!(await enforceProjectCompany(req, res, projectId, "Project not found"))) return;
 
       // Fetch each selection and find its chosen option
       const eligible: Array<{ selection: any; chosenOption: any }> = [];
@@ -13245,7 +13829,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       for (const selId of selectionIds) {
         const sel = await storage.getSelectionWithOptions(selId);
-        if (!sel) { skipped.push({ id: selId, reason: "Not found" }); continue; }
+        // Tenant isolation: every selection must belong to the verified project
+        if (!sel || sel.projectId !== projectId) { skipped.push({ id: selId, reason: "Not found" }); continue; }
+        if (sel.status === "ordered" || sel.status === "received" || sel.purchaseOrderId) {
+          skipped.push({ id: selId, reason: "Already ordered" });
+          continue;
+        }
         const chosenOption = sel.options?.find((o: any) => o.isSelectedByClient);
         if (!chosenOption) { skipped.push({ id: selId, reason: "No client selection made" }); continue; }
         eligible.push({ selection: sel, chosenOption });
@@ -13258,15 +13847,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Generate PO number
       const poNumber = await storage.getNextPONumber(req.user.companyId, "main");
 
-      // Calculate totals (unitCost = pre-markup supplier cost in cents)
+      // Calculate totals from the pre-markup supplier cost. gstInclusive
+      // describes unitCost, so normalise to ex-GST before summing — the old
+      // unitTax-based sum double-counted GST for inc-GST options.
       let subtotal = 0;
       let gstTotal = 0;
       for (const { chosenOption } of eligible) {
-        const unitCost = chosenOption.unitCost ?? 0;
+        const rawUnit = chosenOption.unitCost ?? 0;
         const qty = chosenOption.quantity ?? 1;
-        const tax = chosenOption.unitTax ?? 0;
-        subtotal += unitCost * qty;
-        gstTotal += tax * qty;
+        const unitEx = chosenOption.gstInclusive ? exGstFromInc(rawUnit) : rawUnit;
+        const lineEx = unitEx * qty;
+        subtotal += lineEx;
+        gstTotal += incGstFromEx(lineEx) - lineEx;
       }
       const total = subtotal + gstTotal;
 
@@ -13297,19 +13889,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const updatedSelections: any[] = [];
       for (let i = 0; i < eligible.length; i++) {
         const { selection, chosenOption } = eligible[i];
-        const unitCost = chosenOption.unitCost ?? 0;
+        const rawUnit = chosenOption.unitCost ?? 0;
         const qty = chosenOption.quantity ?? 1;
-        const tax = (chosenOption.unitTax ?? 0) * qty;
+        const unitEx = chosenOption.gstInclusive ? exGstFromInc(rawUnit) : rawUnit;
+        const lineEx = unitEx * qty;
 
         const itemData = {
           purchaseOrderId: po.id,
           description: `${selection.name} — ${chosenOption.name}`,
           quantity: String(qty),
           unit: chosenOption.unitType ?? "ea",
-          unitPrice: unitCost,
-          total: unitCost * qty,
+          unitPrice: unitEx,
+          total: lineEx,
           isGstFree: false,
-          gstAmount: tax,
+          gstAmount: incGstFromEx(lineEx) - lineEx,
           selectionOptionId: chosenOption.id,
           displayOrder: i,
         };
@@ -13343,6 +13936,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const selection = await storage.getSelectionWithOptions(req.params.id);
       if (!selection) return res.status(404).json({ error: "Selection not found" });
+      if (!(await enforceProjectCompany(req, res, selection.projectId, "Selection not found"))) return;
       if (selection.status !== "ordered") {
         return res.status(400).json({ error: "Selection must be in 'ordered' status to mark as received" });
       }
@@ -13508,7 +14102,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const approver = await resolveApprover(req);
     if (!approver) return false;
     const user = await storage.getUser(approver.id);
-    const role = user?.roleId ? await storage.getUserRole(user.roleId) : null;
+    const role = user?.roleId && user.companyId ? await storage.getUserRole(user.roleId, user.companyId) : null;
     if (role && isAdminRole(role)) return true;
     return await storage.checkUserPermission(approver.id, "projects.selections", "approve");
   }
@@ -13653,7 +14247,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         base64Body = dataUrlMatch[2];
       }
       const buffer = Buffer.from(base64Body, "base64");
-      const objectPath = await objectStorage.uploadObjectEntity(buffer, resolvedMime, "selections");
+      // Third arg is the COMPANY ID baked into the served URL — passing a
+      // folder-style label here ("selections") made every stored path fail
+      // the company check on the serving route, so no image ever rendered.
+      const companyId = (req.user as any)?.companyId ?? (req.user as any)?.dbUser?.companyId;
+      const objectPath = await objectStorage.uploadObjectEntity(buffer, resolvedMime, companyId);
       const existingAttachments = await storage.getOptionAttachments(req.params.id);
       const sortOrder = existingAttachments.length;
       const attachment = await storage.createOptionAttachment({
@@ -13718,6 +14316,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!projectId) {
         return res.status(400).json({ error: "projectId is required" });
       }
+      if (!(await enforceProjectCompany(req, res, projectId as string, "Project not found"))) return;
       const clientSelections = await storage.getClientSelections(projectId as string);
       res.json(clientSelections);
     } catch (error) {
@@ -13729,11 +14328,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const validationResult = insertClientSelectionSchema.safeParse(req.body);
       if (!validationResult.success) {
-        return res.status(400).json({ 
-          error: "Validation failed", 
-          details: fromZodError(validationResult.error).toString() 
+        return res.status(400).json({
+          error: "Validation failed",
+          details: fromZodError(validationResult.error).toString()
         });
       }
+      if (!(await enforceProjectCompany(req, res, validationResult.data.projectId, "Project not found"))) return;
 
       const clientSelection = await storage.createClientSelection(validationResult.data);
       res.status(201).json(clientSelection);
@@ -13745,6 +14345,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Selection Comments API Routes
   app.get("/api/selections/:id/comments", requireAuth, requireTeamMember, async (req, res) => {
     try {
+      const selection = await storage.getSelection(req.params.id);
+      if (!selection) return res.status(404).json({ error: "Selection not found" });
+      if (!(await enforceProjectCompany(req, res, selection.projectId, "Selection not found"))) return;
       const comments = await storage.getSelectionComments(req.params.id);
       res.json(comments);
     } catch (error) {
@@ -13758,6 +14361,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!content || typeof content !== "string" || !content.trim()) {
         return res.status(400).json({ error: "Content is required" });
       }
+      const selection = await storage.getSelection(req.params.id);
+      if (!selection) return res.status(404).json({ error: "Selection not found" });
+      if (!(await enforceProjectCompany(req, res, selection.projectId, "Selection not found"))) return;
       const user = req.user!;
       const comment = await storage.createSelectionComment({
         selectionId: req.params.id,
@@ -13774,8 +14380,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/selection-comments/:id", requireAuth, async (req, res) => {
+  app.delete("/api/selection-comments/:id", requireAuth, requireTeamMember, async (req, res) => {
     try {
+      const [comment] = await db.select().from(schema.selectionComments)
+        .where(eq(schema.selectionComments.id, req.params.id))
+        .limit(1);
+      if (!comment) return res.status(404).json({ error: "Comment not found" });
+      const selection = await storage.getSelection(comment.selectionId);
+      if (!selection) return res.status(404).json({ error: "Comment not found" });
+      if (!(await enforceProjectCompany(req, res, selection.projectId, "Comment not found"))) return;
       const success = await storage.deleteSelectionComment(req.params.id);
       if (!success) return res.status(404).json({ error: "Comment not found" });
       res.status(204).send();
@@ -13789,6 +14402,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const selection = await storage.getSelection(req.params.id);
       if (!selection) return res.status(404).json({ error: "Selection not found" });
+      if (!(await enforceProjectCompany(req, res, selection.projectId, "Selection not found"))) return;
       let token = selection.portalToken;
       if (!token) {
         token = randomBytes(24).toString("hex");
@@ -13804,6 +14418,68 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Email the portal link to the client and stamp portalSentAt
+  app.post("/api/selections/:id/send-portal", requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      const selection = await storage.getSelection(req.params.id);
+      if (!selection) return res.status(404).json({ error: "Selection not found" });
+      if (!(await enforceProjectCompany(req, res, selection.projectId, "Selection not found"))) return;
+
+      const { to, message } = req.body ?? {};
+      if (!to || typeof to !== "string" || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to.trim())) {
+        return res.status(400).json({ error: "A valid recipient email is required" });
+      }
+
+      let token = selection.portalToken;
+      if (!token) {
+        token = randomBytes(24).toString("hex");
+        await storage.updateSelection(selection.id, { portalToken: token } as any);
+      }
+      const host = req.headers.origin || `${req.protocol}://${req.headers.host}`;
+      const url = `${host}/portal/selections/${token}`;
+
+      const [project, company] = await Promise.all([
+        storage.getProject(selection.projectId),
+        storage.getCompany(req.user.companyId),
+      ]);
+      const fromName = company?.name || "Morada";
+      const optionCount = (await storage.getSelectionOptions(selection.id)).filter((o: any) => o.visibleToClient !== false).length;
+
+      const html = `
+        <div style="font-family:Helvetica,Arial,sans-serif;max-width:560px;margin:auto;color:#2C2825">
+          <div style="padding:22px 26px;border:1px solid #EAEAE8;border-radius:12px;background:#FAFAF8">
+            <div style="font-size:13px;color:#7A5FA8;font-weight:700;margin-bottom:14px">${escapeHtml(fromName)}</div>
+            <div style="font-size:19px;font-weight:800;margin-bottom:6px">Your selection is ready to review</div>
+            <div style="font-size:13.5px;color:#6B6560;line-height:1.5;margin-bottom:4px">
+              <b style="color:#2C2825">${escapeHtml(selection.name)}</b>${project?.name ? ` — ${escapeHtml(project.name)}` : ""}
+            </div>
+            <div style="font-size:13px;color:#6B6560;margin-bottom:18px">${optionCount} option${optionCount === 1 ? "" : "s"} to choose from${selection.deadline ? ` · please respond by ${new Date(selection.deadline).toLocaleDateString("en-AU")}` : ""}.</div>
+            ${message && typeof message === "string" && message.trim()
+              ? `<div style="font-size:13.5px;line-height:1.55;background:#fff;border:1px solid #EAEAE8;border-radius:8px;padding:12px 14px;margin-bottom:18px;white-space:pre-wrap">${escapeHtml(message.trim().slice(0, 2000))}</div>`
+              : ""}
+            <a href="${url}" style="display:inline-block;background:#A890D4;color:#fff;text-decoration:none;font-weight:700;font-size:14px;padding:11px 22px;border-radius:8px">View &amp; choose</a>
+            <div style="font-size:11px;color:#6B6560;margin-top:16px">Or copy this link: <a href="${url}" style="color:#7A5FA8">${url}</a></div>
+          </div>
+        </div>`;
+
+      await sendGenericEmail({
+        to: to.trim(),
+        subject: `Selection ready for your review — ${selection.name}`,
+        html,
+        from: `${fromName} via Morada <noreply@moradaco.com.au>`,
+        replyTo: req.user.email,
+        userId: req.user.id,
+      });
+
+      const sentAt = new Date();
+      await storage.updateSelection(selection.id, { portalSentAt: sentAt } as any);
+      res.json({ success: true, url, sentAt });
+    } catch (error) {
+      console.error("Error sending selection portal link:", error);
+      res.status(500).json({ error: "Failed to send portal link" });
+    }
+  });
+
   // ── Product Library Routes ─────────────────────────────────────────────────
   app.get("/api/products", requireAuth, requireTeamMember, async (req: any, res) => {
     try {
@@ -13814,6 +14490,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
         search: search || undefined,
         isActive: true,
       });
+      // Attach each product's first image so pickers can show thumbnails
+      // (single batched query — no per-product fan-out)
+      if (products.length > 0) {
+        const images = await db.select().from(schema.productImages)
+          .where(inArray(schema.productImages.productId, products.map((p) => p.id)))
+          .orderBy(asc(schema.productImages.sortOrder));
+        const firstByProduct = new Map<number, any>();
+        for (const img of images) {
+          if (!firstByProduct.has(img.productId)) firstByProduct.set(img.productId, img);
+        }
+        return res.json(products.map((p) => ({
+          ...p,
+          images: firstByProduct.has(p.id) ? [firstByProduct.get(p.id)] : [],
+        })));
+      }
       res.json(products);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch products" });
@@ -13830,10 +14521,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Tenant isolation: load a product by id and verify the caller's company
+  // owns it. Sends a 404 and returns null otherwise.
+  const getOwnedProduct = async (req: any, res: any, productId: number) => {
+    const product = await storage.getProduct(productId);
+    if (!product || product.companyId !== req.user?.companyId) {
+      res.status(404).json({ error: "Product not found" });
+      return null;
+    }
+    return product;
+  };
+
   app.get("/api/products/:id", requireAuth, requireTeamMember, async (req: any, res) => {
     try {
-      const product = await storage.getProduct(Number(req.params.id));
-      if (!product) return res.status(404).json({ error: "Product not found" });
+      const product = await getOwnedProduct(req, res, Number(req.params.id));
+      if (!product) return;
       const images = await storage.getProductImages(product.id);
       res.json({ ...product, images });
     } catch (error) {
@@ -13843,7 +14545,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/products/:id", requireAuth, requireTeamMember, async (req: any, res) => {
     try {
-      const product = await storage.updateProduct(Number(req.params.id), req.body);
+      if (!(await getOwnedProduct(req, res, Number(req.params.id)))) return;
+      // Never allow re-parenting a product to another company
+      const { companyId: _ignored, ...body } = req.body ?? {};
+      const product = await storage.updateProduct(Number(req.params.id), body);
       if (!product) return res.status(404).json({ error: "Product not found" });
       res.json(product);
     } catch (error) {
@@ -13853,6 +14558,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/products/:id", requireAuth, requireTeamMember, async (req: any, res) => {
     try {
+      if (!(await getOwnedProduct(req, res, Number(req.params.id)))) return;
       const success = await storage.deleteProduct(Number(req.params.id));
       if (!success) return res.status(404).json({ error: "Product not found" });
       res.status(204).send();
@@ -13864,6 +14570,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/products/:id/images", requireAuth, requireTeamMember, async (req: any, res) => {
     try {
       const productId = Number(req.params.id);
+      if (!(await getOwnedProduct(req, res, productId))) return;
       const image = await storage.createProductImage({ ...req.body, productId });
       res.status(201).json(image);
     } catch (error) {
@@ -13873,7 +14580,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/product-images/:id", requireAuth, requireTeamMember, async (req: any, res) => {
     try {
-      const success = await storage.deleteProductImage(Number(req.params.id));
+      const imageId = Number(req.params.id);
+      const [image] = await db.select().from(schema.productImages)
+        .where(eq(schema.productImages.id, imageId))
+        .limit(1);
+      if (!image) return res.status(404).json({ error: "Image not found" });
+      if (!(await getOwnedProduct(req, res, image.productId))) return;
+      const success = await storage.deleteProductImage(imageId);
       if (!success) return res.status(404).json({ error: "Image not found" });
       res.status(204).send();
     } catch (error) {
@@ -13881,12 +14594,73 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Scrape a supplier product page (name/brand/price/images) for URL import.
+  // Read-only: returns extracted fields for the client to review — nothing is
+  // created until the user saves the pre-filled option.
+  app.post("/api/products/scrape-url", requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      const { url } = req.body ?? {};
+      if (!url || typeof url !== "string") {
+        return res.status(400).json({ error: "url is required" });
+      }
+      const { scrapeProductUrl } = await import("./services/productScraper");
+      const scraped = await scrapeProductUrl(url);
+      res.json(scraped);
+    } catch (error: any) {
+      res.status(422).json({ error: error?.message || "Could not read that page" });
+    }
+  });
+
+  // Download remote images (e.g. from a scraped product page) into object
+  // storage as attachments on an option. Capped; each URL is SSRF-guarded.
+  app.post("/api/selection-options/:id/attachments-from-url", requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      const option = await assertOptionAccess(req, res, req.params.id);
+      if (!option) return;
+      const { urls } = req.body ?? {};
+      if (!Array.isArray(urls) || urls.length === 0 || urls.some((u: any) => typeof u !== "string")) {
+        return res.status(400).json({ error: "urls (string array) is required" });
+      }
+      const { downloadImage } = await import("./services/productScraper");
+      const { ObjectStorageService } = await import("./replit_integrations/object_storage/objectStorage");
+      const objectStorage = new ObjectStorageService();
+      const existing = await storage.getOptionAttachments(req.params.id);
+      let sortOrder = existing.length;
+      const created: any[] = [];
+      const failed: Array<{ url: string; reason: string }> = [];
+      for (const u of urls.slice(0, 6)) {
+        try {
+          const { buffer, mimeType, fileName } = await downloadImage(u);
+          const objectPath = await objectStorage.uploadObjectEntity(
+            buffer,
+            mimeType,
+            req.user?.companyId ?? req.user?.dbUser?.companyId,
+          );
+          created.push(await storage.createOptionAttachment({
+            optionId: req.params.id,
+            fileName,
+            filePath: objectPath,
+            fileType: "image",
+            fileSize: buffer.length,
+            mimeType,
+            sortOrder: sortOrder++,
+          }));
+        } catch (e: any) {
+          failed.push({ url: u, reason: e?.message || "download failed" });
+        }
+      }
+      res.status(created.length > 0 ? 201 : 422).json({ attachments: created, failed });
+    } catch (error: any) {
+      res.status(500).json({ error: error?.message || "Failed to import images" });
+    }
+  });
+
   // Save a selection option to the product library
   app.post("/api/selection-options/:id/save-to-library", requireAuth, requireTeamMember, async (req: any, res) => {
     try {
       const companyId = req.user!.companyId!;
-      const option = await storage.getSelectionOption(req.params.id);
-      if (!option) return res.status(404).json({ error: "Option not found" });
+      const option = await assertOptionAccess(req, res, req.params.id);
+      if (!option) return;
       if (!option.name?.trim()) return res.status(400).json({ error: "Option must have a name before saving to the library" });
       const product = await storage.createProduct({
         companyId,
@@ -13925,8 +14699,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/selections/:id/options/from-product", requireAuth, requireTeamMember, async (req: any, res) => {
     try {
       const { productId, quantity, markupPercent, visibleToClient } = req.body;
-      const product = await storage.getProduct(Number(productId));
-      if (!product) return res.status(404).json({ error: "Product not found" });
+      const selection = await storage.getSelection(req.params.id);
+      if (!selection) return res.status(404).json({ error: "Selection not found" });
+      if (!(await enforceProjectCompany(req, res, selection.projectId, "Selection not found"))) return;
+      const product = await getOwnedProduct(req, res, Number(productId));
+      if (!product) return;
       const allOptions = await storage.getSelectionOptions(req.params.id);
       const newOption = await storage.createSelectionOption({
         selectionId: req.params.id,
@@ -13941,7 +14718,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         unitType: product.unitType ?? "ea",
         url: product.url ?? undefined,
         markupPercent: markupPercent ?? undefined,
-        totalCost: product.defaultUnitCost ?? undefined,
+        totalCost: product.defaultUnitCost != null
+          ? Math.round(product.defaultUnitCost * (quantity ?? 1) * (1 + (markupPercent ?? 0) / 100))
+          : undefined,
         visibleToClient: visibleToClient !== false,
         sortOrder: allOptions.length,
         productId: product.id,
@@ -13969,6 +14748,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get/generate trades portal token for a project
   app.get("/api/projects/:id/trades-portal-token", requireAuth, requireTeamMember, async (req: any, res) => {
     try {
+      if (!(await enforceProjectCompany(req, res, req.params.id, "Project not found"))) return;
       const project = await storage.getProject(req.params.id);
       if (!project) return res.status(404).json({ error: "Project not found" });
       let token = (project as any).tradesPortalToken;
@@ -13986,6 +14766,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // QR code for project trades portal
   app.get("/api/projects/:id/trades-qr", requireAuth, requireTeamMember, async (req: any, res) => {
     try {
+      if (!(await enforceProjectCompany(req, res, req.params.id, "Project not found"))) return;
       const project = await storage.getProject(req.params.id);
       if (!project) return res.status(404).json({ error: "Project not found" });
       let token = (project as any).tradesPortalToken;
@@ -14008,7 +14789,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const selection = await storage.getSelectionWithOptions(req.params.id);
       if (!selection) return res.status(404).json({ error: "Selection not found" });
-      const pdfBuffer = await generateSelectionPdf([selection]);
+      if (!(await enforceProjectCompany(req, res, selection.projectId, "Selection not found"))) return;
+      const [project, company] = await Promise.all([
+        storage.getProject(selection.projectId),
+        storage.getCompany(req.user!.companyId!),
+      ]);
+      const pdfBuffer = await generateSelectionPdf([selection], {
+        projectName: project?.name,
+        companyName: company?.name,
+        companyLogoDataUri: await objectPathToDataUri((company as any)?.logoUrl, new Map()),
+      });
       res.set("Content-Type", "application/pdf");
       res.set("Content-Disposition", `attachment; filename="${selection.name.replace(/[^a-z0-9]/gi, "_")}.pdf"`);
       res.send(pdfBuffer);
@@ -14020,18 +14810,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/selections/project/:projectId/pdf", requireAuth, requireTeamMember, async (req: any, res) => {
     try {
-      const { eq: eqFn } = await import("drizzle-orm");
-      const schemaImport = await import("@shared/schema");
-      const selectionsRaw = await db.select().from(schemaImport.selections)
-        .where(eqFn(schemaImport.selections.projectId, req.params.projectId))
-        .orderBy(schemaImport.selections.name);
-      const selections: any[] = [];
-      for (const s of selectionsRaw) {
-        const withOptions = await storage.getSelectionWithOptions(s.id);
-        if (withOptions) selections.push(withOptions);
-      }
-      const project = await storage.getProject(req.params.projectId);
-      const pdfBuffer = await generateSelectionPdf(selections, project?.name);
+      if (!(await enforceProjectCompany(req, res, req.params.projectId, "Project not found"))) return;
+      const selections = (await storage.getSelectionsWithOptions(req.params.projectId))
+        .sort((a: any, b: any) => String(a.name).localeCompare(String(b.name)));
+      const [project, company] = await Promise.all([
+        storage.getProject(req.params.projectId),
+        storage.getCompany(req.user!.companyId!),
+      ]);
+      const pdfBuffer = await generateSelectionPdf(selections, {
+        projectName: project?.name,
+        companyName: company?.name,
+        companyLogoDataUri: await objectPathToDataUri((company as any)?.logoUrl, new Map()),
+      });
       res.set("Content-Type", "application/pdf");
       const fname = (project?.name ?? "selections").replace(/[^a-z0-9]/gi, "_");
       res.set("Content-Disposition", `attachment; filename="${fname}_schedule.pdf"`);
@@ -15569,6 +16359,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Public Selection Portal (no auth required - clients access via token link)
+  // A selection is closed to further client changes once an option is approved
+  // (locked) or the selection has moved into procurement.
+  function isSelectionLockedForClient(sel: any, options: any[]): boolean {
+    if (["approved", "ordered", "received"].includes(sel.status)) return true;
+    return options.some((o: any) => o.lockedAt);
+  }
+
+  // Rewrite an attachment's file path to the public, token-scoped portal file
+  // route (raw /objects/... paths are behind authenticated company-scoped URLs
+  // that a portal visitor cannot load).
+  function portalAttachmentView(att: any, urlPrefix: string) {
+    return {
+      id: att.id,
+      optionId: att.optionId,
+      fileName: att.fileName,
+      fileType: att.fileType,
+      mimeType: att.mimeType,
+      sortOrder: att.sortOrder,
+      thumbnailX: att.thumbnailX,
+      thumbnailY: att.thumbnailY,
+      filePath: `${urlPrefix}/attachments/${att.id}`,
+    };
+  }
+
   app.get("/api/portal/selections/:token", async (req, res) => {
     try {
       const { token } = req.params;
@@ -15578,78 +16392,228 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .limit(1);
       if (!sel) return res.status(404).json({ error: "Invalid link" });
 
-      const selWithOptions = await storage.getSelectionWithOptions(sel.id);
-      if (!selWithOptions) return res.status(404).json({ error: "Selection not found" });
-
+      const options = await storage.getSelectionOptions(sel.id);
       const clientSelection = await storage.getClientSelectionBySelectionId(sel.id);
       const comments = await storage.getSelectionComments(sel.id);
 
-      res.json({ selection: selWithOptions, clientSelection, comments });
+      // Client-safe projection: only client-visible options, and NEVER the
+      // builder's cost fields (unitCost/unitTax/markupPercent/totalCost) or
+      // internal trades notes. Price is exposed only as a derived inc-GST
+      // client price, and only when the builder enabled clientCanSeePrice.
+      const clientCanSeePrice = !!(sel as any).clientCanSeePrice;
+      const urlPrefix = `/api/portal/selections/${token}`;
+      const safeOptions = options
+        .filter((o: any) => o.visibleToClient !== false)
+        .map((o: any) => ({
+          id: o.id,
+          selectionId: o.selectionId,
+          name: o.name,
+          description: o.description,
+          sku: o.sku,
+          brand: o.brand,
+          category: o.category,
+          subcategory: o.subcategory,
+          quantity: o.quantity,
+          unitType: o.unitType,
+          url: o.url,
+          specifications: o.specifications,
+          isSelectedByClient: o.isSelectedByClient,
+          sortOrder: o.sortOrder,
+          approvedAt: o.approvedAt,
+          clientPrice: clientCanSeePrice ? selectionOptionClientPriceCents(o) : null,
+          attachments: ((o as any).attachments ?? []).map((a: any) => portalAttachmentView(a, urlPrefix)),
+        }))
+        .sort((a: any, b: any) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+
+      const safeSelection = {
+        id: sel.id,
+        name: (sel as any).name,
+        category: (sel as any).category,
+        room: (sel as any).room,
+        description: (sel as any).description,
+        status: (sel as any).status,
+        deadline: (sel as any).deadline,
+        clientCanChange: (sel as any).clientCanChange,
+        clientCanSeePrice,
+        allowance: clientCanSeePrice ? (sel as any).allowance : null,
+        locked: isSelectionLockedForClient(sel, options),
+        options: safeOptions,
+      };
+
+      res.json({ selection: safeSelection, clientSelection, comments });
     } catch (error) {
       console.error("Portal selection error:", error);
       res.status(500).json({ error: "Failed to load selection" });
     }
   });
 
-  app.patch("/api/portal/selections/:token/options/:optionId/select", async (req, res) => {
+  // Public, token-scoped file serving for portal option attachments. The raw
+  // object paths are only served to authenticated same-company users, so the
+  // portal rewrites attachment URLs to this route instead.
+  app.get("/api/portal/selections/:token/attachments/:attachmentId", async (req, res) => {
     try {
-      const { token, optionId } = req.params;
-      const { clientName } = req.body;
+      const { token, attachmentId } = req.params;
       const { eq: eqFn } = await import("drizzle-orm");
       const [sel] = await db.select().from(schema.selections as any)
         .where(eqFn((schema.selections as any).portalToken, token))
         .limit(1);
-      if (!sel) return res.status(404).json({ error: "Invalid link" });
-      if ((sel as any).lockedAt) return res.status(403).json({ error: "Selection is locked" });
+      if (!sel) return res.status(404).json({ error: "Not found" });
 
-      const allOptionsForCheck = await storage.getSelectionOptions(sel.id);
-      const option = allOptionsForCheck.find(o => o.id === optionId);
-      if (!option) return res.status(403).json({ error: "Option not accessible" });
-
-      // Clear previous client selections on this selection
-      const prevClientSelection = await storage.getClientSelectionBySelectionId(sel.id);
-      if (prevClientSelection) await storage.deleteClientSelection(prevClientSelection.id);
-
-      // Deselect all options for this selection
-      const allOptions = await storage.getSelectionOptions(sel.id);
-      for (const opt of allOptions) {
-        if (opt.isSelectedByClient) {
-          await storage.updateSelectionOption(opt.id, { isSelectedByClient: false });
-        }
+      const attachment = await storage.getOptionAttachmentById(attachmentId);
+      if (!attachment) return res.status(404).json({ error: "Not found" });
+      const option = await storage.getSelectionOption(attachment.optionId);
+      if (!option || option.selectionId !== sel.id || option.visibleToClient === false) {
+        return res.status(404).json({ error: "Not found" });
       }
 
-      // Mark the chosen option as selected
-      await storage.updateSelectionOption(optionId, { isSelectedByClient: true });
+      // Stored paths may be raw /objects/... or company-scoped
+      // /objects/company/<id>/objects/... — normalise to the raw form.
+      // Stored paths are /objects/company/<cid>/uploads/<id> (or legacy raw
+      // /objects/uploads/<id>) — strip the company segment for the storage
+      // lookup, which uses the raw form
+      const normalisedPath = (attachment.filePath || "").replace(/^\/objects\/company\/[^/]+\//, "/objects/");
+      const objectFile = await objectStorageService.getObjectEntityFile(normalisedPath);
+      await objectStorageService.downloadObject(objectFile, res);
+    } catch (error: any) {
+      if (error?.name === "ObjectNotFoundError") {
+        return res.status(404).json({ error: "Not found" });
+      }
+      console.error("Portal attachment error:", error);
+      res.status(500).json({ error: "Failed to load attachment" });
+    }
+  });
 
-      // Create clientSelection record
+  app.patch("/api/portal/selections/:token/options/:optionId/select", async (req, res) => {
+    try {
+      const { token, optionId } = req.params;
+      const { eq: eqFn, and: andFn } = await import("drizzle-orm");
+      const [sel] = await db.select().from(schema.selections as any)
+        .where(eqFn((schema.selections as any).portalToken, token))
+        .limit(1);
+      if (!sel) return res.status(404).json({ error: "Invalid link" });
+
+      const allOptions = await storage.getSelectionOptions(sel.id);
+      if (isSelectionLockedForClient(sel, allOptions)) {
+        return res.status(403).json({ error: "This selection has been finalised and can no longer be changed. Please contact your builder." });
+      }
+
+      const option = allOptions.find(o => o.id === optionId);
+      if (!option || option.visibleToClient === false) {
+        return res.status(403).json({ error: "Option not accessible" });
+      }
+
+      const prevClientSelection = await storage.getClientSelectionBySelectionId(sel.id);
+      if (prevClientSelection && (sel as any).clientCanChange === false) {
+        return res.status(403).json({ error: "Your choice has been submitted and can no longer be changed. Please contact your builder." });
+      }
+      const prevChosen = allOptions.find(o => o.isSelectedByClient);
+      if (prevClientSelection) await storage.deleteClientSelection(prevClientSelection.id);
+
+      // Move the client's choice: clear any current choice, set the new one
+      const now = new Date();
+      await db.update(schema.selectionOptions)
+        .set({ isSelectedByClient: false, updatedAt: now })
+        .where(andFn(
+          eqFn(schema.selectionOptions.selectionId, sel.id),
+          eqFn(schema.selectionOptions.isSelectedByClient, true),
+        ));
+      await db.update(schema.selectionOptions)
+        .set({ isSelectedByClient: true, updatedAt: now })
+        .where(eqFn(schema.selectionOptions.id, optionId));
+
       const newClientSelection = await storage.createClientSelection({
         projectId: sel.projectId,
         selectionId: sel.id,
-        selectedOptionId: optionId,
-        clientName: clientName || "Client",
+        optionId,
       });
 
-      // Auto-generate a draft variation if selection exceeds allowance
+      // A choice moves a still-draft selection into pending review
+      if ((sel as any).status === "draft") {
+        await storage.updateSelection(sel.id, { status: "pending" } as any);
+      }
+
+      // Timestamped decision log + builder notification. Non-fatal — the
+      // client's choice is already saved.
       try {
-        const chosenOption = await storage.getSelectionOption(optionId);
-        const allowanceCents = Number((sel as any).allowance) || 0;
-        const totalCostCents = Number(chosenOption?.totalCost) || 0;
-        if (allowanceCents > 0 && totalCostCents > allowanceCents) {
-          const overageCents = totalCostCents - allowanceCents;
-          const gstCents = Math.round(overageCents * 0.1);
-          const totalCents = overageCents + gstCents;
-          await storage.createVariation({
-            projectId: sel.projectId,
-            variationNumber: `SEL-OA-${Date.now().toString(36).toUpperCase()}`,
-            name: `Over-allowance: ${(sel as any).name}`,
-            status: "draft",
-            subtotal: overageCents,
-            gstAmount: gstCents,
-            totalAmount: totalCents,
-            paidAmount: 0,
-            balanceAmount: totalCents,
-            relatedTo: sel.id,
+        const clientName = typeof req.body?.clientName === "string" && req.body.clientName.trim()
+          ? req.body.clientName.trim().slice(0, 100) : "Client";
+        const priceCents = selectionOptionClientPriceCents(option);
+        const priceText = priceCents != null && (sel as any).clientCanSeePrice
+          ? ` ($${(priceCents / 100).toLocaleString("en-AU", { minimumFractionDigits: 2 })} inc GST)` : "";
+        const changeText = prevChosen && prevChosen.id !== optionId
+          ? ` — changed from “${prevChosen.name}”` : "";
+        await storage.createSelectionComment({
+          selectionId: sel.id,
+          content: `${clientName} chose “${option.name}”${priceText}${changeText}`,
+          attachmentUrls: [],
+          attachmentFileNames: [],
+          createdById: null,
+          createdByName: "Decision log",
+          isClientComment: false,
+        });
+
+        if ((sel as any).createdBy) {
+          const notification = await storage.createNotification({
+            userId: (sel as any).createdBy,
+            companyId: (await storage.getProject(sel.projectId))?.companyId!,
+            type: "selection_client_choice",
+            title: "Client made a selection",
+            message: `${clientName} chose “${option.name}” on ${(sel as any).name}${changeText ? " (changed)" : ""}`,
+            link: `/projects/${sel.projectId}/selections/${sel.id}`,
+            entityType: "selection",
+            entityId: sel.id,
+            isRead: false,
+            createdByUserId: null,
           });
+          emitNotification((sel as any).createdBy, notification);
+        }
+      } catch (_logErr) {
+        // Non-fatal
+      }
+
+      // Maintain the auto-generated draft over-allowance variation for this
+      // selection: create it when the chosen option exceeds the allowance,
+      // update it when the client changes choice, remove it when the new
+      // choice fits within the allowance. Non-fatal — variation upkeep must
+      // not break the client's selection.
+      try {
+        const allowanceCents = Number((sel as any).allowance) || 0;
+        if (allowanceCents > 0) {
+          const priceCents = selectionOptionClientPriceCents(option) ?? 0;
+          const overageIncCents = priceCents - allowanceCents;
+
+          const existingDrafts = await db.select().from(schema.variations)
+            .where(andFn(
+              eqFn(schema.variations.relatedTo, sel.id),
+              eqFn(schema.variations.status, "draft"),
+            ));
+          const existingAuto = existingDrafts.find((v: any) => String(v.variationNumber || "").startsWith("SEL-OA-"));
+
+          if (overageIncCents > 0) {
+            // Overage is inc GST (client price vs inc-GST allowance) — split it
+            const { exGst, gst } = gstSplit(overageIncCents);
+            const payload = {
+              name: `Over-allowance: ${(sel as any).name}`,
+              subtotal: exGst,
+              gstAmount: gst,
+              totalAmount: overageIncCents,
+              paidAmount: 0,
+              balanceAmount: overageIncCents,
+            };
+            if (existingAuto) {
+              await storage.updateVariation(existingAuto.id, payload as any);
+            } else {
+              await storage.createVariation({
+                projectId: sel.projectId,
+                variationNumber: `SEL-OA-${Date.now().toString(36).toUpperCase()}`,
+                status: "draft",
+                relatedTo: sel.id,
+                ...payload,
+              });
+            }
+          } else if (existingAuto) {
+            await storage.deleteVariation(existingAuto.id);
+          }
         }
       } catch (_varErr) {
         // Non-fatal — variation auto-gen failure should not break selection
@@ -15669,6 +16633,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!content || typeof content !== "string" || !content.trim()) {
         return res.status(400).json({ error: "Content is required" });
       }
+      if (content.length > 5000) {
+        return res.status(400).json({ error: "Comment is too long" });
+      }
       const { eq: eqFn } = await import("drizzle-orm");
       const [sel] = await db.select().from(schema.selections as any)
         .where(eqFn((schema.selections as any).portalToken, token))
@@ -15681,9 +16648,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
         attachmentUrls: [],
         attachmentFileNames: [],
         createdById: null,
-        createdByName: clientName || "Client",
+        createdByName: (typeof clientName === "string" && clientName.trim() ? clientName.trim().slice(0, 100) : "Client"),
         isClientComment: true,
       });
+
+      // Notify the builder of client comments (non-fatal)
+      try {
+        if ((sel as any).createdBy) {
+          const notification = await storage.createNotification({
+            userId: (sel as any).createdBy,
+            companyId: (await storage.getProject(sel.projectId))?.companyId!,
+            type: "selection_client_comment",
+            title: "Client commented on a selection",
+            message: `${comment.createdByName}: ${content.trim().slice(0, 120)}${content.trim().length > 120 ? "…" : ""} — ${(sel as any).name}`,
+            link: `/projects/${sel.projectId}/selections/${sel.id}`,
+            entityType: "selection",
+            entityId: sel.id,
+            isRead: false,
+            createdByUserId: null,
+          });
+          emitNotification((sel as any).createdBy, notification);
+        }
+      } catch (_notifErr) {
+        // Non-fatal
+      }
+
       res.status(201).json(comment);
     } catch (error) {
       res.status(500).json({ error: "Failed to post comment" });
@@ -15701,23 +16690,84 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .limit(1);
       if (!project) return res.status(404).json({ error: "Invalid or expired link" });
 
-      const selectionsRaw = await db.select().from(schemaImp.selections)
-        .where(eqFn(schemaImp.selections.projectId, project.id))
-        .orderBy(schemaImp.selections.name);
+      const selectionsWithOptions = await storage.getSelectionsWithOptions(project.id);
 
-      const selectionsWithOptions: any[] = [];
-      for (const s of selectionsRaw) {
-        const withOptions = await storage.getSelectionWithOptions(s.id);
-        if (withOptions) selectionsWithOptions.push(withOptions);
-      }
+      // Public payload — trades need product/spec/image data, never the
+      // builder's cost fields (unitCost/unitTax/markupPercent/totalCost).
+      const urlPrefix = `/api/portal/project/${token}/trades`;
+      const safeSelections = selectionsWithOptions
+        .sort((a: any, b: any) => String(a.name).localeCompare(String(b.name)))
+        .map((s: any) => ({
+          id: s.id,
+          name: s.name,
+          category: s.category,
+          room: s.room,
+          description: s.description,
+          status: s.status,
+          deadline: s.deadline,
+          notes: s.notes,
+          options: (s.options ?? []).map((o: any) => ({
+            id: o.id,
+            selectionId: o.selectionId,
+            name: o.name,
+            description: o.description,
+            sku: o.sku,
+            brand: o.brand,
+            category: o.category,
+            subcategory: o.subcategory,
+            quantity: o.quantity,
+            unitType: o.unitType,
+            url: o.url,
+            specifications: o.specifications,
+            notes: o.notes,
+            isSelectedByClient: o.isSelectedByClient,
+            approvedAt: o.approvedAt,
+            sortOrder: o.sortOrder,
+            attachments: (o.attachments ?? []).map((a: any) => portalAttachmentView(a, urlPrefix)),
+          })),
+        }));
 
       res.json({
         project: { id: project.id, name: (project as any).name, address: (project as any).address },
-        selections: selectionsWithOptions,
+        selections: safeSelections,
       });
     } catch (error) {
       console.error("Trades portal error:", error);
       res.status(500).json({ error: "Failed to load trades portal" });
+    }
+  });
+
+  // Public, token-scoped file serving for trades-portal option attachments
+  app.get("/api/portal/project/:token/trades/attachments/:attachmentId", async (req, res) => {
+    try {
+      const { token, attachmentId } = req.params;
+      const { eq: eqFn } = await import("drizzle-orm");
+      const schemaImp = await import("@shared/schema");
+      const [project] = await db.select().from(schemaImp.projects)
+        .where(eqFn((schemaImp.projects as any).tradesPortalToken, token))
+        .limit(1);
+      if (!project) return res.status(404).json({ error: "Not found" });
+
+      const attachment = await storage.getOptionAttachmentById(attachmentId);
+      if (!attachment) return res.status(404).json({ error: "Not found" });
+      const option = await storage.getSelectionOption(attachment.optionId);
+      const selection = option ? await storage.getSelection(option.selectionId) : undefined;
+      if (!selection || selection.projectId !== project.id) {
+        return res.status(404).json({ error: "Not found" });
+      }
+
+      // Stored paths are /objects/company/<cid>/uploads/<id> (or legacy raw
+      // /objects/uploads/<id>) — strip the company segment for the storage
+      // lookup, which uses the raw form
+      const normalisedPath = (attachment.filePath || "").replace(/^\/objects\/company\/[^/]+\//, "/objects/");
+      const objectFile = await objectStorageService.getObjectEntityFile(normalisedPath);
+      await objectStorageService.downloadObject(objectFile, res);
+    } catch (error: any) {
+      if (error?.name === "ObjectNotFoundError") {
+        return res.status(404).json({ error: "Not found" });
+      }
+      console.error("Trades portal attachment error:", error);
+      res.status(500).json({ error: "Failed to load attachment" });
     }
   });
 
@@ -16170,11 +17220,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/bills", requireAuth, async (req, res) => {
     try {
-      const billData = { ...req.body };
       const currentUser = (req as any).user;
+      // companyId is never accepted from the body — it was only *defaulted*
+      // from the session, so a supplied one won and the bill was created
+      // inside another tenant (visible in their bill list, rewriting their
+      // project budget). projectId is accepted but must be verified below.
+      const { companyId: _ignoredCompanyId, ...bodyWithoutCompany } = req.body ?? {};
+      const billData: any = { ...bodyWithoutCompany };
       billData.createdById = currentUser.id;
-      if (!billData.companyId && currentUser.companyId) {
-        billData.companyId = currentUser.companyId;
+      billData.companyId = currentUser.companyId;
+      if (billData.projectId) {
+        if (!(await enforceProjectCompany(req, res, billData.projectId, "Project not found"))) return;
       }
 
       if (!billData.billNumber || billData.billNumber.startsWith("BILL-") && /BILL-\d{13,}/.test(billData.billNumber)) {
@@ -16303,14 +17359,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
           scheduleAutoPushBill(bill.id, companyId);
         } else if (
           !bill.xeroInvoiceId &&
-          (bill.status === "awaiting_approval" || bill.status === "awaiting_payment") &&
-          previous?.status !== bill.status
+          (bill.status === "awaiting_approval" || bill.status === "awaiting_payment")
         ) {
-          // Create-first push: when an unlinked bill enters the approval
-          // workflow (awaiting_approval) it lands in Xero as SUBMITTED
-          // ("Awaiting Approval"). When it later moves to awaiting_payment it
-          // is updated to AUTHORISED ("Awaiting Payment"). Either transition
-          // is allowed to be the very first push.
+          // Create-first push: an unlinked bill in the approval workflow lands
+          // in Xero as SUBMITTED (awaiting_approval) or AUTHORISED
+          // (awaiting_payment). Deliberately NOT gated on a status *transition*:
+          // a bill can already be awaiting_approval when its content is first
+          // completed (e.g. AI read set the status before the user filled in
+          // the rest), and that save must sync too — previously it silently
+          // didn't, leaving the bill "saved but unsynced". The queue's own
+          // guards (sendToXero, fire-time re-check) keep this from over-pushing.
           scheduleAutoPushBill(bill.id, companyId);
         }
 
@@ -16876,14 +17934,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Helper: schedule auto-push for the parent bill if linked to Xero and not paid
+  // Helper: schedule auto-push for the parent bill after a line-item write.
+  // Always schedules — scheduleAutoPushBill re-reads the bill at fire time and
+  // its guards decide (linked, or sendToXero + in approval workflow; never
+  // paid). Because the queue is debounced, each line write RESETS the timer, so
+  // the push fires once after the last write instead of racing a save that is
+  // still streaming line items (previously the bill PATCH armed the push and
+  // slow line writes could get pushed half-finished — and line edits on
+  // unlinked sendToXero bills never pushed at all).
   const maybeAutoPushParentBill = async (billId: string, companyId?: string) => {
     if (!companyId) return;
     try {
-      const parent = await storage.getBillById(billId);
-      if (parent?.xeroInvoiceId && parent.status !== "paid") {
-        scheduleAutoPushBill(parent.id, companyId);
-      }
+      scheduleAutoPushBill(billId, companyId);
     } catch {}
   };
 
@@ -17086,7 +18148,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const companyId = (req as any).user?.companyId;
 
       const bills = await storage.getBills(projectId, undefined, companyId || undefined);
-      const settings = await storage.getCompanySettings();
+      const settings = await storage.getCompanySettings(companyId);
       const taxRate = Number(settings?.taxRate ?? 10) || 10;
 
       const changes: Array<{
@@ -17486,7 +18548,115 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Variations API Routes
-  app.get("/api/variations", async (req, res) => {
+
+  // Client-settable money/workflow fields are stripped at the validation
+  // boundary: subtotal/gstAmount/totalAmount are recomputed server-side from
+  // the variation's components (see recomputeVariationTotals), paid/balance
+  // are maintained from invoice payments, and portal/signature/approval
+  // stamps are only written by their dedicated flows.
+  const VARIATION_GUARDED_FIELDS = {
+    subtotal: true,
+    gstAmount: true,
+    totalAmount: true,
+    paidAmount: true,
+    balanceAmount: true,
+    portalToken: true,
+    portalSentAt: true,
+    portalViewedAt: true,
+    createdById: true,
+    clientSignedName: true,
+    clientSignedDate: true,
+    clientSignedIp: true,
+    clientSignedUserAgent: true,
+    builderSignedName: true,
+    builderSignedDate: true,
+    approvedBy: true,
+    approvedDate: true,
+  } as const;
+  const createVariationSchema = insertVariationSchema.omit(VARIATION_GUARDED_FIELDS);
+  const updateVariationSchema = insertVariationSchema.partial().omit(VARIATION_GUARDED_FIELDS);
+
+  // Shared status-change payload for every door that flips a variation's
+  // status (single PATCH, bulk-status): stamps approval metadata on the
+  // transition INTO approved so approvals are attributable no matter which
+  // UI performed them.
+  const buildVariationStatusUpdates = (
+    prev: any,
+    status: string,
+    actorUserId?: string | null,
+  ): Record<string, any> => {
+    const updates: Record<string, any> = { status };
+    if (status === "approved" && prev?.status !== "approved") {
+      updates.approvedBy = actorUserId ?? null;
+      updates.approvedDate = new Date();
+    }
+    return updates;
+  };
+
+  // Once approved, a variation is immutable: the ONLY permitted change is a
+  // rejection (with a reason). Editing again means reject → edit → re-approve,
+  // which keeps an audit trail instead of silently rewriting contract value.
+  const APPROVED_VARIATION_LOCK_MESSAGE =
+    "Approved variations are locked. Reject the variation to make changes.";
+
+  // Invoice claims pin a variation: while a client invoice claims part of its
+  // value it can be neither rejected out of the contract nor deleted.
+  const getVariationInvoiceClaimCount = async (variationId: string): Promise<number> => {
+    const { invoiceVariations: ivTbl } = await import("@shared/schema");
+    const rows = await db.select({ id: ivTbl.id }).from(ivTbl).where(eq(ivTbl.variationId, variationId));
+    return rows.length;
+  };
+
+  // Recompute and persist a variation's money totals from its stored
+  // components: line items (ex-GST cents, taxable lines attract 10%), linked
+  // bills (stored ex/tax components), and linked timesheets (ex-GST dollars,
+  // grossed up — on-charged labour is a taxable supply). The server is the
+  // authority on these totals; balanceAmount tracks totalAmount minus the
+  // server-maintained paidAmount.
+  const recomputeVariationTotals = async (variationId: string): Promise<any | undefined> => {
+    const [current, items, bills, timesheets] = await Promise.all([
+      storage.getVariation(variationId),
+      storage.getVariationItems(variationId),
+      storage.getVariationBills(variationId),
+      storage.getVariationTimesheets(variationId),
+    ]);
+    if (!current) return undefined;
+    const totals = computeVariationTotals({ items, bills, timesheets });
+    return storage.updateVariation(variationId, {
+      subtotal: totals.subtotalCents,
+      gstAmount: totals.gstCents,
+      totalAmount: totals.totalCents,
+      balanceAmount: totals.totalCents - ((current as any).paidAmount ?? 0),
+    } as any);
+  };
+
+  // T005: EOT — extend the project end date by daysChanged working days when a
+  // variation transitions into approved. Shared by the single-PATCH and
+  // bulk-status paths so approvals behave the same from either door.
+  const extendScheduleOnVariationApproval = async (
+    prev: any,
+    updated: any,
+  ): Promise<{ days: number; newEndDate: string } | undefined> => {
+    const wasApproved = prev?.status === "approved";
+    const isApproved = updated?.status === "approved";
+    const daysChanged = updated?.daysChanged ?? 0;
+    if (wasApproved || !isApproved || daysChanged <= 0 || !updated?.projectId) return undefined;
+    const project = await storage.getProject(updated.projectId);
+    if (!project || !project.proposedEndDate) return undefined;
+    // Add working days (Mon-Fri) to the current proposedEndDate
+    let date = new Date(project.proposedEndDate);
+    let remaining = daysChanged;
+    while (remaining > 0) {
+      date.setDate(date.getDate() + 1);
+      const day = date.getDay();
+      if (day !== 0 && day !== 6) remaining--;
+    }
+    const newEndDate = date.toISOString().split("T")[0];
+    await storage.updateProject(updated.projectId, { proposedEndDate: newEndDate });
+    return { days: daysChanged, newEndDate };
+  };
+
+  app.get("/api/variations", requireAuth, async (req, res) => {
     try {
       const { projectId, status } = req.query;
       // Tenant scoping: always restrict to the caller's company (previously an
@@ -17569,7 +18739,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/variations/bulk-status", async (req, res) => {
+  app.post("/api/variations/bulk-status", requireAuth, async (req, res) => {
     try {
       const userCompanyId = (req.user as any)?.companyId;
       if (!userCompanyId) {
@@ -17587,6 +18757,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // transitions for the contract-metrics derivation.
       const previous = await Promise.all(ids.map((id: string) => storage.getVariation(id)));
 
+      // Approved lock: bulk actions never touch approved variations — a
+      // rejection must go through the variation page so a reason is captured.
+      const lockedIdx = previous.findIndex((v: any) => v?.status === "approved" && v.status !== status);
+      if (lockedIdx !== -1) {
+        return res.status(409).json({
+          error: "Selection includes approved variations, which are locked. Reject them individually from the variation page.",
+        });
+      }
+
       // Per-record company ownership (via each variation's project) — reject
       // mixed/foreign IDs before writing anything, mirroring PO bulk-status.
       const projectIds = Array.from(new Set(previous.map((v: any) => v?.projectId).filter(Boolean)));
@@ -17599,7 +18778,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
-      await Promise.all(ids.map((id: string) => storage.updateVariation(id, { status })));
+      const actorUserId = (req.user as any)?.id;
+      await Promise.all(
+        previous.map((prev: any) =>
+          storage.updateVariation(prev.id, buildVariationStatusUpdates(prev, status, actorUserId)),
+        ),
+      );
+      // Same EOT rule as the single PATCH path: approving a variation with
+      // daysChanged extends the project schedule regardless of which door
+      // performed the approval.
+      if (status === "approved") {
+        for (const prev of previous as any[]) {
+          if (prev.status === "approved") continue;
+          try {
+            await extendScheduleOnVariationApproval(prev, { ...prev, status });
+          } catch (err) {
+            console.error("[variation bulk-status] EOT extension failed:", err);
+          }
+        }
+      }
       const APPROVED = new Set(["approved", "released"]);
       const projectsAffected = new Set<string>();
       previous.forEach((prev: any) => {
@@ -17637,30 +18834,68 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/variations", async (req, res) => {
+  app.post("/api/variations", requireAuth, async (req, res) => {
     try {
-      const validationResult = insertVariationSchema.safeParse(req.body);
+      const validationResult = createVariationSchema.safeParse(req.body);
       if (!validationResult.success) {
-        return res.status(400).json({ 
-          error: "Validation failed", 
-          details: fromZodError(validationResult.error).toString() 
+        return res.status(400).json({
+          error: "Validation failed",
+          details: fromZodError(validationResult.error).toString()
         });
       }
 
-      // Generate variation number if not provided
-      let variationNumber = validationResult.data.variationNumber;
-      if (!variationNumber || variationNumber === "Auto-generated") {
-        const projectId = validationResult.data.projectId;
-        const existingVariations = await storage.getVariations(projectId);
-        const projectPrefix = Math.floor(1000 + Math.random() * 9000); // Random 4-digit number
-        const variationCount = existingVariations.length + 1;
-        variationNumber = `${projectPrefix}-VO-${String(variationCount).padStart(3, '0')}`;
-      }
+      // The target project must belong to the caller's company.
+      if (!(await enforceProjectCompany(req, res, validationResult.data.projectId, "Project not found"))) return;
 
-      const variation = await storage.createVariation({
+      // Generate variation number if not provided. Numbering comes from
+      // Settings (variationPrefix/variationStartNumber — previously dead
+      // config while the generator used a random prefix) with a per-project
+      // sequence of max-existing-suffix + 1, so deleting a variation never
+      // reuses its number the way the old count-based scheme did.
+      const providedNumber = validationResult.data.variationNumber;
+      const autoNumber = !providedNumber || providedNumber === "Auto-generated";
+      const generateVariationNumber = async (bump: number): Promise<string> => {
+        const config = await storage.getSystemConfiguration().catch(() => undefined);
+        const prefix = (config as any)?.variationPrefix || "VAR-";
+        const startNumber = (config as any)?.variationStartNumber ?? 1;
+        const existingVariations = await storage.getVariations(validationResult.data.projectId);
+        let maxSeen = 0;
+        for (const v of existingVariations) {
+          const m = /(\d+)\s*$/.exec((v as any).variationNumber || "");
+          if (m) maxSeen = Math.max(maxSeen, parseInt(m[1], 10));
+        }
+        const seq = Math.max(startNumber, maxSeen + 1) + bump;
+        return `${prefix}${String(seq).padStart(3, "0")}`;
+      };
+
+      // Money totals start at zero — recomputeVariationTotals fills them as
+      // items/bills/timesheets are attached (guarded fields are stripped from
+      // the create schema, so they can't come from the client).
+      const baseData = {
         ...validationResult.data,
-        variationNumber
-      });
+        createdById: (req.user as any)?.id ?? null,
+        subtotal: 0,
+        gstAmount: 0,
+        totalAmount: 0,
+        paidAmount: 0,
+        balanceAmount: 0,
+      };
+      let variation;
+      for (let attempt = 0; ; attempt++) {
+        const variationNumber = autoNumber ? await generateVariationNumber(attempt) : providedNumber;
+        try {
+          variation = await storage.createVariation({ ...baseData, variationNumber });
+          break;
+        } catch (err: any) {
+          // Unique (project_id, variation_number) index: a concurrent create
+          // can win the race — regenerate with the next number and retry.
+          if (err?.code === "23505" && autoNumber && attempt < 2) continue;
+          if (err?.code === "23505") {
+            return res.status(409).json({ error: `Variation number ${variationNumber} is already in use on this project` });
+          }
+          throw err;
+        }
+      }
       res.status(201).json(variation);
     } catch (error) {
       res.status(500).json({ error: "Failed to create variation" });
@@ -17669,11 +18904,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/variations/:id", async (req, res) => {
     try {
-      const validationResult = insertVariationSchema.partial().safeParse(req.body);
+      const validationResult = updateVariationSchema.safeParse(req.body);
       if (!validationResult.success) {
-        return res.status(400).json({ 
-          error: "Validation failed", 
-          details: fromZodError(validationResult.error).toString() 
+        return res.status(400).json({
+          error: "Validation failed",
+          details: fromZodError(validationResult.error).toString()
         });
       }
 
@@ -17681,10 +18916,46 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const prevVariation = await getOwnedVariation(req, res, req.params.id);
       if (!prevVariation) return;
 
-      const variation = await storage.updateVariation(req.params.id, validationResult.data);
+      // Approved lock: the only permitted PATCHes are a rejection (status +
+      // reason) or the builder's list-view "seen" toggle. Everything else —
+      // field edits, moving back to draft/pending, re-approving — is blocked.
+      if ((prevVariation as any).status === "approved") {
+        const keys = Object.keys(validationResult.data);
+        const allowedKeys = new Set(["status", "rejectionReason", "isSeen"]);
+        const withinAllowed = keys.every((k) => allowedKeys.has(k));
+        const wantsStatusChange = validationResult.data.status !== undefined
+          && validationResult.data.status !== "approved";
+        if (!withinAllowed || (wantsStatusChange && validationResult.data.status !== "rejected")) {
+          return res.status(409).json({ error: APPROVED_VARIATION_LOCK_MESSAGE });
+        }
+        if (validationResult.data.status === "rejected") {
+          if (!validationResult.data.rejectionReason?.trim()) {
+            return res.status(400).json({ error: "A rejection reason is required to reject an approved variation" });
+          }
+          if ((await getVariationInvoiceClaimCount(req.params.id)) > 0) {
+            return res.status(409).json({
+              error: "This variation is claimed on a client invoice. Remove the claim from the invoice before rejecting it.",
+            });
+          }
+        }
+      }
+
+      const updates: Record<string, any> = { ...validationResult.data };
+      if (updates.status && updates.status !== (prevVariation as any).status) {
+        Object.assign(
+          updates,
+          buildVariationStatusUpdates(prevVariation, updates.status, (req.user as any)?.id),
+        );
+      }
+
+      let variation = await storage.updateVariation(req.params.id, updates);
       if (!variation) {
         return res.status(404).json({ error: "Variation not found" });
       }
+
+      // Header money totals are server-derived; refresh them before any
+      // budget recalc reads the row.
+      variation = (await recomputeVariationTotals(req.params.id)) ?? variation;
 
       // Task #257: emit a marker log whenever a variation crosses the approved
       // boundary so downstream consumers (and operators tailing logs) can
@@ -17704,26 +18975,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // T005: EOT — extend project end date when variation is approved and has daysChanged
-      let scheduleExtended: { days: number; newEndDate: string } | undefined;
-      const wasApproved = prevVariation?.status !== "approved" && (variation as any).status === "approved";
-      const daysChanged = (variation as any).daysChanged ?? 0;
-
-      if (wasApproved && daysChanged > 0 && (variation as any).projectId) {
-        const project = await storage.getProject((variation as any).projectId);
-        if (project && project.proposedEndDate) {
-          // Add working days (Mon-Fri) to the current proposedEndDate
-          let date = new Date(project.proposedEndDate);
-          let remaining = daysChanged;
-          while (remaining > 0) {
-            date.setDate(date.getDate() + 1);
-            const day = date.getDay();
-            if (day !== 0 && day !== 6) remaining--;
-          }
-          const newEndDate = date.toISOString().split("T")[0];
-          await storage.updateProject((variation as any).projectId, { proposedEndDate: newEndDate });
-          scheduleExtended = { days: daysChanged, newEndDate };
-        }
-      }
+      const scheduleExtended = await extendScheduleOnVariationApproval(prevVariation, variation);
 
       res.json({ ...variation, scheduleExtended });
     } catch (error) {
@@ -17735,6 +18987,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const owned = await getOwnedVariation(req, res, req.params.id);
       if (!owned) return;
+      if ((owned as any).status === "approved") {
+        return res.status(409).json({
+          error: "Approved variations cannot be deleted. Reject the variation first.",
+        });
+      }
+      if ((await getVariationInvoiceClaimCount(req.params.id)) > 0) {
+        return res.status(409).json({
+          error: "This variation is claimed on a client invoice. Remove the claim from the invoice before deleting it.",
+        });
+      }
       const deleted = await storage.deleteVariation(req.params.id);
       if (!deleted) {
         return res.status(404).json({ error: "Variation not found" });
@@ -17761,6 +19023,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const ownedVariation = await getOwnedVariation(req, res, req.params.id);
       if (!ownedVariation) return;
+      if ((ownedVariation as any).status === "approved") {
+        return res.status(409).json({ error: APPROVED_VARIATION_LOCK_MESSAGE });
+      }
       const validationResult = insertVariationItemSchema.safeParse({
         ...req.body,
         variationId: req.params.id
@@ -17772,32 +19037,87 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      const item = await storage.createVariationItem(validationResult.data);
+      // Cost-line client prices are derived server-side from the builder cost
+      // fields (unitCostExTax dollars × markup × qty → ex-GST cents) so a
+      // buggy or hand-crafted client can't store prices that disagree with
+      // the line's own inputs. Allowance adjustment lines set their amount
+      // directly and are stored as sent. Lines with no cost basis (legacy
+      // rows carry the price only in unitPrice) keep their explicit prices —
+      // deriving from a zero cost would wipe them.
+      const data: Record<string, any> = { ...validationResult.data };
+      if ((data.itemType ?? "cost_line") === "cost_line" && (data.unitCostExTax ?? 0) !== 0) {
+        const priced = computeVariationLinePriceCents({
+          quantity: data.quantity ?? 1,
+          unitCostExTax: data.unitCostExTax ?? 0,
+          markupPercent: data.markupPercent ?? null,
+        });
+        data.unitPrice = priced.unitPriceCents;
+        data.totalPrice = priced.totalPriceCents;
+      }
+
+      const item = await storage.createVariationItem(data as any);
+      await recomputeVariationTotals(req.params.id);
       res.status(201).json(item);
     } catch (error) {
       res.status(500).json({ error: "Failed to create variation item" });
     }
   });
 
+  // All variation items for a project (dashboard cost metrics)
+  app.get("/api/variation-items", async (req, res) => {
+    try {
+      const { projectId } = req.query;
+      if (!(req.user as any)?.companyId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      if (!projectId) return res.status(400).json({ error: "projectId is required" });
+      if (!(await enforceProjectCompany(req, res, projectId as string, "Project not found"))) return;
+      const items = await storage.getVariationItemsByProject(projectId as string);
+      res.json(items);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch variation items" });
+    }
+  });
+
   app.patch("/api/variation-items/:id", async (req, res) => {
     try {
       const { variationItems: viTbl } = await import("@shared/schema");
-      const [viRow] = await db.select({ variationId: viTbl.variationId }).from(viTbl).where(eq(viTbl.id, req.params.id));
+      const [viRow] = await db.select().from(viTbl).where(eq(viTbl.id, req.params.id));
       if (!viRow) return res.status(404).json({ error: "Variation item not found" });
-      if (!(await getOwnedVariation(req, res, viRow.variationId, "Variation item not found"))) return;
+      const parentVariation = await getOwnedVariation(req, res, viRow.variationId, "Variation item not found");
+      if (!parentVariation) return;
+      if ((parentVariation as any).status === "approved") {
+        return res.status(409).json({ error: APPROVED_VARIATION_LOCK_MESSAGE });
+      }
 
       const validationResult = insertVariationItemSchema.partial().safeParse(req.body);
       if (!validationResult.success) {
-        return res.status(400).json({ 
-          error: "Validation failed", 
-          details: fromZodError(validationResult.error).toString() 
+        return res.status(400).json({
+          error: "Validation failed",
+          details: fromZodError(validationResult.error).toString()
         });
       }
 
-      const item = await storage.updateVariationItem(req.params.id, validationResult.data);
+      // Same server-side pricing rule as item create: recompute the stored
+      // client price from the merged line's cost inputs (skipped when there is
+      // no cost basis — legacy lines keep their explicit prices).
+      const data: Record<string, any> = { ...validationResult.data };
+      const merged: Record<string, any> = { ...viRow, ...data };
+      if ((merged.itemType ?? "cost_line") === "cost_line" && (merged.unitCostExTax ?? 0) !== 0) {
+        const priced = computeVariationLinePriceCents({
+          quantity: merged.quantity ?? 1,
+          unitCostExTax: merged.unitCostExTax ?? 0,
+          markupPercent: merged.markupPercent ?? null,
+        });
+        data.unitPrice = priced.unitPriceCents;
+        data.totalPrice = priced.totalPriceCents;
+      }
+
+      const item = await storage.updateVariationItem(req.params.id, data as any);
       if (!item) {
         return res.status(404).json({ error: "Variation item not found" });
       }
+      await recomputeVariationTotals(viRow.variationId);
       res.json(item);
     } catch (error) {
       res.status(500).json({ error: "Failed to update variation item" });
@@ -17809,11 +19129,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { variationItems: viTbl } = await import("@shared/schema");
       const [viRow] = await db.select({ variationId: viTbl.variationId }).from(viTbl).where(eq(viTbl.id, req.params.id));
       if (!viRow) return res.status(404).json({ error: "Variation item not found" });
-      if (!(await getOwnedVariation(req, res, viRow.variationId, "Variation item not found"))) return;
+      const parentVariation = await getOwnedVariation(req, res, viRow.variationId, "Variation item not found");
+      if (!parentVariation) return;
+      if ((parentVariation as any).status === "approved") {
+        return res.status(409).json({ error: APPROVED_VARIATION_LOCK_MESSAGE });
+      }
       const deleted = await storage.deleteVariationItem(req.params.id);
       if (!deleted) {
         return res.status(404).json({ error: "Variation item not found" });
       }
+      await recomputeVariationTotals(viRow.variationId);
       res.status(204).send();
     } catch (error) {
       res.status(500).json({ error: "Failed to delete variation item" });
@@ -17836,13 +19161,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const ownedVariation = await getOwnedVariation(req, res, req.params.id);
       if (!ownedVariation) return;
+      if ((ownedVariation as any).status === "approved") {
+        return res.status(409).json({ error: APPROVED_VARIATION_LOCK_MESSAGE });
+      }
       const { billIds } = req.body as { billIds: string[] };
       await storage.deleteVariationBillsByVariationId(req.params.id);
-      const results = [];
-      for (const billId of (billIds || [])) {
-        const vb = await storage.createVariationBill({ variationId: req.params.id, billId });
-        results.push(vb);
-      }
+      const results = await storage.createVariationBills(
+        req.params.id,
+        Array.isArray(billIds) ? billIds : [],
+      );
+      await recomputeVariationTotals(req.params.id);
       res.json(results);
     } catch (error) {
       res.status(500).json({ error: "Failed to update variation bills" });
@@ -17865,13 +19193,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const ownedVariation = await getOwnedVariation(req, res, req.params.id);
       if (!ownedVariation) return;
+      if ((ownedVariation as any).status === "approved") {
+        return res.status(409).json({ error: APPROVED_VARIATION_LOCK_MESSAGE });
+      }
       const { timesheetIds } = req.body as { timesheetIds: string[] };
       await storage.deleteVariationTimesheetsByVariationId(req.params.id);
-      const results = [];
-      for (const timesheetId of (timesheetIds || [])) {
-        const vt = await storage.createVariationTimesheet({ variationId: req.params.id, timesheetId });
-        results.push(vt);
-      }
+      const results = await storage.createVariationTimesheets(
+        req.params.id,
+        Array.isArray(timesheetIds) ? timesheetIds : [],
+      );
+      await recomputeVariationTotals(req.params.id);
       res.json(results);
     } catch (error) {
       res.status(500).json({ error: "Failed to update variation timesheets" });
@@ -17943,7 +19274,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       let token = (variation as any).portalToken;
       if (!token) {
-        token = require("crypto").randomUUID();
+        token = randomUUID();
         await storage.updateVariation(req.params.id, { portalToken: token } as any);
       }
 
@@ -17954,73 +19285,251 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Public portal — fetch variation data by token (no auth required)
+  // Public portal — fetch variation data by token (no auth required).
+  //
+  // SECURITY: everything returned here is readable by ANY holder of the
+  // portal link, so the payload is projected down to exactly what the portal
+  // page renders. Builder-internal data (unit costs, markup, cost codes,
+  // hidden lines, timesheet rates, company integration credentials) must
+  // never be added back to this response.
+  const projectPortalVariation = (variation: any) => ({
+    id: variation.id,
+    variationNumber: variation.variationNumber,
+    name: variation.name,
+    introductionText: variation.introductionText,
+    closingText: variation.closingText,
+    approvalDeadline: variation.approvalDeadline,
+    daysChanged: variation.daysChanged,
+    subtotal: variation.subtotal,
+    gstAmount: variation.gstAmount,
+    totalAmount: variation.totalAmount,
+    status: variation.status,
+    rejectionReason: variation.rejectionReason,
+    termsAndConditions: variation.termsAndConditions,
+    attachments: variation.attachments,
+    clientSignedName: variation.clientSignedName,
+    clientSignedDate: variation.clientSignedDate,
+    builderSignedName: variation.builderSignedName,
+    builderSignedDate: variation.builderSignedDate,
+    portalSentAt: variation.portalSentAt,
+    createdAt: variation.createdAt,
+  });
+
   app.get("/api/portal/variation/:token", async (req, res) => {
     try {
       const { token } = req.params;
-      // Find variation by portal token
-      const { db } = await import("./db");
-      const { variations, projects, companies } = await import("@shared/schema");
-      const { eq } = await import("drizzle-orm");
+      const { variations, projects } = await import("@shared/schema");
 
       const [variation] = await db.select().from(variations).where(eq(variations.portalToken, token));
-      if (!variation) return res.status(404).json({ error: "Portal link not found or expired" });
+      if (!variation) return res.status(404).json({ error: "Portal link not found" });
 
-      const [project] = variation.projectId
-        ? await db.select().from(projects).where(eq(projects.id, variation.projectId))
-        : [undefined];
-
-      const company = project
-        ? await storage.getCompany((project as any).companyId)
+      const [projectRows, items, bills, timesheets] = await Promise.all([
+        variation.projectId
+          ? db.select().from(projects).where(eq(projects.id, variation.projectId))
+          : Promise.resolve([] as any[]),
+        storage.getVariationItems(variation.id),
+        storage.getVariationBills(variation.id),
+        storage.getVariationTimesheets(variation.id),
+      ]);
+      const project: any = projectRows[0];
+      const company = project ? await storage.getCompany(project.companyId) : undefined;
+      // No session here — the portal token is the only credential — so the
+      // branding/terms shown to the client come from the company that owns the
+      // variation's project, never from whichever settings row came back first.
+      const settings = project?.companyId
+        ? await storage.getCompanySettings(project.companyId).catch(() => undefined)
         : undefined;
 
-      const items = await storage.getVariationItems(variation.id);
-      const bills = await storage.getVariationBills(variation.id);
-      const timesheets = await storage.getVariationTimesheets(variation.id);
+      // Lines the builder marked "hide from client" are dropped server-side;
+      // remaining lines expose only client-price fields.
+      const publicItems = items
+        .filter((item: any) => item.showInPdf !== false)
+        .map((item: any) => ({
+          id: item.id,
+          name: item.name,
+          description: item.description,
+          quantity: item.quantity,
+          unitType: item.unitType,
+          unitPrice: item.unitPrice,
+          totalPrice: item.totalPrice,
+          taxable: item.taxable,
+          itemType: item.itemType,
+          type: item.type,
+          sortOrder: item.sortOrder,
+        }));
 
-      res.json({ variation, items, bills, timesheets, project, company });
+      // Hidden lines are still real charges, so their value is returned as a
+      // single "not itemised" figure. Without it the visible rows wouldn't sum
+      // to the Total the client is asked to approve.
+      const hiddenItems = items.filter((item: any) => item.showInPdf === false);
+      const notItemisedIncCents = hiddenItems.length
+        ? computeVariationTotals({ items: hiddenItems }).totalCents
+        : 0;
+
+      const publicBills = bills.map((bill: any) => ({
+        id: bill.id,
+        billNumber: bill.billNumber,
+        supplierName: bill.supplierName ?? null,
+        invoiceDate: bill.billDate,
+        totalAmountCents: bill.total,
+      }));
+
+      // Attachments are exposed by index only — the raw object-storage path
+      // stays server-side and downloads go through the token-scoped route
+      // below (the /objects route requires a logged-in company member).
+      const attachmentList = Array.isArray((variation as any).attachments)
+        ? ((variation as any).attachments as any[])
+        : [];
+      const publicAttachments = attachmentList.map((a: any, index: number) => ({
+        index,
+        name: a?.name || `attachment-${index + 1}`,
+        size: a?.size ?? null,
+        type: a?.type ?? null,
+      }));
+
+      // Timesheet rows (names, hours, rates) stay server-side; the portal
+      // only needs the on-charged labour total.
+      const labourTotalCents = timesheets.reduce(
+        (sum: number, ts: any) => sum + timesheetTotalExGstCents(ts),
+        0,
+      );
+
+      // Record the client's first view. Fire-and-forget: a tracking write must
+      // never fail the page load. isSeen is kept in step so the builder's list
+      // column finally means "the client has seen it".
+      if (!(variation as any).portalViewedAt) {
+        storage
+          .updateVariation(variation.id, { portalViewedAt: new Date(), isSeen: true } as any)
+          .catch((err) => console.error("[portal] failed to record variation view:", err));
+      }
+
+      res.json({
+        variation: projectPortalVariation(variation),
+        items: publicItems,
+        bills: publicBills,
+        attachments: publicAttachments,
+        notItemisedIncCents,
+        labourTotalCents,
+        project: project
+          ? {
+              id: project.id,
+              name: project.name,
+              address: project.address,
+              clientName: project.clientName,
+              clientPhone: project.clientPhone,
+              clientEmail: project.clientEmail,
+            }
+          : undefined,
+        company: company
+          ? {
+              id: company.id,
+              name: company.name,
+              abn: company.abn,
+              phone: company.phone,
+              email: company.email,
+              logo: company.logo,
+              brandColor: (settings as any)?.brandColor ?? null,
+            }
+          : undefined,
+      });
     } catch (error) {
       console.error("Error fetching portal variation:", error);
       res.status(500).json({ error: "Failed to fetch portal data" });
     }
   });
 
-  // Public portal — client/builder sign
+  // Public portal — download an attachment by index.
+  //
+  // The normal /objects route requires a logged-in company member, so a client
+  // holding a portal link could never open the files attached to the variation
+  // they're being asked to approve. Access here is scoped by the token AND by
+  // the index being present on that specific variation — no caller-supplied
+  // paths, so this can't be used to reach any other object.
+  app.get("/api/portal/variation/:token/attachments/:index", async (req, res) => {
+    try {
+      const { token, index } = req.params;
+      const { variations } = await import("@shared/schema");
+      const [variation] = await db.select().from(variations).where(eq(variations.portalToken, token));
+      if (!variation) return res.status(404).json({ error: "Portal link not found" });
+
+      const attachments = Array.isArray((variation as any).attachments)
+        ? ((variation as any).attachments as any[])
+        : [];
+      const attachment = attachments[Number(index)];
+      const objectPath: string | undefined = attachment?.url;
+      if (!attachment || typeof objectPath !== "string" || !objectPath.startsWith("/objects/")) {
+        return res.status(404).json({ error: "Attachment not found" });
+      }
+
+      // Stored paths carry a /company/<id> segment for the authenticated route;
+      // the bucket itself is flat, so strip it before the lookup.
+      const normalised = objectPath.replace(/^\/objects\/company\/[^/]+/, "/objects");
+      const objectFile = await objectStorageService.getObjectEntityFile(normalised);
+      if (attachment.name) {
+        res.setHeader("Content-Disposition", `inline; filename="${String(attachment.name).replace(/"/g, "")}"`);
+      }
+      await objectStorageService.downloadObject(objectFile, res);
+    } catch (error: any) {
+      if (error?.name === "ObjectNotFoundError") {
+        return res.status(404).json({ error: "Attachment not found" });
+      }
+      console.error("Error serving portal attachment:", error);
+      res.status(500).json({ error: "Failed to download attachment" });
+    }
+  });
+
+  // Public portal — client sign (approve or reject).
+  //
+  // SECURITY: this endpoint is reachable by anyone holding the portal link,
+  // so it can only ever act as the CLIENT signature. It never sets builder
+  // signature fields and never sets status "approved" — a client approval
+  // moves the variation to "pending" for the builder to finalise in-app
+  // (which stamps approvedBy/approvedDate and runs budget/EOT side-effects).
   app.post("/api/portal/variation/:token/sign", async (req, res) => {
     try {
       const { token } = req.params;
-      const { signerType, name, action, rejectionReason } = req.body as {
-        signerType: "client" | "builder";
+      const { name, action, rejectionReason } = req.body as {
         name: string;
         action: "approve" | "reject";
         rejectionReason?: string;
       };
 
-      if (!name) return res.status(400).json({ error: "Name is required" });
+      if (!name || !String(name).trim()) return res.status(400).json({ error: "Name is required" });
+      if (action !== "approve" && action !== "reject") {
+        return res.status(400).json({ error: "Invalid action" });
+      }
 
-      const { db } = await import("./db");
       const { variations } = await import("@shared/schema");
-      const { eq } = await import("drizzle-orm");
-
       const [variation] = await db.select().from(variations).where(eq(variations.portalToken, token));
       if (!variation) return res.status(404).json({ error: "Portal link not found" });
 
-      const now = new Date();
-      const updates: Record<string, any> = {};
-
-      if (signerType === "client") {
-        updates.clientSignedName = name;
-        updates.clientSignedDate = now;
-        updates.status = action === "approve" ? "pending" : "rejected";
-        if (rejectionReason) updates.rejectionReason = rejectionReason;
-      } else {
-        updates.builderSignedName = name;
-        updates.builderSignedDate = now;
-        if (action === "approve") updates.status = "approved";
+      // State guard + idempotency: a variation that is already signed or
+      // finalised cannot be signed again through the public link.
+      if (variation.status === "approved" || variation.status === "rejected") {
+        return res.status(409).json({ error: "This variation has already been finalised." });
+      }
+      if (variation.clientSignedName) {
+        return res.status(409).json({ error: "This variation has already been signed." });
+      }
+      if (variation.approvalDeadline && new Date() > new Date(variation.approvalDeadline)) {
+        return res.status(410).json({
+          error: "The approval deadline for this variation has passed. Please contact your builder for an updated link.",
+        });
       }
 
+      // Audit trail: server timestamp + request origin (trust proxy is set,
+      // so req.ip reflects the real client IP behind the proxy).
+      const updates: Record<string, any> = {
+        clientSignedName: String(name).trim(),
+        clientSignedDate: new Date(),
+        clientSignedIp: req.ip ?? null,
+        clientSignedUserAgent: (req.headers["user-agent"] || "").toString().slice(0, 500) || null,
+        status: action === "approve" ? "pending" : "rejected",
+      };
+      if (action === "reject" && rejectionReason) updates.rejectionReason = rejectionReason;
+
       const updated = await storage.updateVariation(variation.id, updates as any);
-      res.json({ success: true, variation: updated });
+      res.json({ success: true, variation: updated ? projectPortalVariation(updated) : undefined });
     } catch (error) {
       console.error("Error signing variation:", error);
       res.status(500).json({ error: "Failed to sign variation" });
@@ -18047,7 +19556,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Ensure portal token exists
       let token = (variation as any).portalToken;
       if (!token) {
-        token = require("crypto").randomUUID();
+        token = randomUUID();
         await storage.updateVariation(variation.id, { portalToken: token } as any);
       }
 
@@ -18057,7 +19566,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         mimeType: "application/pdf",
       }] : undefined;
 
-      const settings = await storage.getCompanySettings();
+      const settings = await storage.getCompanySettings(getSessionCompanyId(req));
       const fromName = settings?.companyName || "Morada";
 
       await sendGenericEmail({
@@ -18070,10 +19579,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
         attachments,
       });
 
-      // Mark portalSentAt
-      await storage.updateVariation(variation.id, { portalSentAt: new Date() } as any);
+      // Mark portalSentAt, and advance an unissued variation to "pending".
+      // The portal presents an approve/reject signature panel, so once the
+      // client has the link the variation IS awaiting their decision —
+      // previously status stayed "draft" and the client was shown a Draft
+      // chip on a document they were being asked to sign. Approved/rejected
+      // variations keep their decided status.
+      const sendUpdates: Record<string, any> = { portalSentAt: new Date() };
+      if (variation.status === "draft" || variation.status === "action") {
+        sendUpdates.status = "pending";
+      }
+      await storage.updateVariation(variation.id, sendUpdates as any);
 
-      res.json({ success: true });
+      res.json({ success: true, status: sendUpdates.status ?? variation.status });
     } catch (error) {
       console.error("Error sending variation:", error);
       res.status(500).json({ error: "Failed to send variation" });
@@ -18097,7 +19615,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (req.user.userCategory !== 'team') {
         workerUserId = req.user.id;
       } else if (req.user.roleId) {
-        const role = await storage.getUserRole(req.user.roleId);
+        const role = req.user.companyId ? await storage.getUserRole(req.user.roleId, req.user.companyId) : undefined;
         if (!role || !isAdminRole(role)) {
           workerUserId = req.user.id;
         }
@@ -18191,7 +19709,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // Verify project access for non-admin workers
         let isAdmin = false;
         if (req.user.userCategory === 'team' && req.user.roleId) {
-          const role = await storage.getUserRole(req.user.roleId);
+          const role = req.user.companyId ? await storage.getUserRole(req.user.roleId, req.user.companyId) : undefined;
           if (role && isAdminRole(role)) isAdmin = true;
         }
         if (!isAdmin) {
@@ -18409,7 +19927,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       };
 
       if (to) {
-        const settings = await storage.getCompanySettings();
+        const settings = await storage.getCompanySettings(req.user.companyId);
         const fromName = settings?.companyName || "Morada";
 
         await sendGenericEmail({
@@ -19184,7 +20702,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!req.user?.companyId) {
         return res.status(401).json({ error: "Not authenticated" });
       }
-      const allTimesheets = await storage.getTimesheets(undefined, req.user.companyId);
+      const allTimesheets = await storage.getTimesheets(undefined, { companyId: req.user.companyId });
 
       // Strict: only timesheets explicitly flagged as awaiting_po appear
       // in the Sub PO modal. (Retroactive inclusion of approved-but-
@@ -19216,13 +20734,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "Project ID is required" });
       }
 
-      const timesheets = [];
-      for (const id of timesheetIds) {
-        const ts = await storage.getTimesheet(id);
-        if (ts && ts.poStatus === "awaiting_po") {
-          timesheets.push(ts);
-        }
-      }
+      const fetched = await storage.getTimesheetsByIds(timesheetIds);
+      // Tenancy: timesheets resolve company through their owning user — batch
+      // the owner lookups and drop anything outside the caller's company.
+      const ownerIds = Array.from(new Set(fetched.map((ts) => ts.userId)));
+      const owners = await Promise.all(ownerIds.map((uid) => storage.getUser(uid)));
+      const ownCompanyUserIds = new Set(
+        owners.filter((u) => u?.companyId === (req.user as any).companyId).map((u) => u!.id)
+      );
+      const timesheets = fetched.filter(
+        (ts) => ts.poStatus === "awaiting_po" && ownCompanyUserIds.has(ts.userId)
+      );
       if (timesheets.length === 0) {
         return res.status(400).json({ error: "No valid timesheets found with 'Awaiting PO' status" });
       }
@@ -19423,9 +20945,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // silently change a claim on an invoice the client has already received.
   const computeProjectContractPriceCents = async (projectId: string): Promise<number | null> => {
     try {
-      const { computeContractMetrics } = await import("@shared/projectMetrics");
+      const { computeContractMetrics, frozenContractTotalFrom } = await import("@shared/projectMetrics");
       const project = await storage.getProject(projectId);
       if (!project) return null;
+      // Contracted job: the frozen sum IS the contract price, with no estimate
+      // read at all. Locking an invoice to it is then a no-op in practice —
+      // which is the point: the base can no longer drift under a sent claim.
+      const frozenForLock = frozenContractTotalFrom(project as any);
+      if (frozenForLock) return frozenForLock.incGstCents;
       if (!project.selectedEstimateId) return (project as any)?.contractPrice ?? null;
       const items = await storage.getEstimateItems(project.selectedEstimateId);
       const variations = await storage.getVariations(projectId);
@@ -20048,8 +21575,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/client-invoices/:id/variations", async (req, res) => {
     try {
-      const ownedInvoice = await getOwnedClientInvoice(req, res, req.params.id);
-      if (!ownedInvoice) return;
+      const invoice = await getOwnedClientInvoice(req, res, req.params.id, "Client invoice not found");
+      if (!invoice) return;
       const validationResult = insertInvoiceVariationSchema.safeParse({
         ...req.body,
         invoiceId: req.params.id
@@ -20060,11 +21587,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
           details: fromZodError(validationResult.error).toString()
         });
       }
-      // The variation being linked must belong to the caller's company too.
+      // The claimed variation must belong to the same project as the (owned)
+      // invoice — which also pins it to the caller's company.
       const variation = await storage.getVariation(validationResult.data.variationId);
-      if (!variation || !(await enforceProjectCompany(req, res, (variation as any).projectId, "Variation not found"))) return;
+      if (!variation || (variation as any).projectId !== (invoice as any).projectId) {
+        return res.status(400).json({ error: "Variation does not belong to this invoice's project" });
+      }
 
       const invoiceVariation = await storage.createInvoiceVariation(validationResult.data);
+      await storage.recomputeVariationPaidAmount(validationResult.data.variationId);
       res.status(201).json(invoiceVariation);
     } catch (error) {
       res.status(500).json({ error: "Failed to create invoice variation" });
@@ -20104,6 +21635,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!updated) {
         return res.status(404).json({ error: "Invoice variation not found" });
       }
+      await storage.recomputeVariationPaidAmount(updated.variationId);
       res.json(updated);
     } catch (error) {
       res.status(500).json({ error: "Failed to update invoice variation" });
@@ -20121,6 +21653,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!deleted) {
         return res.status(404).json({ error: "Invoice variation not found" });
       }
+      await storage.recomputeVariationPaidAmount(link.variationId);
       res.status(204).send();
     } catch (error) {
       res.status(500).json({ error: "Failed to delete invoice variation" });
@@ -20342,6 +21875,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!validationResult.success) {
         return res.status(400).json({ error: "Validation failed" });
       }
+      // The linked option must belong to the invoice's own project
+      const option = await storage.getSelectionOption(validationResult.data.selectionOptionId);
+      const optionSelection = option ? await storage.getSelection(option.selectionId) : undefined;
+      if (!optionSelection || optionSelection.projectId !== (ownedInvoice as any).projectId) {
+        return res.status(404).json({ error: "Selection option not found" });
+      }
+      // Block double-billing: the option must not already sit on a live invoice
+      const [existingLink] = await db.select({ id: schema.invoiceSelections.id })
+        .from(schema.invoiceSelections)
+        .innerJoin(schema.clientInvoices, eq(schema.invoiceSelections.invoiceId, schema.clientInvoices.id))
+        .where(and(
+          eq(schema.invoiceSelections.selectionOptionId, validationResult.data.selectionOptionId),
+          ne(schema.clientInvoices.status, "void"),
+        ))
+        .limit(1);
+      if (existingLink) {
+        return res.status(409).json({ error: "This selection option is already on an invoice" });
+      }
       const row = await storage.createInvoiceSelection(validationResult.data);
       res.status(201).json(row);
     } catch (error) {
@@ -20390,7 +21941,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         mimeType: "application/pdf",
       }] : undefined;
 
-      const settings = await storage.getCompanySettings();
+      const settings = await storage.getCompanySettings(getSessionCompanyId(req));
       const fromName = settings?.companyName || "Morada";
 
       await sendGenericEmail({
@@ -20449,7 +22000,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
           and(
             eq(schema.selections.projectId, projectId),
             eq(schema.selectionOptions.isSelectedByClient, true),
-            gt(schema.selectionOptions.totalCost, 0)
+            gt(schema.selectionOptions.totalCost, 0),
+            // Exclude options already on a live (non-void) invoice so the
+            // same approved option can't be billed twice
+            notExists(
+              db.select({ one: sql`1` }).from(schema.invoiceSelections)
+                .innerJoin(schema.clientInvoices, eq(schema.invoiceSelections.invoiceId, schema.clientInvoices.id))
+                .where(and(
+                  eq(schema.invoiceSelections.selectionOptionId, schema.selectionOptions.id),
+                  ne(schema.clientInvoices.status, "void"),
+                ))
+            )
           )
         );
       res.json(rows);
@@ -20790,7 +22351,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         storage.getProposalSections(req.params.id),
         storage.getProposalItems(req.params.id),
         storage.getProposalPaymentMilestones(req.params.id),
-        storage.getCompanySettings(),
+        storage.getCompanySettings(getSessionCompanyId(req)),
       ]);
 
       const sentDate = sentAt ? new Date(sentAt) : new Date();
@@ -21423,6 +22984,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           filename: fileName,
           mimeType,
           size: buffer.length,
+          // Lets the client re-run OCR on this attachment before the bill row
+          // exists; ocr-from-path no longer trusts the path alone.
+          ...(companyId ? { uploadGrant: signUploadGrant(objectPath, companyId) } : {}),
         };
       } catch (uploadErr: any) {
         console.error("OCR file upload failed:", uploadErr);
@@ -21457,12 +23021,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // and already has an attachment but ocrProcessed is still false.
   app.post("/api/bills/ocr-from-path", requireAuth, async (req, res) => {
     try {
-      const { objectPath, mimeType: mimeHint, filename: filenameHint } = req.body;
+      const { objectPath, mimeType: mimeHint, filename: filenameHint, uploadGrant } = req.body;
       if (!objectPath) return res.status(400).json({ error: "objectPath required" });
 
       const userCompanyId = (req as any).user?.companyId;
-      const expectedPrefix = `/objects/company/${userCompanyId}/`;
-      if (!objectPath.startsWith(expectedPrefix)) {
+      if (!userCompanyId) return res.status(403).json({ error: "Forbidden" });
+
+      // The company segment of objectPath is NOT proof of anything: the bucket
+      // is flat and the segment is stripped below, so putting your own company
+      // id in front of another tenant's UUID used to pass this check and return
+      // their invoice, AI-extracted. The grant is issued by the upload route
+      // for one exact path and company, and is unforgeable.
+      if (!verifyUploadGrant(uploadGrant, objectPath, userCompanyId)) {
         return res.status(403).json({ error: "Forbidden" });
       }
 
@@ -21500,7 +23070,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const dataUrl = `data:${mimeType};base64,${base64}`;
 
       const { processInvoiceWithAI } = await import("./services/aiBillReader");
-      const attachmentMeta = { objectPath, filename, mimeType, size: fileBuffer.length };
+      // Re-issued so a retry of this same OCR call still authorises.
+      const attachmentMeta = {
+        objectPath, filename, mimeType, size: fileBuffer.length,
+        uploadGrant: signUploadGrant(objectPath, userCompanyId),
+      };
       try {
         const result = await processInvoiceWithAI(dataUrl, filename);
         res.json({ ...result, attachment: attachmentMeta });
@@ -21750,7 +23324,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const dataUrl = `data:${mimeType};base64,${base64}`;
 
       const { processInvoiceWithAI } = await import("./services/aiBillReader");
-      const attachmentMeta = { objectPath, filename, mimeType, size: fileBuffer.length };
+      // Re-issued so a retry of this same OCR call still authorises.
+      const attachmentMeta = {
+        objectPath, filename, mimeType, size: fileBuffer.length,
+        uploadGrant: signUploadGrant(objectPath, userCompanyId),
+      };
 
       // Skip re-extraction if this bill was already successfully processed and
       // the user did not explicitly force a re-run. The auto-OCR trigger on
@@ -21868,18 +23446,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
         attachmentCount: parsedEmail.attachments.length,
       });
 
-      // Get default user (system user or first admin)
-      const users = await storage.getUsers("team");
-      const defaultUser = users.find(u => u.username === "admin") || users[0];
-
-      if (!defaultUser) {
-        return res.status(500).json({ error: "No system user found" });
+      // Bills are created in the CALLER's company, attributed to the caller.
+      //
+      // This used to be `storage.getUsers("team")` — every team user on the
+      // platform — then `find(username === "admin") || users[0]`. Whichever
+      // company happened to own that row received every emailed invoice,
+      // regardless of who submitted it: a cross-tenant write, and the reason
+      // the feature only ever worked for one company.
+      //
+      // The route is behind requireAuth, so there is a real session to use.
+      const caller = req.user as any;
+      const callerCompanyId = caller?.companyId;
+      if (!callerCompanyId) {
+        return res.status(403).json({ error: "No company context" });
       }
 
       // Process email and create bills
       const results = await autoBillCreator.processEmailInvoices(parsedEmail, {
-        defaultUserId: defaultUser.id,
-        companyId: defaultUser.companyId || undefined,
+        defaultUserId: caller.id,
+        companyId: callerCompanyId,
         autoMatch: true, // Auto-match suppliers and projects
       });
 
@@ -21909,13 +23494,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const projectId = req.query.projectId as string | undefined;
       const userId = req.query.userId as string | undefined;
-      const companyId = req.query.companyId as string | undefined;
       const limit = req.query.limit ? parseInt(req.query.limit as string) : 50;
 
-      // At least one filter is required
-      if (!projectId && !userId && !companyId) {
-        return res.status(400).json({ error: "At least one of projectId, userId, or companyId is required" });
+      // companyId comes from the session, never the query. It used to be read
+      // straight off req.query, so naming another company returned its
+      // activity feed — who did what, on which project, when.
+      const companyId = getSessionCompanyId(req);
+      if (!companyId) {
+        return res.status(403).json({ error: "No company context" });
       }
+
+      // A project filter must also belong to the caller; otherwise the
+      // company scope below is bypassed by naming a foreign project.
+      if (projectId && !(await enforceProjectCompany(req, res, projectId, "Project not found"))) return;
 
       const activities = await storage.getActivities({ projectId, userId, companyId, limit });
       res.json(activities);
@@ -21937,7 +23528,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         userName: user.firstName && user.lastName 
           ? `${user.firstName} ${user.lastName}` 
           : user.email,
-        companyId: req.body.companyId || user.companyId,
+        // Session only: a companyId in the body used to win, which let a
+        // caller write activity entries into another company's feed.
+        companyId: getSessionCompanyId(req),
       });
       const activity = await storage.createActivity(activityData);
       res.json(activity);
@@ -21979,7 +23572,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Site Diary Template routes
   app.get("/api/site-diary-templates", async (req, res) => {
     try {
-      const templates = await storage.getSiteDiaryTemplates();
+      const companyId = (req.user as any)?.companyId;
+      if (!companyId) return res.status(403).json({ error: "No company context" });
+      const templates = await storage.getSiteDiaryTemplates(companyId);
       res.json(templates);
     } catch (error: any) {
       res.status(500).json({ 
@@ -21992,7 +23587,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get default site diary template for company (must be before :id route)
   app.get("/api/site-diary-templates/default/:companyId", async (req, res) => {
     try {
-      const template = await storage.getDefaultSiteDiaryTemplate(req.params.companyId);
+      // companyId comes from the SESSION. The :companyId path param is
+      // vestigial and deliberately ignored — it used to be passed straight to
+      // storage, so naming another tenant returned their default template.
+      // Both mobile callers already send their own user.companyId, so reading
+      // the session instead is a no-op for them.
+      const companyId = (req.user as any)?.companyId;
+      if (!companyId) return res.status(403).json({ error: "No company context" });
+      const template = await storage.getDefaultSiteDiaryTemplate(companyId);
       if (!template) {
         // Return null if no default set - not an error
         return res.json(null);
@@ -22029,6 +23631,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(401).json({ error: "Not authenticated" });
       }
       
+      // Ownership: site diary templates carry companyId directly.
+      if (!(await getOwnedSiteDiaryTemplate(req, res, req.params.id))) return;
       const template = await storage.setDefaultSiteDiaryTemplate(req.params.id, user.companyId);
       if (!template) {
         return res.status(404).json({ error: "Template not found" });
@@ -22106,6 +23710,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/site-diary-templates/:id", async (req, res) => {
     try {
+      // Ownership: site diary templates carry companyId directly.
+      if (!(await getOwnedSiteDiaryTemplate(req, res, req.params.id))) return;
       const success = await storage.deleteSiteDiaryTemplate(req.params.id);
       if (!success) {
         return res.status(404).json({ error: "Template not found" });
@@ -22274,8 +23880,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(401).json({ error: "Not authenticated" });
       }
 
-      const templates = await storage.getSiteDiaryTemplates();
-      const companyTemplates = templates.filter((t: any) => t.companyId === user.companyId && !t.isArchived);
+      const companyTemplates = await storage.getSiteDiaryTemplates(user.companyId);
 
       const XLSX = await import("xlsx");
       const rows: any[] = [];
@@ -22341,8 +23946,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(401).json({ error: "Not authenticated" });
       }
 
-      const templates = await storage.getSiteDiaryTemplates();
-      const companyTemplates = templates.filter((t: any) => t.companyId === user.companyId && !t.isArchived);
+      const companyTemplates = await storage.getSiteDiaryTemplates(user.companyId);
 
       const exportData = companyTemplates.map((t: any) => ({
         name: t.name,
@@ -23783,6 +25387,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
     return item;
   };
 
+  // Instance-side ownership. checklist_instances carries companyId directly;
+  // instance groups and items reach it through instanceId. The instance CRUD
+  // routes already checked this inline, but the nested group/item/audit-log
+  // routes below had no check at all — any instance, group or item id was
+  // readable and writable across tenants, and (there being no global /api auth
+  // guard) without a session at all.
+  const getOwnedInstance = async (
+    req: any, res: any, instanceId: string, notFound = "Checklist instance not found",
+  ): Promise<any | null> => {
+    const instance = await storage.getChecklistInstance(instanceId);
+    if (!instance) { res.status(404).json({ error: notFound }); return null; }
+    const companyId = req.user?.companyId;
+    if (!companyId || instance.companyId !== companyId) {
+      // 404 (not 403) on company mismatch so existence isn't confirmed.
+      res.status(404).json({ error: notFound });
+      return null;
+    }
+    return instance;
+  };
+  const getOwnedInstanceGroup = async (
+    req: any, res: any, groupId: string,
+  ): Promise<any | null> => {
+    const group = await storage.getChecklistInstanceGroup(groupId);
+    if (!group) { res.status(404).json({ error: "Checklist group not found" }); return null; }
+    const instance = await getOwnedInstance(req, res, group.instanceId, "Checklist group not found");
+    if (!instance) return null;
+    return group;
+  };
+
   app.get("/api/checklist-templates", async (req, res) => {
     try {
       const { filterByRole } = req.query;
@@ -23809,6 +25442,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       for (const template of templates) {
         const groups = await storage.getChecklistTemplateGroups(template.id);
         
+        // Keep every row the same shape so the CSV has stable columns even when
+        // a template or group is empty.
+        const emptyItemColumns = { itemDescription: "", itemTooltip: "", responseType: "", responseOptions: "" };
+
         if (groups.length === 0) {
           // Template with no groups
           exportData.push({
@@ -23816,12 +25453,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
             templateDescription: template.description || "",
             type: template.type,
             groupName: "",
-            itemDescription: "",
+            ...emptyItemColumns,
           });
         } else {
           for (const group of groups) {
             const items = await storage.getChecklistTemplateItems(group.id);
-            
+
             if (items.length === 0) {
               // Group with no items
               exportData.push({
@@ -23829,7 +25466,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 templateDescription: template.description || "",
                 type: template.type,
                 groupName: group.name,
-                itemDescription: "",
+                ...emptyItemColumns,
               });
             } else {
               for (const item of items) {
@@ -23839,6 +25476,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
                   type: template.type,
                   groupName: group.name,
                   itemDescription: item.description,
+                  // Emit the full item config so export → import round-trips
+                  // without flattening every question back to a checkbox.
+                  itemTooltip: item.tooltip || "",
+                  responseType: item.responseType || "checkbox",
+                  responseOptions: Array.isArray(item.responseOptions)
+                    ? (item.responseOptions as string[]).join(" | ")
+                    : "",
                 });
               }
             }
@@ -23950,6 +25594,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         name: `${originalTemplate.name} (Copy)`,
         description: originalTemplate.description,
         type: originalTemplate.type as "Task" | "Job" | "Estimation" | "Lead",
+        visibleToRoles: Array.isArray(originalTemplate.visibleToRoles)
+          ? (originalTemplate.visibleToRoles as string[])
+          : [],
+        defaultVisibility: (originalTemplate.defaultVisibility ?? "everyone") as
+          "everyone" | "assignee_only",
         companyId: (req.user as any)?.companyId,
       });
       
@@ -23966,10 +25615,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
         
         const items = await storage.getChecklistTemplateItems(group.id);
         for (const item of items) {
+          // Copy the whole item, not just description/order — a duplicate that
+          // silently drops response types, options, tooltips and role
+          // assignments isn't a duplicate.
           await storage.createChecklistTemplateItem({
             groupId: duplicateGroup.id,
             description: item.description,
+            tooltip: item.tooltip ?? null,
             order: item.order,
+            responseType: (item.responseType ?? "checkbox") as
+              "checkbox" | "text" | "single_choice" | "multiple_choice",
+            responseOptions: Array.isArray(item.responseOptions)
+              ? (item.responseOptions as string[])
+              : [],
+            assignedRoleId: item.assignedRoleId ?? null,
           });
         }
       }
@@ -24018,7 +25677,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const ownedTemplate = await getOwnedTemplate(req, res, validationResult.data.templateId);
       if (!ownedTemplate) return;
 
-      const group = await storage.createChecklistTemplateGroup(validationResult.data);
+      // Append, same as items — the client used to send order 0, which put
+      // every newly created checklist at the top of the template.
+      const data = { ...validationResult.data };
+      if (req.body.order === undefined) {
+        const siblings = await storage.getChecklistTemplateGroups(validationResult.data.templateId);
+        data.order = siblings.reduce((max, s) => Math.max(max, s.order ?? 0), -1) + 1;
+      }
+
+      const group = await storage.createChecklistTemplateGroup(data);
       res.status(201).json(group);
     } catch (error: any) {
       res.status(500).json({ 
@@ -24209,7 +25876,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const ownedGroup = await getOwnedGroup(req, res, validationResult.data.groupId);
       if (!ownedGroup) return;
 
-      const item = await storage.createChecklistTemplateItem(validationResult.data);
+      // Append to the end of the group. The client used to hardcode order 0 on
+      // every item, so nothing in a checklist had a meaningful sequence and
+      // every surface fell back to sorting alphabetically. Assign the order
+      // server-side so it's right regardless of caller.
+      const data = { ...validationResult.data };
+      if (req.body.order === undefined) {
+        const siblings = await storage.getChecklistTemplateItems(validationResult.data.groupId);
+        data.order = siblings.reduce((max, s) => Math.max(max, s.order ?? 0), -1) + 1;
+      }
+
+      const item = await storage.createChecklistTemplateItem(data);
       res.status(201).json(item);
     } catch (error: any) {
       res.status(500).json({ 
@@ -24246,6 +25923,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ 
         error: "Failed to update item",
         details: error.message 
+      });
+    }
+  });
+
+  // Reorder items within a checklist template group.
+  app.post("/api/checklist-template-groups/:groupId/items/reorder", async (req, res) => {
+    try {
+      const { orderedItemIds } = req.body;
+      if (!Array.isArray(orderedItemIds) || orderedItemIds.length === 0) {
+        return res.status(400).json({ error: "orderedItemIds must be a non-empty array" });
+      }
+
+      const ownedGroup = await getOwnedGroup(req, res, req.params.groupId);
+      if (!ownedGroup) return;
+
+      // Only reorder items that actually belong to this (owned) group, so a
+      // cross-company item id can't be smuggled into the array.
+      const groupItems = await storage.getChecklistTemplateItems(req.params.groupId);
+      const ownedItemIds = new Set(groupItems.map(i => i.id));
+
+      for (let i = 0; i < orderedItemIds.length; i++) {
+        if (!ownedItemIds.has(orderedItemIds[i])) continue;
+        await storage.updateChecklistTemplateItem(orderedItemIds[i], { order: i });
+      }
+
+      res.json(await storage.getChecklistTemplateItems(req.params.groupId));
+    } catch (error: any) {
+      res.status(500).json({
+        error: "Failed to reorder items",
+        details: error.message
       });
     }
   });
@@ -24297,12 +26004,43 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return "Job"; // Default for unrecognized values
       };
 
+      type ResponseType = "checkbox" | "text" | "single_choice" | "multiple_choice";
+
+      // Accept the response-type column the export now emits, tolerating the
+      // spellings a human is likely to type in a spreadsheet. Anything
+      // unrecognised falls back to a plain checkbox.
+      const normalizeResponseType = (value: unknown): ResponseType => {
+        if (typeof value !== "string" || !value.trim()) return "checkbox";
+        const normalized = value.trim().toLowerCase().replace(/[\s-]+/g, "_");
+        if (normalized === "text" || normalized === "free_text") return "text";
+        if (normalized === "single_choice" || normalized === "single") return "single_choice";
+        if (normalized === "multiple_choice" || normalized === "multiple" || normalized === "multi") {
+          return "multiple_choice";
+        }
+        return "checkbox";
+      };
+
+      // Options arrive either as a real array or as a "A | B | C" string.
+      const parseResponseOptions = (value: unknown): string[] => {
+        if (Array.isArray(value)) return value.map(String).map(s => s.trim()).filter(Boolean);
+        if (typeof value !== "string") return [];
+        return value.split("|").map(s => s.trim()).filter(Boolean);
+      };
+
+      type ImportItem = {
+        description: string;
+        order: number;
+        tooltip: string | null;
+        responseType: ResponseType;
+        responseOptions: string[];
+      };
+
       // Group items by template name
       const templateMap = new Map<string, {
         name: string;
         description: string | null;
         type: "Task" | "Job" | "Estimation" | "Lead";
-        groups: Map<string, Array<{ description: string; order: number }>>;
+        groups: Map<string, ImportItem[]>;
       }>();
 
       // First pass: organize data structure
@@ -24339,9 +26077,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
         // Add item if provided
         if (row.itemDescription && row.itemDescription.trim()) {
+          let responseType = normalizeResponseType(row.responseType);
+          const isChoice = responseType === "single_choice" || responseType === "multiple_choice";
+          const responseOptions = isChoice ? parseResponseOptions(row.responseOptions) : [];
+          // A choice question with no options renders as an unanswerable empty
+          // list, so import it as a checkbox instead of a dead item.
+          if (isChoice && responseOptions.length === 0) {
+            responseType = "checkbox";
+            skippedReasons.push(`Row ${i + 1}: "${row.responseType}" had no options — imported as a checkbox`);
+          }
           template.groups.get(groupKey)!.push({
             description: row.itemDescription,
             order: template.groups.get(groupKey)!.length,
+            tooltip: (row.itemTooltip && String(row.itemTooltip).trim()) || null,
+            responseType,
+            responseOptions,
           });
         }
       }
@@ -24353,6 +26103,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           name: templateData.name,
           description: templateData.description,
           type: templateData.type,
+          visibleToRoles: [],
+          defaultVisibility: "everyone",
           companyId: (req.user as any)?.companyId,
         });
         templatesCreated++;
@@ -24373,6 +26125,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
               groupId: group.id,
               description: item.description,
               order: item.order,
+              tooltip: item.tooltip,
+              responseType: item.responseType,
+              responseOptions: item.responseOptions,
             });
             itemsCreated++;
           }
@@ -24408,25 +26163,45 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const currentUser = req.user as any;
       const userId = currentUser ? String(currentUser.id) : undefined;
       const isAdmin = currentUser?.role === 'admin' || currentUser?.isAdmin;
+      if (!currentUser?.companyId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
       if (projectId && !(await enforceProjectCompany(req, res, projectId, "Project not found"))) return;
-      const fetchedInstances = await storage.getChecklistInstances(projectId, userId, isAdmin);
-      // Tenant scoping: instances carry companyId directly.
-      const instances = fetchedInstances.filter((i: any) => i.companyId === currentUser?.companyId);
-      
-      // Get item counts for each instance
-      const instancesWithCounts = await Promise.all(
-        instances.map(async (instance) => {
-          const items = await storage.getChecklistInstanceItems(instance.id);
-          const completedCount = items.filter(i => i.status === "completed" || i.status === "na").length;
-          return {
-            ...instance,
-            completedCount,
-            totalCount: items.length,
-          };
-        })
-      );
-      
-      res.json(instancesWithCounts);
+
+      // `?include=groups` folds the per-instance groups request into this one,
+      // with each group carrying its own completion counts. Items stay lazy:
+      // most checklists render collapsed, so shipping every item row up front
+      // would trade one round trip for a much larger payload.
+      const wantsGroups = String(req.query.include || "")
+        .split(",").map(s => s.trim()).includes("groups");
+
+      const instances = await storage.getChecklistInstances(projectId, userId, isAdmin, currentUser.companyId);
+      const instanceIds = instances.map(i => i.id);
+
+      // One grouped query for every instance, instead of one query per instance.
+      const [counts, allGroups] = await Promise.all([
+        storage.getChecklistItemCounts(instanceIds),
+        wantsGroups ? storage.getChecklistInstanceGroupsForInstances(instanceIds) : Promise.resolve([]),
+      ]);
+      const zero = { total: 0, completed: 0 };
+
+      const groupsByInstance = new Map<string, any[]>();
+      for (const group of allGroups) {
+        const groupCounts = counts.byGroup[group.id] ?? zero;
+        const bucket = groupsByInstance.get(group.instanceId) ?? [];
+        bucket.push({ ...group, completedCount: groupCounts.completed, totalCount: groupCounts.total });
+        groupsByInstance.set(group.instanceId, bucket);
+      }
+
+      res.json(instances.map(instance => {
+        const instanceCounts = counts.byInstance[instance.id] ?? zero;
+        return {
+          ...instance,
+          completedCount: instanceCounts.completed,
+          totalCount: instanceCounts.total,
+          ...(wantsGroups ? { groups: groupsByInstance.get(instance.id) ?? [] } : {}),
+        };
+      }));
     } catch (error: any) {
       res.status(500).json({ 
         error: "Failed to fetch checklist instances",
@@ -24437,10 +26212,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/checklist-instances/:id", async (req, res) => {
     try {
-      const instance = await storage.getChecklistInstance(req.params.id);
-      if (!instance || (instance as any).companyId !== (req.user as any)?.companyId) {
-        return res.status(404).json({ error: "Checklist instance not found" });
-      }
+      const instance = await getOwnedInstance(req, res, req.params.id);
+      if (!instance) return;
       res.json(instance);
     } catch (error: any) {
       res.status(500).json({ 
@@ -24495,6 +26268,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             name: group.name,
             order: group.order,
             status: "active",
+            priority: "low",
           });
           
           // Create items linked to this group
@@ -24505,11 +26279,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               groupId: instanceGroup.id,
               groupName: group.name,
               groupOrder: group.order,
-              description: templateItem.description,
-              tooltip: templateItem.tooltip,
-              order: templateItem.order,
-              isRequired: templateItem.isRequired ?? false,
-              status: "pending",
+              ...instanceItemFieldsFromTemplate(templateItem),
             });
           }
         }
@@ -24537,11 +26307,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      // Ownership: instances carry companyId directly.
-      const ownedInstance = await storage.getChecklistInstance(req.params.id);
-      if (!ownedInstance || (ownedInstance as any).companyId !== currentUser?.companyId) {
-        return res.status(404).json({ error: "Checklist instance not found" });
-      }
+      const ownedInstance = await getOwnedInstance(req, res, req.params.id);
+      if (!ownedInstance) return;
 
       // Only admins or the instance creator/assignee can change visibility
       if (validationResult.data.visibility !== undefined && !isAdmin) {
@@ -24570,12 +26337,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/checklist-instances/:id", async (req, res) => {
     try {
-      // Ownership: instances carry companyId directly.
-      const ownedInstance = await storage.getChecklistInstance(req.params.id);
-      if (!ownedInstance || (ownedInstance as any).companyId !== (req.user as any)?.companyId) {
-        return res.status(404).json({ error: "Checklist instance not found" });
-      }
-
+      if (!(await getOwnedInstance(req, res, req.params.id))) return;
       const success = await storage.deleteChecklistInstance(req.params.id);
       if (!success) {
         return res.status(404).json({ error: "Checklist instance not found" });
@@ -24598,23 +26360,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(401).json({ error: "Not authenticated" });
       }
       
-      // Get all instances for the company first (filtered by companyId)
-      const allInstances = await storage.getChecklistInstances(undefined, String(user.id), user?.role === 'admin' || user?.isAdmin);
-      const companyInstances = allInstances.filter(i => i.companyId === user.companyId);
-      
-      // Get groups for each instance and flatten
-      const allGroups = await Promise.all(
-        companyInstances.map(async (instance) => {
-          const groups = await storage.getChecklistInstanceGroups(instance.id);
-          return groups.map(g => ({
-            ...g,
-            instanceName: instance.name, // Include parent instance name for context
-            projectId: instance.projectId, // Include projectId for filtering in task modal
-          }));
-        })
+      const instances = await storage.getChecklistInstances(
+        undefined, String(user.id), user?.role === 'admin' || user?.isAdmin, user.companyId,
       );
-      
-      res.json(allGroups.flat());
+      const instanceById = new Map(instances.map(i => [i.id, i]));
+
+      // One query for every group, rather than one per instance.
+      const groups = await storage.getChecklistInstanceGroupsForInstances(Array.from(instanceById.keys()));
+
+      res.json(groups.map(g => {
+        const instance = instanceById.get(g.instanceId);
+        return {
+          ...g,
+          instanceName: instance?.name, // Parent instance name for context
+          projectId: instance?.projectId, // For filtering in the task modal
+        };
+      }));
     } catch (error: any) {
       res.status(500).json({ 
         error: "Failed to fetch checklist groups",
@@ -24625,8 +26386,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/checklist-instances/:instanceId/groups", async (req, res) => {
     try {
-      const groups = await storage.getChecklistInstanceGroups(req.params.instanceId);
-      res.json(groups);
+      if (!(await getOwnedInstance(req, res, req.params.instanceId))) return;
+      const [groups, counts] = await Promise.all([
+        storage.getChecklistInstanceGroups(req.params.instanceId),
+        // Counts travel with the groups so a collapsed checklist can still show
+        // its progress — previously the client only knew a group's totals once
+        // it had expanded it and fetched the items.
+        storage.getChecklistItemCounts([req.params.instanceId]),
+      ]);
+      res.json(groups.map(g => ({
+        ...g,
+        completedCount: counts.byGroup[g.id]?.completed ?? 0,
+        totalCount: counts.byGroup[g.id]?.total ?? 0,
+      })));
     } catch (error: any) {
       res.status(500).json({ 
         error: "Failed to fetch checklist groups",
@@ -24637,10 +26409,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/checklist-instance-groups/:id", async (req, res) => {
     try {
-      const group = await storage.getChecklistInstanceGroup(req.params.id);
-      if (!group) {
-        return res.status(404).json({ error: "Checklist group not found" });
-      }
+      const group = await getOwnedInstanceGroup(req, res, req.params.id);
+      if (!group) return;
       res.json(group);
     } catch (error: any) {
       res.status(500).json({ 
@@ -24652,6 +26422,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/checklist-instances/:instanceId/groups", async (req, res) => {
     try {
+      if (!(await getOwnedInstance(req, res, req.params.instanceId))) return;
       const validationResult = insertChecklistInstanceGroupSchema.safeParse({
         ...req.body,
         instanceId: req.params.instanceId,
@@ -24683,7 +26454,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      const existingGroup = await storage.getChecklistInstanceGroup(req.params.id);
+      const existingGroup = await getOwnedInstanceGroup(req, res, req.params.id);
+      if (!existingGroup) return;
+      // Re-parenting a group to another instance must land on an owned instance.
+      if (validationResult.data.instanceId && validationResult.data.instanceId !== existingGroup.instanceId) {
+        if (!(await getOwnedInstance(req, res, validationResult.data.instanceId))) return;
+      }
+
       const group = await storage.updateChecklistInstanceGroup(req.params.id, validationResult.data);
       if (!group) {
         return res.status(404).json({ error: "Checklist group not found" });
@@ -24723,6 +26500,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/checklist-instance-groups/:id", async (req, res) => {
     try {
+      if (!(await getOwnedInstanceGroup(req, res, req.params.id))) return;
       const success = await storage.deleteChecklistInstanceGroup(req.params.id);
       if (!success) {
         return res.status(404).json({ error: "Checklist group not found" });
@@ -24738,6 +26516,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/checklist-instance-groups/:groupId/items", async (req, res) => {
     try {
+      if (!(await getOwnedInstanceGroup(req, res, req.params.groupId))) return;
       const items = await storage.getChecklistInstanceItemsByGroup(req.params.groupId);
       res.json(items);
     } catch (error: any) {
@@ -24751,6 +26530,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Checklist Instance Item routes
   app.get("/api/checklist-instances/:instanceId/items", async (req, res) => {
     try {
+      if (!(await getOwnedInstance(req, res, req.params.instanceId))) return;
       const items = await storage.getChecklistInstanceItems(req.params.instanceId);
       res.json(items);
     } catch (error: any) {
@@ -24763,18 +26543,54 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/checklist-instances/:instanceId/items", async (req, res) => {
     try {
+      if (!(await getOwnedInstance(req, res, req.params.instanceId))) return;
       const validationResult = insertChecklistInstanceItemSchema.safeParse({
         ...req.body,
         instanceId: req.params.instanceId,
       });
       if (!validationResult.success) {
-        return res.status(400).json({ 
-          error: "Validation failed", 
-          details: fromZodError(validationResult.error).toString() 
+        return res.status(400).json({
+          error: "Validation failed",
+          details: fromZodError(validationResult.error).toString()
         });
       }
+      // The target group, when given, must belong to this same instance —
+      // otherwise an item could be filed into another tenant's checklist.
+      const data = { ...validationResult.data };
+      if (data.groupId) {
+        const targetGroup = await getOwnedInstanceGroup(req, res, data.groupId);
+        if (!targetGroup) return;
+        if (targetGroup.instanceId !== req.params.instanceId) {
+          return res.status(404).json({ error: "Checklist group not found" });
+        }
+        // The item sits in its group's section, so it inherits the group's
+        // position. Callers used to hardcode groupOrder 0, which shunted every
+        // hand-added item up into the first section.
+        data.groupOrder = targetGroup.order ?? 0;
 
-      const item = await storage.createChecklistInstanceItem(validationResult.data);
+        // Append to the end of the group, the same way template items do.
+        // One caller sent order 9999 for every item and another counted items
+        // across the whole instance, so hand-added items all tied on order and
+        // the display sort fell back to alphabetical.
+        if (req.body.order === undefined) {
+          const siblings = await storage.getChecklistInstanceItemsByGroup(data.groupId);
+          data.order = siblings.reduce((max, s) => Math.max(max, s.order ?? 0), -1) + 1;
+        }
+      } else if (req.body.order === undefined || req.body.groupOrder === undefined) {
+        // The instance-detail dialog files items by groupName rather than
+        // groupId, so match on the name and append to that section instead.
+        const all = await storage.getChecklistInstanceItems(req.params.instanceId);
+        const siblings = all.filter(i => (i.groupName || "") === (data.groupName || ""));
+        if (req.body.order === undefined) {
+          data.order = siblings.reduce((max, s) => Math.max(max, s.order ?? 0), -1) + 1;
+        }
+        if (req.body.groupOrder === undefined) {
+          data.groupOrder = siblings[0]?.groupOrder
+            ?? all.reduce((max, s) => Math.max(max, s.groupOrder ?? 0), -1) + 1;
+        }
+      }
+
+      const item = await storage.createChecklistInstanceItem(data);
       res.status(201).json(item);
     } catch (error: any) {
       res.status(500).json({ 
@@ -24799,10 +26615,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: "Checklist instance item not found" });
       }
       // Ownership: item → instance → companyId.
-      const parentInstance = await storage.getChecklistInstance(existingItem.instanceId);
-      if (!parentInstance || (parentInstance as any).companyId !== (req.user as any)?.companyId) {
-        return res.status(404).json({ error: "Checklist instance item not found" });
-      }
+      if (!(await getOwnedInstance(req, res, existingItem.instanceId, "Checklist instance item not found"))) return;
 
       const item = await storage.updateChecklistInstanceItem(req.params.id, validationResult.data);
       if (!item) {
@@ -24878,7 +26691,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
           if (allItemsDone && group && group.status !== "completed") {
             await storage.updateChecklistInstanceGroup(item.groupId, {
               status: "completed",
-              completedAt: new Date().toISOString(),
+              // A Date, not an ISO string: these go straight to a Drizzle
+              // timestamp column, which calls .toISOString() on the value. A
+              // string threw, and the throw was swallowed by the catch below —
+              // so checklists never actually auto-completed.
+              completedAt: new Date(),
               completedBy: actingUser?.id || null,
               completedByName: actingUser ? `${actingUser.firstName || ''} ${actingUser.lastName || ''}`.trim() : null,
             } as any);
@@ -24899,7 +26716,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             if (allGroupsDone && instance && instance.status !== "completed") {
               await storage.updateChecklistInstance(item.instanceId, {
                 status: "completed",
-                completedAt: new Date().toISOString(),
+                completedAt: new Date(),
                 completedBy: actingUser?.id || null,
                 completedByName: actingUser ? `${actingUser.firstName || ''} ${actingUser.lastName || ''}`.trim() : null,
               } as any);
@@ -24933,10 +26750,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!existingItem) {
         return res.status(404).json({ error: "Checklist instance item not found" });
       }
-      const parentInstance = await storage.getChecklistInstance(existingItem.instanceId);
-      if (!parentInstance || (parentInstance as any).companyId !== (req.user as any)?.companyId) {
-        return res.status(404).json({ error: "Checklist instance item not found" });
-      }
+      if (!(await getOwnedInstance(req, res, existingItem.instanceId, "Checklist instance item not found"))) return;
 
       const success = await storage.deleteChecklistInstanceItem(req.params.id);
       if (!success) {
@@ -25031,6 +26845,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Checklist Audit Log
   app.get("/api/checklist-instances/:instanceId/audit-log", async (req, res) => {
     try {
+      if (!(await getOwnedInstance(req, res, req.params.instanceId))) return;
       const log = await storage.getChecklistAuditLog(req.params.instanceId);
       res.json(log);
     } catch (error: any) {
@@ -25060,17 +26875,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!budget) {
         budget = await storage.calculateBudget(req.params.projectId);
       }
-      res.json(budget);
+      // Attach the labour share of the actual so the budget widget can show a
+      // bills/labour split without another round trip.
+      let labourActualAmount = 0;
+      try {
+        const { timesheets: tsTbl } = await import("@shared/schema");
+        const approvedTs = await db.select().from(tsTbl).where(
+          and(eq(tsTbl.projectId, req.params.projectId), eq(tsTbl.status, "approved")),
+        );
+        labourActualAmount = approvedTs.reduce((s: number, ts: any) => s + timesheetTotalExGstCents(ts), 0);
+      } catch {}
+      res.json(budget ? { ...budget, labourActualAmount } : budget);
     } catch (error: any) {
-      res.status(500).json({ 
+      res.status(500).json({
         error: "Failed to fetch budget",
-        details: error.message 
+        details: error.message
       });
     }
   });
 
   app.post("/api/projects/:projectId/budget/calculate", requireAuth, requirePermission("financial.budget_actuals", "view"), async (req, res) => {
     try {
+      // Ownership: requirePermission is a role gate, not a tenant gate.
+      // calculateBudget CREATES or OVERWRITES the budget for the project.
+      if (!(await enforceProjectCompany(req, res, req.params.projectId, "Project not found"))) return;
       const budget = await storage.calculateBudget(req.params.projectId);
       res.json(budget);
     } catch (error: any) {
@@ -25083,6 +26911,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/budgets/:id", async (req, res) => {
     try {
+      // Ownership: budget → project → company. This route had no middleware
+      // at all beyond the global auth/requireCompany mount.
+      if (!(await getOwnedBudget(req, res, req.params.id))) return;
       const validationResult = updateBudgetSchema.safeParse(req.body);
       if (!validationResult.success) {
         return res.status(400).json({ 
@@ -25106,6 +26937,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/budgets/:id", async (req, res) => {
     try {
+      if (!(await getOwnedBudget(req, res, req.params.id))) return;
       const success = await storage.deleteBudget(req.params.id);
       if (!success) {
         return res.status(404).json({ error: "Budget not found" });
@@ -25134,6 +26966,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/budgets/:budgetId/line-items/recalculate", requireAuth, requirePermission("financial.budget_actuals", "view"), async (req, res) => {
     try {
+      if (!(await getOwnedBudget(req, res, req.params.budgetId))) return;
       const lineItems = await storage.recalculateBudgetLineItems(req.params.budgetId);
       res.json(lineItems);
     } catch (error: any) {
@@ -25146,6 +26979,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/budget-line-items/:id", async (req, res) => {
     try {
+      // Ownership: line item → budget → project → company.
+      if (!(await getOwnedBudgetLineItem(req, res, req.params.id))) return;
       const validationResult = updateBudgetLineItemSchema.safeParse(req.body);
       if (!validationResult.success) {
         return res.status(400).json({ 
@@ -25182,6 +27017,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/projects/:projectId/labour-hours-budget/recalculate", requireAuth, requirePermission("financial.budget_labour", "view"), async (req, res) => {
     try {
+      if (!(await enforceProjectCompany(req, res, req.params.projectId, "Project not found"))) return;
       const labourHours = await storage.recalculateLabourHoursBudget(req.params.projectId);
       res.json(labourHours);
     } catch (error: any) {
@@ -25590,7 +27426,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     if (process.env.NODE_ENV === "development") return true;
     if (!user?.roleId) return false;
     try {
-      const role = await storage.getUserRole(user.roleId);
+      const role = user.companyId ? await storage.getUserRole(user.roleId, user.companyId) : undefined;
       if (role && isAdminRole(role)) return true;
       // Batch, don't look each permission up in the loop (N+1 — see the
       // effectivePermissions comment in /api/auth/user).
@@ -25615,12 +27451,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
   async function enrichTimesheetsWithCostCodes(timesheets: any[]) {
     if (timesheets.length === 0) return timesheets;
 
-    const allSplits = await Promise.all(
-      timesheets.map(ts => storage.getTimesheetCostCodes(ts.id))
-    );
+    // Single inArray query instead of one query per timesheet.
+    const allSplits = await storage.getTimesheetCostCodesByTimesheetIds(timesheets.map(ts => ts.id));
+    const splitsByTimesheet = new Map<string, any[]>();
+    for (const split of allSplits) {
+      const list = splitsByTimesheet.get(split.timesheetId) || [];
+      list.push(split);
+      splitsByTimesheet.set(split.timesheetId, list);
+    }
 
-    return timesheets.map((ts, idx) => {
-      const splits = allSplits[idx] || [];
+    return timesheets.map((ts) => {
+      const splits = splitsByTimesheet.get(ts.id) || [];
       const enriched = { ...ts, costCodeSplits: splits };
       if (!enriched.costCodeId && splits.length >= 1) {
         enriched.costCodeId = splits[0].costCodeId;
@@ -25645,6 +27486,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/projects/:projectId/timesheets", async (req, res) => {
     try {
+      // Tenancy: the project itself must belong to the caller's company —
+      // without this an admin (view scope "all") could read any project's hours.
+      if (!(await enforceProjectCompany(req, res, req.params.projectId, "Project not found"))) return;
       const timesheets = await storage.getTimesheets(req.params.projectId);
       // Allowance allocation is a financial workflow, not a timesheet-viewing one:
       // the actual-cost totals include EVERY project timesheet (see the actual-costs
@@ -25687,6 +27531,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           status: status as string | undefined,
           costCodeId: costCodeId as string | undefined,
           invoiced: invoiced ? invoiced === 'true' : undefined,
+          // Tenancy: without this, an admin's "all" view scope returned every
+          // company's timesheets from the unscoped table.
+          companyId: (req.user as any)?.companyId ?? undefined,
         }
       );
       // Mobile app always shows only the authenticated user's own timesheets
@@ -25823,7 +27670,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
             // Sub PO modal never sees bulk-approved subbie timesheets.)
             if (status === "approved") {
               const tsOwner = await storage.getUser(timesheet.userId);
-              if (tsOwner?.isSubcontractor && !timesheet.linkedPurchaseOrderId) {
+              // First approval only — never re-queue an entry already on a PO
+              // or paid (see the single-approve route).
+              if (tsOwner?.isSubcontractor && !timesheet.poStatus && !timesheet.linkedPurchaseOrderId) {
                 await storage.updateTimesheet(id, { poStatus: "awaiting_po" });
               }
             }
@@ -26035,11 +27884,46 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Fields only the approval / PO / clock flows may write — never a raw
+  // create/update body. Without this, any request could inject
+  // status:"approved" or reset poStatus and bypass the workflow endpoints.
+  const TIMESHEET_PROTECTED_FIELDS = [
+    "approvedById", "approvedAt", "poStatus", "linkedPurchaseOrderId",
+    "isActive", "clockInTime", "actualStartTime", "actualEndTime",
+  ] as const;
+
+  // Normalise a client-supplied date to UTC midnight of the calendar date in
+  // the company timezone — the same convention clock-in uses. A raw
+  // `new Date("2026-07-20T00:00:00+10:00")` otherwise stores 19 Jul 14:00 UTC
+  // and the entry lands on the previous day.
+  const normaliseTimesheetDate = async (raw: unknown): Promise<Date | undefined> => {
+    if (!raw) return undefined;
+    const parsed = raw instanceof Date ? raw : new Date(String(raw));
+    if (isNaN(parsed.getTime())) return undefined;
+    const cfg = await storage.getSystemConfiguration();
+    const tz = cfg?.timezone || "Australia/Sydney";
+    return calendarDateMidnightUtcInTz(parsed, tz);
+  };
+
   app.post("/api/timesheets", async (req, res) => {
     try {
       const body = { ...req.body };
-      if (body.date && typeof body.date === "string") {
-        body.date = new Date(body.date);
+      for (const field of TIMESHEET_PROTECTED_FIELDS) delete body[field];
+      if (body.date) {
+        const normalised = await normaliseTimesheetDate(body.date);
+        if (!normalised) {
+          return res.status(400).json({ error: "Invalid date" });
+        }
+        body.date = normalised;
+      }
+      // Status on create: draft/submitted only; "approved" needs the approval
+      // permission (mirrors the import route's coercion rule).
+      if (body.status && !["draft", "submitted"].includes(body.status)) {
+        const creatorId = (req.user as any)?.id;
+        const creatorCanApprove = creatorId ? await storage.canUserApproveTimesheets(creatorId) : false;
+        if (body.status !== "approved" || !creatorCanApprove) {
+          body.status = "submitted";
+        }
       }
       // Sanitise numeric fields — mobile app may send empty strings instead of null/0
       if (body.breakDuration === "" || body.breakDuration === null) body.breakDuration = "0";
@@ -26179,6 +28063,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       let imported = 0;
       let skipped = 0;
       const errors: string[] = [];
+      // Rows are validated in the loop but inserted in ONE batch afterwards —
+      // a serial insert per row was hundreds of sequential Neon round trips.
+      const rowsToInsert: any[] = [];
 
       for (let i = 0; i < rows.length; i++) {
         const row = rows[i];
@@ -26280,28 +28167,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
         const description = String(row["Description"] ?? "").trim() || null;
 
+        rowsToInsert.push({
+          projectId,
+          userId: resolvedUserId,
+          // Store UTC midnight of the imported calendar date — the same
+          // convention as clock-in — instead of server-local midnight.
+          date: new Date(Date.UTC(y, m - 1, d)),
+          startTime,
+          endTime,
+          duration,
+          breakDuration,
+          description,
+          status: validStatus,
+          hourlyRate: 0,
+          total: 0,
+          invoiced: false,
+          isActive: false,
+          costCodeId: resolvedCostCodeId,
+        });
+      }
+
+      if (rowsToInsert.length > 0) {
         try {
-          await storage.createTimesheet({
-            projectId,
-            userId: resolvedUserId,
-            date: parsedDate,
-            startTime,
-            endTime,
-            duration,
-            breakDuration,
-            description,
-            status: validStatus,
-            hourlyRate: 0,
-            total: 0,
-            invoiced: false,
-            isActive: false,
-            costCodeId: resolvedCostCodeId,
-          });
-          imported++;
+          const created = await storage.createTimesheetsBulk(rowsToInsert);
+          imported = created.length;
         } catch (err) {
-          console.error("Timesheet import row insert failed:", err);
-          skipped++;
-          errors.push(`${rowLabel} skipped: insert failed — ${err instanceof Error ? err.message : String(err)}`);
+          console.error("Timesheet import bulk insert failed:", err);
+          skipped += rowsToInsert.length;
+          errors.push(`Import failed during insert — no rows were imported: ${err instanceof Error ? err.message : String(err)}`);
         }
       }
 
@@ -26341,8 +28234,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
       const body = { ...req.body };
-      if (body.date && typeof body.date === "string") {
-        body.date = new Date(body.date);
+      // Strip approval/PO/clock fields — those are written only by their
+      // dedicated flows. Exception: poStatus === null is the explicit
+      // "remove from PO queue" action in the row menu, so a null clear passes.
+      const clearingPoStatus = "poStatus" in body && body.poStatus === null;
+      for (const field of TIMESHEET_PROTECTED_FIELDS) delete body[field];
+      if (clearingPoStatus) body.poStatus = null;
+      // Status via PATCH: draft/submitted always allowed (editing an approved
+      // entry re-submits it); approved/rejected require the approval permission
+      // — otherwise an owner could self-approve around the approve endpoint.
+      if (body.status && !["draft", "submitted"].includes(body.status)) {
+        const patcherCanApprove = await storage.canUserApproveTimesheets((req.user as any).id);
+        if (!patcherCanApprove) {
+          delete body.status;
+        }
+      }
+      if (body.date) {
+        const normalised = await normaliseTimesheetDate(body.date);
+        if (!normalised) {
+          return res.status(400).json({ error: "Invalid date" });
+        }
+        body.date = normalised;
       }
       // Sanitise numeric fields — mobile app may send empty strings instead of null/0
       if (body.breakDuration === "" || body.breakDuration === null) body.breakDuration = "0";
@@ -26430,7 +28342,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!ownedTimesheet) return;
 
       if (req.user.companyId) {
-        const settings = await storage.getCompanySettings();
+        const settings = await storage.getCompanySettings(getSessionCompanyId(req));
         if (settings?.timesheetAutoRound) {
           const existing = await storage.getTimesheet(req.params.id);
           if (existing) {
@@ -26467,7 +28379,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const timesheetUser = await storage.getUser(timesheet.userId);
-      if (timesheetUser?.isSubcontractor) {
+      // Queue subbie timesheets for PO generation on FIRST approval only.
+      // Re-approving after an edit must not drag an entry already on a PO
+      // (or paid) back into the Sub PO queue.
+      if (timesheetUser?.isSubcontractor && !timesheet.poStatus && !timesheet.linkedPurchaseOrderId) {
         await storage.updateTimesheet(req.params.id, { poStatus: "awaiting_po" });
         timesheet.poStatus = "awaiting_po";
       }
@@ -26554,9 +28469,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Timesheet cost codes routes
+  // Timesheet cost codes routes — every route resolves the parent timesheet
+  // first and runs the same company-ownership check as the timesheet routes.
   app.get("/api/timesheets/:timesheetId/cost-codes", async (req, res) => {
     try {
+      const timesheet = await getOwnedTimesheet(req, res, req.params.timesheetId);
+      if (!timesheet) return;
       const costCodes = await storage.getTimesheetCostCodes(req.params.timesheetId);
       res.json(costCodes);
     } catch (error: any) {
@@ -26569,6 +28487,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/timesheets/:timesheetId/cost-codes", async (req, res) => {
     try {
+      const timesheet = await getOwnedTimesheet(req, res, req.params.timesheetId);
+      if (!timesheet) return;
       const costCode = await storage.createTimesheetCostCode({
         ...req.body,
         timesheetId: req.params.timesheetId
@@ -26582,8 +28502,40 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Replace ALL splits for a timesheet in one atomic call — the dialog
+  // previously issued a serial DELETE per old split + POST per new split
+  // (each a full Neon round trip and non-atomic on partial failure).
+  app.put("/api/timesheets/:timesheetId/cost-codes", async (req, res) => {
+    try {
+      const timesheet = await getOwnedTimesheet(req, res, req.params.timesheetId);
+      if (!timesheet) return;
+      const splits = req.body?.splits;
+      if (!Array.isArray(splits)) {
+        return res.status(400).json({ error: "splits array is required" });
+      }
+      const sanitised = splits.map((s: any) => ({
+        costCodeId: s.costCodeId ?? null,
+        duration: Number(s.duration ?? 0),
+        hourlyRate: Number(s.hourlyRate ?? 0),
+        total: Number(s.total ?? 0),
+      }));
+      const result = await storage.replaceTimesheetCostCodes(req.params.timesheetId, sanitised as any);
+      res.json(result);
+    } catch (error: any) {
+      res.status(500).json({
+        error: "Failed to replace timesheet cost codes",
+        details: error.message
+      });
+    }
+  });
+
   app.patch("/api/timesheets/cost-codes/:id", async (req, res) => {
     try {
+      const existing = await storage.getTimesheetCostCode(req.params.id);
+      if (!existing) {
+        return res.status(404).json({ error: "Timesheet cost code not found" });
+      }
+      if (!(await getOwnedTimesheet(req, res, existing.timesheetId, "Timesheet cost code not found"))) return;
       const costCode = await storage.updateTimesheetCostCode(req.params.id, req.body);
       if (!costCode) {
         return res.status(404).json({ error: "Timesheet cost code not found" });
@@ -26599,6 +28551,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/timesheets/cost-codes/:id", async (req, res) => {
     try {
+      const existing = await storage.getTimesheetCostCode(req.params.id);
+      if (!existing) {
+        return res.status(404).json({ error: "Timesheet cost code not found" });
+      }
+      if (!(await getOwnedTimesheet(req, res, existing.timesheetId, "Timesheet cost code not found"))) return;
       const deleted = await storage.deleteTimesheetCostCode(req.params.id);
       if (!deleted) {
         return res.status(404).json({ error: "Timesheet cost code not found" });
@@ -26612,9 +28569,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Timesheet Allowances routes
+  // Timesheet Allowances routes — ownership resolves through the parent timesheet.
   app.get("/api/timesheets/:timesheetId/allowances", async (req, res) => {
     try {
+      const timesheet = await getOwnedTimesheet(req, res, req.params.timesheetId);
+      if (!timesheet) return;
       const allowances = await storage.getTimesheetAllowances(req.params.timesheetId);
       res.json(allowances);
     } catch (error) {
@@ -26626,12 +28585,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const validationResult = insertTimesheetAllowanceSchema.safeParse(req.body);
       if (!validationResult.success) {
-        return res.status(400).json({ 
-          error: "Validation failed", 
-          details: fromZodError(validationResult.error).toString() 
+        return res.status(400).json({
+          error: "Validation failed",
+          details: fromZodError(validationResult.error).toString()
         });
       }
 
+      if (!(await getOwnedTimesheet(req, res, validationResult.data.timesheetId))) return;
       const allowance = await storage.createTimesheetAllowance(validationResult.data);
       res.status(201).json(allowance);
     } catch (error: any) {
@@ -26653,6 +28613,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
+      const existingAllowance = await storage.getTimesheetAllowance(req.params.id);
+      if (!existingAllowance) {
+        return res.status(404).json({ error: "Timesheet allowance not found" });
+      }
+      if (!(await getOwnedTimesheet(req, res, existingAllowance.timesheetId, "Timesheet allowance not found"))) return;
       const allowance = await storage.updateTimesheetAllowance(req.params.id, validationResult.data);
       if (!allowance) {
         return res.status(404).json({ error: "Timesheet allowance not found" });
@@ -26663,8 +28628,63 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Bulk-allocate whole timesheets to a single allowance (from the Timesheets
+  // page bulk bar). One batch insert; already-allocated and wrong-project
+  // entries are skipped and reported, not errored.
+  app.post("/api/timesheet-allowances/bulk", async (req, res) => {
+    try {
+      const { estimateItemId, projectId, timesheetIds } = req.body || {};
+      if (!estimateItemId || !projectId || !Array.isArray(timesheetIds) || timesheetIds.length === 0) {
+        return res.status(400).json({ error: "estimateItemId, projectId and timesheetIds are required" });
+      }
+      if (!(await enforceProjectCompany(req, res, projectId, "Project not found"))) return;
+
+      // The target must be a PC/PS allowance line on one of this project's estimates
+      const allowanceItem = await storage.getEstimateItem(estimateItemId);
+      if (!allowanceItem || !allowanceItem.allowance) {
+        return res.status(404).json({ error: "Allowance not found" });
+      }
+      const estimate = await storage.getEstimate(allowanceItem.estimateId);
+      if (!estimate || estimate.projectId !== projectId) {
+        return res.status(404).json({ error: "Allowance not found on this project" });
+      }
+
+      const sheets = await storage.getTimesheetsByIds(timesheetIds);
+      // Timesheets must be on the same (company-verified) project as the allowance
+      const validSheets = sheets.filter((ts) => ts.projectId === projectId);
+
+      const existing = await storage.getTimesheetAllowancesByEstimateItem(estimateItemId);
+      const alreadyAllocated = new Set(existing.map((a) => a.timesheetId));
+
+      const rows = validSheets
+        .filter((ts) => !alreadyAllocated.has(ts.id))
+        .map((ts) => ({
+          timesheetId: ts.id,
+          estimateItemId,
+          timesheetCostCodeId: null,
+          hours: String(timesheetHours(ts)),
+          amount: timesheetTotalExGstCents(ts), // EX GST cents — labour carries no GST
+        }));
+
+      const created = await storage.createTimesheetAllowancesBulk(rows);
+      res.json({
+        allocated: created.length,
+        skippedAlreadyAllocated: validSheets.length - rows.length,
+        skippedWrongProject: sheets.length - validSheets.length,
+      });
+    } catch (error: any) {
+      console.error("[timesheet-allowances] bulk create failed:", error?.message);
+      res.status(500).json({ error: "Failed to allocate timesheets to allowance", details: error?.message });
+    }
+  });
+
   app.delete("/api/timesheet-allowances/:id", async (req, res) => {
     try {
+      const existingAllowance = await storage.getTimesheetAllowance(req.params.id);
+      if (!existingAllowance) {
+        return res.status(404).json({ error: "Timesheet allowance not found" });
+      }
+      if (!(await getOwnedTimesheet(req, res, existingAllowance.timesheetId, "Timesheet allowance not found"))) return;
       await storage.deleteTimesheetAllowance(req.params.id);
       res.status(204).send();
     } catch (error) {
@@ -26873,12 +28893,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const validationResult = insertScheduleSchema.safeParse(req.body);
       if (!validationResult.success) {
-        return res.status(400).json({ 
-          error: "Validation failed", 
-          details: fromZodError(validationResult.error).toString() 
+        return res.status(400).json({
+          error: "Validation failed",
+          details: fromZodError(validationResult.error).toString()
         });
       }
-      
+
+      // projectId arrives in the body (there is no path param here) and was
+      // inserted verbatim — a schedule could be created on another tenant's
+      // project. It must be owned.
+      if (!(await enforceProjectCompany(req, res, (validationResult.data as any).projectId, "Project not found"))) return;
+
       const schedule = await storage.createSchedule(validationResult.data);
       res.status(201).json(schedule);
     } catch (error: any) {
@@ -27512,6 +29537,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
       
+      // scheduleId arrives in the body and drives both the sibling-sortOrder
+      // query and the insert — it must belong to the caller's company.
+      if (!(await getOwnedSchedule(req, res, (validationResult.data as any).scheduleId))) return;
+
       // Handle business assignee (company:xxx format)
       const createData = { ...validationResult.data } as any;
       if (createData.assignedToId && createData.assignedToId.startsWith('company:')) {
@@ -28086,7 +30115,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!Array.isArray(items)) {
         return res.status(400).json({ error: "Expected items array" });
       }
-      
+
+      // Ownership for the whole batch in one query, before any write.
+      if (!(await ownsAllScheduleItems(req, res, items.map((i: any) => i?.id).filter(Boolean)))) return;
+
       // Get original items to track changes
       const originalItemsMap = new Map<string, any>();
       for (const item of items) {
@@ -28273,6 +30305,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
+      // The schedule check above proves the caller owns the schedule they
+      // NAMED — it says nothing about the item ids they supplied. Verify every
+      // id (and any parentItemId being set) in one round trip before writing.
+      const touchedIds = [
+        ...updates.map((u: any) => u?.id),
+        ...updates.map((u: any) => u?.parentItemId),
+      ].filter(Boolean);
+      if (!(await ownsAllScheduleItems(req, res, touchedIds))) return;
+
       // Apply all updates in parallel now that ownership is confirmed
       const updatedItems = await Promise.all(
         updates
@@ -28307,10 +30348,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "items array is required and must not be empty" });
       }
 
-      const schedule = await storage.getScheduleById(scheduleId);
-      if (!schedule) {
-        return res.status(404).json({ error: "Schedule not found" });
-      }
+      // The schedule was fetched and used (its weekend flags, its project's
+      // holidays) but never checked against the caller's company.
+      const schedule = await getOwnedSchedule(req, res, scheduleId);
+      if (!schedule) return;
 
       // Get existing items count for sort order offset
       const existingItems = await storage.getScheduleItems(scheduleId);
@@ -28483,6 +30524,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/schedule-items/:itemId/steps", async (req, res) => {
     if (!req.user) return res.status(401).json({ error: "Not authenticated" });
+    // Ownership: step → schedule item → schedule → project → company.
+    // `if (!req.user)` is an authentication check, not a tenancy one.
+    if (!(await getOwnedScheduleItem(req, res, req.params.itemId, "Schedule item not found"))) return;
     const data = insertScheduleItemStepSchema.parse({
       ...req.body,
       scheduleItemId: req.params.itemId,
@@ -28493,6 +30537,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/schedule-item-steps/:id", async (req, res) => {
     if (!req.user) return res.status(401).json({ error: "Not authenticated" });
+    if (!(await getOwnedScheduleItemStep(req, res, req.params.id))) return;
     const { isCompleted, name, sortOrder } = req.body;
     const updates: any = {};
     if (isCompleted !== undefined) updates.isCompleted = isCompleted;
@@ -28507,6 +30552,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/schedule-item-steps/:id", async (req, res) => {
     if (!req.user) return res.status(401).json({ error: "Not authenticated" });
+    if (!(await getOwnedScheduleItemStep(req, res, req.params.id))) return;
     await db.delete(scheduleItemSteps).where(eq(scheduleItemSteps.id, req.params.id));
     res.json({ success: true });
   });
@@ -28521,6 +30567,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/schedules/:scheduleId/baselines", async (req, res) => {
     if (!req.user) return res.status(401).json({ error: "Not authenticated" });
+    // Ownership: baseline → schedule → project → company. Unguarded this
+    // snapshotted every schedule_item of a foreign schedule into a row the
+    // caller could then read back.
+    if (!(await getOwnedSchedule(req, res, req.params.scheduleId))) return;
     const user = req.user as any;
     const { name, description } = req.body;
 
@@ -28563,6 +30613,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/baselines/:id", async (req, res) => {
     if (!req.user) return res.status(401).json({ error: "Not authenticated" });
+    if (!(await getOwnedBaseline(req, res, req.params.id))) return;
     await db.delete(scheduleBaselines).where(eq(scheduleBaselines.id, req.params.id));
     res.json({ success: true });
   });
@@ -28978,6 +31029,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/schedule-items/:scheduleItemId/activity-notes", requireAuth, async (req, res) => {
     try {
+      // Ownership: stamping the caller's own userId onto the row is NOT an
+      // ownership check — the note still lands on the target schedule item.
+      if (!(await getOwnedScheduleItem(req, res, req.params.scheduleItemId, "Schedule item not found"))) return;
       const validationResult = insertActivityNoteSchema.safeParse({
         ...req.body,
         scheduleItemId: req.params.scheduleItemId,
@@ -29036,10 +31090,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/activity-notes/:id", requireAuth, async (req, res) => {
     try {
+      // Ownership first: note → schedule item → schedule → project → company.
+      // The isAdmin branch below skips the author check, and an admin of
+      // ANOTHER company is still an admin — so without this the branch was a
+      // cross-tenant delete.
+      if (!(await getOwnedActivityNote(req, res, req.params.id))) return;
+
       // Check if user is admin or the note author
       const canDelete = await storage.canEditActivityNote(req.params.id, req.user!.id);
       const isAdmin = req.user!.roleName === 'Admin' || req.user!.roleName === 'Owner';
-      
+
       if (!canDelete && !isAdmin) {
         return res.status(403).json({ 
           error: "Cannot delete note. Only the author (within 5 minutes) or admins can delete notes." 
@@ -29990,33 +32050,39 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // ─── Selection Template Apply / Save-as-Template ────────────────────────────
 
+  // Batched: builds all rows up front (ids generated locally) and does at most
+  // 3 inserts, instead of 1 insert per selection/option/attachment — a large
+  // template was minutes of serial round trips against a ~400ms-RTT database.
   async function applyTemplateItems(
     items: any[],
     projectId: string,
     selectionType: string,
-    storage: any
+    _storage: any
   ): Promise<string[]> {
-    const selectionIds: string[] = [];
-    for (const item of items) {
-      const selection = await storage.createSelection({
-        projectId,
-        name: item.itemName,
-        description: item.description || null,
-        category: item.categoryName || null,
-        room: item.room || null,
-        selectionType: selectionType || "selection",
-        status: "draft",
-        allowance: item.budgetAmount || null,
-        clientCanSeePrice: item.clientCanSeePrice ?? true,
-        clientCanChange: item.clientCanChange ?? true,
-        deadline: item.deadline || null,
-        sortOrder: item.sortOrder ?? 0,
-        notes: item.notes || null,
-      });
-      selectionIds.push(selection.id);
+    const selectionRows = items.map((item) => ({
+      id: randomUUID(),
+      projectId,
+      name: item.itemName,
+      description: item.description || null,
+      category: item.categoryName || null,
+      room: item.room || null,
+      selectionType: selectionType || "selection",
+      status: "draft",
+      allowance: item.budgetAmount || null,
+      clientCanSeePrice: item.clientCanSeePrice ?? true,
+      clientCanChange: item.clientCanChange ?? true,
+      deadline: item.deadline ? new Date(item.deadline) : null,
+      sortOrder: item.sortOrder ?? 0,
+      notes: item.notes || null,
+    }));
+    const optionRows: any[] = [];
+    const attachmentRows: any[] = [];
+    items.forEach((item, i) => {
       for (const opt of (item.options || [])) {
-        const option = await storage.createSelectionOption({
-          selectionId: selection.id,
+        const optionId = randomUUID();
+        optionRows.push({
+          id: optionId,
+          selectionId: selectionRows[i].id,
           name: opt.name,
           brand: opt.brand || null,
           sku: opt.sku || null,
@@ -30035,20 +32101,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
           specifications: opt.specifications || null,
         });
         const imageUrls: string[] = opt.imageUrls || (opt.imageUrl ? [opt.imageUrl] : []);
-        for (let idx = 0; idx < imageUrls.length; idx++) {
-          const filePath = imageUrls[idx];
-          await storage.createOptionAttachment({
-            optionId: option.id,
+        imageUrls.forEach((filePath, idx) => {
+          attachmentRows.push({
+            optionId,
             fileName: filePath.split("/").pop() || "image.jpg",
             filePath,
             fileType: "image",
             mimeType: "image/jpeg",
             sortOrder: idx,
           });
-        }
+        });
       }
-    }
-    return selectionIds;
+    });
+    if (selectionRows.length > 0) await db.insert(schema.selections).values(selectionRows as any);
+    if (optionRows.length > 0) await db.insert(schema.selectionOptions).values(optionRows);
+    if (attachmentRows.length > 0) await db.insert(schema.optionAttachments).values(attachmentRows);
+    return selectionRows.map((r) => r.id);
   }
 
   app.post("/api/selection-templates/:id/apply", requireAuth, requireTeamMember, async (req, res) => {
@@ -30086,9 +32154,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
           sortOrder: maxOrder + 1,
           notes: null,
         } as any);
-        for (let idx = 0; idx < items.length; idx++) {
-          const opt = items[idx];
-          const option = await storage.createSelectionOption({
+        // Batched inserts — see applyTemplateItems
+        const optionRows: any[] = [];
+        const attachmentRows: any[] = [];
+        items.forEach((opt: any, idx: number) => {
+          const optionId = randomUUID();
+          optionRows.push({
+            id: optionId,
             selectionId: selection.id,
             name: opt.name,
             brand: opt.brand || null,
@@ -30108,18 +32180,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
             specifications: opt.specifications || null,
           });
           const imageUrls: string[] = opt.imageUrls || (opt.imageUrl ? [opt.imageUrl] : []);
-          for (let imgIdx = 0; imgIdx < imageUrls.length; imgIdx++) {
-            const filePath = imageUrls[imgIdx];
-            await storage.createOptionAttachment({
-              optionId: option.id,
+          imageUrls.forEach((filePath: string, imgIdx: number) => {
+            attachmentRows.push({
+              optionId,
               fileName: filePath.split("/").pop() || "image.jpg",
               filePath,
               fileType: "image",
               mimeType: "image/jpeg",
               sortOrder: imgIdx,
             });
-          }
-        }
+          });
+        });
+        if (optionRows.length > 0) await db.insert(schema.selectionOptions).values(optionRows);
+        if (attachmentRows.length > 0) await db.insert(schema.optionAttachments).values(attachmentRows);
         res.json({ created: 1, selectionIds: [selection.id] });
       }
     } catch (error: any) {
@@ -30160,12 +32233,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const project = await storage.getProject(projectId);
       if (!project || project.companyId !== user.companyId) return res.status(403).json({ error: "Project not found or access denied" });
       const selectionsWithOptions = await storage.getSelectionsWithOptions(projectId);
-      const templateData = await Promise.all(
-        selectionsWithOptions.map(async (sel: any) => {
-          const optionsWithImages = await Promise.all(
-            (sel.options || []).map(async (opt: any) => {
-              const attachments = await storage.getOptionAttachments(opt.id);
-              return {
+      // getSelectionsWithOptions already includes each option's attachments —
+      // no per-option re-fetch
+      const templateData = selectionsWithOptions.map((sel: any) => {
+          const optionsWithImages = (sel.options || []).map((opt: any) => ({
                 id: crypto.randomUUID(),
                 name: opt.name, brand: opt.brand, sku: opt.sku,
                 description: opt.description, category: opt.category,
@@ -30174,10 +32245,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 markupPercent: opt.markupPercent, totalCost: opt.totalCost,
                 url: opt.url, visibleToClient: opt.visibleToClient,
                 gstInclusive: opt.gstInclusive, sortOrder: opt.sortOrder,
-                imageUrls: attachments.map((a: any) => a.filePath),
-              };
-            })
-          );
+                imageUrls: (opt.attachments || []).map((a: any) => a.filePath),
+          }));
           return {
             id: crypto.randomUUID(),
             itemName: sel.name,
@@ -30192,8 +32261,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             sortOrder: sel.sortOrder ?? 0,
             options: optionsWithImages,
           };
-        })
-      );
+      });
       const template = await storage.createSelectionTemplate({
         companyId: user.companyId,
         name,
@@ -31628,6 +33696,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/channels/:channelId/members", requireAuth, async (req, res) => {
     try {
+      // Ownership: channels carry companyId and storage.getChannel already
+      // filters on it — this route simply never called it.
+      if (!(await getOwnedChannel(req, res, req.params.channelId))) return;
       const validationResult = insertChannelMemberSchema.omit({ channelId: true }).safeParse(req.body);
       if (!validationResult.success) {
         return res.status(400).json({ 
@@ -31648,6 +33719,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/channels/:channelId/members/:userId", requireAuth, async (req, res) => {
     try {
+      // Ownership: the channel must be the caller's. The handler was a single
+      // storage call with no checks of any kind.
+      if (!(await getOwnedChannel(req, res, req.params.channelId))) return;
       await storage.removeChannelMember(req.params.channelId, req.params.userId);
       res.status(204).send();
     } catch (error) {
@@ -31809,7 +33883,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const userId = req.user!.id;
       const channelId = req.params.channelId;
-      
+
+      // Ownership: post into another tenant's channel was possible with only
+      // the channel id.
+      if (!(await getOwnedChannel(req, res, channelId))) return;
+
       const validationResult = insertMessageSchema.omit({ channelId: true, userId: true }).safeParse(req.body);
       if (!validationResult.success) {
         return res.status(400).json({ 
@@ -31960,6 +34038,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/messages/:id", requireAuth, async (req, res) => {
     try {
+      // Ownership: message → channel → company.
+      if (!(await getOwnedMessage(req, res, req.params.id))) return;
       await storage.deleteMessage(req.params.id);
       res.status(204).send();
     } catch (error) {
@@ -32877,6 +34957,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       const projectId = req.params.projectId;
+      // The companyId check above only proves the caller HAS a company, not
+      // that they own this project — so any project's tasks, RFIs, RFQs and
+      // estimates were summarised for any logged-in user.
+      if (!(await enforceProjectCompany(req, res, projectId, "Project not found"))) return;
+
       const today = new Date();
       today.setHours(0, 0, 0, 0);
       const tomorrow = new Date(today);
@@ -33382,7 +35467,7 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
         storage.getActiveTimesheet(userId).catch(() => null),
         storage.getTimesheets(undefined, { userId }).catch(() => []),
         storage.getAllScheduleItems(companyId, scheduleRange).catch(() => []),
-        storage.getCompanySettings().catch(() => null),
+        storage.getCompanySettings(companyId).catch(() => null),
         storage.getCostCodes(companyId).then(codes => codes.filter(c => c.availableInTimesheets === true)).catch(() => []),
         storage.getActivities({ userId, companyId, limit: 20 }).catch(() => []),
       ]);
@@ -33833,7 +35918,11 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
       if (!companyId) {
         return res.status(401).json({ error: "Unauthorized - no company context" });
       }
-      const state = Buffer.from(JSON.stringify({ companyId })).toString("base64");
+      // Signed, action-scoped state — the same helper the Google Calendar
+      // flow uses. An unsigned base64 blob let a crafted state name any
+      // company on the callback.
+      const { signOAuthState } = await import('./services/googleOAuthService');
+      const state = signOAuthState({ action: 'xero', companyId, userId: user.id });
       const authUrl = xeroService.getAuthUrl(state);
       res.json({ authUrl });
     } catch (error: any) {
@@ -33849,19 +35938,22 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
         return res.status(400).json({ error: "Missing authorization code" });
       }
 
-      let companyId: string | undefined;
-      if (state && typeof state === "string") {
-        try {
-          const stateData = JSON.parse(Buffer.from(state, "base64").toString());
-          companyId = stateData.companyId;
-        } catch {}
-      }
-
+      // The state must verify AND name the caller's own company. It used to be
+      // unsigned base64 and was PREFERRED over the session
+      // (`companyId = stateData.companyId || user?.companyId`), so a crafted
+      // state overwrote another tenant's Xero connection with the caller's
+      // tokens. Same class as the Calendar fix in PR #34.
+      const { verifyOAuthState } = await import('./services/googleOAuthService');
       const user = req.user as any;
-      companyId = companyId || user?.companyId;
-      if (!companyId) {
+      const sessionCompanyId = user?.companyId;
+      if (!sessionCompanyId) {
         return res.status(401).json({ error: "Unauthorized - no company context" });
       }
+      const verified = verifyOAuthState(state, 'xero');
+      if (!verified || verified.companyId !== sessionCompanyId) {
+        return res.status(400).json({ error: "Invalid or expired OAuth state" });
+      }
+      const companyId = sessionCompanyId;
 
       const tokenData = await xeroService.exchangeCodeForTokens(code);
       const tenants = await xeroService.getTenants(tokenData.access_token);
@@ -34035,6 +36127,7 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
       }
       return res.json({
         success: true,
+        warning: result.warning,
         xeroInvoiceId: result.xeroInvoiceId,
         xeroInvoiceNumber: result.xeroInvoiceNumber,
         updated: result.updated,
@@ -34163,7 +36256,8 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
                 projectXeroTrackingOptionId = (project as any).xeroTrackingOptionId;
               } else {
                 try {
-                  const option = await xeroService.createTrackingOption(
+                  // Link-only, never create — see pushBillToXeroInternal.
+                  const option = await xeroService.findTrackingOptionByName(
                     connection.id,
                     (connection as any).trackingCategory2Id,
                     project.name,
@@ -34172,11 +36266,13 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
                     projectXeroTrackingOptionId = option.TrackingOptionID;
                     await storage.updateProject((po as any).projectId, {
                       xeroTrackingOptionId: option.TrackingOptionID,
-                      xeroTrackingOptionName: project.name,
+                      xeroTrackingOptionName: option.Name || project.name,
                     } as any);
+                  } else {
+                    console.warn(`[PO push] no Xero tracking option matches project "${project.name}" — pushed without job tracking`);
                   }
                 } catch (e) {
-                  console.error("Failed to create/get Xero tracking option for project:", e);
+                  console.error("Failed to resolve Xero tracking option for project:", e);
                 }
               }
             }
@@ -34213,7 +36309,7 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
 
       let companyDefaultAccountCode: string | undefined;
       try {
-        const settings = await storage.getCompanySettings();
+        const settings = await storage.getCompanySettings(getSessionCompanyId(req));
         companyDefaultAccountCode = (settings as any)?.billDefaultXeroAccount || undefined;
       } catch {}
 
@@ -34387,9 +36483,12 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
   // Fallback Xero revenue account for client-invoice lines with no account code:
   // company default (Settings → clientInvoiceDefaultXeroAccount) → the Xero
   // account named "Sales". Shared by the push and update routes.
-  const resolveClientInvoiceFallbackAccount = async (connectionId: string): Promise<string | undefined> => {
+  const resolveClientInvoiceFallbackAccount = async (
+    connectionId: string,
+    companyId: string | undefined,
+  ): Promise<string | undefined> => {
     try {
-      const settings = await storage.getCompanySettings();
+      const settings = await storage.getCompanySettings(companyId);
       const configured = (settings as any)?.clientInvoiceDefaultXeroAccount;
       if (configured) return configured;
     } catch {}
@@ -34498,7 +36597,7 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
           if ((project as any).xeroTrackingOptionId) {
             projectXeroTrackingOptionId = (project as any).xeroTrackingOptionId;
           } else {
-            const option = await xeroService.createTrackingOption(
+            const option = await xeroService.findTrackingOptionByName(
               connection.id,
               connection.trackingCategory2Id,
               project.name
@@ -34507,8 +36606,10 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
               projectXeroTrackingOptionId = option.TrackingOptionID;
               await storage.updateProject(invoice.projectId, {
                 xeroTrackingOptionId: option.TrackingOptionID,
-                xeroTrackingOptionName: project.name,
+                xeroTrackingOptionName: option.Name || project.name,
               } as any);
+            } else {
+              console.warn(`[client-invoice push] no Xero tracking option matches project "${project.name}" — pushed without job tracking`);
             }
           }
         } catch (e) {
@@ -34526,7 +36627,7 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
       //   line.accountCode -> company default -> Xero account named "Sales".
       // Xero rejects AUTHORISED invoices whose lines have no account code, so we
       // pre-flight this rather than let the push 400.
-      const fallbackAccountCode = await resolveClientInvoiceFallbackAccount(connection.id);
+      const fallbackAccountCode = await resolveClientInvoiceFallbackAccount(connection.id, getSessionCompanyId(req));
 
       const lineTracking: any[] = [];
       if (projectXeroTrackingOptionId && connection.trackingCategory2Id) {
@@ -34664,13 +36765,15 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
           if ((project as any).xeroTrackingOptionId) {
             projectXeroTrackingOptionId = (project as any).xeroTrackingOptionId;
           } else {
-            const option = await xeroService.createTrackingOption(connection.id, connection.trackingCategory2Id, project.name);
+            const option = await xeroService.findTrackingOptionByName(connection.id, connection.trackingCategory2Id, project.name);
             if (option?.TrackingOptionID) {
               projectXeroTrackingOptionId = option.TrackingOptionID;
               await storage.updateProject(invoice.projectId, {
                 xeroTrackingOptionId: option.TrackingOptionID,
-                xeroTrackingOptionName: project.name,
+                xeroTrackingOptionName: option.Name || project.name,
               } as any);
+            } else {
+              console.warn(`[client-invoice push] no Xero tracking option matches project "${project.name}" — pushed without job tracking`);
             }
           }
         } catch (e) {
@@ -34684,7 +36787,7 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
         return date.toISOString().split("T")[0];
       };
 
-      const fallbackAccountCode = await resolveClientInvoiceFallbackAccount(connection.id);
+      const fallbackAccountCode = await resolveClientInvoiceFallbackAccount(connection.id, getSessionCompanyId(req));
 
       const lineTracking: any[] = [];
       if (projectXeroTrackingOptionId && connection.trackingCategory2Id) {
@@ -35783,16 +37886,22 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
       if (!connection) return res.status(400).json({ error: "Xero is not connected" });
 
       const categories = await xeroService.getTrackingCategories(connection.id);
-      res.json(categories.map((tc: any) => ({
-        trackingCategoryId: tc.TrackingCategoryID,
-        name: tc.Name,
-        status: tc.Status,
-        options: (tc.Options || []).map((opt: any) => ({
-          trackingOptionId: opt.TrackingOptionID,
-          name: opt.Name,
-          status: opt.Status,
-        })),
-      })));
+      // Archived categories/options are not selectable anywhere in the UI, so
+      // drop them here rather than in every picker.
+      res.json(categories
+        .filter((tc: any) => tc.Status === "ACTIVE")
+        .map((tc: any) => ({
+          trackingCategoryId: tc.TrackingCategoryID,
+          name: tc.Name,
+          status: tc.Status,
+          options: (tc.Options || [])
+            .filter((opt: any) => opt.Status === "ACTIVE")
+            .map((opt: any) => ({
+              trackingOptionId: opt.TrackingOptionID,
+              name: opt.Name,
+              status: opt.Status,
+            })),
+        })));
     } catch (error: any) {
       console.error("Error fetching Xero tracking categories:", error);
       res.status(500).json({ error: error.message || "Failed to fetch tracking categories" });
@@ -35864,11 +37973,17 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
 
       const { trackingCategory1Id, trackingCategory1Name, trackingCategory2Id, trackingCategory2Name } = req.body;
 
+      // The client's selects use "none" as their empty sentinel. Persisting it
+      // verbatim left the connection looking configured while pointing at a
+      // category ID Xero doesn't have, so bills pushed with no tracking at all.
+      const tc1 = trackingCategoryId(trackingCategory1Id);
+      const tc2 = trackingCategoryId(trackingCategory2Id);
+
       const updated = await storage.updateXeroConnection(connection.id, {
-        trackingCategory1Id: trackingCategory1Id || null,
-        trackingCategory1Name: trackingCategory1Name || null,
-        trackingCategory2Id: trackingCategory2Id || null,
-        trackingCategory2Name: trackingCategory2Name || null,
+        trackingCategory1Id: tc1 || null,
+        trackingCategory1Name: (tc1 && trackingCategory1Name) || null,
+        trackingCategory2Id: tc2 || null,
+        trackingCategory2Name: (tc2 && trackingCategory2Name) || null,
       });
 
       res.json({ success: true, connection: updated });
@@ -36951,42 +39066,6 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
   // ─────────────────────────────────────────────────────────────────────
   // GET /api/tasks/my — thin alias for current user's tasks across projects
   // ─────────────────────────────────────────────────────────────────────
-  app.get("/api/tasks/my", requireAuth, async (req, res) => {
-    try {
-      const user = req.user as any;
-      if (!user?.companyId) return res.status(401).json({ error: "Unauthorized" });
-      const tasks = await storage.getTasksByUser(user.id, user.companyId);
-
-      // Enrich each task with the project display name (when applicable) so
-      // widgets can render context without a second projects fetch.
-      const projectIds = Array.from(new Set(
-        tasks
-          .map((t: any) => t.projectId || (t.taskContextType === "project" ? t.taskContextId : null))
-          .filter((id: string | null): id is string => Boolean(id)),
-      ));
-
-      let projectNameMap = new Map<string, string>();
-      if (projectIds.length > 0) {
-        const allProjects = await storage.getProjects();
-        projectNameMap = new Map(
-          allProjects
-            .filter((p: any) => projectIds.includes(p.id))
-            .map((p: any) => [p.id, p.name as string]),
-        );
-      }
-
-      const enriched = tasks.map((t: any) => {
-        const pid = t.projectId || (t.taskContextType === "project" ? t.taskContextId : null);
-        return { ...t, projectName: pid ? projectNameMap.get(pid) ?? null : null };
-      });
-
-      res.json(enriched);
-    } catch (error: any) {
-      console.error("[GET /api/tasks/my] error:", error);
-      res.status(500).json({ error: "Failed to fetch user tasks" });
-    }
-  });
-
   // Project Cash Flow widget data endpoint
   app.get("/api/projects/:projectId/cash-flow", requireAuth, requireTeamMember, async (req, res) => {
     try {
@@ -37011,15 +39090,24 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
         clientInvoicePayments: paymentsTbl,
         bills: billsTbl,
         variations: variationsTbl,
+        timesheets: timesheetsTbl,
       } = await import("@shared/schema");
 
-      const [invoiceRows, billRows, variationRows] = await Promise.all([
+      const [invoiceRows, billRows, variationRows, timesheetRows] = await Promise.all([
         db.select().from(invoicesTbl).where(eq(invoicesTbl.projectId, projectId)),
         db.select().from(billsTbl).where(eq(billsTbl.projectId, projectId)),
+        // "Approved" for contract purposes means approved OR released — see
+        // isApprovedVariationStatus, the single definition every other surface
+        // uses. Filtering to "approved" alone silently dropped released
+        // variations from the contract + variations ceiling.
         db
           .select()
           .from(variationsTbl)
-          .where(and(eq(variationsTbl.projectId, projectId), eq(variationsTbl.status, "approved"))),
+          .where(eq(variationsTbl.projectId, projectId)),
+        db
+          .select()
+          .from(timesheetsTbl)
+          .where(and(eq(timesheetsTbl.projectId, projectId), eq(timesheetsTbl.status, "approved"))),
       ]);
 
       const invoiceIds = invoiceRows.map((i: any) => i.id);
@@ -37077,6 +39165,7 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
         label: string;
         moneyIn: number;
         moneyOut: number;
+        labourOut: number;
         invoicedNotPaid: number;
         committedNotPaid: number;
         plannedIn: number;
@@ -37091,6 +39180,7 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
           label: bucketLabel(cursor),
           moneyIn: 0,
           moneyOut: 0,
+          labourOut: 0,
           invoicedNotPaid: 0,
           committedNotPaid: 0,
           plannedIn: 0,
@@ -37100,7 +39190,7 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
 
       const addToBucket = (
         d: Date | string | null | undefined,
-        field: "moneyIn" | "moneyOut" | "invoicedNotPaid" | "committedNotPaid" | "plannedIn",
+        field: "moneyIn" | "moneyOut" | "labourOut" | "invoicedNotPaid" | "committedNotPaid" | "plannedIn",
         amount: number,
       ) => {
         if (!d || !amount) return;
@@ -37130,9 +39220,20 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
           if (remaining > 0) addToBucket(i.dueDate || i.invoiceDate, "invoicedNotPaid", remaining);
         }
       }
+      // Approved timesheet labour is cash out too (wages, ex GST — no GST on
+      // wages). Bucketed by the timesheet date as the closest cash proxy.
+      for (const ts of timesheetRows as any[]) {
+        addToBucket((ts as any).date, "labourOut", timesheetTotalExGstCents(ts as any));
+      }
 
+      // The frozen contract sum wins outright on a contracted job — the ceiling
+      // is what the client agreed to pay, not what the estimate currently says.
+      const frozenCeiling = frozenContractTotalFrom(project as any);
       let contractCeiling =
-        Number((project as any).contractPrice) || Number((project as any).contractCost) || 0;
+        frozenCeiling?.incGstCents
+        || Number((project as any).contractPrice)
+        || Number((project as any).contractCost)
+        || 0;
 
       // Fallback: when the project's contractPrice/contractCost isn't set,
       // derive the ceiling from the selected estimate or any contract-status
@@ -37169,7 +39270,7 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
         }
       }
       const approvedVarTotal = (variationRows as any[]).reduce(
-        (s, v) => s + (Number(v.totalAmount) || 0),
+        (s, v) => (isApprovedVariationStatus(v.status) ? s + (Number(v.totalAmount) || 0) : s),
         0,
       );
       const contractPlusVariationsCeiling = contractCeiling + approvedVarTotal;
@@ -37200,21 +39301,25 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
 
       let cumIn = 0;
       let cumOut = 0;
+      let cumLabour = 0;
       let cumPlanned = 0;
       const periodsOut = periods.map((p) => {
         cumIn += p.moneyIn;
         cumOut += p.moneyOut;
+        cumLabour += p.labourOut;
         cumPlanned += p.plannedIn;
         return {
           label: p.label,
           periodStart: p.periodStart.toISOString(),
           moneyIn: p.moneyIn,
           moneyOut: p.moneyOut,
+          labourOut: p.labourOut,
           invoicedNotPaid: p.invoicedNotPaid,
           committedNotPaid: p.committedNotPaid,
           plannedIn: p.plannedIn,
           cumulativeIn: cumIn,
           cumulativeOut: cumOut,
+          cumulativeLabour: cumLabour,
           cumulativePlanned: cumPlanned,
         };
       });
@@ -37238,6 +39343,10 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
       const totalMoneyOut = (billRows as any[])
         .filter((b) => b.status === "paid")
         .reduce((s, b) => s + (Number(b.paidAmount) || 0), 0);
+      const totalLabour = (timesheetRows as any[]).reduce(
+        (s, ts) => s + timesheetTotalExGstCents(ts),
+        0,
+      );
       const totalInvoiced = (invoiceRows as any[]).reduce(
         (s, i) => s + (Number(i.totalAmount) || 0),
         0,
@@ -37252,7 +39361,8 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
         summary: {
           totalMoneyIn,
           totalMoneyOut,
-          netPosition: totalMoneyIn - totalMoneyOut,
+          totalLabour,
+          netPosition: totalMoneyIn - totalMoneyOut - totalLabour,
           totalInvoiced,
           totalBilled,
         },

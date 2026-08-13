@@ -114,8 +114,12 @@ app.use('/api', (_req, res, next) => {
   next();
 });
 
-// Serve uploaded files (avatars, gear photos, etc.)
-app.use('/uploads', express.static(path.resolve(import.meta.dirname, '..', 'uploads')));
+// NOTE: uploaded files are NOT served here. This mount used to be
+// `express.static('/uploads', ...)` at this point in the file — above
+// setupAuth — which made every estimate-note attachment, gear photo and
+// contact avatar readable by anyone who knew a path, with no session.
+// Serving now happens inside registerRoutes, after auth, with a per-file
+// ownership check. See server/middleware/uploadsAccess.ts.
 
 // Set Content Security Policy — frame-ancestors * allows canvas/iframe embedding
 app.use((req, res, next) => {
@@ -427,6 +431,26 @@ app.use((req, res, next) => {
     const { startXeroReconcileScheduler } = await import("./services/xeroReconcileScheduler");
     startXeroReconcileScheduler();
 
+    // Billing config audit: billing fails soft (no Stripe = no paywall), so
+    // surface misconfiguration loudly at boot — console always, Sentry in
+    // production — instead of discovering it when a customer's checkout fails.
+    try {
+      const { auditBillingConfig } = await import("./config/plans");
+      const audit = auditBillingConfig();
+      for (const note of audit.notes) log(`[billing-config] ${note}`);
+      for (const problem of audit.problems) {
+        console.warn(`[billing-config] WARNING: ${problem}`);
+      }
+      if (audit.problems.length > 0 && sentryEnabled && process.env.NODE_ENV === "production") {
+        Sentry.captureMessage(
+          `[billing-config] ${audit.problems.length} billing configuration problem(s) at boot`,
+          { level: "warning", extra: { problems: audit.problems } },
+        );
+      }
+    } catch (err) {
+      console.error("[billing-config] audit failed (non-fatal):", err);
+    }
+
     // Trial-expiry sweep: flip lapsed 'trialing' companies to 'expired'.
     // Runs once on boot and hourly thereafter. Guarded so a failure never
     // takes down startup.
@@ -440,6 +464,21 @@ app.use((req, res, next) => {
     };
     trialExpirySweep();
     setInterval(trialExpirySweep, 60 * 60 * 1000);
+
+    // Trial lifecycle emails (day 3 tip, day 10 "4 days left", post-expiry).
+    // The day-0 welcome fires inline at company creation. Once-only delivery is
+    // enforced by a unique index, so running this hourly is safe.
+    const onboardingEmailSweep = async () => {
+      try {
+        const { processOnboardingEmails } = await import("./services/onboardingEmails");
+        const r = await processOnboardingEmails();
+        if (r.sent > 0) log(`[onboarding-email] sent ${r.sent} trial email(s)`);
+      } catch (err) {
+        console.error('[onboarding-email] sweep failed (non-fatal):', err);
+      }
+    };
+    onboardingEmailSweep();
+    setInterval(onboardingEmailSweep, 60 * 60 * 1000);
 
     // Referral-credit sweep: issues pending referral credits past their 7-day
     // hold (after re-checking the referee's invoice wasn't refunded). Runs
@@ -560,8 +599,30 @@ app.use((req, res, next) => {
       if (snap.updated > 0) {
         log(`Contract price snapshots recomputed: corrected ${snap.updated} of ${snap.scanned} project(s)`);
       }
+      if (snap.skippedContracted > 0) {
+        log(`Contract price snapshots: skipped ${snap.skippedContracted} contracted project(s) (sum is frozen)`);
+      }
     } catch (error) {
       console.error('Failed to recompute contract price snapshots:', error);
+    }
+
+    // Backfill the frozen contract sum for jobs contracted BEFORE the freeze
+    // existed (migration 0042). Captures the current canonical total, so
+    // nothing on screen changes at deploy — the figures simply stop moving
+    // afterwards. Idempotent and self-disabling: it only matches projects with
+    // a contracted estimate and no frozen sum, and always sets contracted_at,
+    // so the second boot matches nothing.
+    //
+    // Runs after recomputeContractPriceSnapshots so that on the first boot both
+    // land on the same canonical figure (each computes it from the estimate
+    // summary independently, so contract_price and the frozen sum agree).
+    try {
+      const frozen = await storage.backfillContractedTotals();
+      if (frozen.filled > 0) {
+        log(`Contract sums frozen: backfilled ${frozen.filled} of ${frozen.scanned} contracted project(s)`);
+      }
+    } catch (error) {
+      console.error('Failed to backfill contracted totals:', error);
     }
   });
 })();

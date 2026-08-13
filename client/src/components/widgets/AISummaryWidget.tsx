@@ -104,7 +104,7 @@ export default function AISummaryWidget({ widget }: WidgetProps) {
         {summary?.schedule && summary.schedule.length > 0 && (
           <div>
             <div className="flex items-center gap-1.5 mb-2">
-              <Calendar className="h-3.5 w-3.5 text-blue-500" />
+              <Calendar className="h-3.5 w-3.5" style={{ color: "hsl(var(--teal))" }} />
               <span className="font-medium text-xs uppercase tracking-wide text-muted-foreground">Today's Schedule</span>
             </div>
             <ul className="space-y-1.5">
@@ -121,7 +121,7 @@ export default function AISummaryWidget({ widget }: WidgetProps) {
         {summary?.actionItems && summary.actionItems.length > 0 && (
           <div>
             <div className="flex items-center gap-1.5 mb-2">
-              <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />
+              <CheckCircle2 className="h-3.5 w-3.5" style={{ color: "hsl(var(--sage))" }} />
               <span className="font-medium text-xs uppercase tracking-wide text-muted-foreground">Action Items</span>
             </div>
             <ul className="space-y-1.5">
@@ -138,13 +138,19 @@ export default function AISummaryWidget({ widget }: WidgetProps) {
         {summary?.issues && summary.issues.length > 0 && (
           <div>
             <div className="flex items-center gap-1.5 mb-2">
-              <AlertCircle className="h-3.5 w-3.5 text-amber-500" />
+              <AlertCircle className="h-3.5 w-3.5" style={{ color: "hsl(var(--amber))" }} />
               <span className="font-medium text-xs uppercase tracking-wide text-muted-foreground">Potential Issues</span>
             </div>
             <ul className="space-y-1.5">
               {summary.issues.map((item, index) => (
                 <li key={index} className="flex items-start gap-2 text-foreground">
-                  <Badge variant="outline" className="text-data px-1 py-0 h-4 bg-amber-500/10 text-amber-600 border-amber-200">!</Badge>
+                  <Badge
+                    variant="outline"
+                    className="text-data px-1 py-0 h-4 border-transparent"
+                    style={{ backgroundColor: "hsl(var(--amber-light))", color: "hsl(42 45% 30%)" }}
+                  >
+                    !
+                  </Badge>
                   <span>{item}</span>
                 </li>
               ))}

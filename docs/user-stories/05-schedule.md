@@ -727,9 +727,16 @@ The schedule operates in three modes:
 **Acceptance Criteria:**
 - Schedule items have a `scopeStageId` field (optional)
 - Linkage established during item creation or via the scope section
-- API endpoint: `POST /api/scope/:scopeItemId/link-schedule`
+- Updated through the schedule item routes (`PATCH /api/schedule-items/:id`)
 
-**Current Implementation:** Schema and API route are implemented. Scope-to-schedule linking is functional.
+**Current Implementation:** Partial. `schedule_items.scope_stage_id` exists and is
+maintained from the scope side, but there is no UI for setting it during schedule
+item creation.
+
+The reverse link — `scope_items.schedule_item_id`, written by
+`POST /api/scope/:scopeItemId/link-schedule` — was removed in Scope-PR1. It had no
+caller in any client and nothing ever read the column. The column itself is
+retained; only the write path is gone.
 
 ---
 

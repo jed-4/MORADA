@@ -277,7 +277,7 @@ export default function Variations({ embedded }: { embedded?: boolean } = {}) {
       queryClient.invalidateQueries({ queryKey: ["/api/variations"] });
       queryClient.invalidateQueries({ predicate: (query) => Array.isArray(query.queryKey) && query.queryKey[0] === "/api/projects" });
     },
-    onError: () => toast({ title: "Failed to update status", variant: "destructive" }),
+    onError: (error: Error) => toast({ title: "Failed to update status", description: error.message, variant: "destructive" }),
   });
 
   const bulkStatusMutation = useMutation({
@@ -289,7 +289,7 @@ export default function Variations({ embedded }: { embedded?: boolean } = {}) {
       setSelectedIds(new Set());
       toast({ title: `${vars.ids.length} variation${vars.ids.length !== 1 ? "s" : ""} updated to ${STATUS_LABEL[vars.status] ?? vars.status}` });
     },
-    onError: () => toast({ title: "Failed to update variations", variant: "destructive" }),
+    onError: (error: Error) => toast({ title: "Failed to update variations", description: error.message, variant: "destructive" }),
   });
 
   const getProject = (projectId: string) => projects.find((p) => p.id === projectId);
@@ -511,26 +511,37 @@ export default function Variations({ embedded }: { embedded?: boolean } = {}) {
         id: "seen",
         header: "Seen",
         enableSorting: false,
-        cell: ({ row }) => (
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              toggleSeenMutation.mutate({ id: row.original.id, isSeen: !row.original.isSeen });
-            }}
-            className={cn(
-              "p-0.5 rounded hover-elevate",
-              row.original.isSeen ? "text-foreground" : "text-muted-foreground/40",
-            )}
-            data-testid={`button-seen-${row.original.id}`}
-          >
-            {row.original.isSeen
-              ? <Eye className="w-3.5 h-3.5" />
-              : <EyeOff className="w-3.5 h-3.5" />}
-          </button>
-        ),
+        cell: ({ row }) => {
+          // Set automatically the first time the client opens their portal
+          // link; still click-toggleable as a manual override.
+          const viewedAt = (row.original as any).portalViewedAt as string | null | undefined;
+          const title = viewedAt
+            ? `Client viewed ${format(new Date(viewedAt), "d MMM yyyy 'at' h:mm a")}`
+            : row.original.isSeen
+              ? "Marked as seen"
+              : "Client hasn't opened this yet";
+          return (
+            <button
+              type="button"
+              title={title}
+              onClick={(e) => {
+                e.stopPropagation();
+                toggleSeenMutation.mutate({ id: row.original.id, isSeen: !row.original.isSeen });
+              }}
+              className={cn(
+                "p-0.5 rounded hover-elevate",
+                row.original.isSeen ? "text-foreground" : "text-muted-foreground/40",
+              )}
+              data-testid={`button-seen-${row.original.id}`}
+            >
+              {row.original.isSeen
+                ? <Eye className="w-3.5 h-3.5" />
+                : <EyeOff className="w-3.5 h-3.5" />}
+            </button>
+          );
+        },
         size: 60,
-        meta: { defaultWidth: 60, align: "center", headerLabel: "Seen", defaultHidden: true },
+        meta: { defaultWidth: 60, align: "center", headerLabel: "Seen by client", defaultHidden: true },
       },
       {
         id: "deadline",
@@ -608,6 +619,16 @@ export default function Variations({ embedded }: { embedded?: boolean } = {}) {
     }
 
     if (targetStatus && activeVariation.status !== targetStatus) {
+      // Approved variations are locked (server-enforced) — rejection needs a
+      // reason, which the drag interaction can't capture.
+      if (activeVariation.status === "approved") {
+        toast({
+          title: "Approved variations are locked",
+          description: "Open the variation and use Reject to make changes.",
+          variant: "destructive",
+        });
+        return;
+      }
       updateStatusMutation.mutate({ id: activeVariation.id, status: targetStatus });
     }
   };

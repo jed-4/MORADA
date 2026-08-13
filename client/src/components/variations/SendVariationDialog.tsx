@@ -38,6 +38,7 @@ interface SendVariationDialogProps {
   variationId: string;
   items: VariationItem[];
   bills?: any[];
+  labourTotalCents?: number;
   company?: Company | null;
   project?: Project | null;
   brandColor?: string;
@@ -59,6 +60,7 @@ export function SendVariationDialog({
   variationId,
   items,
   bills = [],
+  labourTotalCents = 0,
   company,
   project,
   brandColor = "#6d28d9",
@@ -98,6 +100,7 @@ export function SendVariationDialog({
             variation={variation as any}
             items={items}
             bills={bills}
+            labourTotalCents={labourTotalCents}
             company={company}
             project={project}
             brandColor={brandColor}
@@ -108,7 +111,14 @@ export function SendVariationDialog({
           />
         ).toBlob();
         const arrayBuf = await blob.arrayBuffer();
-        pdfBase64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuf)));
+        // Chunked conversion — spreading the whole buffer into fromCharCode
+        // blows the call stack on multi-page PDFs.
+        const bytes = new Uint8Array(arrayBuf);
+        let binary = "";
+        for (let i = 0; i < bytes.length; i++) {
+          binary += String.fromCharCode(bytes[i]);
+        }
+        pdfBase64 = btoa(binary);
       }
       await apiRequest(`/api/variations/${variationId}/send`, "POST", {
         to,

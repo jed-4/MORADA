@@ -121,6 +121,7 @@ import { eq, or, and, desc, asc, gte, lte, sql, inArray, isNull, isNotNull, gt, 
 import * as schema from "@shared/schema";
 import { computeEstimateItemPrice, computeEstimateSummary, estimateItemBuilderCostExTax, resolveEstimateStoredPrice } from "@shared/pricing";
 import { computeBillTotalsCents, billLineExGstCents } from "@shared/billTotals";
+import { timesheetTotalExGstCents } from "@shared/money";
 import type { CircuitContext } from "@shared/schema";
 import type { AiConversation, InsertAiConversation, AiMessage, InsertAiMessage, AiBlockedItem, InsertAiBlockedItem } from "@shared/schema";
 
@@ -153,7 +154,7 @@ export function calendarDateMidnightUtcInTz(d: Date, tz: string): Date {
   } catch {}
   return d;
 }
-import type { Timesheet, InsertTimesheet, TimesheetCostCode, InsertTimesheetCostCode } from "@shared/schema";
+import type { Timesheet, InsertTimesheet, TimesheetCostCode, InsertTimesheetCostCode, TimesheetAllowance, InsertTimesheetAllowance } from "@shared/schema";
 import type { Defect, InsertDefect } from "@shared/schema";
 import type { UserColumnPreferences, InsertUserColumnPreferences } from "@shared/schema";
 import type { UserViewPreferences, InsertUserViewPreferences } from "@shared/schema";
@@ -205,6 +206,14 @@ export type ClientInvoiceChildren = {
   selections?: string[];
 };
 
+// Completion tallies for a set of checklist instances, resolved in one query.
+// Keyed by instance id and by group id; "done" counts both completed and n/a
+// items, matching how progress has always been presented in the UI.
+export type ChecklistItemCounts = {
+  byInstance: Record<string, { total: number; completed: number }>;
+  byGroup: Record<string, { total: number; completed: number }>;
+};
+
 export interface IStorage {
   // User operations
   getUser(id: string): Promise<User | undefined>;
@@ -234,7 +243,10 @@ export interface IStorage {
 
   // User Role operations  
   getUserRoles(category?: UserCategory, companyId?: string): Promise<UserRole[]>;
-  getUserRole(id: string, companyId?: string): Promise<UserRole | undefined>;
+  // companyId required: a role is only meaningful inside its own company, and
+  // resolving a roleId that points at another company's role grants that
+  // company's permissions.
+  getUserRole(id: string, companyId: string): Promise<UserRole | undefined>;
   createUserRole(role: InsertUserRole): Promise<UserRole>;
   updateUserRole(id: string, role: Partial<InsertUserRole>, companyId?: string): Promise<UserRole | undefined>;
   deleteUserRole(id: string, companyId?: string): Promise<boolean>;
@@ -414,7 +426,9 @@ export interface IStorage {
 
   // E-Note Attachments
   getEnoteAttachmentCounts(estimateId: string): Promise<Record<string, number>>;
-  getEnoteAttachments(enoteId: string): Promise<any[]>;
+  // companyId required: ownership is a join through enote → estimate → project,
+  // so the compiler is what stops a caller reading another tenant's list.
+  getEnoteAttachments(enoteId: string, companyId: string): Promise<any[]>;
   createEnoteAttachment(data: any): Promise<any>;
   deleteEnoteAttachment(id: string): Promise<boolean>;
 
@@ -515,15 +529,20 @@ export interface IStorage {
     estimateId: string,
     userId: string,
   ): Promise<{ estimate: Estimate; project: Project; recalcWarnings: string[] } | undefined>;
-  // Stage 2: lock an approved estimate as the contract — freezes the price,
-  // sets isLocked + contracted audit fields, demotes any prior contract.
+  // Stage 2: lock an approved estimate as the contract — snapshots the frozen
+  // contract sum (ex + inc GST) onto the project, sets isLocked + contracted
+  // audit fields, demotes any prior contract.
   markEstimateAsContract(
     estimateId: string,
     userId: string,
   ): Promise<{ estimate: Estimate; project: Project; recalcWarnings: string[] } | undefined>;
   // Idempotent backfill: recompute projects.contractPrice from the selected
   // estimate's canonical total wherever the cached snapshot has drifted.
-  recomputeContractPriceSnapshots(): Promise<{ scanned: number; updated: number }>;
+  // Skips contracted projects — their sum is frozen, not a live cache.
+  recomputeContractPriceSnapshots(): Promise<{ scanned: number; updated: number; skippedContracted: number }>;
+  // One-time backfill for jobs contracted before the freeze existed: captures
+  // the current canonical total as the frozen sum. Self-disabling.
+  backfillContractedTotals(): Promise<{ scanned: number; filled: number }>;
   
   // Summary calculations
   getEstimateSummary(estimateId: string): Promise<{
@@ -572,19 +591,14 @@ export interface IStorage {
   createScopeTemplate(template: InsertScopeTemplate): Promise<ScopeTemplate>;
   updateScopeTemplate(id: string, template: Partial<InsertScopeTemplate>, companyId: string): Promise<ScopeTemplate | undefined>;
   deleteScopeTemplate(id: string, companyId: string): Promise<boolean>;
-  applyScopeTemplate(templateId: string, projectId: string): Promise<ScopeItem[]>;
+  applyScopeTemplate(templateId: string, projectId: string, companyId: string): Promise<ScopeItem[]>;
   addItemToScopeTemplate(templateId: string, scopeItem: any, companyId: string): Promise<ScopeTemplate | undefined>;
   
   // Scope Gear Photos CRUD
   getScopeGearPhotos(scopeItemId: string): Promise<ScopeGearPhoto[]>;
+  getScopeGearPhoto(id: string): Promise<ScopeGearPhoto | undefined>;
   createScopeGearPhoto(photo: InsertScopeGearPhoto): Promise<ScopeGearPhoto>;
   deleteScopeGearPhoto(id: string): Promise<boolean>;
-  
-  // Scope Integration Helpers
-  pushScopeToEstimate(scopeItemIds: string[], estimateId: string): Promise<EstimateItem[]>;
-  createRfqFromScope(scopeItemIds: string[], projectId: string): Promise<import("@shared/schema").Rfq>;
-  createPoFromScope(scopeItemIds: string[], projectId: string): Promise<import("@shared/schema").PurchaseOrder>;
-  linkScopeToScheduleItem(scopeItemId: string, scheduleItemId: string): Promise<ScopeItem | undefined>;
 
   // Company CRUD
   getCompany(id: string): Promise<import("@shared/schema").Company | undefined>;
@@ -594,8 +608,16 @@ export interface IStorage {
   expireLapsedTrials(): Promise<{ expired: number }>;
   
   // Company Settings
-  getCompanySettings(companyId?: string): Promise<CompanySettings | undefined>;
-  updateCompanySettings(settings: Partial<InsertCompanySettings>, companyId?: string): Promise<CompanySettings | undefined>;
+  // companyId is required on both, so tsc rejects any caller that would fall
+  // back to reading or writing an arbitrary tenant's settings row.
+  getCompanySettings(companyId: string): Promise<CompanySettings | undefined>;
+  updateCompanySettings(settings: Partial<InsertCompanySettings>, companyId: string): Promise<CompanySettings | undefined>;
+  /**
+   * Every company's settings row. Deliberately cross-tenant — only for
+   * background workers that must fan out over all companies (the bill inbox
+   * poller). Never reachable from a request path.
+   */
+  getAllCompanySettings(): Promise<CompanySettings[]>;
 
   // System Configuration
   getSystemConfiguration(): Promise<SystemConfiguration | undefined>;
@@ -815,6 +837,9 @@ export interface IStorage {
 
   // Timesheet Allowances
   getTimesheetAllowances(timesheetId: string): Promise<TimesheetAllowance[]>;
+  getTimesheetAllowance(id: string): Promise<TimesheetAllowance | undefined>;
+  getTimesheetAllowancesByEstimateItem(estimateItemId: string): Promise<TimesheetAllowance[]>;
+  createTimesheetAllowancesBulk(allowances: InsertTimesheetAllowance[]): Promise<TimesheetAllowance[]>;
   getTimesheetAllowancesByProject(projectId: string): Promise<TimesheetAllowance[]>;
   createTimesheetAllowance(allowance: InsertTimesheetAllowance): Promise<TimesheetAllowance>;
   updateTimesheetAllowance(id: string, allowance: Partial<InsertTimesheetAllowance>): Promise<TimesheetAllowance | undefined>;
@@ -846,6 +871,7 @@ export interface IStorage {
 
   // Variation Items CRUD
   getVariationItems(variationId: string): Promise<VariationItem[]>;
+  getVariationItemsByProject(projectId: string): Promise<VariationItem[]>;
   createVariationItem(item: InsertVariationItem): Promise<VariationItem>;
   updateVariationItem(id: string, item: Partial<InsertVariationItem>): Promise<VariationItem | undefined>;
   deleteVariationItem(id: string): Promise<boolean>;
@@ -900,6 +926,8 @@ export interface IStorage {
   createInvoiceVariation(data: InsertInvoiceVariation): Promise<InvoiceVariation>;
   updateInvoiceVariation(id: string, data: Partial<InsertInvoiceVariation>): Promise<InvoiceVariation | undefined>;
   deleteInvoiceVariation(id: string): Promise<boolean>;
+  syncVariationPaidAmountsForInvoice(invoiceId: string): Promise<void>;
+  recomputeVariationPaidAmount(variationId: string): Promise<void>;
 
   // Invoice-Allowance Junction Table
   getInvoiceAllowances(invoiceId: string): Promise<InvoiceAllowance[]>;
@@ -912,11 +940,13 @@ export interface IStorage {
   // Variation-Bill Junction Table
   getVariationBills(variationId: string): Promise<any[]>;
   createVariationBill(data: InsertVariationBill): Promise<VariationBill>;
+  createVariationBills(variationId: string, billIds: string[]): Promise<VariationBill[]>;
   deleteVariationBillsByVariationId(variationId: string): Promise<void>;
 
   // Variation-Timesheet Junction Table
   getVariationTimesheets(variationId: string): Promise<any[]>;
   createVariationTimesheet(data: InsertVariationTimesheet): Promise<VariationTimesheet>;
+  createVariationTimesheets(variationId: string, timesheetIds: string[]): Promise<VariationTimesheet[]>;
   deleteVariationTimesheetsByVariationId(variationId: string): Promise<void>;
 
   // Invoice-Bill Junction Table
@@ -981,7 +1011,7 @@ export interface IStorage {
   updateActivity(id: string, activity: Partial<schema.InsertActivity & { pinned?: boolean; pinnedAt?: Date; pinnedBy?: string }>): Promise<schema.Activity | undefined>;
 
   // Site Diary Templates CRUD (company-wide)
-  getSiteDiaryTemplates(): Promise<schema.SiteDiaryTemplate[]>;
+  getSiteDiaryTemplates(companyId: string): Promise<schema.SiteDiaryTemplate[]>;
   getSiteDiaryTemplate(id: string): Promise<schema.SiteDiaryTemplate | undefined>;
   getDefaultSiteDiaryTemplate(companyId: string): Promise<schema.SiteDiaryTemplate | undefined>;
   setDefaultSiteDiaryTemplate(id: string, companyId: string): Promise<schema.SiteDiaryTemplate | undefined>;
@@ -1021,7 +1051,10 @@ export interface IStorage {
   deleteChecklistTemplateItem(id: string): Promise<boolean>;
 
   // Checklist Instances CRUD (these are "Checklist Groups" in user terminology)
-  getChecklistInstances(projectId?: string, userId?: string, isAdmin?: boolean): Promise<ChecklistInstance[]>;
+  getChecklistInstances(projectId?: string, userId?: string, isAdmin?: boolean, companyId?: string): Promise<ChecklistInstance[]>;
+  // Batched reads — the list endpoints used to fan out one query per instance.
+  getChecklistInstanceGroupsForInstances(instanceIds: string[]): Promise<ChecklistInstanceGroup[]>;
+  getChecklistItemCounts(instanceIds: string[]): Promise<ChecklistItemCounts>;
   getChecklistInstance(id: string): Promise<ChecklistInstance | undefined>;
   createChecklistInstance(instance: InsertChecklistInstance): Promise<ChecklistInstance>;
   updateChecklistInstance(id: string, instance: Partial<InsertChecklistInstance>): Promise<ChecklistInstance | undefined>;
@@ -1073,8 +1106,10 @@ export interface IStorage {
   getProjectIdsWithContractEstimate(companyId: string): Promise<string[]>;
 
   // Timesheets CRUD
-  getTimesheets(projectId?: string, filters?: { userId?: string; startDate?: Date; endDate?: Date; status?: string; costCodeId?: string; invoiced?: boolean }): Promise<Timesheet[]>;
+  getTimesheets(projectId?: string, filters?: { userId?: string; startDate?: Date; endDate?: Date; status?: string; costCodeId?: string; invoiced?: boolean; companyId?: string }): Promise<Timesheet[]>;
   getTimesheet(id: string): Promise<Timesheet | undefined>;
+  getTimesheetsByIds(ids: string[]): Promise<Timesheet[]>;
+  createTimesheetsBulk(timesheets: InsertTimesheet[]): Promise<Timesheet[]>;
   createTimesheet(timesheet: InsertTimesheet): Promise<Timesheet>;
   updateTimesheet(id: string, timesheet: Partial<InsertTimesheet>): Promise<Timesheet | undefined>;
   deleteTimesheet(id: string): Promise<boolean>;
@@ -1084,6 +1119,9 @@ export interface IStorage {
 
   // Timesheet Cost Codes (for split timesheets)
   getTimesheetCostCodes(timesheetId: string): Promise<TimesheetCostCode[]>;
+  getTimesheetCostCode(id: string): Promise<TimesheetCostCode | undefined>;
+  getTimesheetCostCodesByTimesheetIds(timesheetIds: string[]): Promise<TimesheetCostCode[]>;
+  replaceTimesheetCostCodes(timesheetId: string, splits: Omit<InsertTimesheetCostCode, "timesheetId">[]): Promise<TimesheetCostCode[]>;
   createTimesheetCostCode(costCode: InsertTimesheetCostCode): Promise<TimesheetCostCode>;
   updateTimesheetCostCode(id: string, costCode: Partial<InsertTimesheetCostCode>): Promise<TimesheetCostCode | undefined>;
   deleteTimesheetCostCode(id: string): Promise<boolean>;
@@ -1209,7 +1247,7 @@ export interface IStorage {
   deleteDefect(id: string): Promise<void>;
 
   // Minutes CRUD operations
-  getMinutes(projectId?: string): Promise<Minute[]>;
+  getMinutes(companyId: string, projectId?: string): Promise<Minute[]>;
   getMinute(id: string): Promise<Minute | undefined>;
   createMinute(minute: InsertMinute): Promise<Minute>;
   updateMinute(id: string, minute: Partial<InsertMinute>): Promise<Minute | undefined>;
@@ -1649,7 +1687,9 @@ export class MemStorage implements IStorage {
   private costCategories: Map<string, CostCategory>;
   private costCodes: Map<string, CostCode>;
   private companies: Map<string, import("@shared/schema").Company>;
-  private companySettings: CompanySettings | undefined;
+  // Keyed by companyId. A single shared row here would make the in-memory
+  // store behave exactly like the cross-tenant bug this replaced.
+  private companySettings: Map<string, CompanySettings> = new Map();
   private systemConfiguration: SystemConfiguration | undefined;
   private fieldCategories: Map<string, FieldCategory>;
   private fieldOptions: Map<string, FieldOption>;
@@ -5329,6 +5369,9 @@ export class MemStorage implements IStorage {
       const projectId = target.projectId;
       const summary = await this.getEstimateSummary(estimateId);
       const contractPriceCents = Math.round((summary.total || 0) * 100);
+      const contractedExGstCents = Math.round((summary.totalExTax || 0) * 100);
+      const contractedIncGstCents = contractPriceCents;
+      const contractedAt = new Date();
       return await db.transaction(async (tx) => {
         await tx.update(schema.estimates)
           .set({
@@ -5347,7 +5390,7 @@ export class MemStorage implements IStorage {
           .set({
             status: "contract",
             isLocked: true,
-            contractedAt: new Date(),
+            contractedAt,
             contractedById: userId,
             approvedAt: target.approvedAt ?? new Date(),
             approvedById: target.approvedById ?? userId,
@@ -5361,6 +5404,10 @@ export class MemStorage implements IStorage {
           .set({
             selectedEstimateId: estimateId,
             contractPrice: contractPriceCents > 0 ? contractPriceCents : null,
+            contractedTotalExGstCents: contractedIncGstCents > 0 ? contractedExGstCents : null,
+            contractedTotalIncGstCents: contractedIncGstCents > 0 ? contractedIncGstCents : null,
+            contractedAt: contractedIncGstCents > 0 ? contractedAt : null,
+            contractedEstimateId: contractedIncGstCents > 0 ? estimateId : null,
             updatedAt: new Date(),
           })
           .where(eq(schema.projects.id, projectId))
@@ -5376,20 +5423,28 @@ export class MemStorage implements IStorage {
     }
   }
 
-  async recomputeContractPriceSnapshots(): Promise<{ scanned: number; updated: number }> {
+  // Mirrors DbStorage.recomputeContractPriceSnapshots — contracted projects are
+  // skipped so a frozen contract sum is never walked back to the live estimate.
+  async recomputeContractPriceSnapshots(): Promise<{ scanned: number; updated: number; skippedContracted: number }> {
     let scanned = 0;
     let updated = 0;
+    let skippedContracted = 0;
     try {
       const rows = await db
         .select({
           id: schema.projects.id,
           selectedEstimateId: schema.projects.selectedEstimateId,
           contractPrice: schema.projects.contractPrice,
+          contractedAt: schema.projects.contractedAt,
         })
         .from(schema.projects)
         .where(isNotNull(schema.projects.selectedEstimateId));
       for (const row of rows) {
         if (!row.selectedEstimateId) continue;
+        if (row.contractedAt) {
+          skippedContracted++;
+          continue;
+        }
         scanned++;
         try {
           const summary = await this.getEstimateSummary(row.selectedEstimateId);
@@ -5409,7 +5464,60 @@ export class MemStorage implements IStorage {
     } catch (err) {
       console.error("[recomputeContractPriceSnapshots] (MemStorage) failed:", err);
     }
-    return { scanned, updated };
+    return { scanned, updated, skippedContracted };
+  }
+
+  // Mirrors DbStorage.backfillContractedTotals. See there for the rationale.
+  async backfillContractedTotals(): Promise<{ scanned: number; filled: number }> {
+    let scanned = 0;
+    let filled = 0;
+    try {
+      const rows = await db
+        .select({
+          id: schema.projects.id,
+          selectedEstimateId: schema.projects.selectedEstimateId,
+          estimateContractedAt: schema.estimates.contractedAt,
+        })
+        .from(schema.projects)
+        .innerJoin(
+          schema.estimates,
+          eq(schema.projects.selectedEstimateId, schema.estimates.id),
+        )
+        .where(and(
+          isNull(schema.projects.contractedAt),
+          eq(schema.estimates.status, "contract"),
+        ));
+
+      for (const row of rows) {
+        if (!row.selectedEstimateId) continue;
+        scanned++;
+        try {
+          const summary = await this.getEstimateSummary(row.selectedEstimateId);
+          const incCents = Math.round((summary.total || 0) * 100);
+          const exCents = Math.round((summary.totalExTax || 0) * 100);
+          if (incCents <= 0) continue;
+          const contractedAt = row.estimateContractedAt ?? new Date();
+          const result = await db.update(schema.projects)
+            .set({
+              contractedTotalExGstCents: exCents,
+              contractedTotalIncGstCents: incCents,
+              contractedAt,
+              contractedEstimateId: row.selectedEstimateId,
+              updatedAt: new Date(),
+            })
+            .where(and(
+              eq(schema.projects.id, row.id),
+              isNull(schema.projects.contractedAt),
+            ));
+          if (((result as any)?.rowCount ?? 1) > 0) filled++;
+        } catch (err) {
+          console.error(`[backfillContractedTotals] project ${row.id} failed:`, err);
+        }
+      }
+    } catch (err) {
+      console.error("[backfillContractedTotals] (MemStorage) failed:", err);
+    }
+    return { scanned, filled };
   }
 
   // Summary calculations
@@ -5505,42 +5613,56 @@ export class MemStorage implements IStorage {
   }
 
   // Company Settings
-  async getCompanySettings(): Promise<CompanySettings | undefined> {
-    return this.companySettings;
+  async getCompanySettings(companyId: string): Promise<CompanySettings | undefined> {
+    if (!companyId) {
+      throw new Error('getCompanySettings requires a companyId');
+    }
+    return this.companySettings.get(companyId);
   }
 
-  async updateCompanySettings(settings: Partial<InsertCompanySettings>): Promise<CompanySettings | undefined> {
-    if (!this.companySettings) {
-      // Create new company settings if none exist
-      this.companySettings = ({
-        id: randomUUID(),
-        companyName: null,
-        email: null,
-        phone: null,
-        taxRate: "10.00",
-        website: null,
-        address: null,
-        logoUrl: null,
-        facebook: null,
-        linkedin: null,
-        twitter: null,
-        instagram: null,
-        googleMyBusiness: null,
-        yelp: null,
-        isActive: true,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-        ...settings,
-      } as unknown) as CompanySettings;
-    } else {
-      // Update existing settings
-      this.companySettings = ({
-        ...this.companySettings,
-        ...settings,
-        updatedAt: new Date(),
-      } as unknown) as CompanySettings;
+  async getAllCompanySettings(): Promise<CompanySettings[]> {
+    return Array.from(this.companySettings.values());
+  }
+
+  async updateCompanySettings(settings: Partial<InsertCompanySettings>, companyId: string): Promise<CompanySettings | undefined> {
+    if (!companyId) {
+      throw new Error('updateCompanySettings requires a companyId');
     }
-    return this.companySettings;
+    // The body must never re-point the row at another company.
+    const { companyId: _ignored, ...safeSettings } = settings as any;
+    const existing = this.companySettings.get(companyId);
+
+    const next = existing
+      ? (({
+          ...existing,
+          ...safeSettings,
+          companyId,
+          updatedAt: new Date(),
+        } as unknown) as CompanySettings)
+      : (({
+          id: randomUUID(),
+          companyId,
+          companyName: null,
+          email: null,
+          phone: null,
+          taxRate: "10.00",
+          website: null,
+          address: null,
+          logoUrl: null,
+          facebook: null,
+          linkedin: null,
+          twitter: null,
+          instagram: null,
+          googleMyBusiness: null,
+          yelp: null,
+          isActive: true,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          ...safeSettings,
+        } as unknown) as CompanySettings);
+
+    this.companySettings.set(companyId, next);
+    return next;
   }
 
   // System Configuration
@@ -6048,9 +6170,9 @@ export class MemStorage implements IStorage {
   }
 
   // Site Diary Templates CRUD
-  async getSiteDiaryTemplates(): Promise<schema.SiteDiaryTemplate[]> {
+  async getSiteDiaryTemplates(companyId: string): Promise<schema.SiteDiaryTemplate[]> {
     return Array.from(this.siteDiaryTemplates.values())
-      .filter(t => !t.isArchived)
+      .filter(t => !t.isArchived && t.companyId === companyId)
       .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())
       .map(t => structuredClone(t)); // Return clones to prevent mutation
   }
@@ -6595,6 +6717,12 @@ export class MemStorage implements IStorage {
   }
   async updateSuggestion(id: string, updates: { status?: string; priority?: string | null; internalNote?: string | null }): Promise<Suggestion | undefined> {
     return undefined;
+  }
+  async getChecklistInstanceGroupsForInstances(instanceIds: string[]): Promise<ChecklistInstanceGroup[]> {
+    return [];
+  }
+  async getChecklistItemCounts(instanceIds: string[]): Promise<ChecklistItemCounts> {
+    return { byInstance: {}, byGroup: {} };
   }
   async createChecklistAuditEntry(entry: InsertChecklistAuditLog): Promise<ChecklistAuditLog> {
     return { id: '', ...entry, createdAt: new Date() } as ChecklistAuditLog;
@@ -7764,7 +7892,7 @@ export class DbStorage implements IStorage {
     
     let role;
     if (user.roleId) {
-      role = await this.getUserRole(user.roleId);
+      role = user.companyId ? await this.getUserRole(user.roleId, user.companyId) : undefined;
     }
     
     return { ...user, role };
@@ -8319,8 +8447,27 @@ export class DbStorage implements IStorage {
   }
 
   async getSelectionsWithOptions(projectId: string): Promise<SelectionWithOptions[]> {
+    // Batched: 3 queries total regardless of selection count. The previous
+    // per-selection fan-out was 3 round trips × N selections against a
+    // ~400ms-RTT database.
     const selections = await this.getSelections(projectId);
-    return Promise.all(selections.map(async (s) => (await this.getSelectionWithOptions(s.id))!));
+    if (selections.length === 0) return [];
+    const selectionIds = selections.map((s) => s.id);
+    const options = await db.select().from(schema.selectionOptions)
+      .where(inArray(schema.selectionOptions.selectionId, selectionIds));
+    const optionIds = options.map((o) => o.id);
+    const attachments = optionIds.length === 0 ? [] : await db.select().from(schema.optionAttachments)
+      .where(inArray(schema.optionAttachments.optionId, optionIds))
+      .orderBy(asc(schema.optionAttachments.sortOrder));
+    const attachmentsByOption = attachments.reduce<Record<string, OptionAttachment[]>>((acc, att) => {
+      (acc[att.optionId] ??= []).push(att);
+      return acc;
+    }, {});
+    const optionsBySelection = options.reduce<Record<string, SelectionOption[]>>((acc, o) => {
+      (acc[o.selectionId] ??= []).push({ ...o, attachments: attachmentsByOption[o.id] ?? [] } as SelectionOption);
+      return acc;
+    }, {});
+    return selections.map((s) => ({ ...s, options: optionsBySelection[s.id] ?? [] }));
   }
 
   async createSelection(insertSelection: InsertSelection): Promise<Selection> {
@@ -8471,12 +8618,15 @@ export class DbStorage implements IStorage {
     }
   }
 
-  async getUserRole(id: string, companyId?: string): Promise<UserRole | undefined> {
+  async getUserRole(id: string, companyId: string): Promise<UserRole | undefined> {
+    if (!companyId) {
+      throw new Error('getUserRole requires a companyId');
+    }
     try {
-      const conditions = [eq(schema.userRoles.id, id)];
-      if (companyId) {
-        conditions.push(eq(schema.userRoles.companyId, companyId));
-      }
+      const conditions = [
+        eq(schema.userRoles.id, id),
+        eq(schema.userRoles.companyId, companyId),
+      ];
       
       const results = await db.select()
         .from(schema.userRoles)
@@ -8905,7 +9055,7 @@ export class DbStorage implements IStorage {
       if (!user || !user.roleId) return false;
 
       // Check if user has an admin-level built-in role (bypass permission check)
-      const role = await this.getUserRole(user.roleId);
+      const role = user.companyId ? await this.getUserRole(user.roleId, user.companyId) : undefined;
       if (role && role.isBuiltIn) {
         const roleName = role.name?.toLowerCase() || '';
         const isAdminRole = 
@@ -9992,14 +10142,16 @@ export class DbStorage implements IStorage {
   }
   async getTaskViews(companyId: string, userId?: string): Promise<TaskView[]> {
     try {
-      let query = db.select().from(schema.taskViews)
-        .where(eq(schema.taskViews.companyId, companyId));
-      
-      if (userId) {
-        query = query.where(eq(schema.taskViews.userId, userId)) as any;
-      }
-      
-      const views = await query.orderBy(schema.taskViews.sortOrder, desc(schema.taskViews.createdAt));
+      // Predicates are collected and applied as ONE .where(and(...)).
+      // Chaining a second .where() REPLACES the first in Drizzle rather than
+      // ANDing it, so the optional filter below used to silently delete the
+      // companyId predicate and return every tenant's rows.
+      const conds: any[] = [eq(schema.taskViews.companyId, companyId)];
+      if (userId) conds.push(eq(schema.taskViews.userId, userId));
+
+      const views = await db.select().from(schema.taskViews)
+        .where(and(...conds))
+        .orderBy(schema.taskViews.sortOrder, desc(schema.taskViews.createdAt));
       return views;
     } catch (error) {
       console.error("Database error in getTaskViews:", error);
@@ -10967,12 +11119,40 @@ export class DbStorage implements IStorage {
     }
   }
 
-  async getEnoteAttachments(enoteId: string): Promise<any[]> {
+  /**
+   * Attachments for one estimate note, scoped to the owning company.
+   *
+   * enote_attachments has no companyId of its own — ownership runs
+   * attachment → enote → estimate → project → company — so the scope is a
+   * join, not a column filter. The route also checks ownership before calling
+   * this; the predicate here is the backstop, so a future caller that forgets
+   * cannot re-open the leak.
+   */
+  async getEnoteAttachments(enoteId: string, companyId: string): Promise<any[]> {
+    if (!companyId) {
+      throw new Error('getEnoteAttachments requires a companyId');
+    }
     try {
       return await db
-        .select()
+        .select({
+          id: schema.enoteAttachments.id,
+          enoteId: schema.enoteAttachments.enoteId,
+          fileName: schema.enoteAttachments.fileName,
+          fileUrl: schema.enoteAttachments.fileUrl,
+          fileSize: schema.enoteAttachments.fileSize,
+          mimeType: schema.enoteAttachments.mimeType,
+          uploadedAt: schema.enoteAttachments.uploadedAt,
+          thumbnailX: schema.enoteAttachments.thumbnailX,
+          thumbnailY: schema.enoteAttachments.thumbnailY,
+        })
         .from(schema.enoteAttachments)
-        .where(eq(schema.enoteAttachments.enoteId, enoteId))
+        .innerJoin(schema.estimateEnotes, eq(schema.estimateEnotes.id, schema.enoteAttachments.enoteId))
+        .innerJoin(schema.estimates, eq(schema.estimates.id, schema.estimateEnotes.estimateId))
+        .innerJoin(schema.projects, eq(schema.projects.id, schema.estimates.projectId))
+        .where(and(
+          eq(schema.enoteAttachments.enoteId, enoteId),
+          eq(schema.projects.companyId, companyId),
+        ))
         .orderBy(schema.enoteAttachments.uploadedAt);
     } catch (error) {
       console.error("Database error in getEnoteAttachments:", error);
@@ -12435,6 +12615,11 @@ export class DbStorage implements IStorage {
   // isLocked + contracted audit fields, and demotes any prior contract back to
   // approved. Budget + labour-hours recalcs run inside the same transaction so
   // everything commits or rolls back together.
+  //
+  // THIS IS THE FREEZE POINT. The canonical total is snapshotted (ex AND inc
+  // GST) onto projects.contracted_total_*_cents together with contracted_at,
+  // and from here on that snapshot — not the live estimate — is the client's
+  // contract price everywhere. Only an approved variation can move it.
   async markEstimateAsContract(
     estimateId: string,
     userId: string,
@@ -12444,9 +12629,14 @@ export class DbStorage implements IStorage {
       if (!target || !target.projectId) return undefined;
       const projectId = target.projectId;
 
-      // Freeze the canonical estimate total (cents).
+      // Freeze the canonical estimate total (cents). Both sides of GST are
+      // stored so no read site ever has to derive one from the other — GST is
+      // applied once at the estimate subtotal, so gst = inc - ex exactly.
       const summary = await this.getEstimateSummary(estimateId);
       const contractPriceCents = Math.round((summary.total || 0) * 100);
+      const contractedExGstCents = Math.round((summary.totalExTax || 0) * 100);
+      const contractedIncGstCents = contractPriceCents;
+      const contractedAt = new Date();
 
       return await db.transaction(async (tx) => {
         // Demote any prior contract on this project (and unlock it).
@@ -12469,7 +12659,7 @@ export class DbStorage implements IStorage {
           .set({
             status: "contract",
             isLocked: true,
-            contractedAt: new Date(),
+            contractedAt,
             contractedById: userId,
             approvedAt: target.approvedAt ?? new Date(),
             approvedById: target.approvedById ?? userId,
@@ -12482,11 +12672,17 @@ export class DbStorage implements IStorage {
           throw new Error("Failed to promote estimate to contract");
         }
 
-        // Update project selectedEstimateId + frozen contractPrice in the same tx.
+        // Update project selectedEstimateId + the FROZEN contract sum in the
+        // same tx. Re-contracting a different revision overwrites the freeze,
+        // which is the intended "contract replaced" path.
         const updatedProjectRows = await tx.update(schema.projects)
           .set({
             selectedEstimateId: estimateId,
             contractPrice: contractPriceCents > 0 ? contractPriceCents : null,
+            contractedTotalExGstCents: contractedIncGstCents > 0 ? contractedExGstCents : null,
+            contractedTotalIncGstCents: contractedIncGstCents > 0 ? contractedIncGstCents : null,
+            contractedAt: contractedIncGstCents > 0 ? contractedAt : null,
+            contractedEstimateId: contractedIncGstCents > 0 ? estimateId : null,
             updatedAt: new Date(),
           })
           .where(eq(schema.projects.id, projectId))
@@ -12514,20 +12710,32 @@ export class DbStorage implements IStorage {
   // recompute the canonical estimate total and update projects.contractPrice
   // when the cached snapshot has drifted. Non-destructive (only corrects a
   // derived cache) — safe to run on every startup.
-  async recomputeContractPriceSnapshots(): Promise<{ scanned: number; updated: number }> {
+  //
+  // CONTRACTED JOBS ARE SKIPPED. contractPrice is a live cache of the selected
+  // estimate, which is exactly the right thing for an approved-but-not-yet
+  // contracted job and exactly the wrong thing once the contract is signed —
+  // this job used to walk a frozen contract sum back to the live estimate total
+  // on every single boot.
+  async recomputeContractPriceSnapshots(): Promise<{ scanned: number; updated: number; skippedContracted: number }> {
     let scanned = 0;
     let updated = 0;
+    let skippedContracted = 0;
     try {
       const rows = await db
         .select({
           id: schema.projects.id,
           selectedEstimateId: schema.projects.selectedEstimateId,
           contractPrice: schema.projects.contractPrice,
+          contractedAt: schema.projects.contractedAt,
         })
         .from(schema.projects)
         .where(isNotNull(schema.projects.selectedEstimateId));
       for (const row of rows) {
         if (!row.selectedEstimateId) continue;
+        if (row.contractedAt) {
+          skippedContracted++;
+          continue;
+        }
         scanned++;
         try {
           const summary = await this.getEstimateSummary(row.selectedEstimateId);
@@ -12547,7 +12755,81 @@ export class DbStorage implements IStorage {
     } catch (err) {
       console.error("[recomputeContractPriceSnapshots] failed:", err);
     }
-    return { scanned, updated };
+    return { scanned, updated, skippedContracted };
+  }
+
+  // One-time backfill for jobs contracted BEFORE the contract sum was frozen
+  // (migration 0042). For every project whose selected estimate is already at
+  // status "contract" but which carries no frozen sum, capture the CURRENT
+  // canonical total as the frozen one.
+  //
+  // Backfilling from the current live total is deliberate: every figure on
+  // screen the moment after deploy equals the figure the moment before. What
+  // changes is that they stop moving afterwards. A job whose live total has
+  // already drifted from its signed amount needs a manual correction — see the
+  // verification query in the PR body.
+  //
+  // Idempotent by construction: it only ever writes rows where contractedAt IS
+  // NULL and always sets contractedAt, so the second boot matches nothing and
+  // writes nothing. Never overwrites an existing freeze.
+  async backfillContractedTotals(): Promise<{ scanned: number; filled: number }> {
+    let scanned = 0;
+    let filled = 0;
+    try {
+      const rows = await db
+        .select({
+          id: schema.projects.id,
+          selectedEstimateId: schema.projects.selectedEstimateId,
+          estimateContractedAt: schema.estimates.contractedAt,
+        })
+        .from(schema.projects)
+        .innerJoin(
+          schema.estimates,
+          eq(schema.projects.selectedEstimateId, schema.estimates.id),
+        )
+        .where(and(
+          isNull(schema.projects.contractedAt),
+          eq(schema.estimates.status, "contract"),
+        ));
+
+      for (const row of rows) {
+        if (!row.selectedEstimateId) continue;
+        scanned++;
+        try {
+          const summary = await this.getEstimateSummary(row.selectedEstimateId);
+          const incCents = Math.round((summary.total || 0) * 100);
+          const exCents = Math.round((summary.totalExTax || 0) * 100);
+          // A zero/failed total must not freeze a job at $0 — leave it unfrozen
+          // so it keeps reading live and stays visible as needing attention.
+          if (incCents <= 0) continue;
+
+          // Prefer the estimate's own contractedAt so the frozen-at timestamp
+          // reflects when the contract was actually signed, not deploy time.
+          const contractedAt = row.estimateContractedAt ?? new Date();
+
+          // Re-assert the IS NULL predicate in the UPDATE so a concurrent
+          // Mark as Contract during boot can never be clobbered by the backfill.
+          const result = await db.update(schema.projects)
+            .set({
+              contractedTotalExGstCents: exCents,
+              contractedTotalIncGstCents: incCents,
+              contractedAt,
+              contractedEstimateId: row.selectedEstimateId,
+              updatedAt: new Date(),
+            })
+            .where(and(
+              eq(schema.projects.id, row.id),
+              isNull(schema.projects.contractedAt),
+            ));
+          if (((result as any)?.rowCount ?? 1) > 0) filled++;
+        } catch (err) {
+          console.error(`[backfillContractedTotals] project ${row.id} failed:`, err);
+        }
+      }
+    } catch (err) {
+      console.error("[backfillContractedTotals] failed:", err);
+    }
+    return { scanned, filled };
   }
 
   async getEstimateSummary(estimateId: string): Promise<{
@@ -13138,23 +13420,30 @@ export class DbStorage implements IStorage {
     }
   }
 
-  async applyScopeTemplate(templateId: string, projectId: string): Promise<ScopeItem[]> {
+  async applyScopeTemplate(templateId: string, projectId: string, companyId: string): Promise<ScopeItem[]> {
     try {
-      // Get the template
+      // Scope template lookup to caller's company — prevents cross-tenant template reads
       const [template] = await db.select().from(schema.scopeTemplates)
-        .where(eq(schema.scopeTemplates.id, templateId))
+        .where(and(
+          eq(schema.scopeTemplates.id, templateId),
+          eq(schema.scopeTemplates.companyId, companyId),
+        ))
         .limit(1);
-      
+
       if (!template) {
         throw new Error("Template not found");
       }
 
-      // Get project to get companyId
+      // Scope project lookup to caller's company — prevents cross-tenant writes.
+      // companyId used to be read off the project itself, so applying a template
+      // to another tenant's project stamped the new items with THEIR company.
       const project = await this.getProject(projectId);
       if (!project) {
         throw new Error("Project not found");
       }
-      const companyId = project.companyId;
+      if (project.companyId !== companyId) {
+        throw new Error("Access denied");
+      }
 
       // Get existing stages for this project. Track them in a name-keyed
       // map so collisions during template apply re-use the existing row
@@ -13454,6 +13743,21 @@ export class DbStorage implements IStorage {
     }
   }
 
+  // Single-row lookup. Exists so DELETE /api/gear-photos/:id can verify the
+  // photo belongs to the caller's company before removing it — the row carries
+  // companyId directly.
+  async getScopeGearPhoto(id: string): Promise<ScopeGearPhoto | undefined> {
+    try {
+      const [photo] = await db.select().from(schema.scopeGearPhotos)
+        .where(eq(schema.scopeGearPhotos.id, id))
+        .limit(1);
+      return photo;
+    } catch (error) {
+      console.error("Database error in getScopeGearPhoto:", error);
+      return undefined;
+    }
+  }
+
   async createScopeGearPhoto(photo: InsertScopeGearPhoto): Promise<ScopeGearPhoto> {
     const [newPhoto] = await db.insert(schema.scopeGearPhotos)
       .values(photo)
@@ -13469,207 +13773,6 @@ export class DbStorage implements IStorage {
     } catch (error) {
       console.error("Database error in deleteScopeGearPhoto:", error);
       return false;
-    }
-  }
-
-  // Scope Integration Helpers
-  async pushScopeToEstimate(scopeItemIds: string[], estimateId: string): Promise<EstimateItem[]> {
-    try {
-      // Get the scope items
-      const scopeItems = await db.select().from(schema.scopeItems)
-        .where(inArray(schema.scopeItems.id, scopeItemIds));
-
-      // Get the estimate to check if it exists
-      const [estimate] = await db.select().from(schema.estimates)
-        .where(eq(schema.estimates.id, estimateId))
-        .limit(1);
-      
-      if (!estimate) {
-        throw new Error("Estimate not found");
-      }
-
-      // Create estimate items from scope items
-      const estimateItems: InsertEstimateItem[] = scopeItems.map((scopeItem, index) => ({
-        estimateId,
-        groupId: null,
-        description: scopeItem.description || scopeItem.title,
-        costCodeId: scopeItem.costCodeId,
-        costCodeTitle: scopeItem.costCodeTitle,
-        quantity: 1,
-        unit: 'item',
-        unitCost: 0,
-        builderCost: 0,
-        markup: estimate.markupPercentage || 0,
-        clientPrice: 0,
-        taxAmount: 0,
-        displayOrder: index,
-      }));
-
-      const newItems = await this.bulkCreateEstimateItems(estimateItems);
-
-      // Update scope items to link to estimate items
-      for (let i = 0; i < scopeItems.length; i++) {
-        await db.update(schema.scopeItems)
-          .set({ estimateItemId: newItems[i].id })
-          .where(eq(schema.scopeItems.id, scopeItems[i].id));
-      }
-
-      return newItems;
-    } catch (error) {
-      console.error("Database error in pushScopeToEstimate:", error);
-      return [];
-    }
-  }
-
-  async createRfqFromScope(scopeItemIds: string[], projectId: string): Promise<import("@shared/schema").Rfq> {
-    try {
-      // Get project to verify company ownership
-      const [project] = await db.select().from(schema.projects)
-        .where(eq(schema.projects.id, projectId))
-        .limit(1);
-
-      if (!project) {
-        throw new Error('Project not found');
-      }
-
-      // Get scope items and validate they all belong to this project/company
-      const scopeItems = await db.select().from(schema.scopeItems)
-        .where(inArray(schema.scopeItems.id, scopeItemIds));
-
-      // Security: Verify ALL scope items belong to the target project and company
-      for (const item of scopeItems) {
-        if (item.projectId !== projectId || item.companyId !== project.companyId) {
-          throw new Error('Unauthorized: Scope item does not belong to this project/company');
-        }
-      }
-
-      if (scopeItems.length !== scopeItemIds.length) {
-        throw new Error('Some scope items not found');
-      }
-
-      // Create a combined description from scope items
-      const description = scopeItems.map(item => item.title).join('\n');
-      const scope = scopeItems.map(item => `${item.title}\n${item.description || ''}`).join('\n\n');
-
-      // Create RFQ
-      const [rfq] = await db.insert(schema.rfqs)
-        .values({
-          projectId,
-          title: 'RFQ from Scope',
-          description,
-          scope,
-          status: 'draft',
-          dueDate: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000), // 2 weeks from now
-        })
-        .returning();
-
-      // Link scope items to RFQ
-      for (const scopeItem of scopeItems) {
-        await db.update(schema.scopeItems)
-          .set({ rfqId: rfq.id })
-          .where(eq(schema.scopeItems.id, scopeItem.id));
-      }
-
-      return rfq;
-    } catch (error) {
-      console.error("Database error in createRfqFromScope:", error);
-      throw error;
-    }
-  }
-
-  async createPoFromScope(scopeItemIds: string[], projectId: string): Promise<import("@shared/schema").PurchaseOrder> {
-    try {
-      // Get project to verify company ownership
-      const [project] = await db.select().from(schema.projects)
-        .where(eq(schema.projects.id, projectId))
-        .limit(1);
-
-      if (!project) {
-        throw new Error('Project not found');
-      }
-
-      // Get scope items and validate they all belong to this project/company
-      const scopeItems = await db.select().from(schema.scopeItems)
-        .where(inArray(schema.scopeItems.id, scopeItemIds));
-
-      // Security: Verify ALL scope items belong to the target project and company
-      for (const item of scopeItems) {
-        if (item.projectId !== projectId || item.companyId !== project.companyId) {
-          throw new Error('Unauthorized: Scope item does not belong to this project/company');
-        }
-      }
-
-      if (scopeItems.length !== scopeItemIds.length) {
-        throw new Error('Some scope items not found');
-      }
-
-      // Generate PO number atomically using advisory lock
-      const result = await db.transaction(async (tx) => {
-        // Use PostgreSQL advisory lock to prevent concurrent PO creation for same company
-        // Use hashtext to convert UUID to deterministic bigint for advisory lock
-        await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${project.companyId}))`);
-
-        // Now safely get the highest PO number for this company
-        const existingPos = await tx.select({ poNumber: schema.purchaseOrders.poNumber })
-          .from(schema.purchaseOrders)
-          .where(eq(schema.purchaseOrders.companyId, project.companyId))
-          .orderBy(sql`${schema.purchaseOrders.poNumber} DESC`)
-          .limit(1);
-
-        // Extract number from PO-XXXX format and increment
-        let nextNumber = 1;
-        if (existingPos.length > 0 && existingPos[0].poNumber) {
-          const match = existingPos[0].poNumber.match(/PO-(\d+)/);
-          if (match) {
-            nextNumber = parseInt(match[1], 10) + 1;
-          }
-        }
-        const poNumber = `PO-${String(nextNumber).padStart(4, '0')}`;
-
-        // Create a combined description from scope items
-        const description = scopeItems.map(item => `${item.title}\n${item.description || ''}`).join('\n\n');
-
-        // Create Purchase Order within transaction
-        const [po] = await tx.insert(schema.purchaseOrders)
-          .values({
-            projectId,
-            companyId: project.companyId,
-            poNumber,
-            title: 'PO from Scope',
-            description,
-            status: 'draft',
-            total: 0,
-          })
-          .returning();
-
-        // Link scope items to PO
-        for (const scopeItem of scopeItems) {
-          await tx.update(schema.scopeItems)
-            .set({ poId: po.id })
-            .where(eq(schema.scopeItems.id, scopeItem.id));
-        }
-
-        // Advisory lock is automatically released at transaction end
-        return po;
-      });
-
-      return result;
-    } catch (error) {
-      console.error("Database error in createPoFromScope:", error);
-      throw error;
-    }
-  }
-
-  async linkScopeToScheduleItem(scopeItemId: string, scheduleItemId: string): Promise<ScopeItem | undefined> {
-    try {
-      const [updated] = await db.update(schema.scopeItems)
-        .set({ scheduleItemId })
-        .where(eq(schema.scopeItems.id, scopeItemId))
-        .returning();
-      return updated;
-    } catch (error) {
-      console.error("Database error in linkScopeToScheduleItem:", error);
-      return undefined;
     }
   }
 
@@ -13736,36 +13839,23 @@ export class DbStorage implements IStorage {
     return { expired: result.rowCount ?? 0 };
   }
 
-  async getCompanySettings(companyId?: string): Promise<CompanySettings | undefined> {
-    // Per-company row when a companyId is supplied (the /api/company-settings
-    // routes always pass the caller's). Without one (internal service callers),
-    // fall back to the legacy first-row behaviour — single-tenant compatible.
-    if (companyId) {
-      const [scoped] = await db.select().from(schema.companySettings)
-        .where(eq(schema.companySettings.companyId, companyId))
-        .limit(1);
-      if (scoped) return scoped;
-      // Self-heal: claim the legacy unowned (pre-multi-tenant) row for the
-      // first company that reads it; every other company strictly misses and
-      // gets its own row created on first save.
-      const [legacy] = await db.select().from(schema.companySettings)
-        .where(isNull(schema.companySettings.companyId))
-        .limit(1);
-      if (legacy) {
-        const [claimed] = await db.update(schema.companySettings)
-          .set({ companyId, updatedAt: new Date() } as any)
-          .where(and(
-            eq(schema.companySettings.id, legacy.id),
-            isNull(schema.companySettings.companyId),
-          ))
-          .returning();
-        return claimed ?? undefined;
-      }
-      return undefined;
+  async getCompanySettings(companyId: string): Promise<CompanySettings | undefined> {
+    // Fails closed. There used to be an unscoped `LIMIT 1` fallback here for
+    // callers that had no companyId, which returned an arbitrary tenant's row —
+    // including its Gmail OAuth credentials. The parameter is now required, so
+    // tsc rejects a caller that omits it; this guard covers the paths types
+    // can't see (`any`, dynamic dispatch).
+    if (!companyId) {
+      throw new Error('getCompanySettings requires a companyId');
     }
-    // Legacy: first (historically only) company settings record
-    const [settings] = await db.select().from(schema.companySettings).limit(1);
-    return settings;
+    const [scoped] = await db.select().from(schema.companySettings)
+      .where(eq(schema.companySettings.companyId, companyId))
+      .limit(1);
+    return scoped;
+  }
+
+  async getAllCompanySettings(): Promise<CompanySettings[]> {
+    return await db.select().from(schema.companySettings);
   }
 
   async getFirstCompanyId(): Promise<string | undefined> {
@@ -13824,10 +13914,14 @@ export class DbStorage implements IStorage {
 
   async syncCompanyName(): Promise<{ synced: boolean; name?: string }> {
     try {
-      const settings = await this.getCompanySettings();
-      if (!settings?.companyName) return { synced: false };
+      // Legacy startup heal for the original single-tenant install. It only
+      // ever targets the primary company, so it must read that company's own
+      // settings — reading an unscoped row would stamp a second tenant's
+      // company name onto the primary company on the next boot.
       const primaryId = await this.getFirstCompanyId();
       if (!primaryId) return { synced: false };
+      const settings = await this.getCompanySettings(primaryId);
+      if (!settings?.companyName) return { synced: false };
       await db.update(schema.companies)
         .set({ name: settings.companyName })
         .where(and(
@@ -13841,10 +13935,13 @@ export class DbStorage implements IStorage {
     }
   }
 
-  async updateCompanySettings(settings: Partial<InsertCompanySettings>, companyId?: string): Promise<CompanySettings | undefined> {
-    // Per-company row when a companyId is supplied — an admin of company B can
-    // no longer edit the row every other company reads. Never allow the body
+  async updateCompanySettings(settings: Partial<InsertCompanySettings>, companyId: string): Promise<CompanySettings | undefined> {
+    // Required for the same reason as the read: an unscoped write let an admin
+    // of company B edit the row every other company reads. Never allow the body
     // to re-point the row at another company.
+    if (!companyId) {
+      throw new Error('updateCompanySettings requires a companyId');
+    }
     const { companyId: _ignored, ...safeSettings } = settings as any;
     const existing = await this.getCompanySettings(companyId);
 
@@ -13856,9 +13953,9 @@ export class DbStorage implements IStorage {
         .returning();
       return updated;
     } else {
-      // Create new record (stamped with the owning company when known)
+      // Create new record, always stamped with the owning company
       const [created] = await db.insert(schema.companySettings)
-        .values({ ...safeSettings, ...(companyId ? { companyId } : {}) } as any)
+        .values({ ...safeSettings, companyId } as any)
         .returning();
       return created;
     }
@@ -14006,10 +14103,18 @@ export class DbStorage implements IStorage {
       throw error;
     }
   }
-  async getClientSelections(projectId: string): Promise<ClientSelection[]> { return []; }
-  async createClientSelection(selection: InsertClientSelection): Promise<ClientSelection> { throw new Error("Not implemented"); }
-  async deleteClientSelection(id: string): Promise<boolean> { return false; }
-  async getClientSelectionBySelectionId(selectionId: string): Promise<ClientSelection | undefined> { return undefined; }
+  async getClientSelections(projectId: string): Promise<ClientSelection[]> {
+    return db.select().from(schema.clientSelections)
+      .where(eq(schema.clientSelections.projectId, projectId));
+  }
+  async createClientSelection(selection: InsertClientSelection): Promise<ClientSelection> {
+    const [row] = await db.insert(schema.clientSelections).values(selection).returning();
+    return row;
+  }
+  async deleteClientSelection(id: string): Promise<boolean> {
+    const result = await db.delete(schema.clientSelections).where(eq(schema.clientSelections.id, id));
+    return (result.rowCount ?? 0) > 0;
+  }
   async getSelectionComments(selectionId: string): Promise<SelectionComment[]> { return []; }
   async createSelectionComment(comment: InsertSelectionComment): Promise<SelectionComment> { throw new Error("Not implemented"); }
   async deleteSelectionComment(id: string): Promise<boolean> { return false; }
@@ -15911,7 +16016,9 @@ export class DbStorage implements IStorage {
         .where(eq(schema.billLineItems.billId, billId));
       if (lines.length === 0) return false;
 
-      const settings = await this.getCompanySettings();
+      // Tax rate comes from the bill's own company — recomputing a bill must
+      // never pick up another tenant's configured rate.
+      const settings = await this.getCompanySettings(bill.companyId ?? undefined);
       const taxRate = Number(settings?.taxRate ?? 10) || 10;
       const taxMode = bill.taxMode === "inclusive" ? "inclusive" : "exclusive";
       const { subtotal, tax, total } = computeBillTotalsCents(
@@ -16129,6 +16236,42 @@ export class DbStorage implements IStorage {
     }
   }
 
+  async getTimesheetAllowance(id: string): Promise<TimesheetAllowance | undefined> {
+    try {
+      const result = await db.select()
+        .from(schema.timesheetAllowances)
+        .where(eq(schema.timesheetAllowances.id, id))
+        .limit(1);
+      return result[0];
+    } catch (error) {
+      console.error("Database error in getTimesheetAllowance:", error);
+      throw error;
+    }
+  }
+
+  async getTimesheetAllowancesByEstimateItem(estimateItemId: string): Promise<TimesheetAllowance[]> {
+    try {
+      return await db.select()
+        .from(schema.timesheetAllowances)
+        .where(eq(schema.timesheetAllowances.estimateItemId, estimateItemId));
+    } catch (error) {
+      console.error("Database error in getTimesheetAllowancesByEstimateItem:", error);
+      throw error;
+    }
+  }
+
+  async createTimesheetAllowancesBulk(allowances: InsertTimesheetAllowance[]): Promise<TimesheetAllowance[]> {
+    if (allowances.length === 0) return [];
+    try {
+      return await db.insert(schema.timesheetAllowances)
+        .values(allowances)
+        .returning();
+    } catch (error) {
+      console.error("Database error in createTimesheetAllowancesBulk:", error);
+      throw error;
+    }
+  }
+
   async getTimesheetAllowancesByProject(projectId: string): Promise<TimesheetAllowance[]> {
     try {
       const allowances = await db.select({
@@ -16283,10 +16426,15 @@ export class DbStorage implements IStorage {
         .where(eq(schema.billApprovals.billId, billId))
         .orderBy(desc(schema.billApprovals.createdAt));
 
+      // The join above already resolves the approver — surface it as
+      // `approvedByName` so the UI can show a person instead of the raw UUID
+      // (it used to be selected and then dropped here).
       return approvals.map(approval => ({
         id: approval.id,
         billId: approval.billId,
         approvedById: approval.approvedById,
+        approvedByName:
+          [approval.approvedByName, approval.approvedByLastName].filter(Boolean).join(" ") || null,
         status: approval.status,
         comments: approval.comments,
         createdAt: approval.createdAt,
@@ -16611,6 +16759,21 @@ export class DbStorage implements IStorage {
         .orderBy(schema.variationItems.sortOrder);
     } catch (error) {
       console.error("Database error in getVariationItems:", error);
+      throw error;
+    }
+  }
+
+  // All variation items for a project in one query (dashboard metrics)
+  async getVariationItemsByProject(projectId: string): Promise<VariationItem[]> {
+    try {
+      const rows = await db.select({ item: schema.variationItems })
+        .from(schema.variationItems)
+        .innerJoin(schema.variations, eq(schema.variationItems.variationId, schema.variations.id))
+        .where(eq(schema.variations.projectId, projectId))
+        .orderBy(schema.variationItems.sortOrder);
+      return rows.map(r => r.item);
+    } catch (error) {
+      console.error("Database error in getVariationItemsByProject:", error);
       throw error;
     }
   }
@@ -17073,9 +17236,67 @@ export class DbStorage implements IStorage {
       await db.update(schema.clientInvoices)
         .set({ paidAmount: paid, balanceAmount: balance, status, updatedAt: new Date() })
         .where(eq(schema.clientInvoices.id, invoiceId));
+
+      // Flow the payment change through to any variations claimed on this
+      // invoice — their paid/balance track invoice payments pro-rata.
+      await this.syncVariationPaidAmountsForInvoice(invoiceId);
     } catch (error) {
       console.error("Database error in syncClientInvoicePaidStatus:", error);
       throw error;
+    }
+  }
+
+  // Recompute paidAmount/balanceAmount for every variation claimed on the
+  // given invoice. Best-effort: paid tracking is informational and must never
+  // fail the payment write.
+  async syncVariationPaidAmountsForInvoice(invoiceId: string): Promise<void> {
+    try {
+      const claims = await db.select({ variationId: schema.invoiceVariations.variationId })
+        .from(schema.invoiceVariations)
+        .where(eq(schema.invoiceVariations.invoiceId, invoiceId));
+      for (const claim of claims) {
+        await this.recomputeVariationPaidAmount(claim.variationId);
+      }
+    } catch (error) {
+      console.error("Database error in syncVariationPaidAmountsForInvoice:", error);
+    }
+  }
+
+  // A variation's paidAmount = sum over every invoice claiming it of
+  // (claimPercent of the variation total) × (that invoice's paid ratio).
+  // Cents throughout; the paid ratio is clamped to [0,1] so overpayments
+  // don't inflate the variation beyond its claim.
+  async recomputeVariationPaidAmount(variationId: string): Promise<void> {
+    try {
+      const [variation] = await db.select().from(schema.variations)
+        .where(eq(schema.variations.id, variationId)).limit(1);
+      if (!variation) return;
+
+      const claimRows = await db
+        .select({
+          claimPercent: schema.invoiceVariations.claimPercent,
+          invoicePaid: schema.clientInvoices.paidAmount,
+          invoiceTotal: schema.clientInvoices.totalAmount,
+        })
+        .from(schema.invoiceVariations)
+        .innerJoin(schema.clientInvoices, eq(schema.invoiceVariations.invoiceId, schema.clientInvoices.id))
+        .where(eq(schema.invoiceVariations.variationId, variationId));
+
+      const totalAmount = variation.totalAmount ?? 0;
+      let paid = 0;
+      for (const row of claimRows) {
+        const invoiceTotal = row.invoiceTotal ?? 0;
+        if (invoiceTotal <= 0) continue;
+        const claimCents = Math.round((totalAmount * (row.claimPercent ?? 100)) / 100);
+        const paidRatio = Math.min(1, Math.max(0, (row.invoicePaid ?? 0) / invoiceTotal));
+        paid += Math.round(claimCents * paidRatio);
+      }
+
+      await db.update(schema.variations)
+        .set({ paidAmount: paid, balanceAmount: totalAmount - paid, updatedAt: new Date() })
+        .where(eq(schema.variations.id, variationId));
+    } catch (error) {
+      console.error("Database error in recomputeVariationPaidAmount:", error);
     }
   }
 
@@ -17339,11 +17560,15 @@ export class DbStorage implements IStorage {
           createdAt: schema.variationBills.createdAt,
           billNumber: schema.bills.billNumber,
           supplierId: schema.bills.supplierId,
+          supplierName: schema.contacts.name,
           billDate: schema.bills.billDate,
+          subtotal: schema.bills.subtotal,
+          tax: schema.bills.tax,
           total: schema.bills.total,
         })
         .from(schema.variationBills)
         .innerJoin(schema.bills, eq(schema.variationBills.billId, schema.bills.id))
+        .leftJoin(schema.contacts, eq(schema.bills.supplierId, schema.contacts.id))
         .where(eq(schema.variationBills.variationId, variationId));
       return rows;
     } catch (error) {
@@ -17358,6 +17583,19 @@ export class DbStorage implements IStorage {
       return result[0];
     } catch (error) {
       console.error("Database error in createVariationBill:", error);
+      throw error;
+    }
+  }
+
+  async createVariationBills(variationId: string, billIds: string[]): Promise<VariationBill[]> {
+    if (billIds.length === 0) return [];
+    try {
+      return await db
+        .insert(schema.variationBills)
+        .values(billIds.map((billId) => ({ variationId, billId })))
+        .returning();
+    } catch (error) {
+      console.error("Database error in createVariationBills:", error);
       throw error;
     }
   }
@@ -17404,6 +17642,19 @@ export class DbStorage implements IStorage {
       return result[0];
     } catch (error) {
       console.error("Database error in createVariationTimesheet:", error);
+      throw error;
+    }
+  }
+
+  async createVariationTimesheets(variationId: string, timesheetIds: string[]): Promise<VariationTimesheet[]> {
+    if (timesheetIds.length === 0) return [];
+    try {
+      return await db
+        .insert(schema.variationTimesheets)
+        .values(timesheetIds.map((timesheetId) => ({ variationId, timesheetId })))
+        .returning();
+    } catch (error) {
+      console.error("Database error in createVariationTimesheets:", error);
       throw error;
     }
   }
@@ -18145,11 +18396,18 @@ export class DbStorage implements IStorage {
   }
 
   // Site Diary Templates CRUD
-  async getSiteDiaryTemplates(): Promise<schema.SiteDiaryTemplate[]> {
+  async getSiteDiaryTemplates(companyId: string): Promise<schema.SiteDiaryTemplate[]> {
+    // companyId is required, not optional: this used to return every tenant's
+    // templates to any caller. Making it required means tsc finds any caller
+    // that forgets it, the same fail-closed move used for getCompanySettings.
+    if (!companyId) throw new Error('getSiteDiaryTemplates requires a companyId');
     try {
       return await db.select()
         .from(schema.siteDiaryTemplates)
-        .where(eq(schema.siteDiaryTemplates.isArchived, false))
+        .where(and(
+          eq(schema.siteDiaryTemplates.isArchived, false),
+          eq(schema.siteDiaryTemplates.companyId, companyId),
+        ))
         .orderBy(desc(schema.siteDiaryTemplates.updatedAt));
     } catch (error) {
       console.error("Database error in getSiteDiaryTemplates:", error);
@@ -18201,10 +18459,16 @@ export class DbStorage implements IStorage {
           )
         );
       
-      // Then set the new default and update companyId
+      // Then set the new default. companyId is a WHERE predicate, never a SET:
+      // it used to be written into the row, so calling this with another
+      // tenant's template id TRANSFERRED that template into the caller's
+      // company. The id alone is not an ownership proof.
       const result = await db.update(schema.siteDiaryTemplates)
-        .set({ isDefault: true, companyId, updatedAt: new Date() })
-        .where(eq(schema.siteDiaryTemplates.id, id))
+        .set({ isDefault: true, updatedAt: new Date() })
+        .where(and(
+          eq(schema.siteDiaryTemplates.id, id),
+          eq(schema.siteDiaryTemplates.companyId, companyId),
+        ))
         .returning();
       return result[0];
     } catch (error) {
@@ -18588,11 +18852,14 @@ export class DbStorage implements IStorage {
   }
 
   // Checklist Instances CRUD
-  async getChecklistInstances(projectId?: string, userId?: string, isAdmin?: boolean): Promise<ChecklistInstance[]> {
+  async getChecklistInstances(projectId?: string, userId?: string, isAdmin?: boolean, companyId?: string): Promise<ChecklistInstance[]> {
     try {
       const buildWhere = (projectFilter?: ReturnType<typeof eq>) => {
         const conditions = [];
         if (projectFilter) conditions.push(projectFilter);
+        // Tenant scoping in SQL. This used to be a JS filter applied after the
+        // fact, which meant every call read every instance in the database.
+        if (companyId) conditions.push(eq(schema.checklistInstances.companyId, companyId));
         // Visibility filter: hide assignee_only checklists from non-assignees (unless admin).
         // NULL visibility treated as 'everyone' for backwards-compat with pre-migration rows.
         if (!isAdmin) {
@@ -18699,9 +18966,32 @@ export class DbStorage implements IStorage {
       return await db.select()
         .from(schema.checklistInstanceGroups)
         .where(eq(schema.checklistInstanceGroups.instanceId, instanceId))
-        .orderBy(schema.checklistInstanceGroups.order);
+        .orderBy(
+          schema.checklistInstanceGroups.order,
+          schema.checklistInstanceGroups.createdAt,
+          schema.checklistInstanceGroups.id,
+        );
     } catch (error) {
       console.error("Database error in getChecklistInstanceGroups:", error);
+      throw error;
+    }
+  }
+
+  // Batched sibling of getChecklistInstanceGroups: one query for many
+  // instances, so list endpoints don't fan out a query per instance.
+  async getChecklistInstanceGroupsForInstances(instanceIds: string[]): Promise<ChecklistInstanceGroup[]> {
+    if (instanceIds.length === 0) return [];
+    try {
+      return await db.select()
+        .from(schema.checklistInstanceGroups)
+        .where(inArray(schema.checklistInstanceGroups.instanceId, instanceIds))
+        .orderBy(
+          schema.checklistInstanceGroups.order,
+          schema.checklistInstanceGroups.createdAt,
+          schema.checklistInstanceGroups.id,
+        );
+    } catch (error) {
+      console.error("Database error in getChecklistInstanceGroupsForInstances:", error);
       throw error;
     }
   }
@@ -18766,9 +19056,60 @@ export class DbStorage implements IStorage {
       return await db.select()
         .from(schema.checklistInstanceItems)
         .where(eq(schema.checklistInstanceItems.instanceId, instanceId))
-        .orderBy(schema.checklistInstanceItems.groupOrder, schema.checklistInstanceItems.order);
+        // createdAt/id are only ever reached by rows that tie on `order` —
+        // legacy items written before the order column was populated. Without
+        // them Postgres is free to return ties in a different sequence on every
+        // read, so a checklist visibly reshuffles between refreshes.
+        .orderBy(
+          schema.checklistInstanceItems.groupOrder,
+          schema.checklistInstanceItems.order,
+          schema.checklistInstanceItems.createdAt,
+          schema.checklistInstanceItems.id,
+        );
     } catch (error) {
       console.error("Database error in getChecklistInstanceItems:", error);
+      throw error;
+    }
+  }
+
+  // Completion tallies for many instances in a single grouped query, rather
+  // than pulling every item row back and counting them in JS.
+  async getChecklistItemCounts(instanceIds: string[]): Promise<ChecklistItemCounts> {
+    const empty: ChecklistItemCounts = { byInstance: {}, byGroup: {} };
+    if (instanceIds.length === 0) return empty;
+    try {
+      const rows = await db.select({
+        instanceId: schema.checklistInstanceItems.instanceId,
+        groupId: schema.checklistInstanceItems.groupId,
+        status: schema.checklistInstanceItems.status,
+        count: sql<number>`count(*)::int`,
+      })
+        .from(schema.checklistInstanceItems)
+        .where(inArray(schema.checklistInstanceItems.instanceId, instanceIds))
+        .groupBy(
+          schema.checklistInstanceItems.instanceId,
+          schema.checklistInstanceItems.groupId,
+          schema.checklistInstanceItems.status,
+        );
+
+      const bump = (bucket: Record<string, { total: number; completed: number }>, key: string, row: typeof rows[number]) => {
+        const entry = bucket[key] ?? (bucket[key] = { total: 0, completed: 0 });
+        entry.total += row.count;
+        // "na" counts as done, same as the completedCount the list endpoint
+        // has always returned and what the progress bars render.
+        if (row.status === "completed" || row.status === "na") entry.completed += row.count;
+      };
+
+      const counts: ChecklistItemCounts = { byInstance: {}, byGroup: {} };
+      for (const row of rows) {
+        bump(counts.byInstance, row.instanceId, row);
+        if (row.groupId) bump(counts.byGroup, row.groupId, row);
+      }
+      // Instances with no items at all still need a zero entry.
+      for (const id of instanceIds) counts.byInstance[id] ??= { total: 0, completed: 0 };
+      return counts;
+    } catch (error) {
+      console.error("Database error in getChecklistItemCounts:", error);
       throw error;
     }
   }
@@ -18778,7 +19119,12 @@ export class DbStorage implements IStorage {
       return await db.select()
         .from(schema.checklistInstanceItems)
         .where(eq(schema.checklistInstanceItems.groupId, groupId))
-        .orderBy(schema.checklistInstanceItems.order);
+        // Same deterministic tie-break as getChecklistInstanceItems.
+        .orderBy(
+          schema.checklistInstanceItems.order,
+          schema.checklistInstanceItems.createdAt,
+          schema.checklistInstanceItems.id,
+        );
     } catch (error) {
       console.error("Database error in getChecklistInstanceItemsByGroup:", error);
       throw error;
@@ -19025,11 +19371,26 @@ export class DbStorage implements IStorage {
         : [];
       const billByIdForActual = new Map<string, Bill>(bills.map((b) => [b.id, b]));
 
-      const actualAmount = billLineItemsForActual.reduce((sum, li) => {
+      const billsActualAmount = billLineItemsForActual.reduce((sum, li) => {
         const bill = billByIdForActual.get(li.billId);
         const exGst = billLineExGstCents(li.total || 0, li.tax, bill?.taxMode);
         return sum + (bill?.billType === 'credit' ? -exGst : exGst);
       }, 0);
+
+      // Approved timesheet labour is a real project cost (ex GST — wages carry
+      // no GST), so it belongs in the actual alongside the ex-GST bill costs.
+      const approvedTimesheetsForActual = await exec.select()
+        .from(schema.timesheets)
+        .where(and(
+          eq(schema.timesheets.projectId, projectId),
+          eq(schema.timesheets.status, "approved"),
+        ));
+      const labourActualAmount = approvedTimesheetsForActual.reduce(
+        (sum: number, ts: any) => sum + timesheetTotalExGstCents(ts),
+        0,
+      );
+
+      const actualAmount = billsActualAmount + labourActualAmount;
 
       // Calculate variations
       const variations: Variation[] = await exec.select()
@@ -19633,10 +19994,10 @@ export class DbStorage implements IStorage {
   }
 
   // Timesheets CRUD
-  async getTimesheets(projectId?: string, filters?: { userId?: string; startDate?: Date; endDate?: Date; status?: string; costCodeId?: string; invoiced?: boolean }): Promise<Timesheet[]> {
+  async getTimesheets(projectId?: string, filters?: { userId?: string; startDate?: Date; endDate?: Date; status?: string; costCodeId?: string; invoiced?: boolean; companyId?: string }): Promise<Timesheet[]> {
     try {
       let query = db.select().from(schema.timesheets);
-      
+
       const conditions: any[] = [];
       if (projectId) conditions.push(eq(schema.timesheets.projectId, projectId));
       if (filters?.userId) conditions.push(eq(schema.timesheets.userId, filters.userId));
@@ -19644,15 +20005,47 @@ export class DbStorage implements IStorage {
       if (filters?.invoiced !== undefined) conditions.push(eq(schema.timesheets.invoiced, filters.invoiced));
       if (filters?.startDate) conditions.push(gte(schema.timesheets.date, filters.startDate));
       if (filters?.endDate) conditions.push(lte(schema.timesheets.date, filters.endDate));
-      
+      // Tenancy: timesheets have no companyId column — scope through the owning
+      // user with a subquery so it stays a single round trip.
+      if (filters?.companyId) {
+        conditions.push(inArray(
+          schema.timesheets.userId,
+          db.select({ id: schema.users.id }).from(schema.users).where(eq(schema.users.companyId, filters.companyId)),
+        ));
+      }
+
       if (conditions.length > 0) {
         query = query.where(and(...conditions)) as any;
       }
-      
+
       const result = await query.orderBy(desc(schema.timesheets.date));
       return result;
     } catch (error) {
       console.error("Database error in getTimesheets:", error);
+      throw error;
+    }
+  }
+
+  async getTimesheetsByIds(ids: string[]): Promise<Timesheet[]> {
+    if (ids.length === 0) return [];
+    try {
+      return await db.select()
+        .from(schema.timesheets)
+        .where(inArray(schema.timesheets.id, ids));
+    } catch (error) {
+      console.error("Database error in getTimesheetsByIds:", error);
+      throw error;
+    }
+  }
+
+  async createTimesheetsBulk(timesheets: InsertTimesheet[]): Promise<Timesheet[]> {
+    if (timesheets.length === 0) return [];
+    try {
+      return await db.insert(schema.timesheets)
+        .values(timesheets)
+        .returning();
+    } catch (error) {
+      console.error("Database error in createTimesheetsBulk:", error);
       throw error;
     }
   }
@@ -19743,6 +20136,47 @@ export class DbStorage implements IStorage {
       return result;
     } catch (error) {
       console.error("Database error in getTimesheetCostCodes:", error);
+      throw error;
+    }
+  }
+
+  async getTimesheetCostCode(id: string): Promise<TimesheetCostCode | undefined> {
+    try {
+      const result = await db.select()
+        .from(schema.timesheetCostCodes)
+        .where(eq(schema.timesheetCostCodes.id, id))
+        .limit(1);
+      return result[0];
+    } catch (error) {
+      console.error("Database error in getTimesheetCostCode:", error);
+      throw error;
+    }
+  }
+
+  async getTimesheetCostCodesByTimesheetIds(timesheetIds: string[]): Promise<TimesheetCostCode[]> {
+    if (timesheetIds.length === 0) return [];
+    try {
+      return await db.select()
+        .from(schema.timesheetCostCodes)
+        .where(inArray(schema.timesheetCostCodes.timesheetId, timesheetIds));
+    } catch (error) {
+      console.error("Database error in getTimesheetCostCodesByTimesheetIds:", error);
+      throw error;
+    }
+  }
+
+  async replaceTimesheetCostCodes(timesheetId: string, splits: Omit<InsertTimesheetCostCode, "timesheetId">[]): Promise<TimesheetCostCode[]> {
+    try {
+      return await db.transaction(async (tx) => {
+        await tx.delete(schema.timesheetCostCodes)
+          .where(eq(schema.timesheetCostCodes.timesheetId, timesheetId));
+        if (splits.length === 0) return [];
+        return await tx.insert(schema.timesheetCostCodes)
+          .values(splits.map((s) => ({ ...s, timesheetId })))
+          .returning();
+      });
+    } catch (error) {
+      console.error("Database error in replaceTimesheetCostCodes:", error);
       throw error;
     }
   }
@@ -21299,16 +21733,30 @@ export class DbStorage implements IStorage {
   }
 
   // Minutes CRUD operations
-  async getMinutes(projectId?: string): Promise<Minute[]> {
+  async getMinutes(companyId: string, projectId?: string): Promise<Minute[]> {
+    // companyId is required: a bare GET /api/minutes returned every tenant's
+    // meeting minutes — title, attendees, full HTML body, AI summary.
+    if (!companyId) throw new Error('getMinutes requires a companyId');
     try {
-      let query = db.select().from(schema.minutes).orderBy(desc(schema.minutes.meetingDate));
-      
-      if (projectId) {
-        query = query.where(eq(schema.minutes.projectId, projectId)) as any;
-      }
-      
-      const minutes = await query;
-      return minutes as Minute[];
+      // Minutes are either project-scoped or business-level (ownerId only),
+      // mirroring getOwnedMinute. Both legs are resolved here in one query
+      // rather than filtering in JS.
+      const conds = [
+        or(
+          eq(schema.projects.companyId, companyId),
+          eq(schema.users.companyId, companyId),
+        ),
+      ];
+      if (projectId) conds.push(eq(schema.minutes.projectId, projectId));
+
+      const rows = await db
+        .select({ m: schema.minutes })
+        .from(schema.minutes)
+        .leftJoin(schema.projects, eq(schema.minutes.projectId, schema.projects.id))
+        .leftJoin(schema.users, eq(schema.minutes.ownerId, schema.users.id))
+        .where(and(...conds))
+        .orderBy(desc(schema.minutes.meetingDate));
+      return rows.map((r: any) => r.m) as Minute[];
     } catch (error) {
       console.error("Database error in getMinutes:", error);
       throw error;
@@ -21369,18 +21817,21 @@ export class DbStorage implements IStorage {
 
   async getSystemFolders(companyId: string, parentId?: string | null): Promise<SystemFolder[]> {
     try {
-      let query = db.select()
-        .from(schema.systemFolders)
-        .where(eq(schema.systemFolders.companyId, companyId))
-        .orderBy(asc(schema.systemFolders.displayOrder));
-
+      // Predicates are collected and applied as ONE .where(and(...)).
+      // Chaining a second .where() REPLACES the first in Drizzle rather than
+      // ANDing it, so the optional filter below used to silently delete the
+      // companyId predicate and return every tenant's rows.
+      const conds: any[] = [eq(schema.systemFolders.companyId, companyId)];
       if (parentId === null) {
-        query = query.where(sql`${schema.systemFolders.parentId} IS NULL`) as any;
+        conds.push(sql`${schema.systemFolders.parentId} IS NULL`);
       } else if (parentId) {
-        query = query.where(eq(schema.systemFolders.parentId, parentId)) as any;
+        conds.push(eq(schema.systemFolders.parentId, parentId));
       }
 
-      const folders = await query;
+      const folders = await db.select()
+        .from(schema.systemFolders)
+        .where(and(...conds))
+        .orderBy(asc(schema.systemFolders.displayOrder));
       return folders as SystemFolder[];
     } catch (error) {
       console.error("Database error in getSystemFolders:", error);
@@ -21467,20 +21918,21 @@ export class DbStorage implements IStorage {
 
   async getSystemDocuments(companyId: string, folderId?: string | null): Promise<SystemDocument[]> {
     try {
-      let query = db.select()
-        .from(schema.systemDocuments)
-        .where(eq(schema.systemDocuments.companyId, companyId))
-        .orderBy(desc(schema.systemDocuments.createdAt));
-
+      // Predicates are collected and applied as ONE .where(and(...)).
+      // Chaining a second .where() REPLACES the first in Drizzle rather than
+      // ANDing it, so the optional filter below used to silently delete the
+      // companyId predicate and return every tenant's rows.
+      const conds: any[] = [eq(schema.systemDocuments.companyId, companyId)];
       if (folderId !== undefined) {
-        if (folderId === null) {
-          query = query.where(sql`${schema.systemDocuments.folderId} IS NULL`) as any;
-        } else {
-          query = query.where(eq(schema.systemDocuments.folderId, folderId)) as any;
-        }
+        conds.push(folderId === null
+          ? sql`${schema.systemDocuments.folderId} IS NULL`
+          : eq(schema.systemDocuments.folderId, folderId));
       }
 
-      const documents = await query;
+      const documents = await db.select()
+        .from(schema.systemDocuments)
+        .where(and(...conds))
+        .orderBy(desc(schema.systemDocuments.createdAt));
       return documents as SystemDocument[];
     } catch (error) {
       console.error("Database error in getSystemDocuments:", error);
@@ -21571,16 +22023,17 @@ export class DbStorage implements IStorage {
 
   async getTaskTemplates(companyId: string, isActive?: boolean): Promise<TaskTemplate[]> {
     try {
-      let query = db.select()
+      // Predicates are collected and applied as ONE .where(and(...)).
+      // Chaining a second .where() REPLACES the first in Drizzle rather than
+      // ANDing it, so the optional filter below used to silently delete the
+      // companyId predicate and return every tenant's rows.
+      const conds: any[] = [eq(schema.taskTemplates.companyId, companyId)];
+      if (isActive !== undefined) conds.push(eq(schema.taskTemplates.isActive, isActive));
+
+      const templates = await db.select()
         .from(schema.taskTemplates)
-        .where(eq(schema.taskTemplates.companyId, companyId))
+        .where(and(...conds))
         .orderBy(asc(schema.taskTemplates.title));
-
-      if (isActive !== undefined) {
-        query = query.where(eq(schema.taskTemplates.isActive, isActive)) as any;
-      }
-
-      const templates = await query;
       return templates as TaskTemplate[];
     } catch (error) {
       console.error("Database error in getTaskTemplates:", error);
@@ -22363,16 +22816,17 @@ export class DbStorage implements IStorage {
 
   async getWorkflowTemplates(companyId: string, isActive?: boolean): Promise<WorkflowTemplate[]> {
     try {
-      let query = db.select()
+      // Predicates are collected and applied as ONE .where(and(...)).
+      // Chaining a second .where() REPLACES the first in Drizzle rather than
+      // ANDing it, so the optional filter below used to silently delete the
+      // companyId predicate and return every tenant's rows.
+      const conds: any[] = [eq(schema.workflowTemplates.companyId, companyId)];
+      if (isActive !== undefined) conds.push(eq(schema.workflowTemplates.isActive, isActive));
+
+      const templates = await db.select()
         .from(schema.workflowTemplates)
-        .where(eq(schema.workflowTemplates.companyId, companyId))
+        .where(and(...conds))
         .orderBy(asc(schema.workflowTemplates.name));
-
-      if (isActive !== undefined) {
-        query = query.where(eq(schema.workflowTemplates.isActive, isActive)) as any;
-      }
-
-      const templates = await query;
       return templates as WorkflowTemplate[];
     } catch (error) {
       console.error("Database error in getWorkflowTemplates:", error);

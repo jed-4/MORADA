@@ -2,15 +2,17 @@ import { useEffect } from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { BottomSheetModalProvider } from '@gorhom/bottom-sheet';
-import { Sentry } from './src/lib/sentry';
+import { Sentry, reportAppStart } from './src/lib/sentry';
 import { AuthProvider } from './src/contexts/AuthContext';
 import { ToastProvider } from './src/components/ui/Toast';
 import AppNavigator from './src/navigation/AppNavigator';
 import { checkForOtaUpdate } from './src/lib/updates';
 
 function App() {
-  // Check for an over-the-air (OTA) update on launch. No-op in dev / Expo Go.
+  // Record which native build is running before anything else can fail, then
+  // check for an over-the-air (OTA) update. Both are no-ops in dev / Expo Go.
   useEffect(() => {
+    reportAppStart();
     checkForOtaUpdate();
   }, []);
 

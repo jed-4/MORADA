@@ -465,12 +465,18 @@ export class XeroService {
     return all;
   }
 
-  async getTrackingCategories(connectionId: string, opts: { maxRetries?: number } = {}): Promise<any[]> {
+  async getTrackingCategories(
+    connectionId: string,
+    opts: { maxRetries?: number; includeArchived?: boolean } = {},
+  ): Promise<any[]> {
     const accessToken = await this.getValidToken(connectionId);
     const connection = await storage.getXeroConnection(connectionId);
     if (!connection) throw new Error("Connection not found");
 
-    const response = await xeroFetchWithRetry(`${XERO_API_BASE}/TrackingCategories`, {
+    const url = opts.includeArchived
+      ? `${XERO_API_BASE}/TrackingCategories?includeArchived=true`
+      : `${XERO_API_BASE}/TrackingCategories`;
+    const response = await xeroFetchWithRetry(url, {
       headers: {
         Authorization: `Bearer ${accessToken}`,
         "Xero-Tenant-Id": connection.tenantId,
@@ -552,6 +558,30 @@ export class XeroService {
   /** Invalidate cached tax rates for a connection (e.g. after re-auth). */
   invalidateTaxRateCache(connectionId: string): void {
     this.taxRateCache.delete(connectionId);
+  }
+
+  /**
+   * Find an ACTIVE tracking option by name within a category (trimmed,
+   * case-insensitive). Deliberately never creates options — Xero is the
+   * source of truth for the tracking option list, and enforces unique names
+   * (including archived ones), so blind auto-creation 400s for any name that
+   * was ever used. Callers surface a warning when no match exists.
+   */
+  async findTrackingOptionByName(
+    connectionId: string,
+    trackingCategoryId: string,
+    name: string,
+  ): Promise<{ TrackingOptionID: string; Name: string; Status?: string } | null> {
+    const categories = await this.getTrackingCategories(connectionId);
+    const category = categories.find((tc: any) => tc.TrackingCategoryID === trackingCategoryId);
+    const options = (category?.Options || []) as any[];
+    const wanted = name.trim().toLowerCase();
+    return (
+      options.find(
+        (o: any) =>
+          o.Status === "ACTIVE" && String(o.Name || "").trim().toLowerCase() === wanted,
+      ) || null
+    );
   }
 
   async createTrackingOption(connectionId: string, trackingCategoryId: string, name: string): Promise<any> {

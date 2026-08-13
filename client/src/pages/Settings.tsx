@@ -1070,7 +1070,7 @@ export default function Settings() {
                       </SelectContent>
                     </Select>
                     <p className="text-data text-muted-foreground">
-                      Projects auto-create as options in this category
+                      Projects link to an existing option in this category, matched by name
                     </p>
                   </div>
                 </div>

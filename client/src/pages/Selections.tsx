@@ -49,6 +49,13 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
+import { Textarea } from "@/components/ui/textarea";
+import {
   Package,
   Plus,
   Search,
@@ -78,127 +85,31 @@ import {
   BookCopy,
   CheckSquare,
   Filter,
+  LayoutGrid,
+  LayoutList,
+  Send,
+  Link as LinkIcon,
 } from "lucide-react";
 import { format, differenceInCalendarDays } from "date-fns";
+import {
+  type DerivedStatus,
+  getDerivedStatus,
+  getSelectedOption,
+  getActualCents,
+  formatMoneyCents,
+  formatVarianceCents,
+  ProgressStrip,
+} from "@/components/selections/selectionHelpers";
+import {
+  SortableSelectionRow,
+  type SelectionColumnVisibility,
+} from "@/components/selections/SelectionRow";
+import { SelectionCard } from "@/components/selections/SelectionCard";
+import { SelectionDrawer } from "@/components/selections/SelectionDrawer";
 
 // ───────────────────────────────────────────────────────────────────────
 // Helpers
 // ───────────────────────────────────────────────────────────────────────
-
-type DerivedStatus = "open" | "submitted" | "approved" | "overdue" | "ordered" | "received";
-
-const CATEGORY_DOT_COLOURS: Record<string, string> = {
-  Tiles: "#7C5CBF",
-  Cladding: "#B5813B",
-  Flooring: "#4A7A9B",
-  Lighting: "#9B7A4A",
-  Appliances: "#5C7A5C",
-  Fixtures: "#C46B5A",
-  Joinery: "#8B6B4A",
-  Plumbing: "#4A8B7A",
-};
-
-function getCategoryColour(category?: string | null): string {
-  if (!category) return "#94a3b8"; // neutral slate
-  return CATEGORY_DOT_COLOURS[category] ?? "#94a3b8";
-}
-
-function getDerivedStatus(sel: SelectionWithOptions): DerivedStatus {
-  if ((sel as any).status === "received") return "received";
-  if ((sel as any).status === "ordered") return "ordered";
-  if (sel.status === "approved" || sel.status === "completed") return "approved";
-  const isPastDue = sel.deadline && new Date(sel.deadline).getTime() < Date.now();
-  if (isPastDue) return "overdue";
-  if (sel.options?.some((o) => o.isSelectedByClient)) return "submitted";
-  return "open";
-}
-
-function getSelectedOption(sel: SelectionWithOptions): SelectionOption | undefined {
-  return sel.options?.find((o) => o.isSelectedByClient);
-}
-
-function getActualCents(sel: SelectionWithOptions): number | null {
-  const sel0 = getSelectedOption(sel);
-  return sel0?.totalCost ?? null;
-}
-
-function formatMoneyCents(cents: number | null | undefined): string {
-  if (cents === null || cents === undefined) return "—";
-  return `$${(cents / 100).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
-}
-
-function formatVarianceCents(cents: number | null): { text: string; tone: "under" | "over" | "none" } {
-  if (cents === null || cents === 0) return { text: cents === 0 ? "$0" : "—", tone: "none" };
-  const sign = cents > 0 ? "+" : "−";
-  return {
-    text: `${sign}$${Math.abs(cents / 100).toLocaleString(undefined, { maximumFractionDigits: 0 })}`,
-    tone: cents > 0 ? "over" : "under",
-  };
-}
-
-function getDeadlineMeta(deadline: Date | null | undefined, derived: DerivedStatus) {
-  if (!deadline) return { text: "—", className: "text-muted-foreground/40" };
-  const date = new Date(deadline);
-  if (derived === "approved") return { text: "Done", className: "text-muted-foreground/50" };
-  const days = differenceInCalendarDays(date, new Date());
-  if (days < 0) return { text: format(date, "dd MMM"), className: "font-semibold text-[hsl(var(--coral))]" };
-  if (days <= 7) return { text: format(date, "dd MMM"), className: "font-semibold text-[hsl(var(--amber))]" };
-  return { text: format(date, "dd MMM yyyy"), className: "text-muted-foreground" };
-}
-
-const STATUS_CHIP_CLASS: Record<DerivedStatus, string> = {
-  open: "bg-primary/10 text-primary border-primary/30",
-  submitted: "bg-[hsl(var(--amber-bg))] text-[hsl(var(--amber))] border-[hsl(var(--amber))]/30",
-  approved: "bg-[hsl(var(--sage-bg))] text-[hsl(var(--sage))] border-[hsl(var(--sage))]/30",
-  overdue: "bg-[hsl(var(--coral-bg))] text-[hsl(var(--coral))] border-[hsl(var(--coral))]/30",
-  ordered: "bg-[#4a90d4]/10 text-[#4a90d4] border-[#4a90d4]/30",
-  received: "bg-[#68b088]/10 text-[#68b088] border-[#68b088]/30",
-};
-
-const STATUS_LABEL: Record<DerivedStatus, string> = {
-  open: "Open",
-  submitted: "Submitted",
-  approved: "Approved",
-  overdue: "Overdue",
-  ordered: "Ordered",
-  received: "Received",
-};
-
-// ───────────────────────────────────────────────────────────────────────
-// Sub-components
-// ───────────────────────────────────────────────────────────────────────
-
-interface SelectionThumbnailProps {
-  category?: string | null;
-  attachment?: OptionAttachment;
-  size?: number;
-}
-
-function SelectionThumbnail({ category, attachment, size = 32 }: SelectionThumbnailProps) {
-  const colour = getCategoryColour(category);
-  const isImage = attachment && attachment.fileType?.toLowerCase() === "image";
-  return (
-    <div
-      className="rounded-md overflow-hidden flex items-center justify-center shrink-0"
-      style={{
-        width: size,
-        height: size,
-        backgroundColor: `${colour}26`, // ~15% alpha
-      }}
-    >
-      {isImage && attachment?.filePath ? (
-        <img
-          src={attachment.filePath}
-          alt=""
-          className="w-full h-full object-cover"
-          style={{ objectPosition: `${attachment.thumbnailX ?? 50}% ${attachment.thumbnailY ?? 50}%` }}
-        />
-      ) : (
-        <ImageIcon className="text-muted-foreground/60" style={{ width: size * 0.4, height: size * 0.4 }} />
-      )}
-    </div>
-  );
-}
 
 interface StatCardProps {
   value: number | string;
@@ -232,400 +143,6 @@ function StatCard({ value, label, variant, active = false, onClick, testId }: St
   );
 }
 
-interface SelectionRowProps {
-  selection: SelectionWithOptions;
-  expanded: boolean;
-  onToggleExpand: () => void;
-  onSelectOption: (selectionId: string, optionId: string) => void;
-  onEdit: (id: string) => void;
-  onDelete: (id: string) => void;
-  onDuplicate: (id: string) => void;
-  isPending: boolean;
-  isChecked: boolean;
-  onCheck: (id: string, checked: boolean) => void;
-  projectId: string;
-  dragHandleProps?: React.HTMLAttributes<HTMLDivElement>;
-  isDraggable?: boolean;
-}
-
-function SelectionRow({
-  selection,
-  expanded,
-  onToggleExpand,
-  onSelectOption,
-  onEdit,
-  onDelete,
-  onDuplicate,
-  isPending,
-  isChecked,
-  onCheck,
-  projectId,
-  dragHandleProps,
-  isDraggable = false,
-}: SelectionRowProps) {
-  const derived = getDerivedStatus(selection);
-  const selectedOption = getSelectedOption(selection);
-  const actual = getActualCents(selection);
-  const allowance = selection.allowance ?? null;
-  const variance = actual !== null && allowance !== null ? actual - allowance : null;
-  const varianceMeta = formatVarianceCents(variance);
-  const deadlineMeta = getDeadlineMeta(selection.deadline, derived);
-
-  const isOrderedOrReceived = derived === "ordered" || derived === "received";
-  const isCheckable = derived === "approved" && !!selection.clientSelection;
-
-  // Use first attachment of the selected option for the row thumbnail
-  const rowThumb = selectedOption?.attachments?.[0] ?? selection.options?.[0]?.attachments?.[0];
-
-  const poNumber = (selection as any).purchaseOrderId ? (selection as any).poNumber : null;
-  const purchaseOrderId = (selection as any).purchaseOrderId ?? null;
-
-  return (
-    <>
-      <div
-        className={`group grid grid-cols-[16px_32px_40px_minmax(160px,1fr)_120px_120px_100px_100px_100px_100px_110px_90px_32px] gap-3 items-center h-12 px-3 border-b border-border cursor-pointer ${
-          isChecked ? "bg-primary/5" : "hover:bg-muted/30"
-        }`}
-        onClick={() => onEdit(selection.id)}
-        data-testid={`row-selection-${selection.id}`}
-      >
-        {/* Drag handle */}
-        <div
-          className={`flex items-center justify-center flex-shrink-0 ${isDraggable ? "cursor-grab opacity-0 group-hover:opacity-100" : "opacity-0 pointer-events-none"}`}
-          onClick={(e) => e.stopPropagation()}
-          {...(isDraggable ? dragHandleProps : {})}
-        >
-          <GripVertical className="w-3.5 h-3.5 text-muted-foreground" />
-        </div>
-
-        {/* Second column: expand/collapse chevron */}
-        <div
-          className="flex items-center justify-center flex-shrink-0"
-          onClick={(e) => { e.stopPropagation(); onToggleExpand(); }}
-        >
-          <ChevronRight
-            className={`w-3.5 h-3.5 text-muted-foreground transition-transform duration-150 ${expanded ? "rotate-90" : ""}`}
-          />
-        </div>
-
-        {/* Thumbnail */}
-        <SelectionThumbnail category={selection.category} attachment={rowThumb} size={32} />
-
-        {/* Selection name + sub-label */}
-        <div className="min-w-0">
-          <a
-            href={`/selections/${selection.id}`}
-            onClick={(e) => { e.stopPropagation(); e.preventDefault(); onEdit(selection.id); }}
-            className="text-[12px] font-medium text-foreground truncate hover:underline block"
-            data-testid={`text-name-${selection.id}`}
-          >
-            {selection.name}
-          </a>
-          {selectedOption ? (
-            <div className="text-[10px] text-muted-foreground/60 truncate">{selectedOption.name}</div>
-          ) : selection.description ? (
-            <div className="text-[10px] text-muted-foreground/60 truncate">{selection.description}</div>
-          ) : null}
-        </div>
-
-        {/* Category */}
-        <div className="flex items-center gap-1.5 min-w-0">
-          {selection.category && (
-            <>
-              <span
-                className="rounded-full shrink-0"
-                style={{ width: 7, height: 7, backgroundColor: getCategoryColour(selection.category) }}
-              />
-              <span className="text-[11px] text-muted-foreground truncate">{selection.category}</span>
-            </>
-          )}
-        </div>
-
-        {/* Location */}
-        <div className="text-[11px] text-muted-foreground truncate">{selection.room || ""}</div>
-
-        {/* Status */}
-        <div className="min-w-0">
-          <span
-            className={`inline-block rounded px-2 py-1 text-[10px] font-medium border ${STATUS_CHIP_CLASS[derived]}`}
-            data-testid={`badge-status-${selection.id}`}
-          >
-            {STATUS_LABEL[derived]}
-          </span>
-        </div>
-
-        {/* Allowance */}
-        <div className="text-[12px] text-muted-foreground tabular-nums text-right">
-          {formatMoneyCents(allowance)}
-        </div>
-
-        {/* Actual */}
-        <div
-          className={`text-[12px] tabular-nums text-right ${actual === null ? "text-muted-foreground/50" : "text-foreground"}`}
-          data-testid={`text-actual-${selection.id}`}
-        >
-          {formatMoneyCents(actual)}
-        </div>
-
-        {/* Variance */}
-        <div
-          className={`text-[12px] font-semibold tabular-nums text-right ${
-            varianceMeta.tone === "under"
-              ? "text-[hsl(var(--sage))]"
-              : varianceMeta.tone === "over"
-                ? "text-[hsl(var(--coral))]"
-                : "text-muted-foreground/40"
-          }`}
-        >
-          {varianceMeta.text}
-        </div>
-
-        {/* Deadline / PO chip for ordered+received */}
-        <div className="min-w-0">
-          {isOrderedOrReceived && purchaseOrderId ? (
-            <a
-              href={`/projects/${projectId}/purchase-orders/${purchaseOrderId}`}
-              onClick={(e) => e.stopPropagation()}
-              className="inline-flex items-center gap-1 text-[10px] font-medium text-[#4a90d4] hover:underline truncate"
-              data-testid={`chip-po-${selection.id}`}
-            >
-              <ExternalLink className="w-3 h-3 shrink-0" />
-              <span className="truncate">View PO</span>
-            </a>
-          ) : (
-            <span className={`text-[11px] truncate ${deadlineMeta.className}`}>{deadlineMeta.text}</span>
-          )}
-        </div>
-
-        {/* Options count badge (only when collapsed) */}
-        <div className="flex justify-center">
-          {!expanded && selection.options && selection.options.length > 0 && (
-            <span className="bg-muted/40 text-muted-foreground rounded-full text-[10px] font-medium px-2 py-0.5">
-              {selection.options.length} options
-            </span>
-          )}
-        </div>
-
-        {/* Actions */}
-        <div onClick={(e) => e.stopPropagation()} className="flex items-center justify-center">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button
-                className="h-6 w-6 rounded-md hover-elevate active-elevate-2 flex items-center justify-center text-muted-foreground hover:text-foreground"
-                data-testid={`button-actions-${selection.id}`}
-              >
-                <MoreVertical className="h-3 w-3" />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={() => onEdit(selection.id)}>
-                <Eye className="w-4 h-4 mr-2" />
-                View Details
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => onEdit(selection.id)}>
-                <Edit3 className="w-4 h-4 mr-2" />
-                Edit
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => onDuplicate(selection.id)} data-testid={`button-duplicate-${selection.id}`}>
-                <Copy className="w-4 h-4 mr-2" />
-                Duplicate
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => onDelete(selection.id)} className="text-destructive">
-                <Trash2 className="w-4 h-4 mr-2" />
-                Delete
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-      </div>
-
-    </>
-  );
-}
-
-interface OptionsPanelProps {
-  selection: SelectionWithOptions;
-  onSelectOption: (optionId: string) => void;
-  isPending: boolean;
-}
-
-function OptionsPanel({ selection, onSelectOption, isPending }: OptionsPanelProps) {
-  const allowance = selection.allowance ?? null;
-  const options = selection.options ?? [];
-
-  return (
-    <div className="relative border-b border-border bg-muted/20" data-testid={`panel-options-${selection.id}`}>
-      {/* Left accent bar */}
-      <div aria-hidden="true" className="absolute top-0 left-0 bottom-0 w-[3px] bg-primary" />
-
-      <div className="pl-4">
-        {/* Sub-column header row */}
-        <div className="grid grid-cols-[18px_40px_minmax(160px,1.5fr)_minmax(140px,1fr)_120px_120px_140px] gap-3 items-center h-6 border-b border-border/60 px-3 text-[9px] uppercase tracking-wider font-semibold text-muted-foreground/60">
-          <div></div>
-          <div></div>
-          <div>Option</div>
-          <div>Specifications</div>
-          <div className="text-right">Price</div>
-          <div className="text-right">Vs Allowance</div>
-          <div></div>
-        </div>
-
-        {options.length === 0 ? (
-          <div className="px-3 py-4 text-[11px] text-muted-foreground/60 text-center">
-            No options yet. Add an option below to begin.
-          </div>
-        ) : (
-          options.map((option) => {
-            const isSelected = !!option.isSelectedByClient;
-            const price = option.totalCost ?? null;
-            const variance = price !== null && allowance !== null ? price - allowance : null;
-            const varMeta = formatVarianceCents(variance);
-            const optThumb = option.attachments?.[0];
-            const specsParts: string[] = [];
-            if (option.brand) specsParts.push(option.brand);
-            if (option.sku) specsParts.push(`SKU ${option.sku}`);
-            if (option.unitType && option.quantity)
-              specsParts.push(`${option.quantity} ${option.unitType}`);
-            const specsText = specsParts.join(" · ") || (option.description ?? "—");
-
-            return (
-              <div
-                key={option.id}
-                className="grid grid-cols-[18px_40px_minmax(160px,1.5fr)_minmax(140px,1fr)_120px_120px_140px] gap-3 items-center h-[52px] border-b border-border/60 last:border-0 px-3"
-                data-testid={`row-option-${option.id}`}
-              >
-                {/* Radio */}
-                <button
-                  type="button"
-                  onClick={() => !isSelected && !isPending && onSelectOption(option.id)}
-                  disabled={isPending}
-                  className={`w-[18px] h-[18px] rounded-full flex items-center justify-center border-2 transition-colors ${
-                    isSelected
-                      ? "bg-primary border-primary"
-                      : "bg-transparent border-border hover:border-primary"
-                  }`}
-                  aria-label={isSelected ? "Selected option" : "Select this option"}
-                  data-testid={`radio-option-${option.id}`}
-                >
-                  {isSelected && <span className="w-1.5 h-1.5 rounded-full bg-white" />}
-                </button>
-
-                {/* Thumbnail */}
-                <SelectionThumbnail category={option.category ?? selection.category} attachment={optThumb} size={36} />
-
-                {/* Option name + supplier */}
-                <div className="min-w-0">
-                  <div
-                    className={`text-[12px] font-medium truncate ${isSelected ? "text-foreground" : "text-muted-foreground"}`}
-                  >
-                    {option.name}
-                  </div>
-                  {option.brand && (
-                    <div className="text-[10px] text-muted-foreground/60 truncate">{option.brand}</div>
-                  )}
-                </div>
-
-                {/* Specs */}
-                <div className="text-[11px] text-muted-foreground truncate">{specsText}</div>
-
-                {/* Price */}
-                <div
-                  className={`text-[12px] tabular-nums text-right ${
-                    isSelected ? "font-semibold text-foreground" : "text-muted-foreground"
-                  }`}
-                >
-                  {formatMoneyCents(price)}
-                </div>
-
-                {/* Variance vs allowance */}
-                <div
-                  className={`text-[11px] font-semibold tabular-nums text-right ${
-                    varMeta.tone === "under"
-                      ? "text-[hsl(var(--sage))]"
-                      : varMeta.tone === "over"
-                        ? "text-[hsl(var(--coral))]"
-                        : "text-muted-foreground/40"
-                  }`}
-                >
-                  {varMeta.text}
-                </div>
-
-                {/* Right side: Selected pill or Select button + comment/attach */}
-                <div className="flex items-center justify-end gap-1.5">
-                  <button
-                    type="button"
-                    className="text-muted-foreground/50 hover:text-muted-foreground p-1 rounded hover-elevate"
-                    aria-label="Comment"
-                  >
-                    <MessageSquare className="w-3 h-3" />
-                  </button>
-                  <button
-                    type="button"
-                    className="text-muted-foreground/50 hover:text-muted-foreground p-1 rounded hover-elevate"
-                    aria-label="Attach"
-                  >
-                    <Paperclip className="w-3 h-3" />
-                  </button>
-                  {isSelected ? (
-                    <span className="bg-primary/10 text-primary rounded px-2 py-1 text-[10px] font-medium inline-flex items-center gap-1">
-                      Selected
-                      <Check className="w-3 h-3" />
-                    </span>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => !isPending && onSelectOption(option.id)}
-                      disabled={isPending}
-                      className="border border-border rounded px-3 py-1 text-[11px] text-muted-foreground hover:border-primary hover:text-primary disabled:opacity-50"
-                      data-testid={`button-select-${option.id}`}
-                    >
-                      Select
-                    </button>
-                  )}
-                </div>
-              </div>
-            );
-          })
-        )}
-
-        {/* Add option ghost row */}
-        <button
-          type="button"
-          className="w-full h-9 flex items-center text-[11px] text-muted-foreground/50 hover:text-muted-foreground hover:bg-muted/10 px-3"
-          data-testid={`button-add-option-${selection.id}`}
-        >
-          <span className="pl-[136px]">+ Add option</span>
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function SortableSelectionRow(props: SelectionRowProps) {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id: props.selection.id });
-
-  const style: React.CSSProperties = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : 1,
-    position: "relative",
-    zIndex: isDragging ? 10 : undefined,
-  };
-
-  return (
-    <div ref={setNodeRef} style={style}>
-      <SelectionRow {...props} dragHandleProps={{ ...attributes, ...listeners }} />
-    </div>
-  );
-}
 
 // ───────────────────────────────────────────────────────────────────────
 // Main page
@@ -635,7 +152,6 @@ export default function Selections() {
   const [searchTerm, setSearchTerm] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string>("");
   const [statusTab, setStatusTab] = useState<"all" | DerivedStatus>("all");
-  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
   const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set());
   const [showCreatePOModal, setShowCreatePOModal] = useState(false);
   const [createPOSupplierId, setCreatePOSupplierId] = useState<string>("");
@@ -646,6 +162,93 @@ export default function Selections() {
   const [groupBy, setGroupBy] = useState<"none" | "category" | "location">(() => {
     return (localStorage.getItem("selections-group-by") as "none" | "category" | "location") || "none";
   });
+  // List/Cards toggle — persisted like the detail page's grid/table toggle
+  const [viewMode, setViewMode] = useState<"list" | "cards">(() => {
+    return (localStorage.getItem("selections-view-mode") as "list" | "cards") || "list";
+  });
+  useEffect(() => {
+    localStorage.setItem("selections-view-mode", viewMode);
+  }, [viewMode]);
+  // Quick-view drawer (replaces the old inline expand panel)
+  const [drawerId, setDrawerId] = useState<string | null>(null);
+
+  // Column sorting: click a header to cycle asc → desc → off (manual order)
+  type SortKey = "name" | "category" | "location" | "status" | "budget" | "due";
+  const [sortBy, setSortBy] = useState<SortKey | null>(null);
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+  const cycleSort = (key: SortKey) => {
+    if (sortBy !== key) { setSortBy(key); setSortDir("asc"); }
+    else if (sortDir === "asc") setSortDir("desc");
+    else setSortBy(null);
+  };
+
+  // Optional columns so wide monitors aren't bare (persisted)
+  const [visibleColumns, setVisibleColumns] = useState<SelectionColumnVisibility>(() => {
+    try {
+      const stored = JSON.parse(localStorage.getItem("selections-columns") || "null");
+      if (stored && typeof stored.category === "boolean") return stored;
+    } catch { /* corrupted — fall through */ }
+    return { category: true, location: true, options: false };
+  });
+  useEffect(() => {
+    localStorage.setItem("selections-columns", JSON.stringify(visibleColumns));
+  }, [visibleColumns]);
+
+  // Saved column widths per the app table standard (resizable via the header
+  // dividers; name is the filler column)
+  type WidthKey = "category" | "location" | "status" | "budget" | "deadline";
+  const [columnWidths, setColumnWidths] = useState<Record<WidthKey, number>>(() => {
+    const defaults: Record<WidthKey, number> = { category: 110, location: 120, status: 120, budget: 200, deadline: 90 };
+    try {
+      const stored = JSON.parse(localStorage.getItem("selections-column-widths") || "null");
+      if (stored && typeof stored.status === "number") return { ...defaults, ...stored };
+    } catch { /* corrupted — fall through */ }
+    return defaults;
+  });
+  useEffect(() => {
+    localStorage.setItem("selections-column-widths", JSON.stringify(columnWidths));
+  }, [columnWidths]);
+  const gridTemplate = [
+    "16px",
+    "64px",
+    "minmax(200px,1fr)",
+    visibleColumns.category ? `${columnWidths.category}px` : null,
+    visibleColumns.location ? `${columnWidths.location}px` : null,
+    `${columnWidths.status}px`,
+    visibleColumns.options ? "60px" : null,
+    `${columnWidths.budget}px`,
+    `${columnWidths.deadline}px`,
+    "64px",
+  ].filter(Boolean).join(" ");
+
+  // Column resize. Listeners live on window, NOT the handle element — the
+  // handle unmounts on the first width re-render, which killed the drag after
+  // one tick and left the col-resize cursor stuck on the whole page.
+  const resizeRef = useRef<{ key: WidthKey; startX: number; startW: number } | null>(null);
+  const startColumnResize = (key: WidthKey, e: React.PointerEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    resizeRef.current = { key, startX: e.clientX, startW: columnWidths[key] };
+    document.body.style.userSelect = "none";
+    document.body.style.cursor = "col-resize";
+    const onMove = (ev: PointerEvent) => {
+      const r = resizeRef.current;
+      if (!r) return;
+      const next = Math.max(60, Math.min(400, r.startW + (ev.clientX - r.startX)));
+      setColumnWidths((prev) => ({ ...prev, [r.key]: next }));
+    };
+    const onUp = () => {
+      resizeRef.current = null;
+      document.body.style.userSelect = "";
+      document.body.style.cursor = "";
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onUp);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onUp);
+  };
   const [expandedTemplateIds, setExpandedTemplateIds] = useState<Set<string>>(new Set());
   const [expandedGroupIds, setExpandedGroupIds] = useState<Set<string>>(new Set());
   const [templateSearch, setTemplateSearch] = useState("");
@@ -737,7 +340,7 @@ export default function Selections() {
     },
   });
 
-  const isDraggable = !searchTerm && !categoryFilter && statusTab === "all";
+  const isDraggable = !searchTerm && !categoryFilter && statusTab === "all" && !sortBy;
 
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
@@ -904,6 +507,36 @@ export default function Selections() {
     });
   }, [selectionsWithOptions, orderedIds, statusTab, categoryFilter, searchTerm]);
 
+  // Header sort — applied on top of the manual drag order when active
+  const STATUS_SORT_ORDER: Record<DerivedStatus, number> = {
+    overdue: 0, open: 1, submitted: 2, approved: 3, ordered: 4, received: 5,
+  };
+  const sorted = useMemo(() => {
+    if (!sortBy) return filtered;
+    const dir = sortDir === "asc" ? 1 : -1;
+    const val = (sel: (typeof filtered)[number]): string | number => {
+      switch (sortBy) {
+        case "name": return sel.name.toLowerCase();
+        case "category": return (sel.category ?? "").toLowerCase();
+        case "location": return (sel.room ?? "").toLowerCase();
+        case "status": return STATUS_SORT_ORDER[getDerivedStatus(sel)];
+        case "budget": return getActualCents(sel) ?? sel.allowance ?? -1;
+        case "due": {
+          // Decided items sort last; missing deadlines just before them
+          const d = getDerivedStatus(sel);
+          if (d === "approved" || d === "ordered" || d === "received") return Number.MAX_SAFE_INTEGER;
+          return sel.deadline ? new Date(sel.deadline).getTime() : Number.MAX_SAFE_INTEGER - 1;
+        }
+      }
+    };
+    return [...filtered].sort((a, b) => {
+      const av = val(a), bv = val(b);
+      if (av < bv) return -1 * dir;
+      if (av > bv) return 1 * dir;
+      return 0;
+    });
+  }, [filtered, sortBy, sortDir]);
+
   // Approved spend
   const approvedSpend = useMemo(() => {
     return selectionsWithOptions.reduce((sum, sel) => {
@@ -917,20 +550,6 @@ export default function Selections() {
   }, [selectionsWithOptions]);
 
   // Handlers
-  const toggleExpand = (id: string) => {
-    setExpandedRows((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
-
-  const toggleAllExpanded = () => {
-    const allExpanded = filtered.every((s) => expandedRows.has(s.id));
-    setExpandedRows(allExpanded ? new Set() : new Set(filtered.map((s) => s.id)));
-  };
-
   const handleAddSelection = () => {
     if (!projectId) return;
     createSelectionMutation.mutate({
@@ -1019,14 +638,14 @@ export default function Selections() {
   const groupedFiltered = useMemo(() => {
     if (groupBy === "none") return null;
     const key = groupBy === "category" ? "category" : "room";
-    const groups = new Map<string, typeof filtered>();
-    for (const sel of filtered) {
+    const groups = new Map<string, typeof sorted>();
+    for (const sel of sorted) {
       const g = (sel as any)[key] || "Uncategorised";
       if (!groups.has(g)) groups.set(g, []);
       groups.get(g)!.push(sel);
     }
     return groups;
-  }, [filtered, groupBy]);
+  }, [sorted, groupBy]);
 
   const allGroupKeys = useMemo(() => (groupedFiltered ? [...groupedFiltered.keys()] : []), [groupedFiltered]);
 
@@ -1126,8 +745,10 @@ export default function Selections() {
             />
           </div>
 
-          {/* Right: budget summary */}
+          {/* Right: decision progress + budget summary */}
           <div className="rounded-lg border border-border bg-card px-4 py-2 flex items-center gap-6">
+            <ProgressStrip selections={selectionsWithOptions} />
+            <div className="w-px self-stretch bg-border/70" />
             <div>
               <div className="text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">Allowance</div>
               <div className="text-[13px] font-bold text-foreground tabular-nums" data-testid="text-total-allowance">
@@ -1251,6 +872,65 @@ export default function Selections() {
 
           {/* Right side */}
           <div className="ml-auto flex items-center gap-1 flex-shrink-0">
+            {/* List / Cards toggle */}
+            <div className="flex items-center rounded-md border border-border/50 p-px mr-1">
+              <button
+                onClick={() => setViewMode("list")}
+                className={cn(
+                  "h-5 w-6 flex items-center justify-center rounded",
+                  viewMode === "list" ? "bg-primary/15 text-primary" : "text-muted-foreground",
+                )}
+                data-testid="button-view-list"
+                aria-label="List view"
+              >
+                <LayoutList className="w-3 h-3" />
+              </button>
+              <button
+                onClick={() => setViewMode("cards")}
+                className={cn(
+                  "h-5 w-6 flex items-center justify-center rounded",
+                  viewMode === "cards" ? "bg-primary/15 text-primary" : "text-muted-foreground",
+                )}
+                data-testid="button-view-cards"
+                aria-label="Cards view"
+              >
+                <LayoutGrid className="w-3 h-3" />
+              </button>
+            </div>
+            {/* Column visibility (list view) */}
+            {viewMode === "list" && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    className="h-6 w-6 flex items-center justify-center border border-border/50 rounded-md hover-elevate active-elevate-2 text-muted-foreground"
+                    data-testid="button-columns"
+                    aria-label="Columns"
+                  >
+                    <ChevronsUpDown className="w-3.5 h-3.5 rotate-90" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuCheckboxItem
+                    checked={visibleColumns.category}
+                    onCheckedChange={(v) => setVisibleColumns((p) => ({ ...p, category: !!v }))}
+                  >
+                    Category
+                  </DropdownMenuCheckboxItem>
+                  <DropdownMenuCheckboxItem
+                    checked={visibleColumns.location}
+                    onCheckedChange={(v) => setVisibleColumns((p) => ({ ...p, location: !!v }))}
+                  >
+                    Location
+                  </DropdownMenuCheckboxItem>
+                  <DropdownMenuCheckboxItem
+                    checked={visibleColumns.options}
+                    onCheckedChange={(v) => setVisibleColumns((p) => ({ ...p, options: !!v }))}
+                  >
+                    Options count
+                  </DropdownMenuCheckboxItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
             {/* Group-by dropdown */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -1390,32 +1070,61 @@ export default function Selections() {
 
       {/* Table */}
       <div className="flex-1 overflow-auto">
-        {/* Table header */}
-        <div className="grid grid-cols-[16px_32px_40px_minmax(160px,1fr)_120px_120px_100px_100px_100px_100px_110px_90px_32px] gap-3 items-center bg-muted border-b border-border h-[34px] px-3 text-[10px] uppercase tracking-wider font-semibold text-muted-foreground sticky top-0 z-10">
-          <div></div>
-          <div className="flex items-center justify-center">
-            <button
-              type="button"
-              onClick={toggleAllExpanded}
-              className="flex items-center justify-center h-5 w-5 text-muted-foreground hover:text-foreground transition-colors"
-              data-testid="button-expand-all"
-              aria-label={filtered.every(s => expandedRows.has(s.id)) ? "Collapse all" : "Expand all"}
+       {/* min-w-full + w-fit: children paint across the full scrollable width,
+           not just the visible viewport (header/row colour vanished on
+           horizontal scroll) */}
+       <div className="min-w-full w-fit">
+        {/* Table header — hidden in cards view. Click a label to sort
+            (asc → desc → off); drag the divider after a label to resize
+            (widths persisted). */}
+        {viewMode === "list" && (() => {
+          // Plain render functions (NOT components) — inline component types
+          // remounted the header every render, breaking drags mid-resize
+          const headerCell = (
+            label: string,
+            sortKey: NonNullable<typeof sortBy>,
+            widthKey?: WidthKey,
+            align: "left" | "right" = "left",
+          ) => (
+            <div key={sortKey} className={cn("relative flex items-center h-full min-w-0", align === "right" && "justify-end")}>
+              <button
+                type="button"
+                onClick={() => cycleSort(sortKey)}
+                className="flex items-center gap-1 uppercase tracking-wider font-semibold hover:text-foreground truncate"
+                data-testid={`sort-${sortKey}`}
+              >
+                {label}
+                {sortBy === sortKey && <span className="text-primary">{sortDir === "asc" ? "↑" : "↓"}</span>}
+              </button>
+              {widthKey && (
+                <div
+                  className="absolute -right-2 top-0 h-full w-3 cursor-col-resize flex items-center justify-center group/handle touch-none"
+                  onPointerDown={(e) => startColumnResize(widthKey, e)}
+                  data-testid={`resize-${widthKey}`}
+                >
+                  <div className="h-4 w-px bg-border group-hover/handle:bg-primary group-hover/handle:w-0.5" />
+                </div>
+              )}
+            </div>
+          );
+          return (
+            <div
+              className="grid gap-3 items-center bg-muted border-b border-border h-[34px] px-3 text-[10px] text-muted-foreground sticky top-0 z-10"
+              style={{ gridTemplateColumns: gridTemplate }}
             >
-              <ChevronsUpDown className="w-3.5 h-3.5" />
-            </button>
-          </div>
-          <div></div>
-          <div>Selection</div>
-          <div>Category</div>
-          <div>Location</div>
-          <div>Status</div>
-          <div className="text-right">Allowance</div>
-          <div className="text-right">Actual</div>
-          <div className="text-right">Variance</div>
-          <div>Deadline</div>
-          <div className="text-center">Options</div>
-          <div></div>
-        </div>
+              <div></div>
+              <div></div>
+              {headerCell("Selection", "name")}
+              {visibleColumns.category && headerCell("Category", "category", "category")}
+              {visibleColumns.location && headerCell("Location", "location", "location")}
+              {headerCell("Status", "status", "status")}
+              {visibleColumns.options && <div className="text-center uppercase tracking-wider font-semibold">Opts</div>}
+              {headerCell("Budget", "budget", "budget", "right")}
+              {headerCell("Due", "due", "deadline", "right")}
+              <div></div>
+            </div>
+          );
+        })()}
 
         {/* Body — DndContext always mounted so hook count stays stable */}
         <DndContext
@@ -1425,7 +1134,7 @@ export default function Selections() {
         >
           {isLoading ? (
             <div className="px-3 py-12 text-center text-sm text-muted-foreground">Loading selections…</div>
-          ) : filtered.length === 0 ? (
+          ) : sorted.length === 0 ? (
             <div className="text-center py-12">
               <Package className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
               <h3 className="text-base font-medium mb-2">No selections found</h3>
@@ -1463,87 +1172,90 @@ export default function Selections() {
                         <span className="text-[9px] text-muted-foreground/40 bg-muted/50 rounded px-1 py-px ml-0.5">{groupItems.length}</span>
                       </button>
                     </div>
-                    {/* Group items with sortable context */}
-                    {isOpen && (
+                    {/* Group items — cards grid or sortable rows */}
+                    {isOpen && (viewMode === "cards" ? (
+                      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3 px-3 py-3">
+                        {groupItems.map((sel) => (
+                          <SelectionCard
+                            key={sel.id}
+                            selection={sel}
+                            onOpenDrawer={setDrawerId}
+                            onEdit={handleEdit}
+                            onDelete={handleDelete}
+                            onDuplicate={handleDuplicate}
+                            projectId={projectId!}
+                          />
+                        ))}
+                      </div>
+                    ) : (
                       <SortableContext
                         items={groupItems.map((s) => s.id)}
                         strategy={verticalListSortingStrategy}
                       >
                         {groupItems.map((sel) => (
-                          <div key={sel.id}>
-                            <SortableSelectionRow
-                              selection={sel}
-                              expanded={expandedRows.has(sel.id)}
-                              onToggleExpand={() => toggleExpand(sel.id)}
-                              onSelectOption={(selectionId, optionId) =>
-                                selectOptionMutation.mutate({ selectionId, optionId })
-                              }
-                              onEdit={handleEdit}
-                              onDelete={handleDelete}
-                              onDuplicate={handleDuplicate}
-                              isPending={selectOptionMutation.isPending}
-                              isChecked={checkedIds.has(sel.id)}
-                              onCheck={handleCheck}
-                              projectId={projectId!}
-                              isDraggable={isDraggable}
-                            />
-                            {expandedRows.has(sel.id) && (
-                              <OptionsPanel
-                                selection={sel}
-                                onSelectOption={(optionId) =>
-                                  selectOptionMutation.mutate({ selectionId: sel.id, optionId })
-                                }
-                                isPending={selectOptionMutation.isPending}
-                              />
-                            )}
-                          </div>
+                          <SortableSelectionRow
+                            key={sel.id}
+                            selection={sel}
+                            gridTemplate={gridTemplate}
+                            columns={visibleColumns}
+                            onOpenDrawer={setDrawerId}
+                            onEdit={handleEdit}
+                            onDelete={handleDelete}
+                            onDuplicate={handleDuplicate}
+                            isChecked={checkedIds.has(sel.id)}
+                            projectId={projectId!}
+                            isDraggable={isDraggable}
+                          />
                         ))}
                       </SortableContext>
-                    )}
+                    ))}
                   </div>
                 );
               })}
             </div>
           ) : (
-            /* Flat rendering */
+            /* Flat rendering — cards grid or sortable rows */
+            viewMode === "cards" ? (
+              <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3 px-3 py-3">
+                {sorted.map((sel) => (
+                  <SelectionCard
+                    key={sel.id}
+                    selection={sel}
+                    onOpenDrawer={setDrawerId}
+                    onEdit={handleEdit}
+                    onDelete={handleDelete}
+                    onDuplicate={handleDuplicate}
+                    projectId={projectId!}
+                  />
+                ))}
+              </div>
+            ) : (
             <SortableContext
-              items={filtered.map((s) => s.id)}
+              items={sorted.map((s) => s.id)}
               strategy={verticalListSortingStrategy}
             >
               <div>
-                {filtered.map((sel) => (
-                  <div key={sel.id}>
-                    <SortableSelectionRow
-                      selection={sel}
-                      expanded={expandedRows.has(sel.id)}
-                      onToggleExpand={() => toggleExpand(sel.id)}
-                      onSelectOption={(selectionId, optionId) =>
-                        selectOptionMutation.mutate({ selectionId, optionId })
-                      }
-                      onEdit={handleEdit}
-                      onDelete={handleDelete}
-                      onDuplicate={handleDuplicate}
-                      isPending={selectOptionMutation.isPending}
-                      isChecked={checkedIds.has(sel.id)}
-                      onCheck={handleCheck}
-                      projectId={projectId!}
-                      isDraggable={isDraggable}
-                    />
-                    {expandedRows.has(sel.id) && (
-                      <OptionsPanel
-                        selection={sel}
-                        onSelectOption={(optionId) =>
-                          selectOptionMutation.mutate({ selectionId: sel.id, optionId })
-                        }
-                        isPending={selectOptionMutation.isPending}
-                      />
-                    )}
-                  </div>
+                {sorted.map((sel) => (
+                  <SortableSelectionRow
+                    key={sel.id}
+                    selection={sel}
+                    gridTemplate={gridTemplate}
+                    columns={visibleColumns}
+                    onOpenDrawer={setDrawerId}
+                    onEdit={handleEdit}
+                    onDelete={handleDelete}
+                    onDuplicate={handleDuplicate}
+                    isChecked={checkedIds.has(sel.id)}
+                    projectId={projectId!}
+                    isDraggable={isDraggable}
+                  />
                 ))}
               </div>
             </SortableContext>
+            )
           )}
         </DndContext>
+       </div>
       </div>
 
       {/* Bulk action toolbar */}
@@ -1837,6 +1549,16 @@ export default function Selections() {
         </div>
       )}
 
+      {/* Quick-view drawer */}
+      <SelectionDrawer
+        selection={selectionsWithOptions.find((s) => s.id === drawerId) ?? null}
+        open={!!drawerId}
+        onClose={() => setDrawerId(null)}
+        onEdit={handleEdit}
+        onSelectOption={(selectionId, optionId) => selectOptionMutation.mutate({ selectionId, optionId })}
+        selectPending={selectOptionMutation.isPending}
+        projectId={projectId ?? ""}
+      />
     </div>
   );
 }

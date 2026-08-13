@@ -9,6 +9,10 @@ import * as signature from 'cookie-signature';
 
 const SALT_ROUNDS = 12;
 
+// Bump when the Terms of Service / Privacy Policy materially change so
+// users.terms_version records which version each account accepted.
+const TERMS_VERSION = '2026-07-27';
+
 function generateOAuthState(): string {
   const array = new Uint8Array(32);
   crypto.getRandomValues(array);
@@ -81,10 +85,14 @@ export async function setupAuth(app: Express) {
   // Email/password registration
   app.post('/api/auth/register', async (req: Request, res: Response) => {
     try {
-      const { email, password, firstName, lastName } = req.body;
+      const { email, password, firstName, lastName, agreeToTerms } = req.body;
 
       if (!email || !password) {
         return res.status(400).json({ message: 'Email and password are required' });
+      }
+
+      if (agreeToTerms !== true) {
+        return res.status(400).json({ message: 'You must agree to the Terms of Service and Privacy Policy to create an account' });
       }
 
       const passwordValidation = PasswordUtils.validatePasswordStrength(password);
@@ -105,6 +113,8 @@ export async function setupAuth(app: Express) {
         passwordHash,
         firstName: firstName || null,
         lastName: lastName || null,
+        termsAcceptedAt: new Date(),
+        termsVersion: TERMS_VERSION,
       });
 
       // Set session
@@ -201,6 +211,18 @@ export async function setupAuth(app: Express) {
     // Generate and store CSRF state token
     const state = generateOAuthState();
     (req.session as any).oauthState = state;
+
+    // Terms consent, captured on the signup form BEFORE we hand off to Google.
+    // Recorded server-side (not trusted back from the client on return) and
+    // pinned to the version the user actually saw. The callback refuses to
+    // CREATE a new account without it — see the terms_required branch there.
+    if (req.query.terms === 'accepted') {
+      (req.session as any).oauthTermsAccepted = true;
+      (req.session as any).oauthTermsVersion = TERMS_VERSION;
+    } else {
+      delete (req.session as any).oauthTermsAccepted;
+      delete (req.session as any).oauthTermsVersion;
+    }
 
     // Store redirect path in session
     const redirectTo = req.query.redirect as string;
@@ -319,14 +341,28 @@ export async function setupAuth(app: Express) {
         }
       }
 
+      const termsAccepted = (req.session as any).oauthTermsAccepted === true;
+      const termsVersion = (req.session as any).oauthTermsVersion || TERMS_VERSION;
+      // Consent is single-use: never let a stale flag authorise a later signup.
+      delete (req.session as any).oauthTermsAccepted;
+      delete (req.session as any).oauthTermsVersion;
+
       if (!user) {
-        // Create new user
+        // Creating an account, not signing in — this needs consent. Reaching
+        // here without it means Google was clicked from the login side (no
+        // checkbox), so refuse rather than stamp a consent never given.
+        if (!termsAccepted) {
+          console.warn(`[Auth] Google signup refused — terms not accepted: ${email}`);
+          return errorRedirect('terms_required');
+        }
         user = await storage.createUser({
           email: email || null,
           googleId,
           firstName: firstName || null,
           lastName: lastName || null,
           profileImageUrl: profileImageUrl || null,
+          termsAcceptedAt: new Date(),
+          termsVersion,
         });
         console.log(`[Auth] Created new Google user: ${email}`);
       } else {
@@ -408,12 +444,24 @@ export async function setupAuth(app: Express) {
       }
 
       if (!user) {
+        // Same rule as the web callback: creating an account requires consent.
+        // Existing users signing in are unaffected. The mobile client must send
+        // agreeToTerms:true from its own T&C checkbox.
+        if (req.body?.agreeToTerms !== true) {
+          console.warn(`[Auth] Mobile Google signup refused — terms not accepted: ${email}`);
+          return res.status(403).json({
+            message: 'You must accept the Terms of Service and Privacy Policy to create an account',
+            code: 'terms_required',
+          });
+        }
         user = await storage.createUser({
           email: email || null,
           googleId,
           firstName: firstName || null,
           lastName: lastName || null,
           profileImageUrl: profileImageUrl || null,
+          termsAcceptedAt: new Date(),
+          termsVersion: TERMS_VERSION,
         });
       } else {
         if (profileImageUrl && profileImageUrl !== user.profileImageUrl) {

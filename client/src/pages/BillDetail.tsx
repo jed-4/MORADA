@@ -14,6 +14,10 @@ import {
   Trash2, 
   Ban,
   Wallet,
+  Tag,
+  Landmark,
+  Percent,
+  Ruler,
   Paperclip,
   MessageSquare,
   Check,
@@ -96,8 +100,8 @@ import {
   CommandList,
 } from "@/components/ui/command";
 import { matchSupplier, type SupplierMatch } from "@shared/supplierMatcher";
-import { clampRoundingCents } from "@shared/billTotals";
-import { computeDueDate, describePaymentTerms } from "@shared/paymentTerms";
+import { clampRoundingCents, MAX_ROUNDING_CENTS } from "@shared/billTotals";
+import { computeDueDate, describePaymentTerms, PAYMENT_TERMS_OPTIONS } from "@shared/paymentTerms";
 import { DatePicker } from "@/components/DatePicker";
 import {
   Collapsible,
@@ -109,6 +113,8 @@ import { useUpload } from "@/hooks/use-upload";
 import { Badge } from "@/components/ui/badge";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { CostCodeSelect } from "@/components/CostCodeSelect";
+import { UnitSelect } from "@/components/UnitSelect";
+import { BulkActionBar } from "@/components/BulkActionBar";
 import type { Bill, Supplier, Project, CostCode, BillLineItem, BillApproval, BillPayment, BillLineItemAllowance, EstimateItem, PurchaseOrder } from "@shared/schema";
 
 const DocumentPreview = lazy(() => import("@/components/DocumentPreview"));
@@ -167,6 +173,11 @@ function isXeroPushError(e: unknown): e is XeroPushError {
   return e instanceof Error;
 }
 
+// Fallback copy for the server's CREDIT_NOT_SUPPORTED response (the server
+// sends its own message; this only covers an empty body).
+const CREDIT_NOT_SUPPORTED_COPY =
+  "Vendor credits can't sync to Xero yet — record the credit note in Xero directly.";
+
 /**
  * Build a human-readable description for a failed Xero push. When the server
  * returned a structured `validationErrors` list (XeroValidationException, or
@@ -195,6 +206,45 @@ function formatXeroErrorDescription(e: unknown): string {
   return e?.message || "Could not push to Xero. Check your Xero connection in Settings.";
 }
 
+/**
+ * An AI-extracted value with a hover/focus copy button. The invoice preview
+ * can't be selected on scans or photos, so these read-outs are the practical
+ * way to get a reference number or ABN onto the clipboard without retyping it.
+ */
+function CopyableValue({
+  value,
+  emptyLabel = "Not detected",
+  testId,
+}: {
+  value?: string | null;
+  emptyLabel?: string;
+  testId?: string;
+}) {
+  const [copied, setCopied] = useState(false);
+  if (!value) {
+    return <p className="font-medium" data-testid={testId}>{emptyLabel}</p>;
+  }
+  return (
+    <p className="font-medium flex items-center gap-1 group/copy min-w-0" data-testid={testId}>
+      <span className="truncate">{value}</span>
+      <button
+        type="button"
+        onClick={() => {
+          navigator.clipboard?.writeText(value);
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1200);
+        }}
+        className="opacity-0 group-hover/copy:opacity-100 focus:opacity-100 text-muted-foreground hover:text-foreground shrink-0 transition-opacity"
+        title={`Copy "${value}"`}
+        aria-label={`Copy ${value}`}
+        data-testid={testId ? `${testId}-copy` : undefined}
+      >
+        {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+      </button>
+    </p>
+  );
+}
+
 export default function BillDetail() {
   const { id, projectId } = useParams<{ id: string; projectId?: string }>();
   const [, setLocation] = useLocation();
@@ -206,6 +256,11 @@ export default function BillDetail() {
   // Manual rounding adjustment in cents (±MAX_ROUNDING_CENTS), applied to the
   // total so it can be nudged to match the supplier invoice — like Xero.
   const [roundingCents, setRoundingCents] = useState(0);
+  // The total printed on the supplier's invoice (cents inc GST) — the ANCHOR.
+  // While set, roundingCents is re-derived from it on every lines/taxMode
+  // change so the bill total tracks the document instead of keeping a stale
+  // one-shot delta. Null = no anchor (totals purely line-derived).
+  const [documentTotalCents, setDocumentTotalCents] = useState<number | null>(null);
   const [editingInvoiceTotal, setEditingInvoiceTotal] = useState(false);
   const [invoiceTotalInput, setInvoiceTotalInput] = useState("");
   const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
@@ -215,7 +270,7 @@ export default function BillDetail() {
   const [ocrPreviewOpen, setOcrPreviewOpen] = useState(false);
   const [addSupplierDialogOpen, setAddSupplierDialogOpen] = useState(false);
   const [attachmentUrls, setAttachmentUrls] = useState<string[]>([]);
-  const [attachmentMeta, setAttachmentMeta] = useState<Record<string, { filename: string; mimeType?: string }>>({});
+  const [attachmentMeta, setAttachmentMeta] = useState<Record<string, { filename: string; mimeType?: string; uploadGrant?: string }>>({});
   const [sheetPreviewUrl, setSheetPreviewUrl] = useState<string | null>(null);
   const [sheetPreviewFilename, setSheetPreviewFilename] = useState<string>("");
   const [modalPreviewFile, setModalPreviewFile] = useState<PreviewFile | null>(null);
@@ -246,18 +301,33 @@ export default function BillDetail() {
   const [unmappedSupplierId, setUnmappedSupplierId] = useState<string | null>(null);
   const [pendingXeroBillId, setPendingXeroBillId] = useState<string | null>(null);
   const [selectedLineIndices, setSelectedLineIndices] = useState<Set<number>>(new Set());
-  const [bulkCostCodeOpen, setBulkCostCodeOpen] = useState(false);
-  const [bulkCostCodeValue, setBulkCostCodeValue] = useState<string>("");
+  // Bulk edit of the selected line items. One dialog drives every field —
+  // `bulkField` picks which control it shows and which property it writes.
+  type BulkField = "costCode" | "account" | "tax" | "unit";
+  const [bulkField, setBulkField] = useState<BulkField | null>(null);
+  const [bulkValue, setBulkValue] = useState<string>("");
+  // Last active field/count, so the dialog keeps its labels through Radix's
+  // close animation after Apply clears the state.
+  const lastBulkRef = useRef<{ field: BulkField; count: number } | null>(null);
+  const [paymentsOpen, setPaymentsOpen] = useState(false);
   const [supplierDefaultsOpen, setSupplierDefaultsOpen] = useState(false);
   const [supplierDefaultsCostCode, setSupplierDefaultsCostCode] = useState<string>("");
   const [supplierDefaultsAccount, setSupplierDefaultsAccount] = useState<string>("");
-  // Track which of the two defaults the user actually edited this session, so
-  // saving one (e.g. cost code) never overwrites/clears the other.
+  // Payment terms drive the auto-filled due date (computeDueDate), so they
+  // belong in this dialog alongside the other per-supplier bill defaults.
+  const [supplierDefaultsTerms, setSupplierDefaultsTerms] = useState<string>("");
+  // Track which of the defaults the user actually edited this session, so
+  // saving one (e.g. cost code) never overwrites/clears the others.
   const [supplierDefaultsCostCodeDirty, setSupplierDefaultsCostCodeDirty] = useState(false);
   const [supplierDefaultsAccountDirty, setSupplierDefaultsAccountDirty] = useState(false);
+  const [supplierDefaultsTermsDirty, setSupplierDefaultsTermsDirty] = useState(false);
   const [defaultsAccountPickerOpen, setDefaultsAccountPickerOpen] = useState(false);
   const [defaultsAccountSearch, setDefaultsAccountSearch] = useState("");
-  const [defaultsPromptDismissed, setDefaultsPromptDismissed] = useState(false);
+  // Cost code and Xero account are offered as supplier defaults independently —
+  // accepting one must not silently save the other, and declining one must not
+  // hide the other.
+  const [costCodeDefaultDismissed, setCostCodeDefaultDismissed] = useState(false);
+  const [accountDefaultDismissed, setAccountDefaultDismissed] = useState(false);
   const [showUpdateDefaultsPrompt, setShowUpdateDefaultsPrompt] = useState(false);
   const [poSearchOpen, setPoSearchOpen] = useState(false);
   const [poSearchText, setPoSearchText] = useState("");
@@ -318,6 +388,20 @@ export default function BillDetail() {
   const { data: xeroStatus } = useQuery<{ connected: boolean }>({
     queryKey: ["/api/xero/status"],
   });
+
+  // New bills default to syncing when the company is connected to Xero —
+  // Morada's approval workflow mirrors into Xero, so an unticked box on a
+  // fresh bill almost always meant "saved but never reached Xero". Applied
+  // once so the user can still untick it deliberately.
+  const sendToXeroDefaultApplied = useRef(false);
+  useEffect(() => {
+    if (isEditMode || sendToXeroDefaultApplied.current) return;
+    if (xeroStatus?.connected) {
+      sendToXeroDefaultApplied.current = true;
+      form.setValue("sendToXero", true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [xeroStatus?.connected, isEditMode]);
 
   const { data: approvals = [] } = useQuery<BillApproval[]>({
     queryKey: ["/api/bills", id, "approvals"],
@@ -467,8 +551,20 @@ export default function BillDetail() {
   });
   const existingAllowances = existingAllowancesData ?? [];
 
+  // ── Guarded form hydration ─────────────────────────────────────────────────
+  // The bill query refetches constantly (status PATCHes, payments, Xero sync
+  // writes, list invalidations…). Rebuilding the form from the server copy on
+  // every refetch used to wipe whatever the user (or the AI reader) had typed
+  // but not yet saved — the "page reloads as if never edited" bug. Rule now:
+  // always hydrate when a DIFFERENT bill loads; for the same bill, hydrate only
+  // while the form has no unsaved changes.
+  const lastHydratedBillIdRef = useRef<string | null>(null);
+  const hasUnsavedChangesRef = useRef(false);
   useEffect(() => {
     if (bill && isEditMode) {
+      const billChanged = lastHydratedBillIdRef.current !== bill.id;
+      if (!billChanged && hasUnsavedChangesRef.current) return;
+      lastHydratedBillIdRef.current = bill.id;
       form.reset({
         billNumber: bill.billNumber,
         projectId: bill.projectId,
@@ -493,6 +589,7 @@ export default function BillDetail() {
         setTaxMode(persistedTaxMode);
       }
       setRoundingCents((bill as any).roundingCents ?? 0);
+      setDocumentTotalCents((bill as any).documentTotalCents ?? null);
       // attachmentUrls may now contain either legacy string entries or rich
       // attachment record objects ({objectPath, filename, mimeType, ...}).
       // Normalize down to a string[] of object paths for the existing UI;
@@ -528,9 +625,15 @@ export default function BillDetail() {
     }
   }, [suppliers.length, bill?.id, isEditMode]);
 
+  // Same guard as the form hydration above: never clobber in-progress line-item
+  // edits with a refetch of the same bill.
+  const lastHydratedLinesBillIdRef = useRef<string | null>(null);
   useEffect(() => {
     if (existingLineItemsLoading || existingAllowancesLoading) return;
     if (existingLineItems.length > 0 && isEditMode) {
+      const billChanged = lastHydratedLinesBillIdRef.current !== id;
+      if (!billChanged && hasUnsavedChangesRef.current) return;
+      lastHydratedLinesBillIdRef.current = id ?? null;
       setLineItems(
         existingLineItems.map((item) => {
           const allowance = existingAllowances.find(a => a.billLineItemId === item.id);
@@ -541,7 +644,7 @@ export default function BillDetail() {
             costCodeId: item.costCodeId || undefined,
             quantity: item.quantity,
             unitPrice: item.unitPrice / 100,
-            unit: "",
+            unit: (item as any).unit || "",
             tax: item.tax as "GST on expenses" | "No GST",
             account: item.account || "",
             total: item.total / 100,
@@ -649,17 +752,38 @@ export default function BillDetail() {
   // excluded — they persist immediately via their own endpoints.
   const baselineRef = useRef<string | null>(null);
   const watchedAll = form.watch();
-  const currentSnapshot = JSON.stringify({ f: watchedAll, lineItems, roundingCents, taxMode });
+  const currentSnapshot = JSON.stringify({ f: watchedAll, lineItems, roundingCents, documentTotalCents, taxMode });
+  // Navigating to a different bill in the same mounted component (e.g.
+  // "Approve & next") must drop the previous bill's baseline, or the new
+  // bill's snapshot would compare against the old bill and read as "dirty".
+  useEffect(() => {
+    baselineRef.current = null;
+  }, [id]);
+  const currentSnapshotRef = useRef(currentSnapshot);
+  currentSnapshotRef.current = currentSnapshot;
   useEffect(() => {
     if (!isEditMode) { baselineRef.current = null; return; }
     if (!bill || existingLineItemsLoading || existingAllowancesLoading) return;
     if (baselineRef.current !== null) return; // capture once per load
-    baselineRef.current = currentSnapshot;
+    // Capture on a macrotask so the baseline reflects the SETTLED post-
+    // hydration state: the form reset and line-item hydration land across
+    // follow-up renders, and snapshotting synchronously here would freeze the
+    // pre-hydration state as the baseline — every bill would then read as
+    // "dirty" the moment it finished loading. Each snapshot change before
+    // settling re-arms the timer, so the capture happens once rendering goes
+    // quiet.
+    const timer = setTimeout(() => {
+      if (baselineRef.current === null) baselineRef.current = currentSnapshotRef.current;
+    }, 0);
+    return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isEditMode, bill, existingLineItemsLoading, existingAllowancesLoading, currentSnapshot]);
 
   const hasUnsavedChanges =
     isEditMode && baselineRef.current !== null && currentSnapshot !== baselineRef.current;
+  // Ref mirror so the hydration effects above (declared earlier in the file)
+  // can consult dirtiness without re-running on every keystroke.
+  hasUnsavedChangesRef.current = hasUnsavedChanges;
 
   // Warn on tab close / refresh when there are unsaved edits.
   useEffect(() => {
@@ -690,7 +814,8 @@ export default function BillDetail() {
 
   // Reset per-bill dismissals whenever the supplier changes.
   useEffect(() => {
-    setDefaultsPromptDismissed(false);
+    setCostCodeDefaultDismissed(false);
+    setAccountDefaultDismissed(false);
     setShowUpdateDefaultsPrompt(false);
   }, [watchedSupplierId]);
 
@@ -739,6 +864,7 @@ export default function BillDetail() {
       supplierId: string;
       defaultCostCodeId?: string | null;
       xeroDefaultAccountCode?: string | null;
+      paymentTerms?: string | null;
       suppressDefaultsPrompt?: boolean;
     }) => {
       const { supplierId, ...patch } = payload;
@@ -773,10 +899,97 @@ export default function BillDetail() {
   // Suggest whenever the bill has a value that differs from (or fills in) the stored default.
   const suggestedCostCode = (mostUsedCostCode && mostUsedCostCode !== supplierDefaultCostCode) ? mostUsedCostCode : "";
   const suggestedAccount = (mostUsedAccount && mostUsedAccount !== supplierDefaultAccountCode) ? mostUsedAccount : "";
-  const showDefaultsPrompt = !!currentSupplier
-    && !defaultsPromptDismissed
-    && !currentSupplier.suppressDefaultsPrompt
-    && (!!suggestedCostCode || !!suggestedAccount);
+  const defaultsPromptable = !!currentSupplier && !currentSupplier.suppressDefaultsPrompt;
+  const showCostCodeDefaultPrompt = defaultsPromptable && !costCodeDefaultDismissed && !!suggestedCostCode;
+  const showAccountDefaultPrompt =
+    defaultsPromptable && !accountDefaultDismissed && !!suggestedAccount && xeroAccounts.length > 0;
+  // The post-save "update the saved default?" prompt only makes sense once the
+  // user has finished with the offers above.
+  const defaultsPromptDismissed = costCodeDefaultDismissed && accountDefaultDismissed;
+
+  // One "save this as a supplier default?" row. Rendered once per field so
+  // cost code and Xero account can be accepted or declined independently.
+  // A plain render function (not a component) so it can't remount mid-edit.
+  const renderDefaultsPrompt = (opts: {
+    testId: string;
+    fieldLabel: string;
+    valueLabel: string;
+    payload: { defaultCostCodeId?: string; xeroDefaultAccountCode?: string };
+    onDone: () => void;
+    saveTestId: string;
+    deferTestId: string;
+  }) => (
+    <div
+      className="flex flex-wrap items-center gap-2 px-3 py-2 border-b bg-muted/20 text-table"
+      data-testid={opts.testId}
+    >
+      <span className="text-muted-foreground">
+        Save {opts.fieldLabel}{" "}
+        <span className="font-medium text-foreground">{opts.valueLabel}</span>
+        {" "}as the default for {currentSupplier?.name || "this supplier"}?
+      </span>
+      <div className="flex items-center gap-1 ml-auto">
+        <Button
+          type="button"
+          size="sm"
+          variant="default"
+          className="h-6 text-table px-2"
+          disabled={updateSupplierDefaultsMutation.isPending}
+          onClick={() => {
+            if (!currentSupplier) return;
+            updateSupplierDefaultsMutation.mutate(
+              { supplierId: currentSupplier.id, ...opts.payload },
+              {
+                onSuccess: () => {
+                  opts.onDone();
+                  toast({
+                    title: "Default saved",
+                    description: `Future bills for ${currentSupplier.name} will use this ${opts.fieldLabel}.`,
+                  });
+                },
+              },
+            );
+          }}
+          data-testid={opts.saveTestId}
+        >
+          Save
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          className="h-6 text-table px-2"
+          onClick={opts.onDone}
+          data-testid={opts.deferTestId}
+        >
+          Not now
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          className="h-6 text-table px-2 text-muted-foreground"
+          disabled={updateSupplierDefaultsMutation.isPending}
+          onClick={() => {
+            if (!currentSupplier) return;
+            // Suppression is per-supplier, so it silences both rows.
+            updateSupplierDefaultsMutation.mutate(
+              { supplierId: currentSupplier.id, suppressDefaultsPrompt: true },
+              {
+                onSuccess: () => {
+                  setCostCodeDefaultDismissed(true);
+                  setAccountDefaultDismissed(true);
+                },
+              },
+            );
+          }}
+          data-testid="button-suppress-supplier-defaults"
+        >
+          Don't ask for this supplier
+        </Button>
+      </div>
+    </div>
+  );
 
   const addLineItem = () => {
     setLineItems([
@@ -849,6 +1062,22 @@ export default function BillDetail() {
     return calculateTotalBeforeRounding() + roundingCents / 100;
   };
 
+  // ── Document-total anchor ──────────────────────────────────────────────────
+  // While an anchor is set, re-derive the rounding adjustment whenever the
+  // computed base moves (line edits, tax mode) so the total tracks the invoice
+  // document. Rounding is capped at ±MAX_ROUNDING_CENTS — a larger gap means
+  // the lines genuinely disagree with the invoice, which renders as an amber
+  // mismatch warning next to the totals instead of being silently absorbed.
+  const documentMismatchCents =
+    documentTotalCents != null
+      ? documentTotalCents - Math.round(calculateTotalBeforeRounding() * 100)
+      : 0;
+  useEffect(() => {
+    if (documentTotalCents == null) return;
+    setRoundingCents(clampRoundingCents(documentTotalCents - Math.round(calculateTotalBeforeRounding() * 100)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [documentTotalCents, lineItems, taxMode]);
+
   const calculateDue = () => {
     const total = calculateTotal();
     return total - paidDollars;
@@ -882,8 +1111,9 @@ export default function BillDetail() {
     return getLineExTax(item) + getLineTax(item);
   };
 
-  // Column widths for the line-item grid. Resize handles were removed in #169
-  // when this table was migrated to the shared LineItemTable primitive.
+  // Starting widths for the line-item grid. Columns are drag-resizable (see
+  // LineItemTable's `resizeNamespace`) and dragged widths persist per user, so
+  // these are only the defaults before any resize.
   const defaultColWidths: Record<string, number> = {
     description: 140,
     costCode: 130,
@@ -920,6 +1150,7 @@ export default function BillDetail() {
         tax: Math.round(calculateTax() * 100),
         total: Math.round(calculateTotal() * 100),
         roundingCents: clampRoundingCents(roundingCents),
+        documentTotalCents,
         // Convert paidAmount (held in the form as dollars) back to integer cents.
         paidAmount: Math.round((data.paidAmount || 0) * 100),
         taxMode,
@@ -944,6 +1175,7 @@ export default function BillDetail() {
           description: item.description,
           costCodeId: item.costCodeId,
           quantity: item.quantity,
+          unit: item.unit || null,
           unitPrice: Math.round(item.unitPrice * 100),
           tax: item.tax,
           account: item.account,
@@ -984,13 +1216,25 @@ export default function BillDetail() {
               toast({ title: "Bill created", description: "Supplier not linked to Xero — select the matching contact below to complete the sync." });
               return; // stay on page for mapping
             }
+            if (errData.error === "CREDIT_NOT_SUPPORTED") {
+              // A vendor credit is saved and correct in Morada; it just can't
+              // be mirrored to Xero yet (it would post as a positive bill).
+              // A limitation, not a failure — no red toast.
+              toast({ title: "Credit created", description: errData.message || CREDIT_NOT_SUPPORTED_COPY });
+              return;
+            }
             const err: XeroPushError = Object.assign(
               new Error(errData.message || errData.error || "Xero sync failed"),
               { validationErrors: errData.validationErrors as XeroValidationIssue[] | undefined },
             );
             throw err;
           }
-          toast({ title: "Bill created & synced to Xero", description: "New bill created in Xero." });
+          const pushData = await pushRes.json().catch(() => ({} as any));
+          if (pushData?.warning) {
+            toast({ title: "Bill created & synced to Xero", description: pushData.warning });
+          } else {
+            toast({ title: "Bill created & synced to Xero", description: "New bill created in Xero." });
+          }
         } catch (e) {
           const desc = formatXeroErrorDescription(e);
           toast({
@@ -1038,13 +1282,15 @@ export default function BillDetail() {
   });
 
   const updateMutation = useMutation({
-    mutationFn: async (data: BillFormData) => {
+    // __stayOnPage: save without navigating away afterwards — used by
+    // save-then-approve so the approve call runs against the just-saved bill.
+    mutationFn: async (data: BillFormData & { __stayOnPage?: boolean }) => {
       // paidAmount is payment-managed (set only by recording payments + syncBillPaidStatus)
       // and has no input in this form — it is merely carried in defaultValues as DOLLARS.
       // Spreading it back unconverted sent e.g. $47.50 -> 47.5 into the integer "paid_amount"
       // column and 500'd the update. It is also a stale value (payments/Xero sync may have
       // changed it since load), so we omit it entirely from the update payload instead.
-      const { paidAmount: _omitPaidAmount, ...rest } = data;
+      const { paidAmount: _omitPaidAmount, __stayOnPage: _omitStayFlag, ...rest } = data;
       const billData = {
         ...rest,
         billDate: new Date(data.billDate),
@@ -1053,6 +1299,7 @@ export default function BillDetail() {
         tax: Math.round(calculateTax() * 100),
         total: Math.round(calculateTotal() * 100),
         roundingCents: clampRoundingCents(roundingCents),
+        documentTotalCents,
         taxMode,
         // attachmentUrls is intentionally omitted — attachments are managed
         // through the dedicated POST /api/bills/:id/attachments endpoint to
@@ -1077,6 +1324,7 @@ export default function BillDetail() {
           description: item.description,
           costCodeId: item.costCodeId,
           quantity: item.quantity,
+          unit: item.unit || null,
           unitPrice: Math.round(item.unitPrice * 100),
           tax: item.tax,
           account: item.account,
@@ -1114,7 +1362,8 @@ export default function BillDetail() {
 
       return updatedBill;
     },
-    onSuccess: async () => {
+    onSuccess: async (_updatedBill, variables) => {
+      const stayOnPage = !!variables.__stayOnPage;
       // Content is now persisted — drop the baseline so it re-captures the
       // saved state (prevents a false "unsaved changes" prompt when the flow
       // stays on the page, e.g. the Xero-unmapped or update-defaults prompts).
@@ -1149,7 +1398,14 @@ export default function BillDetail() {
                 title: "Bill saved",
                 description: errData.message || "This bill is paid in Xero, so its line items can't be changed there.",
               });
-              setLocation(projectId ? `/projects/${projectId}/bills` : "/bills");
+              if (!stayOnPage) setLocation(projectId ? `/projects/${projectId}/bills` : "/bills");
+              return;
+            }
+            if (errData.error === "CREDIT_NOT_SUPPORTED") {
+              // As above: the credit saved fine, only the Xero mirror is
+              // unavailable. Same calm treatment as INVOICE_LOCKED.
+              toast({ title: "Credit saved", description: errData.message || CREDIT_NOT_SUPPORTED_COPY });
+              if (!stayOnPage) setLocation(projectId ? `/projects/${projectId}/bills` : "/bills");
               return;
             }
             const err: XeroPushError = Object.assign(
@@ -1161,7 +1417,9 @@ export default function BillDetail() {
           const result = await pushRes.json();
           toast({
             title: "Bill saved & synced to Xero",
-            description: result.updated ? "Existing Xero bill updated." : "New bill created in Xero.",
+            description: result.warning
+              ? result.warning
+              : result.updated ? "Existing Xero bill updated." : "New bill created in Xero.",
           });
         } catch (e) {
           // Stay on page so user can see the error and retry
@@ -1175,6 +1433,7 @@ export default function BillDetail() {
       } else {
         toast({ title: "Success", description: "Bill updated successfully" });
       }
+      if (stayOnPage) return; // save-then-approve keeps the user here
       // If supplier defaults are stored but the user coded this bill differently,
       // stay on the page so they can decide whether to update the defaults.
       if (currentSupplier && !currentSupplier.suppressDefaultsPrompt && !defaultsPromptDismissed) {
@@ -1296,6 +1555,31 @@ export default function BillDetail() {
     else setLocation(`/bills/${remainingInQueue[0].id}`);
   };
 
+  // Approve commits whatever is on screen: unsaved edits are saved FIRST, then
+  // the approval runs against the persisted bill. Previously Approve posted
+  // straight to the server and silently approved the stale saved copy while
+  // the reviewer was looking at their edited (unsaved) version.
+  const approveWithSave = async (goNext: boolean) => {
+    if (hasUnsavedChanges) {
+      const valid = await form.trigger();
+      if (!valid) {
+        toast({
+          title: "Can't approve yet",
+          description: "Fix the highlighted form errors, then approve.",
+          variant: "destructive",
+        });
+        return;
+      }
+      try {
+        await updateMutation.mutateAsync({ ...form.getValues(), __stayOnPage: true });
+      } catch {
+        return; // save failed — updateMutation.onError already showed the toast
+      }
+    }
+    approveMutation.mutate(undefined, goNext ? { onSuccess: () => goToNextInQueue() } : undefined);
+  };
+  const approveBusy = approveMutation.isPending || updateMutation.isPending;
+
   const rejectMutation = useMutation({
     mutationFn: async (comments: string) => {
       const response = await apiRequest(`/api/bills/${id}/reject`, "POST", {
@@ -1350,7 +1634,7 @@ export default function BillDetail() {
   // it into pendingAttachments + attachmentUrls (the create payload picks it
   // up); for existing bills we POST it through the dedicated endpoint.
   const persistOcrAttachment = async (
-    attachment: { objectPath: string; filename?: string; mimeType?: string; size?: number },
+    attachment: { objectPath: string; filename?: string; mimeType?: string; size?: number; uploadGrant?: string },
     file: File | null,
   ): Promise<{ ok: boolean }> => {
     const filename = attachment.filename || file?.name || "invoice";
@@ -1373,7 +1657,7 @@ export default function BillDetail() {
       }
     }
     setAttachmentUrls((prev) => (prev.includes(attachment.objectPath) ? prev : [...prev, attachment.objectPath]));
-    if (filename) setAttachmentMeta(prev => ({ ...prev, [attachment.objectPath]: { filename, mimeType } }));
+    if (filename) setAttachmentMeta(prev => ({ ...prev, [attachment.objectPath]: { filename, mimeType, uploadGrant: attachment.uploadGrant } }));
     setPendingAttachments((prev) =>
       prev.some((p) => p.objectPath === attachment.objectPath)
         ? prev
@@ -1453,6 +1737,9 @@ export default function BillDetail() {
         objectPath,
         mimeType: meta?.mimeType,
         filename: meta?.filename,
+        // Proves this company uploaded this path; the server no longer trusts
+        // the company segment of objectPath, which any caller can forge.
+        uploadGrant: meta?.uploadGrant,
       });
     },
     onSuccess: (data: any) => {
@@ -1466,6 +1753,7 @@ export default function BillDetail() {
       if (data.dueDate) {
         form.setValue("dueDate", format(new Date(data.dueDate), "yyyy-MM-dd"));
       }
+      let matchedSupplierId: string | null = null;
       if (data.supplierName) {
         const candidates = (suppliers as any[]).map((s) => ({
           id: s.id,
@@ -1474,6 +1762,7 @@ export default function BillDetail() {
         }));
         const result = matchSupplier(data.supplierName, candidates);
         if (result.match) {
+          matchedSupplierId = result.match.candidate.id;
           form.setValue("supplierId", result.match.candidate.id);
         } else {
           const top: SupplierMatch<typeof candidates[number]> | undefined = result.nearMatches[0];
@@ -1496,10 +1785,31 @@ export default function BillDetail() {
           setUnmatchedSupplierDialogOpen(true);
         }
       }
+      // Detect the invoice's tax mode from the AI's own numbers instead of
+      // forcing "inclusive": if the extracted line totals sum to the document's
+      // ex-GST subtotal they are ex-GST lines (exclusive mode); if they sum to
+      // the inc-GST total they are inc-GST (inclusive). Forcing inclusive on an
+      // ex-GST invoice made every computed total ~10% off the document — the
+      // main source of "the Total ends up being wrong".
+      let detectedTaxMode: "inclusive" | "exclusive" = "inclusive";
       if (data.lineItems && data.lineItems.length > 0) {
+        const sumLinesCents = data.lineItems.reduce(
+          (s: number, it: any) => s + (it.totalAmount || 0),
+          0,
+        );
+        const docTotal = data.totalAmount as number | null | undefined; // cents inc GST
+        const docSubtotal = data.subtotalAmount as number | null | undefined; // cents ex GST
+        if (
+          docTotal != null &&
+          docSubtotal != null &&
+          docTotal !== docSubtotal &&
+          Math.abs(sumLinesCents - docSubtotal) < Math.abs(sumLinesCents - docTotal)
+        ) {
+          detectedTaxMode = "exclusive";
+        }
         const firstCostCode = costCodes[0]?.id;
         const defaultAccount = getSupplierDefaultAccount();
-        setTaxMode("inclusive");
+        setTaxMode(detectedTaxMode);
         const newLineItems = data.lineItems.map((item: any, index: number) => ({
           lineType: "custom" as const,
           description: item.description || "",
@@ -1516,14 +1826,36 @@ export default function BillDetail() {
         }));
         setLineItems(newLineItems);
       }
+      // Anchor the document's printed total — rounding is derived from it and
+      // keeps the bill total pinned to the invoice through later edits.
+      if (typeof data.totalAmount === "number" && data.totalAmount > 0) {
+        setDocumentTotalCents(data.totalAmount);
+      }
       form.setValue("status", "awaiting_approval");
       if (isEditMode && id && bill?.status === "draft") {
-        apiRequest(`/api/bills/${id}`, "PATCH", { status: "awaiting_approval" })
+        // Persist everything the AI extracted, not just the status. The status
+        // PATCH triggers a refetch, and only server-persisted fields survive
+        // one — the old {status}-only PATCH is why "AI fills in the bill info
+        // at the top, then it disappears".
+        const persist: Record<string, unknown> = {
+          status: "awaiting_approval",
+          taxMode: detectedTaxMode,
+        };
+        const extractedRef = data.billReference || data.invoiceNumber;
+        if (extractedRef) persist.billReference = extractedRef;
+        const extractedBillDate = data.billDate || data.invoiceDate;
+        if (extractedBillDate) persist.billDate = new Date(extractedBillDate);
+        if (data.dueDate) persist.dueDate = new Date(data.dueDate);
+        if (matchedSupplierId) persist.supplierId = matchedSupplierId;
+        if (typeof data.totalAmount === "number" && data.totalAmount > 0) {
+          persist.documentTotalCents = data.totalAmount;
+        }
+        apiRequest(`/api/bills/${id}`, "PATCH", persist)
           .then(() => {
             queryClient.invalidateQueries({ queryKey: ["/api/bills", id] });
             queryClient.invalidateQueries({ queryKey: ["/api/bills"] });
           })
-          .catch((err) => console.error("Failed to set bill status to awaiting_approval:", err));
+          .catch((err) => console.error("Failed to persist AI-extracted bill fields:", err));
       }
       toast({
         title: "Bill updated",
@@ -1580,7 +1912,7 @@ export default function BillDetail() {
         const uploadResult = await uploadFile(file);
         if (uploadResult?.objectPath) {
           recordPendingAttachment(uploadResult.objectPath, file, "manual");
-          setAttachmentMeta(prev => ({ ...prev, [uploadResult.objectPath]: { filename: file.name, mimeType: file.type } }));
+          setAttachmentMeta(prev => ({ ...prev, [uploadResult.objectPath]: { filename: file.name, mimeType: file.type, uploadGrant: uploadResult.uploadGrant } }));
         }
         if (uploadResult?.objectPath && isEditMode && id) {
           // Persist immediately on existing bills via the dedicated endpoint
@@ -1912,47 +2244,9 @@ export default function BillDetail() {
                 {formatCurrency(due)}
               </span>
             </div>
-            {isEditMode && bill?.status === "awaiting_approval" && canApprove && (
-              <>
-                <Button
-                  variant="default"
-                  size="sm"
-                  onClick={() => approveMutation.mutate(undefined)}
-                  disabled={approveMutation.isPending}
-                  data-testid="button-approve"
-                  className="gap-1"
-                >
-                  {approveMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
-                  {approveMutation.isPending ? "Approving..." : "Approve"}
-                </Button>
-                {remainingInQueue.length > 0 && (
-                  <Button
-                    variant="default"
-                    size="sm"
-                    onClick={() => approveMutation.mutate(undefined, { onSuccess: () => goToNextInQueue() })}
-                    disabled={approveMutation.isPending}
-                    data-testid="button-approve-next"
-                    className="gap-1"
-                    title={`${remainingInQueue.length} more awaiting approval`}
-                  >
-                    <Check className="h-3.5 w-3.5" />
-                    Approve &amp; next
-                    <span className="opacity-70">({remainingInQueue.length})</span>
-                  </Button>
-                )}
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setRejectDialogOpen(true)}
-                  disabled={rejectMutation.isPending}
-                  data-testid="button-reject"
-                  className="gap-1"
-                >
-                  <X className="h-3.5 w-3.5" />
-                  Reject
-                </Button>
-              </>
-            )}
+            {/* Approve / Approve & next / Reject now live in the sticky action
+                bar at the bottom, next to Save — they were up here, far from
+                the save controls and easy to miss. */}
             {isEditMode && (
               <Button 
                 variant="ghost" 
@@ -2072,9 +2366,13 @@ export default function BillDetail() {
       )}
 
       <div className="flex-1 flex overflow-hidden">
-        <div className="flex-1 overflow-auto p-4">
+        {/* Column: scrolling content + a real footer bar. The action bar is a
+            flex sibling OUTSIDE the scroll area (not sticky inside it), so
+            content can never appear below or behind it. */}
+        <div className="flex-1 flex flex-col overflow-hidden">
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-3">
+          <form onSubmit={form.handleSubmit(onSubmit)} className="flex-1 flex flex-col overflow-hidden">
+            <div className="flex-1 overflow-auto p-4 space-y-3">
             <div className={`grid grid-cols-1 gap-3 ${sheetPreviewUrl ? 'lg:grid-cols-[1fr_140px]' : 'lg:grid-cols-[1fr_280px]'}`}>
               <Card className="p-4">
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
@@ -2205,8 +2503,10 @@ export default function BillDetail() {
                             onClick={() => {
                               setSupplierDefaultsCostCode(selected.defaultCostCodeId || "");
                               setSupplierDefaultsAccount(selected.xeroDefaultAccountCode || selected.xeroDefaultAccount || "");
+                              setSupplierDefaultsTerms(selected.paymentTerms || "");
                               setSupplierDefaultsCostCodeDirty(false);
                               setSupplierDefaultsAccountDirty(false);
+                              setSupplierDefaultsTermsDirty(false);
                               setSupplierDefaultsOpen(true);
                             }}
                             data-testid="button-open-supplier-defaults"
@@ -2629,50 +2929,54 @@ export default function BillDetail() {
                             <CollapsibleContent className="mt-2 space-y-2" data-testid="card-ocr-results">
                               <div className="border rounded-md p-2 space-y-1.5 text-table">
                                 <div className="grid grid-cols-2 gap-1.5">
-                                  <div>
+                                  <div className="min-w-0">
                                     <p className="text-muted-foreground">Supplier</p>
-                                    <p className="font-medium" data-testid="text-ocr-supplier">
-                                      {ocrResults.supplierName || "Not detected"}
-                                    </p>
+                                    <CopyableValue value={ocrResults.supplierName} testId="text-ocr-supplier" />
                                   </div>
-                                  <div>
+                                  <div className="min-w-0">
                                     <p className="text-muted-foreground">Invoice #</p>
-                                    <p className="font-medium" data-testid="text-ocr-invoice-number">
-                                      {ocrResults.invoiceNumber || "Not detected"}
-                                    </p>
+                                    <CopyableValue value={ocrResults.invoiceNumber} testId="text-ocr-invoice-number" />
                                   </div>
-                                  <div>
+                                  <div className="min-w-0">
                                     <p className="text-muted-foreground">Date</p>
-                                    <p className="font-medium" data-testid="text-ocr-invoice-date">
-                                      {ocrResults.invoiceDate ? format(new Date(ocrResults.invoiceDate), "dd/MM/yyyy") : "Not detected"}
-                                    </p>
+                                    <CopyableValue
+                                      value={ocrResults.invoiceDate ? format(new Date(ocrResults.invoiceDate), "dd/MM/yyyy") : null}
+                                      testId="text-ocr-invoice-date"
+                                    />
                                   </div>
-                                  <div>
+                                  <div className="min-w-0">
                                     <p className="text-muted-foreground">Due</p>
-                                    <p className="font-medium" data-testid="text-ocr-due-date">
-                                      {ocrResults.dueDate ? format(new Date(ocrResults.dueDate), "dd/MM/yyyy") : "Not detected"}
-                                    </p>
+                                    <CopyableValue
+                                      value={ocrResults.dueDate ? format(new Date(ocrResults.dueDate), "dd/MM/yyyy") : null}
+                                      testId="text-ocr-due-date"
+                                    />
                                   </div>
                                 </div>
                                 <div className="border-t pt-1.5">
                                   <div className="grid grid-cols-3 gap-1.5">
-                                    <div>
+                                    <div className="min-w-0">
                                       <p className="text-muted-foreground">Subtotal</p>
-                                      <p className="font-medium" data-testid="text-ocr-subtotal">
-                                        {ocrResults.subtotalAmount ? formatCurrency(ocrResults.subtotalAmount / 100) : "—"}
-                                      </p>
+                                      <CopyableValue
+                                        value={ocrResults.subtotalAmount ? formatCurrency(ocrResults.subtotalAmount / 100) : null}
+                                        emptyLabel="—"
+                                        testId="text-ocr-subtotal"
+                                      />
                                     </div>
-                                    <div>
+                                    <div className="min-w-0">
                                       <p className="text-muted-foreground">Tax</p>
-                                      <p className="font-medium" data-testid="text-ocr-tax">
-                                        {ocrResults.totalTax ? formatCurrency(ocrResults.totalTax / 100) : "—"}
-                                      </p>
+                                      <CopyableValue
+                                        value={ocrResults.totalTax ? formatCurrency(ocrResults.totalTax / 100) : null}
+                                        emptyLabel="—"
+                                        testId="text-ocr-tax"
+                                      />
                                     </div>
-                                    <div>
+                                    <div className="min-w-0">
                                       <p className="text-muted-foreground">Total</p>
-                                      <p className="font-medium" data-testid="text-ocr-total">
-                                        {ocrResults.totalAmount ? formatCurrency(ocrResults.totalAmount / 100) : "—"}
-                                      </p>
+                                      <CopyableValue
+                                        value={ocrResults.totalAmount ? formatCurrency(ocrResults.totalAmount / 100) : null}
+                                        emptyLabel="—"
+                                        testId="text-ocr-total"
+                                      />
                                     </div>
                                   </div>
                                 </div>
@@ -2771,91 +3075,34 @@ export default function BillDetail() {
                 </div>
               </div>
 
-              {showDefaultsPrompt && (
-                <div className="flex flex-wrap items-center gap-2 px-3 py-2 border-b bg-muted/20 text-table" data-testid="prompt-save-supplier-defaults">
-                  <span className="text-muted-foreground">
-                    Save{" "}
-                    {suggestedCostCode && (
-                      <>
-                        cost code{" "}
-                        <span className="font-medium text-foreground">
-                          {(costCodes.find(c => c.id === suggestedCostCode)?.code) || ""} {(costCodes.find(c => c.id === suggestedCostCode)?.name) || ""}
-                        </span>
-                      </>
-                    )}
-                    {suggestedCostCode && suggestedAccount && " and "}
-                    {suggestedAccount && xeroAccounts.length > 0 && (
-                      <>
-                        Xero account{" "}
-                        <span className="font-medium text-foreground">
-                          {(() => {
-                            const a = xeroAccounts.find(x => x.code === suggestedAccount);
-                            return a ? `${a.code} - ${a.name}` : suggestedAccount;
-                          })()}
-                        </span>
-                      </>
-                    )}
-                    {" "}as defaults for {currentSupplier?.name || "this supplier"}?
-                  </span>
-                  <div className="flex items-center gap-1 ml-auto">
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="default"
-                      className="h-6 text-table px-2"
-                      disabled={updateSupplierDefaultsMutation.isPending}
-                      onClick={() => {
-                        if (!currentSupplier) return;
-                        const payload: {
-                          supplierId: string;
-                          defaultCostCodeId?: string | null;
-                          xeroDefaultAccountCode?: string | null;
-                        } = { supplierId: currentSupplier.id };
-                        if (suggestedCostCode) payload.defaultCostCodeId = suggestedCostCode;
-                        if (suggestedAccount && xeroAccounts.length > 0) payload.xeroDefaultAccountCode = suggestedAccount;
-                        updateSupplierDefaultsMutation.mutate(payload, {
-                          onSuccess: () => {
-                            setDefaultsPromptDismissed(true);
-                            toast({ title: "Defaults saved", description: `Future bills for ${currentSupplier.name} will use these.` });
-                          },
-                        });
-                      }}
-                      data-testid="button-save-supplier-defaults"
-                    >
-                      Save
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="ghost"
-                      className="h-6 text-table px-2"
-                      onClick={() => setDefaultsPromptDismissed(true)}
-                      data-testid="button-defer-supplier-defaults"
-                    >
-                      Not now
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="ghost"
-                      className="h-6 text-table px-2 text-muted-foreground"
-                      disabled={updateSupplierDefaultsMutation.isPending}
-                      onClick={() => {
-                        if (!currentSupplier) return;
-                        updateSupplierDefaultsMutation.mutate({
-                          supplierId: currentSupplier.id,
-                          suppressDefaultsPrompt: true,
-                        }, {
-                          onSuccess: () => setDefaultsPromptDismissed(true),
-                        });
-                      }}
-                      data-testid="button-suppress-supplier-defaults"
-                    >
-                      Don't ask for this supplier
-                    </Button>
-                  </div>
-                </div>
-              )}
+              {showCostCodeDefaultPrompt && renderDefaultsPrompt({
+                testId: "prompt-save-supplier-default-cost-code",
+                fieldLabel: "cost code",
+                valueLabel: (() => {
+                  const c = costCodes.find(c => c.id === suggestedCostCode);
+                  // `title`, not `name` — the cost-code schema has code + title,
+                  // so the old `.name` was always undefined and only the number
+                  // showed.
+                  return c ? [c.code, c.title].filter(Boolean).join(" – ") : suggestedCostCode;
+                })(),
+                payload: { defaultCostCodeId: suggestedCostCode },
+                onDone: () => setCostCodeDefaultDismissed(true),
+                saveTestId: "button-save-supplier-default-cost-code",
+                deferTestId: "button-defer-supplier-default-cost-code",
+              })}
+
+              {showAccountDefaultPrompt && renderDefaultsPrompt({
+                testId: "prompt-save-supplier-default-account",
+                fieldLabel: "Xero account",
+                valueLabel: (() => {
+                  const a = xeroAccounts.find(x => x.code === suggestedAccount);
+                  return a ? `${a.code} - ${a.name}` : suggestedAccount;
+                })(),
+                payload: { xeroDefaultAccountCode: suggestedAccount },
+                onDone: () => setAccountDefaultDismissed(true),
+                saveTestId: "button-save-supplier-default-account",
+                deferTestId: "button-defer-supplier-default-account",
+              })}
 
               {showUpdateDefaultsPrompt && currentSupplier && (
                 <div className="flex flex-wrap items-center gap-2 px-3 py-2 border-b bg-muted/20 text-table" data-testid="prompt-update-supplier-defaults">
@@ -2908,32 +3155,18 @@ export default function BillDetail() {
                 </div>
               )}
 
-              {selectedLineIndices.size > 0 && (
-                <div className="flex items-center gap-2 px-3 py-1.5 bg-muted/30 border-b text-table">
-                  <span className="text-muted-foreground">{selectedLineIndices.size} selected</span>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    className="h-6 text-table px-2"
-                    onClick={() => setBulkCostCodeOpen(true)}
-                    data-testid="button-bulk-change-cost-code"
-                  >
-                    Change Cost Code
-                  </Button>
-                  <button
-                    type="button"
-                    className="text-muted-foreground hover:text-foreground ml-auto text-table"
-                    onClick={() => setSelectedLineIndices(new Set())}
-                  >
-                    Clear selection
-                  </button>
-                </div>
-              )}
-
               <div className="overflow-x-auto">
                 <LineItemTable
                   fixedLayout
+                  resizeNamespace="bill-line-items"
+                  // The default --table-header-bg (#F8F7FC) is 2% off white and
+                  // vanishes against the card. Rather than a fill (an amber
+                  // tint read as too loud), the header earns its separation
+                  // through typography plus a rule below it.
+                  // NOTE: the rule MUST go on the th cells — the table is
+                  // `border-separate`, and in that border model borders on a
+                  // row group (thead) are never painted.
+                  headerClassName="bg-transparent [&_th]:border-b-2 [&_th]:border-border [&_th]:text-foreground/75 [&_th]:font-semibold"
                   data={lineItems}
                   rowKey={(_item, index) => index}
                   rowTestId={(_item, index) => `row-line-item-${index}`}
@@ -2991,12 +3224,27 @@ export default function BillDetail() {
                       {
                         key: "unit", header: "Unit", width: getColWidth("unit"), truncate: false,
                         cell: (item, index) => (
-                          <input
+                          <UnitSelect
                             value={item.unit}
-                            onChange={(e) => updateLineItem(index, "unit", e.target.value)}
-                            placeholder="Unit"
-                            className="w-full h-7 px-1.5 text-table bg-transparent border-0 outline-none focus:ring-1 focus:ring-ring rounded-sm"
-                            data-testid={`input-unit-${index}`}
+                            onValueChange={(value) => updateLineItem(index, "unit", value)}
+                            triggerClassName="w-full h-7 px-1.5 text-table bg-transparent border-0 focus:ring-1 focus:ring-ring rounded-sm"
+                            data-testid={`select-unit-${index}`}
+                          />
+                        ),
+                      },
+                      {
+                        // Sits directly after Unit — qty → unit → unit cost
+                        // reads as one thought before the tax/account coding.
+                        key: "unitCost",
+                        header: taxMode === "inclusive" ? "Unit Cost (inc GST)" : "Unit Cost (ex GST)",
+                        align: "right", width: getColWidth("unitCost"), truncate: false,
+                        cell: (item, index) => (
+                          <input
+                            type="number"
+                            value={item.unitPrice}
+                            onChange={(e) => updateLineItem(index, "unitPrice", parseFloat(e.target.value) || 0)}
+                            className="w-full h-7 px-1.5 text-table text-right bg-transparent border-0 outline-none focus:ring-1 focus:ring-ring rounded-sm"
+                            data-testid={`input-amount-${index}`}
                           />
                         ),
                       },
@@ -3099,20 +3347,6 @@ export default function BillDetail() {
                           </div>
                         ),
                       },
-                      {
-                        key: "unitCost",
-                        header: taxMode === "inclusive" ? "Unit Cost (inc GST)" : "Unit Cost (ex GST)",
-                        align: "right", width: getColWidth("unitCost"), truncate: false,
-                        cell: (item, index) => (
-                          <input
-                            type="number"
-                            value={item.unitPrice}
-                            onChange={(e) => updateLineItem(index, "unitPrice", parseFloat(e.target.value) || 0)}
-                            className="w-full h-7 px-1.5 text-table text-right bg-transparent border-0 outline-none focus:ring-1 focus:ring-ring rounded-sm"
-                            data-testid={`input-amount-${index}`}
-                          />
-                        ),
-                      },
                     ];
                     if (visibleAmountCols.exTax) {
                       cols.push({
@@ -3212,9 +3446,9 @@ export default function BillDetail() {
                           Rounding
                           <button
                             type="button"
-                            onClick={() => setRoundingCents(0)}
+                            onClick={() => { setDocumentTotalCents(null); setRoundingCents(0); }}
                             className="text-muted-foreground/60 hover:text-foreground"
-                            title="Clear rounding"
+                            title="Clear rounding and unpin from the invoice total"
                             data-testid="button-clear-rounding"
                           >
                             <X className="h-3 w-3" />
@@ -3238,8 +3472,11 @@ export default function BillDetail() {
                           onBlur={() => {
                             const typed = parseFloat(invoiceTotalInput);
                             if (!isNaN(typed)) {
-                              const diffCents = Math.round((typed - calculateTotalBeforeRounding()) * 100);
-                              setRoundingCents(clampRoundingCents(diffCents));
+                              // Anchor the document total — the rounding
+                              // adjustment is derived from it (and re-derived
+                              // on later line/tax-mode edits) by the anchor
+                              // effect, so the total keeps tracking the invoice.
+                              setDocumentTotalCents(Math.round(typed * 100));
                             }
                             setEditingInvoiceTotal(false);
                             setInvoiceTotalInput("");
@@ -3263,6 +3500,16 @@ export default function BillDetail() {
                         </button>
                       )}
                     </div>
+                    {documentTotalCents != null && Math.abs(documentMismatchCents) > MAX_ROUNDING_CENTS && (
+                      <div
+                        className="text-xs leading-snug"
+                        style={{ color: "hsl(var(--amber))" }}
+                        data-testid="text-document-total-mismatch"
+                      >
+                        Invoice says {formatCurrency(documentTotalCents / 100)} but lines total{" "}
+                        {formatCurrency(calculateTotalBeforeRounding())} — check the line amounts or tax mode.
+                      </div>
+                    )}
                     <div className="flex justify-between gap-4 text-xs">
                       <span className="text-muted-foreground">Paid</span>
                       <span className="font-medium" data-testid="text-paid">
@@ -3291,7 +3538,7 @@ export default function BillDetail() {
                           <div className="flex-1">
                             <div className="flex items-center gap-1.5">
                               <span className="text-xs font-medium">
-                                {approval.approvedById}
+                                {(approval as any).approvedByName || "Unknown user"}
                               </span>
                               <span
                                 className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-data font-medium ${
@@ -3320,30 +3567,49 @@ export default function BillDetail() {
 
                 {isEditMode && (
                   <Card className="p-3">
-                    <div className="flex items-center justify-between gap-2 flex-wrap mb-2">
-                      <div className="flex items-center gap-1.5">
-                        <Wallet className="h-3.5 w-3.5 text-muted-foreground" />
-                        <h3 className="text-xs font-semibold">Payments</h3>
+                    {/* Collapsed by default — payment history is reference
+                        material, not something you read on every visit. The
+                        header carries the count and total so it stays useful
+                        while closed. */}
+                    <Collapsible open={paymentsOpen} onOpenChange={setPaymentsOpen}>
+                      <div className="flex items-center justify-between gap-2 flex-wrap">
+                        <CollapsibleTrigger asChild>
+                          <button
+                            type="button"
+                            className="flex items-center gap-1.5 min-w-0 hover:text-foreground text-left"
+                            data-testid="button-toggle-payments"
+                          >
+                            <ChevronDown
+                              className={`h-3.5 w-3.5 text-muted-foreground transition-transform ${paymentsOpen ? "rotate-180" : ""}`}
+                            />
+                            <Wallet className="h-3.5 w-3.5 text-muted-foreground" />
+                            <h3 className="text-xs font-semibold">Payments</h3>
+                            {billPayments.length > 0 && (
+                              <span className="text-data text-muted-foreground">
+                                {billPayments.filter((p) => !p.isVoided).length} · {formatCurrency(paid)}
+                              </span>
+                            )}
+                          </button>
+                        </CollapsibleTrigger>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => {
+                            setPaymentForm((f) => ({
+                              ...f,
+                              amount: due > 0 ? due.toFixed(2) : "",
+                              paymentDate: format(new Date(), "yyyy-MM-dd"),
+                            }));
+                            setPaymentDialogOpen(true);
+                          }}
+                          data-testid="button-record-payment"
+                        >
+                          <Plus className="h-3 w-3 mr-1" />
+                          Record
+                        </Button>
                       </div>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        className="gap-1"
-                        onClick={() => {
-                          setPaymentForm((f) => ({
-                            ...f,
-                            amount: due > 0 ? due.toFixed(2) : "",
-                            paymentDate: format(new Date(), "yyyy-MM-dd"),
-                          }));
-                          setPaymentDialogOpen(true);
-                        }}
-                        data-testid="button-record-payment"
-                      >
-                        <Plus className="h-3.5 w-3.5" />
-                        Record Payment
-                      </Button>
-                    </div>
+                      <CollapsibleContent className="mt-2">
                     {billPayments.length === 0 ? (
                       <EmptyState
                         variant="inline"
@@ -3403,10 +3669,19 @@ export default function BillDetail() {
                         ))}
                       </div>
                     )}
+                      </CollapsibleContent>
+                    </Collapsible>
                   </Card>
                 )}
 
-                <div className="flex items-center justify-between gap-3">
+                </div>
+                {/* Action bar — a real footer outside the scroll area, so Save
+                    and Approve are always reachable on a long bill and no
+                    content can ever pass under or below them. */}
+                <div
+                  className="shrink-0 px-4 py-2 border-t bg-background flex items-center justify-between gap-3 flex-wrap"
+                  data-testid="bill-action-bar"
+                >
                   <div>
                     {isEditMode && bill?.status === "draft" && (() => {
                       const validation = getSubmitForApprovalValidation();
@@ -3419,11 +3694,63 @@ export default function BillDetail() {
                       ) : null;
                     })()}
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {isEditMode && bill?.status === "awaiting_approval" && canApprove && (
+                      <>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setRejectDialogOpen(true)}
+                          disabled={rejectMutation.isPending}
+                          data-testid="button-reject"
+                          className="gap-1"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                          Reject
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="default"
+                          size="sm"
+                          onClick={() => approveWithSave(false)}
+                          disabled={approveBusy}
+                          data-testid="button-approve"
+                          className="gap-1"
+                        >
+                          {approveBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+                          {updateMutation.isPending ? "Saving..." : approveMutation.isPending ? "Approving..." : hasUnsavedChanges ? "Save & approve" : "Approve"}
+                        </Button>
+                        {remainingInQueue.length > 0 && (
+                          <Button
+                            type="button"
+                            variant="default"
+                            size="sm"
+                            onClick={() => approveWithSave(true)}
+                            disabled={approveBusy}
+                            data-testid="button-approve-next"
+                            className="gap-1"
+                            title={`${remainingInQueue.length} more awaiting approval`}
+                          >
+                            <Check className="h-3.5 w-3.5" />
+                            Approve &amp; next
+                            <span className="opacity-70">({remainingInQueue.length})</span>
+                          </Button>
+                        )}
+                      </>
+                    )}
                     {isEditMode && (bill as any)?.xeroInvoiceId && (
                       <div className="text-table text-muted-foreground" data-testid="text-xero-sync-status">
                         {(bill as any)?.xeroLastSyncStatus === "success" && (bill as any)?.xeroLastSyncAt && (
-                          <span>Synced {format(new Date((bill as any).xeroLastSyncAt), "dd MMM HH:mm")}</span>
+                          (bill as any)?.xeroLastSyncError ? (
+                            // Success with text in the error column = non-fatal
+                            // warning (e.g. pushed without job tracking).
+                            <span style={{ color: "hsl(var(--amber))" }} title={(bill as any).xeroLastSyncError}>
+                              Synced with warning: {String((bill as any).xeroLastSyncError).slice(0, 60)}
+                            </span>
+                          ) : (
+                            <span>Synced {format(new Date((bill as any).xeroLastSyncAt), "dd MMM HH:mm")}</span>
+                          )
                         )}
                         {(bill as any)?.xeroLastSyncStatus === "failed" && (
                           <span className="text-destructive" title={(bill as any)?.xeroLastSyncError || ""}>
@@ -3829,11 +4156,11 @@ export default function BillDetail() {
             return;
           }
           try {
-            await apiRequest("/api/xero/push-bill", "POST", {
+            const pushResult: any = await apiRequest("/api/xero/push-bill", "POST", {
               billId: billIdToUse,
               xeroContactId,
             });
-            toast({ title: "Success", description: "Bill sent to Xero" });
+            toast({ title: "Success", description: pushResult?.warning || "Bill sent to Xero" });
             setUnmappedContactDialogOpen(false);
             setPendingXeroBillId(null);
             setUnmappedSupplierId(null);
@@ -3850,44 +4177,145 @@ export default function BillDetail() {
         }}
       />
 
-      <Dialog open={bulkCostCodeOpen} onOpenChange={(open) => { setBulkCostCodeOpen(open); if (!open) setBulkCostCodeValue(""); }}>
-        <DialogContent className="max-w-sm" data-testid="dialog-bulk-cost-code">
-          <DialogHeader>
-            <DialogTitle>Change Cost Code</DialogTitle>
-            <DialogDescription>
-              Apply a cost code to the {selectedLineIndices.size} selected item{selectedLineIndices.size !== 1 ? 's' : ''}.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="py-2">
-            <CostCodeSelect
-              value={bulkCostCodeValue}
-              onValueChange={(v) => setBulkCostCodeValue(v || "")}
-              placeholder="Select cost code..."
-              data-testid="select-bulk-cost-code"
-            />
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => { setBulkCostCodeOpen(false); setBulkCostCodeValue(""); }}>Cancel</Button>
-            <Button
-              disabled={!bulkCostCodeValue}
-              onClick={() => {
-                const indices = Array.from(selectedLineIndices);
-                setLineItems(prev => prev.map((item, i) =>
-                  indices.includes(i) ? { ...item, costCodeId: bulkCostCodeValue } : item
-                ));
-                toast({
-                  title: "Cost code updated",
-                  description: `Cost code updated on ${indices.length} item${indices.length !== 1 ? 's' : ''}. Save the bill to persist.`,
-                });
-                setBulkCostCodeOpen(false);
-                setBulkCostCodeValue("");
-                setSelectedLineIndices(new Set());
-              }}
-              data-testid="button-apply-bulk-cost-code"
-            >
-              Apply
-            </Button>
-          </DialogFooter>
+      {/* Shared floating-pill bulk bar, same as the list pages. Raised clear of
+          this page's own bottom action bar. */}
+      <BulkActionBar
+        count={selectedLineIndices.size}
+        summary={formatCurrency(
+          lineItems
+            .filter((_, i) => selectedLineIndices.has(i))
+            .reduce((s, li) => s + getLineIncTax(li), 0),
+        )}
+        onClear={() => setSelectedLineIndices(new Set())}
+        className="bottom-20"
+        data-testid="bulk-action-bar-bill-lines"
+      >
+        {([
+          { field: "costCode" as const, label: "Cost Code", Icon: Tag, testId: "button-bulk-change-cost-code" },
+          { field: "account" as const, label: "Account", Icon: Landmark, testId: "button-bulk-change-account" },
+          { field: "tax" as const, label: "Tax", Icon: Percent, testId: "button-bulk-change-tax" },
+          { field: "unit" as const, label: "Unit", Icon: Ruler, testId: "button-bulk-change-unit" },
+        ]).map(({ field, label, Icon, testId }) => (
+          <Button
+            key={field}
+            type="button"
+            size="sm"
+            variant="outline"
+            className="h-7 text-xs"
+            onClick={() => { setBulkValue(""); setBulkField(field); }}
+            data-testid={testId}
+          >
+            <Icon className="h-3.5 w-3.5 mr-1" />
+            {label}
+          </Button>
+        ))}
+      </BulkActionBar>
+
+      {/* One bulk-edit dialog for every field — the control and the property it
+          writes are chosen by `bulkField`. */}
+      <Dialog open={bulkField !== null} onOpenChange={(open) => { if (!open) { setBulkField(null); setBulkValue(""); } }}>
+        <DialogContent className="max-w-sm" data-testid="dialog-bulk-edit">
+          {(() => {
+            const meta: Record<BulkField, { label: string; prop: keyof LineItem }> = {
+              costCode: { label: "Cost Code", prop: "costCodeId" },
+              account: { label: "Account", prop: "account" },
+              tax: { label: "Tax", prop: "tax" },
+              unit: { label: "Unit", prop: "unit" },
+            };
+            // Applying clears the field and the selection, but Radix keeps the
+            // dialog mounted through its close animation — so render from the
+            // last active values to avoid a "Set / 0 selected items" flash.
+            if (bulkField) {
+              lastBulkRef.current = { field: bulkField, count: selectedLineIndices.size };
+            }
+            const shownField = bulkField ?? lastBulkRef.current?.field ?? null;
+            const active = shownField ? meta[shownField] : null;
+            const count = bulkField ? selectedLineIndices.size : (lastBulkRef.current?.count ?? 0);
+            return (
+              <>
+                <DialogHeader>
+                  <DialogTitle>Set {active?.label}</DialogTitle>
+                  <DialogDescription>
+                    Apply to the {count} selected item{count !== 1 ? "s" : ""}.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="py-2">
+                  {shownField === "costCode" && (
+                    <CostCodeSelect
+                      value={bulkValue}
+                      onValueChange={(v) => setBulkValue(v || "")}
+                      placeholder="Select cost code..."
+                      data-testid="select-bulk-cost-code"
+                    />
+                  )}
+                  {shownField === "unit" && (
+                    <UnitSelect
+                      value={bulkValue}
+                      onValueChange={(v) => setBulkValue(v || "")}
+                      data-testid="select-bulk-unit"
+                    />
+                  )}
+                  {shownField === "tax" && (
+                    <Select value={bulkValue} onValueChange={setBulkValue}>
+                      <SelectTrigger data-testid="select-bulk-tax">
+                        <SelectValue placeholder="Select tax treatment..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="GST on expenses">GST on expenses</SelectItem>
+                        <SelectItem value="No GST">No GST</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  )}
+                  {shownField === "account" && (
+                    xeroAccounts.length > 0 ? (
+                      <Select value={bulkValue} onValueChange={setBulkValue}>
+                        <SelectTrigger data-testid="select-bulk-account">
+                          <SelectValue placeholder="Select account..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {xeroAccounts.map((acc) => (
+                            <SelectItem key={acc.code} value={acc.code}>
+                              {acc.code} - {acc.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <Input
+                        value={bulkValue}
+                        onChange={(e) => setBulkValue(e.target.value)}
+                        placeholder="Account code"
+                        data-testid="input-bulk-account"
+                      />
+                    )
+                  )}
+                </div>
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => { setBulkField(null); setBulkValue(""); }}>Cancel</Button>
+                  <Button
+                    disabled={!bulkValue || !active}
+                    onClick={() => {
+                      if (!active) return;
+                      const indices = Array.from(selectedLineIndices);
+                      setLineItems(prev => prev.map((item, i) =>
+                        indices.includes(i) ? { ...item, [active.prop]: bulkValue } : item
+                      ));
+                      toast({
+                        title: `${active.label} updated`,
+                        description: `${active.label} set on ${indices.length} item${indices.length !== 1 ? "s" : ""}. Save the bill to persist.`,
+                      });
+                      setBulkField(null);
+                      setBulkValue("");
+                      setSelectedLineIndices(new Set());
+                    }}
+                    data-testid="button-apply-bulk-edit"
+                  >
+                    Apply
+                  </Button>
+                </DialogFooter>
+              </>
+            );
+          })()}
         </DialogContent>
       </Dialog>
 
@@ -3953,22 +4381,49 @@ export default function BillDetail() {
                 />
               )}
             </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium">Payment Terms</label>
+              <Select
+                value={supplierDefaultsTerms || "__none__"}
+                onValueChange={(v) => {
+                  setSupplierDefaultsTerms(v === "__none__" ? "" : v);
+                  setSupplierDefaultsTermsDirty(true);
+                }}
+              >
+                <SelectTrigger className="text-xs" data-testid="select-supplier-defaults-terms">
+                  <SelectValue placeholder="Select payment terms" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">None</SelectItem>
+                  {PAYMENT_TERMS_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-[10px] text-muted-foreground">
+                Sets the due date automatically on new bills for this supplier.
+              </p>
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setSupplierDefaultsOpen(false)}>Cancel</Button>
             <Button
-              disabled={!currentSupplier || updateSupplierDefaultsMutation.isPending || (!supplierDefaultsCostCodeDirty && !supplierDefaultsAccountDirty)}
+              disabled={!currentSupplier || updateSupplierDefaultsMutation.isPending || (!supplierDefaultsCostCodeDirty && !supplierDefaultsAccountDirty && !supplierDefaultsTermsDirty)}
               onClick={() => {
                 if (!currentSupplier) return;
-                // Only send the field(s) the user actually changed — sending both
-                // would clear whichever one they left untouched.
+                // Only send the field(s) the user actually changed — sending all
+                // would clear whichever ones they left untouched.
                 const payload: {
                   supplierId: string;
                   defaultCostCodeId?: string | null;
                   xeroDefaultAccountCode?: string | null;
+                  paymentTerms?: string | null;
                 } = { supplierId: currentSupplier.id };
                 if (supplierDefaultsCostCodeDirty) payload.defaultCostCodeId = supplierDefaultsCostCode || null;
                 if (supplierDefaultsAccountDirty) payload.xeroDefaultAccountCode = supplierDefaultsAccount || null;
+                if (supplierDefaultsTermsDirty) payload.paymentTerms = supplierDefaultsTerms || null;
                 updateSupplierDefaultsMutation.mutate(payload, {
                   onSuccess: () => {
                     toast({ title: "Defaults saved" });

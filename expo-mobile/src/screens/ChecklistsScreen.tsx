@@ -41,6 +41,7 @@ interface ChecklistInstance {
   projectId: string;
   completedCount: number;
   totalCount: number;
+  createdAt?: string;
 }
 
 interface ChecklistItem {
@@ -48,6 +49,7 @@ interface ChecklistItem {
   instanceId: string;
   groupId?: string;
   groupName?: string;
+  groupOrder?: number;
   description: string;
   order: number;
   isRequired: boolean;
@@ -69,10 +71,31 @@ type Props = {
   route: RouteProp<any>;
 };
 
-// Items render in their authored `order`, falling back to description for
-// ties or missing values (previously sorted alphabetically, ignoring order).
+// Oldest first. Mirrors compareCreatedAt in shared/utils.ts — mobile can't
+// reach the web app's @shared alias, so it keeps its own copy.
+function compareCreatedAt(
+  a: { createdAt?: string | null } | null | undefined,
+  b: { createdAt?: string | null } | null | undefined,
+): number {
+  const at = a?.createdAt ? new Date(a.createdAt).getTime() : 0;
+  const bt = b?.createdAt ? new Date(b.createdAt).getTime() : 0;
+  return at - bt;
+}
+
+// Items render in their authored `order`, nothing else. Ties keep the order
+// the server sent (Array.sort is stable) — falling back to description sorted
+// whole checklists alphabetically whenever their items shared an order.
 function compareItems(a: ChecklistItem, b: ChecklistItem): number {
-  return (a.order ?? 0) - (b.order ?? 0) || (a.description || '').localeCompare(b.description || '');
+  return (a.order ?? 0) - (b.order ?? 0);
+}
+
+// Groups render in the order their checklist was authored — each item carries
+// its parent's position in groupOrder. Ties keep insertion order.
+function compareGroupEntries(
+  [, itemsA]: [string, ChecklistItem[]],
+  [, itemsB]: [string, ChecklistItem[]],
+): number {
+  return (itemsA[0]?.groupOrder ?? 0) - (itemsB[0]?.groupOrder ?? 0);
 }
 
 export default function ChecklistsScreen({ navigation, route }: Props) {
@@ -130,7 +153,9 @@ const colors = {
       const filterPid = projectId || selectedProjectId;
       const query = filterPid ? `?projectId=${filterPid}` : '';
       const data = await apiFetch<ChecklistInstance[]>(`/api/checklist-instances${query}`);
-      const sorted = (data || []).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+      // Checklists have no order column of their own, so they hold the order
+      // they were added in — same as the web checklists page and the widget.
+      const sorted = (data || []).sort(compareCreatedAt);
       setInstances(sorted);
     } catch {
       setInstances([]);
@@ -515,7 +540,7 @@ const colors = {
     return (
       <View style={[styles.itemsContainer, { borderTopColor: colors.border }]}>
         {ungrouped.length > 0 && ungrouped.map(renderItemRow)}
-        {Object.entries(groups).sort(([a], [b]) => a.localeCompare(b)).map(([groupName, grpItems]) => {
+        {Object.entries(groups).sort(compareGroupEntries).map(([groupName, grpItems]) => {
           const groupKey = `${instanceId}:${groupName}`;
           const isCollapsed = collapsedGroups[groupKey];
           const completedInGroup = grpItems.filter(i => i.status === 'completed' || i.status === 'na').length;

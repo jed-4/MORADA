@@ -1,5 +1,5 @@
 import { google } from 'googleapis';
-import { randomBytes, createHash } from 'crypto';
+import { randomBytes, createHash, createHmac, timingSafeEqual } from 'crypto';
 import { encryptToken, decryptToken } from '../utils/encryption';
 import type { IStorage } from '../storage';
 import type { User } from '@shared/schema';
@@ -18,6 +18,79 @@ const BILL_INBOX_SCOPES = [
 
 const userClientCache = new Map<string, { client: any; expiresAt: number }>();
 const TOKEN_PERSIST_DEBOUNCE = new Map<string, NodeJS.Timeout>();
+
+// ---------------------------------------------------------------------------
+// Signed OAuth state
+//
+// The bill-inbox callback is necessarily unauthenticated (Google redirects the
+// browser to it), so the `state` round-trip is what tells us which company the
+// consent belongs to. An unsigned state is forgeable: anyone could hand an
+// admin a callback URL naming another company and bind their own Gmail account
+// into that company's bill inbox. Every state we issue is therefore HMAC-signed
+// and short-lived, and the callback refuses anything that doesn't verify.
+// ---------------------------------------------------------------------------
+
+const STATE_MAX_AGE_MS = 10 * 60 * 1000;
+
+export interface OAuthStatePayload {
+  action: string;
+  companyId: string;
+  userId: string;
+}
+
+function getStateSigningKey(): string {
+  const secret = process.env.SESSION_SECRET;
+  if (secret) return secret;
+  if (process.env.NODE_ENV === 'production') {
+    // index.ts already refuses to boot without SESSION_SECRET in production;
+    // this is a second line of defence so we never sign with a known constant.
+    throw new Error('SESSION_SECRET is required to sign OAuth state');
+  }
+  return 'buildpro-dev-oauth-state-key';
+}
+
+function computeStateSignature(body: string): string {
+  return createHmac('sha256', getStateSigningKey()).update(body).digest('base64url');
+}
+
+export function signOAuthState(payload: OAuthStatePayload): string {
+  const body = Buffer.from(
+    JSON.stringify({
+      ...payload,
+      nonce: randomBytes(16).toString('hex'),
+      timestamp: Date.now(),
+    }),
+  ).toString('base64url');
+  return `${body}.${computeStateSignature(body)}`;
+}
+
+/**
+ * Returns the payload when the state is authentic and unexpired, otherwise
+ * null. Never throws — callers are redirect handlers that must fail closed
+ * without leaking why.
+ */
+export function verifyOAuthState(
+  state: unknown,
+  expectedAction: string,
+): OAuthStatePayload | null {
+  if (typeof state !== 'string' || !state.includes('.')) return null;
+  const [body, signature] = state.split('.', 2);
+  if (!body || !signature) return null;
+
+  const expected = Buffer.from(computeStateSignature(body));
+  const actual = Buffer.from(signature);
+  if (expected.length !== actual.length || !timingSafeEqual(expected, actual)) return null;
+
+  try {
+    const parsed = JSON.parse(Buffer.from(body, 'base64url').toString('utf8'));
+    if (parsed.action !== expectedAction) return null;
+    if (!parsed.companyId || !parsed.userId || !parsed.nonce || !parsed.timestamp) return null;
+    if (Date.now() - parsed.timestamp > STATE_MAX_AGE_MS) return null;
+    return { action: parsed.action, companyId: parsed.companyId, userId: parsed.userId };
+  } catch {
+    return null;
+  }
+}
 
 export class GoogleOAuthService {
   private oauth2Client: any;
@@ -51,8 +124,13 @@ export class GoogleOAuthService {
       || 'https://buildpro4.replit.app/api/google-calendar/callback';
   }
   
-  generateAuthUrl(userId: string): string {
-    const state = this.generateState(userId);
+  generateAuthUrl(userId: string, companyId: string): string {
+    // Signed, for the same reason the bill-inbox state is: the callback is
+    // unauthenticated (Google redirects the browser to it) and the state is
+    // the only thing saying whose account this consent belongs to. Unsigned,
+    // anyone could hand a user a callback URL naming another user id and bind
+    // their own Google Calendar into that account.
+    const state = signOAuthState({ action: 'calendar', companyId, userId });
     
     const authUrl = this.oauth2Client.generateAuthUrl({
       access_type: 'offline',
@@ -64,11 +142,6 @@ export class GoogleOAuthService {
     return authUrl;
   }
   
-  private generateState(userId: string): string {
-    const nonce = randomBytes(16).toString('hex');
-    return Buffer.from(JSON.stringify({ userId, nonce, timestamp: Date.now() })).toString('base64');
-  }
-  
   private generateCodeVerifier(): string {
     return randomBytes(32).toString('base64url');
   }
@@ -77,24 +150,12 @@ export class GoogleOAuthService {
     return createHash('sha256').update(verifier).digest('base64url');
   }
   
-  parseState(state: string): { userId: string; nonce: string; timestamp: number } {
-    try {
-      const decoded = Buffer.from(state, 'base64').toString('utf8');
-      const parsed = JSON.parse(decoded);
-      
-      if (!parsed.userId || !parsed.nonce || !parsed.timestamp) {
-        throw new Error('Invalid state format');
-      }
-      
-      const age = Date.now() - parsed.timestamp;
-      if (age > 10 * 60 * 1000) {
-        throw new Error('State expired (older than 10 minutes)');
-      }
-      
-      return parsed;
-    } catch (error) {
+  parseState(state: string): { userId: string; companyId: string } {
+    const verified = verifyOAuthState(state, 'calendar');
+    if (!verified) {
       throw new Error('Invalid state parameter');
     }
+    return { userId: verified.userId, companyId: verified.companyId };
   }
   
   async handleCallback(code: string, state: string): Promise<User> {
@@ -455,11 +516,21 @@ export class GoogleOAuthService {
     };
   }
 
+  /**
+   * The companyId is required because a successful refresh writes the new
+   * access token straight back to company_settings. Without it that write went
+   * through the unscoped fallback and could land a live Gmail token in another
+   * company's settings row.
+   */
   async getBillInboxGmailClient(settings: {
     billInboxGmailAccessToken: string;
     billInboxGmailRefreshToken: string;
     billInboxGmailTokenExpiry?: Date | null;
-  }): Promise<any> {
+  }, companyId: string): Promise<any> {
+    if (!companyId) {
+      throw new Error('getBillInboxGmailClient requires a companyId');
+    }
+
     let accessToken: string;
     let refreshToken: string;
 
@@ -497,7 +568,7 @@ export class GoogleOAuthService {
           await this.storage.updateCompanySettings({
             billInboxGmailAccessToken: encryptedNew,
             billInboxGmailTokenExpiry: newExpiry,
-          });
+          }, companyId);
         }
       } catch (err: any) {
         console.log('[BillInbox] Token refresh failed, using existing credentials:', err.message);

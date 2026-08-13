@@ -720,6 +720,286 @@ async function main() {
       const paymentSurvivor = await storage.getBillPaymentById(billPaymentA.id);
       assert.ok(paymentSurvivor && !(paymentSurvivor as any).isVoided, "company A's bill payment was voided/deleted by company B");
     });
+
+    // -----------------------------------------------------------------------
+    // Company settings / bill inbox.
+    //
+    // These used to resolve through an unscoped `LIMIT 1`, so every company
+    // read and wrote whichever settings row the database returned first —
+    // including its Gmail OAuth refresh token. The credentials below are
+    // deliberately junk: nothing here should ever reach Google, and the
+    // assertions are about which ROW was touched, not whether a poll worked.
+    // -----------------------------------------------------------------------
+
+    const A_INBOX_EMAIL = "tenant-a-inbox@tenanttest.local";
+    const B_INBOX_EMAIL = "tenant-b-inbox@tenanttest.local";
+
+    await test("company A connecting a bill inbox does not connect company B's", async () => {
+      await storage.updateCompanySettings({
+        companyName: "Tenant A Co",
+        billInboxGmailEmail: A_INBOX_EMAIL,
+        billInboxGmailAccessToken: "not-a-real-token-A",
+        billInboxGmailRefreshToken: "not-a-real-refresh-A",
+        billInboxGmailConnectedAt: new Date(),
+        billInboxPollingEnabled: true,
+      } as any, A.companyId);
+
+      const settingsA = await storage.getCompanySettings(A.companyId);
+      assert.strictEqual(settingsA?.billInboxGmailEmail, A_INBOX_EMAIL, "company A's inbox did not save");
+
+      // B has never connected anything; it must not inherit A's row.
+      const status = await api("GET", "/api/bill-inbox/status", { cookie: B.cookie });
+      assert.strictEqual(status.status, 200, `B status failed: ${JSON.stringify(status.body)}`);
+      assert.strictEqual(status.body.connected, false, "company B sees company A's connected bill inbox");
+      assert.strictEqual(status.body.email, null, "company B sees company A's Gmail address");
+    });
+
+    await test("company A's own /status reflects its own inbox", async () => {
+      const status = await api("GET", "/api/bill-inbox/status", { cookie: A.cookie });
+      assert.strictEqual(status.status, 200, `A status failed: ${JSON.stringify(status.body)}`);
+      assert.strictEqual(status.body.connected, true, "company A cannot see its own bill inbox");
+      assert.strictEqual(status.body.email, A_INBOX_EMAIL, "company A sees the wrong Gmail address");
+    });
+
+    await test("company B disconnecting does not disconnect company A", async () => {
+      const res = await api("POST", "/api/bill-inbox/disconnect", { cookie: B.cookie, body: {} });
+      assert.strictEqual(res.status, 200, `B disconnect failed: ${JSON.stringify(res.body)}`);
+
+      const settingsA = await storage.getCompanySettings(A.companyId);
+      assert.strictEqual(
+        settingsA?.billInboxGmailEmail,
+        A_INBOX_EMAIL,
+        "company B's disconnect wiped company A's Gmail connection",
+      );
+      assert.ok(settingsA?.billInboxGmailRefreshToken, "company B's disconnect cleared company A's refresh token");
+    });
+
+    await test("company B toggling polling does not toggle company A's", async () => {
+      const res = await api("POST", "/api/bill-inbox/toggle-polling", {
+        cookie: B.cookie,
+        body: { enabled: false },
+      });
+      assert.strictEqual(res.status, 200, `B toggle failed: ${JSON.stringify(res.body)}`);
+
+      const settingsA = await storage.getCompanySettings(A.companyId);
+      assert.strictEqual(settingsA?.billInboxPollingEnabled, true, "company B's toggle disabled company A's polling");
+
+      const settingsB = await storage.getCompanySettings(B.companyId);
+      assert.strictEqual(settingsB?.billInboxPollingEnabled, false, "company B's own toggle did not take effect");
+      assert.notStrictEqual(settingsB?.id, settingsA?.id, "both companies are sharing one settings row");
+    });
+
+    await test("company B cannot set a bill-inbox default user from another company", async () => {
+      const res = await api("POST", "/api/bill-inbox/set-default-user", {
+        cookie: B.cookie,
+        body: { userId: A.userId },
+      });
+      assert.strictEqual(res.status, 404, `expected 404, got ${res.status}: ${JSON.stringify(res.body)}`);
+
+      const settingsB = await storage.getCompanySettings(B.companyId);
+      assert.notStrictEqual(
+        settingsB?.billInboxDefaultUserId,
+        A.userId,
+        "company B pinned company A's user as its bill-inbox default",
+      );
+    });
+
+    await test("getCompanySettings with no companyId throws instead of returning a row", async () => {
+      await assert.rejects(
+        async () => await (storage as any).getCompanySettings(),
+        /requires a companyId/,
+        "no-arg getCompanySettings did not throw — the unscoped fallback is back",
+      );
+      await assert.rejects(
+        async () => await (storage as any).getCompanySettings(undefined),
+        /requires a companyId/,
+        "getCompanySettings(undefined) did not throw",
+      );
+      await assert.rejects(
+        async () => await (storage as any).updateCompanySettings({ companyName: "nope" }),
+        /requires a companyId/,
+        "no-arg updateCompanySettings did not throw",
+      );
+    });
+
+    await test("pollAllBillInboxes polls each tenant against its own row", async () => {
+      // Guard: pollAllBillInboxes fans out over EVERY company with a connected
+      // inbox. On a database where a real company has one, running it here
+      // would hit a live mailbox and import real invoices. Only run when the
+      // test tenants are the sole pollable companies.
+      const all = await storage.getAllCompanySettings();
+      const pollable = all.filter(
+        (s) => s.companyId && s.billInboxPollingEnabled && s.billInboxGmailRefreshToken,
+      );
+      const foreign = pollable.filter((s) => s.companyId !== A.companyId && s.companyId !== B.companyId);
+      if (foreign.length > 0) {
+        console.log(
+          `      (skipped: ${foreign.length} non-test company/companies have a live bill inbox on this database)`,
+        );
+        return;
+      }
+
+      // Both tenants connected, both with junk credentials, so both polls fail.
+      // That is the point: the failures must land on separate rows, and A's
+      // failure must not stop B from being polled.
+      await storage.updateCompanySettings({
+        billInboxPollingEnabled: true,
+        billInboxStatus: null,
+        billInboxLastError: null,
+      } as any, A.companyId);
+      await storage.updateCompanySettings({
+        billInboxGmailEmail: B_INBOX_EMAIL,
+        billInboxGmailAccessToken: "not-a-real-token-B",
+        billInboxGmailRefreshToken: "not-a-real-refresh-B",
+        billInboxGmailConnectedAt: new Date(),
+        billInboxPollingEnabled: true,
+        billInboxStatus: null,
+        billInboxLastError: null,
+      } as any, B.companyId);
+
+      const { pollAllBillInboxes } = await import("../services/gmailBillPoller");
+      await pollAllBillInboxes();
+
+      const afterA = await storage.getCompanySettings(A.companyId);
+      const afterB = await storage.getCompanySettings(B.companyId);
+
+      // Every company got polled — a single tenant's failure did not abort the
+      // loop. Before the fix only one arbitrary row was ever touched.
+      assert.strictEqual(afterA?.billInboxStatus, "error", "company A was not polled at all");
+      assert.strictEqual(afterB?.billInboxStatus, "error", "company B was not polled — A's failure aborted the run");
+
+      // Each poll wrote to its own row and left the other's credentials alone.
+      assert.strictEqual(afterA?.billInboxGmailEmail, A_INBOX_EMAIL, "company A's inbox address was overwritten");
+      assert.strictEqual(afterB?.billInboxGmailEmail, B_INBOX_EMAIL, "company B's inbox address was overwritten");
+    });
+
+    await test("pollBillInbox refuses to run without a companyId", async () => {
+      const { pollBillInbox } = await import("../services/gmailBillPoller");
+      await assert.rejects(
+        async () => await (pollBillInbox as any)(),
+        /requires a companyId/,
+        "pollBillInbox ran with no company — it would poll an arbitrary tenant's mailbox",
+      );
+    });
+
+    // -----------------------------------------------------------------------
+    // PR2: estimate-note attachments (A5) and the activity feed (A6).
+    // -----------------------------------------------------------------------
+
+    await test("company B cannot list company A's estimate-note attachments", async () => {
+      const enoteA = await storage.createEstimateEnote({
+        estimateId: estimateA.id,
+        groupName: "G",
+        categoryName: "C",
+      } as any);
+      await storage.createEnoteAttachment({
+        enoteId: enoteA.id,
+        fileName: "secret-quote.pdf",
+        fileUrl: "/uploads/enote-attachments/tenant-test-secret.pdf",
+        fileSize: 123,
+        mimeType: "application/pdf",
+      });
+
+      const res = await api("GET", `/api/estimate-enotes/${enoteA.id}/attachments`, { cookie: B.cookie });
+      assert.strictEqual(res.status, 404, `expected 404, got ${res.status}: ${JSON.stringify(res.body)}`);
+      assert.ok(
+        !JSON.stringify(res.body ?? "").includes("tenant-test-secret.pdf"),
+        "company B received company A's attachment fileUrl — the index for the /uploads hole",
+      );
+
+      // The owner still gets their own list.
+      const own = await api("GET", `/api/estimate-enotes/${enoteA.id}/attachments`, { cookie: A.cookie });
+      assert.strictEqual(own.status, 200, `owner blocked from their own attachments: ${JSON.stringify(own.body)}`);
+      assert.ok(
+        JSON.stringify(own.body).includes("tenant-test-secret.pdf"),
+        "owner did not receive their own attachment",
+      );
+
+      // Storage-level backstop.
+      const scoped = await storage.getEnoteAttachments(enoteA.id, B.companyId);
+      assert.strictEqual(scoped.length, 0, "getEnoteAttachments returned another company's rows");
+      await assert.rejects(
+        async () => await (storage as any).getEnoteAttachments(enoteA.id),
+        /requires a companyId/,
+        "no-arg getEnoteAttachments did not throw",
+      );
+    });
+
+    await test("company B cannot attach a file to company A's estimate note", async () => {
+      const [enoteA] = await db.select().from((await import("@shared/schema")).estimateEnotes)
+        .where(eq((await import("@shared/schema")).estimateEnotes.estimateId, estimateA.id)).limit(1);
+      if (!enoteA) return; // previous test creates it; skip if it did not run
+      const res = await api("POST", `/api/estimate-enotes/${enoteA.id}/attachments`, { cookie: B.cookie });
+      assert.ok(
+        res.status === 404 || res.status === 400,
+        `company B's upload into company A's note returned ${res.status}`,
+      );
+    });
+
+    await test("/api/activities ignores a companyId from the query", async () => {
+      await storage.createActivity({
+        companyId: A.companyId,
+        userId: A.userId,
+        userName: "Tenant A",
+        action: "created",
+        entityType: "project",
+        entityId: projectA.id,
+        description: "TENANT-A-ACTIVITY-MARKER",
+      } as any);
+
+      const res = await api("GET", `/api/activities?companyId=${A.companyId}`, { cookie: B.cookie });
+      assert.ok(res.status === 200 || res.status === 403, `unexpected status ${res.status}`);
+      assert.ok(
+        !JSON.stringify(res.body ?? "").includes("TENANT-A-ACTIVITY-MARKER"),
+        "naming company A in the query returned company A's activity feed",
+      );
+    });
+
+    await test("/api/activities ignores a companyId in the POST body", async () => {
+      const res = await api("POST", "/api/activities", {
+        cookie: B.cookie,
+        body: {
+          companyId: A.companyId,
+          action: "created",
+          entityType: "project",
+          entityId: projectA.id,
+          description: "B-WROTE-INTO-A",
+        },
+      });
+      if (res.status === 200 || res.status === 201) {
+        assert.strictEqual(
+          res.body?.companyId,
+          B.companyId,
+          "the body's companyId won — company B wrote into company A's activity feed",
+        );
+      }
+      const aFeed = await storage.getActivities({ companyId: A.companyId, limit: 100 });
+      assert.ok(
+        !JSON.stringify(aFeed).includes("B-WROTE-INTO-A"),
+        "company B's entry landed in company A's feed",
+      );
+    });
+
+    await test("company B cannot summarise company A's project", async () => {
+      const res = await api("GET", `/api/ai-summary/${projectA.id}`, { cookie: B.cookie });
+      assert.strictEqual(res.status, 404, `expected 404, got ${res.status}`);
+    });
+
+    await test("company B cannot edit, repassword or reset company A's user", async () => {
+      for (const [method, path, body] of [
+        ["PATCH", `/api/users/${A.userId}`, { firstName: "Hijacked" }],
+        ["POST", `/api/users/${A.userId}/change-password`, { newPassword: "NotYours123!" }],
+        ["POST", `/api/users/${A.userId}/send-password-reset`, {}],
+      ] as const) {
+        const res = await api(method, path, { cookie: B.cookie, body });
+        assert.ok(
+          res.status === 404 || res.status === 403,
+          `${method} ${path} returned ${res.status} — company B reached company A's user`,
+        );
+      }
+      const stillA = await storage.getUser(A.userId);
+      assert.notStrictEqual((stillA as any)?.firstName, "Hijacked", "company B edited company A's user");
+    });
   } finally {
     await cleanup([A.companyId, B.companyId], [A.userId, B.userId]);
   }
@@ -752,12 +1032,18 @@ async function cleanup(companyIds: string[], userIds: string[]) {
     [`DELETE FROM variations WHERE project_id IN (SELECT id FROM projects WHERE company_id = ANY($1))`, [companyIds]],
     [`DELETE FROM client_invoices WHERE project_id IN (SELECT id FROM projects WHERE company_id = ANY($1))`, [companyIds]],
     [`DELETE FROM proposals WHERE project_id IN (SELECT id FROM projects WHERE company_id = ANY($1))`, [companyIds]],
+    [`DELETE FROM enote_attachments WHERE enote_id IN (SELECT e.id FROM estimate_enotes e JOIN estimates es ON e.estimate_id = es.id WHERE es.project_id IN (SELECT id FROM projects WHERE company_id = ANY($1)))`, [companyIds]],
+    [`DELETE FROM estimate_enotes WHERE estimate_id IN (SELECT id FROM estimates WHERE project_id IN (SELECT id FROM projects WHERE company_id = ANY($1)))`, [companyIds]],
+    [`DELETE FROM activities WHERE company_id = ANY($1)`, [companyIds]],
     [`DELETE FROM estimates WHERE project_id IN (SELECT id FROM projects WHERE company_id = ANY($1))`, [companyIds]],
     [`DELETE FROM schedules WHERE project_id IN (SELECT id FROM projects WHERE company_id = ANY($1))`, [companyIds]],
     [`DELETE FROM selections WHERE project_id IN (SELECT id FROM projects WHERE company_id = ANY($1))`, [companyIds]],
     [`DELETE FROM projects WHERE company_id = ANY($1)`, [companyIds]],
     [`DELETE FROM role_permissions WHERE role_id IN (SELECT id FROM user_roles WHERE company_id = ANY($1))`, [companyIds]],
     [`DELETE FROM sessions WHERE sess->>'userId' = ANY($1)`, [userIds]],
+    // Before users/companies: company_settings holds the test tenants' fake
+    // bill-inbox credentials and FKs to companies.
+    [`DELETE FROM company_settings WHERE company_id = ANY($1)`, [companyIds]],
     [`DELETE FROM users WHERE company_id = ANY($1)`, [companyIds]],
     [`DELETE FROM user_roles WHERE company_id = ANY($1)`, [companyIds]],
     [`DELETE FROM companies WHERE id = ANY($1)`, [companyIds]],

@@ -6,6 +6,35 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 /**
+ * Compare two names the way someone reading a numbered list expects:
+ * "2. Slab" before "10. Frame", and "ITP3" before "ITP20".
+ *
+ * A plain localeCompare is lexicographic — it reads "10" as "1" then "0" and
+ * puts it ahead of "2" — which scrambles every numbered checklist, template
+ * and group name. Use this anywhere a user-authored name is sorted.
+ */
+export function compareNames(a: string | null | undefined, b: string | null | undefined): number {
+  return (a || '').localeCompare(b || '', undefined, { numeric: true });
+}
+
+/**
+ * Oldest first, i.e. the order the rows were created in.
+ *
+ * Use this for lists the user builds up by hand but which have no `order`
+ * column to drag against — the checklists on a project, for one. Sorting those
+ * by name reshuffles them away from the sequence they were entered in, which
+ * is the sequence the work actually happens in.
+ */
+export function compareCreatedAt(
+  a: { createdAt?: Date | string | null } | null | undefined,
+  b: { createdAt?: Date | string | null } | null | undefined,
+): number {
+  const at = a?.createdAt ? new Date(a.createdAt).getTime() : 0;
+  const bt = b?.createdAt ? new Date(b.createdAt).getTime() : 0;
+  return at - bt;
+}
+
+/**
  * Format currency for Australian dollars
  */
 export function formatCurrency(amount: number): string {

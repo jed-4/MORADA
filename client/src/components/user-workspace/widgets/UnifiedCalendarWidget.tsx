@@ -507,8 +507,17 @@ export default function UnifiedCalendarWidget({ widget, onUpdate, isConfiguring,
     }
   };
 
+  // Auto-scroll once per view/date change only. Without the latch the
+  // once-a-minute clock tick re-renders, mints new event array identities and
+  // re-runs this effect, yanking the user's scroll position back mid-scroll.
+  const scrolledRef = useRef(false);
   useEffect(() => {
-    if (!scrollRef.current || isLoading) return;
+    scrolledRef.current = false;
+  }, [viewMode, selectedDate, weekStart, weekViewMode]);
+
+  useEffect(() => {
+    if (!scrollRef.current || isLoading || scrolledRef.current) return;
+    scrolledRef.current = true;
 
     if (viewMode === "day") {
       const DEFAULT_START_HOUR = 6;

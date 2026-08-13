@@ -40,8 +40,6 @@ import {
   ListTree,
   Plus,
   FileDown,
-  Send,
-  DollarSign,
   Package,
   Check,
   ChevronDown,
@@ -425,10 +423,9 @@ function InlineAddItemRow({ stage, onSave, onCancel }: {
   return (
     <div
       className="grid gap-2 px-2 border-b border-border/50 h-10 items-center bg-primary/5"
-      style={{ gridTemplateColumns: '24px 40px 24px minmax(200px, 1fr) 100px minmax(150px, 2fr) 24px' }}
+      style={{ gridTemplateColumns: '24px 24px minmax(200px, 1fr) 100px minmax(150px, 2fr) 24px' }}
       data-testid={`inline-add-row-${stage.toLowerCase().replace(/\s+/g, '-')}`}
     >
-      <div />
       <div />
       <div />
       <input
@@ -861,7 +858,7 @@ function SortableScopeItem({ item, onUpdate, onDelete, onToggleSelect, isSelecte
           isDetailOpen ? 'bg-primary/5' : isSelected ? 'bg-primary/5 border-primary/30' : ''
         } ${isCompleted ? 'opacity-60' : ''} ${item.isTodo ? 'border-l-2 border-amber bg-amber/5' : ''}`}
         style={{ 
-          gridTemplateColumns: '24px 40px 24px minmax(200px, 1fr) 100px minmax(150px, 2fr) 24px',
+          gridTemplateColumns: '24px 24px minmax(200px, 1fr) 100px minmax(150px, 2fr) 24px',
         }}
         data-testid={`scope-item-row-${item.id}`}
         onClick={(e) => {
@@ -887,15 +884,10 @@ function SortableScopeItem({ item, onUpdate, onDelete, onToggleSelect, isSelecte
           )}
         </button>
         
-        {/* Checkbox - 40px */}
-        <div className="flex items-center justify-center">
-          <Checkbox
-            checked={isSelected}
-            onCheckedChange={() => onToggleSelect(item.id)}
-            data-testid={`checkbox-select-${item.id}`}
-            className="h-4 w-4"
-          />
-        </div>
+        {/* Multi-select checkbox removed with the scope→estimate/RFQ/PO push
+            (Scope-PR1). The selectedItems state and the onToggleSelect /
+            isSelected plumbing are deliberately left in place — bulk actions
+            return in PR4 and this is the render site to restore. */}
 
         {/* Drag - 24px */}
         <div {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
@@ -2413,10 +2405,6 @@ export default function ProjectScope() {
   const [dropTarget, setDropTarget] = useState<{ id: string; position: 'above' | 'below' } | null>(null);
   const [isTemplateDialogOpen, setIsTemplateDialogOpen] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState<string>("");
-  const [isPushDialogOpen, setIsPushDialogOpen] = useState(false);
-  const [selectedEstimateId, setSelectedEstimateId] = useState<string>("");
-  const [isRfqDialogOpen, setIsRfqDialogOpen] = useState(false);
-  const [isPoDialogOpen, setIsPoDialogOpen] = useState(false);
   const [isPdfDialogOpen, setIsPdfDialogOpen] = useState(false);
   const [pdfStage, setPdfStage] = useState<string>('');
   const [hideClientCosts, setHideClientCosts] = useState(false); // Client toggle for PDF
@@ -2969,18 +2957,6 @@ export default function ProjectScope() {
     },
   });
 
-  // Push to estimate mutation
-  const pushToEstimateMutation = useMutation({
-    mutationFn: async ({ scopeItemIds, estimateId }: { scopeItemIds: string[]; estimateId: string }) => {
-      return apiRequest('/api/scope/push-to-estimate', 'POST', { scopeItemIds, estimateId });
-    },
-    onSuccess: () => {
-      setIsPushDialogOpen(false);
-      setSelectedItems(new Set());
-      toast({ title: "Items pushed to estimate successfully!" });
-    },
-  });
-
   // Create scope item mutation
   const createItemMutation = useMutation({
     mutationFn: async ({ title, description, stage }: { title: string; description: string; stage: string }) => {
@@ -2995,30 +2971,6 @@ export default function ProjectScope() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/scope`] });
-    },
-  });
-
-  // Create RFQ mutation
-  const createRfqMutation = useMutation({
-    mutationFn: async (scopeItemIds: string[]) => {
-      return apiRequest('/api/scope/create-rfq', 'POST', { scopeItemIds, projectId });
-    },
-    onSuccess: () => {
-      setIsRfqDialogOpen(false);
-      setSelectedItems(new Set());
-      toast({ title: "RFQ created successfully!" });
-    },
-  });
-
-  // Create PO mutation
-  const createPoMutation = useMutation({
-    mutationFn: async (scopeItemIds: string[]) => {
-      return apiRequest('/api/scope/create-po', 'POST', { scopeItemIds, projectId });
-    },
-    onSuccess: () => {
-      setIsPoDialogOpen(false);
-      setSelectedItems(new Set());
-      toast({ title: "PO created successfully with auto-number!" });
     },
   });
 
@@ -4019,33 +3971,6 @@ export default function ProjectScope() {
                   Import Stages
                 </DropdownMenuItem>
               )}
-              {selectedItems.size > 0 && estimates.length > 0 && (
-                <DropdownMenuItem
-                  onClick={() => setIsPushDialogOpen(true)}
-                  data-testid="option-push-to-estimate"
-                >
-                  <DollarSign className="h-3.5 w-3.5 mr-2" />
-                  Push to Estimate ({selectedItems.size})
-                </DropdownMenuItem>
-              )}
-              {selectedItems.size > 0 && (
-                <DropdownMenuItem
-                  onClick={() => setIsRfqDialogOpen(true)}
-                  data-testid="option-create-rfq"
-                >
-                  <Send className="h-3.5 w-3.5 mr-2" />
-                  Create RFQ ({selectedItems.size})
-                </DropdownMenuItem>
-              )}
-              {selectedItems.size > 0 && (
-                <DropdownMenuItem
-                  onClick={() => setIsPoDialogOpen(true)}
-                  data-testid="option-create-po"
-                >
-                  <Package className="h-3.5 w-3.5 mr-2" />
-                  Create PO ({selectedItems.size})
-                </DropdownMenuItem>
-              )}
               <DropdownMenuSeparator />
               <DropdownMenuItem
                 onClick={() => setIsPdfDialogOpen(true)}
@@ -4093,92 +4018,6 @@ export default function ProjectScope() {
               </DialogFooter>
             </DialogContent>
           </Dialog>
-
-          {/* Push to Estimate */}
-          {selectedItems.size > 0 && estimates.length > 0 && (
-            <Dialog open={isPushDialogOpen} onOpenChange={setIsPushDialogOpen}>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Push to Estimate</DialogTitle>
-                  <DialogDescription>
-                    Select an estimate to push {selectedItems.size} selected items
-                  </DialogDescription>
-                </DialogHeader>
-                <div className="space-y-4">
-                  <div>
-                    <Label>Estimate</Label>
-                    <Select value={selectedEstimateId} onValueChange={setSelectedEstimateId}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select an estimate" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {estimates.map((est) => (
-                          <SelectItem key={est.id} value={est.id}>
-                            {est.name || 'Untitled Estimate'}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-                <DialogFooter>
-                  <Button
-                    onClick={() => selectedEstimateId && pushToEstimateMutation.mutate({ 
-                      scopeItemIds: Array.from(selectedItems), 
-                      estimateId: selectedEstimateId 
-                    })}
-                    disabled={!selectedEstimateId || pushToEstimateMutation.isPending}
-                  >
-                    {pushToEstimateMutation.isPending ? (<><Loader2 className="w-4 h-4 mr-2 animate-spin" />Pushing...</>) : "Push Items"}
-                  </Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
-          )}
-
-          {/* Create RFQ */}
-          {selectedItems.size > 0 && (
-            <Dialog open={isRfqDialogOpen} onOpenChange={setIsRfqDialogOpen}>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Create RFQ</DialogTitle>
-                  <DialogDescription>
-                    Generate a Request for Quote from {selectedItems.size} selected items
-                  </DialogDescription>
-                </DialogHeader>
-                <DialogFooter>
-                  <Button
-                    onClick={() => createRfqMutation.mutate(Array.from(selectedItems))}
-                    disabled={createRfqMutation.isPending}
-                  >
-                    {createRfqMutation.isPending ? (<><Loader2 className="w-4 h-4 mr-2 animate-spin" />Creating...</>) : "Create RFQ"}
-                  </Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
-          )}
-
-          {/* Create PO */}
-          {selectedItems.size > 0 && (
-            <Dialog open={isPoDialogOpen} onOpenChange={setIsPoDialogOpen}>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Create Purchase Order</DialogTitle>
-                  <DialogDescription>
-                    Generate a Purchase Order from {selectedItems.size} selected items with auto-numbering
-                  </DialogDescription>
-                </DialogHeader>
-                <DialogFooter>
-                  <Button
-                    onClick={() => createPoMutation.mutate(Array.from(selectedItems))}
-                    disabled={createPoMutation.isPending}
-                  >
-                    {createPoMutation.isPending ? (<><Loader2 className="w-4 h-4 mr-2 animate-spin" />Creating...</>) : "Create PO"}
-                  </Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
-          )}
 
           {/* Export PDF */}
           <Dialog open={isPdfDialogOpen} onOpenChange={(open) => {
