@@ -183,9 +183,9 @@ No new table, no migration. Extends the existing `taskIds` / `taskLinkOffsets` l
 1. ✅ `taskLinkOffsets` widened to `{taskId, offsetDays, offsetFrom, startTime?, endTime?}` — additive, so existing rows keep working. Times are only present on *bookings*; a plain due-date link is left alone.
 2. ✅ **Reflow moved to the server** ([`server/utils/scheduleTaskLinks.ts`](server/utils/scheduleTaskLinks.ts)) and hooked into both the single-item PATCH and the bulk endpoint, firing when dates *or* offsets change. It writes `startTime`/`endTime` alongside `dueDate` so a booking keeps its hour. The old client-side `applyTaskOffsets` in Schedule.tsx is deleted — it only ever covered that one modal.
 3. ✅ **"Book my time"** on any schedule item in the calendar's detail modal, via `POST /api/schedule-items/:id/book-time`. Creates a task assigned to you, inheriting the item's own times when it has them (an inspection at 9 books 9–10) else 09:00–10:00, and links it back. Adjust afterwards by dragging on the grid — Phase 2 made that cheap.
-4. ⬜ Show existing bookings on the schedule item's detail panel. Not done; the link exists in `taskIds` so this is presentation-only.
+4. ✅ Show existing bookings on the schedule item's detail panel — `GET /api/schedule-items/:id/bookings` reads the item's own `taskIds` rather than scanning tasks by reference, so links made before the back-reference existed still resolve, and tasks deleted since being linked are skipped rather than 404ing the list.
 5. ✅ Reflow now fires for **every** path — Schedule edit modal, single Gantt drag, and the bulk endpoint the Gantt uses for cascades.
-6. ⬜ Calendar affordance linking a booking back to its schedule item. Not done.
+6. ✅ Calendar affordance linking a booking back to its schedule item — a booking shows "Booked against &lt;item&gt;" and links through to the schedule, via `notes.referenceType` / `referenceId` (fields that already existed for system-generated tasks).
 
 **Two pre-existing bugs fixed to make this work:**
 - `notes.author` is NOT NULL and is filled by the task-create *route*, not `storage.createTask`. Any other server-side caller of `createTask` hits a constraint violation.
