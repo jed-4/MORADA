@@ -700,16 +700,21 @@ export default function UserTasks({ user, isOwnPage }: UserTasksProps) {
     updateTaskMutation.mutate({ taskId: eventId, status: newStatus });
   };
 
-  const handleEventReschedule = (eventId: string, newDate: Date, eventType: "task" | "schedule" | "meeting" | "google-calendar", newTime?: string) => {
-    const updatePayload: any = { 
-      taskId: eventId, 
+  // The calendar hands back the full CalendarEvent["type"] union. This view only
+  // ever builds task events, but both handlers below treat eventId as a task id,
+  // so anything else has to be turned away rather than mutated blindly.
+  const handleEventReschedule = (eventId: string, newDate: Date, eventType: CalendarEvent["type"], newTime?: string) => {
+    if (eventType !== "task") return;
+    const updatePayload: any = {
+      taskId: eventId,
       dueDate: new Date(newDate).toISOString().split('T')[0]
     };
     if (newTime) updatePayload.startTime = newTime;
     rescheduleTaskMutation.mutate(updatePayload);
   };
 
-  const handleEventResize = (eventId: string, startTime: string, endTime: string, eventType: "task" | "schedule" | "meeting" | "google-calendar") => {
+  const handleEventResize = (eventId: string, startTime: string, endTime: string, eventType: CalendarEvent["type"]) => {
+    if (eventType !== "task") return;
     resizeTaskMutation.mutate({ taskId: eventId, startTime, endTime });
   };
 

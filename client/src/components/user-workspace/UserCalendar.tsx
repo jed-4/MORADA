@@ -338,7 +338,7 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
   });
 
   // Handler for task reschedule from calendar drag-and-drop
-  const handleEventReschedule = (eventId: string, newDate: Date, eventType: "task" | "schedule" | "meeting" | "google-calendar", newTime?: string) => {
+  const handleEventReschedule = (eventId: string, newDate: Date, eventType: CalendarEvent["type"], newTime?: string) => {
     // Only allow rescheduling of tasks (not Google Calendar events)
     if (eventType !== "task") return;
 
@@ -408,7 +408,7 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
   });
 
   // Handler for task resize from calendar
-  const handleEventResize = (eventId: string, startTime: string, endTime: string, eventType: "task" | "schedule" | "meeting" | "google-calendar") => {
+  const handleEventResize = (eventId: string, startTime: string, endTime: string, eventType: CalendarEvent["type"]) => {
     if (eventType === "task") {
       resizeTaskMutation.mutate({ taskId: eventId, startTime, endTime });
     }
