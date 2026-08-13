@@ -197,22 +197,21 @@ No new table, no migration. Extends the existing `taskIds` / `taskLinkOffsets` l
 
 **Ships:** "I'm at the frame inspection 9–10am Tuesday" — one hour on your calendar, not a five-day bar, and it follows the schedule when the job moves.
 
-### Phase 4 — Google multi-calendar + real colours 🔶 *(server side written, UNVERIFIED)*
+### Phase 4 — Google multi-calendar + real colours 🔶 *(written, unverified, parked on a branch)*
 
-> ⚠️ **Nothing in this phase has been exercised against Google.** The dev tenant has no
-> Google account connected, so every code path here is reasoned-through and
-> typecheck-clean but unrun. Treat it as scaffolding until someone connects an
-> account and re-tests. Do not assume the response shapes are right.
+> Steps 1–3 below are **already written** and live on `feat/calendar-google-multi`,
+> deliberately kept off this branch. Nothing in them has ever been exercised against
+> Google — the dev tenant has no Google account connected — and they change live
+> behaviour for anyone who does: the events endpoint fans out from 1 to N API calls
+> at 20s each, event ids change from `google-${id}` to `google-${calendarId}-${id}`,
+> and event colour stops being constant. Connect a real account and re-test that
+> branch before merging it. Steps 4–5 are not started.
 
-1. 🔶 `GET /api/google-calendar/calendars` — lists the calendar list with each calendar's Google colour, `accessRole` and primary flag. Degrades to `[]` when disconnected or Google errors, matching the events endpoint's posture.
-2. 🔶 The events endpoint fans out over every calendar, or a `?calendarIds=` subset, instead of the hardcoded `calendarId: 'primary'`. A single failing calendar is skipped rather than losing the whole response. Event ids are namespaced by calendar, since the same invite can appear in two of them.
-3. 🔶 Each calendar's own colour replaces the single `#7aafff`. Events also carry `googleCalendarId`, `googleCalendarName` and `canEdit` — the last so Phase 5 never offers editing on a read-only subscribed calendar. Per-event `colorId` overrides are deliberately ignored: resolving them needs a separate `colors.get` palette call and calendar-level colour is the useful signal.
-4. ⬜ Calendar picker UI and filter-bar toggles. Not started — selections will live in the saved-view `filters` (as `fullScheduleProjects` does), so still no migration.
-5. ⬜ Surface `event.location` on chips. Still fetched and discarded.
-
-**Prerequisite discovered:** `getRedirectUri()` was hardcoded to the deployed Replit callback, so the OAuth *connect* flow could never complete anywhere else — Google posts the callback to the registered URI and a local server never sees it. It now reads `GOOGLE_CALENDAR_REDIRECT_URI` and falls back to the old constant, so production is unchanged. To connect in local dev, set that variable **and** add the same URI to the OAuth client's authorised redirect URIs in Google Cloud Console.
-
-**Good news for Phase 5:** the OAuth scopes already include `calendar.events`, not just `calendar.readonly`, so writes should not need re-consent — provided the stored token was granted under the current scope list.
+1. `/api/google-calendar/calendars` listing the user's calendar list.
+2. Persist per-user calendar selections and replace the hardcoded `calendarId: 'primary'` ([`routes.ts:9250`](server/routes.ts:9250)) with a fan-out over selected calendars.
+3. Carry each calendar's Google colour through instead of the single `#7aafff`.
+4. Calendar picker in the settings dialog; toggles in the filter bar.
+5. Surface `event.location` on chips — it's already fetched and currently discarded.
 
 **Ships:** family calendar, partner's calendar, personal calendar. This is the "my whole life is here" moment.
 
@@ -271,7 +270,7 @@ Migration: new `google_calendar_events` + `google_calendar_sync_state` tables.
 | 1 | Schedule visibility ✅ | — | Needs 0 |
 | 2 | Task timeboxing ✅ | — | Yes |
 | 3 | Time bookings on schedule items ✅ | — | Needs 0 |
-| 4 | Google multi-calendar 🔶 | — | Yes |
+| 4 | Google multi-calendar 🔶 *(on `feat/calendar-google-multi`)* | — | Yes |
 | 5 | Google two-way write | — | Needs 4 |
 | 6 | Google local sync | 2 new tables | Needs 4 |
 | 7 | Morada → Google | — | Needs 1, 2 |
