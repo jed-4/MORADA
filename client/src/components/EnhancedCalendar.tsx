@@ -8,6 +8,7 @@ import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, Check } from "luci
 import { cn } from "@/lib/utils";
 import { useWeekStartDay } from "@/hooks/useWeekStartDay";
 import { generateNotionColors, TYPE_COLORS_HEX } from "@/lib/taskColors";
+import type { ProjectBand } from "@shared/scheduleVisibility";
 import {
   DndContext,
   DragEndEvent,
@@ -19,7 +20,23 @@ import {
   useSensors,
   useDraggable,
   useDroppable,
+  DragOverlay,
+  pointerWithin,
+  closestCenter,
+  type CollisionDetection,
 } from "@dnd-kit/core";
+
+/**
+ * Drop where the cursor is, not where the dragged element's box happens to overlap.
+ * dnd-kit's default compares rectangles, so a wide chip grabbed near its right edge
+ * lands a column to the left of the cursor — very visible when dragging a full-width
+ * tray item onto a narrow day column. Falls back to closestCenter when the pointer
+ * is between droppables, so a drop is never silently discarded.
+ */
+const pointerFirstCollision: CollisionDetection = (args) => {
+  const byPointer = pointerWithin(args);
+  return byPointer.length > 0 ? byPointer : closestCenter(args);
+};
 
 const HOUR_HEIGHT = 60; // pixels per hour in week/day view
 
@@ -36,7 +53,8 @@ export interface CalendarEvent {
   projectName?: string | null;
   assigneeName?: string | null;
   assigneeId?: string | null;
-  type: "task" | "schedule" | "meeting" | "google-calendar" | "timesheet" | "site_diary";
+  /** "projected" is a ghost from a recurring template — read-only, never persisted. */
+  type: "task" | "schedule" | "meeting" | "google-calendar" | "timesheet" | "site_diary" | "reminder" | "projected";
   status?: string;
   isCompleted?: boolean;
   description?: string | null;
@@ -92,6 +110,25 @@ interface EnhancedCalendarProps {
   focusBlocks?: FocusBlockData[];
   onFocusBlockClick?: (block: FocusBlockData) => void;
   onFocusBlockUpdate?: (blockId: string, startTime: string, endTime: string) => void;
+  /**
+   * Collapsed project-schedule spans drawn as a slim band under the day headers,
+   * so other people's multi-day work bars don't compete with real appointments.
+   */
+  projectBands?: ProjectBand[];
+  onProjectBandClick?: (band: ProjectBand) => void;
+  /**
+   * Tasks that are due but not yet given a time. They sit in a side tray rather
+   * than the all-day row, and are dragged onto the grid to timebox them.
+   */
+  unscheduledEvents?: CalendarEvent[];
+  /** Dragging a timeboxed event back to the tray clears its times. */
+  onEventUnschedule?: (eventId: string, eventType: CalendarEvent["type"]) => void;
+  /**
+   * A task was dropped on a slot covered by a focus block. Timeboxing a task into
+   * a block you set aside for that kind of work should also pin it to the block,
+   * rather than leaving the two views disagreeing about what you planned.
+   */
+  onTaskDropInFocusBlock?: (blockId: string, taskId: string) => void;
 }
 
 interface DraggableEventProps {
@@ -107,7 +144,9 @@ interface DraggableEventProps {
 function DraggableEvent({ event, index, onEventClick, onToggleComplete, showCompletionCheckbox, showResizeHandles = false, displayOptions }: DraggableEventProps) {
   const isGoogleCalendarEvent = event.type === "google-calendar";
   const isLookbackEvent = event.type === "timesheet" || event.type === "site_diary";
-  const isReadOnlyEvent = isGoogleCalendarEvent || isLookbackEvent;
+  // A projection has no row behind it, so there is nothing to drag or resize.
+  const isProjected = event.type === "projected";
+  const isReadOnlyEvent = isGoogleCalendarEvent || isLookbackEvent || isProjected;
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: event.id,
     data: { event, type: 'move' },
@@ -167,12 +206,19 @@ function DraggableEvent({ event, index, onEventClick, onToggleComplete, showComp
         !isReadOnlyEvent && "touch-none cursor-move",
         isReadOnlyEvent && "cursor-pointer",
         isCompleted && "opacity-55",
+        // Ghosted so it reads as "this is what your week normally looks like",
+        // not as a task that already exists.
+        isProjected && "opacity-60",
         isDragging && "opacity-50 scale-[0.98] shadow-md"
       )}
       style={{
-        backgroundColor: notionColors.pastelBg,
-        borderLeft: `3px solid ${notionColors.originalHex}`,
+        backgroundColor: isProjected ? "transparent" : notionColors.pastelBg,
+        borderLeft: `3px ${isProjected ? "dashed" : "solid"} ${notionColors.originalHex}`,
+        ...(isProjected
+          ? { border: `1px dashed ${notionColors.originalHex}`, borderLeft: `3px dashed ${notionColors.originalHex}` }
+          : {}),
       }}
+      title={isProjected ? `${event.title} — from your recurring routine (not yet created)` : undefined}
     >
       {/* Top resize handle - Notion style, only interactive on hover */}
       {showResizeHandles && !isReadOnlyEvent && (
@@ -306,10 +352,11 @@ interface DroppableTimeSlotProps {
   quarter: number; // 0, 15, 30, or 45
   children?: React.ReactNode;
   className?: string;
+  style?: React.CSSProperties;
   onClick?: () => void;
 }
 
-function DroppableTimeSlot({ date, hour, quarter, children, className, onClick }: DroppableTimeSlotProps) {
+function DroppableTimeSlot({ date, hour, quarter, children, className, style, onClick }: DroppableTimeSlotProps) {
   const slotId = `${format(date, "yyyy-MM-dd")}-${hour}:${quarter.toString().padStart(2, '0')}`;
   const { setNodeRef } = useDroppable({
     id: slotId,
@@ -321,14 +368,76 @@ function DroppableTimeSlot({ date, hour, quarter, children, className, onClick }
       ref={setNodeRef}
       onClick={onClick}
       className={className}
+      style={style}
     >
       {children}
     </div>
   );
 }
 
-export function EnhancedCalendar({ 
-  events, 
+/**
+ * A due-but-untimed task in the side tray. Uses the same drag payload as an
+ * on-grid event, so dropping it on a time slot goes through the normal
+ * reschedule path and gives it a time.
+ */
+function UnscheduledTrayItem({
+  event,
+  onEventClick,
+}: {
+  event: CalendarEvent;
+  onEventClick?: (event: CalendarEvent) => void;
+}) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+    id: event.id,
+    data: { event, type: 'move' },
+  });
+  const colors = generateNotionColors(event.projectColor || event.color);
+
+  return (
+    <div
+      ref={setNodeRef}
+      {...listeners}
+      {...attributes}
+      onClick={() => onEventClick?.(event)}
+      className={cn(
+        "px-2 py-1.5 rounded cursor-grab active:cursor-grabbing select-none",
+        isDragging && "opacity-40"
+      )}
+      style={{
+        backgroundColor: colors.pastelBg,
+        color: colors.darkText,
+        borderLeft: `3px solid ${colors.originalHex}`,
+      }}
+      title={event.title}
+      data-testid={`unscheduled-task-${event.id}`}
+    >
+      <div className="text-xs font-medium truncate leading-tight">{event.title}</div>
+      {event.projectName && (
+        <div className="text-2xs opacity-70 truncate leading-tight">{event.projectName}</div>
+      )}
+    </div>
+  );
+}
+
+/** Drop target that strips an event's times, returning it to the tray. */
+function UnscheduleDropZone({ children, className }: { children: React.ReactNode; className?: string }) {
+  const { setNodeRef, isOver } = useDroppable({
+    id: "unscheduled-tray",
+    data: { unschedule: true },
+  });
+  return (
+    <div
+      ref={setNodeRef}
+      className={cn(className, isOver && "ring-2 ring-primary/50 ring-inset")}
+      data-testid="unscheduled-tray"
+    >
+      {children}
+    </div>
+  );
+}
+
+export function EnhancedCalendar({
+  events,
   onEventClick, 
   onEventComplete,
   onEventReschedule,
@@ -345,12 +454,18 @@ export function EnhancedCalendar({
   focusBlocks = [],
   onFocusBlockClick,
   onFocusBlockUpdate,
+  projectBands = [],
+  onProjectBandClick,
+  unscheduledEvents = [],
+  onEventUnschedule,
+  onTaskDropInFocusBlock,
 }: EnhancedCalendarProps) {
   const weekStartDay = useWeekStartDay();
   const { effectiveTimezone } = useTimezone();
   const [internalCurrentDate, setInternalCurrentDate] = useState(new Date());
   const [internalView, setInternalView] = useState<"month" | "week" | "day" | "roster">(initialView);
   const [activeEvent, setActiveEvent] = useState<CalendarEvent | null>(null);
+  const [trayOpen, setTrayOpen] = useState(true);
   // Track resize preview state for real-time visual feedback
   const [resizePreview, setResizePreview] = useState<{
     eventId: string;
@@ -411,6 +526,7 @@ export function EnhancedCalendar({
   
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const allDayScrollRef = useRef<HTMLDivElement>(null);
+  const bandScrollRef = useRef<HTMLDivElement>(null);
   const timeGridScrollRef = useRef<HTMLDivElement>(null);
   const monthScrollRef = useRef<HTMLDivElement>(null);
   const monthScrolledToToday = useRef(false);
@@ -531,19 +647,22 @@ export function EnhancedCalendar({
   }, []);
 
   // Synchronize horizontal scroll across date header, all-day, and time grid
-  const handleHorizontalScroll = useCallback((source: 'header' | 'allDay' | 'timeGrid') => {
+  const handleHorizontalScroll = useCallback((source: 'header' | 'allDay' | 'timeGrid' | 'band') => {
     return (e: React.UIEvent<HTMLDivElement>) => {
       const element = e.currentTarget;
       const scrollLeft = element.scrollLeft;
       const scrollWidth = element.scrollWidth;
       const clientWidth = element.clientWidth;
-      
+
       // Sync scroll position
       if (source !== 'header' && scrollContainerRef.current) {
         scrollContainerRef.current.scrollLeft = scrollLeft;
       }
       if (source !== 'allDay' && allDayScrollRef.current) {
         allDayScrollRef.current.scrollLeft = scrollLeft;
+      }
+      if (source !== 'band' && bandScrollRef.current) {
+        bandScrollRef.current.scrollLeft = scrollLeft;
       }
       if (source !== 'timeGrid' && timeGridScrollRef.current) {
         timeGridScrollRef.current.scrollLeft = scrollLeft;
@@ -729,6 +848,31 @@ export function EnhancedCalendar({
   };
 
   // Handle drag end
+  /**
+   * The focus block covering a given day and time, if any. Mirrors the day-matching
+   * the overlay renders with: recurring blocks match by weekday, one-offs by date.
+   * End time is exclusive so a block ending at 10:00 doesn't claim the 10:00 slot.
+   */
+  const findFocusBlockAt = useCallback(
+    (date: Date, time: string): FocusBlockData | undefined => {
+      const dayKey = format(date, "yyyy-MM-dd");
+      const dow = getDay(date);
+      const minutes = (t: string) => {
+        const [h, m] = t.split(":").map(Number);
+        return h * 60 + m;
+      };
+      const target = minutes(time);
+      return focusBlocks.find(fb => {
+        const onThisDay = fb.isRecurring
+          ? ((fb.daysOfWeek as number[]) || []).includes(dow)
+          : fb.specificDate === dayKey;
+        if (!onThisDay) return false;
+        return target >= minutes(fb.startTime) && target < minutes(fb.endTime);
+      });
+    },
+    [focusBlocks]
+  );
+
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
     
@@ -741,11 +885,19 @@ export function EnhancedCalendar({
 
     const dragType = active.data.current?.type;
     const draggedEvent = active.data.current?.event as CalendarEvent;
-    
+
     if (!draggedEvent) {
       return;
     }
-    
+
+    // Dropped back on the tray - strip the times so it becomes unscheduled again.
+    if (over.data.current?.unschedule) {
+      if (onEventUnschedule && (draggedEvent.startTime || draggedEvent.endTime)) {
+        onEventUnschedule(draggedEvent.id, draggedEvent.type);
+      }
+      return;
+    }
+
     // Handle resize operations
     if ((dragType === 'resize-start' || dragType === 'resize-end') && onEventResize) {
       const targetHour = over.data.current?.hour as number | undefined;
@@ -819,6 +971,15 @@ export function EnhancedCalendar({
           }
           
           onEventReschedule(draggedEvent.id, targetDate, draggedEvent.type, newTime);
+
+          // Timeboxing a task into a focus block also pins it to that block, so the
+          // block's task list and the grid don't disagree about the plan.
+          if (draggedEvent.type === "task" && onTaskDropInFocusBlock) {
+            const block = findFocusBlockAt(targetDate, newTime);
+            if (block) {
+              onTaskDropInFocusBlock(block.id, draggedEvent.id);
+            }
+          }
         } else {
           // Check for no-op drop (same date, no time slot) - skip
           if (targetDateStr === preDragDate) {
@@ -1036,8 +1197,21 @@ export function EnhancedCalendar({
     // Roster view: use fixed 140px width for horizontal scroll
     const DAY_WIDTH = (view === "day" || view === "week") ? undefined : 140;
     
+    // Tasks due in the visible stretch, plus anything already overdue — an
+    // untimed task from three weeks ago still needs a home.
+    const rangeStartKey = format(dateRange[0], "yyyy-MM-dd");
+    const rangeEndKey = format(dateRange[dateRange.length - 1], "yyyy-MM-dd");
+    const trayEvents = unscheduledEvents.filter(event => {
+      const key = format(new Date(event.startDate), "yyyy-MM-dd");
+      return key <= rangeEndKey;
+    });
+    const overdueCount = trayEvents.filter(
+      event => format(new Date(event.startDate), "yyyy-MM-dd") < rangeStartKey
+    ).length;
+
     return (
-      <div className="flex-1 flex flex-col overflow-hidden bg-background">
+      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 flex flex-col overflow-hidden bg-background min-w-0">
         {/* Date header row - Notion style */}
         <div className="flex border-b border-border">
           <div className="py-2 px-2 border-r border-border/50 w-16 flex-shrink-0 bg-background"></div>
@@ -1074,6 +1248,77 @@ export function EnhancedCalendar({
             })}
           </div>
         </div>
+
+        {/* Project phase band — one slim segment per project per contiguous run of
+            other people's work, so it reads at a glance without crowding the grid. */}
+        {projectBands.length > 0 && (
+          <div className="flex border-b border-border" data-testid="project-band-row">
+            <div className="py-1 px-2 border-r border-border/50 w-16 flex-shrink-0 text-label text-muted-foreground flex items-center justify-center bg-background uppercase font-semibold">
+              Projects
+            </div>
+            <div
+              className={cn("flex overflow-x-auto hide-scrollbar", (view === "day" || view === "week") && "flex-1")}
+              ref={bandScrollRef}
+              onScroll={handleHorizontalScroll('band')}
+            >
+              {dateRange.map((date, idx) => {
+                const dayKey = format(date, "yyyy-MM-dd");
+                const covering = projectBands.filter(b => dayKey >= b.startDate && dayKey <= b.endDate);
+                const MAX_BANDS = 3;
+                return (
+                  <div
+                    key={idx}
+                    className={cn(
+                      "border-r border-border/50 flex-shrink-0 py-1 space-y-0.5 min-h-[16px]",
+                      (view === "day" || view === "week") && "flex-1"
+                    )}
+                    style={DAY_WIDTH ? { minWidth: `${DAY_WIDTH}px`, width: `${DAY_WIDTH}px` } : undefined}
+                    data-testid={`project-band-${dayKey}`}
+                  >
+                    {covering.slice(0, MAX_BANDS).map(band => {
+                      const bandColors = generateNotionColors(band.projectColor || undefined);
+                      // Label on the band's first day, or the first visible day when it
+                      // started before this week — otherwise the run reads as anonymous colour.
+                      const showLabel =
+                        dayKey === band.startDate ||
+                        (idx === 0 && band.startDate < format(dateRange[0], "yyyy-MM-dd"));
+                      const detail = [band.projectName, band.label].filter(Boolean).join(" — ");
+                      return (
+                        <div
+                          key={`${band.projectId}-${band.startDate}`}
+                          className={cn(
+                            "h-2.5 flex items-center overflow-hidden",
+                            onProjectBandClick && "cursor-pointer"
+                          )}
+                          style={{
+                            backgroundColor: bandColors.pastelBg,
+                            borderLeft: showLabel ? `3px solid ${bandColors.originalHex}` : undefined,
+                          }}
+                          title={`${detail}${band.itemCount > 1 ? ` (${band.itemCount} items)` : ""}`}
+                          onClick={() => onProjectBandClick?.(band)}
+                        >
+                          {showLabel && (
+                            <span
+                              className="text-2xs leading-none px-1 truncate font-semibold"
+                              style={{ color: bandColors.darkText }}
+                            >
+                              {detail}
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })}
+                    {covering.length > MAX_BANDS && (
+                      <div className="text-2xs leading-none px-1 text-muted-foreground">
+                        +{covering.length - MAX_BANDS}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* All-Day Events Section - Notion style */}
         <div className="flex border-b border-border">
@@ -1162,7 +1407,7 @@ export function EnhancedCalendar({
             onScroll={handleHourLabelsScroll}
           >
             {hours.map((hour) => (
-              <div key={hour} className="h-10 p-1 text-label text-muted-foreground border-b border-border/50 text-center uppercase">
+              <div key={hour} className="p-1 text-label text-muted-foreground border-b border-border/50 text-center uppercase" style={{ height: HOUR_HEIGHT }}>
                 {format(new Date().setHours(hour, 0), "ha")}
               </div>
             ))}
@@ -1197,14 +1442,15 @@ export function EnhancedCalendar({
                     )}
                   >
                     {hours.map((hour) => (
-                      <div key={hour} className="relative h-10 border-b border-border/50">
+                      <div key={hour} className="relative border-b border-border/50" style={{ height: HOUR_HEIGHT }}>
                         {[0, 15, 30, 45].map((quarter) => (
                           <DroppableTimeSlot
                             key={`${hour}-${quarter}`}
                             date={date}
                             hour={hour}
                             quarter={quarter}
-                            className="h-2.5 hover:bg-primary/10 cursor-pointer transition-colors"
+                            className="hover:bg-primary/10 cursor-pointer transition-colors"
+                            style={{ height: HOUR_HEIGHT / 4 }}
                             onClick={() => onDateClick?.(date)}
                           />
                         ))}
@@ -1440,15 +1686,75 @@ export function EnhancedCalendar({
           </div>
         </div>
       </div>
+
+        {/* Unscheduled tray — drag onto the grid to timebox, drag back to clear */}
+        {onEventUnschedule && (
+          trayOpen ? (
+            <UnscheduleDropZone className="w-56 flex-shrink-0 border-l border-border flex flex-col bg-background">
+              <div className="flex items-center justify-between px-2 py-1.5 border-b border-border">
+                <div className="text-label text-muted-foreground uppercase font-semibold">
+                  Unscheduled
+                  {trayEvents.length > 0 && ` (${trayEvents.length})`}
+                </div>
+                <button
+                  className="text-xs text-muted-foreground hover:text-foreground px-1"
+                  onClick={() => setTrayOpen(false)}
+                  title="Hide unscheduled tasks"
+                  data-testid="tray-collapse"
+                >
+                  ›
+                </button>
+              </div>
+              {overdueCount > 0 && (
+                <div className="px-2 py-1 text-2xs text-muted-foreground border-b border-border/50">
+                  {overdueCount} overdue
+                </div>
+              )}
+              <div className="flex-1 overflow-y-auto p-2 space-y-1.5">
+                {trayEvents.length === 0 ? (
+                  <div className="text-2xs text-muted-foreground px-1 py-2 leading-relaxed">
+                    Nothing unscheduled. Drag a task here to clear its time.
+                  </div>
+                ) : (
+                  trayEvents.map(event => (
+                    <UnscheduledTrayItem
+                      key={event.id}
+                      event={event}
+                      onEventClick={onEventClick}
+                    />
+                  ))
+                )}
+              </div>
+            </UnscheduleDropZone>
+          ) : (
+            <button
+              className="w-7 flex-shrink-0 border-l border-border bg-background hover:bg-muted/50 flex flex-col items-center justify-start pt-2 gap-1"
+              onClick={() => setTrayOpen(true)}
+              title="Show unscheduled tasks"
+              data-testid="tray-expand"
+            >
+              <span className="text-xs text-muted-foreground">‹</span>
+              {trayEvents.length > 0 && (
+                <span className="text-2xs text-muted-foreground">{trayEvents.length}</span>
+              )}
+            </button>
+          )
+        )}
+      </div>
     );
   };
 
   return (
     <DndContext
       sensors={sensors}
+      collisionDetection={pointerFirstCollision}
       onDragStart={handleDragStart}
       onDragMove={handleDragMove}
       onDragEnd={handleDragEnd}
+      onDragCancel={() => {
+        setActiveEvent(null);
+        setResizePreview(null);
+      }}
     >
       <div className="flex flex-col h-full bg-background">
         {/* Header - Notion minimal style */}
@@ -1626,6 +1932,36 @@ export function EnhancedCalendar({
         {view === "roster" && renderWeekView()}
       </div>
 
+      {/* Drag preview. Without this the source chip just dims and nothing follows
+          the cursor, so dragging a task out of the tray feels like nothing is
+          happening until you let go. `dropAnimation={null}` because the chip
+          re-renders in its new slot immediately — animating it back to the
+          source first reads as the drop having failed. */}
+      <DragOverlay dropAnimation={null}>
+        {activeEvent ? (
+          (() => {
+            const dragColors = generateNotionColors(activeEvent.projectColor || activeEvent.color);
+            return (
+              <div
+                className="px-2 py-1.5 rounded shadow-lg cursor-grabbing select-none opacity-95"
+                style={{
+                  backgroundColor: dragColors.pastelBg,
+                  color: dragColors.darkText,
+                  borderLeft: `3px solid ${dragColors.originalHex}`,
+                  minWidth: 120,
+                  maxWidth: 220,
+                }}
+                data-testid="drag-overlay"
+              >
+                <div className="text-xs font-medium truncate leading-tight">{activeEvent.title}</div>
+                {activeEvent.startTime && (
+                  <div className="text-2xs opacity-70 leading-tight">{activeEvent.startTime}</div>
+                )}
+              </div>
+            );
+          })()
+        ) : null}
+      </DragOverlay>
     </DndContext>
   );
 }

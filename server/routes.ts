@@ -193,6 +193,8 @@ import {
   readTimesheetBreakFromRow,
 } from "@shared/import";
 import { computeEstimateItemPrice, resolveEstimateStoredPrice } from "@shared/pricing";
+import { scheduleItemTier, computeProjectBands } from "@shared/scheduleVisibility";
+import { reflowLinkedTasks, scheduleDatesChanged, SCHEDULE_BOOKING_REFERENCE } from "./utils/scheduleTaskLinks";
 import { z } from "zod";
 import { fromZodError } from "zod-validation-error";
 import { eq, and, asc, desc, or, isNull, isNotNull, sql, min, max, gte, lte, inArray, gt, ne, notExists } from "drizzle-orm";
@@ -2895,11 +2897,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const existingTask = await getOwnedTask(req, res, req.params.id);
       if (!existingTask) return;
 
-      // Preprocess: remove empty/null date/time/assignee fields to avoid validation errors
+      // Preprocess: drop empty-string date/time/assignee fields to avoid validation errors.
+      // startTime/endTime keep an explicit null — that is how a task is un-timeboxed and
+      // sent back to the unscheduled tray. Dropping null made clearing them impossible.
       const body = { ...req.body };
       if (body.dueDate === "" || body.dueDate === null) delete body.dueDate;
-      if (body.startTime === "" || body.startTime === null) delete body.startTime;
-      if (body.endTime === "" || body.endTime === null) delete body.endTime;
+      if (body.startTime === "") delete body.startTime;
+      if (body.endTime === "") delete body.endTime;
       if (body.assigneeId === "" || body.assigneeId === null) delete body.assigneeId;
 
       const updateSchema = insertTaskSchema.partial();
@@ -29215,27 +29219,201 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Must be before /:id to avoid route conflict
-  app.get("/api/schedule-items/user-assigned", async (req, res) => {
+  // Schedule items shaped for a *personal* calendar.
+  //
+  // Replaces the old /user-assigned endpoint, which compared item.assignedToId (a
+  // contact id) against a user id and so matched nothing, while admins bypassed the
+  // filter entirely and got the whole company schedule.
+  //
+  // Returns two buckets (see shared/scheduleVisibility.ts for the rules):
+  //   events — in-house work plus appointment-type items, to draw as chips
+  //   bands  — everyone else's work bars, collapsed to one span per project per run
+  app.get("/api/schedule-items/calendar", async (req, res) => {
     try {
       const user = req.user as any;
       if (!user?.companyId) {
-        return res.status(401).json({ error: "Unauthorized" });
+        return res.status(401).json({ error: "Unauthorized - no company context" });
       }
-      const { startDate, endDate } = req.query;
+
+      const { startDate, endDate, fullScheduleProjects } = req.query;
       const dateRange = (startDate || endDate) ? {
         startDate: startDate as string | undefined,
         endDate: endDate as string | undefined
       } : undefined;
+
       let items = await storage.getAllScheduleItems(user.companyId, dateRange);
+
+      // Same project-access rules as /api/schedule-items/all.
       const isAdmin = user.roleName?.toLowerCase()?.includes('admin') ||
                       user.roleName?.toLowerCase()?.includes('owner') ||
                       user.roleName?.toLowerCase()?.includes('general manager');
+
       if (!isAdmin) {
-        items = items.filter((item: any) => item.assignedToId === String(user.id));
+        const userAccess = await storage.getUserProjectAccess(String(user.id));
+        const accessibleProjectIds = new Set(userAccess.map(a => a.projectId));
+        const allProjects = await storage.getProjects();
+        const ownedProjectIds = new Set(
+          allProjects.filter(p => p.ownerId === String(user.id)).map(p => p.id)
+        );
+        items = items.filter((item: any) =>
+          accessibleProjectIds.has(item.projectId) || ownedProjectIds.has(item.projectId)
+        );
       }
-      res.json(items);
+
+      const optedInProjects = new Set(
+        String(fullScheduleProjects ?? "")
+          .split(",")
+          .map(id => id.trim())
+          .filter(Boolean)
+      );
+
+      const events: any[] = [];
+      const banded: any[] = [];
+      for (const item of items as any[]) {
+        if (scheduleItemTier(item, user.companyId, optedInProjects) === "event") {
+          events.push(item);
+        } else {
+          banded.push(item);
+        }
+      }
+
+      res.json({ events, bands: computeProjectBands(banded) });
     } catch (error: any) {
-      res.status(500).json({ error: "Failed to fetch user-assigned schedule items", details: error.message });
+      res.status(500).json({
+        error: "Failed to fetch calendar schedule items",
+        details: error.message
+      });
+    }
+  });
+
+  // Book time against a schedule item.
+  //
+  // Assigning yourself to a five-day work bar would drop five days on your
+  // calendar when the real commitment is an hour. So instead of assigning, this
+  // creates a *linked task* carrying its own time window, attached to the item via
+  // taskIds/taskLinkOffsets. When the item moves, reflowLinkedTasks moves the
+  // booking with it and keeps the hour.
+  app.post("/api/schedule-items/:id/book-time", requireAuth, async (req: any, res) => {
+    try {
+      const user = req.user;
+      const userId = String(user?.dbUser?.id || user?.id || "");
+      if (!user?.companyId || !userId) {
+        return res.status(401).json({ error: "Unauthorized - no company context" });
+      }
+
+      const item = await getOwnedScheduleItem(req, res, req.params.id);
+      if (!item) return;
+
+      const { z } = await import("zod");
+      const bodySchema = z.object({
+        startTime: z.string().regex(/^([0-1][0-9]|2[0-3]):[0-5][0-9]$/).default("09:00"),
+        endTime: z.string().regex(/^([0-1][0-9]|2[0-3]):[0-5][0-9]$/).default("10:00"),
+        offsetDays: z.number().int().default(0),
+        offsetFrom: z.enum(["start", "end"]).default("start"),
+        title: z.string().optional(),
+      });
+      const parsed = bodySchema.safeParse(req.body ?? {});
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Validation failed", details: fromZodError(parsed.error).toString() });
+      }
+      const { startTime, endTime, offsetDays, offsetFrom, title } = parsed.data;
+
+      if (startTime >= endTime) {
+        return res.status(400).json({ error: "End time must be after start time" });
+      }
+
+      const reference = offsetFrom === "end" ? item.endDate : item.startDate;
+      if (!reference) {
+        return res.status(400).json({ error: "Schedule item has no date to book against" });
+      }
+      const dueDate = new Date(reference as any);
+      dueDate.setDate(dueDate.getDate() + offsetDays);
+
+      // Resolve the project so the booking is filed against the right job.
+      const schedule = item.scheduleId ? await storage.getScheduleById(item.scheduleId) : null;
+      const projectId = (item as any).projectId || schedule?.projectId || null;
+
+      const task = await storage.createTask({
+        title: title || item.name,
+        content: `Booked against schedule item: ${item.name}`,
+        type: "task",
+        status: "todo",
+        scope: projectId ? "project" : "personal",
+        taskContextType: projectId ? "project" : "business",
+        taskContextId: projectId || user.companyId,
+        projectId,
+        companyId: user.companyId,
+        // Server-managed on the normal create route; `author` is NOT NULL.
+        ownerId: user.id,
+        ownerName: user.email,
+        author: user.email,
+        assigneeIds: [userId],
+        // Cached alongside the id: storage only resolves a name for the legacy
+        // single `assigneeId`, so without this the bookings list has no one to show.
+        assigneeNames: [
+          [user.firstName, user.lastName].filter(Boolean).join(" ").trim() || user.email,
+        ],
+        dueDate,
+        startTime,
+        endTime,
+        // Back-reference so the calendar can link a booking to what it's for, and
+        // the schedule item can list who has committed time to it.
+        referenceType: SCHEDULE_BOOKING_REFERENCE,
+        referenceId: item.id,
+      } as any);
+
+      // Link it to the item so the booking follows future moves.
+      const existingTaskIds: string[] = Array.isArray((item as any).taskIds) ? (item as any).taskIds : [];
+      const existingOffsets: any[] = Array.isArray((item as any).taskLinkOffsets) ? (item as any).taskLinkOffsets : [];
+
+      await storage.updateScheduleItem(item.id, {
+        taskIds: [...existingTaskIds, task.id],
+        taskLinkOffsets: [...existingOffsets, { taskId: task.id, offsetDays, offsetFrom, startTime, endTime }],
+      } as any);
+
+      res.status(201).json(task);
+    } catch (error: any) {
+      console.error("Failed to book time against schedule item:", error);
+      res.status(500).json({ error: "Failed to book time", details: error.message });
+    }
+  });
+
+  // Who has booked time against this schedule item. Reads the item's own taskIds
+  // rather than scanning tasks by reference, so links made before the back-reference
+  // existed still resolve.
+  app.get("/api/schedule-items/:id/bookings", requireAuth, async (req: any, res) => {
+    try {
+      const item = await getOwnedScheduleItem(req, res, req.params.id);
+      if (!item) return;
+
+      const linkedIds: string[] = Array.isArray((item as any).taskIds) ? (item as any).taskIds : [];
+      if (linkedIds.length === 0) return res.json([]);
+
+      const offsets: any[] = Array.isArray((item as any).taskLinkOffsets) ? (item as any).taskLinkOffsets : [];
+      const bookings = [];
+
+      for (const taskId of linkedIds) {
+        const task = await storage.getTask(taskId);
+        if (!task) continue; // deleted since it was linked
+        const offset = offsets.find((o: any) => o?.taskId === taskId);
+        bookings.push({
+          id: task.id,
+          title: task.title,
+          dueDate: task.dueDate,
+          startTime: task.startTime,
+          endTime: task.endTime,
+          status: task.status,
+          assigneeIds: task.assigneeIds ?? [],
+          assigneeNames: task.assigneeNames ?? [],
+          // A booking carries a time window on its link; a plain task link doesn't.
+          isTimeBooking: !!(offset?.startTime || task.referenceType === SCHEDULE_BOOKING_REFERENCE),
+        });
+      }
+
+      res.json(bookings);
+    } catch (error: any) {
+      console.error("Failed to list schedule item bookings:", error);
+      res.status(500).json({ error: "Failed to list bookings", details: error.message });
     }
   });
 
@@ -29510,6 +29688,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const item = await storage.updateScheduleItem(req.params.id, updateData);
       if (!item) {
         return res.status(404).json({ error: "Schedule item not found" });
+      }
+
+      // Move linked tasks with the item. Done here rather than in the callers so
+      // Gantt drags get it too — they PATCH dates directly and never ran the
+      // client-side offset pass that the Schedule edit modal used to do.
+      // Also fires when only the offsets changed — retargeting a link without
+      // moving the item still has to move the task.
+      if (scheduleDatesChanged(originalItem as any, item as any) || updateData.taskLinkOffsets !== undefined) {
+        try {
+          await reflowLinkedTasks(item as any, storage);
+        } catch (reflowError) {
+          console.error("Failed to reflow tasks linked to schedule item:", reflowError);
+        }
       }
 
       // Recalculate parent progress if this item has a parent
@@ -29849,7 +30040,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
-      const updatedItems = await storage.bulkUpdateScheduleItems(items);
+      // Run each update through the same schema the single-item PATCH uses. Without
+      // this, date strings reached Drizzle uncoerced and any bulk date change threw
+      // "value.toISOString is not a function" — the Gantt only ever sent sortOrder
+      // through here, so it went unnoticed.
+      const validatedItems: any[] = [];
+      for (const item of items) {
+        if (!item?.id) continue;
+        const parsed = updateScheduleItemSchema.safeParse(item.updates ?? {});
+        if (!parsed.success) {
+          return res.status(400).json({
+            error: "Validation failed",
+            details: `Item ${item.id}: ${fromZodError(parsed.error).toString()}`,
+          });
+        }
+        validatedItems.push({ id: item.id, updates: parsed.data });
+      }
+
+      const updatedItems = await storage.bulkUpdateScheduleItems(validatedItems);
+
+      // Same linked-task reflow as the single-item PATCH — the Gantt drives
+      // cascades through this endpoint, so bookings would otherwise detach.
+      for (const updated of updatedItems) {
+        const original = originalItemsMap.get(updated.id);
+        if (original && scheduleDatesChanged(original, updated as any)) {
+          try {
+            await reflowLinkedTasks(updated as any, storage);
+          } catch (reflowError) {
+            console.error("Failed to reflow tasks linked to schedule item:", reflowError);
+          }
+        }
+      }
 
       // Recalculate parent progress for all affected parents
       try {

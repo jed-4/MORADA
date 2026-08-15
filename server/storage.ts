@@ -117,7 +117,7 @@ import { randomUUID } from "crypto";
 import { PasswordUtils } from "./utils/auth";
 import { generateRecurringTaskInstances, getRecurringTaskKey, generateNextRecurringInstance } from "./utils/recurringTasks";
 import { db } from "./db";
-import { eq, or, and, desc, asc, gte, lte, sql, inArray, isNull, isNotNull, gt, lt, not, ne } from "drizzle-orm";
+import { eq, or, and, desc, asc, gte, lte, sql, inArray, isNull, isNotNull, gt, lt, not, ne, arrayContains } from "drizzle-orm";
 import * as schema from "@shared/schema";
 import { computeEstimateItemPrice, computeEstimateSummary, estimateItemBuilderCostExTax, resolveEstimateStoredPrice } from "@shared/pricing";
 import { computeBillTotalsCents, billLineExGstCents } from "@shared/billTotals";
@@ -3817,10 +3817,9 @@ export class MemStorage implements IStorage {
     }
 
     if (assigneeId) {
-      filteredTasks = filteredTasks.filter(task => 
-        task.assigneeId === assigneeId || 
-        (task.assignedTo && task.assignedTo.includes(assigneeId)) ||
-        (task.assigneeType === "user" && task.assigneeUserId === assigneeId)
+      filteredTasks = filteredTasks.filter(task =>
+        task.assigneeId === assigneeId ||
+        (Array.isArray(task.assigneeIds) && task.assigneeIds.includes(assigneeId))
       );
     }
     
@@ -3854,9 +3853,9 @@ export class MemStorage implements IStorage {
       .filter(note => note.type === "task") as Task[];
     
     const userTasks = allTasks.filter(task => {
-      // Check if user is assigned (via assigneeId or assignedTo array)
-      const isAssigned = task.assigneeId === userId || 
-        (Array.isArray(task.assignedTo) && task.assignedTo.includes(userId));
+      // Check if user is assigned (via legacy assigneeId or the assigneeIds array)
+      const isAssigned = task.assigneeId === userId ||
+        (Array.isArray(task.assigneeIds) && task.assigneeIds.includes(userId));
       if (!isAssigned) return false;
       
       // Verify task belongs to the company
@@ -8255,8 +8254,14 @@ export class DbStorage implements IStorage {
       conditions.push(eq(schema.notes.status, status));
     }
     if (assigneeId) {
-      // Filter by assigneeId - notes table uses single assigneeId field
-      conditions.push(eq(schema.notes.assigneeId, assigneeId));
+      // Match both the legacy single assigneeId and the assigneeIds array, otherwise
+      // multi-assignee tasks are invisible to every assignee-filtered caller.
+      conditions.push(
+        or(
+          eq(schema.notes.assigneeId, assigneeId),
+          arrayContains(schema.notes.assigneeIds, [assigneeId])
+        )!
+      );
     }
     
     // Add date range filtering for calendar performance
@@ -8287,7 +8292,7 @@ export class DbStorage implements IStorage {
 
   async getTasksByUser(userId: string, companyId: string): Promise<Task[]> {
     // Get all tasks in this company that are assigned to this user
-    // Check both assigneeId (single user) and assignedTo array (multiple users)
+    // Check both assigneeId (legacy single user) and assigneeIds (multiple users)
     const allCompanyTasks = await db.select()
       .from(schema.notes)
       .where(
@@ -8307,15 +8312,10 @@ export class DbStorage implements IStorage {
     );
     
     const filteredTasks = allCompanyTasks.filter(task => {
-      // Check if user is assigned via:
-      // 1. Legacy assigneeId field
-      // 2. Polymorphic model (assigneeType='user' and assigneeUserId matches)
-      // 3. assignedTo array (multiple assignees)
+      // Check if user is assigned via the legacy single field or the assigneeIds array
       const isAssignedLegacy = task.assigneeId === userId;
-      const isAssignedPolymorphic = task.assigneeType === 'user' && task.assigneeUserId === userId;
-      const isAssignedArray = Array.isArray(task.assignedTo) && task.assignedTo.includes(userId);
-      const isAssigned = isAssignedLegacy || isAssignedPolymorphic || isAssignedArray;
-      if (!isAssigned) return false;
+      const isAssignedArray = Array.isArray(task.assigneeIds) && task.assigneeIds.includes(userId);
+      if (!isAssignedLegacy && !isAssignedArray) return false;
       
       // Business-level tasks - always include if assigned
       if (task.taskContextType === "business") return true;

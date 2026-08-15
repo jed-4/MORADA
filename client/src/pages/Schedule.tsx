@@ -779,27 +779,6 @@ export default function Schedule() {
   });
 
   // Update schedule item
-  const applyTaskOffsets = async (
-    item: ScheduleItem,
-    offsets: Array<{ taskId: string; offsetDays: number; offsetFrom: "start" | "end" }>
-  ) => {
-    const validOffsets = offsets.filter(o => o.taskId && (o.offsetDays !== 0 || o.offsetFrom));
-    for (const o of validOffsets) {
-      const refDate = o.offsetFrom === "end" ? item.endDate : item.startDate;
-      if (!refDate) continue;
-      const base = new Date(refDate as any);
-      if (isNaN(base.getTime())) continue;
-      const due = new Date(base);
-      due.setDate(due.getDate() + o.offsetDays);
-      await fetch(`/api/tasks/${o.taskId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ dueDate: due.toISOString() }),
-      });
-    }
-  };
-
   const updateItemMutation = useMutation({
     mutationFn: async (data: any) => {
       if (!editingItem) throw new Error("No item selected");
@@ -814,8 +793,10 @@ export default function Schedule() {
       return response.json() as Promise<ScheduleItem>;
     },
     onSuccess: async (updatedItem, variables) => {
+      // Linked tasks are reflowed server-side on every schedule-item update (see
+      // reflowLinkedTasks), so this path no longer PATCHes them itself — doing it
+      // here only ever covered this one modal and missed every Gantt drag.
       if (taskLinkOffsetsLocal.length > 0) {
-        await applyTaskOffsets(updatedItem, taskLinkOffsetsLocal);
         queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/tasks`] });
       }
 

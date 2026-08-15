@@ -113,7 +113,15 @@ export class GoogleOAuthService {
   }
   
   private getRedirectUri(): string {
-    return 'https://buildpro4.replit.app/api/google-calendar/callback';
+    // Hardcoding this made the connect flow impossible to run anywhere but the
+    // deployed Replit app: Google sends the callback to the registered URI, so a
+    // local server never receives it and Google Calendar can't be connected in dev.
+    // Override with GOOGLE_CALENDAR_REDIRECT_URI (e.g.
+    // http://localhost:3001/api/google-calendar/callback), which must also be added
+    // to the OAuth client's authorised redirect URIs in Google Cloud Console.
+    // Unset — including in production — keeps the previous behaviour exactly.
+    return process.env.GOOGLE_CALENDAR_REDIRECT_URI
+      || 'https://buildpro4.replit.app/api/google-calendar/callback';
   }
   
   generateAuthUrl(userId: string, companyId: string): string {
