@@ -8453,8 +8453,13 @@ export class DbStorage implements IStorage {
     const selections = await this.getSelections(projectId);
     if (selections.length === 0) return [];
     const selectionIds = selections.map((s) => s.id);
+    // Ordered here so every consumer (list, portal, mobile, PDF) agrees. sortOrder
+    // defaults to 0, so createdAt is what actually breaks the tie for any selection
+    // whose options were never drag-reordered. Ordering the flat set is enough: the
+    // reduce below appends in row order, so each selection's bucket stays sorted.
     const options = await db.select().from(schema.selectionOptions)
-      .where(inArray(schema.selectionOptions.selectionId, selectionIds));
+      .where(inArray(schema.selectionOptions.selectionId, selectionIds))
+      .orderBy(asc(schema.selectionOptions.sortOrder), asc(schema.selectionOptions.createdAt));
     const optionIds = options.map((o) => o.id);
     const attachments = optionIds.length === 0 ? [] : await db.select().from(schema.optionAttachments)
       .where(inArray(schema.optionAttachments.optionId, optionIds))
@@ -8490,7 +8495,9 @@ export class DbStorage implements IStorage {
 
   // Selection Options CRUD
   async getSelectionOptions(selectionId: string): Promise<SelectionOption[]> {
-    const options = await db.select().from(schema.selectionOptions).where(eq(schema.selectionOptions.selectionId, selectionId));
+    const options = await db.select().from(schema.selectionOptions)
+      .where(eq(schema.selectionOptions.selectionId, selectionId))
+      .orderBy(asc(schema.selectionOptions.sortOrder), asc(schema.selectionOptions.createdAt));
     if (options.length === 0) return [];
     const optionIds = options.map((o) => o.id);
     const attachments = await db.select().from(schema.optionAttachments)
