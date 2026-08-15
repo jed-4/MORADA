@@ -296,6 +296,11 @@ export default function ClientInvoices({ embedded }: { embedded?: boolean } = {}
     mutationFn: async (id: string) => apiRequest(`/api/client-invoices/${id}`, "DELETE"),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/client-invoices"] });
+      // Deleting an invoice cascades its variation/allowance claim links, which
+      // frees those lines to be claimed again. Drop the cached cross-invoice
+      // claim lists (staleTime: Infinity) so the pickers see them as available.
+      queryClient.invalidateQueries({ queryKey: ["/api/invoice-variations/by-project"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/invoice-allowances/by-project"] });
       toast({ title: "Invoice deleted" });
     },
     onError: (err: any) => {

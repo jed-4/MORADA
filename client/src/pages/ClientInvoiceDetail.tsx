@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useMemo } from "react";
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
@@ -432,7 +432,7 @@ export default function ClientInvoiceDetail() {
   // percentage-based progress claims reconcile to the contract to the penny
   // instead of leaving a phantom rounding cent. claimPercent here is what each
   // OTHER invoice has billed for the same variation/allowance line.
-  const { data: projectInvoiceVariations = [] } = useQuery<Array<{ variationId: string; invoiceId: string; claimPercent: number }>>({
+  const { data: projectInvoiceVariations = [] } = useQuery<Array<{ variationId: string; invoiceId: string; invoiceNumber: string | null; claimPercent: number }>>({
     queryKey: ["/api/invoice-variations/by-project", selectedProjectId],
     queryFn: () => fetch(`/api/invoice-variations/by-project?projectId=${selectedProjectId}`, { credentials: "include" }).then(r => r.json()),
     enabled: !!selectedProjectId,
@@ -769,6 +769,34 @@ export default function ClientInvoiceDetail() {
     thisPct > 0 &&
     otherPct + thisPct >= 100 - CLAIM_CLOSE_TOL &&
     otherPct < 100 - CLAIM_CLOSE_TOL;
+
+  // How much of each variation is ALREADY claimed on the project's OTHER
+  // invoices. A variation may legitimately be claimed across several progress
+  // claims (40% now, 60% later), so the guard is cumulative percent — not
+  // "is it linked anywhere" — and a variation already claimed to 100%
+  // elsewhere must not be selectable again (that is a straight double-bill).
+  // Rows belonging to THIS invoice are excluded so editing an invoice never
+  // counts its own claim against itself.
+  const otherInvoiceVariationClaims = useMemo(() => {
+    const map: Record<string, { percent: number; invoiceNumbers: string[] }> = {};
+    for (const row of projectInvoiceVariations) {
+      if (row.invoiceId === effectiveInvoiceId) continue;
+      const entry = (map[row.variationId] ||= { percent: 0, invoiceNumbers: [] });
+      entry.percent += row.claimPercent || 0;
+      const label = row.invoiceNumber || "another invoice";
+      if (!entry.invoiceNumbers.includes(label)) entry.invoiceNumbers.push(label);
+    }
+    return map;
+  }, [projectInvoiceVariations, effectiveInvoiceId]);
+
+  // Claim percent still available for a variation on THIS invoice (0–100).
+  const getVariationRemainingPercent = (variationId: string) =>
+    Math.max(0, 100 - (otherInvoiceVariationClaims[variationId]?.percent ?? 0));
+
+  // Fully claimed elsewhere — nothing left to bill, so the picker locks it.
+  // Same tolerance as isClosingClaim so a 33/33/34 split reads as closed.
+  const isVariationFullyClaimedElsewhere = (variationId: string) =>
+    (otherInvoiceVariationClaims[variationId]?.percent ?? 0) >= 100 - CLAIM_CLOSE_TOL;
 
   // Per-row contract claim cents for THIS invoice. When this invoice closes the
   // contract, the rounding residual is absorbed into the last claimed row so the
@@ -1220,6 +1248,16 @@ export default function ClientInvoiceDetail() {
     }
   };
 
+  // The cross-invoice claim lists drive the "already claimed elsewhere" guard
+  // in the variation/allowance pickers. queryClient runs staleTime: Infinity,
+  // so without an explicit invalidation a save here leaves every other invoice
+  // in the session reading a stale list — the guard would miss a variation
+  // that was just claimed, and un-linking one would not free it again.
+  const invalidateProjectClaimQueries = () => {
+    queryClient.invalidateQueries({ queryKey: ["/api/invoice-variations/by-project"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/invoice-allowances/by-project"] });
+  };
+
   const createMutation = useMutation({
     mutationFn: async (data: InvoiceFormData) => {
       const payload = buildInvoicePayload(data);
@@ -1240,6 +1278,7 @@ export default function ClientInvoiceDetail() {
     },
     onSuccess: async (inv) => {
       queryClient.invalidateQueries({ queryKey: ["/api/client-invoices"] });
+      invalidateProjectClaimQueries();
       // Refresh the auto-generated number so the next new invoice advances
       // instead of reusing (and colliding with) the number we just consumed.
       queryClient.invalidateQueries({ queryKey: ["/api/client-invoices/next-number"] });
@@ -1310,6 +1349,7 @@ export default function ClientInvoiceDetail() {
       queryClient.invalidateQueries({
         queryKey: [`/api/client-invoices/${effectiveInvoiceId}`],
       });
+      invalidateProjectClaimQueries();
       if (effectiveInvoiceId) invalidateInvoiceChildQueries(effectiveInvoiceId);
       if (user?.id) {
         logActivity({
@@ -2575,6 +2615,8 @@ export default function ClientInvoiceDetail() {
                               <TableBody>
                                 {getSelectedVariations().map((variation) => {
                                   const claimPct = variationClaims[variation.id] ?? 100;
+                                  // Can't claim more than the other invoices left behind.
+                                  const maxClaimPct = getVariationRemainingPercent(variation.id);
                                   const claimAmt = getVariationClaimCents(variation) / 100;
                                   const exTax = claimAmt / (1 + GST_RATE);
                                   const tax = claimAmt - exTax;
@@ -2595,12 +2637,15 @@ export default function ClientInvoiceDetail() {
                                           <Input
                                             type="number"
                                             min="0"
-                                            max="100"
+                                            max={maxClaimPct}
                                             value={claimPct}
                                             onChange={(e) =>
                                               setVariationClaims((prev) => ({
                                                 ...prev,
-                                                [variation.id]: parseInt(e.target.value) || 0,
+                                                [variation.id]: Math.min(
+                                                  maxClaimPct,
+                                                  parseInt(e.target.value) || 0,
+                                                ),
                                               }))
                                             }
                                             className="h-7 w-16 text-right text-sm border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring ml-auto"
@@ -3818,22 +3863,37 @@ export default function ClientInvoiceDetail() {
               variations.map((v) => {
                 const isApproved = v.status === "approved";
                 const isSelected = selectedVariationIds.includes(v.id);
+                const claimedElsewhere = otherInvoiceVariationClaims[v.id];
+                const fullyClaimed = isVariationFullyClaimedElsewhere(v.id);
+                const remaining = getVariationRemainingPercent(v.id);
+                // A variation billed in full on another invoice can't be added
+                // again. It stays visible (with the invoice that holds it) so
+                // "where did VO-017 go?" answers itself. Already-selected rows
+                // stay togglable so a bad link can always be removed.
+                const isLocked = fullyClaimed && !isSelected;
+                const canToggle = isApproved && !isLocked;
                 return (
                   <div
                     key={v.id}
                     className={cn(
                       "flex items-center gap-3 p-3 rounded-md border",
-                      isApproved
+                      canToggle
                         ? "hover-elevate cursor-pointer"
                         : "opacity-40 cursor-not-allowed"
                     )}
                     onClick={() => {
-                      if (!isApproved) return;
-                      setSelectedVariationIds((prev) =>
-                        isSelected
-                          ? prev.filter((id) => id !== v.id)
-                          : [...prev, v.id]
-                      );
+                      if (!canToggle) return;
+                      if (isSelected) {
+                        setSelectedVariationIds((prev) => prev.filter((id) => id !== v.id));
+                        return;
+                      }
+                      setSelectedVariationIds((prev) => [...prev, v.id]);
+                      // Default this invoice's claim to what's actually left,
+                      // not a blind 100% on top of an existing partial claim.
+                      setVariationClaims((prev) => ({
+                        ...prev,
+                        [v.id]: prev[v.id] ?? remaining,
+                      }));
                     }}
                     data-testid={`variation-option-${v.id}`}
                   >
@@ -3856,6 +3916,16 @@ export default function ClientInvoiceDetail() {
                         </span>
                         <span className="text-sm truncate">{v.name}</span>
                       </div>
+                      {claimedElsewhere && (
+                        <div
+                          className="text-xs text-muted-foreground mt-0.5"
+                          data-testid={`variation-claimed-note-${v.id}`}
+                        >
+                          {fullyClaimed
+                            ? `Already claimed in full on ${claimedElsewhere.invoiceNumbers.join(", ")}`
+                            : `${claimedElsewhere.percent}% claimed on ${claimedElsewhere.invoiceNumbers.join(", ")} — ${remaining}% remaining`}
+                        </div>
+                      )}
                     </div>
                     <div className="flex items-center gap-3 flex-shrink-0">
                       <Badge
