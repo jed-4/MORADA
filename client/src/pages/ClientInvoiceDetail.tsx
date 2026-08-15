@@ -100,6 +100,13 @@ import type {
   Bill,
   Contact,
 } from "@shared/schema";
+import {
+  summariseClaimsElsewhere,
+  // Aliased: this file already has a local `remainingClaimPercent` for the
+  // contract claim (a single number), distinct from these per-line helpers.
+  remainingClaimPercent as remainingLineClaimPercent,
+  isFullyClaimedElsewhere,
+} from "@shared/invoiceClaims";
 
 const GST_RATE = 0.1;
 
@@ -771,32 +778,20 @@ export default function ClientInvoiceDetail() {
     otherPct < 100 - CLAIM_CLOSE_TOL;
 
   // How much of each variation is ALREADY claimed on the project's OTHER
-  // invoices. A variation may legitimately be claimed across several progress
-  // claims (40% now, 60% later), so the guard is cumulative percent — not
-  // "is it linked anywhere" — and a variation already claimed to 100%
-  // elsewhere must not be selectable again (that is a straight double-bill).
-  // Rows belonging to THIS invoice are excluded so editing an invoice never
-  // counts its own claim against itself.
-  const otherInvoiceVariationClaims = useMemo(() => {
-    const map: Record<string, { percent: number; invoiceNumbers: string[] }> = {};
-    for (const row of projectInvoiceVariations) {
-      if (row.invoiceId === effectiveInvoiceId) continue;
-      const entry = (map[row.variationId] ||= { percent: 0, invoiceNumbers: [] });
-      entry.percent += row.claimPercent || 0;
-      const label = row.invoiceNumber || "another invoice";
-      if (!entry.invoiceNumbers.includes(label)) entry.invoiceNumbers.push(label);
-    }
-    return map;
-  }, [projectInvoiceVariations, effectiveInvoiceId]);
+  // invoices — see shared/invoiceClaims.ts for why the guard is cumulative
+  // percent rather than "is it linked anywhere".
+  const otherInvoiceVariationClaims = useMemo(
+    () => summariseClaimsElsewhere(projectInvoiceVariations, (r) => r.variationId, effectiveInvoiceId),
+    [projectInvoiceVariations, effectiveInvoiceId],
+  );
 
   // Claim percent still available for a variation on THIS invoice (0–100).
   const getVariationRemainingPercent = (variationId: string) =>
-    Math.max(0, 100 - (otherInvoiceVariationClaims[variationId]?.percent ?? 0));
+    remainingLineClaimPercent(otherInvoiceVariationClaims[variationId]);
 
   // Fully claimed elsewhere — nothing left to bill, so the picker locks it.
-  // Same tolerance as isClosingClaim so a 33/33/34 split reads as closed.
   const isVariationFullyClaimedElsewhere = (variationId: string) =>
-    (otherInvoiceVariationClaims[variationId]?.percent ?? 0) >= 100 - CLAIM_CLOSE_TOL;
+    isFullyClaimedElsewhere(otherInvoiceVariationClaims[variationId]);
 
   // Per-row contract claim cents for THIS invoice. When this invoice closes the
   // contract, the rounding residual is absorbed into the last claimed row so the
