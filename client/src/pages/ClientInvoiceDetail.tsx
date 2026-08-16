@@ -2477,6 +2477,12 @@ export default function ClientInvoiceDetail() {
                                           <Input
                                             type="number"
                                             min="0"
+                                            // Contract claim rows live in the contract_claim_rows jsonb
+                                            // column and are validated by a bare z.number(), so fractional
+                                            // claims (7.5% progress payments) are storable. Without an
+                                            // explicit step, type="number" defaults to step="1" and the
+                                            // browser treats 7.5 as a stepMismatch.
+                                            step="0.01"
                                             value={row.claimPercent}
                                             onChange={(e) =>
                                               updateContractClaimRow(row.id, "claimPercent", parseFloat(e.target.value) || 0)
@@ -2632,6 +2638,14 @@ export default function ClientInvoiceDetail() {
                                           <Input
                                             type="number"
                                             min="0"
+                                            // invoice_variations.claim_percent is an integer column and
+                                            // the Zod schema is .int(), so this field is whole-number
+                                            // only — step="1" makes the browser agree. Round rather
+                                            // than truncate: parseInt("7.5") silently billed 7, and
+                                            // because the rounded value never changed, React left the
+                                            // field reading "7.5" while state held 7. Rounding makes the
+                                            // field snap to 8, so the stored number is the visible one.
+                                            step="1"
                                             max={maxClaimPct}
                                             value={claimPct}
                                             onChange={(e) =>
@@ -2639,7 +2653,7 @@ export default function ClientInvoiceDetail() {
                                                 ...prev,
                                                 [variation.id]: Math.min(
                                                   maxClaimPct,
-                                                  parseInt(e.target.value) || 0,
+                                                  Math.round(parseFloat(e.target.value)) || 0,
                                                 ),
                                               }))
                                             }
@@ -2775,12 +2789,17 @@ export default function ClientInvoiceDetail() {
                                           <Input
                                             type="number"
                                             min="0"
+                                            // invoice_allowances.claim_percent is an integer column and
+                                            // the Zod schema is .int() — same whole-number constraint,
+                                            // and the same round-don't-truncate reasoning, as the
+                                            // variation claim input above.
+                                            step="1"
                                             max="100"
                                             value={claimPct}
                                             onChange={(e) =>
                                               setAllowanceClaims((prev) => ({
                                                 ...prev,
-                                                [item.id]: parseInt(e.target.value) || 0,
+                                                [item.id]: Math.round(parseFloat(e.target.value)) || 0,
                                               }))
                                             }
                                             className="h-7 w-16 text-right text-sm border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring ml-auto"
