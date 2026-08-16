@@ -9725,7 +9725,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const calendarMeta = new Map<string, { summary: string; color: string | null; accessRole: string }>();
       let targetCalendarIds: string[] = requestedIds;
       try {
-        const listResponse = await calendar.calendarList.list({ maxResults: 250, showHidden: false });
+        // Raced against its own timeout: this call sits in front of the events
+        // fan-out below, so without it a hung calendarList would block the whole
+        // endpoint indefinitely and defeat the 20s guarantee that fan-out has.
+        const listResponse = await Promise.race([
+          calendar.calendarList.list({ maxResults: 250, showHidden: false }),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error('Google calendarList timed out after 20s')), 20000)
+          ),
+        ]);
         for (const cal of listResponse.data.items || []) {
           if (!cal.id) continue;
           calendarMeta.set(cal.id, {
