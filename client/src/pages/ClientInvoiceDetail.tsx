@@ -2107,38 +2107,6 @@ export default function ClientInvoiceDetail() {
           <div className="flex-1 overflow-auto">
             <div className="max-w-4xl mx-auto px-3 py-3 space-y-3">
 
-                {/* Bill To strip — shows billing recipient (client + project) */}
-                {(currentProject || clientContact) && (
-                  <div className="rounded-lg border border-border bg-card overflow-hidden">
-                    <div className="h-8 flex items-center px-3 gap-2 border-b border-border/50 bg-muted/40">
-                      <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-primary/80" />
-                      <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Bill To</span>
-                    </div>
-                    <div className="px-4 py-2.5 flex items-start gap-6">
-                      {clientContact && (
-                        <div className="min-w-0">
-                          <div className="text-xs font-semibold truncate">{clientContact.name}</div>
-                          {clientContact.company && (
-                            <div className="text-xs text-muted-foreground truncate">{clientContact.company}</div>
-                          )}
-                          {(clientContact.addressFormatted || clientContact.address) && (
-                            <div className="text-xs text-muted-foreground truncate">{clientContact.addressFormatted || clientContact.address}</div>
-                          )}
-                        </div>
-                      )}
-                      {currentProject && (
-                        <div className="min-w-0">
-                          <div className="text-data text-muted-foreground/60 uppercase tracking-wide">Project</div>
-                          <div className="text-xs font-medium truncate">{(currentProject as any).name}</div>
-                          {(currentProject as any).location && (
-                            <div className="text-xs text-muted-foreground truncate">{(currentProject as any).location}</div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
-
                 {/* Card 1 — Invoice Info */}
                 <div className="rounded-lg border border-border bg-card overflow-hidden">
 
@@ -2148,17 +2116,20 @@ export default function ClientInvoiceDetail() {
                     <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Invoice Info</span>
                   </div>
 
-                  {/* Invoice Name + Number + Dates */}
-                  <div className="px-4 py-3 space-y-3">
-                      <div className="grid grid-cols-3 gap-4">
+                  {/* Invoice Name + Number + Dates, with the recipient alongside —
+                      an invoice header is "who" and "which invoice" read together,
+                      not two stacked cards. */}
+                  <div className="px-4 py-3 grid grid-cols-1 lg:grid-cols-3 gap-4">
+                    <div className="lg:col-span-2 space-y-3">
+                      <div className="grid grid-cols-3 gap-3">
                         <FormField
                           control={form.control}
                           name="name"
                           render={({ field }) => (
                             <FormItem className="col-span-2">
-                              <FormLabel className="h-4 leading-none flex items-center text-table text-muted-foreground/70 uppercase tracking-wide font-medium">Invoice Name*</FormLabel>
+                              <FormLabel className="h-4 leading-none flex items-center text-[9px] text-muted-foreground uppercase tracking-wide font-semibold">Invoice Name*</FormLabel>
                               <FormControl>
-                                <Input {...field} className="h-8 text-sm" data-testid="input-name" />
+                                <Input {...field} className="h-7 text-[11px]" data-testid="input-name" />
                               </FormControl>
                               <FormMessage />
                             </FormItem>
@@ -2170,7 +2141,7 @@ export default function ClientInvoiceDetail() {
                           name="invoiceNumber"
                           render={({ field }) => (
                             <FormItem>
-                              <FormLabel className="h-4 leading-none flex items-center gap-1.5 text-table text-muted-foreground/70 uppercase tracking-wide font-medium">
+                              <FormLabel className="h-4 leading-none flex items-center gap-1.5 text-[9px] text-muted-foreground uppercase tracking-wide font-semibold">
                                 Invoice Number
                                 {!isEditMode && (
                                   <Tooltip>
@@ -2212,7 +2183,7 @@ export default function ClientInvoiceDetail() {
                                   {...field}
                                   readOnly={isEditMode || !invoiceNumberOverride}
                                   className={cn(
-                                    "h-8 text-sm",
+                                    "h-7 text-[11px]",
                                     !invoiceNumberOverride && !isEditMode
                                       ? "bg-muted text-muted-foreground cursor-default"
                                       : ""
@@ -2226,14 +2197,14 @@ export default function ClientInvoiceDetail() {
                         />
                       </div>
 
-                      {/* Invoice Date + Due Date */}
-                      <div className="grid grid-cols-3 gap-4">
+                      {/* Invoice Date + Due Date + Type */}
+                      <div className="grid grid-cols-3 gap-3">
                         <FormField
                           control={form.control}
                           name="invoiceDate"
                           render={({ field }) => (
                             <FormItem className="flex flex-col">
-                              <FormLabel className="h-4 leading-none flex items-center text-table text-muted-foreground/70 uppercase tracking-wide font-medium">Invoice Date</FormLabel>
+                              <FormLabel className="h-4 leading-none flex items-center text-[9px] text-muted-foreground uppercase tracking-wide font-semibold">Invoice Date</FormLabel>
                               <Popover open={invoiceDateOpen} onOpenChange={setInvoiceDateOpen}>
                                 <PopoverTrigger asChild>
                                   <FormControl>
@@ -2241,13 +2212,13 @@ export default function ClientInvoiceDetail() {
                                       variant="outline"
                                       size="sm"
                                       className={cn(
-                                        "justify-start text-left font-normal text-sm",
+                                        "h-7 justify-start text-left font-normal text-[11px]",
                                         !field.value && "text-muted-foreground"
                                       )}
                                       data-testid="button-invoice-date"
                                     >
-                                      <CalendarIcon className="mr-2 h-4 w-4" />
-                                      {field.value ? format(field.value, "PPP") : "Pick a date"}
+                                      <CalendarIcon className="mr-1.5 h-3 w-3" />
+                                      {field.value ? format(field.value, "d MMM yyyy") : "Pick a date"}
                                     </Button>
                                   </FormControl>
                                 </PopoverTrigger>
@@ -2278,7 +2249,7 @@ export default function ClientInvoiceDetail() {
                           name="dueDate"
                           render={({ field }) => (
                             <FormItem className="flex flex-col">
-                              <FormLabel className="h-4 leading-none flex items-center text-table text-muted-foreground/70 uppercase tracking-wide font-medium">Due Date</FormLabel>
+                              <FormLabel className="h-4 leading-none flex items-center text-[9px] text-muted-foreground uppercase tracking-wide font-semibold">Due Date</FormLabel>
                               <Popover open={dueDateOpen} onOpenChange={(open) => { setDueDateOpen(open); if (!open) setDueDateCustom(false); }}>
                                 <PopoverTrigger asChild>
                                   <FormControl>
@@ -2286,13 +2257,13 @@ export default function ClientInvoiceDetail() {
                                       variant="outline"
                                       size="sm"
                                       className={cn(
-                                        "justify-start text-left font-normal text-sm",
+                                        "h-7 justify-start text-left font-normal text-[11px]",
                                         !field.value && "text-muted-foreground"
                                       )}
                                       data-testid="button-due-date"
                                     >
-                                      <CalendarIcon className="mr-2 h-4 w-4" />
-                                      {field.value ? format(field.value, "PPP") : "Pick a date"}
+                                      <CalendarIcon className="mr-1.5 h-3 w-3" />
+                                      {field.value ? format(field.value, "d MMM yyyy") : "Pick a date"}
                                     </Button>
                                   </FormControl>
                                 </PopoverTrigger>
@@ -2366,18 +2337,14 @@ export default function ClientInvoiceDetail() {
                             </FormItem>
                           )}
                         />
-                        <div />
-                      </div>
-
-                      {/* Invoice Type toggle — subtle pill */}
-                      <div className="flex items-center gap-1.5 pt-0.5">
-                        <span className="text-data text-muted-foreground/40 uppercase tracking-wide">Type:</span>
-                        <div className="flex items-center rounded-full border border-border/50 overflow-hidden">
+                        <div className="flex flex-col">
+                          <span className="h-4 leading-none flex items-center text-[9px] text-muted-foreground uppercase tracking-wide font-semibold">Type</span>
+                          <div className="flex items-center h-7 rounded-md border border-border/60 overflow-hidden w-fit">
                           <button
                             type="button"
                             onClick={() => setInvoiceType("progress_payments")}
                             className={cn(
-                              "px-2.5 py-0.5 text-table leading-none transition-colors",
+                              "px-2.5 py-0.5 text-table leading-none whitespace-nowrap transition-colors",
                               invoiceType === "progress_payments"
                                 ? "bg-muted text-foreground font-medium"
                                 : "text-muted-foreground/50 hover:text-muted-foreground"
@@ -2390,7 +2357,7 @@ export default function ClientInvoiceDetail() {
                             type="button"
                             onClick={() => setInvoiceType("cost_plus")}
                             className={cn(
-                              "px-2.5 py-0.5 text-table leading-none transition-colors",
+                              "px-2.5 py-0.5 text-table leading-none whitespace-nowrap transition-colors",
                               invoiceType === "cost_plus"
                                 ? "bg-muted text-foreground font-medium"
                                 : "text-muted-foreground/50 hover:text-muted-foreground"
@@ -2398,9 +2365,39 @@ export default function ClientInvoiceDetail() {
                           >
                             Cost Plus
                           </button>
+                          </div>
                         </div>
                       </div>
                     </div>
+
+                    {/* Bill To — static context, so it reads as a panel rather than
+                        another card with its own header bar. */}
+                    {(currentProject || clientContact) && (
+                      <div className="rounded-md border border-border/60 bg-muted/30 px-3 py-2.5 space-y-2">
+                        <div className="text-[9px] text-muted-foreground uppercase tracking-wide font-semibold">Bill To</div>
+                        {clientContact && (
+                          <div className="min-w-0">
+                            <div className="text-[11px] font-semibold truncate">{clientContact.name}</div>
+                            {clientContact.company && (
+                              <div className="text-[11px] text-muted-foreground truncate">{clientContact.company}</div>
+                            )}
+                            {(clientContact.addressFormatted || clientContact.address) && (
+                              <div className="text-[11px] text-muted-foreground truncate">{clientContact.addressFormatted || clientContact.address}</div>
+                            )}
+                          </div>
+                        )}
+                        {currentProject && (
+                          <div className="min-w-0 pt-1.5 border-t border-border/50">
+                            <div className="text-[9px] text-muted-foreground uppercase tracking-wide font-semibold">Project</div>
+                            <div className="text-[11px] font-medium truncate">{(currentProject as any).name}</div>
+                            {(currentProject as any).location && (
+                              <div className="text-[11px] text-muted-foreground truncate">{(currentProject as any).location}</div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
 
                   {/* Introduction Text — collapsible */}
                   <div className="border-t border-border/50">
@@ -4657,8 +4654,8 @@ export default function ClientInvoiceDetail() {
                             )}
                             data-testid="button-payment-date"
                           >
-                            <CalendarIcon className="mr-2 h-4 w-4" />
-                            {field.value ? format(field.value, "PPP") : "Pick a date"}
+                            <CalendarIcon className="mr-1.5 h-3 w-3" />
+                            {field.value ? format(field.value, "d MMM yyyy") : "Pick a date"}
                           </Button>
                         </FormControl>
                       </PopoverTrigger>
