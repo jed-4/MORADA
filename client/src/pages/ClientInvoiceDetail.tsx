@@ -2399,44 +2399,6 @@ export default function ClientInvoiceDetail() {
                     )}
                   </div>
 
-                  {/* Introduction Text — collapsible */}
-                  <div className="border-t border-border/50">
-                    <div
-                      className="h-8 flex items-center justify-between px-3 gap-2 cursor-pointer"
-                      onClick={() => setIntroCollapsed((v) => !v)}
-                    >
-                      <div className="flex items-center gap-2">
-                        <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-teal/70" />
-                        <span className="text-xs font-medium">Introduction</span>
-                      </div>
-                      {introCollapsed ? (
-                        <ChevronDown className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
-                      ) : (
-                        <ChevronUp className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
-                      )}
-                    </div>
-                    {!introCollapsed && (
-                      <div className="px-4 pb-3">
-                        <FormField
-                          control={form.control}
-                          name="introductionText"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormControl>
-                                <RichTextEditor
-                                  content={field.value || ""}
-                                  onChange={(html) => field.onChange(html)}
-                                  placeholder="Enter introduction text..."
-                                  data-testid="editor-introduction"
-                                />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                      </div>
-                    )}
-                  </div>
 
                 </div>{/* end Card 1 — Invoice Info */}
 
@@ -3674,12 +3636,128 @@ export default function ClientInvoiceDetail() {
                     </div>
                   </div>{/* end summary content */}
               </div>{/* end summary-panel */}
-              </div>{/* end Card 2: Financials */}
+              </div>{/* end Act 2: Money */}
 
-              {/* ── Card 3: Documentation ── */}
+                {/* Payments — money, so it sits with the financials, not adrift
+                   at the bottom of the page. */}
+                {isEditMode && (
+                  <div className="rounded-lg border border-border bg-card overflow-hidden" data-testid="section-payments-history">
+                    <div className="h-8 flex items-center justify-between px-3 gap-2 border-b border-border/50">
+                      <div className="flex items-center gap-2">
+                        <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-sage/70" />
+                        <span className="text-xs font-medium">Payments ({payments.length})</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setPaymentDialogOpen(true)}
+                        className="h-6 px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-0.5"
+                        data-testid="button-record-payment"
+                      >
+                        <Plus className="w-3 h-3" />
+                        <span>Record Payment</span>
+                      </button>
+                    </div>
+                    <div className="px-4 py-3">
+                      {payments.length > 0 ? (
+                        <Table>
+                          <TableHeader>
+                            <TableRow className="[&>th]:border-b-2 [&>th]:border-border [&>th]:text-foreground/75 [&>th]:font-semibold">
+                              <TableHead>Date</TableHead>
+                              <TableHead className="text-right">Amount</TableHead>
+                              <TableHead>Method</TableHead>
+                              <TableHead>Reference</TableHead>
+                              <TableHead className="w-16 py-0 px-2" />
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {payments.map((payment) => (
+                              <TableRow key={payment.id} className={cn("h-9", (payment as any).isVoided && "opacity-50")}>
+                                <TableCell className="text-table px-2">
+                                  {payment.paymentDate
+                                    ? format(new Date(payment.paymentDate), "d MMM yyyy")
+                                    : "-"}
+                                </TableCell>
+                                <TableCell className={cn("text-right text-sm font-medium px-2", (payment as any).isVoided && "line-through")}>
+                                  {formatCurrency(payment.amount / 100)}
+                                </TableCell>
+                                <TableCell className="text-table text-muted-foreground px-2">
+                                  {payment.paymentMethod || "-"}
+                                </TableCell>
+                                <TableCell className="text-table text-muted-foreground px-2">
+                                  {payment.reference || "-"}
+                                </TableCell>
+                                <TableCell className="px-2 w-16">
+                                  {(payment as any).isVoided ? (
+                                    <Badge variant="secondary" className="text-data h-4 px-1.5">Voided</Badge>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() => voidPaymentMutation.mutate(payment.id)}
+                                      disabled={voidPaymentMutation.isPending}
+                                      className="h-5 px-1.5 text-data border rounded text-muted-foreground hover-elevate flex items-center gap-0.5"
+                                      data-testid={`button-void-payment-${payment.id}`}
+                                    >
+                                      Void
+                                    </button>
+                                  )}
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      ) : (
+                        <p className="text-table text-muted-foreground text-center py-2">
+                          No payments recorded
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+              {/* ── Act 3: Presentation — everything that shapes how the invoice
+                   reads to the client. All collapsible, all closed by default. ── */}
               <div className="rounded-lg border border-border bg-card overflow-hidden">
-                {/* Closing Text sub-section */}
+                  {/* Introduction — presentation, so it lives with Closing/Terms */}
                 <div>
+                  <div
+                    className="h-8 flex items-center justify-between px-3 gap-2 border-b border-border/50 cursor-pointer bg-muted/40"
+                    onClick={() => setIntroCollapsed((v) => !v)}
+                  >
+                    <div className="flex items-center gap-2">
+                      <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-teal/70" />
+                      <span className="text-xs font-medium">Introduction</span>
+                    </div>
+                    {introCollapsed ? (
+                      <ChevronDown className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+                    ) : (
+                      <ChevronUp className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+                    )}
+                  </div>
+                  {!introCollapsed && (
+                    <div className="px-4 py-3">
+                      <FormField
+                        control={form.control}
+                        name="introductionText"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormControl>
+                              <RichTextEditor
+                                content={field.value || ""}
+                                onChange={(html) => field.onChange(html)}
+                                placeholder="Enter introduction text..."
+                                data-testid="editor-introduction"
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+                  )}
+                </div>
+
+                {/* Closing Text sub-section */}
+                <div className="border-t border-border/50">
                   <div
                     className="h-8 flex items-center justify-between px-3 gap-2 border-b border-border/50 cursor-pointer bg-muted/40"
                     onClick={() => setClosingCollapsed((v) => !v)}
@@ -3805,82 +3883,8 @@ export default function ClientInvoiceDetail() {
                     </div>
                   )}
                 </div>
-              </div>{/* end Card 3: Documentation */}
+              </div>{/* end Act 3: Presentation */}
 
-                {/* ── Card 5: Payments ── */}
-                {isEditMode && (
-                  <div className="rounded-lg border border-border bg-card overflow-hidden" data-testid="section-payments-history">
-                    <div className="h-8 flex items-center justify-between px-3 gap-2 border-b border-border/50">
-                      <div className="flex items-center gap-2">
-                        <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-sage/70" />
-                        <span className="text-xs font-medium">Payments ({payments.length})</span>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => setPaymentDialogOpen(true)}
-                        className="h-6 px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-0.5"
-                        data-testid="button-record-payment"
-                      >
-                        <Plus className="w-3 h-3" />
-                        <span>Record Payment</span>
-                      </button>
-                    </div>
-                    <div className="px-4 py-3">
-                      {payments.length > 0 ? (
-                        <Table>
-                          <TableHeader>
-                            <TableRow className="[&>th]:border-b-2 [&>th]:border-border [&>th]:text-foreground/75 [&>th]:font-semibold">
-                              <TableHead>Date</TableHead>
-                              <TableHead className="text-right">Amount</TableHead>
-                              <TableHead>Method</TableHead>
-                              <TableHead>Reference</TableHead>
-                              <TableHead className="w-16 py-0 px-2" />
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                            {payments.map((payment) => (
-                              <TableRow key={payment.id} className={cn("h-9", (payment as any).isVoided && "opacity-50")}>
-                                <TableCell className="text-table px-2">
-                                  {payment.paymentDate
-                                    ? format(new Date(payment.paymentDate), "d MMM yyyy")
-                                    : "-"}
-                                </TableCell>
-                                <TableCell className={cn("text-right text-sm font-medium px-2", (payment as any).isVoided && "line-through")}>
-                                  {formatCurrency(payment.amount / 100)}
-                                </TableCell>
-                                <TableCell className="text-table text-muted-foreground px-2">
-                                  {payment.paymentMethod || "-"}
-                                </TableCell>
-                                <TableCell className="text-table text-muted-foreground px-2">
-                                  {payment.reference || "-"}
-                                </TableCell>
-                                <TableCell className="px-2 w-16">
-                                  {(payment as any).isVoided ? (
-                                    <Badge variant="secondary" className="text-data h-4 px-1.5">Voided</Badge>
-                                  ) : (
-                                    <button
-                                      type="button"
-                                      onClick={() => voidPaymentMutation.mutate(payment.id)}
-                                      disabled={voidPaymentMutation.isPending}
-                                      className="h-5 px-1.5 text-data border rounded text-muted-foreground hover-elevate flex items-center gap-0.5"
-                                      data-testid={`button-void-payment-${payment.id}`}
-                                    >
-                                      Void
-                                    </button>
-                                  )}
-                                </TableCell>
-                              </TableRow>
-                            ))}
-                          </TableBody>
-                        </Table>
-                      ) : (
-                        <p className="text-table text-muted-foreground text-center py-2">
-                          No payments recorded
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                )}
 
             </div>
           </div>
