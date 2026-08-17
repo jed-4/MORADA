@@ -1827,7 +1827,8 @@ export default function ClientInvoiceDetail() {
   // One bar so the sections can't drift apart the way the grids had.
   const sectionHeader = (opts: {
     label: string;
-    dot: string;
+    /** "card" titles a whole card; "section" titles a band inside one. */
+    variant?: "card" | "section";
     right?: ReactNode;
     icon?: ReactNode;
     onToggle?: () => void;
@@ -1836,16 +1837,25 @@ export default function ClientInvoiceDetail() {
   }) => (
     <div
       className={cn(
-        "h-8 flex items-center justify-between px-3 gap-2 border-b border-border/50 bg-muted/40",
+        "flex items-center justify-between px-3 gap-2 border-b border-border/50",
+        opts.variant === "card" ? "h-9 bg-card" : "h-8 bg-muted/40",
         opts.onToggle && "cursor-pointer",
       )}
       onClick={opts.onToggle}
       data-testid={opts.testId}
     >
       <div className="flex items-center gap-2 min-w-0">
-        <div className={cn("w-1.5 h-1.5 rounded-full flex-shrink-0", opts.dot)} />
         {opts.icon}
-        <span className="text-xs font-medium truncate">{opts.label}</span>
+        <span
+          className={cn(
+            "truncate",
+            opts.variant === "card"
+              ? "text-xs font-semibold text-foreground uppercase tracking-wide"
+              : "text-xs font-medium text-muted-foreground",
+          )}
+        >
+          {opts.label}
+        </span>
       </div>
       <div className="flex items-center gap-2 flex-shrink-0">
         {opts.right}
@@ -2112,7 +2122,7 @@ export default function ClientInvoiceDetail() {
                 <div className="rounded-lg border border-border bg-card overflow-hidden">
 
                   {/* Section header */}
-                  {sectionHeader({ label: "Invoice Info", dot: "bg-primary/80" })}
+                  {sectionHeader({ label: "Invoice Info", variant: "card" })}
 
                   {/* Invoice Name + Number + Dates, with the recipient alongside —
                       an invoice header is "who" and "which invoice" read together,
@@ -2183,7 +2193,7 @@ export default function ClientInvoiceDetail() {
                                   className={cn(
                                     "h-7 text-[11px]",
                                     !invoiceNumberOverride && !isEditMode
-                                      ? "bg-muted text-muted-foreground cursor-default"
+                                      ? "text-muted-foreground cursor-default"
                                       : ""
                                   )}
                                   data-testid="input-invoice-number"
@@ -2210,7 +2220,8 @@ export default function ClientInvoiceDetail() {
                                       variant="outline"
                                       size="sm"
                                       className={cn(
-                                        "h-7 justify-start text-left font-normal text-[11px]",
+                                        "h-7 min-h-7 w-full justify-start text-left font-normal text-[11px] px-2",
+                                        "border-input bg-background hover:bg-background",
                                         !field.value && "text-muted-foreground"
                                       )}
                                       data-testid="button-invoice-date"
@@ -2255,7 +2266,8 @@ export default function ClientInvoiceDetail() {
                                       variant="outline"
                                       size="sm"
                                       className={cn(
-                                        "h-7 justify-start text-left font-normal text-[11px]",
+                                        "h-7 min-h-7 w-full justify-start text-left font-normal text-[11px] px-2",
+                                        "border-input bg-background hover:bg-background",
                                         !field.value && "text-muted-foreground"
                                       )}
                                       data-testid="button-due-date"
@@ -2335,7 +2347,7 @@ export default function ClientInvoiceDetail() {
                             </FormItem>
                           )}
                         />
-                        <div className="flex flex-col">
+                        <div className="flex flex-col space-y-2">
                           <span className="h-4 leading-none flex items-center text-[9px] text-muted-foreground uppercase tracking-wide font-semibold">Type</span>
                           <div className="flex items-center h-7 rounded-md border border-input overflow-hidden w-full bg-background">
                           <button
@@ -2344,7 +2356,7 @@ export default function ClientInvoiceDetail() {
                             className={cn(
                               "flex-1 h-full text-[11px] leading-none whitespace-nowrap transition-colors",
                               invoiceType === "progress_payments"
-                                ? "bg-muted text-foreground font-medium"
+                                ? "bg-primary text-primary-foreground font-medium"
                                 : "text-muted-foreground hover:text-foreground"
                             )}
                           >
@@ -2357,7 +2369,7 @@ export default function ClientInvoiceDetail() {
                             className={cn(
                               "flex-1 h-full text-[11px] leading-none whitespace-nowrap transition-colors",
                               invoiceType === "cost_plus"
-                                ? "bg-muted text-foreground font-medium"
+                                ? "bg-primary text-primary-foreground font-medium"
                                 : "text-muted-foreground hover:text-foreground"
                             )}
                           >
@@ -2405,7 +2417,6 @@ export default function ClientInvoiceDetail() {
                       onClick={() => setIntroCollapsed((v) => !v)}
                     >
                       <div className="flex items-center gap-2">
-                        <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-teal/70" />
                         <span className="text-xs font-medium">Introduction</span>
                       </div>
                       {introCollapsed ? (
@@ -2442,7 +2453,7 @@ export default function ClientInvoiceDetail() {
 
                 {/* Card 2 — Financials */}
                 <div className="rounded-lg border border-border bg-card overflow-hidden">
-                  {sectionHeader({ label: "Financials", dot: "bg-sage/70" })}
+                  {sectionHeader({ label: "Financials", variant: "card" })}
 
                 {invoiceType === "progress_payments" && (
                   <>
@@ -2450,7 +2461,6 @@ export default function ClientInvoiceDetail() {
                     <div data-testid="section-contract-price">
                       <div className="h-8 flex items-center justify-between px-3 gap-2 border-b border-border/50 bg-muted/40">
                         <div className="flex items-center gap-2">
-                          <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-primary/70" />
                           <span className="text-xs font-medium">Contract Price</span>
                           {!!getEffectiveContractPrice() && (
                             <Tooltip>
@@ -2694,7 +2704,6 @@ export default function ClientInvoiceDetail() {
                     <div className="border-t border-border/50" data-testid="section-variations">
                       {sectionHeader({
                         label: "Variations",
-                        dot: "bg-amber/70",
                         right: (
                           <>
                             {selectedVariationIds.length > 0 && (
@@ -2778,7 +2787,6 @@ export default function ClientInvoiceDetail() {
                     <div className="border-t border-border/50" data-testid="section-allowances">
                       {sectionHeader({
                         label: "Allowances",
-                        dot: "bg-sage/70",
                         right: (
                           <>
                             {selectedAllowanceIds.length > 0 && (
@@ -2862,7 +2870,6 @@ export default function ClientInvoiceDetail() {
                     <div className="border-t border-border/50" data-testid="section-labour">
                       <div className="h-8 flex items-center justify-between px-3 gap-2 border-b border-border/50 bg-muted/40">
                         <div className="flex items-center gap-2">
-                          <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-sage/70" />
                           <span className="text-xs font-medium">Labour</span>
                           {selectedTimesheetIds.length > 0 && (
                             <span className="text-xs tabular-nums text-muted-foreground">
@@ -3063,7 +3070,6 @@ export default function ClientInvoiceDetail() {
                     <div className="border-t border-border/50" data-testid="section-bills">
                       <div className="h-8 flex items-center justify-between px-3 gap-2 border-b border-border/50 bg-muted/40">
                         <div className="flex items-center gap-2">
-                          <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-amber/70" />
                           <span className="text-xs font-medium">Bills</span>
                           {selectedBillIds.length > 0 && (
                             <span className="text-xs tabular-nums text-muted-foreground">
@@ -3118,7 +3124,6 @@ export default function ClientInvoiceDetail() {
                     <div className="border-t border-border/50" data-testid="section-selections">
                       <div className="h-8 flex items-center justify-between px-3 gap-2 border-b border-border/50 bg-muted/40">
                         <div className="flex items-center gap-2">
-                          <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-primary/80" />
                           <span className="text-xs font-medium">Selections</span>
                           {selectedSelectionOptionIds.length > 0 && (
                             <span className="text-xs tabular-nums text-muted-foreground">
@@ -3177,7 +3182,6 @@ export default function ClientInvoiceDetail() {
                 <div className="border-t border-border/50" data-testid="section-custom-lines">
                   <div className="h-8 flex items-center justify-between px-3 gap-2 border-b border-border/50 bg-muted/40">
                     <div className="flex items-center gap-2">
-                      <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-primary/70" />
                       <span className="text-xs font-medium">Custom Lines</span>
                     </div>
                     <div className="flex items-center gap-1.5">
@@ -3420,7 +3424,6 @@ export default function ClientInvoiceDetail() {
                 return (
                   <div data-testid="xero-accounts-panel">
                     <div className="h-8 flex items-center px-3 gap-2 border-b border-border/50 bg-muted/40">
-                      <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-status-info/80" />
                       <span className="text-xs font-medium flex items-center gap-1">
                         <SiXero className="w-3 h-3" />
                         Xero Accounts
@@ -3484,7 +3487,6 @@ export default function ClientInvoiceDetail() {
               <div data-testid="summary-panel">
                 <div className="bg-primary/10 px-4 py-3 flex items-center justify-between gap-4">
                   <div className="flex items-center gap-2">
-                    <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-primary/80" />
                     <span className="text-xs font-medium">Invoice Summary</span>
                   </div>
                   <div className="flex items-center gap-1.5 text-xs">
@@ -3676,7 +3678,6 @@ export default function ClientInvoiceDetail() {
                   <div className="rounded-lg border border-border bg-card overflow-hidden" data-testid="section-payments-history">
                     <div className="h-8 flex items-center justify-between px-3 gap-2 border-b border-border/50">
                       <div className="flex items-center gap-2">
-                        <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-sage/70" />
                         <span className="text-xs font-medium">Payments ({payments.length})</span>
                       </div>
                       <button
@@ -3756,7 +3757,6 @@ export default function ClientInvoiceDetail() {
                     onClick={() => setClosingCollapsed((v) => !v)}
                   >
                     <div className="flex items-center gap-2">
-                      <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-amber/70" />
                       <span className="text-xs font-medium">Closing Text</span>
                     </div>
                     {closingCollapsed ? (
@@ -3795,7 +3795,6 @@ export default function ClientInvoiceDetail() {
                     onClick={() => setTermsCollapsed((v) => !v)}
                   >
                     <div className="flex items-center gap-2">
-                      <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-muted-foreground/40" />
                       <span className="text-xs font-medium">Terms &amp; Conditions</span>
                     </div>
                     {termsCollapsed ? (
@@ -3863,7 +3862,6 @@ export default function ClientInvoiceDetail() {
                 <div className="border-t border-border/50" data-testid="section-attachments">
                   {sectionHeader({
                     label: "Attachments",
-                    dot: "bg-muted-foreground/40",
                     icon: <Paperclip className="h-3 w-3 text-muted-foreground flex-shrink-0" />,
                     onToggle: () => setAttachmentsCollapsed((v) => !v),
                     collapsed: attachmentsCollapsed,
