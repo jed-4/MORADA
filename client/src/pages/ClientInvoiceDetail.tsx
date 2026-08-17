@@ -264,6 +264,7 @@ export default function ClientInvoiceDetail() {
   const [introCollapsed, setIntroCollapsed] = useState(true);
   const [closingCollapsed, setClosingCollapsed] = useState(true);
   const [termsCollapsed, setTermsCollapsed] = useState(true);
+  const [attachmentsCollapsed, setAttachmentsCollapsed] = useState(true);
   const [termsAndConditions, setTermsAndConditions] = useState<string>("");
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>("");
   const [invoiceNumberOverride, setInvoiceNumberOverride] = useState(false);
@@ -1821,6 +1822,56 @@ export default function ClientInvoiceDetail() {
     return cols;
   };
 
+  // Section header bar shared by every sub-section: accent dot, label, and a
+  // right-hand slot for the section total, its action, or a collapse chevron.
+  // One bar so the sections can't drift apart the way the grids had.
+  const sectionHeader = (opts: {
+    label: string;
+    dot: string;
+    right?: ReactNode;
+    icon?: ReactNode;
+    onToggle?: () => void;
+    collapsed?: boolean;
+    testId?: string;
+  }) => (
+    <div
+      className={cn(
+        "h-8 flex items-center justify-between px-3 gap-2 border-b border-border/50 bg-muted/40",
+        opts.onToggle && "cursor-pointer",
+      )}
+      onClick={opts.onToggle}
+      data-testid={opts.testId}
+    >
+      <div className="flex items-center gap-2 min-w-0">
+        <div className={cn("w-1.5 h-1.5 rounded-full flex-shrink-0", opts.dot)} />
+        {opts.icon}
+        <span className="text-xs font-medium truncate">{opts.label}</span>
+      </div>
+      <div className="flex items-center gap-2 flex-shrink-0">
+        {opts.right}
+        {opts.collapsed !== undefined &&
+          (opts.collapsed ? (
+            <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+          ) : (
+            <ChevronUp className="h-3.5 w-3.5 text-muted-foreground" />
+          ))}
+      </div>
+    </div>
+  );
+
+  // The action that opens a picker, sized to sit in a section header.
+  const sectionAction = (label: string, onClick: () => void, testId: string) => (
+    <button
+      type="button"
+      onClick={(e) => { e.stopPropagation(); onClick(); }}
+      className="h-6 px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
+      data-testid={testId}
+    >
+      <Plus className="w-3 h-3" />
+      {label}
+    </button>
+  );
+
   // Header treatment shared by every line grid on this page, matched to the
   // allowance grid (LineItemsTable): 9px uppercase semibold in muted-foreground
   // — literal 9px, not the `text-label` token, because tailwind-merge reads
@@ -2648,33 +2699,29 @@ export default function ClientInvoiceDetail() {
 
                     {/* Variations sub-section */}
                     <div className="border-t border-border/50" data-testid="section-variations">
-                      <div className="h-8 flex items-center justify-between px-3 gap-2 border-b border-border/50 bg-muted/40">
-                        <div className="flex items-center gap-2">
-                          <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-amber/70" />
-                          <span className="text-xs font-medium">Variations</span>
-                        </div>
-                        {selectedVariationIds.length > 0 && (
-                          <span className="text-xs font-medium tabular-nums text-muted-foreground">
-                            {formatCurrency(calculateVariationsTotal() / 100)}
-                          </span>
-                        )}
-                      </div>
+                      {sectionHeader({
+                        label: "Variations",
+                        dot: "bg-amber/70",
+                        right: (
+                          <>
+                            {selectedVariationIds.length > 0 && (
+                              <span className="text-xs font-medium tabular-nums text-muted-foreground">
+                                {formatCurrency(calculateVariationsTotal() / 100)}
+                              </span>
+                            )}
+                            {sectionAction(
+                              selectedVariationIds.length === 0 ? "Select Variations" : "Add",
+                              () => setVariationsModalOpen(true),
+                              "button-select-variations",
+                            )}
+                          </>
+                        ),
+                      })}
 
-                      <div className="px-4 py-3">
-                        {selectedVariationIds.length === 0 ? (
-                          <div className="py-1.5 flex items-center gap-3">
-                            <button
-                              type="button"
-                              onClick={() => setVariationsModalOpen(true)}
-                              className="h-7 px-3 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1.5"
-                              data-testid="button-select-variations"
-                            >
-                              <Plus className="w-3 h-3" />
-                              Select Variations
-                            </button>
-                            <span className="text-xs text-muted-foreground/50">No approved variations selected</span>
-                          </div>
-                        ) : (
+                      {/* Nothing selected renders no body — the header carries the
+                          action, so an unused section costs one row, not a panel. */}
+                      {selectedVariationIds.length > 0 && (
+                        <div className="px-4 py-3">
                           <>
                             {renderClaimGrid(
                               getSelectedVariations().map((variation) => {
@@ -2729,51 +2776,34 @@ export default function ClientInvoiceDetail() {
                                     )}
                               </span>
                             </div>
-                            <div className="pt-1.5">
-                              <button
-                                type="button"
-                                onClick={() => setVariationsModalOpen(true)}
-                                className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors"
-                                data-testid="button-select-variations"
-                              >
-                                <Plus className="w-3 h-3" />
-                                Add more variations
-                              </button>
-                            </div>
                           </>
-                        )}
-                      </div>{/* end variations content */}
+                        </div>
+                      )}{/* end variations content */}
                     </div>{/* end variations sub-section */}
 
                     {/* Allowances sub-section */}
                     <div className="border-t border-border/50" data-testid="section-allowances">
-                      <div className="h-8 flex items-center justify-between px-3 gap-2 border-b border-border/50 bg-muted/40">
-                        <div className="flex items-center gap-2">
-                          <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-sage/70" />
-                          <span className="text-xs font-medium">Allowances</span>
-                        </div>
-                        {selectedAllowanceIds.length > 0 && (
-                          <span className="text-xs font-medium tabular-nums text-muted-foreground">
-                            {formatCurrency(calculateAllowancesTotal() / 100)}
-                          </span>
-                        )}
-                      </div>
+                      {sectionHeader({
+                        label: "Allowances",
+                        dot: "bg-sage/70",
+                        right: (
+                          <>
+                            {selectedAllowanceIds.length > 0 && (
+                              <span className="text-xs font-medium tabular-nums text-muted-foreground">
+                                {formatCurrency(calculateAllowancesTotal() / 100)}
+                              </span>
+                            )}
+                            {sectionAction(
+                              selectedAllowanceIds.length === 0 ? "Select Allowances" : "Add",
+                              () => setAllowancesModalOpen(true),
+                              "button-select-allowances",
+                            )}
+                          </>
+                        ),
+                      })}
 
-                      <div className="px-4 py-3">
-                        {selectedAllowanceIds.length === 0 ? (
-                          <div className="py-1.5 flex items-center gap-3">
-                            <button
-                              type="button"
-                              onClick={() => setAllowancesModalOpen(true)}
-                              className="h-7 px-3 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1.5"
-                              data-testid="button-select-allowances"
-                            >
-                              <Plus className="w-3 h-3" />
-                              Select Allowances
-                            </button>
-                            <span className="text-xs text-muted-foreground/50">No finalized allowances selected</span>
-                          </div>
-                        ) : (
+                      {selectedAllowanceIds.length > 0 && (
+                        <div className="px-4 py-3">
                           <>
                             {renderClaimGrid(
                               getSelectedAllowanceItems().map((item) => ({
@@ -2825,20 +2855,9 @@ export default function ClientInvoiceDetail() {
                                     )}
                               </span>
                             </div>
-                            <div className="pt-1.5">
-                              <button
-                                type="button"
-                                onClick={() => setAllowancesModalOpen(true)}
-                                className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors"
-                                data-testid="button-select-allowances"
-                              >
-                                <Plus className="w-3 h-3" />
-                                Add more allowances
-                              </button>
-                            </div>
                           </>
-                        )}
-                      </div>{/* end allowances content */}
+                        </div>
+                      )}{/* end allowances content */}
                     </div>{/* end allowances sub-section */}
                   </>
                 )}
@@ -3774,18 +3793,20 @@ export default function ClientInvoiceDetail() {
 
                 {/* Attachments sub-section */}
                 <div className="border-t border-border/50" data-testid="section-attachments">
-                  <div className="h-8 flex items-center justify-between px-3 gap-2 border-b border-border/50 bg-muted/40">
-                    <div className="flex items-center gap-2">
-                      <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-muted-foreground/40" />
-                      <Paperclip className="h-3 w-3 text-muted-foreground flex-shrink-0" />
-                      <span className="text-xs font-medium">Attachments</span>
+                  {sectionHeader({
+                    label: "Attachments",
+                    dot: "bg-muted-foreground/40",
+                    icon: <Paperclip className="h-3 w-3 text-muted-foreground flex-shrink-0" />,
+                    onToggle: () => setAttachmentsCollapsed((v) => !v),
+                    collapsed: attachmentsCollapsed,
+                  })}
+                  {!attachmentsCollapsed && (
+                    <div className="px-4 py-3">
+                      <p className="text-table text-muted-foreground text-center py-2">
+                        No attachments
+                      </p>
                     </div>
-                  </div>
-                  <div className="px-4 py-3">
-                    <p className="text-table text-muted-foreground text-center py-2">
-                      No attachments
-                    </p>
-                  </div>
+                  )}
                 </div>
               </div>{/* end Card 3: Documentation */}
 
