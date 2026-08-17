@@ -100,6 +100,7 @@ import {
   formatVarianceCents,
   ProgressStrip,
 } from "@/components/selections/selectionHelpers";
+import { useSelectionPdfExport } from "@/components/selections/useSelectionPdfExport";
 import {
   SortableSelectionRow,
   type SelectionColumnVisibility,
@@ -149,6 +150,7 @@ function StatCard({ value, label, variant, active = false, onClick, testId }: St
 // ───────────────────────────────────────────────────────────────────────
 
 export default function Selections() {
+  const { exportPdf, isExporting: isExportingPdf } = useSelectionPdfExport();
   const [searchTerm, setSearchTerm] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string>("");
   const [statusTab, setStatusTab] = useState<"all" | DerivedStatus>("all");
@@ -1033,9 +1035,9 @@ export default function Selections() {
                     <DropdownMenuItem
                       onClick={async () => {
                         try {
-                          const res = await fetch(`/api/projects/${projectId}/trades-portal-token`, { method: "POST" });
-                          if (!res.ok) throw new Error();
-                          const { url } = await res.json();
+                          // Route is registered app.get — a POST misses it and falls
+                          // through to the SPA catch-all, which returns HTML.
+                          const { url } = await apiRequest(`/api/projects/${projectId}/trades-portal-token`, "GET");
                           await navigator.clipboard.writeText(url);
                           toast({ title: "Trades portal link copied!", description: "Share this link with your trades." });
                         } catch {
@@ -1047,10 +1049,16 @@ export default function Selections() {
                       Copy Trades View Link
                     </DropdownMenuItem>
                     <DropdownMenuItem
-                      onClick={() => window.open(`/api/selections/project/${projectId}/pdf`, "_blank")}
+                      onSelect={(e) => e.preventDefault()}
+                      disabled={isExportingPdf}
+                      onClick={() => exportPdf(`/api/selections/project/${projectId}/pdf`, "selections_schedule.pdf")}
                     >
-                      <FileText className="w-3.5 h-3.5 mr-2" />
-                      Export Schedule PDF
+                      {isExportingPdf ? (
+                        <Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" />
+                      ) : (
+                        <FileText className="w-3.5 h-3.5 mr-2" />
+                      )}
+                      {isExportingPdf ? "Exporting…" : "Export Schedule PDF"}
                     </DropdownMenuItem>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem

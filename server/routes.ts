@@ -1,5 +1,7 @@
 import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
+import * as Sentry from "@sentry/node";
+import { sentryEnabled } from "./instrument";
 import { storage, InvalidProposalStateError, calendarDateMidnightUtcInTz } from "./storage";
 import { timesheetHours, timesheetTotalExGstCents, exGstFromInc, incGstFromEx, gstSplit } from "@shared/money";
 import { db, pool } from "./db";
@@ -1446,6 +1448,26 @@ async function generateSelectionPdf(
   } finally {
     await browser.close();
   }
+}
+
+// Both PDF routes swallow their errors to return a clean 500, so nothing ever
+// reached the error middleware that reports to Sentry — a 100%-failing export
+// stayed invisible. Report explicitly. `scope` carries the identifiers needed
+// to tell a missing-browser failure apart from a bad-data one.
+function reportPdfFailure(
+  error: unknown,
+  req: any,
+  scope: { route: string; selectionId?: string; projectId?: string },
+): void {
+  console.error(`PDF generation error (${scope.route}):`, error);
+  if (!sentryEnabled) return;
+  Sentry.withScope((s) => {
+    s.setTag("feature", "selections_pdf");
+    s.setTag("route", scope.route);
+    if (req?.user?.companyId) s.setTag("company_id", req.user.companyId);
+    s.setContext("pdf_export", scope);
+    Sentry.captureException(error instanceof Error ? error : new Error(String(error)));
+  });
 }
 
 // ── Morada AI ─────────────────────────────────────────
@@ -14707,7 +14729,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.set("Content-Disposition", `attachment; filename="${selection.name.replace(/[^a-z0-9]/gi, "_")}.pdf"`);
       res.send(pdfBuffer);
     } catch (error) {
-      console.error("PDF generation error:", error);
+      reportPdfFailure(error, req, {
+        route: "GET /api/selections/:id/pdf",
+        selectionId: req.params.id,
+      });
       res.status(500).json({ error: "Failed to generate PDF" });
     }
   });
@@ -14731,7 +14756,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.set("Content-Disposition", `attachment; filename="${fname}_schedule.pdf"`);
       res.send(pdfBuffer);
     } catch (error) {
-      console.error("PDF schedule generation error:", error);
+      reportPdfFailure(error, req, {
+        route: "GET /api/selections/project/:projectId/pdf",
+        projectId: req.params.projectId,
+      });
       res.status(500).json({ error: "Failed to generate PDF" });
     }
   });
