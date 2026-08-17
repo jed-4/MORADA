@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, useMemo } from "react";
+import { useEffect, useState, useRef, useMemo, type ReactNode } from "react";
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
@@ -40,6 +40,7 @@ import {
 } from "lucide-react";
 import { SiXero } from "react-icons/si";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { LineItemTable, type LineItemColumn } from "@/components/LineItemTable";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -1783,28 +1784,70 @@ export default function ClientInvoiceDetail() {
 
   // ── render helpers ────────────────────────────────────────────────────────────
 
-  const renderLineTableHeader = (_includeContractCols: boolean = false) => (
-    <TableRow className="[&>th]:border-b-2 [&>th]:border-border [&>th]:text-foreground/75 [&>th]:font-semibold">
-      {isColVisible("name") && <TableHead className="w-40">Name</TableHead>}
-      {isColVisible("description") && <TableHead>Description</TableHead>}
-      {isColVisible("claimPercent") && (
-        <TableHead className="text-right w-20">Claim %</TableHead>
+  // ── Progress-claim line grid ──────────────────────────────────────────────
+  // Contract claims, variations and allowances are the same seven columns with
+  // the same money maths — only the name, description and claim-% cells differ
+  // per source. One column set and one grid renderer, so the three can't drift
+  // apart the way three copies of the markup did.
+  type ClaimLine = {
+    key: string;
+    name: ReactNode;
+    description: ReactNode;
+    claimPercentCell: ReactNode;
+    /** Dollars, inc GST — the ex/tax columns derive from this. */
+    claimAmt: number;
+    onRemove: () => void;
+  };
+
+  const claimLineColumns = (): LineItemColumn<ClaimLine>[] => {
+    const exOf = (incAmt: number) => incAmt / (1 + GST_RATE);
+    const cols: LineItemColumn<ClaimLine>[] = [];
+    // Name/description/claim% hold inline editors on the contract grid, so they
+    // opt out of LineItemTable's truncating wrapper.
+    if (isColVisible("name"))
+      cols.push({ key: "name", header: "Name", width: 160, truncate: false, className: "font-medium", cell: (l) => l.name });
+    if (isColVisible("description"))
+      cols.push({ key: "description", header: "Description", truncate: false, className: "text-muted-foreground", cell: (l) => l.description });
+    if (isColVisible("claimPercent"))
+      cols.push({ key: "claimPercent", header: "Claim %", align: "right", width: 80, truncate: false, cell: (l) => l.claimPercentCell });
+    if (isColVisible("claimAmount"))
+      cols.push({ key: "claimAmount", header: "Claim $", align: "right", width: 112, className: "font-medium", cell: (l) => formatCurrency(l.claimAmt) });
+    if (isColVisible("amountExTax"))
+      cols.push({ key: "amountExTax", header: "Ex Tax", align: "right", width: 112, cell: (l) => formatCurrency(exOf(l.claimAmt)) });
+    if (isColVisible("amountTax"))
+      cols.push({ key: "amountTax", header: "Tax", align: "right", width: 96, cell: (l) => formatCurrency(l.claimAmt - exOf(l.claimAmt)) });
+    if (isColVisible("amountIncTax"))
+      cols.push({ key: "amountIncTax", header: "Inc Tax", align: "right", width: 112, className: "font-medium", cell: (l) => formatCurrency(l.claimAmt) });
+    return cols;
+  };
+
+  // All three grids stack in one document, so they share a resize namespace —
+  // dragging a column on any of them keeps the whole invoice aligned.
+  const renderClaimGrid = (lines: ClaimLine[], testId: string) => (
+    <LineItemTable
+      fixedLayout
+      resizeNamespace="client-invoice-claim-lines"
+      // No fill: --table-header-bg is 2% off white and vanishes on a card, so
+      // the rule and the weight carry the separation (matches BillDetail). The
+      // border must sit on the th — the table is border-separate.
+      headerClassName="bg-transparent [&_th]:border-b-2 [&_th]:border-border [&_th]:text-foreground/75 [&_th]:font-semibold"
+      data={lines}
+      columns={claimLineColumns()}
+      rowKey={(l) => l.key}
+      testId={testId}
+      rowTestId={(l) => `row-${testId}-${l.key}`}
+      actions={(l) => (
+        <button
+          type="button"
+          onClick={l.onRemove}
+          className="text-muted-foreground hover:text-destructive"
+        >
+          <X className="w-3.5 h-3.5" />
+        </button>
       )}
-      {isColVisible("claimAmount") && (
-        <TableHead className="text-right w-28">Claim $</TableHead>
-      )}
-      {isColVisible("amountExTax") && (
-        <TableHead className="text-right w-28">Ex Tax</TableHead>
-      )}
-      {isColVisible("amountTax") && (
-        <TableHead className="text-right w-24">Tax</TableHead>
-      )}
-      {isColVisible("amountIncTax") && (
-        <TableHead className="text-right w-28">Inc Tax</TableHead>
-      )}
-      <TableHead className="w-8 py-0" />
-    </TableRow>
+    />
   );
+
 
 
   // ── render ────────────────────────────────────────────────────────────────────
@@ -2497,91 +2540,50 @@ export default function ClientInvoiceDetail() {
                         {/* Claim rows table */}
                         {contractClaimRows.length > 0 ? (
                           <>
-                            <Table>
-                              <TableHeader>
-                                {renderLineTableHeader()}
-                              </TableHeader>
-                              <TableBody>
-                                {(() => { const contractRowCents = getContractClaimRowCents(); return contractClaimRows.map((row) => {
-                                  const claimCents = contractRowCents[row.id] ?? 0;
-                                  const claimAmt = claimCents / 100;
-                                  const exTax = claimAmt / (1 + GST_RATE);
-                                  const tax = claimAmt - exTax;
-                                  return (
-                                    <TableRow key={row.id} className="h-9">
-                                      {isColVisible("name") && (
-                                        <TableCell className="py-1">
-                                          <Input
-                                            value={row.name}
-                                            onChange={(e) => updateContractClaimRow(row.id, "name", e.target.value)}
-                                            className="h-7 text-table border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1.5 rounded-sm placeholder:text-muted-foreground/30"
-                                            placeholder="Claim name"
-                                          />
-                                        </TableCell>
-                                      )}
-                                      {isColVisible("description") && (
-                                        <TableCell className="py-1">
-                                          <Input
-                                            value={row.description}
-                                            onChange={(e) => updateContractClaimRow(row.id, "description", e.target.value)}
-                                            className="h-7 text-table border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1.5 rounded-sm placeholder:text-muted-foreground/30"
-                                            placeholder="Description"
-                                          />
-                                        </TableCell>
-                                      )}
-                                      {isColVisible("claimPercent") && (
-                                        <TableCell className="text-right py-1">
-                                          <Input
-                                            type="number"
-                                            min="0"
-                                            // Contract claim rows live in the contract_claim_rows jsonb
-                                            // column and are validated by a bare z.number(), so fractional
-                                            // claims (7.5% progress payments) are storable. Without an
-                                            // explicit step, type="number" defaults to step="1" and the
-                                            // browser treats 7.5 as a stepMismatch.
-                                            step="0.01"
-                                            value={row.claimPercent}
-                                            onChange={(e) =>
-                                              updateContractClaimRow(row.id, "claimPercent", parseFloat(e.target.value) || 0)
-                                            }
-                                            className="h-7 w-16 text-right text-table ml-auto border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1.5 rounded-sm"
-                                          />
-                                        </TableCell>
-                                      )}
-                                      {isColVisible("claimAmount") && (
-                                        <TableCell className="text-right text-table font-medium py-1">
-                                          {formatCurrency(claimAmt)}
-                                        </TableCell>
-                                      )}
-                                      {isColVisible("amountExTax") && (
-                                        <TableCell className="text-right text-table py-1">
-                                          {formatCurrency(exTax)}
-                                        </TableCell>
-                                      )}
-                                      {isColVisible("amountTax") && (
-                                        <TableCell className="text-right text-table py-1">
-                                          {formatCurrency(tax)}
-                                        </TableCell>
-                                      )}
-                                      {isColVisible("amountIncTax") && (
-                                        <TableCell className="text-right text-table font-medium py-1">
-                                          {formatCurrency(claimAmt)}
-                                        </TableCell>
-                                      )}
-                                      <TableCell className="py-1 w-8">
-                                        <button
-                                          type="button"
-                                          onClick={() => removeContractClaimRow(row.id)}
-                                          className="text-muted-foreground hover:text-destructive"
-                                        >
-                                          <X className="w-3.5 h-3.5" />
-                                        </button>
-                                      </TableCell>
-                                    </TableRow>
-                                  );
-                                }); })()}
-                              </TableBody>
-                            </Table>
+                            {(() => {
+                              const contractRowCents = getContractClaimRowCents();
+                              return renderClaimGrid(
+                                contractClaimRows.map((row) => ({
+                                  key: row.id,
+                                  name: (
+                                    <Input
+                                      value={row.name}
+                                      onChange={(e) => updateContractClaimRow(row.id, "name", e.target.value)}
+                                      className="h-7 text-table border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1.5 rounded-sm placeholder:text-muted-foreground/30"
+                                      placeholder="Claim name"
+                                    />
+                                  ),
+                                  description: (
+                                    <Input
+                                      value={row.description}
+                                      onChange={(e) => updateContractClaimRow(row.id, "description", e.target.value)}
+                                      className="h-7 text-table border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1.5 rounded-sm placeholder:text-muted-foreground/30"
+                                      placeholder="Description"
+                                    />
+                                  ),
+                                  claimPercentCell: (
+                                    <Input
+                                      type="number"
+                                      min="0"
+                                      // Contract claim rows live in the contract_claim_rows jsonb
+                                      // column and are validated by a bare z.number(), so fractional
+                                      // claims (7.5% progress payments) are storable. Without an
+                                      // explicit step, type="number" defaults to step="1" and the
+                                      // browser treats 7.5 as a stepMismatch.
+                                      step="0.01"
+                                      value={row.claimPercent}
+                                      onChange={(e) =>
+                                        updateContractClaimRow(row.id, "claimPercent", parseFloat(e.target.value) || 0)
+                                      }
+                                      className="h-7 w-16 text-right text-table ml-auto border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1.5 rounded-sm"
+                                    />
+                                  ),
+                                  claimAmt: (contractRowCents[row.id] ?? 0) / 100,
+                                  onRemove: () => removeContractClaimRow(row.id),
+                                })),
+                                "contract-claim-lines",
+                              );
+                            })()}
                           </>
                         ) : (
                           <p className="text-table text-muted-foreground text-center py-2">
@@ -2666,96 +2668,47 @@ export default function ClientInvoiceDetail() {
                           </div>
                         ) : (
                           <>
-                            <Table>
-                              <TableHeader>
-                                {renderLineTableHeader(false)}
-                              </TableHeader>
-                              <TableBody>
-                                {getSelectedVariations().map((variation) => {
-                                  const claimPct = variationClaims[variation.id] ?? 100;
-                                  // Can't claim more than the other invoices left behind.
-                                  const maxClaimPct = getVariationRemainingPercent(variation.id);
-                                  const claimAmt = getVariationClaimCents(variation) / 100;
-                                  const exTax = claimAmt / (1 + GST_RATE);
-                                  const tax = claimAmt - exTax;
-                                  return (
-                                    <TableRow key={variation.id} className="h-9">
-                                      {isColVisible("name") && (
-                                        <TableCell className="text-table font-medium py-1">
-                                          {variation.variationNumber}
-                                        </TableCell>
-                                      )}
-                                      {isColVisible("description") && (
-                                        <TableCell className="text-table text-muted-foreground py-1">
-                                          {variation.name}
-                                        </TableCell>
-                                      )}
-                                      {isColVisible("claimPercent") && (
-                                        <TableCell className="text-right py-1">
-                                          <Input
-                                            type="number"
-                                            min="0"
-                                            // invoice_variations.claim_percent is an integer column and
-                                            // the Zod schema is .int(), so this field is whole-number
-                                            // only — step="1" makes the browser agree. Round rather
-                                            // than truncate: parseInt("7.5") silently billed 7, and
-                                            // because the rounded value never changed, React left the
-                                            // field reading "7.5" while state held 7. Rounding makes the
-                                            // field snap to 8, so the stored number is the visible one.
-                                            step="1"
-                                            max={maxClaimPct}
-                                            value={claimPct}
-                                            onChange={(e) =>
-                                              setVariationClaims((prev) => ({
-                                                ...prev,
-                                                [variation.id]: Math.min(
-                                                  maxClaimPct,
-                                                  Math.round(parseFloat(e.target.value)) || 0,
-                                                ),
-                                              }))
-                                            }
-                                            className="h-7 w-16 text-right text-table border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring ml-auto"
-                                          />
-                                        </TableCell>
-                                      )}
-                                      {isColVisible("claimAmount") && (
-                                        <TableCell className="text-right text-table font-medium py-1">
-                                          {formatCurrency(claimAmt)}
-                                        </TableCell>
-                                      )}
-                                      {isColVisible("amountExTax") && (
-                                        <TableCell className="text-right text-table py-1">
-                                          {formatCurrency(exTax)}
-                                        </TableCell>
-                                      )}
-                                      {isColVisible("amountTax") && (
-                                        <TableCell className="text-right text-table py-1">
-                                          {formatCurrency(tax)}
-                                        </TableCell>
-                                      )}
-                                      {isColVisible("amountIncTax") && (
-                                        <TableCell className="text-right text-table font-medium py-1">
-                                          {formatCurrency(claimAmt)}
-                                        </TableCell>
-                                      )}
-                                      <TableCell className="py-1 w-8">
-                                        <button
-                                          type="button"
-                                          onClick={() => {
-                                            setSelectedVariationIds((prev) =>
-                                              prev.filter((id) => id !== variation.id)
-                                            );
-                                          }}
-                                          className="text-muted-foreground hover:text-destructive"
-                                        >
-                                          <X className="w-3.5 h-3.5" />
-                                        </button>
-                                      </TableCell>
-                                    </TableRow>
-                                  );
-                                })}
-                              </TableBody>
-                            </Table>
+                            {renderClaimGrid(
+                              getSelectedVariations().map((variation) => {
+                                // Can't claim more than the other invoices left behind.
+                                const maxClaimPct = getVariationRemainingPercent(variation.id);
+                                return {
+                                  key: variation.id,
+                                  name: variation.variationNumber,
+                                  description: variation.name,
+                                  claimPercentCell: (
+                                    <Input
+                                      type="number"
+                                      min="0"
+                                      // invoice_variations.claim_percent is an integer column and
+                                      // the Zod schema is .int(), so this field is whole-number
+                                      // only — step="1" makes the browser agree. Round rather
+                                      // than truncate: parseInt("7.5") silently billed 7, and
+                                      // because the rounded value never changed, React left the
+                                      // field reading "7.5" while state held 7. Rounding makes the
+                                      // field snap to 8, so the stored number is the visible one.
+                                      step="1"
+                                      max={maxClaimPct}
+                                      value={variationClaims[variation.id] ?? 100}
+                                      onChange={(e) =>
+                                        setVariationClaims((prev) => ({
+                                          ...prev,
+                                          [variation.id]: Math.min(
+                                            maxClaimPct,
+                                            Math.round(parseFloat(e.target.value)) || 0,
+                                          ),
+                                        }))
+                                      }
+                                      className="h-7 w-16 text-right text-table border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring ml-auto"
+                                    />
+                                  ),
+                                  claimAmt: getVariationClaimCents(variation) / 100,
+                                  onRemove: () =>
+                                    setSelectedVariationIds((prev) => prev.filter((id) => id !== variation.id)),
+                                };
+                              }),
+                              "variation-claim-lines",
+                            )}
                             <div className="flex items-center justify-end gap-6 pt-2 border-t text-sm">
                               <span className="text-muted-foreground">
                                 {showAmountsIncTax ? "Amount inc Tax:" : "Amount ex Tax:"}
@@ -2814,93 +2767,44 @@ export default function ClientInvoiceDetail() {
                           </div>
                         ) : (
                           <>
-                            <Table>
-                              <TableHeader>
-                                {renderLineTableHeader(false)}
-                              </TableHeader>
-                              <TableBody>
-                                {getSelectedAllowanceItems().map((item) => {
-                                  const claimPct = allowanceClaims[item.id] ?? 100;
-                                  const claimAmt = getAllowanceClaimCents(item) / 100;
-                                  const exTax = claimAmt / (1 + GST_RATE);
-                                  const tax = claimAmt - exTax;
-                                  return (
-                                    <TableRow key={item.id} className="h-9">
-                                      {isColVisible("name") && (
-                                        <TableCell className="text-table font-medium py-1">
-                                          <div className="flex items-center gap-1.5">
-                                            {item.name}
-                                            <Badge variant="outline" className="text-data">
-                                              {item.allowance}
-                                            </Badge>
-                                          </div>
-                                        </TableCell>
-                                      )}
-                                      {isColVisible("description") && (
-                                        <TableCell className="text-table text-muted-foreground py-1">
-                                          {item.description}
-                                        </TableCell>
-                                      )}
-                                      {isColVisible("claimPercent") && (
-                                        <TableCell className="text-right py-1">
-                                          <Input
-                                            type="number"
-                                            min="0"
-                                            // invoice_allowances.claim_percent is an integer column and
-                                            // the Zod schema is .int() — same whole-number constraint,
-                                            // and the same round-don't-truncate reasoning, as the
-                                            // variation claim input above.
-                                            step="1"
-                                            max="100"
-                                            value={claimPct}
-                                            onChange={(e) =>
-                                              setAllowanceClaims((prev) => ({
-                                                ...prev,
-                                                [item.id]: Math.round(parseFloat(e.target.value)) || 0,
-                                              }))
-                                            }
-                                            className="h-7 w-16 text-right text-table border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring ml-auto"
-                                          />
-                                        </TableCell>
-                                      )}
-                                      {isColVisible("claimAmount") && (
-                                        <TableCell className="text-right text-table font-medium py-1">
-                                          {formatCurrency(claimAmt)}
-                                        </TableCell>
-                                      )}
-                                      {isColVisible("amountExTax") && (
-                                        <TableCell className="text-right text-table py-1">
-                                          {formatCurrency(exTax)}
-                                        </TableCell>
-                                      )}
-                                      {isColVisible("amountTax") && (
-                                        <TableCell className="text-right text-table py-1">
-                                          {formatCurrency(tax)}
-                                        </TableCell>
-                                      )}
-                                      {isColVisible("amountIncTax") && (
-                                        <TableCell className="text-right text-table font-medium py-1">
-                                          {formatCurrency(claimAmt)}
-                                        </TableCell>
-                                      )}
-                                      <TableCell className="py-1 w-8">
-                                        <button
-                                          type="button"
-                                          onClick={() =>
-                                            setSelectedAllowanceIds((prev) =>
-                                              prev.filter((id) => id !== item.id)
-                                            )
-                                          }
-                                          className="text-muted-foreground hover:text-destructive"
-                                        >
-                                          <X className="w-3.5 h-3.5" />
-                                        </button>
-                                      </TableCell>
-                                    </TableRow>
-                                  );
-                                })}
-                              </TableBody>
-                            </Table>
+                            {renderClaimGrid(
+                              getSelectedAllowanceItems().map((item) => ({
+                                key: item.id,
+                                name: (
+                                  <div className="flex items-center gap-1.5">
+                                    {item.name}
+                                    <Badge variant="outline" className="text-data">
+                                      {item.allowance}
+                                    </Badge>
+                                  </div>
+                                ),
+                                description: item.description,
+                                claimPercentCell: (
+                                  <Input
+                                    type="number"
+                                    min="0"
+                                    // invoice_allowances.claim_percent is an integer column and
+                                    // the Zod schema is .int() — same whole-number constraint,
+                                    // and the same round-don't-truncate reasoning, as the
+                                    // variation claim input above.
+                                    step="1"
+                                    max="100"
+                                    value={allowanceClaims[item.id] ?? 100}
+                                    onChange={(e) =>
+                                      setAllowanceClaims((prev) => ({
+                                        ...prev,
+                                        [item.id]: Math.round(parseFloat(e.target.value)) || 0,
+                                      }))
+                                    }
+                                    className="h-7 w-16 text-right text-table border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring ml-auto"
+                                  />
+                                ),
+                                claimAmt: getAllowanceClaimCents(item) / 100,
+                                onRemove: () =>
+                                  setSelectedAllowanceIds((prev) => prev.filter((id) => id !== item.id)),
+                              })),
+                              "allowance-claim-lines",
+                            )}
                             <div className="flex items-center justify-end gap-6 pt-2 border-t text-sm">
                               <span className="text-muted-foreground">
                                 {showAmountsIncTax ? "Amount inc Tax:" : "Amount ex Tax:"}
