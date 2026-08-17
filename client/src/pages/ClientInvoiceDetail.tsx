@@ -1873,6 +1873,8 @@ export default function ClientInvoiceDetail() {
   // apart the way three copies of the markup did.
   type ClaimLine = {
     key: string;
+    /** Override identity — `contract:<id>` etc, not the bare row id. */
+    xeroKey: string;
     name: ReactNode;
     description: ReactNode;
     claimPercentCell: ReactNode;
@@ -1894,6 +1896,52 @@ export default function ClientInvoiceDetail() {
       cols.push({ key: "claimPercent", header: "Claim %", align: "right", width: 80, truncate: false, cell: (l) => l.claimPercentCell });
     if (isColVisible("claimAmount"))
       cols.push({ key: "claimAmount", header: "Claim $", align: "right", width: 112, className: "font-medium", cell: (l) => formatCurrency(l.claimAmt) });
+    // Tax and Account sit inline, exactly as they do on Custom Lines — the Xero
+    // Posting panel is for setting them in bulk and for tracking, not the only
+    // way to reach them.
+    cols.push({
+      key: "taxable", header: "Tax", width: 112, truncate: false,
+      cell: (l) => (
+        <button
+          type="button"
+          onClick={() => setXeroByKey(l.xeroKey, { taxable: !(lineXeroOverrides[l.xeroKey]?.taxable !== false) })}
+          className="text-table text-muted-foreground hover:text-foreground whitespace-nowrap"
+          data-testid={`button-tax-${l.xeroKey}`}
+        >
+          {lineXeroOverrides[l.xeroKey]?.taxable === false ? "No Tax" : "GST on income"}
+        </button>
+      ),
+    });
+    cols.push({
+      key: "account", header: "Account", width: 128, truncate: false,
+      cell: (l) => {
+        const value = lineXeroOverrides[l.xeroKey]?.account || "";
+        return xeroAccounts.length > 0 ? (
+          <Select
+            value={value || "__none__"}
+            onValueChange={(v) => setXeroByKey(l.xeroKey, { account: v === "__none__" ? null : v })}
+          >
+            <SelectTrigger className="h-7 text-table border-0 bg-transparent shadow-none focus:ring-1 focus:ring-ring px-1.5 rounded-sm w-full" data-testid={`select-account-${l.xeroKey}`}>
+              <SelectValue placeholder="— Account —" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__none__"><span className="text-muted-foreground">— Default —</span></SelectItem>
+              {xeroAccounts.map((acc) => (
+                <SelectItem key={acc.code} value={acc.code}>{acc.code} — {acc.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        ) : (
+          <input
+            value={value}
+            onChange={(e) => setXeroByKey(l.xeroKey, { account: e.target.value || null })}
+            placeholder="Account"
+            className="w-full h-7 px-1.5 text-table bg-transparent border-0 outline-none focus:ring-1 focus:ring-ring rounded-sm placeholder:text-muted-foreground/30"
+            data-testid={`input-account-${l.xeroKey}`}
+          />
+        );
+      },
+    });
     if (isColVisible("amountExTax"))
       cols.push({ key: "amountExTax", header: "Ex Tax", align: "right", width: 112, cell: (l) => formatCurrency(exOf(l.claimAmt)) });
     if (isColVisible("amountTax"))
@@ -2688,6 +2736,7 @@ export default function ClientInvoiceDetail() {
                               return renderClaimGrid(
                                 contractClaimRows.map((row) => ({
                                   key: row.id,
+                                  xeroKey: lineAccountKey("contract", row.id),
                                   name: (
                                     <Input
                                       value={row.name}
@@ -2812,6 +2861,7 @@ export default function ClientInvoiceDetail() {
                                 const maxClaimPct = getVariationRemainingPercent(variation.id);
                                 return {
                                   key: variation.id,
+                                  xeroKey: lineAccountKey("variation", variation.id),
                                   name: variation.variationNumber,
                                   description: variation.name,
                                   claimPercentCell: (
@@ -2890,6 +2940,7 @@ export default function ClientInvoiceDetail() {
                             {renderClaimGrid(
                               getSelectedAllowanceItems().map((item) => ({
                                 key: item.id,
+                                xeroKey: lineAccountKey("allowance", item.id),
                                 name: (
                                   <div className="flex items-center gap-1.5">
                                     {item.name}
