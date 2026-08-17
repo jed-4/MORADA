@@ -2496,6 +2496,12 @@ export const clientInvoices = pgTable("client_invoices", {
   // from, so the Xero total always equals what Morada displayed at save time.
   // Shape: InvoiceLineBreakdownEntry[] (see invoiceLineBreakdownEntrySchema).
   lineBreakdown: jsonb("line_breakdown"),
+  // Per-line Xero account overrides, keyed by the stable line identity
+  // (`contract:<rowId>`, `variation:<id>`, `allowance:<estimateItemId>`,
+  // `bill:<id>`, `selection:<id>`, `labour`, `markup`). Custom lines carry
+  // their own account on client_invoice_items instead. An absent key means
+  // "use the company default" — see resolveClientInvoiceFallbackAccount.
+  lineAccountOverrides: jsonb("line_account_overrides").notNull().default({}),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({
@@ -2505,8 +2511,9 @@ export const clientInvoices = pgTable("client_invoices", {
 
 // One line of the persisted invoice money snapshot. All amounts are integer
 // cents; amountExCents + gstCents must equal amountIncCents (validated).
-// `taxable: false` lines must carry gstCents 0. `accountCode` is the optional
-// per-line Xero account override (custom lines only today).
+// `taxable: false` lines must carry gstCents 0. `accountCode` is the resolved
+// per-line Xero account: a custom line's own code, or the override recorded in
+// clientInvoices.lineAccountOverrides for every other source.
 export const invoiceLineBreakdownEntrySchema = z.object({
   source: z.enum(["contract", "variation", "allowance", "labour", "bill", "selection", "markup", "custom"]),
   description: z.string().min(1),

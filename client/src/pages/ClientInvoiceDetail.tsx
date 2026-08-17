@@ -36,8 +36,10 @@ import {
   ArrowDown,
   ArrowUpDown,
   LayoutGrid,
+  AlertCircle,
 } from "lucide-react";
 import { SiXero } from "react-icons/si";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -316,6 +318,12 @@ export default function ClientInvoiceDetail() {
   });
   const [customLineColPickerOpen, setCustomLineColPickerOpen] = useState(false);
   const [bulkAccountCode, setBulkAccountCode] = useState("");
+  // Per-line Xero account overrides for the non-custom sources, keyed by
+  // lineAccountKey(). The breakdown is rebuilt from source data on every
+  // render, so the override cannot live on the derived line — it is keyed by
+  // the line's stable identity and persisted on the invoice. An absent key
+  // means "use the company default".
+  const [lineAccountOverrides, setLineAccountOverrides] = useState<Record<string, string>>({});
   const [modalBillIds, setModalBillIds] = useState<string[]>([]);
   const [modalTimesheetIds, setModalTimesheetIds] = useState<string[]>([]);
   const [modalSelectionOptionIds, setModalSelectionOptionIds] = useState<string[]>([]);
@@ -554,6 +562,10 @@ export default function ClientInvoiceDetail() {
       setTermsAndConditions((invoice as any).termsAndConditions || "");
       if ((invoice as any).contractClaimRows && Array.isArray((invoice as any).contractClaimRows)) {
         setContractClaimRows((invoice as any).contractClaimRows as ContractClaimRow[]);
+      }
+      const overrides = (invoice as any).lineAccountOverrides;
+      if (overrides && typeof overrides === "object" && !Array.isArray(overrides)) {
+        setLineAccountOverrides(overrides as Record<string, string>);
       }
       // Open intro/closing if they have content
       if (invoice.introductionText) setIntroCollapsed(false);
@@ -940,6 +952,10 @@ export default function ClientInvoiceDetail() {
     amountIncCents: number;
     taxable: boolean;
     accountCode?: string | null;
+    // Editor-only extras — the save payload picks fields explicitly, so these
+    // never reach the server. `accountKey` is the line's override identity;
+    // custom lines use `custom#<index>` and write through to their own column.
+    accountKey?: string;
     // PDF-only extras (stripped by the server's Zod schema on save)
     label?: string;
     pdfDescription?: string;
@@ -955,6 +971,31 @@ export default function ClientInvoiceDetail() {
   const gstOnEx = (exCents: number, taxable: boolean) =>
     taxable ? Math.round(exCents * GST_RATE) : 0;
 
+  // Stable identity for a non-custom line, used to key its Xero account
+  // override. `labour` and `markup` are single lines per invoice and so need
+  // no id. Custom lines are excluded — they carry their own account column.
+  const lineAccountKey = (source: BreakdownLine["source"], id?: string) =>
+    id ? `${source}:${id}` : source;
+  const accountFor = (source: BreakdownLine["source"], id?: string) =>
+    lineAccountOverrides[lineAccountKey(source, id)] || null;
+  // Write an account by the line's accountKey. Custom lines keep their account
+  // on their own row (client_invoice_items.xero_account_code); everything else
+  // goes into the override map.
+  const setAccountByKey = (key: string, code: string | null) => {
+    if (key.startsWith("custom#")) {
+      const index = Number(key.slice("custom#".length));
+      setCustomLines((prev) => prev.map((l, i) => (i === index ? { ...l, xeroAccountCode: code } : l)));
+      return;
+    }
+    setLineAccountOverrides((prev) => {
+      if (!code) {
+        const { [key]: _dropped, ...rest } = prev;
+        return rest;
+      }
+      return { ...prev, [key]: code };
+    });
+  };
+
   const buildInvoiceLineBreakdown = (): BreakdownLine[] => {
     const lines: BreakdownLine[] = [];
 
@@ -968,6 +1009,8 @@ export default function ClientInvoiceDetail() {
           source: "contract",
           description: `${row.name || "Contract Claim"}${row.description ? ` — ${row.description}` : ""} (${row.claimPercent}%)`,
           amountExCents: ex, gstCents: gst, amountIncCents: inc, taxable: true,
+          accountCode: accountFor("contract", row.id),
+          accountKey: lineAccountKey("contract", row.id),
           label: row.name || "Contract Claim", pdfDescription: row.description, claimPct: row.claimPercent,
         });
       }
@@ -979,6 +1022,8 @@ export default function ClientInvoiceDetail() {
           source: "variation",
           description: `Variation ${v.variationNumber || ""}${v.name ? `: ${v.name}` : ""} (${pct}%)`,
           amountExCents: ex, gstCents: gst, amountIncCents: inc, taxable: true,
+          accountCode: accountFor("variation", v.id),
+          accountKey: lineAccountKey("variation", v.id),
           label: `Variation ${v.variationNumber || ""}`, pdfDescription: v.name || undefined, claimPct: pct,
         });
       }
@@ -990,6 +1035,8 @@ export default function ClientInvoiceDetail() {
           source: "allowance",
           description: `Allowance — ${item.name || ""} (${pct}%)`,
           amountExCents: ex, gstCents: gst, amountIncCents: inc, taxable: true,
+          accountCode: accountFor("allowance", item.id),
+          accountKey: lineAccountKey("allowance", item.id),
           label: `Allowance - ${item.name || ""}`, claimPct: pct,
         });
       }
@@ -1004,6 +1051,8 @@ export default function ClientInvoiceDetail() {
           source: "labour",
           description: `Labour — ${selectedTimesheets.length} timesheet${selectedTimesheets.length === 1 ? "" : "s"}`,
           amountExCents: ex, gstCents: gst, amountIncCents: ex + gst, taxable: true,
+          accountCode: accountFor("labour"),
+          accountKey: lineAccountKey("labour"),
           label: "Labour",
         });
       }
@@ -1015,6 +1064,8 @@ export default function ClientInvoiceDetail() {
           source: "bill",
           description: `${supplierName || "Bill"}${bill.billNumber ? ` — ${bill.billNumber}` : ""}`,
           amountExCents: ex, gstCents: gst, amountIncCents: ex + gst, taxable: true,
+          accountCode: accountFor("bill", bill.id),
+          accountKey: lineAccountKey("bill", bill.id),
           label: supplierName || "Bill", pdfDescription: bill.billNumber || undefined,
         });
       }
@@ -1025,6 +1076,8 @@ export default function ClientInvoiceDetail() {
           source: "selection",
           description: `Selection — ${o.name || ""}`,
           amountExCents: ex, gstCents: gst, amountIncCents: ex + gst, taxable: true,
+          accountCode: accountFor("selection", o.id),
+          accountKey: lineAccountKey("selection", o.id),
           label: `Selection - ${o.name || ""}`,
         });
       }
@@ -1035,6 +1088,8 @@ export default function ClientInvoiceDetail() {
           source: "markup",
           description: `Builder's margin (${form.watch("markupPercent") || 0}%)`,
           amountExCents: markupEx, gstCents: gst, amountIncCents: markupEx + gst, taxable: true,
+          accountCode: accountFor("markup"),
+          accountKey: lineAccountKey("markup"),
           label: "Builder's margin",
         });
       }
@@ -1043,7 +1098,7 @@ export default function ClientInvoiceDetail() {
     // Custom lines (both methods). Prices are entered EX GST; GST applies only
     // when the line is taxable — this is the single GST convention (the row
     // display, footer, PDF, and Xero all derive from these same cents).
-    for (const line of customLines) {
+    customLines.forEach((line, customIndex) => {
       const ex = Math.round(line.totalPrice * 100);
       const gst = gstOnEx(ex, line.taxable);
       lines.push({
@@ -1051,10 +1106,11 @@ export default function ClientInvoiceDetail() {
         description: line.name || line.description || "Custom Item",
         amountExCents: ex, gstCents: gst, amountIncCents: ex + gst, taxable: line.taxable,
         accountCode: line.xeroAccountCode || null,
+        accountKey: `custom#${customIndex}`,
         label: line.name || line.description || "Custom Item",
         pdfDescription: line.name ? line.description || undefined : undefined,
       });
-    }
+    });
 
     return lines;
   };
@@ -1193,6 +1249,7 @@ export default function ClientInvoiceDetail() {
       columnConfig: columnConfig,
       showAmountsIncTax: showAmountsIncTax,
       contractClaimRows: contractClaimRows,
+      lineAccountOverrides: lineAccountOverrides,
       sendToXero: sendToXero,
     };
   };
@@ -3441,6 +3498,80 @@ export default function ClientInvoiceDetail() {
                   </div>{/* end custom lines content */}
                 </div>{/* end custom lines sub-section */}
 
+              {/* ── Xero Accounts ──
+                  Every line needs an account code before Xero will accept the
+                  invoice. Only custom lines can carry one on the line itself,
+                  so without this panel a progress-claim invoice depends
+                  entirely on the company default — and when that is unset the
+                  push fails with no way to fix it from here. Blank = use the
+                  company default. */}
+              {xeroStatus?.connected && (() => {
+                const lines = buildInvoiceLineBreakdown();
+                if (lines.length === 0) return null;
+                const defaultAccount = companySettings?.clientInvoiceDefaultXeroAccount || null;
+                const unresolved = lines.filter((l) => !l.accountCode && !defaultAccount).length;
+                return (
+                  <div data-testid="xero-accounts-panel">
+                    <div className="h-8 flex items-center px-3 gap-2 border-b border-border/50 bg-muted/40">
+                      <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-status-info/80" />
+                      <span className="text-xs font-medium flex items-center gap-1">
+                        <SiXero className="w-3 h-3" />
+                        Xero Accounts
+                      </span>
+                      <span className="text-xs text-muted-foreground ml-1">
+                        {defaultAccount
+                          ? `Blank uses the company default (${defaultAccount})`
+                          : "No company default set — every line needs an account"}
+                      </span>
+                      {unresolved > 0 && (
+                        <span
+                          className="ml-auto text-xs text-status-warning flex items-center gap-1"
+                          data-testid="text-unresolved-accounts"
+                        >
+                          <AlertCircle className="w-3 h-3" />
+                          {unresolved} line{unresolved === 1 ? "" : "s"} will fail
+                        </span>
+                      )}
+                    </div>
+                    <div className="px-3 py-2 space-y-1">
+                      {lines.map((line) => (
+                        <div key={line.accountKey} className="flex items-center gap-2 text-xs">
+                          <span className="truncate flex-1 text-muted-foreground">{line.description}</span>
+                          <span className="tabular-nums text-muted-foreground w-24 text-right">
+                            {formatCurrency(line.amountIncCents / 100)}
+                          </span>
+                          {xeroAccounts.length > 0 ? (
+                            <SearchableSelect
+                              value={line.accountCode || ""}
+                              onValueChange={(val) => setAccountByKey(line.accountKey!, val || null)}
+                              allowClear
+                              placeholder={defaultAccount ? `Default (${defaultAccount})` : "Select account…"}
+                              searchPlaceholder="Search accounts..."
+                              emptyMessage="No accounts found."
+                              triggerClassName={cn(
+                                "w-56 h-7 text-xs",
+                                !line.accountCode && !defaultAccount && "border-status-warning/60",
+                              )}
+                              data-testid={`select-line-account-${line.accountKey}`}
+                              options={[...xeroAccounts]
+                                .sort((a, b) => (a.name || "").localeCompare(b.name || ""))
+                                .map((acc) => ({ value: acc.code, label: `${acc.code} — ${acc.name}` }))}
+                            />
+                          ) : (
+                            <input
+                              value={line.accountCode || ""}
+                              onChange={(e) => setAccountByKey(line.accountKey!, e.target.value || null)}
+                              placeholder="Account"
+                              className="h-7 w-24 px-2 text-xs border rounded-md bg-transparent focus:outline-none focus:ring-1 focus:ring-ring"
+                              data-testid={`input-line-account-${line.accountKey}`}
+                            />
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* ── Invoice Summary ── */}
               <div data-testid="summary-panel">

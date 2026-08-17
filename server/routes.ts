@@ -702,7 +702,7 @@ export async function pushBillToXeroInternal(
       const issues: XeroValidationIssue[] = missingAcctIdx.map((i) => ({
         scope: "lineItem",
         lineIndex: i,
-        message: `Line ${i + 1}: missing AccountCode. Set an account on the line item, on the supplier (Xero default account), or set a company-wide default in Settings → Documents → Default Xero Account for Bills.`,
+        message: `Line ${i + 1}: missing AccountCode. Set an account on the line item, on the supplier (Xero default account), or set a company-wide default in Settings → Integrations → Xero.`,
       }));
       const msg = issues[0].message;
       await writeSyncStatus("failed", msg);
@@ -36823,7 +36823,7 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
       if (xeroLineItems.some((li) => !li.accountCode)) {
         return res.status(422).json({
           error: "MISSING_ACCOUNT_CODE",
-          message: "Set a default Xero sales account in Settings → Company, or add an account code to each invoice line.",
+          message: "One or more lines have no Xero account. Set an account per line in the invoice's Xero Accounts panel, or a company default in Settings → Integrations → Xero.",
         });
       }
 
@@ -36965,7 +36965,7 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
       if (breakdown.some((l) => !l.accountCode && !fallbackAccountCode)) {
         return res.status(422).json({
           error: "MISSING_ACCOUNT_CODE",
-          message: "Set a default Xero sales account in Settings → Company, or add an account code to each invoice line.",
+          message: "One or more lines have no Xero account. Set an account per line in the invoice's Xero Accounts panel, or a company default in Settings → Integrations → Xero.",
         });
       }
 
