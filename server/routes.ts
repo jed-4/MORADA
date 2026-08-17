@@ -134,6 +134,7 @@ import {
   insertRfqFollowUpSchema,
   insertRfiSchema,
   insertScopeItemSchema,
+  insertReviewItemSchema,
   insertScopeItemTypeDefinitionSchema,
   insertScopeStageSchema,
   insertScopeTemplateSchema,
@@ -211,6 +212,8 @@ import {
 import { computeEstimateItemPrice, resolveEstimateStoredPrice } from "@shared/pricing";
 import { compareNumberedNames } from "@shared/utils";
 import { scheduleItemTier, computeProjectBands } from "@shared/scheduleVisibility";
+import { validateCostEstimate, isTerminalReviewStatus } from "@shared/reviewCostImpact";
+import { createReviewerResolver, attributeComment } from "./reviews/reviewerResolver";
 import { reflowLinkedTasks, scheduleDatesChanged, SCHEDULE_BOOKING_REFERENCE } from "./utils/scheduleTaskLinks";
 import { z } from "zod";
 import { fromZodError } from "zod-validation-error";
@@ -6067,6 +6070,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
     res.status(404).json({ error: notFound }); return null;
   };
+
+  /**
+   * Reviewer resolution for the Client Review module.
+   *
+   * The lookups are injected rather than imported so the resolver stays
+   * testable without a live database — the same shape as scopeOwnership.
+   * V1 only ever resolves clients; the "user" branch is the phase-2 seam.
+   */
+  const reviewerResolver = createReviewerResolver({
+    getContact: (id, companyId) => storage.getContact(id, companyId) as any,
+    getUser: (id) => storage.getUser(id) as any,
+    getProjectClientContactId: async (projectId) => {
+      const project = await storage.getProject(projectId);
+      return (project as any)?.clientId ?? null;
+    },
+  });
 
   const getOwnedVariation = async (
     req: any, res: any, variationId: string, notFound = "Variation not found",
@@ -42146,6 +42165,430 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
     } catch (err: any) {
       console.error("[PATCH /api/attachments/:table/:id/focal-point] error:", err);
       res.status(500).json({ error: "Failed to update focal point" });
+    }
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // CLIENT REVIEW & APPROVALS — team-side (PR1)
+  // ═══════════════════════════════════════════════════════════════════════
+  //
+  // Builder-facing CRUD only. The client-facing surfaces land later:
+  //   PR3 — the logged-in client section + the decision endpoint
+  //   PR4 — the emailed direct link and /api/portal/reviews/:token
+  //   PR5 — the draft-variation hook on approval
+  //
+  // Kept as ONE contiguous block on purpose: routes.ts is edited by several
+  // in-flight branches, so a single block is a single conflict rather than a
+  // dozen scattered ones.
+  //
+  // Tenancy: every handler resolves the item through getOwnedReviewItem, which
+  // is company-scoped at the query. Children are only ever reached after their
+  // item has been resolved, so there is no second place to get it wrong.
+
+  const getOwnedReviewItem = async (
+    req: any, res: any, reviewItemId: string, notFound = "Review not found",
+  ): Promise<any | null> => {
+    if (!reviewItemId) { res.status(404).json({ error: notFound }); return null; }
+    const companyId = req.user?.companyId;
+    if (!companyId) { res.status(404).json({ error: notFound }); return null; }
+    const item = await storage.getReviewItem(reviewItemId, companyId);
+    if (!item) { res.status(404).json({ error: notFound }); return null; }
+    return item;
+  };
+
+  /**
+   * Fields the client may never set directly. Token/viewed stamps, the current
+   * revision pointer and authorship are all server-owned; status moves through
+   * issuing a revision or recording a decision, never through a raw PATCH.
+   */
+  const reviewItemWritableSchema = insertReviewItemSchema.omit({
+    companyId: true,
+    projectId: true,
+    status: true,
+    currentRevisionId: true,
+    portalToken: true,
+    portalSentAt: true,
+    portalViewedAt: true,
+    createdById: true,
+    closedAt: true,
+    // Phase-2 seams. The COLUMNS exist so internal review needs no migration,
+    // but V1 must not accept either from a request: writing reviewerType="user"
+    // would half-build phase 2, and reviewerUserId has no company check behind
+    // it. The server always writes "client" for now.
+    reviewerType: true,
+    reviewerUserId: true,
+  });
+
+  /**
+   * A reviewer contact must belong to the caller's own company — otherwise a
+   * team member could address a review at another tenant's contact and leak the
+   * name (and later, over email, the item itself).
+   */
+  const rejectForeignReviewerContact = async (req: any, res: any, contactId: unknown): Promise<boolean> => {
+    if (contactId == null) return false;
+    if (typeof contactId !== "string" || !contactId) {
+      res.status(400).json({ error: "Invalid reviewerContactId" });
+      return true;
+    }
+    const contact = await storage.getContact(contactId, req.user!.companyId!);
+    if (!contact) {
+      res.status(404).json({ error: "Reviewer contact not found" });
+      return true;
+    }
+    return false;
+  };
+
+  /** Shared validation for the cost-impact estimate fields on create/update. */
+  const rejectBadCostEstimate = (res: any, body: any): boolean => {
+    const problem = validateCostEstimate({
+      mode: body.costImpactEstimateMode ?? null,
+      amountCents: body.costImpactAmountCents ?? null,
+      minCents: body.costImpactMinCents ?? null,
+      maxCents: body.costImpactMaxCents ?? null,
+      note: body.costImpactNote ?? null,
+    });
+    if (problem) { res.status(400).json({ error: problem }); return true; }
+    return false;
+  };
+
+  app.get("/api/reviews", requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      const companyId = req.user!.companyId!;
+      const { projectId, status } = req.query as Record<string, string>;
+      if (projectId && !(await enforceProjectCompany(req, res, projectId, "Project not found"))) return;
+      const items = await storage.getReviewItems(companyId, projectId || undefined, status || undefined);
+      res.json(items);
+    } catch (error) {
+      console.error("Error fetching reviews:", error);
+      res.status(500).json({ error: "Failed to fetch reviews" });
+    }
+  });
+
+  // Full detail in one round trip — Neon is ~400ms away, so the detail view
+  // must not fan out into four sequential queries.
+  app.get("/api/reviews/:id", requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      const item = await getOwnedReviewItem(req, res, req.params.id);
+      if (!item) return;
+
+      const [revisions, documents, comments, approvals] = await Promise.all([
+        storage.getReviewRevisions(item.id),
+        storage.getReviewDocuments(item.id),
+        // Team view: internal notes included. Reviewer-facing reads (PR3/PR4)
+        // must NOT pass true here.
+        storage.getReviewComments(item.id, true),
+        storage.getReviewApprovals(item.id),
+      ]);
+
+      const byRevision = new Map<string, any[]>();
+      for (const doc of documents) {
+        const list = byRevision.get(doc.revisionId) ?? [];
+        list.push(doc);
+        byRevision.set(doc.revisionId, list);
+      }
+
+      res.json({
+        ...item,
+        revisions: revisions.map((rev) => ({ ...rev, documents: byRevision.get(rev.id) ?? [] })),
+        comments,
+        approvals,
+      });
+    } catch (error) {
+      console.error("Error fetching review:", error);
+      res.status(500).json({ error: "Failed to fetch review" });
+    }
+  });
+
+  app.post("/api/reviews", requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      const companyId = req.user!.companyId!;
+      const projectId = req.body?.projectId;
+      if (!projectId || typeof projectId !== "string") {
+        return res.status(400).json({ error: "A projectId is required" });
+      }
+      if (!(await enforceProjectCompany(req, res, projectId, "Project not found"))) return;
+
+      const validationResult = reviewItemWritableSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ error: fromZodError(validationResult.error).message });
+      }
+      if (rejectBadCostEstimate(res, req.body)) return;
+
+      const data = validationResult.data as any;
+      if (!String(data.name || "").trim()) {
+        return res.status(400).json({ error: "A name is required" });
+      }
+      if (await rejectForeignReviewerContact(req, res, data.reviewerContactId)) return;
+
+      // One client per PROJECT: default the reviewer to the project's assigned
+      // client contact. An explicit reviewerContactId in the body wins.
+      const fallback = await reviewerResolver.defaultReviewerForProject(projectId);
+
+      const item = await storage.createReviewItem({
+        ...data,
+        companyId,
+        projectId,
+        status: "draft",
+        reviewerType: fallback.reviewerType, // always "client" in V1
+        reviewerContactId: data.reviewerContactId ?? fallback.reviewerContactId,
+        reviewerUserId: null,
+        createdById: req.user!.id,
+      } as any);
+
+      res.status(201).json(item);
+    } catch (error) {
+      console.error("Error creating review:", error);
+      res.status(500).json({ error: "Failed to create review" });
+    }
+  });
+
+  app.patch("/api/reviews/:id", requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      const companyId = req.user!.companyId!;
+      const item = await getOwnedReviewItem(req, res, req.params.id);
+      if (!item) return;
+
+      const validationResult = reviewItemWritableSchema.partial().safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ error: fromZodError(validationResult.error).message });
+      }
+      if (rejectBadCostEstimate(res, { ...item, ...req.body })) return;
+      if (await rejectForeignReviewerContact(req, res, (validationResult.data as any).reviewerContactId)) return;
+
+      const updated = await storage.updateReviewItem(item.id, companyId, validationResult.data as any);
+      res.json(updated);
+    } catch (error) {
+      console.error("Error updating review:", error);
+      res.status(500).json({ error: "Failed to update review" });
+    }
+  });
+
+  app.delete("/api/reviews/:id", requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      const companyId = req.user!.companyId!;
+      const item = await getOwnedReviewItem(req, res, req.params.id);
+      if (!item) return;
+
+      // A decided item is a record of what the client agreed to. Deleting it
+      // would take the approval trail with it (ON DELETE CASCADE), so refuse
+      // and let the builder close it instead.
+      const approvals = await storage.getReviewApprovals(item.id);
+      if (approvals.length > 0) {
+        return res.status(409).json({
+          error: "This review has recorded decisions and cannot be deleted. Close it instead.",
+        });
+      }
+
+      const deleted = await storage.deleteReviewItem(item.id, companyId);
+      res.json({ success: deleted });
+    } catch (error) {
+      console.error("Error deleting review:", error);
+      res.status(500).json({ error: "Failed to delete review" });
+    }
+  });
+
+  app.get("/api/reviews/:id/revisions", requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      const item = await getOwnedReviewItem(req, res, req.params.id);
+      if (!item) return;
+      res.json(await storage.getReviewRevisions(item.id));
+    } catch (error) {
+      console.error("Error fetching review revisions:", error);
+      res.status(500).json({ error: "Failed to fetch revisions" });
+    }
+  });
+
+  /**
+   * Issue (or re-issue) the item to its reviewer.
+   *
+   * This is the ONLY way an item reaches "awaiting_review". Re-issuing after a
+   * change request creates the next revision rather than editing the last one,
+   * so the client's history stays a true record of what they were shown.
+   */
+  app.post("/api/reviews/:id/revisions", requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      const item = await getOwnedReviewItem(req, res, req.params.id);
+      if (!item) return;
+
+      // Approved/rejected/closed items need an explicit reopen first, so a new
+      // revision cannot quietly invalidate a decision the client already gave.
+      if (isTerminalReviewStatus(item.status)) {
+        return res.status(409).json({
+          error: `This review is ${item.status} — reopen it before issuing another revision.`,
+          code: "review_terminal",
+        });
+      }
+
+      const { notes, revisionLabel } = req.body ?? {};
+      const revision = await storage.issueReviewRevision(item.id, {
+        notes: typeof notes === "string" ? notes.trim().slice(0, 5000) : null,
+        revisionLabel: typeof revisionLabel === "string" ? revisionLabel.trim().slice(0, 40) : null,
+        issuedById: req.user!.id,
+      });
+
+      // Audit line in the conversation. Non-fatal: the revision is already
+      // issued, and losing the log line must not fail the request.
+      try {
+        await storage.createReviewComment({
+          reviewItemId: item.id,
+          revisionId: revision.id,
+          content: `${revision.revisionLabel} issued for review`,
+          createdByName: "Review log",
+          ...attributeComment({ isSystem: true }),
+          isSystem: true,
+        } as any);
+      } catch (_logErr) {
+        // Non-fatal
+      }
+
+      res.status(201).json(revision);
+    } catch (error) {
+      console.error("Error issuing review revision:", error);
+      res.status(500).json({ error: "Failed to issue revision" });
+    }
+  });
+
+  /**
+   * Attach a document to the item's current revision.
+   *
+   * Takes an object-storage path plus the signed grant issued by
+   * /api/uploads/*. The company segment of objectPath proves nothing on its own
+   * — the bucket is flat — so the grant is what binds the path to this company.
+   *
+   * V1 is team-upload only; there is deliberately no client upload route.
+   */
+  app.post("/api/reviews/:id/documents", requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      const companyId = req.user!.companyId!;
+      const item = await getOwnedReviewItem(req, res, req.params.id);
+      if (!item) return;
+
+      const { objectPath, uploadGrant, fileName, fileType, mimeType, fileSize, revisionId } = req.body ?? {};
+      if (!objectPath || typeof objectPath !== "string" || !fileName || typeof fileName !== "string") {
+        return res.status(400).json({ error: "objectPath and fileName are required" });
+      }
+      if (!verifyUploadGrant(uploadGrant, objectPath, companyId)) {
+        return res.status(403).json({ error: "Forbidden" });
+      }
+
+      // Default to the live revision; an explicit revisionId must still belong
+      // to this item, or a caller could staple a file onto another's history.
+      const targetRevisionId = revisionId || item.currentRevisionId;
+      if (!targetRevisionId) {
+        return res.status(400).json({ error: "Issue a revision before attaching documents" });
+      }
+      const revision = await storage.getReviewRevision(targetRevisionId);
+      if (!revision || revision.reviewItemId !== item.id) {
+        return res.status(404).json({ error: "Revision not found" });
+      }
+
+      const existing = await storage.getReviewDocuments(item.id);
+      const document = await storage.createReviewDocument({
+        reviewItemId: item.id,
+        revisionId: revision.id,
+        fileName: fileName.trim().slice(0, 255),
+        filePath: objectPath,
+        fileType: typeof fileType === "string" ? fileType : null,
+        mimeType: typeof mimeType === "string" ? mimeType : null,
+        fileSize: Number.isInteger(fileSize) ? fileSize : null,
+        sortOrder: existing.filter((d) => d.revisionId === revision.id).length,
+        uploadedById: req.user!.id,
+      } as any);
+
+      res.status(201).json(document);
+    } catch (error) {
+      console.error("Error attaching review document:", error);
+      res.status(500).json({ error: "Failed to attach document" });
+    }
+  });
+
+  app.delete("/api/reviews/:id/documents/:documentId", requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      const item = await getOwnedReviewItem(req, res, req.params.id);
+      if (!item) return;
+
+      const document = await storage.getReviewDocument(req.params.documentId);
+      if (!document || document.reviewItemId !== item.id) {
+        return res.status(404).json({ error: "Document not found" });
+      }
+
+      const deleted = await storage.deleteReviewDocument(document.id);
+      res.json({ success: deleted });
+    } catch (error) {
+      console.error("Error deleting review document:", error);
+      res.status(500).json({ error: "Failed to delete document" });
+    }
+  });
+
+  app.get("/api/reviews/:id/comments", requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      const item = await getOwnedReviewItem(req, res, req.params.id);
+      if (!item) return;
+      // Team route: internal notes are included.
+      res.json(await storage.getReviewComments(item.id, true));
+    } catch (error) {
+      console.error("Error fetching review comments:", error);
+      res.status(500).json({ error: "Failed to fetch comments" });
+    }
+  });
+
+  app.post("/api/reviews/:id/comments", requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      const item = await getOwnedReviewItem(req, res, req.params.id);
+      if (!item) return;
+
+      const { content, parentCommentId, isInternal, revisionId } = req.body ?? {};
+      if (!content || typeof content !== "string" || !content.trim()) {
+        return res.status(400).json({ error: "Content is required" });
+      }
+      if (content.length > 5000) {
+        return res.status(400).json({ error: "Comment is too long" });
+      }
+
+      // One level of threading: a reply attaches to a top-level comment on this
+      // item, never to another reply and never across items.
+      let parentId: string | null = null;
+      if (parentCommentId) {
+        const siblings = await storage.getReviewComments(item.id, true);
+        const parent = siblings.find((c) => c.id === parentCommentId);
+        if (!parent) return res.status(404).json({ error: "Parent comment not found" });
+        if (parent.parentCommentId) {
+          return res.status(400).json({ error: "Replies can only be one level deep" });
+        }
+        parentId = parent.id;
+      }
+
+      const author = attributeComment({
+        sessionUserId: req.user!.id,
+        sessionUserCategory: req.user?.userCategory ?? null,
+      });
+
+      const comment = await storage.createReviewComment({
+        reviewItemId: item.id,
+        revisionId: revisionId || item.currentRevisionId || null,
+        parentCommentId: parentId,
+        content: content.trim(),
+        createdByName: [req.user?.firstName, req.user?.lastName].filter(Boolean).join(" ").trim()
+          || req.user?.email || "Team",
+        isInternal: isInternal === true,
+        ...author,
+      } as any);
+
+      res.status(201).json(comment);
+    } catch (error) {
+      console.error("Error posting review comment:", error);
+      res.status(500).json({ error: "Failed to post comment" });
+    }
+  });
+
+  app.get("/api/reviews/:id/approvals", requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      const item = await getOwnedReviewItem(req, res, req.params.id);
+      if (!item) return;
+      res.json(await storage.getReviewApprovals(item.id));
+    } catch (error) {
+      console.error("Error fetching review approvals:", error);
+      res.status(500).json({ error: "Failed to fetch approvals" });
     }
   });
 

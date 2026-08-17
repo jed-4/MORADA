@@ -7702,6 +7702,10 @@ export const reviewItems = pgTable("review_items", {
 
   // Denormalised pointer to the revision currently out for review. Nullable
   // because an item exists before its first revision is issued.
+  //
+  // No .references() here: reviewItems and reviewRevisions point at each other,
+  // and declaring both in Drizzle is a circular initialisation. The real FK
+  // (ON DELETE SET NULL) is added in migration 0045 once both tables exist.
   currentRevisionId: varchar("current_revision_id"),
 
   // ── Reviewer (generic; see the header note) ───────────────────────────────
