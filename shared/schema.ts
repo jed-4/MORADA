@@ -7112,3 +7112,299 @@ export type AiBlockedItem = typeof aiBlockedItems.$inferSelect;
 export type InsertAiConversation = typeof aiConversations.$inferInsert;
 export type InsertAiMessage = typeof aiMessages.$inferInsert;
 export type InsertAiBlockedItem = typeof aiBlockedItems.$inferInsert;
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CLIENT REVIEW & APPROVALS
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// A builder pushes documents (plans, sub-trade quotes, selections, specs) to a
+// reviewer, who reads them and either approves, asks for changes, or rejects.
+// Asking for changes cycles: the builder issues a new revision and it goes back
+// out. Every revision, comment and decision is kept, so the client can always
+// see what they were shown and what they agreed to.
+//
+// REVIEWER IS DELIBERATELY GENERIC. V1 ships client review only, but nothing
+// below says "client": an item names a `reviewerType` plus one of two refs
+// (contact or user). Phase 2 — an admin pushing an estimate to a PM and back —
+// sets reviewerType = 'user' and populates reviewerUserId. No migration, no
+// rearchitecture. Server-side resolution lives in server/reviews/reviewerResolver.ts.
+//
+// Vocabularies (status, decision, cost impact, revision labels) live in
+// shared/reviewCostImpact.ts so the server and client cannot drift.
+
+/** Cost impact is ONE field with three states — never a set of booleans. */
+export const reviewCostImpactEnum = pgEnum("review_cost_impact", ["none", "possible", "confirmed"]);
+
+/** A reviewer's decision on one revision. */
+export const reviewDecisionEnum = pgEnum("review_decision", ["approved", "changes_requested", "rejected"]);
+
+export const reviewItems = pgTable("review_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+
+  // Tenancy. `variations` scopes through projectId alone; reviews carry the
+  // company explicitly so every query can be company-scoped without a join.
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+
+  name: text("name").notNull(),
+  description: text("description"),
+
+  // "draft" | "awaiting_review" | "changes_requested" | "approved" | "rejected" | "closed"
+  // See REVIEW_ITEM_STATUSES in shared/reviewCostImpact.ts.
+  status: text("status").notNull().default("draft"),
+
+  // Overdue is a DATE comparison in the company's local day — see isOverdue().
+  dueDate: timestamp("due_date"),
+
+  // ── Cost impact ──────────────────────────────────────────────────────────
+  costImpact: reviewCostImpactEnum("cost_impact").notNull().default("none"),
+  // Estimated impact: prompted (optional) when costImpact === 'confirmed'.
+  // "amount" | "range" | "tbc" | null — null means the builder skipped it.
+  costImpactEstimateMode: text("cost_impact_estimate_mode"),
+  costImpactAmountCents: integer("cost_impact_amount_cents"),
+  costImpactMinCents: integer("cost_impact_min_cents"),
+  costImpactMaxCents: integer("cost_impact_max_cents"),
+  costImpactNote: text("cost_impact_note"),
+
+  // Opt-in downstream hook (implemented in PR5). When true, approving this item
+  // raises a draft variation linked back to the approval. The PR2 composer
+  // auto-ticks this for 'confirmed' and leaves it off otherwise; the builder can
+  // always override, so this is NOT derivable from costImpact.
+  createVariationOnApproval: boolean("create_variation_on_approval").notNull().default(false),
+
+  // Denormalised pointer to the revision currently out for review. Nullable
+  // because an item exists before its first revision is issued.
+  //
+  // No .references() here: reviewItems and reviewRevisions point at each other,
+  // and declaring both in Drizzle is a circular initialisation. The real FK
+  // (ON DELETE SET NULL) is added in migration 0045 once both tables exist.
+  currentRevisionId: varchar("current_revision_id"),
+
+  // ── Reviewer (generic; see the header note) ───────────────────────────────
+  // "client" in V1. Phase 2 adds "user" for internal review.
+  reviewerType: text("reviewer_type").notNull().default("client"),
+  // V1: defaults to the project's assigned client (projects.clientId).
+  reviewerContactId: varchar("reviewer_contact_id").references(() => contacts.id, { onDelete: "set null" }),
+  // Phase-2 seam. Always null in V1 — present so phase 2 needs no migration.
+  reviewerUserId: varchar("reviewer_user_id").references(() => users.id, { onDelete: "set null" }),
+
+  // ── Direct-link access (emailed notification) ─────────────────────────────
+  // Same lazily-minted-token model as selections.portalToken / variations.portalToken.
+  // One token per ITEM, so the emailed link is stable across revisions.
+  portalToken: varchar("portal_token").unique(),
+  portalSentAt: timestamp("portal_sent_at"),
+  portalViewedAt: timestamp("portal_viewed_at"), // first time the reviewer opened the link
+
+  createdById: varchar("created_by_id").references(() => users.id, { onDelete: "set null" }),
+  closedAt: timestamp("closed_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  companyIdx: index("review_items_company_idx").on(table.companyId),
+  projectStatusIdx: index("review_items_project_status_idx").on(table.projectId, table.status),
+  dueDateIdx: index("review_items_due_date_idx").on(table.dueDate),
+  reviewerContactIdx: index("review_items_reviewer_contact_idx").on(table.reviewerContactId),
+}));
+
+export const insertReviewItemSchema = createInsertSchema(reviewItems).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertReviewItem = z.infer<typeof insertReviewItemSchema>;
+export type ReviewItem = typeof reviewItems.$inferSelect;
+
+/**
+ * One issuance of an item to its reviewer. Re-issuing after a change-request
+ * creates the next revision rather than mutating the last one, so the client's
+ * revision history is a real record of what they were shown.
+ */
+export const reviewRevisions = pgTable("review_revisions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  reviewItemId: varchar("review_item_id").notNull().references(() => reviewItems.id, { onDelete: "cascade" }),
+
+  revisionNumber: integer("revision_number").notNull(), // 1, 2, 3…
+  // STORED, not derived — relabelling the scheme must never rewrite history.
+  // Default comes from defaultRevisionLabel() ("Rev A", "Rev B"…).
+  revisionLabel: text("revision_label").notNull(),
+
+  // Client-visible covering note: what changed since the last revision.
+  // Builder-internal chatter belongs in review_comments with isInternal = true.
+  notes: text("notes"),
+
+  issuedById: varchar("issued_by_id").references(() => users.id, { onDelete: "set null" }),
+  issuedAt: timestamp("issued_at").notNull().defaultNow(),
+  supersededAt: timestamp("superseded_at"), // set when the next revision is issued
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  itemIdx: index("review_revisions_item_idx").on(table.reviewItemId),
+  itemNumberUnique: uniqueIndex("review_revisions_item_number_unique").on(table.reviewItemId, table.revisionNumber),
+}));
+
+export const insertReviewRevisionSchema = createInsertSchema(reviewRevisions).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertReviewRevision = z.infer<typeof insertReviewRevisionSchema>;
+export type ReviewRevision = typeof reviewRevisions.$inferSelect;
+
+/**
+ * A document attached to a REVISION (not to the item) — that is what makes the
+ * revision history meaningful: each revision carries the exact set of documents
+ * the reviewer saw at the time.
+ *
+ * `filePath` is an object-storage path (/objects/company/<cid>/uploads/<uuid>),
+ * matching option_attachments / purchase_order_attachments. NOT
+ * drive_file_attachments: those rows are Google Drive pointers needing the
+ * company's Drive OAuth, which a reviewer on a token link does not have.
+ *
+ * V1 is team-upload only — uploadedById is a user, and there is no client
+ * upload route.
+ */
+export const reviewDocuments = pgTable("review_documents", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  // Denormalised so listing every document on an item needs no join.
+  reviewItemId: varchar("review_item_id").notNull().references(() => reviewItems.id, { onDelete: "cascade" }),
+  revisionId: varchar("revision_id").notNull().references(() => reviewRevisions.id, { onDelete: "cascade" }),
+
+  fileName: text("file_name").notNull(),
+  filePath: text("file_path").notNull(),
+  fileType: text("file_type"), // "image" | "document" | "specification"
+  mimeType: text("mime_type"),
+  fileSize: integer("file_size"), // bytes
+  sortOrder: integer("sort_order").notNull().default(0),
+
+  uploadedById: varchar("uploaded_by_id").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  revisionIdx: index("review_documents_revision_idx").on(table.revisionId),
+  itemIdx: index("review_documents_item_idx").on(table.reviewItemId),
+}));
+
+export const insertReviewDocumentSchema = createInsertSchema(reviewDocuments).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertReviewDocument = z.infer<typeof insertReviewDocumentSchema>;
+export type ReviewDocument = typeof reviewDocuments.$inferSelect;
+
+/**
+ * The conversation on a review item. One level of threading (parentCommentId),
+ * which is new — selection_comments / rfi_comments / task_comments are all flat.
+ *
+ * `isInternal` comments are builder-only and must never appear in a reviewer
+ * projection; the portal/client read paths filter them out server-side.
+ */
+export const reviewComments = pgTable("review_comments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  reviewItemId: varchar("review_item_id").notNull().references(() => reviewItems.id, { onDelete: "cascade" }),
+  // Which revision was on screen when this was written. Set null (not cascade)
+  // so deleting a revision never silently deletes the conversation about it.
+  revisionId: varchar("revision_id").references(() => reviewRevisions.id, { onDelete: "set null" }),
+  // One level only: a reply points at a top-level comment, never at another reply.
+  parentCommentId: varchar("parent_comment_id").references((): AnyPgColumn => reviewComments.id, { onDelete: "set null" }),
+
+  content: text("content").notNull(),
+  attachmentUrls: text("attachment_urls").array().notNull().default(sql`'{}'`),
+  attachmentFileNames: text("attachment_file_names").array().notNull().default(sql`'{}'`),
+
+  // "team" | "client" | "system" — generic, so a phase-2 internal reviewer fits.
+  authorType: text("author_type").notNull().default("team"),
+  // Null for a reviewer arriving on a portal token (no session user).
+  createdById: varchar("created_by_id").references(() => users.id, { onDelete: "set null" }),
+  createdByName: text("created_by_name").notNull(), // cached for display, as elsewhere
+
+  // Builder-only note; stripped from every reviewer-facing projection.
+  isInternal: boolean("is_internal").notNull().default(false),
+  // Auto-generated audit line (issued Rev B, reopened, decision recorded…).
+  isSystem: boolean("is_system").notNull().default(false),
+
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  editedAt: timestamp("edited_at"), // null until the author edits
+}, (table) => ({
+  itemCreatedIdx: index("review_comments_item_created_idx").on(table.reviewItemId, table.createdAt),
+  parentIdx: index("review_comments_parent_idx").on(table.parentCommentId),
+}));
+
+export const insertReviewCommentSchema = createInsertSchema(reviewComments).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  editedAt: true,
+});
+
+export type InsertReviewComment = z.infer<typeof insertReviewCommentSchema>;
+export type ReviewComment = typeof reviewComments.$inferSelect;
+
+/**
+ * An immutable decision record. APPEND-ONLY — never UPDATEd. Mirrors
+ * bill_approvals, plus the audit columns variations gained in migration 0029.
+ *
+ * THE SNAPSHOT IS THE POINT. The cost-impact state AND the exact banner wording
+ * shown at decision time are frozen here, so rewording the banner copy later
+ * cannot change what a historic approval says the client agreed to. This is the
+ * same freeze-on-event pattern as projects.contractedTotal*. The server derives
+ * the text from shared/reviewCostImpact.ts at write time; it is never accepted
+ * from the client.
+ */
+export const reviewApprovals = pgTable("review_approvals", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  reviewItemId: varchar("review_item_id").notNull().references(() => reviewItems.id, { onDelete: "cascade" }),
+  // An approval must always name the revision it was given against.
+  revisionId: varchar("revision_id").notNull().references(() => reviewRevisions.id, { onDelete: "cascade" }),
+
+  decision: reviewDecisionEnum("decision").notNull(),
+  comment: text("comment"),
+
+  // ── Frozen at decision time ──────────────────────────────────────────────
+  snapshotCostImpact: reviewCostImpactEnum("snapshot_cost_impact").notNull(),
+  snapshotBannerText: text("snapshot_banner_text"), // null when impact was 'none'
+  snapshotBannerVersion: text("snapshot_banner_version"), // REVIEW_BANNER_VERSION at the time
+  snapshotEstimateMode: text("snapshot_estimate_mode"),
+  snapshotEstimateAmountCents: integer("snapshot_estimate_amount_cents"),
+  snapshotEstimateMinCents: integer("snapshot_estimate_min_cents"),
+  snapshotEstimateMaxCents: integer("snapshot_estimate_max_cents"),
+  snapshotEstimateNote: text("snapshot_estimate_note"),
+
+  // The red gate: 'confirmed' items cannot be approved until this is ticked.
+  // Enforced server-side; persisted so the audit trail proves it was shown.
+  acknowledgedVariationRequired: boolean("acknowledged_variation_required").notNull().default(false),
+
+  // ── Who decided (generic; phase-2 ready) ──────────────────────────────────
+  decidedByType: text("decided_by_type").notNull().default("client"), // "client" | "user"
+  decidedByUserId: varchar("decided_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  decidedByContactId: varchar("decided_by_contact_id").references(() => contacts.id, { onDelete: "set null" }),
+  decidedByName: text("decided_by_name").notNull(), // as typed/known at the time
+  decidedVia: text("decided_via").notNull().default("portal_login"), // "portal_login" | "portal_token"
+  decidedIp: text("decided_ip"),
+  decidedUserAgent: text("decided_user_agent"),
+
+  // Set by the PR5 hook when this approval raised a draft variation.
+  // Also the idempotency guard: already set means do not raise a second one.
+  createdVariationId: varchar("created_variation_id").references(() => variations.id, { onDelete: "set null" }),
+
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  itemCreatedIdx: index("review_approvals_item_created_idx").on(table.reviewItemId, table.createdAt),
+  revisionIdx: index("review_approvals_revision_idx").on(table.revisionId),
+  variationIdx: index("review_approvals_variation_idx").on(table.createdVariationId),
+}));
+
+export const insertReviewApprovalSchema = createInsertSchema(reviewApprovals).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertReviewApproval = z.infer<typeof insertReviewApprovalSchema>;
+export type ReviewApproval = typeof reviewApprovals.$inferSelect;
+
+/** An item with everything a detail view needs, in one shape. */
+export type ReviewItemWithDetail = ReviewItem & {
+  revisions: (ReviewRevision & { documents: ReviewDocument[] })[];
+  comments: ReviewComment[];
+  approvals: ReviewApproval[];
+};
