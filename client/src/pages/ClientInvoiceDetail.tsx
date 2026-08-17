@@ -1821,16 +1821,24 @@ export default function ClientInvoiceDetail() {
     return cols;
   };
 
+  // Header treatment shared by every line grid on this page, matched to the
+  // allowance grid (LineItemsTable): 9px uppercase semibold in muted-foreground
+  // — literal 9px, not the `text-label` token, because tailwind-merge reads
+  // `text-label` as a text-COLOUR utility and drops it in favour of the colour
+  // class beside it (the same reason <TableHead>'s own text-label never lands)
+  // under a hairline rule. No fill — --table-header-bg is 2% off white and
+  // vanishes on a card. The rule must sit on the th, not the thead: the table
+  // is border-separate, and that border model never paints row-group borders.
+  const GRID_HEADER =
+    "bg-transparent [&_th]:border-b [&_th]:border-border [&_th]:text-[9px] [&_th]:text-muted-foreground [&_th]:font-semibold";
+
   // All three grids stack in one document, so they share a resize namespace —
   // dragging a column on any of them keeps the whole invoice aligned.
   const renderClaimGrid = (lines: ClaimLine[], testId: string) => (
     <LineItemTable
       fixedLayout
       resizeNamespace="client-invoice-claim-lines"
-      // No fill: --table-header-bg is 2% off white and vanishes on a card, so
-      // the rule and the weight carry the separation (matches BillDetail). The
-      // border must sit on the th — the table is border-separate.
-      headerClassName="bg-transparent [&_th]:border-b-2 [&_th]:border-border [&_th]:text-foreground/75 [&_th]:font-semibold"
+      headerClassName={GRID_HEADER}
       data={lines}
       columns={claimLineColumns()}
       rowKey={(l) => l.key}
@@ -3237,166 +3245,152 @@ export default function ClientInvoiceDetail() {
                         No custom lines. Click "Add Line" to add a custom line item.
                       </p>
                     ) : (
-                      <Table className="min-w-[1060px]">
-                        <TableHeader>
-                          <TableRow className="[&>th]:border-b-2 [&>th]:border-border [&>th]:text-foreground/75 [&>th]:font-semibold">
-                            <TableHead className="w-8 py-0 px-2" />
-                            {isColVisible("name") && <TableHead className="w-32">Name</TableHead>}
-                            {isColVisible("description") && <TableHead>Description</TableHead>}
-                            <TableHead className="w-36">Cost Code</TableHead>
-                            <TableHead className="w-20">Unit</TableHead>
-                            <TableHead className="text-right w-14">Qty</TableHead>
-                            <TableHead className="text-right w-24">Unit Cost (ex GST)</TableHead>
-                            <TableHead className="w-28">Tax</TableHead>
-                            <TableHead className="w-32">Account</TableHead>
-                            {isColVisible("amountExTax") && (
-                              <TableHead className="text-right w-24">Ex Tax</TableHead>
-                            )}
-                            {isColVisible("amountTax") && (
-                              <TableHead className="text-right w-20">Tax $</TableHead>
-                            )}
-                            {isColVisible("amountIncTax") && (
-                              <TableHead className="text-right w-24">Inc Tax</TableHead>
-                            )}
-                            <TableHead className="w-8 py-0" />
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {customLines.map((line, index) => {
-                            // Prices are entered EX GST; GST is added on top for
-                            // taxable lines (same convention as the totals/PDF/Xero).
-                            const exTax = line.totalPrice;
-                            const tax = line.taxable ? line.totalPrice * GST_RATE : 0;
-                            return (
-                              <TableRow key={index} className="h-9" data-testid={`custom-line-${index}`}>
-                                {/* Visual-only checkbox */}
-                                <TableCell className="py-1 px-2 w-8">
-                                  <div className="w-4 h-4 rounded border border-input flex items-center justify-center" />
-                                </TableCell>
-                                {isColVisible("name") && (
-                                  <TableCell className="py-1">
-                                    <Input
-                                      value={line.name}
-                                      onChange={(e) => updateCustomLine(index, "name", e.target.value)}
-                                      placeholder="Name"
-                                      className="h-7 text-table border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1.5 rounded-sm placeholder:text-muted-foreground/30"
-                                    />
-                                  </TableCell>
-                                )}
-                                {isColVisible("description") && (
-                                  <TableCell className="py-1">
-                                    <Input
-                                      value={line.description}
-                                      onChange={(e) => updateCustomLine(index, "description", e.target.value)}
-                                      placeholder="Description"
-                                      className="h-7 text-table border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1.5 rounded-sm placeholder:text-muted-foreground/30"
-                                    />
-                                  </TableCell>
-                                )}
-                                {/* Cost Code */}
-                                <TableCell className="py-1 w-36">
-                                  <CostCodeSelect
-                                    value={line.costCodeId || ""}
-                                    onValueChange={(v) => updateCustomLine(index, "costCodeId", v || null)}
-                                    placeholder="— Cost code —"
-                                    allowNone
-                                    triggerClassName="h-7 text-xs border-0 bg-transparent shadow-none focus:ring-1 focus:ring-ring px-1 rounded-sm w-full"
-                                  />
-                                </TableCell>
-                                {/* Unit */}
-                                <TableCell className="py-1 w-20">
-                                  <Input
-                                    value={line.unit || ""}
-                                    onChange={(e) => updateCustomLine(index, "unit", e.target.value)}
-                                    placeholder="unit"
-                                    className="h-7 text-table border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1.5 rounded-sm placeholder:text-muted-foreground/30"
-                                  />
-                                </TableCell>
-                                {/* Qty */}
-                                <TableCell className="py-1">
-                                  <Input
-                                    type="number"
-                                    value={line.quantity}
-                                    onChange={(e) => updateCustomLine(index, "quantity", parseFloat(e.target.value) || 0)}
-                                    className="h-7 w-14 text-right text-sm border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1 rounded-sm ml-auto"
-                                  />
-                                </TableCell>
-                                {/* Unit Cost */}
-                                <TableCell className="py-1">
-                                  <Input
-                                    type="number"
-                                    value={line.unitPrice}
-                                    onChange={(e) => updateCustomLine(index, "unitPrice", parseFloat(e.target.value) || 0)}
-                                    className="h-7 w-20 text-right text-table border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1.5 rounded-sm ml-auto"
-                                  />
-                                </TableCell>
-                                {/* Tax text */}
-                                <TableCell className="py-1 w-28">
-                                  <button
-                                    type="button"
-                                    onClick={() => updateCustomLine(index, "taxable", !line.taxable)}
-                                    className="text-xs text-muted-foreground hover:text-foreground whitespace-nowrap"
-                                  >
-                                    {line.taxable ? "GST on income" : "No Tax"}
-                                  </button>
-                                </TableCell>
-                                {/* Account */}
-                                <TableCell className="py-1 w-32">
-                                  {xeroAccounts.length > 0 ? (
-                                    <Select
-                                      value={line.xeroAccountCode || "__none__"}
-                                      onValueChange={(val) => updateCustomLine(index, "xeroAccountCode", val === "__none__" ? null : val)}
-                                    >
-                                      <SelectTrigger className="h-7 text-xs border-0 bg-transparent shadow-none focus:ring-1 focus:ring-ring px-1 rounded-sm w-full" data-testid={`select-account-${index}`}>
-                                        <SelectValue placeholder="— Account —" />
-                                      </SelectTrigger>
-                                      <SelectContent>
-                                        <SelectItem value="__none__"><span className="text-muted-foreground">— None —</span></SelectItem>
-                                        {xeroAccounts.map((acc) => (
-                                          <SelectItem key={acc.code} value={acc.code}>{acc.code} — {acc.name}</SelectItem>
-                                        ))}
-                                      </SelectContent>
-                                    </Select>
-                                  ) : (
-                                    <input
-                                      value={line.xeroAccountCode || ""}
-                                      onChange={(e) => updateCustomLine(index, "xeroAccountCode", e.target.value || null)}
-                                      placeholder="Account"
-                                      className="w-full h-7 px-1.5 text-xs bg-transparent border-0 outline-none focus:ring-1 focus:ring-ring rounded-sm placeholder:text-muted-foreground/30"
-                                      data-testid={`input-account-${index}`}
-                                    />
-                                  )}
-                                </TableCell>
-                                {isColVisible("amountExTax") && (
-                                  <TableCell className="text-right text-table py-1">
-                                    {formatCurrency(exTax)}
-                                  </TableCell>
-                                )}
-                                {isColVisible("amountTax") && (
-                                  <TableCell className="text-right text-table py-1">
-                                    {formatCurrency(tax)}
-                                  </TableCell>
-                                )}
-                                {isColVisible("amountIncTax") && (
-                                  <TableCell className="text-right text-table font-medium py-1">
-                                    {formatCurrency(exTax + tax)}
-                                  </TableCell>
-                                )}
-                                <TableCell className="py-1 w-8">
-                                  <button
-                                    type="button"
-                                    onClick={() => deleteCustomLine(index)}
-                                    className="text-muted-foreground hover:text-destructive"
-                                    data-testid={`button-delete-custom-line-${index}`}
-                                  >
-                                    <X className="w-3.5 h-3.5" />
-                                  </button>
-                                </TableCell>
-                              </TableRow>
-                            );
-                          })}
-                        </TableBody>
-                      </Table>
+                      <LineItemTable
+                        fixedLayout
+                        resizeNamespace="client-invoice-custom-lines"
+                        headerClassName={GRID_HEADER}
+                        tableClassName="min-w-[1060px]"
+                        data={customLines}
+                        rowKey={(_line, index) => index}
+                        rowTestId={(_line, index) => `custom-line-${index}`}
+                        testId="custom-lines"
+                        columns={(() => {
+                          const inputCls =
+                            "h-7 text-table border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1.5 rounded-sm placeholder:text-muted-foreground/30";
+                          const cols: LineItemColumn<CustomLine>[] = [];
+                          if (isColVisible("name"))
+                            cols.push({
+                              key: "name", header: "Name", width: 128, truncate: false,
+                              cell: (line, index) => (
+                                <Input
+                                  value={line.name}
+                                  onChange={(e) => updateCustomLine(index, "name", e.target.value)}
+                                  placeholder="Name"
+                                  className={inputCls}
+                                />
+                              ),
+                            });
+                          if (isColVisible("description"))
+                            cols.push({
+                              key: "description", header: "Description", truncate: false,
+                              cell: (line, index) => (
+                                <Input
+                                  value={line.description}
+                                  onChange={(e) => updateCustomLine(index, "description", e.target.value)}
+                                  placeholder="Description"
+                                  className={inputCls}
+                                />
+                              ),
+                            });
+                          cols.push({
+                            key: "costCode", header: "Cost Code", width: 144, truncate: false,
+                            cell: (line, index) => (
+                              <CostCodeSelect
+                                value={line.costCodeId || ""}
+                                onValueChange={(v) => updateCustomLine(index, "costCodeId", v || null)}
+                                placeholder="— Cost code —"
+                                allowNone
+                                triggerClassName="h-7 text-table border-0 bg-transparent shadow-none focus:ring-1 focus:ring-ring px-1.5 rounded-sm w-full"
+                              />
+                            ),
+                          });
+                          cols.push({
+                            key: "unit", header: "Unit", width: 80, truncate: false,
+                            cell: (line, index) => (
+                              <Input
+                                value={line.unit || ""}
+                                onChange={(e) => updateCustomLine(index, "unit", e.target.value)}
+                                placeholder="unit"
+                                className={inputCls}
+                              />
+                            ),
+                          });
+                          cols.push({
+                            key: "quantity", header: "Qty", align: "right", width: 56, truncate: false,
+                            cell: (line, index) => (
+                              <Input
+                                type="number"
+                                value={line.quantity}
+                                onChange={(e) => updateCustomLine(index, "quantity", parseFloat(e.target.value) || 0)}
+                                className="h-7 w-14 text-right text-table border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1.5 rounded-sm ml-auto"
+                              />
+                            ),
+                          });
+                          cols.push({
+                            key: "unitPrice", header: "Unit Cost (ex GST)", align: "right", width: 96, truncate: false,
+                            cell: (line, index) => (
+                              <Input
+                                type="number"
+                                value={line.unitPrice}
+                                onChange={(e) => updateCustomLine(index, "unitPrice", parseFloat(e.target.value) || 0)}
+                                className="h-7 w-20 text-right text-table border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1.5 rounded-sm ml-auto"
+                              />
+                            ),
+                          });
+                          cols.push({
+                            key: "taxable", header: "Tax", width: 112, truncate: false,
+                            cell: (line, index) => (
+                              <button
+                                type="button"
+                                onClick={() => updateCustomLine(index, "taxable", !line.taxable)}
+                                className="text-table text-muted-foreground hover:text-foreground whitespace-nowrap"
+                              >
+                                {line.taxable ? "GST on income" : "No Tax"}
+                              </button>
+                            ),
+                          });
+                          cols.push({
+                            key: "account", header: "Account", width: 128, truncate: false,
+                            cell: (line, index) =>
+                              xeroAccounts.length > 0 ? (
+                                <Select
+                                  value={line.xeroAccountCode || "__none__"}
+                                  onValueChange={(val) => updateCustomLine(index, "xeroAccountCode", val === "__none__" ? null : val)}
+                                >
+                                  <SelectTrigger className="h-7 text-table border-0 bg-transparent shadow-none focus:ring-1 focus:ring-ring px-1.5 rounded-sm w-full" data-testid={`select-account-${index}`}>
+                                    <SelectValue placeholder="— Account —" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="__none__"><span className="text-muted-foreground">— None —</span></SelectItem>
+                                    {xeroAccounts.map((acc) => (
+                                      <SelectItem key={acc.code} value={acc.code}>{acc.code} — {acc.name}</SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              ) : (
+                                <input
+                                  value={line.xeroAccountCode || ""}
+                                  onChange={(e) => updateCustomLine(index, "xeroAccountCode", e.target.value || null)}
+                                  placeholder="Account"
+                                  className="w-full h-7 px-1.5 text-table bg-transparent border-0 outline-none focus:ring-1 focus:ring-ring rounded-sm placeholder:text-muted-foreground/30"
+                                  data-testid={`input-account-${index}`}
+                                />
+                              ),
+                          });
+                          // Prices are entered EX GST; GST is added on top for
+                          // taxable lines (same convention as the totals/PDF/Xero).
+                          if (isColVisible("amountExTax"))
+                            cols.push({ key: "amountExTax", header: "Ex Tax", align: "right", width: 96, cell: (line) => formatCurrency(line.totalPrice) });
+                          if (isColVisible("amountTax"))
+                            cols.push({ key: "amountTax", header: "Tax $", align: "right", width: 80, cell: (line) => formatCurrency(line.taxable ? line.totalPrice * GST_RATE : 0) });
+                          if (isColVisible("amountIncTax"))
+                            cols.push({
+                              key: "amountIncTax", header: "Inc Tax", align: "right", width: 96, className: "font-medium",
+                              cell: (line) => formatCurrency(line.totalPrice + (line.taxable ? line.totalPrice * GST_RATE : 0)),
+                            });
+                          return cols;
+                        })()}
+                        actions={(_line, index) => (
+                          <button
+                            type="button"
+                            onClick={() => deleteCustomLine(index)}
+                            className="text-muted-foreground hover:text-destructive"
+                            data-testid={`button-delete-custom-line-${index}`}
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      />
                     )}
                   </div>{/* end custom lines content */}
                 </div>{/* end custom lines sub-section */}
