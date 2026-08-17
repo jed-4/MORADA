@@ -36815,7 +36815,15 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
         taxType: l.taxable ? "OUTPUT" : "NONE",
         taxAmount: l.gstCents / 100,
         accountCode: l.accountCode || fallbackAccountCode || undefined,
-        tracking: lineTracking.length > 0 ? lineTracking : undefined,
+        // A line's own tracking wins; otherwise it inherits the project's
+        // option, which is what every line used to get unconditionally.
+        tracking: (() => {
+          const own = (l as any).tracking as Array<{ categoryId: string; optionId: string }> | null | undefined;
+          if (own?.length) {
+            return own.map((t) => ({ TrackingCategoryID: t.categoryId, TrackingOptionID: t.optionId }));
+          }
+          return lineTracking.length > 0 ? lineTracking : undefined;
+        })(),
       }));
 
       // Clear, actionable pre-flight errors (short enough for a toast) instead of
@@ -36985,7 +36993,13 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
           TaxType: l.taxable ? "OUTPUT" : "NONE",
           TaxAmount: l.gstCents / 100,
           AccountCode: l.accountCode || fallbackAccountCode,
-          ...(lineTracking.length ? { Tracking: lineTracking } : {}),
+          ...(() => {
+            const own = (l as any).tracking as Array<{ categoryId: string; optionId: string }> | null | undefined;
+            if (own?.length) {
+              return { Tracking: own.map((t) => ({ TrackingCategoryID: t.categoryId, TrackingOptionID: t.optionId })) };
+            }
+            return lineTracking.length ? { Tracking: lineTracking } : {};
+          })(),
         })),
         LineAmountTypes: "Exclusive",
         Status: "AUTHORISED",

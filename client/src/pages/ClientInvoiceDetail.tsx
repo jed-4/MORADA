@@ -320,12 +320,17 @@ export default function ClientInvoiceDetail() {
   });
   const [customLineColPickerOpen, setCustomLineColPickerOpen] = useState(false);
   const [bulkAccountCode, setBulkAccountCode] = useState("");
-  // Per-line Xero account overrides for the non-custom sources, keyed by
+  // Per-line Xero overrides for the non-custom sources, keyed by
   // lineAccountKey(). The breakdown is rebuilt from source data on every
-  // render, so the override cannot live on the derived line — it is keyed by
-  // the line's stable identity and persisted on the invoice. An absent key
-  // means "use the company default".
-  const [lineAccountOverrides, setLineAccountOverrides] = useState<Record<string, string>>({});
+  // render, so an override cannot live on the derived line — it is keyed by the
+  // line's stable identity and persisted on the invoice. An absent field means
+  // "company default account, GST charged, project's own tracking option".
+  type LineXeroOverride = {
+    account?: string | null;
+    taxable?: boolean;
+    tracking?: Record<string, string>;
+  };
+  const [lineXeroOverrides, setLineXeroOverrides] = useState<Record<string, LineXeroOverride>>({});
   const [modalBillIds, setModalBillIds] = useState<string[]>([]);
   const [modalTimesheetIds, setModalTimesheetIds] = useState<string[]>([]);
   const [modalSelectionOptionIds, setModalSelectionOptionIds] = useState<string[]>([]);
@@ -364,6 +369,15 @@ export default function ClientInvoiceDetail() {
 
   const { data: xeroAccounts = [] } = useQuery<Array<{ code: string; name: string; type: string; accountId: string }>>({
     queryKey: ["/api/xero/accounts"],
+  });
+
+  const { data: xeroTrackingCategories = [] } = useQuery<Array<{
+    trackingCategoryId: string;
+    name: string;
+    options: Array<{ trackingOptionId: string; name: string }>;
+  }>>({
+    queryKey: ["/api/xero/tracking-categories"],
+    enabled: !!xeroStatus?.connected,
   });
 
   const { data: invoice, isLoading: invoiceLoading } = useQuery<ClientInvoice>({
@@ -565,9 +579,9 @@ export default function ClientInvoiceDetail() {
       if ((invoice as any).contractClaimRows && Array.isArray((invoice as any).contractClaimRows)) {
         setContractClaimRows((invoice as any).contractClaimRows as ContractClaimRow[]);
       }
-      const overrides = (invoice as any).lineAccountOverrides;
+      const overrides = (invoice as any).lineXeroOverrides;
       if (overrides && typeof overrides === "object" && !Array.isArray(overrides)) {
-        setLineAccountOverrides(overrides as Record<string, string>);
+        setLineXeroOverrides(overrides as Record<string, LineXeroOverride>);
       }
       // Open intro/closing if they have content
       if (invoice.introductionText) setIntroCollapsed(false);
@@ -954,6 +968,7 @@ export default function ClientInvoiceDetail() {
     amountIncCents: number;
     taxable: boolean;
     accountCode?: string | null;
+    tracking?: Array<{ categoryId: string; optionId: string }>;
     // Editor-only extras — the save payload picks fields explicitly, so these
     // never reach the server. `accountKey` is the line's override identity;
     // custom lines use `custom#<index>` and write through to their own column.
@@ -965,7 +980,10 @@ export default function ClientInvoiceDetail() {
   };
 
   // Split an inc-GST cents amount into ex + gst (claims are stored inc GST).
-  const splitInc = (incCents: number) => {
+  // A GST-free line is billed at its own amount with no GST inside it, so the
+  // ex-GST figure is the amount itself and the invoice total drops by the GST.
+  const splitInc = (incCents: number, taxable = true) => {
+    if (!taxable) return { ex: incCents, gst: 0 };
     const ex = Math.round(incCents / (1 + GST_RATE));
     return { ex, gst: incCents - ex };
   };
@@ -978,24 +996,66 @@ export default function ClientInvoiceDetail() {
   // no id. Custom lines are excluded — they carry their own account column.
   const lineAccountKey = (source: BreakdownLine["source"], id?: string) =>
     id ? `${source}:${id}` : source;
+  const overrideFor = (source: BreakdownLine["source"], id?: string): LineXeroOverride =>
+    lineXeroOverrides[lineAccountKey(source, id)] ?? {};
   const accountFor = (source: BreakdownLine["source"], id?: string) =>
-    lineAccountOverrides[lineAccountKey(source, id)] || null;
-  // Write an account by the line's accountKey. Custom lines keep their account
-  // on their own row (client_invoice_items.xero_account_code); everything else
-  // goes into the override map.
-  const setAccountByKey = (key: string, code: string | null) => {
+    overrideFor(source, id).account || null;
+  // Lines charge GST unless explicitly marked otherwise. Marking a line GST-free
+  // does not gross it up: the line's own amount is what the client pays, and the
+  // GST inside it comes off the invoice total (same as custom lines already do).
+  const taxableFor = (source: BreakdownLine["source"], id?: string) =>
+    overrideFor(source, id).taxable !== false;
+  // Resolved tracking for a line: its own overrides, else the project's option
+  // on the Jobs category, which is what every line used to get unconditionally.
+  const trackingForKey = (key: string) => {
+    const own = (lineXeroOverrides[key] ?? {}).tracking ?? {};
+    const pairs = Object.entries(own).filter(([, optionId]) => !!optionId);
+    if (pairs.length > 0) return pairs.map(([categoryId, optionId]) => ({ categoryId, optionId }));
+    return undefined;
+  };
+  const trackingFor = (source: BreakdownLine["source"], id?: string) =>
+    trackingForKey(lineAccountKey(source, id));
+
+  // Write an override by the line's accountKey. Custom lines keep their account
+  // and taxable flag on their own row; everything else goes into the map.
+  const setXeroByKey = (key: string, patch: LineXeroOverride) => {
     if (key.startsWith("custom#")) {
       const index = Number(key.slice("custom#".length));
-      setCustomLines((prev) => prev.map((l, i) => (i === index ? { ...l, xeroAccountCode: code } : l)));
-      return;
+      setCustomLines((prev) =>
+        prev.map((l, i) =>
+          i === index
+            ? {
+                ...l,
+                ...(patch.account !== undefined ? { xeroAccountCode: patch.account } : {}),
+                ...(patch.taxable !== undefined ? { taxable: patch.taxable } : {}),
+              }
+            : l,
+        ),
+      );
+      // A custom line still needs somewhere to keep its tracking.
+      if (patch.tracking === undefined) return;
     }
-    setLineAccountOverrides((prev) => {
-      if (!code) {
+    setLineXeroOverrides((prev) => {
+      const next: LineXeroOverride = { ...(prev[key] ?? {}), ...patch };
+      if (patch.tracking !== undefined) {
+        next.tracking = Object.fromEntries(
+          Object.entries(patch.tracking).filter(([, v]) => !!v),
+        );
+        if (Object.keys(next.tracking).length === 0) delete next.tracking;
+      }
+      if (next.account === null || next.account === "") delete next.account;
+      if (next.taxable === true) delete next.taxable;
+      if (Object.keys(next).length === 0) {
         const { [key]: _dropped, ...rest } = prev;
         return rest;
       }
-      return { ...prev, [key]: code };
+      return { ...prev, [key]: next };
     });
+  };
+
+  // Apply one field down every line in the breakdown.
+  const setXeroForAll = (patch: LineXeroOverride) => {
+    buildInvoiceLineBreakdown().forEach((l) => l.accountKey && setXeroByKey(l.accountKey, patch));
   };
 
   const buildInvoiceLineBreakdown = (): BreakdownLine[] => {
@@ -1006,12 +1066,14 @@ export default function ClientInvoiceDetail() {
       for (const row of contractClaimRows) {
         if (!baseContractCents || !row.claimPercent) continue;
         const inc = contractRowCents[row.id] ?? 0;
-        const { ex, gst } = splitInc(inc);
+        const taxable = taxableFor("contract", row.id);
+        const { ex, gst } = splitInc(inc, taxable);
         lines.push({
           source: "contract",
           description: `${row.name || "Contract Claim"}${row.description ? ` — ${row.description}` : ""} (${row.claimPercent}%)`,
-          amountExCents: ex, gstCents: gst, amountIncCents: inc, taxable: true,
+          amountExCents: ex, gstCents: gst, amountIncCents: ex + gst, taxable,
           accountCode: accountFor("contract", row.id),
+          tracking: trackingFor("contract", row.id),
           accountKey: lineAccountKey("contract", row.id),
           label: row.name || "Contract Claim", pdfDescription: row.description, claimPct: row.claimPercent,
         });
@@ -1019,12 +1081,14 @@ export default function ClientInvoiceDetail() {
       for (const v of getSelectedVariations()) {
         const pct = variationClaims[v.id] ?? 100;
         const inc = getVariationClaimCents(v);
-        const { ex, gst } = splitInc(inc);
+        const taxable = taxableFor("variation", v.id);
+        const { ex, gst } = splitInc(inc, taxable);
         lines.push({
           source: "variation",
           description: `Variation ${v.variationNumber || ""}${v.name ? `: ${v.name}` : ""} (${pct}%)`,
-          amountExCents: ex, gstCents: gst, amountIncCents: inc, taxable: true,
+          amountExCents: ex, gstCents: gst, amountIncCents: ex + gst, taxable,
           accountCode: accountFor("variation", v.id),
+          tracking: trackingFor("variation", v.id),
           accountKey: lineAccountKey("variation", v.id),
           label: `Variation ${v.variationNumber || ""}`, pdfDescription: v.name || undefined, claimPct: pct,
         });
@@ -1032,12 +1096,14 @@ export default function ClientInvoiceDetail() {
       for (const item of getSelectedAllowanceItems()) {
         const pct = allowanceClaims[item.id] ?? 100;
         const inc = getAllowanceClaimCents(item);
-        const { ex, gst } = splitInc(inc);
+        const taxable = taxableFor("allowance", item.id);
+        const { ex, gst } = splitInc(inc, taxable);
         lines.push({
           source: "allowance",
           description: `Allowance — ${item.name || ""} (${pct}%)`,
-          amountExCents: ex, gstCents: gst, amountIncCents: inc, taxable: true,
+          amountExCents: ex, gstCents: gst, amountIncCents: ex + gst, taxable,
           accountCode: accountFor("allowance", item.id),
+          tracking: trackingFor("allowance", item.id),
           accountKey: lineAccountKey("allowance", item.id),
           label: `Allowance - ${item.name || ""}`, claimPct: pct,
         });
@@ -1048,49 +1114,57 @@ export default function ClientInvoiceDetail() {
       const selectedTimesheets = getSelectedTimesheets();
       if (selectedTimesheets.length > 0) {
         const ex = calculateLabourTotal();
-        const gst = gstOnEx(ex, true);
+        const labourTaxable = taxableFor("labour");
+        const gst = gstOnEx(ex, labourTaxable);
         lines.push({
           source: "labour",
           description: `Labour — ${selectedTimesheets.length} timesheet${selectedTimesheets.length === 1 ? "" : "s"}`,
-          amountExCents: ex, gstCents: gst, amountIncCents: ex + gst, taxable: true,
+          amountExCents: ex, gstCents: gst, amountIncCents: ex + gst, taxable: labourTaxable,
           accountCode: accountFor("labour"),
+          tracking: trackingFor("labour"),
           accountKey: lineAccountKey("labour"),
           label: "Labour",
         });
       }
       for (const bill of getSelectedBills()) {
         const ex = bill.total;
-        const gst = gstOnEx(ex, true);
+        const billTaxable = taxableFor("bill", bill.id);
+        const gst = gstOnEx(ex, billTaxable);
         const supplierName = (bill as any).supplierName as string | undefined;
         lines.push({
           source: "bill",
           description: `${supplierName || "Bill"}${bill.billNumber ? ` — ${bill.billNumber}` : ""}`,
-          amountExCents: ex, gstCents: gst, amountIncCents: ex + gst, taxable: true,
+          amountExCents: ex, gstCents: gst, amountIncCents: ex + gst, taxable: billTaxable,
           accountCode: accountFor("bill", bill.id),
+          tracking: trackingFor("bill", bill.id),
           accountKey: lineAccountKey("bill", bill.id),
           label: supplierName || "Bill", pdfDescription: bill.billNumber || undefined,
         });
       }
       for (const o of getSelectedSelectionOptions()) {
         const ex = o.totalCost || 0;
-        const gst = gstOnEx(ex, true);
+        const selTaxable = taxableFor("selection", o.id);
+        const gst = gstOnEx(ex, selTaxable);
         lines.push({
           source: "selection",
           description: `Selection — ${o.name || ""}`,
-          amountExCents: ex, gstCents: gst, amountIncCents: ex + gst, taxable: true,
+          amountExCents: ex, gstCents: gst, amountIncCents: ex + gst, taxable: selTaxable,
           accountCode: accountFor("selection", o.id),
+          tracking: trackingFor("selection", o.id),
           accountKey: lineAccountKey("selection", o.id),
           label: `Selection - ${o.name || ""}`,
         });
       }
       const markupEx = Math.round(calculateMarkup() * 100);
       if (markupEx !== 0) {
-        const gst = gstOnEx(markupEx, true);
+        const markupTaxable = taxableFor("markup");
+        const gst = gstOnEx(markupEx, markupTaxable);
         lines.push({
           source: "markup",
           description: `Builder's margin (${form.watch("markupPercent") || 0}%)`,
-          amountExCents: markupEx, gstCents: gst, amountIncCents: markupEx + gst, taxable: true,
+          amountExCents: markupEx, gstCents: gst, amountIncCents: markupEx + gst, taxable: markupTaxable,
           accountCode: accountFor("markup"),
+          tracking: trackingFor("markup"),
           accountKey: lineAccountKey("markup"),
           label: "Builder's margin",
         });
@@ -1108,6 +1182,7 @@ export default function ClientInvoiceDetail() {
         description: line.name || line.description || "Custom Item",
         amountExCents: ex, gstCents: gst, amountIncCents: ex + gst, taxable: line.taxable,
         accountCode: line.xeroAccountCode || null,
+        tracking: trackingForKey(`custom#${customIndex}`),
         accountKey: `custom#${customIndex}`,
         label: line.name || line.description || "Custom Item",
         pdfDescription: line.name ? line.description || undefined : undefined,
@@ -1247,11 +1322,12 @@ export default function ClientInvoiceDetail() {
         amountIncCents: l.amountIncCents,
         taxable: l.taxable,
         accountCode: l.accountCode ?? null,
+        tracking: l.tracking ?? null,
       })),
       columnConfig: columnConfig,
       showAmountsIncTax: showAmountsIncTax,
       contractClaimRows: contractClaimRows,
-      lineAccountOverrides: lineAccountOverrides,
+      lineXeroOverrides: lineXeroOverrides,
       sendToXero: sendToXero,
     };
   };
@@ -3409,75 +3485,138 @@ export default function ClientInvoiceDetail() {
                   </div>{/* end custom lines content */}
                 </div>{/* end custom lines sub-section */}
 
-              {/* ── Xero Accounts ──
-                  Every line needs an account code before Xero will accept the
-                  invoice. Only custom lines can carry one on the line itself,
-                  so without this panel a progress-claim invoice depends
-                  entirely on the company default — and when that is unset the
-                  push fails with no way to fix it from here. Blank = use the
-                  company default. */}
+              {/* ── Xero posting ──
+                  Every line needs an account before Xero will accept the
+                  invoice, and only custom lines can carry one on the line
+                  itself — so without this panel a progress-claim invoice
+                  depends entirely on the company default. GST and tracking sit
+                  here too: this is the last look before the money leaves.
+                  Blank account = company default; blank tracking = the
+                  project's own option. */}
               {xeroStatus?.connected && (() => {
                 const lines = buildInvoiceLineBreakdown();
                 if (lines.length === 0) return null;
                 const defaultAccount = companySettings?.clientInvoiceDefaultXeroAccount || null;
                 const unresolved = lines.filter((l) => !l.accountCode && !defaultAccount).length;
+                const accountOptions = [...xeroAccounts]
+                  .sort((a, b) => (a.name || "").localeCompare(b.name || ""))
+                  .map((acc) => ({ value: acc.code, label: `${acc.code} — ${acc.name}` }));
+                // Xero accepts at most two tracking categories per line.
+                const cats = (xeroTrackingCategories ?? []).slice(0, 2);
+
+                const accountCell = (value: string | null, onPick: (v: string | null) => void, testId: string) =>
+                  accountOptions.length > 0 ? (
+                    <SearchableSelect
+                      value={value || ""}
+                      onValueChange={(v) => onPick(v || null)}
+                      allowClear
+                      placeholder={defaultAccount ? `Default (${defaultAccount})` : "Account…"}
+                      searchPlaceholder="Search accounts..."
+                      emptyMessage="No accounts found."
+                      triggerClassName={cn("w-44 h-7 text-[11px]", !value && !defaultAccount && "border-status-warning/60")}
+                      data-testid={testId}
+                      options={accountOptions}
+                    />
+                  ) : (
+                    <input
+                      value={value || ""}
+                      onChange={(e) => onPick(e.target.value || null)}
+                      placeholder="Account"
+                      className="h-7 w-44 px-2 text-[11px] border rounded-md bg-transparent focus:outline-none focus:ring-1 focus:ring-ring"
+                      data-testid={testId}
+                    />
+                  );
+
+                const trackingCell = (
+                  cat: any,
+                  value: string,
+                  onPick: (v: string) => void,
+                  testId: string,
+                ) => (
+                  <SearchableSelect
+                    value={value}
+                    onValueChange={onPick}
+                    allowClear
+                    placeholder={cat.name}
+                    searchPlaceholder={`Search ${cat.name}...`}
+                    emptyMessage="No options found."
+                    triggerClassName="w-36 h-7 text-[11px]"
+                    data-testid={testId}
+                    options={(cat.options ?? []).map((o: any) => ({ value: o.trackingOptionId, label: o.name }))}
+                  />
+                );
+
                 return (
-                  <div data-testid="xero-accounts-panel">
-                    <div className="h-8 flex items-center px-3 gap-2 border-b border-border/50 bg-muted/40">
-                      <span className="text-xs font-medium flex items-center gap-1">
-                        <SiXero className="w-3 h-3" />
-                        Xero Accounts
-                      </span>
-                      <span className="text-xs text-muted-foreground ml-1">
-                        {defaultAccount
-                          ? `Blank uses the company default (${defaultAccount})`
-                          : "No company default set — every line needs an account"}
-                      </span>
-                      {unresolved > 0 && (
-                        <span
-                          className="ml-auto text-xs text-status-warning flex items-center gap-1"
-                          data-testid="text-unresolved-accounts"
-                        >
-                          <AlertCircle className="w-3 h-3" />
-                          {unresolved} line{unresolved === 1 ? "" : "s"} will fail
-                        </span>
-                      )}
-                    </div>
-                    <div className="px-3 py-2 space-y-1">
-                      {lines.map((line) => (
-                        <div key={line.accountKey} className="flex items-center gap-2 text-table">
-                          <span className="truncate flex-1 text-muted-foreground">{line.description}</span>
-                          <span className="tabular-nums text-muted-foreground w-24 text-right">
-                            {formatCurrency(line.amountIncCents / 100)}
+                  <div data-testid="xero-posting-panel">
+                    {sectionHeader({
+                      label: "Xero Posting",
+                      icon: <SiXero className="w-3 h-3" />,
+                      right:
+                        unresolved > 0 ? (
+                          <span className="text-xs text-status-warning flex items-center gap-1" data-testid="text-unresolved-accounts">
+                            <AlertCircle className="w-3 h-3" />
+                            {unresolved} line{unresolved === 1 ? "" : "s"} will fail
                           </span>
-                          {xeroAccounts.length > 0 ? (
-                            <SearchableSelect
-                              value={line.accountCode || ""}
-                              onValueChange={(val) => setAccountByKey(line.accountKey!, val || null)}
-                              allowClear
-                              placeholder={defaultAccount ? `Default (${defaultAccount})` : "Select account…"}
-                              searchPlaceholder="Search accounts..."
-                              emptyMessage="No accounts found."
-                              triggerClassName={cn(
-                                "w-56 h-7 text-table",
-                                !line.accountCode && !defaultAccount && "border-status-warning/60",
-                              )}
-                              data-testid={`select-line-account-${line.accountKey}`}
-                              options={[...xeroAccounts]
-                                .sort((a, b) => (a.name || "").localeCompare(b.name || ""))
-                                .map((acc) => ({ value: acc.code, label: `${acc.code} — ${acc.name}` }))}
-                            />
-                          ) : (
-                            <input
-                              value={line.accountCode || ""}
-                              onChange={(e) => setAccountByKey(line.accountKey!, e.target.value || null)}
-                              placeholder="Account"
-                              className="h-7 w-24 px-2 text-table border rounded-md bg-transparent focus:outline-none focus:ring-1 focus:ring-ring"
-                              data-testid={`input-line-account-${line.accountKey}`}
-                            />
-                          )}
+                        ) : undefined,
+                    })}
+                    <div className="px-3 py-2 overflow-x-auto">
+                      {/* Set-all row — applies one field down every line. */}
+                      <div className="flex items-center gap-2 pb-2 mb-1 border-b border-border/50">
+                        <span className="text-[9px] uppercase tracking-wide font-semibold text-muted-foreground w-40 flex-shrink-0">
+                          Set all
+                        </span>
+                        {accountCell(null, (v) => setXeroForAll({ account: v }), "select-all-lines-account")}
+                        <div className="flex items-center rounded-md border border-input overflow-hidden h-7 flex-shrink-0">
+                          <button type="button" onClick={() => setXeroForAll({ taxable: true })}
+                            className="px-2 h-full text-[11px] text-muted-foreground hover:text-foreground" data-testid="button-all-gst">
+                            GST
+                          </button>
+                          <div className="w-px h-full bg-border" />
+                          <button type="button" onClick={() => setXeroForAll({ taxable: false })}
+                            className="px-2 h-full text-[11px] text-muted-foreground hover:text-foreground" data-testid="button-all-nogst">
+                            No GST
+                          </button>
                         </div>
-                      ))}
+                        {cats.map((cat: any) =>
+                          trackingCell(cat, "", (v) => setXeroForAll({ tracking: { [cat.trackingCategoryId]: v } }),
+                            `select-all-tracking-${cat.trackingCategoryId}`),
+                        )}
+                      </div>
+
+                      {lines.map((line) => {
+                        const key = line.accountKey!;
+                        const own = lineXeroOverrides[key] ?? {};
+                        return (
+                          <div key={key} className="flex items-center gap-2 py-0.5">
+                            <span className="truncate w-40 flex-shrink-0 text-[11px] text-muted-foreground" title={line.description}>
+                              {line.description}
+                            </span>
+                            {accountCell(line.accountCode ?? null, (v) => setXeroByKey(key, { account: v }), `select-line-account-${key}`)}
+                            <button
+                              type="button"
+                              onClick={() => setXeroByKey(key, { taxable: !line.taxable })}
+                              className={cn(
+                                "h-7 px-2 text-[11px] rounded-md border flex-shrink-0 w-20",
+                                line.taxable ? "border-input text-foreground" : "border-input text-muted-foreground",
+                              )}
+                              data-testid={`button-line-gst-${key}`}
+                            >
+                              {line.taxable ? "GST 10%" : "No GST"}
+                            </button>
+                            {cats.map((cat: any) =>
+                              trackingCell(
+                                cat,
+                                own.tracking?.[cat.trackingCategoryId] ?? "",
+                                (v) => setXeroByKey(key, { tracking: { ...(own.tracking ?? {}), [cat.trackingCategoryId]: v } }),
+                                `select-line-tracking-${cat.trackingCategoryId}-${key}`,
+                              ),
+                            )}
+                            <span className="ml-auto tabular-nums text-[11px] text-muted-foreground w-24 text-right flex-shrink-0">
+                              {formatCurrency(line.amountIncCents / 100)}
+                            </span>
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
                 );

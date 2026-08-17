@@ -2496,12 +2496,14 @@ export const clientInvoices = pgTable("client_invoices", {
   // from, so the Xero total always equals what Morada displayed at save time.
   // Shape: InvoiceLineBreakdownEntry[] (see invoiceLineBreakdownEntrySchema).
   lineBreakdown: jsonb("line_breakdown"),
-  // Per-line Xero account overrides, keyed by the stable line identity
+  // Per-line Xero overrides, keyed by the stable line identity
   // (`contract:<rowId>`, `variation:<id>`, `allowance:<estimateItemId>`,
   // `bill:<id>`, `selection:<id>`, `labour`, `markup`). Custom lines carry
-  // their own account on client_invoice_items instead. An absent key means
-  // "use the company default" — see resolveClientInvoiceFallbackAccount.
-  lineAccountOverrides: jsonb("line_account_overrides").notNull().default({}),
+  // their own account on client_invoice_items instead.
+  // Shape: Record<lineKey, { account?, taxable?, tracking?: Record<catId, optId> }>.
+  // An absent key means "company default account, GST charged, project's own
+  // tracking option" — see resolveClientInvoiceFallbackAccount.
+  lineXeroOverrides: jsonb("line_xero_overrides").notNull().default({}),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({
@@ -2522,6 +2524,12 @@ export const invoiceLineBreakdownEntrySchema = z.object({
   amountIncCents: z.number().int(),
   taxable: z.boolean(),
   accountCode: z.string().optional().nullable(),
+  // Resolved per-line tracking, ready to hand to Xero. Empty/absent means the
+  // push falls back to the project's own tracking option.
+  tracking: z
+    .array(z.object({ categoryId: z.string(), optionId: z.string() }))
+    .optional()
+    .nullable(),
 }).refine((l) => l.amountExCents + l.gstCents === l.amountIncCents, {
   message: "amountExCents + gstCents must equal amountIncCents",
 }).refine((l) => l.taxable || l.gstCents === 0, {
