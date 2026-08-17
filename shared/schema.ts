@@ -2515,7 +2515,7 @@ export const clientInvoices = pgTable("client_invoices", {
 // cents; amountExCents + gstCents must equal amountIncCents (validated).
 // `taxable: false` lines must carry gstCents 0. `accountCode` is the resolved
 // per-line Xero account: a custom line's own code, or the override recorded in
-// clientInvoices.lineAccountOverrides for every other source.
+// clientInvoices.lineXeroOverrides for every other source.
 export const invoiceLineBreakdownEntrySchema = z.object({
   source: z.enum(["contract", "variation", "allowance", "labour", "bill", "selection", "markup", "custom"]),
   description: z.string().min(1),
