@@ -1784,23 +1784,23 @@ export default function ClientInvoiceDetail() {
   // ── render helpers ────────────────────────────────────────────────────────────
 
   const renderLineTableHeader = (_includeContractCols: boolean = false) => (
-    <TableRow className="h-6 bg-muted/30">
-      {isColVisible("name") && <TableHead className="w-40 text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Name</TableHead>}
-      {isColVisible("description") && <TableHead className="text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Description</TableHead>}
+    <TableRow className="[&>th]:border-b-2 [&>th]:border-border [&>th]:text-foreground/75 [&>th]:font-semibold">
+      {isColVisible("name") && <TableHead className="w-40">Name</TableHead>}
+      {isColVisible("description") && <TableHead>Description</TableHead>}
       {isColVisible("claimPercent") && (
-        <TableHead className="text-right w-20 text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Claim %</TableHead>
+        <TableHead className="text-right w-20">Claim %</TableHead>
       )}
       {isColVisible("claimAmount") && (
-        <TableHead className="text-right w-28 text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Claim $</TableHead>
+        <TableHead className="text-right w-28">Claim $</TableHead>
       )}
       {isColVisible("amountExTax") && (
-        <TableHead className="text-right w-28 text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Ex Tax</TableHead>
+        <TableHead className="text-right w-28">Ex Tax</TableHead>
       )}
       {isColVisible("amountTax") && (
-        <TableHead className="text-right w-24 text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Tax</TableHead>
+        <TableHead className="text-right w-24">Tax</TableHead>
       )}
       {isColVisible("amountIncTax") && (
-        <TableHead className="text-right w-28 text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Inc Tax</TableHead>
+        <TableHead className="text-right w-28">Inc Tax</TableHead>
       )}
       <TableHead className="w-8 py-0" />
     </TableRow>
@@ -2514,7 +2514,7 @@ export default function ClientInvoiceDetail() {
                                           <Input
                                             value={row.name}
                                             onChange={(e) => updateContractClaimRow(row.id, "name", e.target.value)}
-                                            className="h-7 text-sm border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1 rounded-sm placeholder:text-muted-foreground/30"
+                                            className="h-7 text-table border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1.5 rounded-sm placeholder:text-muted-foreground/30"
                                             placeholder="Claim name"
                                           />
                                         </TableCell>
@@ -2524,7 +2524,7 @@ export default function ClientInvoiceDetail() {
                                           <Input
                                             value={row.description}
                                             onChange={(e) => updateContractClaimRow(row.id, "description", e.target.value)}
-                                            className="h-7 text-sm border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1 rounded-sm placeholder:text-muted-foreground/30"
+                                            className="h-7 text-table border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1.5 rounded-sm placeholder:text-muted-foreground/30"
                                             placeholder="Description"
                                           />
                                         </TableCell>
@@ -2544,27 +2544,27 @@ export default function ClientInvoiceDetail() {
                                             onChange={(e) =>
                                               updateContractClaimRow(row.id, "claimPercent", parseFloat(e.target.value) || 0)
                                             }
-                                            className="h-7 w-16 text-right text-sm ml-auto border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1 rounded-sm"
+                                            className="h-7 w-16 text-right text-table ml-auto border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1.5 rounded-sm"
                                           />
                                         </TableCell>
                                       )}
                                       {isColVisible("claimAmount") && (
-                                        <TableCell className="text-right text-sm font-medium py-1">
+                                        <TableCell className="text-right text-table font-medium py-1">
                                           {formatCurrency(claimAmt)}
                                         </TableCell>
                                       )}
                                       {isColVisible("amountExTax") && (
-                                        <TableCell className="text-right text-sm py-1">
+                                        <TableCell className="text-right text-table py-1">
                                           {formatCurrency(exTax)}
                                         </TableCell>
                                       )}
                                       {isColVisible("amountTax") && (
-                                        <TableCell className="text-right text-sm py-1">
+                                        <TableCell className="text-right text-table py-1">
                                           {formatCurrency(tax)}
                                         </TableCell>
                                       )}
                                       {isColVisible("amountIncTax") && (
-                                        <TableCell className="text-right text-sm font-medium py-1">
+                                        <TableCell className="text-right text-table font-medium py-1">
                                           {formatCurrency(claimAmt)}
                                         </TableCell>
                                       )}
@@ -2584,7 +2584,7 @@ export default function ClientInvoiceDetail() {
                             </Table>
                           </>
                         ) : (
-                          <p className="text-sm text-muted-foreground text-center py-2">
+                          <p className="text-table text-muted-foreground text-center py-2">
                             {hasContractEstimate
                               ? 'No claim rows yet. Click "Add Claim Row" to begin.'
                               : "Claiming is disabled until an estimate is marked as Contract."}
@@ -2681,12 +2681,12 @@ export default function ClientInvoiceDetail() {
                                   return (
                                     <TableRow key={variation.id} className="h-9">
                                       {isColVisible("name") && (
-                                        <TableCell className="text-sm font-medium py-1">
+                                        <TableCell className="text-table font-medium py-1">
                                           {variation.variationNumber}
                                         </TableCell>
                                       )}
                                       {isColVisible("description") && (
-                                        <TableCell className="text-sm text-muted-foreground py-1">
+                                        <TableCell className="text-table text-muted-foreground py-1">
                                           {variation.name}
                                         </TableCell>
                                       )}
@@ -2714,27 +2714,27 @@ export default function ClientInvoiceDetail() {
                                                 ),
                                               }))
                                             }
-                                            className="h-7 w-16 text-right text-sm border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring ml-auto"
+                                            className="h-7 w-16 text-right text-table border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring ml-auto"
                                           />
                                         </TableCell>
                                       )}
                                       {isColVisible("claimAmount") && (
-                                        <TableCell className="text-right text-sm font-medium py-1">
+                                        <TableCell className="text-right text-table font-medium py-1">
                                           {formatCurrency(claimAmt)}
                                         </TableCell>
                                       )}
                                       {isColVisible("amountExTax") && (
-                                        <TableCell className="text-right text-sm py-1">
+                                        <TableCell className="text-right text-table py-1">
                                           {formatCurrency(exTax)}
                                         </TableCell>
                                       )}
                                       {isColVisible("amountTax") && (
-                                        <TableCell className="text-right text-sm py-1">
+                                        <TableCell className="text-right text-table py-1">
                                           {formatCurrency(tax)}
                                         </TableCell>
                                       )}
                                       {isColVisible("amountIncTax") && (
-                                        <TableCell className="text-right text-sm font-medium py-1">
+                                        <TableCell className="text-right text-table font-medium py-1">
                                           {formatCurrency(claimAmt)}
                                         </TableCell>
                                       )}
@@ -2827,7 +2827,7 @@ export default function ClientInvoiceDetail() {
                                   return (
                                     <TableRow key={item.id} className="h-9">
                                       {isColVisible("name") && (
-                                        <TableCell className="text-sm font-medium py-1">
+                                        <TableCell className="text-table font-medium py-1">
                                           <div className="flex items-center gap-1.5">
                                             {item.name}
                                             <Badge variant="outline" className="text-data">
@@ -2837,7 +2837,7 @@ export default function ClientInvoiceDetail() {
                                         </TableCell>
                                       )}
                                       {isColVisible("description") && (
-                                        <TableCell className="text-sm text-muted-foreground py-1">
+                                        <TableCell className="text-table text-muted-foreground py-1">
                                           {item.description}
                                         </TableCell>
                                       )}
@@ -2859,27 +2859,27 @@ export default function ClientInvoiceDetail() {
                                                 [item.id]: Math.round(parseFloat(e.target.value)) || 0,
                                               }))
                                             }
-                                            className="h-7 w-16 text-right text-sm border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring ml-auto"
+                                            className="h-7 w-16 text-right text-table border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring ml-auto"
                                           />
                                         </TableCell>
                                       )}
                                       {isColVisible("claimAmount") && (
-                                        <TableCell className="text-right text-sm font-medium py-1">
+                                        <TableCell className="text-right text-table font-medium py-1">
                                           {formatCurrency(claimAmt)}
                                         </TableCell>
                                       )}
                                       {isColVisible("amountExTax") && (
-                                        <TableCell className="text-right text-sm py-1">
+                                        <TableCell className="text-right text-table py-1">
                                           {formatCurrency(exTax)}
                                         </TableCell>
                                       )}
                                       {isColVisible("amountTax") && (
-                                        <TableCell className="text-right text-sm py-1">
+                                        <TableCell className="text-right text-table py-1">
                                           {formatCurrency(tax)}
                                         </TableCell>
                                       )}
                                       {isColVisible("amountIncTax") && (
-                                        <TableCell className="text-right text-sm font-medium py-1">
+                                        <TableCell className="text-right text-table font-medium py-1">
                                           {formatCurrency(claimAmt)}
                                         </TableCell>
                                       )}
@@ -2957,23 +2957,22 @@ export default function ClientInvoiceDetail() {
                       </div>
                       <div className="px-4 py-3">
                         {selectedTimesheetIds.length === 0 ? (
-                          <p className="text-sm text-muted-foreground text-center py-2">No labour entries selected.</p>
+                          <p className="text-table text-muted-foreground text-center py-2">No labour entries selected.</p>
                         ) : (() => {
                           const rows = expandByCostCode(getSelectedTimesheets());
-                          const thCls = "text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2";
-                          const showCostCode = labourBreakByCostCode;
+                                                    const showCostCode = labourBreakByCostCode;
 
                           if (labourDisplayMode === "individual") {
                             return (
                               <Table>
                                 <TableHeader>
-                                  <TableRow className="h-6 bg-muted/30">
-                                    <TableHead className={thCls}>Date</TableHead>
-                                    <TableHead className={thCls}>Staff</TableHead>
-                                    {showCostCode && <TableHead className={thCls}>Cost Code</TableHead>}
-                                    <TableHead className={`text-right w-16 ${thCls}`}>Hours</TableHead>
-                                    <TableHead className={`text-right w-20 ${thCls}`}>Rate</TableHead>
-                                    <TableHead className={`text-right w-24 ${thCls}`}>Total</TableHead>
+                                  <TableRow className="[&>th]:border-b-2 [&>th]:border-border [&>th]:text-foreground/75 [&>th]:font-semibold">
+                                    <TableHead>Date</TableHead>
+                                    <TableHead>Staff</TableHead>
+                                    {showCostCode && <TableHead>Cost Code</TableHead>}
+                                    <TableHead className="text-right w-16">Hours</TableHead>
+                                    <TableHead className="text-right w-20">Rate</TableHead>
+                                    <TableHead className="text-right w-24">Total</TableHead>
                                     <TableHead className="w-8 py-0" />
                                   </TableRow>
                                 </TableHeader>
@@ -2983,12 +2982,12 @@ export default function ClientInvoiceDetail() {
                                     const rowKey = t._splitId ? `${t.id}-${t._splitId}` : t.id;
                                     return (
                                       <TableRow key={rowKey} className="h-9">
-                                        <TableCell className="text-sm py-1">{t.date ? format(new Date(t.date), "d MMM yyyy") : "—"}</TableCell>
-                                        <TableCell className="text-sm py-1">{getUserName(t.userId)}</TableCell>
-                                        {showCostCode && <TableCell className="text-sm py-1 text-muted-foreground">{cc?.code || cc?.name || "—"}</TableCell>}
-                                        <TableCell className="text-right text-sm py-1">{Number(t.duration).toFixed(1)}</TableCell>
-                                        <TableCell className="text-right text-sm py-1">{formatCurrency(Number(t.hourlyRate))}</TableCell>
-                                        <TableCell className="text-right text-sm font-medium py-1">{formatCurrency(Number(t.total))}</TableCell>
+                                        <TableCell className="text-table py-1">{t.date ? format(new Date(t.date), "d MMM yyyy") : "—"}</TableCell>
+                                        <TableCell className="text-table py-1">{getUserName(t.userId)}</TableCell>
+                                        {showCostCode && <TableCell className="text-table py-1 text-muted-foreground">{cc?.code || cc?.name || "—"}</TableCell>}
+                                        <TableCell className="text-right text-table py-1">{Number(t.duration).toFixed(1)}</TableCell>
+                                        <TableCell className="text-right text-table py-1">{formatCurrency(Number(t.hourlyRate))}</TableCell>
+                                        <TableCell className="text-right text-table font-medium py-1">{formatCurrency(Number(t.total))}</TableCell>
                                         <TableCell className="py-1 w-8">
                                           {!t._isSplit && (
                                             <button type="button" onClick={() => setSelectedTimesheetIds(prev => prev.filter(id => id !== t.id))} className="text-muted-foreground hover:text-destructive">
@@ -3014,12 +3013,12 @@ export default function ClientInvoiceDetail() {
                             return (
                               <Table>
                                 <TableHeader>
-                                  <TableRow className="h-6 bg-muted/30">
-                                    <TableHead className={thCls}>Staff</TableHead>
-                                    {showCostCode && <TableHead className={thCls}>Cost Code</TableHead>}
-                                    <TableHead className={`text-right w-20 ${thCls}`}>Hours</TableHead>
-                                    <TableHead className={`text-right w-20 ${thCls}`}>Avg Rate</TableHead>
-                                    <TableHead className={`text-right w-24 ${thCls}`}>Total</TableHead>
+                                  <TableRow className="[&>th]:border-b-2 [&>th]:border-border [&>th]:text-foreground/75 [&>th]:font-semibold">
+                                    <TableHead>Staff</TableHead>
+                                    {showCostCode && <TableHead>Cost Code</TableHead>}
+                                    <TableHead className="text-right w-20">Hours</TableHead>
+                                    <TableHead className="text-right w-20">Avg Rate</TableHead>
+                                    <TableHead className="text-right w-24">Total</TableHead>
                                   </TableRow>
                                 </TableHeader>
                                 <TableBody>
@@ -3033,11 +3032,11 @@ export default function ClientInvoiceDetail() {
                                     const avgRate = totalHours > 0 ? totalCost / totalHours : 0;
                                     return (
                                       <TableRow key={key} className="h-9">
-                                        <TableCell className="text-sm py-1 font-medium">{getUserName(userId)}</TableCell>
-                                        {showCostCode && <TableCell className="text-sm py-1 text-muted-foreground">{cc?.code || cc?.name || "—"}</TableCell>}
-                                        <TableCell className="text-right text-sm py-1">{totalHours.toFixed(1)}</TableCell>
-                                        <TableCell className="text-right text-sm py-1">{formatCurrency(avgRate)}</TableCell>
-                                        <TableCell className="text-right text-sm font-medium py-1">{formatCurrency(totalCost)}</TableCell>
+                                        <TableCell className="text-table py-1 font-medium">{getUserName(userId)}</TableCell>
+                                        {showCostCode && <TableCell className="text-table py-1 text-muted-foreground">{cc?.code || cc?.name || "—"}</TableCell>}
+                                        <TableCell className="text-right text-table py-1">{totalHours.toFixed(1)}</TableCell>
+                                        <TableCell className="text-right text-table py-1">{formatCurrency(avgRate)}</TableCell>
+                                        <TableCell className="text-right text-table font-medium py-1">{formatCurrency(totalCost)}</TableCell>
                                       </TableRow>
                                     );
                                   })}
@@ -3058,13 +3057,13 @@ export default function ClientInvoiceDetail() {
                             return (
                               <Table>
                                 <TableHeader>
-                                  <TableRow className="h-6 bg-muted/30">
-                                    <TableHead className={thCls}>Date</TableHead>
-                                    <TableHead className={thCls}>Staff</TableHead>
-                                    {showCostCode && <TableHead className={thCls}>Cost Code</TableHead>}
-                                    <TableHead className={`text-right w-20 ${thCls}`}>Hours</TableHead>
-                                    <TableHead className={`text-right w-20 ${thCls}`}>Avg Rate</TableHead>
-                                    <TableHead className={`text-right w-24 ${thCls}`}>Total</TableHead>
+                                  <TableRow className="[&>th]:border-b-2 [&>th]:border-border [&>th]:text-foreground/75 [&>th]:font-semibold">
+                                    <TableHead>Date</TableHead>
+                                    <TableHead>Staff</TableHead>
+                                    {showCostCode && <TableHead>Cost Code</TableHead>}
+                                    <TableHead className="text-right w-20">Hours</TableHead>
+                                    <TableHead className="text-right w-20">Avg Rate</TableHead>
+                                    <TableHead className="text-right w-24">Total</TableHead>
                                   </TableRow>
                                 </TableHeader>
                                 <TableBody>
@@ -3079,12 +3078,12 @@ export default function ClientInvoiceDetail() {
                                     const avgRate = totalHours > 0 ? totalCost / totalHours : 0;
                                     return (
                                       <TableRow key={key} className="h-9">
-                                        <TableCell className="text-sm py-1 tabular-nums">{dk !== "no-date" ? format(new Date(dk), "d MMM yyyy") : "—"}</TableCell>
+                                        <TableCell className="text-table py-1 tabular-nums">{dk !== "no-date" ? format(new Date(dk), "d MMM yyyy") : "—"}</TableCell>
                                         <TableCell className="text-xs py-1 text-muted-foreground max-w-[140px] truncate">{staffNames}</TableCell>
-                                        {showCostCode && <TableCell className="text-sm py-1 text-muted-foreground">{cc?.code || cc?.name || "—"}</TableCell>}
-                                        <TableCell className="text-right text-sm py-1">{totalHours.toFixed(1)}</TableCell>
-                                        <TableCell className="text-right text-sm py-1">{formatCurrency(avgRate)}</TableCell>
-                                        <TableCell className="text-right text-sm font-medium py-1">{formatCurrency(totalCost)}</TableCell>
+                                        {showCostCode && <TableCell className="text-table py-1 text-muted-foreground">{cc?.code || cc?.name || "—"}</TableCell>}
+                                        <TableCell className="text-right text-table py-1">{totalHours.toFixed(1)}</TableCell>
+                                        <TableCell className="text-right text-table py-1">{formatCurrency(avgRate)}</TableCell>
+                                        <TableCell className="text-right text-table font-medium py-1">{formatCurrency(totalCost)}</TableCell>
                                       </TableRow>
                                     );
                                   })}
@@ -3103,12 +3102,12 @@ export default function ClientInvoiceDetail() {
                           return (
                             <Table>
                               <TableHeader>
-                                <TableRow className="h-6 bg-muted/30">
-                                  <TableHead className={thCls}>Description</TableHead>
-                                  {showCostCode && <TableHead className={thCls}>Cost Code</TableHead>}
-                                  <TableHead className={`text-right w-20 ${thCls}`}>Hours</TableHead>
-                                  <TableHead className={`text-right w-20 ${thCls}`}>Avg Rate</TableHead>
-                                  <TableHead className={`text-right w-24 ${thCls}`}>Total</TableHead>
+                                <TableRow className="[&>th]:border-b-2 [&>th]:border-border [&>th]:text-foreground/75 [&>th]:font-semibold">
+                                  <TableHead>Description</TableHead>
+                                  {showCostCode && <TableHead>Cost Code</TableHead>}
+                                  <TableHead className="text-right w-20">Hours</TableHead>
+                                  <TableHead className="text-right w-20">Avg Rate</TableHead>
+                                  <TableHead className="text-right w-24">Total</TableHead>
                                 </TableRow>
                               </TableHeader>
                               <TableBody>
@@ -3121,11 +3120,11 @@ export default function ClientInvoiceDetail() {
                                   const avgRate = totalHours > 0 ? totalCost / totalHours : 0;
                                   return (
                                     <TableRow key={key} className="h-9">
-                                      <TableCell className="text-sm py-1 font-medium">Labour</TableCell>
-                                      {showCostCode && <TableCell className="text-sm py-1 text-muted-foreground">{cc?.code || cc?.name || "—"}</TableCell>}
-                                      <TableCell className="text-right text-sm py-1">{totalHours.toFixed(1)}</TableCell>
-                                      <TableCell className="text-right text-sm py-1">{formatCurrency(avgRate)}</TableCell>
-                                      <TableCell className="text-right text-sm font-medium py-1">{formatCurrency(totalCost)}</TableCell>
+                                      <TableCell className="text-table py-1 font-medium">Labour</TableCell>
+                                      {showCostCode && <TableCell className="text-table py-1 text-muted-foreground">{cc?.code || cc?.name || "—"}</TableCell>}
+                                      <TableCell className="text-right text-table py-1">{totalHours.toFixed(1)}</TableCell>
+                                      <TableCell className="text-right text-table py-1">{formatCurrency(avgRate)}</TableCell>
+                                      <TableCell className="text-right text-table font-medium py-1">{formatCurrency(totalCost)}</TableCell>
                                     </TableRow>
                                   );
                                 })}
@@ -3159,25 +3158,25 @@ export default function ClientInvoiceDetail() {
                       </div>
                       <div className="px-4 py-3">
                         {selectedBillIds.length === 0 ? (
-                          <p className="text-sm text-muted-foreground text-center py-2">No bills selected.</p>
+                          <p className="text-table text-muted-foreground text-center py-2">No bills selected.</p>
                         ) : (
                           <Table>
                             <TableHeader>
-                              <TableRow className="h-6 bg-muted/30">
-                                <TableHead className="text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Bill No.</TableHead>
-                                <TableHead className="text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Supplier</TableHead>
-                                <TableHead className="text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Date</TableHead>
-                                <TableHead className="text-right w-28 text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Total</TableHead>
+                              <TableRow className="[&>th]:border-b-2 [&>th]:border-border [&>th]:text-foreground/75 [&>th]:font-semibold">
+                                <TableHead>Bill No.</TableHead>
+                                <TableHead>Supplier</TableHead>
+                                <TableHead>Date</TableHead>
+                                <TableHead className="text-right w-28">Total</TableHead>
                                 <TableHead className="w-8 py-0" />
                               </TableRow>
                             </TableHeader>
                             <TableBody>
                               {getSelectedBills().map((b) => (
                                 <TableRow key={b.id} className="h-9">
-                                  <TableCell className="text-sm font-medium py-1">{b.billNumber}</TableCell>
-                                  <TableCell className="text-sm text-muted-foreground py-1">{(b as any).supplierName || "—"}</TableCell>
-                                  <TableCell className="text-sm text-muted-foreground py-1">{(b as any).billDate ? format(new Date((b as any).billDate), "d MMM yyyy") : "—"}</TableCell>
-                                  <TableCell className="text-right text-sm font-medium py-1">{formatCurrency(b.total / 100)}</TableCell>
+                                  <TableCell className="text-table font-medium py-1">{b.billNumber}</TableCell>
+                                  <TableCell className="text-table text-muted-foreground py-1">{(b as any).supplierName || "—"}</TableCell>
+                                  <TableCell className="text-table text-muted-foreground py-1">{(b as any).billDate ? format(new Date((b as any).billDate), "d MMM yyyy") : "—"}</TableCell>
+                                  <TableCell className="text-right text-table font-medium py-1">{formatCurrency(b.total / 100)}</TableCell>
                                   <TableCell className="py-1 w-8">
                                     <button type="button" onClick={() => setSelectedBillIds(prev => prev.filter(id => id !== b.id))} className="text-muted-foreground hover:text-destructive">
                                       <X className="w-3.5 h-3.5" />
@@ -3214,27 +3213,27 @@ export default function ClientInvoiceDetail() {
                       </div>
                       <div className="px-4 py-3">
                         {selectedSelectionOptionIds.length === 0 ? (
-                          <p className="text-sm text-muted-foreground text-center py-2">No selections added.</p>
+                          <p className="text-table text-muted-foreground text-center py-2">No selections added.</p>
                         ) : (
                           <Table>
                             <TableHeader>
-                              <TableRow className="h-6 bg-muted/30">
-                                <TableHead className="text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Selection</TableHead>
-                                <TableHead className="text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Option</TableHead>
-                                <TableHead className="text-right w-16 text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Qty</TableHead>
-                                <TableHead className="w-16 text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Unit</TableHead>
-                                <TableHead className="text-right w-28 text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Total</TableHead>
+                              <TableRow className="[&>th]:border-b-2 [&>th]:border-border [&>th]:text-foreground/75 [&>th]:font-semibold">
+                                <TableHead>Selection</TableHead>
+                                <TableHead>Option</TableHead>
+                                <TableHead className="text-right w-16">Qty</TableHead>
+                                <TableHead className="w-16">Unit</TableHead>
+                                <TableHead className="text-right w-28">Total</TableHead>
                                 <TableHead className="w-8 py-0" />
                               </TableRow>
                             </TableHeader>
                             <TableBody>
                               {getSelectedSelectionOptions().map((o: any) => (
                                 <TableRow key={o.id} className="h-9">
-                                  <TableCell className="text-sm py-1">{o.selectionName || "—"}</TableCell>
-                                  <TableCell className="text-sm font-medium py-1">{o.name}</TableCell>
-                                  <TableCell className="text-right text-sm py-1">{o.quantity}</TableCell>
-                                  <TableCell className="text-sm text-muted-foreground py-1">{o.unitType}</TableCell>
-                                  <TableCell className="text-right text-sm font-medium py-1">{formatCurrency((o.totalCost || 0) / 100)}</TableCell>
+                                  <TableCell className="text-table py-1">{o.selectionName || "—"}</TableCell>
+                                  <TableCell className="text-table font-medium py-1">{o.name}</TableCell>
+                                  <TableCell className="text-right text-table py-1">{o.quantity}</TableCell>
+                                  <TableCell className="text-table text-muted-foreground py-1">{o.unitType}</TableCell>
+                                  <TableCell className="text-right text-table font-medium py-1">{formatCurrency((o.totalCost || 0) / 100)}</TableCell>
                                   <TableCell className="py-1 w-8">
                                     <button type="button" onClick={() => setSelectedSelectionOptionIds(prev => prev.filter(id => id !== o.id))} className="text-muted-foreground hover:text-destructive">
                                       <X className="w-3.5 h-3.5" />
@@ -3336,24 +3335,24 @@ export default function ClientInvoiceDetail() {
                     ) : (
                       <Table className="min-w-[1060px]">
                         <TableHeader>
-                          <TableRow className="h-6 bg-muted/30">
+                          <TableRow className="[&>th]:border-b-2 [&>th]:border-border [&>th]:text-foreground/75 [&>th]:font-semibold">
                             <TableHead className="w-8 py-0 px-2" />
-                            {isColVisible("name") && <TableHead className="w-32 text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Name</TableHead>}
-                            {isColVisible("description") && <TableHead className="text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Description</TableHead>}
-                            <TableHead className="w-36 text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Cost Code</TableHead>
-                            <TableHead className="w-20 text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Unit</TableHead>
-                            <TableHead className="text-right w-14 text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Qty</TableHead>
-                            <TableHead className="text-right w-24 text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Unit Cost (ex GST)</TableHead>
-                            <TableHead className="w-28 text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Tax</TableHead>
-                            <TableHead className="w-32 text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Account</TableHead>
+                            {isColVisible("name") && <TableHead className="w-32">Name</TableHead>}
+                            {isColVisible("description") && <TableHead>Description</TableHead>}
+                            <TableHead className="w-36">Cost Code</TableHead>
+                            <TableHead className="w-20">Unit</TableHead>
+                            <TableHead className="text-right w-14">Qty</TableHead>
+                            <TableHead className="text-right w-24">Unit Cost (ex GST)</TableHead>
+                            <TableHead className="w-28">Tax</TableHead>
+                            <TableHead className="w-32">Account</TableHead>
                             {isColVisible("amountExTax") && (
-                              <TableHead className="text-right w-24 text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Ex Tax</TableHead>
+                              <TableHead className="text-right w-24">Ex Tax</TableHead>
                             )}
                             {isColVisible("amountTax") && (
-                              <TableHead className="text-right w-20 text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Tax $</TableHead>
+                              <TableHead className="text-right w-20">Tax $</TableHead>
                             )}
                             {isColVisible("amountIncTax") && (
-                              <TableHead className="text-right w-24 text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Inc Tax</TableHead>
+                              <TableHead className="text-right w-24">Inc Tax</TableHead>
                             )}
                             <TableHead className="w-8 py-0" />
                           </TableRow>
@@ -3376,7 +3375,7 @@ export default function ClientInvoiceDetail() {
                                       value={line.name}
                                       onChange={(e) => updateCustomLine(index, "name", e.target.value)}
                                       placeholder="Name"
-                                      className="h-7 text-sm border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1 rounded-sm placeholder:text-muted-foreground/30"
+                                      className="h-7 text-table border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1.5 rounded-sm placeholder:text-muted-foreground/30"
                                     />
                                   </TableCell>
                                 )}
@@ -3386,7 +3385,7 @@ export default function ClientInvoiceDetail() {
                                       value={line.description}
                                       onChange={(e) => updateCustomLine(index, "description", e.target.value)}
                                       placeholder="Description"
-                                      className="h-7 text-sm border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1 rounded-sm placeholder:text-muted-foreground/30"
+                                      className="h-7 text-table border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1.5 rounded-sm placeholder:text-muted-foreground/30"
                                     />
                                   </TableCell>
                                 )}
@@ -3406,7 +3405,7 @@ export default function ClientInvoiceDetail() {
                                     value={line.unit || ""}
                                     onChange={(e) => updateCustomLine(index, "unit", e.target.value)}
                                     placeholder="unit"
-                                    className="h-7 text-sm border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1 rounded-sm placeholder:text-muted-foreground/30"
+                                    className="h-7 text-table border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1.5 rounded-sm placeholder:text-muted-foreground/30"
                                   />
                                 </TableCell>
                                 {/* Qty */}
@@ -3424,7 +3423,7 @@ export default function ClientInvoiceDetail() {
                                     type="number"
                                     value={line.unitPrice}
                                     onChange={(e) => updateCustomLine(index, "unitPrice", parseFloat(e.target.value) || 0)}
-                                    className="h-7 w-20 text-right text-sm border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1 rounded-sm ml-auto"
+                                    className="h-7 w-20 text-right text-table border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1.5 rounded-sm ml-auto"
                                   />
                                 </TableCell>
                                 {/* Tax text */}
@@ -3465,17 +3464,17 @@ export default function ClientInvoiceDetail() {
                                   )}
                                 </TableCell>
                                 {isColVisible("amountExTax") && (
-                                  <TableCell className="text-right text-sm py-1">
+                                  <TableCell className="text-right text-table py-1">
                                     {formatCurrency(exTax)}
                                   </TableCell>
                                 )}
                                 {isColVisible("amountTax") && (
-                                  <TableCell className="text-right text-sm py-1">
+                                  <TableCell className="text-right text-table py-1">
                                     {formatCurrency(tax)}
                                   </TableCell>
                                 )}
                                 {isColVisible("amountIncTax") && (
-                                  <TableCell className="text-right text-sm font-medium py-1">
+                                  <TableCell className="text-right text-table font-medium py-1">
                                     {formatCurrency(exTax + tax)}
                                   </TableCell>
                                 )}
@@ -3535,7 +3534,7 @@ export default function ClientInvoiceDetail() {
                     </div>
                     <div className="px-3 py-2 space-y-1">
                       {lines.map((line) => (
-                        <div key={line.accountKey} className="flex items-center gap-2 text-xs">
+                        <div key={line.accountKey} className="flex items-center gap-2 text-table">
                           <span className="truncate flex-1 text-muted-foreground">{line.description}</span>
                           <span className="tabular-nums text-muted-foreground w-24 text-right">
                             {formatCurrency(line.amountIncCents / 100)}
@@ -3549,7 +3548,7 @@ export default function ClientInvoiceDetail() {
                               searchPlaceholder="Search accounts..."
                               emptyMessage="No accounts found."
                               triggerClassName={cn(
-                                "w-56 h-7 text-xs",
+                                "w-56 h-7 text-table",
                                 !line.accountCode && !defaultAccount && "border-status-warning/60",
                               )}
                               data-testid={`select-line-account-${line.accountKey}`}
@@ -3562,7 +3561,7 @@ export default function ClientInvoiceDetail() {
                               value={line.accountCode || ""}
                               onChange={(e) => setAccountByKey(line.accountKey!, e.target.value || null)}
                               placeholder="Account"
-                              className="h-7 w-24 px-2 text-xs border rounded-md bg-transparent focus:outline-none focus:ring-1 focus:ring-ring"
+                              className="h-7 w-24 px-2 text-table border rounded-md bg-transparent focus:outline-none focus:ring-1 focus:ring-ring"
                               data-testid={`input-line-account-${line.accountKey}`}
                             />
                           )}
@@ -3885,7 +3884,7 @@ export default function ClientInvoiceDetail() {
                     </div>
                   </div>
                   <div className="px-4 py-3">
-                    <p className="text-sm text-muted-foreground text-center py-2">
+                    <p className="text-table text-muted-foreground text-center py-2">
                       No attachments
                     </p>
                   </div>
@@ -3914,18 +3913,18 @@ export default function ClientInvoiceDetail() {
                       {payments.length > 0 ? (
                         <Table>
                           <TableHeader>
-                            <TableRow className="h-6 bg-muted/30">
-                              <TableHead className="text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Date</TableHead>
-                              <TableHead className="text-right text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Amount</TableHead>
-                              <TableHead className="text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Method</TableHead>
-                              <TableHead className="text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Reference</TableHead>
+                            <TableRow className="[&>th]:border-b-2 [&>th]:border-border [&>th]:text-foreground/75 [&>th]:font-semibold">
+                              <TableHead>Date</TableHead>
+                              <TableHead className="text-right">Amount</TableHead>
+                              <TableHead>Method</TableHead>
+                              <TableHead>Reference</TableHead>
                               <TableHead className="w-16 py-0 px-2" />
                             </TableRow>
                           </TableHeader>
                           <TableBody>
                             {payments.map((payment) => (
                               <TableRow key={payment.id} className={cn("h-9", (payment as any).isVoided && "opacity-50")}>
-                                <TableCell className="text-sm px-2">
+                                <TableCell className="text-table px-2">
                                   {payment.paymentDate
                                     ? format(new Date(payment.paymentDate), "d MMM yyyy")
                                     : "-"}
@@ -3933,10 +3932,10 @@ export default function ClientInvoiceDetail() {
                                 <TableCell className={cn("text-right text-sm font-medium px-2", (payment as any).isVoided && "line-through")}>
                                   {formatCurrency(payment.amount / 100)}
                                 </TableCell>
-                                <TableCell className="text-sm text-muted-foreground px-2">
+                                <TableCell className="text-table text-muted-foreground px-2">
                                   {payment.paymentMethod || "-"}
                                 </TableCell>
-                                <TableCell className="text-sm text-muted-foreground px-2">
+                                <TableCell className="text-table text-muted-foreground px-2">
                                   {payment.reference || "-"}
                                 </TableCell>
                                 <TableCell className="px-2 w-16">
@@ -3959,7 +3958,7 @@ export default function ClientInvoiceDetail() {
                           </TableBody>
                         </Table>
                       ) : (
-                        <p className="text-sm text-muted-foreground text-center py-2">
+                        <p className="text-table text-muted-foreground text-center py-2">
                           No payments recorded
                         </p>
                       )}
@@ -4334,17 +4333,17 @@ export default function ClientInvoiceDetail() {
                     if (av > bv) return labourSortDir === "asc" ? 1 : -1;
                     return 0;
                   });
-                  const thCls = "text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2 cursor-pointer select-none hover:text-muted-foreground whitespace-nowrap";
+                  const thCls = "cursor-pointer select-none hover:text-muted-foreground whitespace-nowrap";
                   return (
                     <>
                       <TableHeader>
-                        <TableRow className="h-6 bg-muted/30 hover:bg-muted/30">
+                        <TableRow className="[&>th]:border-b-2 [&>th]:border-border [&>th]:text-foreground/75 [&>th]:font-semibold">
                           <TableHead className="w-8 py-0 px-2" />
-                          <TableHead className={thCls} onClick={() => labourSortToggle("date")}>Date <SortIcon col="date" current={labourSortCol} dir={labourSortDir} /></TableHead>
-                          <TableHead className={thCls} onClick={() => labourSortToggle("staff")}>Staff <SortIcon col="staff" current={labourSortCol} dir={labourSortDir} /></TableHead>
-                          <TableHead className={thCls} onClick={() => labourSortToggle("status")}>Status <SortIcon col="status" current={labourSortCol} dir={labourSortDir} /></TableHead>
-                          <TableHead className={`text-right ${thCls}`} onClick={() => labourSortToggle("hours")}>Hours <SortIcon col="hours" current={labourSortCol} dir={labourSortDir} /></TableHead>
-                          <TableHead className={thCls} onClick={() => labourSortToggle("costCode")}>Cost Code <SortIcon col="costCode" current={labourSortCol} dir={labourSortDir} /></TableHead>
+                          <TableHead onClick={() => labourSortToggle("date")}>Date <SortIcon col="date" current={labourSortCol} dir={labourSortDir} /></TableHead>
+                          <TableHead onClick={() => labourSortToggle("staff")}>Staff <SortIcon col="staff" current={labourSortCol} dir={labourSortDir} /></TableHead>
+                          <TableHead onClick={() => labourSortToggle("status")}>Status <SortIcon col="status" current={labourSortCol} dir={labourSortDir} /></TableHead>
+                          <TableHead className="text-right" onClick={() => labourSortToggle("hours")}>Hours <SortIcon col="hours" current={labourSortCol} dir={labourSortDir} /></TableHead>
+                          <TableHead onClick={() => labourSortToggle("costCode")}>Cost Code <SortIcon col="costCode" current={labourSortCol} dir={labourSortDir} /></TableHead>
                           <TableHead className={`${thCls} cursor-default`}>Labels</TableHead>
                         </TableRow>
                       </TableHeader>
@@ -4352,7 +4351,7 @@ export default function ClientInvoiceDetail() {
                         {timesheetsLoading ? (
                           <TableRow><TableCell colSpan={7} className="text-center py-8"><Loader2 className="w-5 h-5 animate-spin mx-auto text-muted-foreground" /></TableCell></TableRow>
                         ) : base.length === 0 ? (
-                          <TableRow><TableCell colSpan={7} className="text-center text-sm text-muted-foreground py-8">No timesheets found.</TableCell></TableRow>
+                          <TableRow><TableCell colSpan={7} className="text-center text-table text-muted-foreground py-8">No timesheets found.</TableCell></TableRow>
                         ) : base.map((t: any) => {
                           const isApproved = t.status === "approved";
                           const isChecked = modalTimesheetIds.includes(t.id);
@@ -4366,15 +4365,15 @@ export default function ClientInvoiceDetail() {
                                   {isChecked && isApproved && <Check className="h-3 w-3 text-primary-foreground" />}
                                 </div>
                               </TableCell>
-                              <TableCell className="py-1 text-sm tabular-nums whitespace-nowrap">{t.date ? format(new Date(t.date), "d MMM yy") : "—"}</TableCell>
-                              <TableCell className="py-1 text-sm font-medium whitespace-nowrap">{getUserName(t.userId)}</TableCell>
+                              <TableCell className="py-1 text-table tabular-nums whitespace-nowrap">{t.date ? format(new Date(t.date), "d MMM yy") : "—"}</TableCell>
+                              <TableCell className="py-1 text-table font-medium whitespace-nowrap">{getUserName(t.userId)}</TableCell>
                               <TableCell className="py-1 whitespace-nowrap">
                                 {isApproved
                                   ? <span className="flex items-center gap-1 text-xs"><div className="w-1.5 h-1.5 rounded-full bg-sage flex-shrink-0" />Approved</span>
                                   : <span className="flex items-center gap-1 text-xs"><div className="w-1.5 h-1.5 rounded-full bg-amber flex-shrink-0" />Pending</span>}
                               </TableCell>
-                              <TableCell className="py-1 text-right text-sm tabular-nums">{Number(t.duration).toFixed(1)}</TableCell>
-                              <TableCell className="py-1 text-sm text-muted-foreground whitespace-nowrap">{cc?.title || cc?.code || "—"}</TableCell>
+                              <TableCell className="py-1 text-right text-table tabular-nums">{Number(t.duration).toFixed(1)}</TableCell>
+                              <TableCell className="py-1 text-table text-muted-foreground whitespace-nowrap">{cc?.title || cc?.code || "—"}</TableCell>
                               <TableCell className="py-1 text-xs text-muted-foreground truncate max-w-[120px]">{labels.length > 0 ? labels.slice(0, 3).join(", ") : "—"}</TableCell>
                             </TableRow>
                           );
@@ -4472,7 +4471,7 @@ export default function ClientInvoiceDetail() {
                     return 0;
                   });
                   const colCount = 1 + INVOICE_BILL_COLUMNS.filter((c) => isBillColVisible(c.id)).length;
-                  const thCls = "text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2 cursor-pointer select-none hover:text-muted-foreground whitespace-nowrap";
+                  const thCls = "cursor-pointer select-none hover:text-muted-foreground whitespace-nowrap";
                   const billStatusBadge = (status: string) => {
                     const map: Record<string, { label: string; cls: string }> = {
                       draft: { label: "Draft", cls: "text-muted-foreground" },
@@ -4496,15 +4495,15 @@ export default function ClientInvoiceDetail() {
                   return (
                     <>
                       <TableHeader>
-                        <TableRow className="h-6 bg-muted/30 hover:bg-muted/30">
+                        <TableRow className="[&>th]:border-b-2 [&>th]:border-border [&>th]:text-foreground/75 [&>th]:font-semibold">
                           <TableHead className="w-8 py-0 px-2" />
-                          {isBillColVisible("billNumber") && <TableHead className={thCls} onClick={() => billsSortToggle("billNumber")}>Bill No. <SortIcon col="billNumber" current={billsSortCol} dir={billsSortDir} /></TableHead>}
-                          {isBillColVisible("status") && <TableHead className={thCls} onClick={() => billsSortToggle("status")}>Status <SortIcon col="status" current={billsSortCol} dir={billsSortDir} /></TableHead>}
-                          {isBillColVisible("supplier") && <TableHead className={thCls} onClick={() => billsSortToggle("supplier")}>Supplier <SortIcon col="supplier" current={billsSortCol} dir={billsSortDir} /></TableHead>}
-                          {isBillColVisible("reference") && <TableHead className={thCls} onClick={() => billsSortToggle("reference")}>Reference <SortIcon col="reference" current={billsSortCol} dir={billsSortDir} /></TableHead>}
-                          {isBillColVisible("date") && <TableHead className={thCls} onClick={() => billsSortToggle("date")}>Date <SortIcon col="date" current={billsSortCol} dir={billsSortDir} /></TableHead>}
-                          {isBillColVisible("total") && <TableHead className={`text-right ${thCls}`} onClick={() => billsSortToggle("total")}>Total <SortIcon col="total" current={billsSortCol} dir={billsSortDir} /></TableHead>}
-                          {isBillColVisible("due") && <TableHead className={thCls} onClick={() => billsSortToggle("due")}>Due <SortIcon col="due" current={billsSortCol} dir={billsSortDir} /></TableHead>}
+                          {isBillColVisible("billNumber") && <TableHead onClick={() => billsSortToggle("billNumber")}>Bill No. <SortIcon col="billNumber" current={billsSortCol} dir={billsSortDir} /></TableHead>}
+                          {isBillColVisible("status") && <TableHead onClick={() => billsSortToggle("status")}>Status <SortIcon col="status" current={billsSortCol} dir={billsSortDir} /></TableHead>}
+                          {isBillColVisible("supplier") && <TableHead onClick={() => billsSortToggle("supplier")}>Supplier <SortIcon col="supplier" current={billsSortCol} dir={billsSortDir} /></TableHead>}
+                          {isBillColVisible("reference") && <TableHead onClick={() => billsSortToggle("reference")}>Reference <SortIcon col="reference" current={billsSortCol} dir={billsSortDir} /></TableHead>}
+                          {isBillColVisible("date") && <TableHead onClick={() => billsSortToggle("date")}>Date <SortIcon col="date" current={billsSortCol} dir={billsSortDir} /></TableHead>}
+                          {isBillColVisible("total") && <TableHead className="text-right" onClick={() => billsSortToggle("total")}>Total <SortIcon col="total" current={billsSortCol} dir={billsSortDir} /></TableHead>}
+                          {isBillColVisible("due") && <TableHead onClick={() => billsSortToggle("due")}>Due <SortIcon col="due" current={billsSortCol} dir={billsSortDir} /></TableHead>}
                           {isBillColVisible("xero") && <TableHead className={`${thCls} cursor-default`}>Xero</TableHead>}
                         </TableRow>
                       </TableHeader>
@@ -4513,7 +4512,7 @@ export default function ClientInvoiceDetail() {
                           <TableRow><TableCell colSpan={colCount} className="text-center py-8"><Loader2 className="w-5 h-5 animate-spin mx-auto text-muted-foreground" /></TableCell></TableRow>
                         ) : sorted.length === 0 ? (
                           <TableRow>
-                            <TableCell colSpan={colCount} className="text-center text-sm text-muted-foreground py-8">
+                            <TableCell colSpan={colCount} className="text-center text-table text-muted-foreground py-8">
                               No bills found for this project.
                             </TableCell>
                           </TableRow>
@@ -4530,15 +4529,15 @@ export default function ClientInvoiceDetail() {
                                   {isChecked && <Check className="h-3 w-3 text-primary-foreground" />}
                                 </div>
                               </TableCell>
-                              {isBillColVisible("billNumber") && <TableCell className="py-1 text-sm font-medium font-mono whitespace-nowrap">{b.billNumber}</TableCell>}
+                              {isBillColVisible("billNumber") && <TableCell className="py-1 text-table font-medium font-mono whitespace-nowrap">{b.billNumber}</TableCell>}
                               {isBillColVisible("status") && <TableCell className="py-1">{billStatusBadge((b as any).status)}</TableCell>}
-                              {isBillColVisible("supplier") && <TableCell className="py-1 text-sm text-muted-foreground whitespace-nowrap">{(b as any).supplierName || "—"}</TableCell>}
-                              {isBillColVisible("reference") && <TableCell className="py-1 text-sm text-muted-foreground whitespace-nowrap">{(b as any).reference || "—"}</TableCell>}
-                              {isBillColVisible("date") && <TableCell className="py-1 text-sm text-muted-foreground whitespace-nowrap">{(b as any).billDate ? format(new Date((b as any).billDate), "d MMM yy") : "—"}</TableCell>}
-                              {isBillColVisible("total") && <TableCell className="py-1 text-right text-sm font-medium tabular-nums whitespace-nowrap">{formatCurrency(b.total / 100)}</TableCell>}
-                              {isBillColVisible("due") && <TableCell className="py-1 text-sm text-muted-foreground whitespace-nowrap">{(b as any).dueDate ? format(new Date((b as any).dueDate), "d MMM yy") : "—"}</TableCell>}
+                              {isBillColVisible("supplier") && <TableCell className="py-1 text-table text-muted-foreground whitespace-nowrap">{(b as any).supplierName || "—"}</TableCell>}
+                              {isBillColVisible("reference") && <TableCell className="py-1 text-table text-muted-foreground whitespace-nowrap">{(b as any).reference || "—"}</TableCell>}
+                              {isBillColVisible("date") && <TableCell className="py-1 text-table text-muted-foreground whitespace-nowrap">{(b as any).billDate ? format(new Date((b as any).billDate), "d MMM yy") : "—"}</TableCell>}
+                              {isBillColVisible("total") && <TableCell className="py-1 text-right text-table font-medium tabular-nums whitespace-nowrap">{formatCurrency(b.total / 100)}</TableCell>}
+                              {isBillColVisible("due") && <TableCell className="py-1 text-table text-muted-foreground whitespace-nowrap">{(b as any).dueDate ? format(new Date((b as any).dueDate), "d MMM yy") : "—"}</TableCell>}
                               {isBillColVisible("xero") && (
-                                <TableCell className="py-1 text-sm">
+                                <TableCell className="py-1 text-table">
                                   {(b as any).xeroInvoiceId
                                     ? <span className="flex items-center gap-1 text-xs text-sage"><div className="w-1.5 h-1.5 rounded-full bg-sage" />Synced</span>
                                     : <span className="text-muted-foreground/40">—</span>}
@@ -4591,13 +4590,13 @@ export default function ClientInvoiceDetail() {
             <div className="max-h-[380px] overflow-y-auto">
               <Table>
                 <TableHeader>
-                  <TableRow className="h-6 bg-muted/30 hover:bg-muted/30">
+                  <TableRow className="[&>th]:border-b-2 [&>th]:border-border [&>th]:text-foreground/75 [&>th]:font-semibold">
                     <TableHead className="w-8 py-0 px-2" />
-                    <TableHead className="text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Selection</TableHead>
-                    <TableHead className="text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Room</TableHead>
-                    <TableHead className="text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Option</TableHead>
-                    <TableHead className="text-right text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Qty</TableHead>
-                    <TableHead className="text-right text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Total</TableHead>
+                    <TableHead>Selection</TableHead>
+                    <TableHead>Room</TableHead>
+                    <TableHead>Option</TableHead>
+                    <TableHead className="text-right">Qty</TableHead>
+                    <TableHead className="text-right">Total</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -4623,7 +4622,7 @@ export default function ClientInvoiceDetail() {
                     if (filtered.length === 0) {
                       return (
                         <TableRow>
-                          <TableCell colSpan={6} className="text-center text-sm text-muted-foreground py-8">
+                          <TableCell colSpan={6} className="text-center text-table text-muted-foreground py-8">
                             No invoiceable selections found for this project.
                           </TableCell>
                         </TableRow>
@@ -4649,11 +4648,11 @@ export default function ClientInvoiceDetail() {
                               {isChecked && <Check className="h-3 w-3 text-primary-foreground" />}
                             </div>
                           </TableCell>
-                          <TableCell className="py-1 text-sm font-medium truncate max-w-[140px]">{o.selectionName || "—"}</TableCell>
-                          <TableCell className="py-1 text-sm text-muted-foreground">{o.room || "—"}</TableCell>
-                          <TableCell className="py-1 text-sm">{o.name}</TableCell>
-                          <TableCell className="py-1 text-right text-sm tabular-nums">{o.quantity || "—"}</TableCell>
-                          <TableCell className="py-1 text-right text-sm font-medium tabular-nums">{formatCurrency((o.totalCost || 0) / 100)}</TableCell>
+                          <TableCell className="py-1 text-table font-medium truncate max-w-[140px]">{o.selectionName || "—"}</TableCell>
+                          <TableCell className="py-1 text-table text-muted-foreground">{o.room || "—"}</TableCell>
+                          <TableCell className="py-1 text-table">{o.name}</TableCell>
+                          <TableCell className="py-1 text-right text-table tabular-nums">{o.quantity || "—"}</TableCell>
+                          <TableCell className="py-1 text-right text-table font-medium tabular-nums">{formatCurrency((o.totalCost || 0) / 100)}</TableCell>
                         </TableRow>
                       );
                     });
