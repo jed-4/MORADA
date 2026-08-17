@@ -2002,6 +2002,26 @@ export const bills = pgTable("bills", {
   xeroLastSyncAt: timestamp("xero_last_sync_at"), // Last successful push or pull timestamp
   xeroLastSyncStatus: text("xero_last_sync_status"), // 'success' | 'failed'
   xeroLastSyncError: text("xero_last_sync_error"), // Last error message if any
+  // ── Xero review queue ──────────────────────────────────────────────────
+  // The nightly reconcile auto-applies safe drift (payments/status) but parks
+  // "surprises" here for a human: total changed, voided, or gone from Xero.
+  // Reason non-null = in the queue. See migrations/0044_bills_xero_review.sql.
+  xeroReviewReason: text("xero_review_reason"), // null | 'total_changed' | 'voided_in_xero' | 'missing_in_xero'
+  // Human-readable diff lines ("total $1,200.00 → $1,450.00"), so the modal
+  // renders with no Xero call. Left untyped: a $type<string[]> here makes the
+  // column incompatible with storage.ts's generated bill insert/update types.
+  xeroReviewChanges: jsonb("xero_review_changes"),
+  xeroReviewFingerprint: text("xero_review_fingerprint"), // Xero-side state that raised the flag
+  xeroReviewDetectedAt: timestamp("xero_review_detected_at"),
+  // Set on dismiss. The sweep only re-flags when the live fingerprint differs
+  // from this — that's what stops the same bill notifying every single night.
+  xeroReviewAckFingerprint: text("xero_review_ack_fingerprint"),
+  xeroReviewResolvedAt: timestamp("xero_review_resolved_at"),
+  xeroReviewResolvedBy: varchar("xero_review_resolved_by"),
+  // Deliberately outside the review lifecycle: a void stays visible on the bill
+  // after the queue entry is resolved. Cleared only if Xero un-voids or the
+  // bill is unlinked.
+  xeroVoidedAt: timestamp("xero_voided_at"),
   attachmentUrls: json("attachment_urls").default([]), // Array of PDF/image URLs
   ocrProcessed: boolean("ocr_processed").notNull().default(false),
   ocrData: json("ocr_data"), // Raw OCR results

@@ -1122,7 +1122,18 @@ function diffBillVsXero(
   return changes;
 }
 
-type ReconcileSurprise = { billId: string; billNumber: string; xeroInvoiceId: string; reason: string; changes: string[] };
+type XeroReviewReason = "total_changed" | "voided_in_xero" | "missing_in_xero";
+
+type ReconcileSurprise = {
+  billId: string;
+  billNumber: string;
+  xeroInvoiceId: string;
+  reason: string;
+  changes: string[];
+  // Persisted classification + whether this sweep is the first to raise it.
+  reviewReason: XeroReviewReason;
+  isNew: boolean;
+};
 
 interface ReconcileReport {
   connected: boolean;
@@ -1141,12 +1152,24 @@ interface ReconcileReport {
 // A "surprising" change shouldn't be auto-applied on the nightly sweep: the
 // invoice total changed, or it was voided/deleted in Xero. Payment/status drift
 // toward paid is expected and safe to apply automatically.
-function isSurprisingXeroChange(local: { total: number | null }, xInv: any): boolean {
+// Returns the reason to park it for review, or null when the change is safe.
+function classifyXeroSurprise(local: { total: number | null }, xInv: any): XeroReviewReason | null {
   const xTotal = Math.round((xInv.Total || 0) * 100);
   const status = String(xInv.Status || "").toUpperCase();
-  if ((local.total ?? 0) !== xTotal) return true;
-  if (status === "VOIDED" || status === "DELETED") return true;
-  return false;
+  // Void outranks a total change: it's the more consequential thing to tell a
+  // human about, and a voided invoice often reports a different total anyway.
+  if (status === "VOIDED" || status === "DELETED") return "voided_in_xero";
+  if ((local.total ?? 0) !== xTotal) return "total_changed";
+  return null;
+}
+
+// The Xero-side state that raised a flag. Compared against the bill's stored
+// ack fingerprint so a dismissed bill stays quiet until Xero moves again —
+// this is what stops the same bills notifying every single night.
+function xeroReviewFingerprint(xInv: any): string {
+  const xTotal = Math.round((xInv.Total || 0) * 100);
+  const status = String(xInv.Status || "").toUpperCase();
+  return `${status}|${xTotal}`;
 }
 
 async function reconcileBillsWithXero(
@@ -1171,6 +1194,9 @@ async function reconcileBillsWithXero(
       paidAmount: billsTbl.paidAmount,
       xeroInvoiceId: billsTbl.xeroInvoiceId,
       xeroPaidStatus: billsTbl.xeroPaidStatus,
+      xeroReviewReason: billsTbl.xeroReviewReason,
+      xeroReviewAckFingerprint: billsTbl.xeroReviewAckFingerprint,
+      xeroVoidedAt: billsTbl.xeroVoidedAt,
     })
     .from(billsTbl)
     .innerJoin(projectsTbl, eq(billsTbl.projectId, projectsTbl.id))
@@ -1189,6 +1215,12 @@ async function reconcileBillsWithXero(
   const surprises: ReconcileSurprise[] = [];
   let corrected = 0;
 
+  // Review-queue bookkeeping, applied after the loop (never on a dry run).
+  type FlagWrite = { reason: XeroReviewReason; fingerprint: string; changes: string[]; voided: boolean };
+  const toFlag = new Map<string, FlagWrite>();
+  const toClear: string[] = []; // seen in Xero and back in sync — self-heal
+  const toClearVoid: string[] = []; // no longer voided in Xero
+
   for (const xInv of xeroBills) {
     const xeroId = xInv.InvoiceID;
     if (!xeroId) continue;
@@ -1196,12 +1228,42 @@ async function reconcileBillsWithXero(
     if (!local) continue; // in Xero but not linked locally — out of scope for reconcile
     seenXeroIds.add(xeroId);
 
+    // Classify BEFORE the no-changes early-out: a bill whose void was already
+    // pulled into xeroPaidStatus produces no diff lines, but is still voided and
+    // must stay visible.
+    const reviewReason = classifyXeroSurprise(local, xInv);
+    const fingerprint = xeroReviewFingerprint(xInv);
+    const isVoided = reviewReason === "voided_in_xero";
+
+    if (!isVoided && local.xeroVoidedAt) toClearVoid.push(local.id); // un-voided in Xero
+
+    if (reviewReason) {
+      // Suppressed until Xero's state actually moves off what was dismissed.
+      const dismissed = local.xeroReviewAckFingerprint === fingerprint;
+      if (!dismissed) {
+        toFlag.set(local.id, { reason: reviewReason, fingerprint, changes: diffBillVsXero(local, xInv), voided: isVoided });
+      } else if (isVoided && !local.xeroVoidedAt) {
+        // Dismissed, but the void badge is still owed.
+        toFlag.set(local.id, { reason: reviewReason, fingerprint, changes: [], voided: true });
+      }
+    } else if (local.xeroReviewReason) {
+      toClear.push(local.id); // was flagged, Xero now agrees
+    }
+
     const changes = diffBillVsXero(local, xInv);
     if (changes.length === 0) continue;
 
-    const surprising = isSurprisingXeroChange(local, xInv);
+    const surprising = reviewReason !== null;
     if (surprising) {
-      surprises.push({ billId: local.id, billNumber: local.billNumber, xeroInvoiceId: xeroId, reason: "changed unexpectedly in Xero", changes });
+      surprises.push({
+        billId: local.id,
+        billNumber: local.billNumber,
+        xeroInvoiceId: xeroId,
+        reason: "changed unexpectedly in Xero",
+        changes,
+        reviewReason: reviewReason!,
+        isNew: local.xeroReviewAckFingerprint !== fingerprint && !local.xeroReviewReason,
+      });
     }
 
     let applied = false;
@@ -1227,7 +1289,25 @@ async function reconcileBillsWithXero(
 
   // A bill that vanished from Xero is always a surprise (deleted/voided there).
   for (const b of notInXero) {
-    surprises.push({ billId: b.billId, billNumber: b.billNumber, xeroInvoiceId: b.xeroInvoiceId, reason: "no longer in Xero", changes: [] });
+    const local = localByXeroId.get(b.xeroInvoiceId)!;
+    const fingerprint = "MISSING";
+    const dismissed = local.xeroReviewAckFingerprint === fingerprint;
+    surprises.push({
+      billId: b.billId,
+      billNumber: b.billNumber,
+      xeroInvoiceId: b.xeroInvoiceId,
+      reason: "no longer in Xero",
+      changes: [],
+      reviewReason: "missing_in_xero",
+      isNew: !dismissed && !local.xeroReviewReason,
+    });
+    if (!dismissed) {
+      toFlag.set(b.billId, { reason: "missing_in_xero", fingerprint, changes: [], voided: false });
+    }
+  }
+
+  if (!opts.dryRun) {
+    await persistXeroReviewFlags(toFlag, toClear, toClearVoid);
   }
 
   return {
@@ -1240,6 +1320,83 @@ async function reconcileBillsWithXero(
     notInXero,
     surprises,
   };
+}
+
+// Write the sweep's review-queue verdicts. Kept out of storage.ts on purpose —
+// the reconcile path already talks to `db` directly here.
+async function persistXeroReviewFlags(
+  toFlag: Map<string, { reason: XeroReviewReason; fingerprint: string; changes: string[]; voided: boolean }>,
+  toClear: string[],
+  toClearVoid: string[],
+): Promise<void> {
+  const { bills: billsTbl } = await import("@shared/schema");
+  const now = new Date();
+
+  for (const [billId, f] of Array.from(toFlag.entries())) {
+    try {
+      await db
+        .update(billsTbl)
+        .set({
+          xeroReviewReason: f.reason,
+          xeroReviewChanges: f.changes,
+          xeroReviewFingerprint: f.fingerprint,
+          xeroReviewDetectedAt: now,
+          xeroReviewResolvedAt: null,
+          xeroReviewResolvedBy: null,
+          ...(f.voided ? { xeroVoidedAt: now } : {}),
+        } as any)
+        .where(eq(billsTbl.id, billId));
+    } catch (e) {
+      console.error(`[xeroReview] failed to flag bill ${billId}:`, e);
+    }
+  }
+
+  if (toClear.length > 0) {
+    try {
+      await db
+        .update(billsTbl)
+        .set({
+          xeroReviewReason: null,
+          xeroReviewChanges: null,
+          xeroReviewFingerprint: null,
+          xeroReviewDetectedAt: null,
+          xeroReviewResolvedAt: now,
+        } as any)
+        .where(inArray(billsTbl.id, toClear));
+    } catch (e) {
+      console.error("[xeroReview] failed to clear flags:", e);
+    }
+  }
+
+  if (toClearVoid.length > 0) {
+    try {
+      await db.update(billsTbl).set({ xeroVoidedAt: null } as any).where(inArray(billsTbl.id, toClearVoid));
+    } catch (e) {
+      console.error("[xeroReview] failed to clear void marks:", e);
+    }
+  }
+}
+
+// Drop one bill out of the review queue after a human resolved it by accepting
+// Xero's version. Leaves xeroVoidedAt and the ack fingerprint alone — accepting
+// isn't dismissing, so a fresh divergence later should flag again.
+async function clearXeroReviewFlag(billId: string, userId?: string | null): Promise<void> {
+  try {
+    const { bills: billsTbl } = await import("@shared/schema");
+    await db
+      .update(billsTbl)
+      .set({
+        xeroReviewReason: null,
+        xeroReviewChanges: null,
+        xeroReviewFingerprint: null,
+        xeroReviewDetectedAt: null,
+        xeroReviewResolvedAt: new Date(),
+        xeroReviewResolvedBy: userId ?? null,
+      } as any)
+      .where(eq(billsTbl.id, billId));
+  } catch (e) {
+    console.error(`[xeroReview] failed to clear flag for bill ${billId}:`, e);
+  }
 }
 
 // Export for the nightly scheduler.
@@ -37220,10 +37377,142 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
 
       const result = await syncBillFromXeroInternal(bill.id, companyId);
       if (!result.ok) return res.status(400).json({ error: result.error || "Sync failed" });
+      // Accepting Xero's version IS the resolution — drop it out of the review
+      // queue. xeroVoidedAt is left alone: a void stays visible on the bill.
+      await clearXeroReviewFlag(bill.id, (req.user as any)?.id);
       res.json({ synced: true, ...result });
     } catch (error: any) {
       console.error("Error syncing bill from Xero:", error);
       res.status(500).json({ error: error.message || "Failed to sync bill from Xero" });
+    }
+  });
+
+  // ── Xero review queue ────────────────────────────────────────────────────
+  // The nightly reconcile parks "surprises" on the bill rows; these serve them
+  // to the Bills page modal and resolve them one at a time.
+
+  // The open queue. Pure DB read — no Xero call, so the modal opens instantly
+  // (a live sweep pages up to 50×100 invoices and can take 15–30s).
+  app.get("/api/xero/bills/review", requireAuth, async (req, res) => {
+    try {
+      const companyId = (req as any).user?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+
+      // bills.supplierId points at `contacts`, not `suppliers` (legacy naming).
+      const { bills: billsTbl, projects: projectsTbl, contacts: contactsTbl } = await import("@shared/schema");
+      const rows = await db
+        .select({
+          billId: billsTbl.id,
+          billNumber: billsTbl.billNumber,
+          billDate: billsTbl.billDate,
+          total: billsTbl.total,
+          status: billsTbl.status,
+          xeroInvoiceId: billsTbl.xeroInvoiceId,
+          reason: billsTbl.xeroReviewReason,
+          changes: billsTbl.xeroReviewChanges,
+          detectedAt: billsTbl.xeroReviewDetectedAt,
+          voidedAt: billsTbl.xeroVoidedAt,
+          projectId: billsTbl.projectId,
+          projectName: projectsTbl.name,
+          supplierName: contactsTbl.name,
+        })
+        .from(billsTbl)
+        .innerJoin(projectsTbl, eq(billsTbl.projectId, projectsTbl.id))
+        .leftJoin(contactsTbl, eq(billsTbl.supplierId, contactsTbl.id))
+        .where(and(eq(projectsTbl.companyId, companyId), isNotNull(billsTbl.xeroReviewReason)))
+        .orderBy(desc(billsTbl.xeroReviewDetectedAt));
+
+      res.json({ count: rows.length, bills: rows });
+    } catch (error: any) {
+      console.error("[xero/bills/review] error:", error);
+      res.status(500).json({ error: error.message || "Failed to load review queue" });
+    }
+  });
+
+  // Dismiss: "Xero is wrong, or I'll fix it there." Records the Xero-side
+  // fingerprint so the nightly sweep stays quiet until Xero moves again.
+  app.post("/api/bills/:id/xero-review/dismiss", requireAuth, async (req, res) => {
+    try {
+      const bill = await getOwnedBill(req, res, req.params.id);
+      if (!bill) return;
+      if (!(bill as any).xeroReviewReason) {
+        return res.status(400).json({ error: "Bill is not in the Xero review queue" });
+      }
+
+      const { bills: billsTbl } = await import("@shared/schema");
+      await db
+        .update(billsTbl)
+        .set({
+          xeroReviewReason: null,
+          xeroReviewChanges: null,
+          xeroReviewAckFingerprint: (bill as any).xeroReviewFingerprint ?? null,
+          xeroReviewDetectedAt: null,
+          xeroReviewResolvedAt: new Date(),
+          xeroReviewResolvedBy: (req.user as any)?.id ?? null,
+        } as any)
+        .where(eq(billsTbl.id, bill.id));
+
+      res.json({ dismissed: true });
+    } catch (error: any) {
+      console.error("[xero-review/dismiss] error:", error);
+      res.status(500).json({ error: error.message || "Failed to dismiss" });
+    }
+  });
+
+  // Unlink: sever the Xero link entirely. The Morada bill survives untouched but
+  // stops being reconciled — the answer for an invoice deleted in Xero, or a
+  // void the builder wants to keep a local record of.
+  app.post("/api/bills/:id/xero-review/unlink", requireAuth, async (req, res) => {
+    try {
+      const bill = await getOwnedBill(req, res, req.params.id);
+      if (!bill) return;
+      if (!(bill as any).xeroInvoiceId) {
+        return res.status(400).json({ error: "Bill is not linked to Xero" });
+      }
+
+      const { bills: billsTbl } = await import("@shared/schema");
+      await db
+        .update(billsTbl)
+        .set({
+          xeroInvoiceId: null,
+          sendToXero: false,
+          xeroPaidStatus: null,
+          xeroReviewReason: null,
+          xeroReviewChanges: null,
+          xeroReviewFingerprint: null,
+          xeroReviewAckFingerprint: null,
+          xeroReviewDetectedAt: null,
+          xeroReviewResolvedAt: new Date(),
+          xeroReviewResolvedBy: (req.user as any)?.id ?? null,
+          // The link is gone, so the void mark has nothing left to refer to.
+          xeroVoidedAt: null,
+        } as any)
+        .where(eq(billsTbl.id, bill.id));
+
+      res.json({ unlinked: true });
+    } catch (error: any) {
+      console.error("[xero-review/unlink] error:", error);
+      res.status(500).json({ error: error.message || "Failed to unlink" });
+    }
+  });
+
+  // Re-check now: run the live sweep on demand and repopulate the queue. Slow
+  // (bulk Xero pull), so the UI drives it from an explicit button with a spinner.
+  app.post("/api/xero/bills/review/refresh", requireAuth, async (req, res) => {
+    try {
+      const companyId = (req as any).user?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+
+      const report = await reconcileBillsWithXero(companyId, { safeOnly: true });
+      if (!report.connected) return res.status(400).json(report);
+      res.json({
+        refreshed: true,
+        corrected: report.corrected,
+        needsReview: report.surprises.length,
+      });
+    } catch (error: any) {
+      console.error("[xero/bills/review/refresh] error:", error);
+      res.status(500).json({ error: error.message || "Re-check failed" });
     }
   });
 
