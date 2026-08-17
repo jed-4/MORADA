@@ -43,7 +43,8 @@ export interface ResolvedReviewer {
 
 /** The record shapes this module needs; anything else is the caller's business. */
 export interface ReviewerLookups {
-  getContact(id: string): Promise<{ id: string; name?: string | null; email?: string | null } | undefined | null>;
+  /** Company-scoped on purpose: a reviewer contact must belong to the item's own company. */
+  getContact(id: string, companyId: string): Promise<{ id: string; name?: string | null; email?: string | null } | undefined | null>;
   getUser(id: string): Promise<{ id: string; firstName?: string | null; lastName?: string | null; email?: string | null } | undefined | null>;
   /** The project's assigned client contact — the V1 default reviewer. */
   getProjectClientContactId(projectId: string): Promise<string | null>;
@@ -66,7 +67,9 @@ export function createReviewerResolver(deps: ReviewerLookups) {
    * reviewerContactId null (ON DELETE SET NULL), and a stale id simply resolves
    * to unassigned rather than failing the whole request.
    */
-  async function resolveReviewer(item: Pick<ReviewItem, "reviewerType" | "reviewerContactId" | "reviewerUserId">): Promise<ResolvedReviewer> {
+  async function resolveReviewer(
+    item: Pick<ReviewItem, "companyId" | "reviewerType" | "reviewerContactId" | "reviewerUserId">,
+  ): Promise<ResolvedReviewer> {
     const type: ReviewerType = item.reviewerType === "user" ? "user" : "client";
 
     if (type === "user") {
@@ -85,7 +88,7 @@ export function createReviewerResolver(deps: ReviewerLookups) {
     if (!item.reviewerContactId) {
       return { type, refId: null, displayName: UNASSIGNED_REVIEWER_NAME, email: null, isAssigned: false };
     }
-    const contact = await deps.getContact(item.reviewerContactId);
+    const contact = await deps.getContact(item.reviewerContactId, item.companyId);
     if (!contact) {
       return { type, refId: null, displayName: UNASSIGNED_REVIEWER_NAME, email: null, isAssigned: false };
     }
