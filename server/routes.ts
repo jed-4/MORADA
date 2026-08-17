@@ -9632,6 +9632,49 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Get Google Calendar events
+  // The user's Google calendar list — the personal one, plus family, partner's,
+  // subscribed ones. Until now only 'primary' was ever read, so anything outside
+  // the main calendar was invisible in Morada.
+  app.get('/api/google-calendar/calendars', requireAuth, async (req: any, res) => {
+    try {
+      const { GoogleOAuthService } = await import('./services/googleOAuthService');
+      const oauthService = new GoogleOAuthService(storage);
+
+      const status = await oauthService.getConnectionStatus(req.user.id);
+      if (!status.connected) return res.json([]);
+
+      const calendar = await oauthService.getCalendarClient(req.user.id);
+
+      const listPromise = calendar.calendarList.list({ maxResults: 250, showHidden: false });
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('Google calendarList timed out after 20s')), 20000)
+      );
+      const response = await Promise.race([listPromise, timeoutPromise]);
+
+      const calendars = (response.data.items || []).map((cal: any) => ({
+        id: cal.id,
+        summary: cal.summaryOverride || cal.summary || cal.id,
+        description: cal.description || null,
+        primary: !!cal.primary,
+        // Google's own colour for the calendar, so a family event doesn't look
+        // identical to a client meeting.
+        backgroundColor: cal.backgroundColor || null,
+        foregroundColor: cal.foregroundColor || null,
+        // "owner"/"writer" can be edited; "reader"/"freeBusyReader" cannot.
+        accessRole: cal.accessRole || 'reader',
+        // Whether it's ticked in Google's own UI — a sensible default selection.
+        selectedInGoogle: cal.selected !== false,
+      }));
+
+      res.json(calendars);
+    } catch (error: any) {
+      console.error('❌ [Google Calendar] Error listing calendars:', error.message);
+      // Same posture as the events endpoint: never break the UI over Google being
+      // unavailable or a revoked token.
+      res.json([]);
+    }
+  });
+
   app.get('/api/google-calendar/events', requireAuth, async (req: any, res) => {
     try {
       const { GoogleOAuthService } = await import('./services/googleOAuthService');
@@ -9671,26 +9714,76 @@ export async function registerRoutes(app: Express): Promise<Server> {
         timeMax: timeMax.toISOString(),
       });
 
+      // Which calendars to read. Defaults to every calendar the user has, so
+      // connecting an account surfaces family/partner/subscribed calendars rather
+      // than just the primary one. ?calendarIds= narrows it to a saved selection.
+      const requestedIds = String(req.query.calendarIds ?? '')
+        .split(',')
+        .map((id: string) => id.trim())
+        .filter(Boolean);
+
+      // Colour per calendar, so a family event doesn't look like a client meeting.
+      const calendarMeta = new Map<string, { summary: string; color: string | null; accessRole: string }>();
+      let targetCalendarIds: string[] = requestedIds;
+      try {
+        // Raced against its own timeout: this call sits in front of the events
+        // fan-out below, so without it a hung calendarList would block the whole
+        // endpoint indefinitely and defeat the 20s guarantee that fan-out has.
+        const listResponse = await Promise.race([
+          calendar.calendarList.list({ maxResults: 250, showHidden: false }),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error('Google calendarList timed out after 20s')), 20000)
+          ),
+        ]);
+        for (const cal of listResponse.data.items || []) {
+          if (!cal.id) continue;
+          calendarMeta.set(cal.id, {
+            summary: (cal as any).summaryOverride || cal.summary || cal.id,
+            color: cal.backgroundColor || null,
+            accessRole: (cal as any).accessRole || 'reader',
+          });
+        }
+        if (targetCalendarIds.length === 0) {
+          targetCalendarIds = Array.from(calendarMeta.keys());
+        }
+      } catch (listError: any) {
+        console.error('⚠️ [Google Calendar] calendarList failed, falling back to primary:', listError.message);
+      }
+      if (targetCalendarIds.length === 0) targetCalendarIds = ['primary'];
+
       // Enforce a 20-second hard timeout so a slow/hung Google API call
       // never blocks the mobile CalendarScreen indefinitely.
-      const calendarListPromise = calendar.events.list({
-        calendarId: 'primary',
-        timeMin: timeMin.toISOString(),
-        timeMax: timeMax.toISOString(),
-        singleEvents: true,
-        orderBy: 'startTime',
-        maxResults: 250,
-      });
       const calendarTimeoutPromise = new Promise<never>((_, reject) =>
         setTimeout(() => reject(new Error('Google Calendar API timed out after 20s')), 20000)
       );
 
-      const response = await Promise.race([calendarListPromise, calendarTimeoutPromise]);
+      // One failing calendar (permissions changed, deleted) must not lose the rest.
+      const perCalendar = await Promise.all(
+        targetCalendarIds.map(async (calendarId) => {
+          try {
+            const response = await Promise.race([
+              calendar.events.list({
+                calendarId,
+                timeMin: timeMin.toISOString(),
+                timeMax: timeMax.toISOString(),
+                singleEvents: true,
+                orderBy: 'startTime',
+                maxResults: 250,
+              }),
+              calendarTimeoutPromise,
+            ]);
+            return (response.data.items || []).map((item: any) => ({ item, calendarId }));
+          } catch (calError: any) {
+            console.error(`⚠️ [Google Calendar] Skipping calendar ${calendarId}:`, calError.message);
+            return [];
+          }
+        })
+      );
 
-      const eventCount = response.data.items?.length || 0;
-      console.log(`✅ [Google Calendar] Retrieved ${eventCount} events from Google API`);
+      const rawEvents = perCalendar.flat();
+      console.log(`✅ [Google Calendar] Retrieved ${rawEvents.length} events across ${targetCalendarIds.length} calendars`);
 
-      const events = (response.data.items || []).map((event: any) => {
+      const events = rawEvents.map(({ item: event, calendarId }: any) => {
         const start = event.start?.dateTime || event.start?.date;
         const end = event.end?.dateTime || event.end?.date;
         const isAllDay = !event.start?.dateTime;
@@ -9719,18 +9812,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
         };
 
+        const meta = calendarMeta.get(calendarId);
+
         return {
-          id: `google-${event.id}`,
+          // Namespaced by calendar: the same event can appear in two calendars
+          // (an invite you and your partner both hold) and React needs distinct keys.
+          id: `google-${calendarId}-${event.id}`,
           title: event.summary || '(No title)',
           startDate: start ? new Date(start) : new Date(),
           endDate,
           startTime: isAllDay ? null : extractTime(event.start?.dateTime),
           endTime: isAllDay ? null : extractTime(event.end?.dateTime),
           type: 'google-calendar' as const,
-          color: '#7aafff', // Soft Google Calendar blue
+          // Each calendar's own Google colour, falling back to the old blue.
+          // Per-event colorId overrides are ignored: resolving them needs a separate
+          // colors.get palette call, and calendar-level colour is the useful signal.
+          color: meta?.color || '#7aafff',
           description: event.description || null,
           location: event.location || null,
           isCompleted: false,
+          // Which calendar this came from, for filtering and the picker.
+          googleCalendarId: calendarId,
+          googleCalendarName: meta?.summary || null,
+          // Read-only calendars must not offer editing once writes land in Phase 5.
+          canEdit: meta?.accessRole === 'owner' || meta?.accessRole === 'writer',
         };
       });
 
