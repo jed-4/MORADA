@@ -112,6 +112,11 @@ import {
   type RfiTemplate, type InsertRfiTemplate,
   type TemplateCategory, type InsertTemplateCategory,
   type SelectionTemplateGroup, type InsertSelectionTemplateGroup,
+  type ReviewItem, type InsertReviewItem,
+  type ReviewRevision, type InsertReviewRevision,
+  type ReviewDocument, type InsertReviewDocument,
+  type ReviewComment, type InsertReviewComment,
+  type ReviewApproval, type InsertReviewApproval,
 } from "@shared/schema";
 import { randomUUID } from "crypto";
 import { PasswordUtils } from "./utils/auth";
@@ -123,6 +128,7 @@ import { computeEstimateItemPrice, computeEstimateSummary, estimateItemBuilderCo
 import { computeBillTotalsCents, billLineExGstCents } from "@shared/billTotals";
 import { timesheetTotalExGstCents } from "@shared/money";
 import { findWorsenedOverClaims, ClaimOverBillingError, isFullyClaimedPercent, type ClaimChange } from "@shared/invoiceClaims";
+import { defaultRevisionLabel } from "@shared/reviewCostImpact";
 import type { CircuitContext } from "@shared/schema";
 import type { AiConversation, InsertAiConversation, AiMessage, InsertAiMessage, AiBlockedItem, InsertAiBlockedItem } from "@shared/schema";
 
@@ -877,6 +883,38 @@ export interface IStorage {
   updateVariationItem(id: string, item: Partial<InsertVariationItem>): Promise<VariationItem | undefined>;
   deleteVariationItem(id: string): Promise<boolean>;
 
+  // ── Client Review & Approvals ───────────────────────────────────────────
+  // Every read is company-scoped at the query, not by the caller: review_items
+  // carries companyId precisely so a cross-tenant id cannot resolve.
+  getReviewItems(companyId: string, projectId?: string, status?: string): Promise<ReviewItem[]>;
+  getReviewItem(id: string, companyId: string): Promise<ReviewItem | undefined>;
+  getReviewItemByPortalToken(token: string): Promise<ReviewItem | undefined>;
+  createReviewItem(item: InsertReviewItem): Promise<ReviewItem>;
+  updateReviewItem(id: string, companyId: string, item: Partial<InsertReviewItem>): Promise<ReviewItem | undefined>;
+  deleteReviewItem(id: string, companyId: string): Promise<boolean>;
+
+  getReviewRevisions(reviewItemId: string): Promise<ReviewRevision[]>;
+  getReviewRevision(id: string): Promise<ReviewRevision | undefined>;
+  /** Issues the next revision, supersedes the previous, repoints the item. */
+  issueReviewRevision(
+    reviewItemId: string,
+    input: { notes?: string | null; issuedById?: string | null; revisionLabel?: string | null },
+  ): Promise<ReviewRevision>;
+
+  getReviewDocuments(reviewItemId: string): Promise<ReviewDocument[]>;
+  getReviewDocument(id: string): Promise<ReviewDocument | undefined>;
+  createReviewDocument(doc: InsertReviewDocument): Promise<ReviewDocument>;
+  deleteReviewDocument(id: string): Promise<boolean>;
+
+  /** `includeInternal: false` is what every reviewer-facing read must pass. */
+  getReviewComments(reviewItemId: string, includeInternal?: boolean): Promise<ReviewComment[]>;
+  createReviewComment(comment: InsertReviewComment): Promise<ReviewComment>;
+  deleteReviewComment(id: string): Promise<boolean>;
+
+  getReviewApprovals(reviewItemId: string): Promise<ReviewApproval[]>;
+  /** Append-only: there is deliberately no updateReviewApproval. */
+  createReviewApproval(approval: InsertReviewApproval): Promise<ReviewApproval>;
+
   // Client Invoices CRUD
   getClientInvoices(projectId?: string, status?: string, companyId?: string): Promise<ClientInvoice[]>;
   createClientInvoiceFull(invoice: InsertClientInvoice, children: ClientInvoiceChildren): Promise<ClientInvoice>;
@@ -1579,6 +1617,7 @@ function getDefaultActionsForRole(
     const keys = [
       'projects.view', 'projects.schedule', 'projects.variations', 'projects.todos',
       'projects.invoices', 'projects.site_diary', 'projects.selections', 'projects.timesheet',
+      'projects.reviews',
       'projects.rfi', 'projects.team_calendars', 'projects.messages', 'projects.notes',
       'projects.contract', 'schedules.view_offline',
       'tasks.manage', 'tasks.project', 'tasks.business',
@@ -1649,6 +1688,9 @@ function getDefaultActionsForRole(
     grant('projects.variations', ['view']);
     grant('projects.site_diary', ['view']);
     grant('projects.messages', ['view', 'add', 'send']);
+    // Reviews are addressed TO the client, so 'approve' is the whole point of
+    // the section — without it they can read an item but never respond.
+    grant('projects.reviews', ['view', 'add', 'approve']);
     return result;
   }
 
@@ -1766,6 +1808,7 @@ export class MemStorage implements IStorage {
       { key: "projects.invoices", name: "Progress Claims", description: "Manage client invoices and progress claims", category: "projects", actions: ["view", "add", "edit", "delete", "approve", "send"], isBuiltIn: true },
       { key: "projects.site_diary", name: "Site Diary", description: "Manage site diary", category: "projects", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "projects.selections", name: "Selections and Allowances", description: "Manage selections", category: "projects", actions: ["view", "add", "edit", "delete", "approve"], isBuiltIn: true },
+      { key: "projects.reviews", name: "Client Reviews", description: "Push documents to a client for review and approval", category: "projects", actions: ["view", "add", "edit", "delete", "approve"], isBuiltIn: true },
       { key: "projects.timesheet", name: "Project Timesheet", description: "Manage per-project timesheets", category: "projects", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "projects.rfi", name: "RFI", description: "Manage RFIs", category: "projects", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "projects.team_calendars", name: "View Team Calendars", description: "View other team members' calendars", category: "projects", actions: ["view"], isBuiltIn: true },
@@ -6906,6 +6949,7 @@ export class DbStorage implements IStorage {
       { key: "projects.invoices", name: "Progress Claims", description: "Manage client invoices and progress claims", category: "projects", actions: ["view", "add", "edit", "delete", "approve", "send"], isBuiltIn: true },
       { key: "projects.site_diary", name: "Site Diary", description: "Manage site diary", category: "projects", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "projects.selections", name: "Selections and Allowances", description: "Manage selections", category: "projects", actions: ["view", "add", "edit", "delete", "approve"], isBuiltIn: true },
+      { key: "projects.reviews", name: "Client Reviews", description: "Push documents to a client for review and approval", category: "projects", actions: ["view", "add", "edit", "delete", "approve"], isBuiltIn: true },
       { key: "projects.timesheet", name: "Project Timesheet", description: "Manage per-project timesheets", category: "projects", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "projects.rfi", name: "RFI", description: "Manage RFIs", category: "projects", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "projects.team_calendars", name: "View Team Calendars", description: "View other team members' calendars", category: "projects", actions: ["view"], isBuiltIn: true },
@@ -16820,6 +16864,296 @@ export class DbStorage implements IStorage {
     } catch (error) {
       console.error("Database error in deleteVariationItem:", error);
       return false;
+    }
+  }
+
+  // ── Client Review & Approvals ─────────────────────────────────────────────
+  //
+  // companyId is a required argument on every item read/write, not an optional
+  // filter, so a caller cannot accidentally omit it and reach another tenant's
+  // row. Children (revisions, documents, comments, approvals) are reached only
+  // after their item has been resolved company-scoped by the route.
+
+  async getReviewItems(companyId: string, projectId?: string, status?: string): Promise<ReviewItem[]> {
+    try {
+      const conditions = [eq(schema.reviewItems.companyId, companyId)];
+      if (projectId) conditions.push(eq(schema.reviewItems.projectId, projectId));
+      if (status) conditions.push(eq(schema.reviewItems.status, status));
+      // One .where() with a composed and() — chaining a second .where() would
+      // silently REPLACE the company predicate (see the tenancy ratchet).
+      return await db.select()
+        .from(schema.reviewItems)
+        .where(and(...conditions))
+        .orderBy(asc(schema.reviewItems.dueDate), desc(schema.reviewItems.createdAt));
+    } catch (error) {
+      console.error("Database error in getReviewItems:", error);
+      throw error;
+    }
+  }
+
+  async getReviewItem(id: string, companyId: string): Promise<ReviewItem | undefined> {
+    try {
+      const [row] = await db.select()
+        .from(schema.reviewItems)
+        .where(and(eq(schema.reviewItems.id, id), eq(schema.reviewItems.companyId, companyId)))
+        .limit(1);
+      return row;
+    } catch (error) {
+      console.error("Database error in getReviewItem:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Token lookup for the emailed direct link (used from PR4).
+   *
+   * Deliberately NOT company-scoped: the token IS the credential, and the
+   * caller has no session to derive a company from. Every consumer must
+   * project the row down before returning it.
+   */
+  async getReviewItemByPortalToken(token: string): Promise<ReviewItem | undefined> {
+    try {
+      if (!token) return undefined;
+      const [row] = await db.select()
+        .from(schema.reviewItems)
+        .where(eq(schema.reviewItems.portalToken, token))
+        .limit(1);
+      return row;
+    } catch (error) {
+      console.error("Database error in getReviewItemByPortalToken:", error);
+      throw error;
+    }
+  }
+
+  async createReviewItem(item: InsertReviewItem): Promise<ReviewItem> {
+    try {
+      const [row] = await db.insert(schema.reviewItems).values(item as any).returning();
+      return row;
+    } catch (error) {
+      console.error("Database error in createReviewItem:", error);
+      throw error;
+    }
+  }
+
+  async updateReviewItem(id: string, companyId: string, item: Partial<InsertReviewItem>): Promise<ReviewItem | undefined> {
+    try {
+      const [row] = await db.update(schema.reviewItems)
+        .set({ ...item, updatedAt: new Date() } as any)
+        .where(and(eq(schema.reviewItems.id, id), eq(schema.reviewItems.companyId, companyId)))
+        .returning();
+      return row;
+    } catch (error) {
+      console.error("Database error in updateReviewItem:", error);
+      throw error;
+    }
+  }
+
+  async deleteReviewItem(id: string, companyId: string): Promise<boolean> {
+    try {
+      const deleted = await db.delete(schema.reviewItems)
+        .where(and(eq(schema.reviewItems.id, id), eq(schema.reviewItems.companyId, companyId)))
+        .returning({ id: schema.reviewItems.id });
+      return deleted.length > 0;
+    } catch (error) {
+      console.error("Database error in deleteReviewItem:", error);
+      return false;
+    }
+  }
+
+  async getReviewRevisions(reviewItemId: string): Promise<ReviewRevision[]> {
+    try {
+      return await db.select()
+        .from(schema.reviewRevisions)
+        .where(eq(schema.reviewRevisions.reviewItemId, reviewItemId))
+        .orderBy(desc(schema.reviewRevisions.revisionNumber));
+    } catch (error) {
+      console.error("Database error in getReviewRevisions:", error);
+      throw error;
+    }
+  }
+
+  async getReviewRevision(id: string): Promise<ReviewRevision | undefined> {
+    try {
+      const [row] = await db.select()
+        .from(schema.reviewRevisions)
+        .where(eq(schema.reviewRevisions.id, id))
+        .limit(1);
+      return row;
+    } catch (error) {
+      console.error("Database error in getReviewRevision:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Issue the next revision of an item.
+   *
+   * Three writes that must agree: stamp the previous revision superseded, insert
+   * the new one, repoint the item at it. Wrapped in a transaction so a failure
+   * cannot leave the item pointing at a revision that does not exist, or two
+   * revisions both live.
+   *
+   * The revision NUMBER comes from the current max inside the transaction, and
+   * the unique index on (review_item_id, revision_number) is the real guard —
+   * two concurrent issues race, and the loser gets a constraint violation
+   * rather than a duplicate label.
+   */
+  async issueReviewRevision(
+    reviewItemId: string,
+    input: { notes?: string | null; issuedById?: string | null; revisionLabel?: string | null },
+  ): Promise<ReviewRevision> {
+    try {
+      return await db.transaction(async (tx) => {
+        const existing = await tx.select({ revisionNumber: schema.reviewRevisions.revisionNumber })
+          .from(schema.reviewRevisions)
+          .where(eq(schema.reviewRevisions.reviewItemId, reviewItemId))
+          .orderBy(desc(schema.reviewRevisions.revisionNumber))
+          .limit(1);
+
+        const nextNumber = (existing[0]?.revisionNumber ?? 0) + 1;
+        const now = new Date();
+
+        if (existing.length > 0) {
+          await tx.update(schema.reviewRevisions)
+            .set({ supersededAt: now })
+            .where(and(
+              eq(schema.reviewRevisions.reviewItemId, reviewItemId),
+              isNull(schema.reviewRevisions.supersededAt),
+            ));
+        }
+
+        const [revision] = await tx.insert(schema.reviewRevisions).values({
+          reviewItemId,
+          revisionNumber: nextNumber,
+          revisionLabel: (input.revisionLabel || "").trim() || defaultRevisionLabel(nextNumber),
+          notes: input.notes ?? null,
+          issuedById: input.issuedById ?? null,
+          issuedAt: now,
+        } as any).returning();
+
+        // Issuing puts the item back in front of the reviewer, whatever it was
+        // before (draft, or changes_requested after a cycle).
+        await tx.update(schema.reviewItems)
+          .set({ currentRevisionId: revision.id, status: "awaiting_review", updatedAt: now })
+          .where(eq(schema.reviewItems.id, reviewItemId));
+
+        return revision;
+      });
+    } catch (error) {
+      console.error("Database error in issueReviewRevision:", error);
+      throw error;
+    }
+  }
+
+  async getReviewDocuments(reviewItemId: string): Promise<ReviewDocument[]> {
+    try {
+      return await db.select()
+        .from(schema.reviewDocuments)
+        .where(eq(schema.reviewDocuments.reviewItemId, reviewItemId))
+        .orderBy(asc(schema.reviewDocuments.sortOrder), asc(schema.reviewDocuments.createdAt));
+    } catch (error) {
+      console.error("Database error in getReviewDocuments:", error);
+      throw error;
+    }
+  }
+
+  async getReviewDocument(id: string): Promise<ReviewDocument | undefined> {
+    try {
+      const [row] = await db.select()
+        .from(schema.reviewDocuments)
+        .where(eq(schema.reviewDocuments.id, id))
+        .limit(1);
+      return row;
+    } catch (error) {
+      console.error("Database error in getReviewDocument:", error);
+      throw error;
+    }
+  }
+
+  async createReviewDocument(doc: InsertReviewDocument): Promise<ReviewDocument> {
+    try {
+      const [row] = await db.insert(schema.reviewDocuments).values(doc as any).returning();
+      return row;
+    } catch (error) {
+      console.error("Database error in createReviewDocument:", error);
+      throw error;
+    }
+  }
+
+  async deleteReviewDocument(id: string): Promise<boolean> {
+    try {
+      await db.delete(schema.reviewDocuments).where(eq(schema.reviewDocuments.id, id));
+      return true;
+    } catch (error) {
+      console.error("Database error in deleteReviewDocument:", error);
+      return false;
+    }
+  }
+
+  /**
+   * The conversation on an item.
+   *
+   * `includeInternal` defaults to FALSE — the safe answer. Builder-only notes
+   * leak to the reviewer if a caller forgets the flag, so forgetting it hides
+   * too much rather than too little.
+   */
+  async getReviewComments(reviewItemId: string, includeInternal = false): Promise<ReviewComment[]> {
+    try {
+      const conditions = [eq(schema.reviewComments.reviewItemId, reviewItemId)];
+      if (!includeInternal) conditions.push(eq(schema.reviewComments.isInternal, false));
+      return await db.select()
+        .from(schema.reviewComments)
+        .where(and(...conditions))
+        .orderBy(asc(schema.reviewComments.createdAt));
+    } catch (error) {
+      console.error("Database error in getReviewComments:", error);
+      throw error;
+    }
+  }
+
+  async createReviewComment(comment: InsertReviewComment): Promise<ReviewComment> {
+    try {
+      const [row] = await db.insert(schema.reviewComments).values(comment as any).returning();
+      return row;
+    } catch (error) {
+      console.error("Database error in createReviewComment:", error);
+      throw error;
+    }
+  }
+
+  async deleteReviewComment(id: string): Promise<boolean> {
+    try {
+      await db.delete(schema.reviewComments).where(eq(schema.reviewComments.id, id));
+      return true;
+    } catch (error) {
+      console.error("Database error in deleteReviewComment:", error);
+      return false;
+    }
+  }
+
+  async getReviewApprovals(reviewItemId: string): Promise<ReviewApproval[]> {
+    try {
+      return await db.select()
+        .from(schema.reviewApprovals)
+        .where(eq(schema.reviewApprovals.reviewItemId, reviewItemId))
+        .orderBy(desc(schema.reviewApprovals.createdAt));
+    } catch (error) {
+      console.error("Database error in getReviewApprovals:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Record a decision. APPEND-ONLY — there is deliberately no update method:
+   * the snapshot columns are only meaningful if the row is never rewritten.
+   */
+  async createReviewApproval(approval: InsertReviewApproval): Promise<ReviewApproval> {
+    try {
+      const [row] = await db.insert(schema.reviewApprovals).values(approval as any).returning();
+      return row;
+    } catch (error) {
+      console.error("Database error in createReviewApproval:", error);
+      throw error;
     }
   }
 
