@@ -11,6 +11,9 @@ import {
   summariseClaimsElsewhere,
   remainingClaimPercent,
   isFullyClaimedElsewhere,
+  isFullyClaimedPercent,
+  findWorsenedOverClaims,
+  ClaimOverBillingError,
   UNNUMBERED_INVOICE_LABEL,
 } from "@shared/invoiceClaims";
 
@@ -173,6 +176,98 @@ check("the same helper guards allowances, keyed by estimate item", () => {
   ];
   const claims = summariseClaimsElsewhere(allowanceLinks, (l) => l.estimateItemId, "inv-2");
   assert.strictEqual(isFullyClaimedElsewhere(claims["item-1"]), true);
+});
+
+// ── Server guard: the monotonic over-billing rule ───────────────────────────
+
+console.log("\nserver over-billing guard:");
+
+const change = (lineId: string, previousPercent: number, nextPercent: number) =>
+  ({ lineId, previousPercent, nextPercent });
+
+check("a normal in-budget claim is allowed", () => {
+  const bad = findWorsenedOverClaims([change("var-1", 0, 60)], { "var-1": 40 });
+  assert.deepStrictEqual(bad, []);
+});
+
+check("a claim landing exactly on 100% is allowed", () => {
+  const bad = findWorsenedOverClaims([change("var-1", 0, 60)], { "var-1": 40 });
+  assert.strictEqual(bad.length, 0);
+});
+
+check("THE HOLE: a new claim on a fully-claimed variation is refused", () => {
+  const bad = findWorsenedOverClaims([change("var-1", 0, 100)], { "var-1": 100 });
+  assert.strictEqual(bad.length, 1);
+  assert.strictEqual(bad[0].lineId, "var-1");
+  assert.strictEqual(bad[0].previousTotal, 100);
+  assert.strictEqual(bad[0].nextTotal, 200);
+});
+
+check("a claim that overshoots 100% by any margin is refused", () => {
+  const bad = findWorsenedOverClaims([change("var-1", 0, 70)], { "var-1": 40 });
+  assert.strictEqual(bad.length, 1);
+  assert.strictEqual(bad[0].nextTotal, 110);
+});
+
+check("EDITING an already over-claimed invoice is still allowed (unchanged)", () => {
+  // Legacy bad data: 100% elsewhere + 100% here = 200%. Re-saving as-is must
+  // not be blocked, or the invoice can never be corrected.
+  const bad = findWorsenedOverClaims([change("var-1", 100, 100)], { "var-1": 100 });
+  assert.deepStrictEqual(bad, []);
+});
+
+check("REDUCING an over-claim is allowed even though it is still over 100%", () => {
+  const bad = findWorsenedOverClaims([change("var-1", 100, 40)], { "var-1": 100 });
+  assert.deepStrictEqual(bad, []);
+});
+
+check("INCREASING an existing over-claim is refused", () => {
+  const bad = findWorsenedOverClaims([change("var-1", 60, 90)], { "var-1": 100 });
+  assert.strictEqual(bad.length, 1);
+  assert.strictEqual(bad[0].previousTotal, 160);
+  assert.strictEqual(bad[0].nextTotal, 190);
+});
+
+check("dropping a line entirely is allowed — it isn't in the change set", () => {
+  const bad = findWorsenedOverClaims([], { "var-1": 200 });
+  assert.deepStrictEqual(bad, []);
+});
+
+check("a line with no claims elsewhere is judged on its own value", () => {
+  assert.deepStrictEqual(findWorsenedOverClaims([change("var-1", 0, 100)], {}), []);
+  assert.strictEqual(findWorsenedOverClaims([change("var-1", 0, 101)], {}).length, 1);
+});
+
+check("each line is judged independently", () => {
+  const bad = findWorsenedOverClaims(
+    [change("var-1", 0, 100), change("var-2", 0, 50)],
+    { "var-1": 100, "var-2": 0 },
+  );
+  assert.strictEqual(bad.length, 1);
+  assert.strictEqual(bad[0].lineId, "var-1");
+});
+
+check("the closing tolerance doesn't trip on a 33/33/34 split", () => {
+  const bad = findWorsenedOverClaims([change("var-1", 0, 34)], { "var-1": 66 });
+  assert.deepStrictEqual(bad, []);
+});
+
+check("isFullyClaimedPercent gates the duplicate route's skip", () => {
+  assert.strictEqual(isFullyClaimedPercent(100), true);
+  assert.strictEqual(isFullyClaimedPercent(200), true);
+  assert.strictEqual(isFullyClaimedPercent(99), false);
+  assert.strictEqual(isFullyClaimedPercent(0), false);
+});
+
+check("the error names the offending lines", () => {
+  const err = new ClaimOverBillingError(
+    [{ lineId: "var-1", elsewherePercent: 100, previousTotal: 100, nextTotal: 200 }],
+    ["4501-VO-017"],
+  );
+  assert.ok(err instanceof Error);
+  assert.strictEqual(err.name, "ClaimOverBillingError");
+  assert.match(err.message, /4501-VO-017/);
+  assert.strictEqual(err.overClaims.length, 1);
 });
 
 console.log(`\n${passed} checks passed`);

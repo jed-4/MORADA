@@ -282,10 +282,28 @@ export default function ClientInvoices({ embedded }: { embedded?: boolean } = {}
 
   const duplicateMutation = useMutation({
     mutationFn: async (id: string) =>
-      (await apiRequest(`/api/client-invoices/${id}/duplicate`, "POST")) as ClientInvoice,
+      (await apiRequest(`/api/client-invoices/${id}/duplicate`, "POST")) as ClientInvoice & {
+        skippedClaims?: string[];
+        adjustedClaims?: string[];
+      },
     onSuccess: (copy) => {
       queryClient.invalidateQueries({ queryKey: ["/api/client-invoices"] });
-      toast({ title: "Invoice duplicated", description: `Created draft ${copy.invoiceNumber || ""}` });
+      queryClient.invalidateQueries({ queryKey: ["/api/invoice-variations/by-project"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/invoice-allowances/by-project"] });
+      // Claims already billed across the project are dropped (or trimmed to
+      // what's left) rather than copied — duplicating used to re-bill them
+      // outright. Name them so the change is visible rather than silent.
+      const notes: string[] = [];
+      if (copy.skippedClaims?.length) {
+        notes.push(`${copy.skippedClaims.join(", ")} not copied — already claimed in full.`);
+      }
+      if (copy.adjustedClaims?.length) {
+        notes.push(`Reduced to the unclaimed balance: ${copy.adjustedClaims.join(", ")}.`);
+      }
+      toast({
+        title: "Invoice duplicated",
+        description: [`Created draft ${copy.invoiceNumber || ""}`.trim(), ...notes].join(" "),
+      });
     },
     onError: (err: any) => {
       toast({ title: "Failed to duplicate invoice", description: err?.payload?.message || err.message, variant: "destructive" });

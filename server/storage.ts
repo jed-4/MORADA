@@ -122,6 +122,7 @@ import * as schema from "@shared/schema";
 import { computeEstimateItemPrice, computeEstimateSummary, estimateItemBuilderCostExTax, resolveEstimateStoredPrice } from "@shared/pricing";
 import { computeBillTotalsCents, billLineExGstCents } from "@shared/billTotals";
 import { timesheetTotalExGstCents } from "@shared/money";
+import { findWorsenedOverClaims, ClaimOverBillingError, isFullyClaimedPercent, type ClaimChange } from "@shared/invoiceClaims";
 import type { CircuitContext } from "@shared/schema";
 import type { AiConversation, InsertAiConversation, AiMessage, InsertAiMessage, AiBlockedItem, InsertAiBlockedItem } from "@shared/schema";
 
@@ -923,6 +924,7 @@ export interface IStorage {
   getInvoiceVariations(invoiceId: string): Promise<InvoiceVariation[]>;
   getInvoiceVariationById(id: string): Promise<InvoiceVariation | undefined>;
   getInvoiceVariationsByProject(projectId: string): Promise<Array<{ variationId: string; invoiceId: string; invoiceNumber: string | null; claimPercent: number }>>;
+  getProjectClaimTotalsExcludingInvoice(projectId: string, excludeInvoiceId: string): Promise<{ variations: Record<string, number>; allowances: Record<string, number> }>;
   createInvoiceVariation(data: InsertInvoiceVariation): Promise<InvoiceVariation>;
   updateInvoiceVariation(id: string, data: Partial<InsertInvoiceVariation>): Promise<InvoiceVariation | undefined>;
   deleteInvoiceVariation(id: string): Promise<boolean>;
@@ -16999,6 +17001,107 @@ export class DbStorage implements IStorage {
     }
   }
 
+  // Cumulative claim percent per line across the project's OTHER invoices.
+  // One round trip for both variations and allowances — Neon is ~400ms from AU,
+  // so this is deliberately a single UNION rather than two selects.
+  private async claimsElsewhereTx(
+    tx: any,
+    projectId: string,
+    excludeInvoiceId: string,
+  ): Promise<{ variations: Record<string, number>; allowances: Record<string, number> }> {
+    const result = await tx.execute(sql`
+      SELECT 'variation' AS kind, iv.variation_id AS line_id, SUM(iv.claim_percent)::int AS pct
+      FROM invoice_variations iv
+      JOIN client_invoices ci ON ci.id = iv.invoice_id
+      WHERE ci.project_id = ${projectId} AND iv.invoice_id <> ${excludeInvoiceId}
+      GROUP BY 1, 2
+      UNION ALL
+      SELECT 'allowance', ia.estimate_item_id, SUM(ia.claim_percent)::int
+      FROM invoice_allowances ia
+      JOIN client_invoices ci ON ci.id = ia.invoice_id
+      WHERE ci.project_id = ${projectId} AND ia.invoice_id <> ${excludeInvoiceId}
+      GROUP BY 1, 2
+    `);
+    const variations: Record<string, number> = {};
+    const allowances: Record<string, number> = {};
+    for (const row of ((result as any).rows ?? [])) {
+      const target = row.kind === "variation" ? variations : allowances;
+      target[row.line_id as string] = Number(row.pct) || 0;
+    }
+    return { variations, allowances };
+  }
+
+  // Refuse a save that would push a line's cumulative claim FURTHER past 100%.
+  // See shared/invoiceClaims.ts for why the rule is monotonic rather than a
+  // flat "reject over 100" — a flat rule would lock already-bad invoices out of
+  // being edited, which is exactly when they need saving.
+  //
+  // `previous` is this invoice's own claim state before the save (empty on
+  // create). On update it comes free from the DELETE ... RETURNING, so the
+  // whole guard costs one extra query, and only when claims are involved.
+  private async assertClaimsNotWorsenedTx(
+    tx: any,
+    projectId: string,
+    invoiceId: string,
+    children: ClientInvoiceChildren,
+    previous: { variations: Record<string, number>; allowances: Record<string, number> },
+  ): Promise<void> {
+    const nextVariations = children.variations ?? [];
+    const nextAllowances = children.allowances ?? [];
+    const touchesClaims =
+      nextVariations.length > 0 || nextAllowances.length > 0 ||
+      Object.keys(previous.variations).length > 0 || Object.keys(previous.allowances).length > 0;
+    if (!touchesClaims) return;
+
+    const elsewhere = await this.claimsElsewhereTx(tx, projectId, invoiceId);
+
+    const variationChanges: ClaimChange[] = nextVariations.map((v) => ({
+      lineId: v.variationId,
+      previousPercent: previous.variations[v.variationId] ?? 0,
+      nextPercent: v.claimPercent ?? 100,
+    }));
+    const allowanceChanges: ClaimChange[] = nextAllowances.map((a) => ({
+      lineId: a.estimateItemId,
+      previousPercent: previous.allowances[a.estimateItemId] ?? 0,
+      nextPercent: a.claimPercent ?? 100,
+    }));
+
+    const badVariations = findWorsenedOverClaims(variationChanges, elsewhere.variations);
+    const badAllowances = findWorsenedOverClaims(allowanceChanges, elsewhere.allowances);
+    if (badVariations.length === 0 && badAllowances.length === 0) return;
+
+    // Only now — on the rejection path — pay for human-readable names.
+    const labels: string[] = [];
+    if (badVariations.length > 0) {
+      const rows = await tx.select({ id: schema.variations.id, number: schema.variations.variationNumber })
+        .from(schema.variations)
+        .where(inArray(schema.variations.id, badVariations.map((b) => b.lineId)));
+      labels.push(...rows.map((r: any) => r.number || r.id));
+    }
+    if (badAllowances.length > 0) {
+      const rows = await tx.select({ id: schema.estimateItems.id, name: schema.estimateItems.name })
+        .from(schema.estimateItems)
+        .where(inArray(schema.estimateItems.id, badAllowances.map((b) => b.lineId)));
+      labels.push(...rows.map((r: any) => r.name || r.id));
+    }
+    throw new ClaimOverBillingError([...badVariations, ...badAllowances], labels);
+  }
+
+  // Public form of the above, for callers outside a transaction (the duplicate
+  // route). Same shape: cumulative claim percent per line across every invoice
+  // on the project except the excluded one.
+  async getProjectClaimTotalsExcludingInvoice(
+    projectId: string,
+    excludeInvoiceId: string,
+  ): Promise<{ variations: Record<string, number>; allowances: Record<string, number> }> {
+    try {
+      return await this.claimsElsewhereTx(db, projectId, excludeInvoiceId);
+    } catch (error) {
+      console.error("Database error in getProjectClaimTotalsExcludingInvoice:", error);
+      throw error;
+    }
+  }
+
   // Create an invoice AND all of its child rows in one transaction — either
   // everything commits or nothing does (the old path was ~15 serial requests
   // that could fail halfway and leave a half-saved invoice).
@@ -17016,6 +17119,11 @@ export class DbStorage implements IStorage {
       }
       return await db.transaction(async (tx) => {
         const [created] = await tx.insert(schema.clientInvoices).values(values).returning();
+        // Nothing claimed on this invoice yet, so every incoming claim is new.
+        await this.assertClaimsNotWorsenedTx(tx, created.projectId, created.id, children, {
+          variations: {},
+          allowances: {},
+        });
         await this.insertClientInvoiceChildrenTx(tx, created.id, children);
         return created;
       });
@@ -17036,11 +17144,25 @@ export class DbStorage implements IStorage {
           .returning();
         if (!updated) return undefined;
         await tx.delete(schema.clientInvoiceItems).where(eq(schema.clientInvoiceItems.invoiceId, id));
-        await tx.delete(schema.invoiceVariations).where(eq(schema.invoiceVariations.invoiceId, id));
-        await tx.delete(schema.invoiceAllowances).where(eq(schema.invoiceAllowances.invoiceId, id));
+        // RETURNING gives us this invoice's pre-save claim state for free — the
+        // guard needs it to tell "reducing a bad claim" from "worsening one".
+        const deletedVariations = await tx.delete(schema.invoiceVariations)
+          .where(eq(schema.invoiceVariations.invoiceId, id))
+          .returning({ variationId: schema.invoiceVariations.variationId, claimPercent: schema.invoiceVariations.claimPercent });
+        const deletedAllowances = await tx.delete(schema.invoiceAllowances)
+          .where(eq(schema.invoiceAllowances.invoiceId, id))
+          .returning({ estimateItemId: schema.invoiceAllowances.estimateItemId, claimPercent: schema.invoiceAllowances.claimPercent });
         await tx.delete(schema.invoiceBills).where(eq(schema.invoiceBills.invoiceId, id));
         await tx.delete(schema.invoiceTimesheets).where(eq(schema.invoiceTimesheets.invoiceId, id));
         await tx.delete(schema.invoiceSelections).where(eq(schema.invoiceSelections.invoiceId, id));
+
+        const previous = {
+          variations: Object.fromEntries(deletedVariations.map((r: any) => [r.variationId, r.claimPercent ?? 0])),
+          allowances: Object.fromEntries(deletedAllowances.map((r: any) => [r.estimateItemId, r.claimPercent ?? 0])),
+        };
+        // Throws inside the transaction, so the deletes above roll back too.
+        await this.assertClaimsNotWorsenedTx(tx, updated.projectId, id, children, previous);
+
         await this.insertClientInvoiceChildrenTx(tx, id, children);
         return updated;
       });
