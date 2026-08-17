@@ -327,9 +327,13 @@ export default function ClientInvoiceDetail() {
   // "company default account, GST charged, project's own tracking option".
   type LineXeroOverride = {
     account?: string | null;
+    /** Xero TaxType, e.g. OUTPUT ("GST on Income") or EXEMPTOUTPUT. */
+    taxType?: string;
     taxable?: boolean;
     tracking?: Record<string, string>;
   };
+  // Only a GST-bearing sales rate adds 10%; every other rate is 0%.
+  const GST_BEARING_TAX_TYPES = new Set(["OUTPUT", "OUTPUT2"]);
   const [lineXeroOverrides, setLineXeroOverrides] = useState<Record<string, LineXeroOverride>>({});
   const [modalBillIds, setModalBillIds] = useState<string[]>([]);
   const [modalTimesheetIds, setModalTimesheetIds] = useState<string[]>([]);
@@ -368,7 +372,12 @@ export default function ClientInvoiceDetail() {
   const docStyle = (companySettings?.documentStyle as "style1" | "style2" | undefined) || "style1";
 
   const { data: xeroAccounts = [] } = useQuery<Array<{ code: string; name: string; type: string; accountId: string }>>({
-    queryKey: ["/api/xero/accounts"],
+    queryKey: ["/api/xero/accounts?kind=revenue"],
+  });
+
+  const { data: xeroTaxRates = [] } = useQuery<Array<{ taxType: string; name: string }>>({
+    queryKey: ["/api/xero/tax-rates"],
+    enabled: !!xeroStatus?.connected,
   });
 
   const { data: xeroTrackingCategories = [] } = useQuery<Array<{
@@ -973,6 +982,7 @@ export default function ClientInvoiceDetail() {
     amountIncCents: number;
     taxable: boolean;
     accountCode?: string | null;
+    taxType?: string;
     tracking?: Array<{ categoryId: string; optionId: string }>;
     // Editor-only extras — the save payload picks fields explicitly, so these
     // never reach the server. `accountKey` is the line's override identity;
@@ -1008,8 +1018,10 @@ export default function ClientInvoiceDetail() {
   // Lines charge GST unless explicitly marked otherwise. Marking a line GST-free
   // does not gross it up: the line's own amount is what the client pays, and the
   // GST inside it comes off the invoice total (same as custom lines already do).
+  const taxTypeFor = (source: BreakdownLine["source"], id?: string) =>
+    overrideFor(source, id).taxType ?? (overrideFor(source, id).taxable === false ? "NONE" : "OUTPUT");
   const taxableFor = (source: BreakdownLine["source"], id?: string) =>
-    overrideFor(source, id).taxable !== false;
+    GST_BEARING_TAX_TYPES.has(taxTypeFor(source, id));
   // Resolved tracking for a line: its own overrides, else the project's option
   // on the Jobs category, which is what every line used to get unconditionally.
   const trackingForKey = (key: string) => {
@@ -1078,6 +1090,7 @@ export default function ClientInvoiceDetail() {
           description: `${row.name || "Contract Claim"}${row.description ? ` — ${row.description}` : ""} (${row.claimPercent}%)`,
           amountExCents: ex, gstCents: gst, amountIncCents: ex + gst, taxable,
           accountCode: accountFor("contract", row.id),
+          taxType: taxTypeFor("contract", row.id),
           tracking: trackingFor("contract", row.id),
           accountKey: lineAccountKey("contract", row.id),
           label: row.name || "Contract Claim", pdfDescription: row.description, claimPct: row.claimPercent,
@@ -1093,6 +1106,7 @@ export default function ClientInvoiceDetail() {
           description: `Variation ${v.variationNumber || ""}${v.name ? `: ${v.name}` : ""} (${pct}%)`,
           amountExCents: ex, gstCents: gst, amountIncCents: ex + gst, taxable,
           accountCode: accountFor("variation", v.id),
+          taxType: taxTypeFor("variation", v.id),
           tracking: trackingFor("variation", v.id),
           accountKey: lineAccountKey("variation", v.id),
           label: `Variation ${v.variationNumber || ""}`, pdfDescription: v.name || undefined, claimPct: pct,
@@ -1108,6 +1122,7 @@ export default function ClientInvoiceDetail() {
           description: `Allowance — ${item.name || ""} (${pct}%)`,
           amountExCents: ex, gstCents: gst, amountIncCents: ex + gst, taxable,
           accountCode: accountFor("allowance", item.id),
+          taxType: taxTypeFor("allowance", item.id),
           tracking: trackingFor("allowance", item.id),
           accountKey: lineAccountKey("allowance", item.id),
           label: `Allowance - ${item.name || ""}`, claimPct: pct,
@@ -1126,6 +1141,7 @@ export default function ClientInvoiceDetail() {
           description: `Labour — ${selectedTimesheets.length} timesheet${selectedTimesheets.length === 1 ? "" : "s"}`,
           amountExCents: ex, gstCents: gst, amountIncCents: ex + gst, taxable: labourTaxable,
           accountCode: accountFor("labour"),
+          taxType: taxTypeFor("labour"),
           tracking: trackingFor("labour"),
           accountKey: lineAccountKey("labour"),
           label: "Labour",
@@ -1141,6 +1157,7 @@ export default function ClientInvoiceDetail() {
           description: `${supplierName || "Bill"}${bill.billNumber ? ` — ${bill.billNumber}` : ""}`,
           amountExCents: ex, gstCents: gst, amountIncCents: ex + gst, taxable: billTaxable,
           accountCode: accountFor("bill", bill.id),
+          taxType: taxTypeFor("bill", bill.id),
           tracking: trackingFor("bill", bill.id),
           accountKey: lineAccountKey("bill", bill.id),
           label: supplierName || "Bill", pdfDescription: bill.billNumber || undefined,
@@ -1155,6 +1172,7 @@ export default function ClientInvoiceDetail() {
           description: `Selection — ${o.name || ""}`,
           amountExCents: ex, gstCents: gst, amountIncCents: ex + gst, taxable: selTaxable,
           accountCode: accountFor("selection", o.id),
+          taxType: taxTypeFor("selection", o.id),
           tracking: trackingFor("selection", o.id),
           accountKey: lineAccountKey("selection", o.id),
           label: `Selection - ${o.name || ""}`,
@@ -1169,6 +1187,7 @@ export default function ClientInvoiceDetail() {
           description: `Builder's margin (${form.watch("markupPercent") || 0}%)`,
           amountExCents: markupEx, gstCents: gst, amountIncCents: markupEx + gst, taxable: markupTaxable,
           accountCode: accountFor("markup"),
+          taxType: taxTypeFor("markup"),
           tracking: trackingFor("markup"),
           accountKey: lineAccountKey("markup"),
           label: "Builder's margin",
@@ -1327,6 +1346,7 @@ export default function ClientInvoiceDetail() {
         amountIncCents: l.amountIncCents,
         taxable: l.taxable,
         accountCode: l.accountCode ?? null,
+        taxType: l.taxType ?? null,
         tracking: l.tracking ?? null,
       })),
       columnConfig: columnConfig,
@@ -1900,17 +1920,28 @@ export default function ClientInvoiceDetail() {
     // Posting panel is for setting them in bulk and for tracking, not the only
     // way to reach them.
     cols.push({
-      key: "taxable", header: "Tax", width: 112, truncate: false,
-      cell: (l) => (
-        <button
-          type="button"
-          onClick={() => setXeroByKey(l.xeroKey, { taxable: !(lineXeroOverrides[l.xeroKey]?.taxable !== false) })}
-          className="text-table text-muted-foreground hover:text-foreground whitespace-nowrap"
-          data-testid={`button-tax-${l.xeroKey}`}
-        >
-          {lineXeroOverrides[l.xeroKey]?.taxable === false ? "No Tax" : "GST on income"}
-        </button>
-      ),
+      key: "taxType", header: "Tax", width: 128, truncate: false,
+      cell: (l) => {
+        const current = lineXeroOverrides[l.xeroKey]?.taxType
+          ?? (lineXeroOverrides[l.xeroKey]?.taxable === false ? "NONE" : "OUTPUT");
+        // Fall back to the two rates every AU org has when Xero isn't reachable,
+        // so the column is still usable rather than a free-text guess.
+        const rates = xeroTaxRates.length > 0
+          ? xeroTaxRates
+          : [{ taxType: "OUTPUT", name: "GST on Income" }, { taxType: "NONE", name: "No GST" }];
+        return (
+          <Select value={current} onValueChange={(v) => setXeroByKey(l.xeroKey, { taxType: v })}>
+            <SelectTrigger className="h-7 text-table border-0 bg-transparent shadow-none focus:ring-1 focus:ring-ring px-1.5 rounded-sm w-full" data-testid={`select-tax-${l.xeroKey}`}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {rates.map((r) => (
+                <SelectItem key={r.taxType} value={r.taxType}>{r.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        );
+      },
     });
     cols.push({
       key: "account", header: "Account", width: 128, truncate: false,

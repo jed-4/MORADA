@@ -36812,7 +36812,7 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
         description: l.description,
         quantity: 1,
         unitAmount: l.amountExCents / 100,
-        taxType: l.taxable ? "OUTPUT" : "NONE",
+        taxType: (l as any).taxType || (l.taxable ? "OUTPUT" : "NONE"),
         taxAmount: l.gstCents / 100,
         accountCode: l.accountCode || fallbackAccountCode || undefined,
         // A line's own tracking wins; otherwise it inherits the project's
@@ -36825,6 +36825,25 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
           return lineTracking.length > 0 ? lineTracking : undefined;
         })(),
       }));
+
+      try {
+        const taxRates = await xeroService.getTaxRates(connection.id);
+        if (Array.isArray(taxRates) && taxRates.length > 0) {
+          const valid = new Set(
+            taxRates.filter((tr: any) => !tr.Status || tr.Status === "ACTIVE").map((tr: any) => tr.TaxType),
+          );
+          const bad = xeroLineItems.find((li) => li.taxType && !valid.has(li.taxType));
+          if (bad) {
+            return res.status(422).json({
+              error: "INVALID_TAX_TYPE",
+              message: `Tax rate "${bad.taxType}" is not configured on this Xero organisation.`,
+            });
+          }
+        }
+      } catch {
+        // If the rate list can't be fetched, let Xero be the judge rather than
+        // blocking a push that would have succeeded.
+      }
 
       // Clear, actionable pre-flight errors (short enough for a toast) instead of
       // letting Xero return a raw validation blob.
@@ -36990,7 +37009,7 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
           Description: l.description,
           Quantity: 1,
           UnitAmount: l.amountExCents / 100,
-          TaxType: l.taxable ? "OUTPUT" : "NONE",
+          TaxType: (l as any).taxType || (l.taxable ? "OUTPUT" : "NONE"),
           TaxAmount: l.gstCents / 100,
           AccountCode: l.accountCode || fallbackAccountCode,
           ...(() => {
@@ -38190,6 +38209,34 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
   });
 
   // Xero: Fetch tracking categories from Xero org
+  // Sales-side tax rates for client invoices. Bills already validate their
+  // taxType against this list on push; exposing it lets the invoice editor
+  // offer the org's real rates instead of a hardcoded GST/No-GST pair.
+  app.get("/api/xero/tax-rates", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+
+      const connection = await storage.getXeroConnectionByCompanyId(companyId);
+      if (!connection) return res.status(400).json({ error: "Xero is not connected" });
+
+      const rates = await xeroService.getTaxRates(connection.id);
+      // Xero exposes both sides of the ledger on one endpoint; an ACCREC line
+      // can only carry a sales rate, so filter the expense ones out rather than
+      // letting someone pick a rate Xero will reject.
+      const salesish = (rates || []).filter(
+        (tr: any) =>
+          (!tr.Status || tr.Status === "ACTIVE") &&
+          !/EXPENSE|INPUT|CAPEX/i.test(tr.TaxType || ""),
+      );
+      res.json(salesish.map((tr: any) => ({ taxType: tr.TaxType, name: tr.Name })));
+    } catch (error: any) {
+      console.error("Error fetching Xero tax rates:", error);
+      res.status(500).json({ error: error?.message || "Failed to fetch tax rates" });
+    }
+  });
+
   app.get("/api/xero/tracking-categories", requireAuth, async (req, res) => {
     try {
       const user = req.user as any;

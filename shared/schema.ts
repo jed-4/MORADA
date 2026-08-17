@@ -2524,6 +2524,10 @@ export const invoiceLineBreakdownEntrySchema = z.object({
   amountIncCents: z.number().int(),
   taxable: z.boolean(),
   accountCode: z.string().optional().nullable(),
+  // The Xero TaxType this line posts under (OUTPUT, EXEMPTOUTPUT, …). Absent
+  // falls back to OUTPUT/NONE derived from `taxable`, which is what pre-tax-rate
+  // invoices carry.
+  taxType: z.string().optional().nullable(),
   // Resolved per-line tracking, ready to hand to Xero. Empty/absent means the
   // push falls back to the project's own tracking option.
   tracking: z
