@@ -454,7 +454,12 @@ export default function ClientInvoiceDetail() {
 
   const { data: projectInvoices = [] } = useQuery<ClientInvoice[]>({
     queryKey: ["/api/client-invoices", selectedProjectId],
-    queryFn: () => fetch(`/api/client-invoices?projectId=${selectedProjectId}`).then(r => r.json()),
+    queryFn: () =>
+      fetch(`/api/client-invoices?projectId=${selectedProjectId}`, { credentials: "include" })
+        .then((r) => r.json())
+        // A failed request answers with an error object, not a list. Without this
+        // the page white-screens on `.filter` and blames the client.
+        .then((d) => (Array.isArray(d) ? d : [])),
     enabled: !!selectedProjectId,
   });
 
@@ -2114,7 +2119,7 @@ export default function ClientInvoiceDetail() {
                 <Tooltip>
                     <TooltipTrigger asChild>
                       <div className={cn(
-                        "flex items-center gap-1.5 px-2 h-6 border rounded-md text-xs",
+                        "relative flex items-center gap-1.5 px-2 h-6 border rounded-md text-xs",
                         xeroStatus?.connected
                           ? "text-status-info border-status-info/30"
                           : "text-muted-foreground border-border opacity-60 cursor-not-allowed"
@@ -3628,7 +3633,7 @@ export default function ClientInvoiceDetail() {
                   <div className="flex items-center gap-2">
                     <span className="text-xs font-medium">Invoice Summary</span>
                   </div>
-                  <div className="flex items-center gap-1.5 text-xs">
+                  <div className="relative flex items-center gap-1.5 text-xs">
                       <span
                         className={cn(
                           "text-xs",
