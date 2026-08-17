@@ -1808,7 +1808,7 @@ export default function ClientInvoiceDetail() {
     if (isColVisible("name"))
       cols.push({ key: "name", header: "Name", width: 160, truncate: false, className: "font-medium", cell: (l) => l.name });
     if (isColVisible("description"))
-      cols.push({ key: "description", header: "Description", truncate: false, className: "text-muted-foreground", cell: (l) => l.description });
+      cols.push({ key: "description", header: "Description", width: 260, truncate: false, className: "text-muted-foreground", cell: (l) => l.description });
     if (isColVisible("claimPercent"))
       cols.push({ key: "claimPercent", header: "Claim %", align: "right", width: 80, truncate: false, cell: (l) => l.claimPercentCell });
     if (isColVisible("claimAmount"))
@@ -1888,6 +1888,7 @@ export default function ClientInvoiceDetail() {
   const renderClaimGrid = (lines: ClaimLine[], testId: string) => (
     <LineItemTable
       fixedLayout
+      filler
       resizeNamespace="client-invoice-claim-lines"
       headerClassName={GRID_HEADER}
       data={lines}
@@ -2111,10 +2112,7 @@ export default function ClientInvoiceDetail() {
                 <div className="rounded-lg border border-border bg-card overflow-hidden">
 
                   {/* Section header */}
-                  <div className="h-8 flex items-center px-3 gap-2 border-b border-border/50">
-                    <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-primary/80" />
-                    <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Invoice Info</span>
-                  </div>
+                  {sectionHeader({ label: "Invoice Info", dot: "bg-primary/80" })}
 
                   {/* Invoice Name + Number + Dates, with the recipient alongside —
                       an invoice header is "who" and "which invoice" read together,
@@ -2339,28 +2337,28 @@ export default function ClientInvoiceDetail() {
                         />
                         <div className="flex flex-col">
                           <span className="h-4 leading-none flex items-center text-[9px] text-muted-foreground uppercase tracking-wide font-semibold">Type</span>
-                          <div className="flex items-center h-7 rounded-md border border-border/60 overflow-hidden w-fit">
+                          <div className="flex items-center h-7 rounded-md border border-input overflow-hidden w-full bg-background">
                           <button
                             type="button"
                             onClick={() => setInvoiceType("progress_payments")}
                             className={cn(
-                              "px-2.5 py-0.5 text-table leading-none whitespace-nowrap transition-colors",
+                              "flex-1 h-full text-[11px] leading-none whitespace-nowrap transition-colors",
                               invoiceType === "progress_payments"
                                 ? "bg-muted text-foreground font-medium"
-                                : "text-muted-foreground/50 hover:text-muted-foreground"
+                                : "text-muted-foreground hover:text-foreground"
                             )}
                           >
                             Progress
                           </button>
-                          <div className="w-px h-3 bg-border/50" />
+                          <div className="w-px h-full bg-border" />
                           <button
                             type="button"
                             onClick={() => setInvoiceType("cost_plus")}
                             className={cn(
-                              "px-2.5 py-0.5 text-table leading-none whitespace-nowrap transition-colors",
+                              "flex-1 h-full text-[11px] leading-none whitespace-nowrap transition-colors",
                               invoiceType === "cost_plus"
                                 ? "bg-muted text-foreground font-medium"
-                                : "text-muted-foreground/50 hover:text-muted-foreground"
+                                : "text-muted-foreground hover:text-foreground"
                             )}
                           >
                             Cost Plus
@@ -2400,15 +2398,51 @@ export default function ClientInvoiceDetail() {
                   </div>
 
 
+                  {/* Introduction — closes out the invoice header, collapsed by default */}
+                  <div className="border-t border-border/50">
+                    <div
+                      className="h-8 flex items-center justify-between px-3 gap-2 border-b border-border/50 cursor-pointer bg-muted/40"
+                      onClick={() => setIntroCollapsed((v) => !v)}
+                    >
+                      <div className="flex items-center gap-2">
+                        <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-teal/70" />
+                        <span className="text-xs font-medium">Introduction</span>
+                      </div>
+                      {introCollapsed ? (
+                        <ChevronDown className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+                      ) : (
+                        <ChevronUp className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+                      )}
+                    </div>
+                    {!introCollapsed && (
+                      <div className="px-4 py-3">
+                        <FormField
+                          control={form.control}
+                          name="introductionText"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormControl>
+                                <RichTextEditor
+                                  content={field.value || ""}
+                                  onChange={(html) => field.onChange(html)}
+                                  placeholder="Enter introduction text..."
+                                  data-testid="editor-introduction"
+                                />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      </div>
+                    )}
+                  </div>
+
                 </div>{/* end Card 1 — Invoice Info */}
 
 
                 {/* Card 2 — Financials */}
                 <div className="rounded-lg border border-border bg-card overflow-hidden">
-                  <div className="h-8 flex items-center px-3 gap-2 border-b border-border/50 bg-muted/40">
-                    <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-sage/70" />
-                    <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Financials</span>
-                  </div>
+                  {sectionHeader({ label: "Financials", dot: "bg-sage/70" })}
 
                 {invoiceType === "progress_payments" && (
                   <>
@@ -2418,7 +2452,7 @@ export default function ClientInvoiceDetail() {
                         <div className="flex items-center gap-2">
                           <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-primary/70" />
                           <span className="text-xs font-medium">Contract Price</span>
-                          {getEffectiveContractPrice() && (
+                          {!!getEffectiveContractPrice() && (
                             <Tooltip>
                               <TooltipTrigger asChild>
                                 <Badge variant="secondary" className="flex items-center gap-1 text-xs">
@@ -2612,7 +2646,7 @@ export default function ClientInvoiceDetail() {
                         )}
 
                         <div className="mt-1 flex items-center gap-3">
-                          {contractClaimRows.length < 5 && hasContractEstimate && (
+                          {contractClaimRows.length < 5 && (
                             <button
                               type="button"
                               onClick={addContractClaimRow}
@@ -3218,16 +3252,14 @@ export default function ClientInvoiceDetail() {
                     </div>
                   </div>
                   <div className="overflow-x-auto">
-                    {customLines.length === 0 ? (
-                      <p className="text-sm text-muted-foreground text-center py-4 px-4">
-                        No custom lines. Click "Add Line" to add a custom line item.
-                      </p>
-                    ) : (
+                    {/* Header carries "+ Add Line", so an empty section shows nothing —
+                        same as Variations and Allowances. */}
+                    {customLines.length === 0 ? null : (
                       <LineItemTable
                         fixedLayout
+                        filler
                         resizeNamespace="client-invoice-custom-lines"
                         headerClassName={GRID_HEADER}
-                        tableClassName="min-w-[1060px]"
                         data={customLines}
                         rowKey={(_line, index) => index}
                         rowTestId={(_line, index) => `custom-line-${index}`}
@@ -3250,7 +3282,7 @@ export default function ClientInvoiceDetail() {
                             });
                           if (isColVisible("description"))
                             cols.push({
-                              key: "description", header: "Description", truncate: false,
+                              key: "description", header: "Description", width: 220, truncate: false,
                               cell: (line, index) => (
                                 <Input
                                   value={line.description}
@@ -3717,47 +3749,8 @@ export default function ClientInvoiceDetail() {
               {/* ── Act 3: Presentation — everything that shapes how the invoice
                    reads to the client. All collapsible, all closed by default. ── */}
               <div className="rounded-lg border border-border bg-card overflow-hidden">
-                  {/* Introduction — presentation, so it lives with Closing/Terms */}
-                <div>
-                  <div
-                    className="h-8 flex items-center justify-between px-3 gap-2 border-b border-border/50 cursor-pointer bg-muted/40"
-                    onClick={() => setIntroCollapsed((v) => !v)}
-                  >
-                    <div className="flex items-center gap-2">
-                      <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-teal/70" />
-                      <span className="text-xs font-medium">Introduction</span>
-                    </div>
-                    {introCollapsed ? (
-                      <ChevronDown className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
-                    ) : (
-                      <ChevronUp className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
-                    )}
-                  </div>
-                  {!introCollapsed && (
-                    <div className="px-4 py-3">
-                      <FormField
-                        control={form.control}
-                        name="introductionText"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormControl>
-                              <RichTextEditor
-                                content={field.value || ""}
-                                onChange={(html) => field.onChange(html)}
-                                placeholder="Enter introduction text..."
-                                data-testid="editor-introduction"
-                              />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                    </div>
-                  )}
-                </div>
-
                 {/* Closing Text sub-section */}
-                <div className="border-t border-border/50">
+                <div>
                   <div
                     className="h-8 flex items-center justify-between px-3 gap-2 border-b border-border/50 cursor-pointer bg-muted/40"
                     onClick={() => setClosingCollapsed((v) => !v)}
