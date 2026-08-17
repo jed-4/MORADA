@@ -69,10 +69,95 @@ export function remainingClaimPercent(claimed: ClaimedElsewhere | undefined): nu
   return Math.max(0, 100 - (claimed?.percent ?? 0));
 }
 
+/** True when a cumulative claim percent has closed the line out. */
+export function isFullyClaimedPercent(percent: number): boolean {
+  return percent >= 100 - CLAIM_CLOSE_TOLERANCE;
+}
+
 /**
  * True when other invoices have already claimed the whole line — selecting it
  * again would bill the client twice for the same work.
  */
 export function isFullyClaimedElsewhere(claimed: ClaimedElsewhere | undefined): boolean {
-  return (claimed?.percent ?? 0) >= 100 - CLAIM_CLOSE_TOLERANCE;
+  return isFullyClaimedPercent(claimed?.percent ?? 0);
+}
+
+// ── Server-side guard ────────────────────────────────────────────────────────
+//
+// The picker guard covers the UI, but it is not the only writer: the duplicate
+// route copies claim rows wholesale, and POST /api/invoice-variations writes
+// one directly. The rule below is what the API enforces.
+//
+// It is deliberately NOT "reject anything over 100%". Historic data may already
+// hold over-claimed rows, and a flat rejection would lock those invoices out of
+// being EDITED — i.e. it would block the very saves needed to fix them. Instead
+// the rule is MONOTONIC: a save may leave a line's cumulative claim the same or
+// lower, but never push it higher once it is over 100%.
+//
+//   allow if  after <= 100 (+tolerance)   — normal, in-budget claim
+//   allow if  after <= before             — reducing or unchanged, even if bad
+//   reject    otherwise                   — this save makes an over-claim worse
+
+/** One line's claim on the invoice being written, before and after the save. */
+export interface ClaimChange {
+  lineId: string;
+  /** This invoice's claim percent before the save (0 when newly added). */
+  previousPercent: number;
+  /** This invoice's claim percent after the save. */
+  nextPercent: number;
+}
+
+/** A rejected change, with the numbers needed to explain it. */
+export interface OverClaim {
+  lineId: string;
+  /** Cumulative claim on the project's OTHER invoices. */
+  elsewherePercent: number;
+  previousTotal: number;
+  nextTotal: number;
+}
+
+/**
+ * Return the changes that would push a line's cumulative claim further past
+ * 100%. Empty means the save is safe to apply.
+ *
+ * `elsewhereByLine` is the cumulative claim percent per line across every
+ * OTHER invoice on the project — the invoice being written must be excluded by
+ * the caller, or it will count its own claim against itself.
+ */
+export function findWorsenedOverClaims(
+  changes: ClaimChange[],
+  elsewhereByLine: Record<string, number>,
+): OverClaim[] {
+  const rejected: OverClaim[] = [];
+  for (const change of changes) {
+    const elsewherePercent = elsewhereByLine[change.lineId] ?? 0;
+    const previousTotal = elsewherePercent + (change.previousPercent || 0);
+    const nextTotal = elsewherePercent + (change.nextPercent || 0);
+    if (nextTotal <= 100 + CLAIM_CLOSE_TOLERANCE) continue; // within budget
+    if (nextTotal <= previousTotal) continue; // not making it worse
+    rejected.push({ lineId: change.lineId, elsewherePercent, previousTotal, nextTotal });
+  }
+  return rejected;
+}
+
+/**
+ * Thrown by the storage layer when a save would worsen an over-claim. Routes
+ * translate this into a 409 rather than a 500 — it is a business-rule refusal,
+ * not a server fault.
+ */
+export class ClaimOverBillingError extends Error {
+  readonly overClaims: OverClaim[];
+  /** Human labels (variation numbers / item descriptions) when resolvable. */
+  readonly labels: string[];
+
+  constructor(overClaims: OverClaim[], labels: string[] = []) {
+    const named = labels.length ? labels.join(", ") : `${overClaims.length} line(s)`;
+    super(
+      `This would bill ${named} beyond 100% of its value. ` +
+      `Reduce the claim percent, or remove the line from this invoice.`,
+    );
+    this.name = "ClaimOverBillingError";
+    this.overClaims = overClaims;
+    this.labels = labels;
+  }
 }

@@ -185,6 +185,7 @@ import { AI_MODEL, buildSystemPrompt, buildCircuitStartMessage } from "./ai/prom
 import { executeTool } from "./ai/executor";
 import { computeBillTotalsCents, billLineExGstCents, clampRoundingCents } from "@shared/billTotals";
 import { computeVariationTotals, computeVariationLinePriceCents } from "@shared/variationTotals";
+import { isFullyClaimedPercent, ClaimOverBillingError, findWorsenedOverClaims } from "@shared/invoiceClaims";
 import { PENDING_VARIATION_STATUSES, isApprovedVariationStatus, frozenContractTotalFrom } from "@shared/projectMetrics";
 import { matchSupplier } from "@shared/supplierMatcher";
 import {
@@ -21093,11 +21094,56 @@ export async function registerRoutes(app: Express): Promise<Server> {
           xeroAccountCode: (it as any).xeroAccountCode ?? null,
         } as any);
       }
+      // Claim links are NOT copied blindly. Duplicating an invoice used to
+      // re-claim every variation on it, which billed the client a second time
+      // for the same work in one click — the picker guard never saw it because
+      // this path doesn't go through the picker. A line already claimed in full
+      // across the project is skipped, and the caller is told which, so the
+      // copy starts as the next progress claim rather than a repeat of the last.
+      // Fully claimed → skipped. Partially claimed → the copied percent is
+      // clamped to what's actually left, since copying 60% onto a line that
+      // already sits at 60% would bill 120% just as surely.
+      const skippedClaims: string[] = [];
+      const adjustedClaims: string[] = [];
+      const claimedElsewhere = await storage.getProjectClaimTotalsExcludingInvoice(
+        (original as any).projectId,
+        copy.id,
+      );
       for (const v of await storage.getInvoiceVariations((original as any).id)) {
-        await storage.createInvoiceVariation({ invoiceId: copy.id, variationId: (v as any).variationId, claimPercent: (v as any).claimPercent } as any);
+        const variationId = (v as any).variationId;
+        const already = claimedElsewhere.variations[variationId] ?? 0;
+        const wanted = (v as any).claimPercent ?? 100;
+        const remaining = Math.max(0, 100 - already);
+        if (isFullyClaimedPercent(already)) {
+          const variation = await storage.getVariation(variationId);
+          skippedClaims.push((variation as any)?.variationNumber || variationId);
+          continue;
+        }
+        const claimPercent = Math.min(wanted, remaining);
+        if (claimPercent !== wanted) {
+          const variation = await storage.getVariation(variationId);
+          adjustedClaims.push(`${(variation as any)?.variationNumber || variationId} (${wanted}% → ${claimPercent}%)`);
+        }
+        await storage.createInvoiceVariation({ invoiceId: copy.id, variationId, claimPercent } as any);
       }
       for (const a of await storage.getInvoiceAllowances((original as any).id)) {
-        await storage.createInvoiceAllowance({ invoiceId: copy.id, estimateItemId: (a as any).estimateItemId, claimPercent: (a as any).claimPercent } as any);
+        const estimateItemId = (a as any).estimateItemId;
+        const already = claimedElsewhere.allowances[estimateItemId] ?? 0;
+        const wanted = (a as any).claimPercent ?? 100;
+        const remaining = Math.max(0, 100 - already);
+        const itemLabel = async () => {
+          const item = await storage.getEstimateItem(estimateItemId);
+          return (item as any)?.name || (item as any)?.description || estimateItemId;
+        };
+        if (isFullyClaimedPercent(already)) {
+          skippedClaims.push(await itemLabel());
+          continue;
+        }
+        const claimPercent = Math.min(wanted, remaining);
+        if (claimPercent !== wanted) {
+          adjustedClaims.push(`${await itemLabel()} (${wanted}% → ${claimPercent}%)`);
+        }
+        await storage.createInvoiceAllowance({ invoiceId: copy.id, estimateItemId, claimPercent } as any);
       }
       for (const b of await storage.getInvoiceBills((original as any).id)) {
         await storage.createInvoiceBill({ invoiceId: copy.id, billId: (b as any).billId } as any);
@@ -21109,7 +21155,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         await storage.createInvoiceSelection({ invoiceId: copy.id, selectionOptionId: (s as any).selectionOptionId } as any);
       }
 
-      res.status(201).json(copy);
+      res.status(201).json({ ...copy, skippedClaims, adjustedClaims });
     } catch (error) {
       console.error("Failed to duplicate client invoice:", error);
       res.status(500).json({ error: "Failed to duplicate client invoice" });
@@ -21204,6 +21250,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
           error: `Invoice number "${(req.body as any)?.invoice?.invoiceNumber ?? ""}" is already in use. Please pick a different number and try again.`,
         });
       }
+      // A business-rule refusal, not a server fault — 409, with the message the
+      // user needs (which lines, and what to do about it).
+      if (error instanceof ClaimOverBillingError) {
+        return res.status(409).json({ error: error.message, overClaims: error.overClaims });
+      }
       console.error("Failed to create client invoice (full):", error);
       res.status(500).json({ error: "Failed to create client invoice" });
     }
@@ -21250,6 +21301,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(409).json({
           error: `Invoice number "${(req.body as any)?.invoice?.invoiceNumber ?? ""}" is already in use. Please pick a different number and try again.`,
         });
+      }
+      if (error instanceof ClaimOverBillingError) {
+        return res.status(409).json({ error: error.message, overClaims: error.overClaims });
       }
       console.error("Failed to update client invoice (full):", error);
       res.status(500).json({ error: "Failed to update client invoice" });
@@ -21495,6 +21549,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const variation = await storage.getVariation(validationResult.data.variationId);
       if (!variation || (variation as any).projectId !== (invoice as any).projectId) {
         return res.status(400).json({ error: "Variation does not belong to this invoice's project" });
+      }
+
+      // Same monotonic over-billing guard the transactional save applies — this
+      // route writes a claim row directly, so it needs its own check.
+      const claimTotals = await storage.getProjectClaimTotalsExcludingInvoice(
+        (invoice as any).projectId,
+        req.params.id,
+      );
+      const existingHere = (await storage.getInvoiceVariations(req.params.id))
+        .filter((r: any) => r.variationId === validationResult.data.variationId)
+        .reduce((sum: number, r: any) => sum + (r.claimPercent ?? 0), 0);
+      const [worsened] = findWorsenedOverClaims(
+        [{
+          lineId: validationResult.data.variationId,
+          previousPercent: existingHere,
+          // This route ADDS a row rather than replacing, so the invoice's claim
+          // after the write is what it already had plus the new row.
+          nextPercent: existingHere + (validationResult.data.claimPercent ?? 100),
+        }],
+        claimTotals.variations,
+      );
+      if (worsened) {
+        return res.status(409).json({
+          error: `${(variation as any).variationNumber || "This variation"} is already claimed at ${worsened.previousTotal}% across this project — adding this claim would bill ${worsened.nextTotal}% of its value.`,
+          overClaims: [worsened],
+        });
       }
 
       const invoiceVariation = await storage.createInvoiceVariation(validationResult.data);
