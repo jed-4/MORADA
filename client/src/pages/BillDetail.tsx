@@ -2373,6 +2373,27 @@ export default function BillDetail() {
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="flex-1 flex flex-col overflow-hidden">
             <div className="flex-1 overflow-auto p-4 space-y-3">
+            {/* A Xero void is consequential enough to state outright on the bill,
+                and it outlives the review-queue entry that first surfaced it. */}
+            {!!(bill as any)?.xeroVoidedAt && (
+              <div
+                className="flex items-start gap-2 rounded-md border p-3 text-sm"
+                style={{
+                  backgroundColor: "hsl(var(--coral-light))",
+                  borderColor: "hsl(var(--coral))",
+                }}
+                data-testid="banner-xero-voided"
+              >
+                <Ban className="w-4 h-4 mt-0.5 flex-shrink-0" style={{ color: "hsl(var(--coral))" }} />
+                <div>
+                  <p className="font-medium">Voided in Xero</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    This invoice was voided or deleted in Xero, but the bill still exists in Morada.
+                    Unlink it to keep the record without syncing, or delete it if it shouldn't be here.
+                  </p>
+                </div>
+              </div>
+            )}
             <div className={`grid grid-cols-1 gap-3 ${sheetPreviewUrl ? 'lg:grid-cols-[1fr_140px]' : 'lg:grid-cols-[1fr_280px]'}`}>
               <Card className="p-4">
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
