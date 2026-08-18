@@ -661,9 +661,31 @@ export async function pushBillToXeroInternal(
       companyDefaultAccountCode = settings?.billDefaultXeroAccount || undefined;
     } catch {}
 
+    // Which tax type a GST-free expense line should carry. Australian Xero orgs
+    // book these against "GST Free Expenses" (EXEMPTEXPENSES); "NONE" is a
+    // different thing (no tax at all, BAS-excluded) and many AU orgs do not
+    // have it active — in which case the pre-flight below rejects the push with
+    // "tax type NONE is not configured", which is what a GST-free bill looked
+    // like from the outside. Resolve against the org's real rates, preferring
+    // the GST-free expense rate and falling back the way it used to behave.
+    let gstFreeExpenseTaxType = "NONE";
+    try {
+      const rates = await xeroService.getTaxRates(connection.id);
+      const active = new Set(
+        (rates || [])
+          .filter((tr: any) => !tr.Status || tr.Status === "ACTIVE")
+          .map((tr: any) => tr.TaxType),
+      );
+      for (const candidate of ["EXEMPTEXPENSES", "NONE", "BASEXCLUDED"]) {
+        if (active.has(candidate)) { gstFreeExpenseTaxType = candidate; break; }
+      }
+    } catch {
+      // Rates unavailable — keep the previous behaviour rather than block.
+    }
+
     const xeroLineItems = lineItems.map((item: any) => {
       let taxType = "INPUT";
-      if (item.tax === "No GST" || item.tax === "NONE") taxType = "NONE";
+      if (item.tax === "No GST" || item.tax === "NONE") taxType = gstFreeExpenseTaxType;
 
       const tracking: any[] = [];
       if (item.costCodeId && tc1Id) {
