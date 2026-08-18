@@ -163,7 +163,7 @@ import type { SupplierLabel, InsertSupplierLabel, SupplierLabelAssignment, Inser
 import type { SupplierInsurance, InsertSupplierInsurance, SupplierContact, InsertSupplierContact } from "@shared/schema";
 import type { ContactInsurance, InsertContactInsurance } from "@shared/schema";
 import { contactInsurances as contactInsurancesTable } from "@shared/schema";
-import type { PriceListCategory, InsertPriceListCategory, PriceListItem, InsertPriceListItem, BillLineItemPriceLink, InsertBillLineItemPriceLink } from "@shared/schema";
+import type { PriceList, InsertPriceList, PriceListCategory, InsertPriceListCategory, PriceListItem, InsertPriceListItem, BillLineItemPriceLink, InsertBillLineItemPriceLink } from "@shared/schema";
 import type { DashboardView, InsertDashboardView, DashboardViewPermission, InsertDashboardViewPermission, UserDashboardPreference } from "@shared/schema";
 import type { NoteGroup, InsertNoteGroup } from "@shared/schema";
 import type { Notification as InAppNotification, InsertNotification } from "@shared/schema";
@@ -1400,6 +1400,13 @@ export interface IStorage {
   getDriveFileActivityLogs(companyId: string, projectId?: string, limit?: number): Promise<import("@shared/schema").DriveFileActivityLog[]>;
   createDriveFileActivityLog(log: import("@shared/schema").InsertDriveFileActivityLog): Promise<import("@shared/schema").DriveFileActivityLog>;
 
+  // Price Lists (the library) CRUD
+  getPriceLists(companyId: string, filters?: { kind?: string; includeArchived?: boolean }): Promise<Array<PriceList & { itemCount: number; supplierName: string | null }>>;
+  getPriceList(id: string, companyId: string): Promise<PriceList | undefined>;
+  createPriceList(list: InsertPriceList & { companyId: string; createdBy?: string }): Promise<PriceList>;
+  updatePriceList(id: string, list: Partial<InsertPriceList>, companyId: string): Promise<PriceList | undefined>;
+  deletePriceList(id: string, companyId: string): Promise<boolean>;
+
   // Price List Categories CRUD
   getPriceListCategories(companyId: string): Promise<PriceListCategory[]>;
   getPriceListCategory(id: string, companyId: string): Promise<PriceListCategory | undefined>;
@@ -1408,7 +1415,7 @@ export interface IStorage {
   deletePriceListCategory(id: string, companyId: string): Promise<boolean>;
 
   // Price List Items CRUD
-  getPriceListItems(companyId: string, filters?: { categoryId?: string; supplierId?: string; isActive?: boolean; search?: string }): Promise<PriceListItem[]>;
+  getPriceListItems(companyId: string, filters?: { priceListId?: string; categoryId?: string; supplierId?: string; isActive?: boolean; search?: string }): Promise<PriceListItem[]>;
   getPriceListItem(id: string, companyId: string): Promise<PriceListItem | undefined>;
   createPriceListItem(item: InsertPriceListItem & { companyId: string }): Promise<PriceListItem>;
   updatePriceListItem(id: string, item: Partial<InsertPriceListItem>, companyId: string): Promise<PriceListItem | undefined>;
@@ -24823,6 +24830,114 @@ export class DbStorage implements IStorage {
   // PRICE LIST FEATURE
   // ============================================
 
+  // Price Lists (the library) CRUD
+  async getPriceLists(companyId: string, filters?: { kind?: string; includeArchived?: boolean }): Promise<Array<PriceList & { itemCount: number; supplierName: string | null }>> {
+    try {
+      const conditions = [eq(schema.priceLists.companyId, companyId)];
+      if (filters?.kind) {
+        conditions.push(eq(schema.priceLists.kind, filters.kind as any));
+      }
+      if (!filters?.includeArchived) {
+        conditions.push(eq(schema.priceLists.isArchived, false));
+      }
+
+      // Item counts come back in the SAME query — a per-list count() would be one
+      // round trip per card, and Neon us-east-1 ↔ AU is ~400ms each.
+      const rows = await db
+        .select({
+          list: schema.priceLists,
+          supplierName: schema.contacts.name,
+          itemCount: sql<number>`count(${schema.priceListItems.id})::int`,
+        })
+        .from(schema.priceLists)
+        .leftJoin(schema.contacts, eq(schema.priceLists.supplierId, schema.contacts.id))
+        .leftJoin(schema.priceListItems, eq(schema.priceListItems.priceListId, schema.priceLists.id))
+        .where(and(...conditions))
+        .groupBy(schema.priceLists.id, schema.contacts.name)
+        .orderBy(desc(schema.priceLists.isDefault), asc(schema.priceLists.name));
+
+      return rows.map(r => ({ ...r.list, itemCount: r.itemCount ?? 0, supplierName: r.supplierName ?? null }));
+    } catch (error) {
+      console.error("Database error in getPriceLists:", error);
+      throw error;
+    }
+  }
+
+  async getPriceList(id: string, companyId: string): Promise<PriceList | undefined> {
+    try {
+      const result = await db.select().from(schema.priceLists)
+        .where(and(
+          eq(schema.priceLists.id, id),
+          eq(schema.priceLists.companyId, companyId)
+        ));
+      return result[0];
+    } catch (error) {
+      console.error("Database error in getPriceList:", error);
+      throw error;
+    }
+  }
+
+  async createPriceList(list: InsertPriceList & { companyId: string; createdBy?: string }): Promise<PriceList> {
+    try {
+      return await db.transaction(async (tx) => {
+        // Only one default per company.
+        if (list.isDefault) {
+          await tx.update(schema.priceLists)
+            .set({ isDefault: false })
+            .where(eq(schema.priceLists.companyId, list.companyId));
+        }
+        const result = await tx.insert(schema.priceLists).values(list as any).returning();
+        return result[0];
+      });
+    } catch (error) {
+      console.error("Database error in createPriceList:", error);
+      throw error;
+    }
+  }
+
+  async updatePriceList(id: string, list: Partial<InsertPriceList>, companyId: string): Promise<PriceList | undefined> {
+    try {
+      return await db.transaction(async (tx) => {
+        if (list.isDefault) {
+          await tx.update(schema.priceLists)
+            .set({ isDefault: false })
+            .where(and(
+              eq(schema.priceLists.companyId, companyId),
+              ne(schema.priceLists.id, id)
+            ));
+        }
+        const result = await tx.update(schema.priceLists)
+          .set({ ...list, updatedAt: new Date() } as any)
+          .where(and(
+            eq(schema.priceLists.id, id),
+            eq(schema.priceLists.companyId, companyId)
+          ))
+          .returning();
+        return result[0];
+      });
+    } catch (error) {
+      console.error("Database error in updatePriceList:", error);
+      throw error;
+    }
+  }
+
+  async deletePriceList(id: string, companyId: string): Promise<boolean> {
+    try {
+      // Items cascade with the list (FK ON DELETE CASCADE) — deleting a supplier's
+      // price book is meant to take its prices with it.
+      const result = await db.delete(schema.priceLists)
+        .where(and(
+          eq(schema.priceLists.id, id),
+          eq(schema.priceLists.companyId, companyId)
+        ))
+        .returning();
+      return result.length > 0;
+    } catch (error) {
+      console.error("Database error in deletePriceList:", error);
+      throw error;
+    }
+  }
+
   // Price List Categories CRUD
   async getPriceListCategories(companyId: string): Promise<PriceListCategory[]> {
     try {
@@ -24891,10 +25006,15 @@ export class DbStorage implements IStorage {
   }
 
   // Price List Items CRUD
-  async getPriceListItems(companyId: string, filters?: { categoryId?: string; supplierId?: string; isActive?: boolean; search?: string }): Promise<PriceListItem[]> {
+  async getPriceListItems(companyId: string, filters?: { priceListId?: string; categoryId?: string; supplierId?: string; isActive?: boolean; search?: string }): Promise<PriceListItem[]> {
     try {
       let conditions = [eq(schema.priceListItems.companyId, companyId)];
-      
+
+      // Omitting priceListId is the deliberate cross-list search — "who is cheapest
+      // for 90x45 pine?" is the reason to keep more than one list.
+      if (filters?.priceListId) {
+        conditions.push(eq(schema.priceListItems.priceListId, filters.priceListId));
+      }
       if (filters?.categoryId) {
         conditions.push(eq(schema.priceListItems.categoryId, filters.categoryId));
       }
@@ -25007,13 +25127,51 @@ export class DbStorage implements IStorage {
   }
 
   async bulkUpdatePriceListItems(updates: Array<{ id: string; data: Partial<InsertPriceListItem> }>, companyId: string): Promise<PriceListItem[]> {
+    if (updates.length === 0) return [];
     try {
-      const results: PriceListItem[] = [];
-      for (const update of updates) {
-        const result = await this.updatePriceListItem(update.id, update.data, companyId);
-        if (result) results.push(result);
-      }
-      return results;
+      // One round trip for the reads, one transaction for the writes. This used to loop
+      // updatePriceListItem, i.e. a SELECT + UPDATE per row — ~400ms each against Neon
+      // us-east-1 from AU, so a 200-row bulk edit took ~160 seconds.
+      const ids = updates.map(u => u.id);
+      const existing = await db.select().from(schema.priceListItems)
+        .where(and(
+          inArray(schema.priceListItems.id, ids),
+          eq(schema.priceListItems.companyId, companyId)
+        ));
+      const byId = new Map(existing.map(row => [row.id, row]));
+      const now = new Date();
+
+      return await db.transaction(async (tx) => {
+        const results: PriceListItem[] = [];
+        for (const { id, data } of updates) {
+          const current = byId.get(id);
+          if (!current) continue; // not ours, or gone — skip silently as before
+
+          const updateData: any = { ...data, updatedAt: now };
+          const costChanged = data.costPrice !== undefined && data.costPrice !== current.costPrice;
+          const sellChanged = data.sellPrice !== undefined && data.sellPrice !== current.sellPrice;
+          if (costChanged || sellChanged) {
+            updateData.lastPriceUpdate = now;
+            const history = ((current.priceHistory as any[]) || []).concat({
+              date: now.toISOString(),
+              costPrice: data.costPrice ?? current.costPrice,
+              sellPrice: data.sellPrice ?? current.sellPrice,
+              source: "bulk",
+            });
+            updateData.priceHistory = history;
+          }
+
+          const [row] = await tx.update(schema.priceListItems)
+            .set(updateData)
+            .where(and(
+              eq(schema.priceListItems.id, id),
+              eq(schema.priceListItems.companyId, companyId)
+            ))
+            .returning();
+          if (row) results.push(row);
+        }
+        return results;
+      });
     } catch (error) {
       console.error("Database error in bulkUpdatePriceListItems:", error);
       throw error;

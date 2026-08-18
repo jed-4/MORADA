@@ -175,6 +175,8 @@ import {
   selections,
   selectionOptions,
   insertSuggestionSchema,
+  insertPriceListSchema,
+  insertPriceListItemSchema,
   type CircuitContext
 } from "@shared/schema";
 // Namespace import for table references (schema.selections etc.). Several
@@ -34902,6 +34904,108 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // PRICE LIST API ROUTES
   // ============================================
 
+  // Price Lists (the library)
+  app.get("/api/price-lists", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.companyId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+      const lists = await storage.getPriceLists(user.companyId, {
+        kind: req.query.kind as string | undefined,
+        includeArchived: req.query.includeArchived === "true",
+      });
+      res.json(lists);
+    } catch (error: any) {
+      res.status(500).json({ error: "Failed to fetch price lists", details: error.message });
+    }
+  });
+
+  app.get("/api/price-lists/:id", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.companyId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+      const list = await storage.getPriceList(req.params.id, user.companyId);
+      if (!list) {
+        return res.status(404).json({ error: "Price list not found" });
+      }
+      res.json(list);
+    } catch (error: any) {
+      res.status(500).json({ error: "Failed to fetch price list", details: error.message });
+    }
+  });
+
+  app.post("/api/price-lists", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.companyId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+      const parsed = insertPriceListSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({
+          error: "Validation failed",
+          details: fromZodError(parsed.error).toString()
+        });
+      }
+      const list = await storage.createPriceList({
+        ...parsed.data,
+        companyId: user.companyId,
+        createdBy: user.id,
+      });
+      res.status(201).json(list);
+    } catch (error: any) {
+      if (error?.code === "23505") {
+        return res.status(409).json({ error: "A price list with that name already exists" });
+      }
+      res.status(500).json({ error: "Failed to create price list", details: error.message });
+    }
+  });
+
+  app.patch("/api/price-lists/:id", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.companyId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+      const parsed = insertPriceListSchema.partial().safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({
+          error: "Validation failed",
+          details: fromZodError(parsed.error).toString()
+        });
+      }
+      const list = await storage.updatePriceList(req.params.id, parsed.data, user.companyId);
+      if (!list) {
+        return res.status(404).json({ error: "Price list not found" });
+      }
+      res.json(list);
+    } catch (error: any) {
+      if (error?.code === "23505") {
+        return res.status(409).json({ error: "A price list with that name already exists" });
+      }
+      res.status(500).json({ error: "Failed to update price list", details: error.message });
+    }
+  });
+
+  app.delete("/api/price-lists/:id", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.companyId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+      const deleted = await storage.deletePriceList(req.params.id, user.companyId);
+      if (!deleted) {
+        return res.status(404).json({ error: "Price list not found" });
+      }
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ error: "Failed to delete price list", details: error.message });
+    }
+  });
+
   // Price List Categories
   app.get("/api/price-list/categories", requireAuth, async (req, res) => {
     try {
@@ -34969,11 +35073,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(401).json({ error: "Unauthorized" });
       }
       const filters: any = {};
+      // No priceListId = cross-list search (compare the same item across suppliers).
+      if (req.query.priceListId) filters.priceListId = req.query.priceListId;
       if (req.query.categoryId) filters.categoryId = req.query.categoryId;
       if (req.query.supplierId) filters.supplierId = req.query.supplierId;
       if (req.query.isActive !== undefined) filters.isActive = req.query.isActive === "true";
       if (req.query.search) filters.search = req.query.search;
-      
+
       const items = await storage.getPriceListItems(user.companyId, filters);
       res.json(items);
     } catch (error: any) {
@@ -35003,7 +35109,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!user?.companyId) {
         return res.status(401).json({ error: "Unauthorized" });
       }
-      const item = await storage.createPriceListItem({ ...req.body, companyId: user.companyId });
+      // req.body used to go straight to the DB — that is how dollar strings reached an
+      // integer-cents column and invalid unit values reached a pgEnum.
+      const parsed = insertPriceListItemSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({
+          error: "Validation failed",
+          details: fromZodError(parsed.error).toString()
+        });
+      }
+      // The target list must be ours, or an item could be planted in another tenant's book.
+      const list = await storage.getPriceList(parsed.data.priceListId, user.companyId);
+      if (!list) {
+        return res.status(404).json({ error: "Price list not found" });
+      }
+      const item = await storage.createPriceListItem({ ...parsed.data, companyId: user.companyId } as any);
       res.status(201).json(item);
     } catch (error: any) {
       res.status(500).json({ error: "Failed to create price list item", details: error.message });
@@ -35016,7 +35136,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!user?.companyId) {
         return res.status(401).json({ error: "Unauthorized" });
       }
-      const item = await storage.updatePriceListItem(req.params.id, req.body, user.companyId);
+      const parsed = insertPriceListItemSchema.partial().safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({
+          error: "Validation failed",
+          details: fromZodError(parsed.error).toString()
+        });
+      }
+      // Moving an item between lists is allowed, but only into one of ours.
+      if (parsed.data.priceListId) {
+        const list = await storage.getPriceList(parsed.data.priceListId, user.companyId);
+        if (!list) {
+          return res.status(404).json({ error: "Price list not found" });
+        }
+      }
+      const item = await storage.updatePriceListItem(req.params.id, parsed.data, user.companyId);
       if (!item) {
         return res.status(404).json({ error: "Item not found" });
       }
