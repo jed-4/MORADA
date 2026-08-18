@@ -38,7 +38,7 @@ import {
   Search,
   AlertCircle,
 } from "lucide-react";
-import type { BillLineItem, Bill, Contact, PriceListItem, PriceListCategory, PriceList } from "@shared/schema";
+import type { BillLineItem, Bill, Contact, PriceListItem, PriceListGroup, PriceList } from "@shared/schema";
 import { dollarsToCents, formatCents } from "@shared/money";
 import { useAuth } from "@/hooks/use-auth";
 
@@ -110,7 +110,7 @@ const AIPriceListReview = forwardRef<AIPriceListReviewHandle, Props>(({ searchQu
     costPrice: 0,
     sellPrice: 0,
     markup: 0,
-    categoryId: "",
+    groupId: "",
     supplierId: "",
     priceListId: "",
   });
@@ -125,11 +125,6 @@ const AIPriceListReview = forwardRef<AIPriceListReviewHandle, Props>(({ searchQu
     enabled: !!companyId,
   });
 
-  const { data: categories } = useQuery<PriceListCategory[]>({
-    queryKey: ['/api/price-list/categories'],
-    enabled: !!companyId,
-  });
-
   const { data: priceLists = [] } = useQuery<Array<PriceList & { itemCount: number }>>({
     queryKey: ['/api/price-lists'],
     enabled: !!companyId,
@@ -140,6 +135,14 @@ const AIPriceListReview = forwardRef<AIPriceListReviewHandle, Props>(({ searchQu
     () => priceLists.find(l => l.isDefault)?.id ?? priceLists[0]?.id ?? "",
     [priceLists],
   );
+
+  // Groups belong to the list the new item will land in.
+  const { data: groups } = useQuery<PriceListGroup[]>({
+    queryKey: ['/api/price-list/groups', createForm.priceListId || defaultPriceListId],
+    queryFn: () => apiRequest(
+      `/api/price-list/groups?priceListId=${createForm.priceListId || defaultPriceListId}`, "GET"),
+    enabled: !!companyId && !!(createForm.priceListId || defaultPriceListId),
+  });
 
   const { data: suppliers } = useQuery<Contact[]>({
     queryKey: ['/api/contacts', 'supplier'],
@@ -183,7 +186,7 @@ const AIPriceListReview = forwardRef<AIPriceListReviewHandle, Props>(({ searchQu
         costPrice: 0,
         sellPrice: 0,
         markup: 0,
-        categoryId: "",
+        groupId: "",
         supplierId: "",
         priceListId: "",
       });
@@ -260,7 +263,7 @@ const AIPriceListReview = forwardRef<AIPriceListReviewHandle, Props>(({ searchQu
       costPrice: item.unitPrice / 100,
       sellPrice: item.unitPrice / 100,
       markup: 0,
-      categoryId: "",
+      groupId: "",
       supplierId: item.bill?.supplierId || "",
     });
     setShowCreateModal(true);
@@ -512,15 +515,16 @@ const AIPriceListReview = forwardRef<AIPriceListReviewHandle, Props>(({ searchQu
                 </select>
               </div>
               <div>
-                <label className="text-xs text-muted-foreground">Category</label>
+                <label className="text-xs text-muted-foreground">Group</label>
                 <select
-                  value={createForm.categoryId}
-                  onChange={(e) => setCreateForm({ ...createForm, categoryId: e.target.value })}
+                  value={createForm.groupId}
+                  onChange={(e) => setCreateForm({ ...createForm, groupId: e.target.value })}
                   className="w-full h-8 text-sm border rounded-md px-2 bg-background"
+                  data-testid="select-target-group"
                 >
-                  <option value="">No category</option>
-                  {categories?.map(cat => (
-                    <option key={cat.id} value={cat.id}>{cat.name}</option>
+                  <option value="">Ungrouped</option>
+                  {groups?.map(g => (
+                    <option key={g.id} value={g.id}>{g.name}</option>
                   ))}
                 </select>
               </div>

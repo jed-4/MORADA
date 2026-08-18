@@ -65,13 +65,32 @@ export const priceLists = pgTable("price_lists", {
   Keep the column for `internal` lists where items come from mixed suppliers; on a
   `supplier` list, inherit from the parent and hide the field.
 
-### Unchanged: `price_list_categories`
+### Retired: `price_list_categories` → new `price_list_groups`
 
-**Recommend keeping these company-global**, not per-list. They are a taxonomy
-(Plasterboard, Timber, Fixings) — global is what lets you ask *"show me every
-plasterboard item across all four lists"*, which is the whole point of a library.
-Per-list categories would give tidier sections but kill cross-list comparison and
-throw away the existing Field Settings CRUD.
+**DECIDED 2026-08-19 (Jed): groups live INSIDE a price list.** The hierarchy is
+
+```
+Price List  →  Group  →  Item
+price_lists    price_list_groups    price_list_items
+```
+
+"Plasterboard", "Cornice", "Compounds" belong to The Plaster Shop's book and
+nowhere else; Bunnings has its own "Timber", "Fixings". The old
+`price_list_categories` were company-GLOBAL, sitting outside any list, which is
+what made the layering ambiguous.
+
+`price_list_groups` mirrors `estimate_groups` — `priceListId`, `name`,
+`sortOrder`, unique name per list — so the grid can reuse its reorder/collapse
+behaviour. `price_list_items.groupId` is `ON DELETE SET NULL`: deleting a section
+must not delete the prices in it, they fall back to "Ungrouped".
+
+`price_list_categories` is dropped, and its Field Settings CRUD removed. The
+migration converts any existing category into a group on the list its items
+landed in (a no-op at 0 rows).
+
+**Trade-off accepted:** cross-list comparison ("all plasterboard everywhere") can
+no longer come from the grouping, since groups are per-list. The compare view
+matches on item name/code instead.
 
 ---
 
@@ -169,7 +188,7 @@ building the grid and modal twice. Fold them together.
    the textbook model and better for price comparison, but roughly doubles PR1 and adds a
    join to every read. Designed so it can be added later as a nullable `masterItemId` —
    additive, not a rewrite.
-2. **Categories global or per-list?** Recommend global (above).
+2. ~~Categories global or per-list?~~ **RESOLVED: per-list groups** (above).
 3. **Product Library — RESOLVED (Jed, 2026-08-18): keep both, they are different things.**
    Product Library is for **selections/specification** — colours, finishes and other
    attributes that are not price-dependent. Price Lists are for **costing**. They are not

@@ -176,6 +176,7 @@ import {
   selectionOptions,
   insertSuggestionSchema,
   insertPriceListSchema,
+  insertPriceListGroupSchema,
   insertPriceListItemSchema,
   type CircuitContext
 } from "@shared/schema";
@@ -35006,62 +35007,110 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Price List Categories
-  app.get("/api/price-list/categories", requireAuth, async (req, res) => {
+  // Price List Groups — sections inside one list.
+  app.get("/api/price-list/groups", requireAuth, async (req, res) => {
     try {
       const user = req.user as any;
       if (!user?.companyId) {
         return res.status(401).json({ error: "Unauthorized" });
       }
-      const categories = await storage.getPriceListCategories(user.companyId);
-      res.json(categories);
+      const groups = await storage.getPriceListGroups(user.companyId, req.query.priceListId as string | undefined);
+      res.json(groups);
     } catch (error: any) {
-      res.status(500).json({ error: "Failed to fetch price list categories", details: error.message });
+      res.status(500).json({ error: "Failed to fetch price list groups", details: error.message });
     }
   });
 
-  app.post("/api/price-list/categories", requireAuth, async (req, res) => {
+  app.post("/api/price-list/groups", requireAuth, async (req, res) => {
     try {
       const user = req.user as any;
       if (!user?.companyId) {
         return res.status(401).json({ error: "Unauthorized" });
       }
-      const category = await storage.createPriceListCategory({ ...req.body, companyId: user.companyId });
-      res.status(201).json(category);
+      const parsed = insertPriceListGroupSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({
+          error: "Validation failed",
+          details: fromZodError(parsed.error).toString()
+        });
+      }
+      // The parent list must be ours.
+      const list = await storage.getPriceList(parsed.data.priceListId, user.companyId);
+      if (!list) {
+        return res.status(404).json({ error: "Price list not found" });
+      }
+      const group = await storage.createPriceListGroup({ ...parsed.data, companyId: user.companyId } as any);
+      res.status(201).json(group);
     } catch (error: any) {
-      res.status(500).json({ error: "Failed to create price list category", details: error.message });
+      if (error?.code === "23505") {
+        return res.status(409).json({ error: "That list already has a group with this name" });
+      }
+      res.status(500).json({ error: "Failed to create price list group", details: error.message });
     }
   });
 
-  app.patch("/api/price-list/categories/:id", requireAuth, async (req, res) => {
+  app.patch("/api/price-list/groups/:id", requireAuth, async (req, res) => {
     try {
       const user = req.user as any;
       if (!user?.companyId) {
         return res.status(401).json({ error: "Unauthorized" });
       }
-      const category = await storage.updatePriceListCategory(req.params.id, req.body, user.companyId);
-      if (!category) {
-        return res.status(404).json({ error: "Category not found" });
+      const parsed = insertPriceListGroupSchema.partial().safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({
+          error: "Validation failed",
+          details: fromZodError(parsed.error).toString()
+        });
       }
-      res.json(category);
+      if (parsed.data.priceListId) {
+        const list = await storage.getPriceList(parsed.data.priceListId, user.companyId);
+        if (!list) {
+          return res.status(404).json({ error: "Price list not found" });
+        }
+      }
+      const group = await storage.updatePriceListGroup(req.params.id, parsed.data, user.companyId);
+      if (!group) {
+        return res.status(404).json({ error: "Group not found" });
+      }
+      res.json(group);
     } catch (error: any) {
-      res.status(500).json({ error: "Failed to update price list category", details: error.message });
+      if (error?.code === "23505") {
+        return res.status(409).json({ error: "That list already has a group with this name" });
+      }
+      res.status(500).json({ error: "Failed to update price list group", details: error.message });
     }
   });
 
-  app.delete("/api/price-list/categories/:id", requireAuth, async (req, res) => {
+  app.delete("/api/price-list/groups/:id", requireAuth, async (req, res) => {
     try {
       const user = req.user as any;
       if (!user?.companyId) {
         return res.status(401).json({ error: "Unauthorized" });
       }
-      const deleted = await storage.deletePriceListCategory(req.params.id, user.companyId);
+      const deleted = await storage.deletePriceListGroup(req.params.id, user.companyId);
       if (!deleted) {
-        return res.status(404).json({ error: "Category not found" });
+        return res.status(404).json({ error: "Group not found" });
       }
       res.status(204).send();
     } catch (error: any) {
-      res.status(500).json({ error: "Failed to delete price list category", details: error.message });
+      res.status(500).json({ error: "Failed to delete price list group", details: error.message });
+    }
+  });
+
+  app.post("/api/price-list/groups/reorder", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.companyId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+      const { orderedIds } = req.body;
+      if (!Array.isArray(orderedIds) || orderedIds.some((id) => typeof id !== "string")) {
+        return res.status(400).json({ error: "orderedIds must be an array of ids" });
+      }
+      const groups = await storage.reorderPriceListGroups(orderedIds, user.companyId);
+      res.json(groups);
+    } catch (error: any) {
+      res.status(500).json({ error: "Failed to reorder price list groups", details: error.message });
     }
   });
 
@@ -35075,7 +35124,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const filters: any = {};
       // No priceListId = cross-list search (compare the same item across suppliers).
       if (req.query.priceListId) filters.priceListId = req.query.priceListId;
-      if (req.query.categoryId) filters.categoryId = req.query.categoryId;
+      if (req.query.groupId) filters.groupId = req.query.groupId;
       if (req.query.supplierId) filters.supplierId = req.query.supplierId;
       if (req.query.isActive !== undefined) filters.isActive = req.query.isActive === "true";
       if (req.query.search) filters.search = req.query.search;
