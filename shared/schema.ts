@@ -2565,7 +2565,9 @@ export const insertClientInvoiceSchema = createInsertSchema(clientInvoices).omit
   invoiceNumber: z.string().optional().nullable(),
   name: z.string().min(1, "Name is required"),
   invoicingMethod: z.enum(["progress_payments", "cost_plus"]).default("progress_payments"),
-  status: z.enum(["draft", "sent", "partial", "paid", "overdue"]).default("draft"),
+  // "approved" sits between draft and sent, mirroring Xero: an invoice is
+  // AUTHORISED there (a real receivable) before SentToContact makes it sent.
+  status: z.enum(["draft", "approved", "sent", "partial", "paid", "overdue"]).default("draft"),
   invoiceDate: z.coerce.date(),
   dueDate: z.coerce.date().optional(),
   sentDate: z.coerce.date().optional(),

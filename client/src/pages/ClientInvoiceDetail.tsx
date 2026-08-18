@@ -2290,22 +2290,37 @@ export default function ClientInvoiceDetail() {
                   </button>
                 )}
 
-                {/* Manual push button — only shown when sendToXero is off and no xeroInvoiceId */}
-                {isEditMode && xeroStatus?.connected && !invoice?.xeroInvoiceId && !sendToXero && (
+                {/* Approve — distinct from saving. Saving records what the
+                    invoice says; approving authorises it in Xero, which makes it
+                    a live receivable and locks the contract price it claims
+                    against. Shown until the invoice has been approved. */}
+                {isEditMode && xeroStatus?.connected && !invoice?.xeroInvoiceId && (
                   <button
                     type="button"
                     onClick={handlePushToXero}
                     disabled={xeroPushing}
-                    className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1 text-status-info border-status-info/30"
-                    data-testid="button-send-to-xero"
+                    className="h-6 w-auto px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-1"
+                    data-testid="button-approve-invoice"
                   >
                     {xeroPushing ? (
                       <Loader2 className="w-3 h-3 animate-spin" />
                     ) : (
-                      <Send className="w-3 h-3" />
+                      <Check className="w-3 h-3" />
                     )}
-                    <span>Push to Xero</span>
+                    <span>Approve</span>
                   </button>
+                )}
+
+                {/* Approved but not yet sent — the two are separate in Xero
+                    (AUTHORISED vs SentToContact) and now separate here too. */}
+                {isEditMode && invoice?.status === "approved" && (
+                  <span
+                    className="text-data text-status-info flex items-center gap-1 px-1.5 h-6 border border-status-info/30 rounded-md"
+                    data-testid="badge-approved"
+                  >
+                    <Check className="w-3 h-3" />
+                    Approved
+                  </span>
                 )}
               </div>
             </div>

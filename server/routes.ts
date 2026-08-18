@@ -37043,11 +37043,24 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
       });
 
       if (xeroInvoice?.InvoiceID) {
-        await storage.updateClientInvoice(invoiceId, {
+        // The invoice is AUTHORISED in Xero the moment this succeeds, so it is
+        // no longer a draft here either. Leaving it draft is what let a later
+        // estimate edit move the claim basis underneath a live receivable: every
+        // contract-price guard is written as `status !== "draft"`.
+        const leavingDraft = invoice.status === "draft";
+        const patch: any = {
           xeroInvoiceId: xeroInvoice.InvoiceID,
           xeroInvoiceNumber: xeroInvoice.InvoiceNumber || null,
           sendToXero: true,
-        } as any);
+        };
+        if (leavingDraft) {
+          patch.status = "approved";
+          if ((invoice as any).lockedContractPrice == null) {
+            const priceCents = await computeProjectContractPriceCents(invoice.projectId);
+            if (priceCents != null) patch.lockedContractPrice = priceCents;
+          }
+        }
+        await storage.updateClientInvoice(invoiceId, patch);
       }
 
       res.json({
@@ -37268,6 +37281,13 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
       const amountPaidCents = Math.round((xeroInvoice.AmountPaid || 0) * 100);
       const xeroStatus: string = xeroInvoice.Status;
       const amountDueCents = Math.round((xeroInvoice.AmountDue || 0) * 100);
+
+      // Xero keeps "sent" off the status axis entirely — it is a SentToContact
+      // flag on the invoice. Mirror it so an invoice sent from inside Xero
+      // still reads as sent here. Never walk backwards over a payment state.
+      if (xeroInvoice.SentToContact && (invoice.status === "approved" || invoice.status === "draft")) {
+        await storage.updateClientInvoice(invoice.id, { status: "sent" } as any);
+      }
 
       // Record the Xero-side payment increase as a payment row, then let
       // syncClientInvoicePaidStatus recompute paid/balance/status from the
