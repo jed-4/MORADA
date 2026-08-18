@@ -2565,8 +2565,19 @@ export const insertClientInvoiceSchema = createInsertSchema(clientInvoices).omit
   invoiceNumber: z.string().optional().nullable(),
   name: z.string().min(1, "Name is required"),
   invoicingMethod: z.enum(["progress_payments", "cost_plus"]).default("progress_payments"),
-  // "approved" sits between draft and sent, mirroring Xero: an invoice is
-  // AUTHORISED there (a real receivable) before SentToContact makes it sent.
+  // Morada status -> Xero, so nothing is lost between the two systems:
+  //
+  //   draft     no Xero invoice yet (nothing is pushed until it is approved)
+  //   approved  AUTHORISED, SentToContact = false
+  //   sent      AUTHORISED, SentToContact = true
+  //   partial   AUTHORISED with payments applied (Xero keeps AUTHORISED)
+  //   paid      PAID
+  //   overdue   derived from the due date, never stored — Xero has no such
+  //             status either, it is a view over AUTHORISED
+  //
+  // Approved and sent both sit under Xero's single AUTHORISED status; the
+  // SentToContact flag is the only thing separating them, which is why emailing
+  // writes that flag back and pulling reads it.
   status: z.enum(["draft", "approved", "sent", "partial", "paid", "overdue"]).default("draft"),
   invoiceDate: z.coerce.date(),
   dueDate: z.coerce.date().optional(),

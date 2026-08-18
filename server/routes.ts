@@ -22321,12 +22321,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Mark the invoice as sent — but never clobber payment-derived states
       // (re-emailing a paid/partial invoice must not revert it to "sent").
-      const statusUpdate = invoice.status === "draft" ? { status: "sent" as const } : {};
+      // "approved" advances too: in Xero both approved and sent are AUTHORISED,
+      // separated only by SentToContact, so emailing is what moves it on.
+      const statusUpdate =
+        invoice.status === "draft" || invoice.status === "approved"
+          ? { status: "sent" as const }
+          : {};
       // Leaving draft locks the invoice to the contract price at that moment.
       let lockUpdate: any = {};
       if (invoice.status === "draft" && (invoice as any).lockedContractPrice == null) {
         const priceCents = await computeProjectContractPriceCents(invoice.projectId);
         if (priceCents != null) lockUpdate = { lockedContractPrice: priceCents };
+      }
+
+      // Tell Xero it has been sent, so the two systems agree on the flag that
+      // distinguishes approved from sent. Best-effort: the client has the email
+      // either way, and failing the request here would be a lie about that.
+      if ((invoice as any).xeroInvoiceId) {
+        try {
+          const conn = await storage.getXeroConnectionByCompanyId((req.user as any)?.companyId);
+          if (conn) await xeroService.markInvoiceSentToContact(conn.id, (invoice as any).xeroInvoiceId);
+        } catch (e: any) {
+          console.warn("[client-invoice] emailed, but could not flag SentToContact in Xero:", e?.message || e);
+        }
       }
       await storage.updateClientInvoice(invoice.id, {
         ...statusUpdate,
