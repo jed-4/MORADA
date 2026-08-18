@@ -38,10 +38,20 @@ import {
   ArrowUpDown,
   LayoutGrid,
   AlertCircle,
+  MoreVertical,
+  Trash2,
+  Copy,
 } from "lucide-react";
 import { SiXero } from "react-icons/si";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { LineItemTable, type LineItemColumn } from "@/components/LineItemTable";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -350,6 +360,7 @@ export default function ClientInvoiceDetail() {
   // T004: PDF + email state
   const [invoicePdfGenerating, setInvoicePdfGenerating] = useState(false);
   const [invoicePreviewOpen, setInvoicePreviewOpen] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [invoiceSendModalOpen, setInvoiceSendModalOpen] = useState(false);
   const [invoiceSendData, setInvoiceSendData] = useState<{
     lineItems: Array<{ label: string; description?: string | null; claimPct?: number | null; amountExTax: number; gst: number; amountIncTax: number }>;
@@ -1717,6 +1728,49 @@ export default function ClientInvoiceDetail() {
     }
   };
 
+  const duplicateInvoiceMutation = useMutation({
+    mutationFn: async () => {
+      const payload = buildInvoicePayload(form.getValues());
+      const copy = await apiRequest("/api/client-invoices/full", "POST", {
+        invoice: {
+          ...payload,
+          // A duplicate is a fresh draft: it must not inherit the original's
+          // number, Xero link, payments or approved state.
+          invoiceNumber: undefined,
+          name: `${payload.name} (copy)`,
+          status: "draft",
+          paidAmount: 0,
+          balanceAmount: payload.totalAmount,
+          sendToXero: false,
+        },
+        ...buildInvoiceChildren(),
+      });
+      return copy as ClientInvoice;
+    },
+    onSuccess: (copy) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/client-invoices"] });
+      toast({ title: "Invoice duplicated" });
+      setLocation(
+        projectIdFromParams
+          ? `/projects/${projectIdFromParams}/client-invoices/${copy.id}`
+          : `/client-invoices/${copy.id}`,
+      );
+    },
+    onError: (e: any) =>
+      toast({ title: "Could not duplicate", description: e?.message, variant: "destructive" }),
+  });
+
+  const deleteInvoiceMutation = useMutation({
+    mutationFn: async () => apiRequest(`/api/client-invoices/${effectiveInvoiceId}`, "DELETE"),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/client-invoices"] });
+      toast({ title: "Invoice deleted" });
+      handleCancel();
+    },
+    onError: (e: any) =>
+      toast({ title: "Could not delete", description: e?.message, variant: "destructive" }),
+  });
+
   const handlePushToXero = async () => {
     if (!effectiveInvoiceId || xeroPushing) return;
     setXeroPushing(true);
@@ -2144,37 +2198,19 @@ export default function ClientInvoiceDetail() {
               </div>
 
               <div className="flex items-center gap-1.5">
+                {/* Email stays inline — for an invoice, sending it is a primary
+                    act, not an occasional one. Preview/PDF/sync/duplicate/delete
+                    move into the overflow menu, matching PurchaseOrderDetail. */}
                 {isEditMode && (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => setInvoicePreviewOpen(true)}
-                      className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
-                      data-testid="button-preview-invoice"
-                    >
-                      <Eye className="w-3 h-3" />
-                      <span>Preview</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleDownloadInvoicePdf}
-                      disabled={invoicePdfGenerating}
-                      className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
-                      data-testid="button-download-invoice-pdf"
-                    >
-                      {invoicePdfGenerating ? <Loader2 className="w-3 h-3 animate-spin" /> : <Download className="w-3 h-3" />}
-                      <span>PDF</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleOpenInvoiceSendModal}
-                      className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
-                      data-testid="button-email-invoice"
-                    >
-                      <Mail className="w-3 h-3" />
-                      <span>Email</span>
-                    </button>
-                  </>
+                  <button
+                    type="button"
+                    onClick={handleOpenInvoiceSendModal}
+                    className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
+                    data-testid="button-email-invoice"
+                  >
+                    <Mail className="w-3 h-3" />
+                    <span>Email</span>
+                  </button>
                 )}
                 <button
                   type="submit"
@@ -2189,6 +2225,57 @@ export default function ClientInvoiceDetail() {
                   )}
                   <span>{isEditMode ? "Update" : "Create"} Invoice</span>
                 </button>
+
+                {isEditMode && (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <button
+                        type="button"
+                        className="h-6 w-6 flex items-center justify-center rounded-md hover-elevate active-elevate-2 text-muted-foreground"
+                        data-testid="button-invoice-actions"
+                      >
+                        <MoreVertical className="w-3.5 h-3.5" />
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-52">
+                      <DropdownMenuItem onClick={() => setInvoicePreviewOpen(true)} data-testid="menu-preview-invoice">
+                        <Eye className="w-3.5 h-3.5 mr-2" />
+                        Preview
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={handleDownloadInvoicePdf} disabled={invoicePdfGenerating} data-testid="menu-download-invoice-pdf">
+                        <Download className="w-3.5 h-3.5 mr-2" />
+                        Download PDF
+                      </DropdownMenuItem>
+                      {xeroStatus?.connected && invoice?.xeroInvoiceId && (
+                        <DropdownMenuItem
+                          onClick={() => pullFromXeroMutation.mutate()}
+                          disabled={pullFromXeroMutation.isPending}
+                          data-testid="menu-sync-from-xero"
+                        >
+                          <RefreshCw className="w-3.5 h-3.5 mr-2" />
+                          Refresh status from Xero
+                        </DropdownMenuItem>
+                      )}
+                      <DropdownMenuItem onClick={() => duplicateInvoiceMutation.mutate()} disabled={duplicateInvoiceMutation.isPending} data-testid="menu-duplicate-invoice">
+                        <Copy className="w-3.5 h-3.5 mr-2" />
+                        Duplicate
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      {/* Deleting an invoice that exists in Xero would strand an
+                          AUTHORISED receivable there with nothing pointing at it,
+                          so the option is only offered before it is approved. */}
+                      <DropdownMenuItem
+                        onClick={() => setDeleteConfirmOpen(true)}
+                        disabled={!!invoice?.xeroInvoiceId}
+                        className="text-destructive focus:text-destructive"
+                        data-testid="menu-delete-invoice"
+                      >
+                        <Trash2 className="w-3.5 h-3.5 mr-2" />
+                        {invoice?.xeroInvoiceId ? "Delete (in Xero — void first)" : "Delete"}
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )}
               </div>
             </div>
 
@@ -4819,6 +4906,32 @@ export default function ClientInvoiceDetail() {
               disabled={modalSelectionOptionIds.length === 0}
             >
               Add {modalSelectionOptionIds.length > 0 ? `${modalSelectionOptionIds.length} ` : ""}to Invoice
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete confirmation — only reachable before the invoice exists in Xero. */}
+      <Dialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
+        <DialogContent data-testid="dialog-delete-invoice">
+          <DialogHeader>
+            <DialogTitle>Delete this invoice?</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            {invoice?.name || "This invoice"} will be permanently removed, along with its
+            line items and any recorded payments. This cannot be undone.
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteConfirmOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => { setDeleteConfirmOpen(false); deleteInvoiceMutation.mutate(); }}
+              disabled={deleteInvoiceMutation.isPending}
+              data-testid="button-confirm-delete-invoice"
+            >
+              Delete invoice
             </Button>
           </DialogFooter>
         </DialogContent>

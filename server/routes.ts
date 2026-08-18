@@ -21393,6 +21393,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const owned = await getOwnedClientInvoice(req, res, req.params.id, "Client invoice not found");
       if (!owned) return;
+
+      // An invoice that reached Xero is AUTHORISED there and cannot be deleted
+      // through Xero's API either — it has to be voided (or credited once paid).
+      // Deleting only the Morada row would strand a live receivable in Xero with
+      // nothing pointing at it, which is exactly the drift this integration is
+      // meant to prevent.
+      if ((owned as any).xeroInvoiceId) {
+        return res.status(409).json({
+          error: "INVOICE_IN_XERO",
+          message:
+            "This invoice exists in Xero and can't be deleted. Void it in Xero first " +
+            "(or raise a credit note if it has been paid), then delete it here.",
+        });
+      }
+
       const deleted = await storage.deleteClientInvoice(req.params.id);
       if (!deleted) {
         return res.status(404).json({ error: "Client invoice not found" });
