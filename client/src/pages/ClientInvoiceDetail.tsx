@@ -2864,6 +2864,25 @@ export default function ClientInvoiceDetail() {
                           </div>
                         )}
 
+                        {/* Committed, but claiming against a price that can still
+                            move. True for the invoices backfilled by 0049: they
+                            were approved in Xero before Morada stamped a price,
+                            and that moment cannot be reconstructed. */}
+                        {!!invoice && invoice.status !== "draft" && invoice.lockedContractPrice == null && (
+                          <div
+                            className="flex items-start gap-2 rounded-md border px-3 py-2 text-sm"
+                            style={{ borderColor: "hsl(var(--amber))", backgroundColor: "hsl(var(--amber-light))" }}
+                            data-testid="banner-contract-price-unconfirmed"
+                          >
+                            <Lock className="w-4 h-4 mt-0.5 shrink-0" style={{ color: "hsl(var(--amber))" }} />
+                            <span>
+                              Contract price not confirmed on this invoice — it reads the project's
+                              live contract price, so editing the contract estimate will change what
+                              this invoice claims against. Re-approving stamps the current price.
+                            </span>
+                          </div>
+                        )}
+
                         {/* Locked contract price display (read-only — sourced from contract estimate) */}
                         {(() => {
                           const baseCents = getEffectiveContractPrice();

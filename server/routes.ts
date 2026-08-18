@@ -7775,6 +7775,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (target === "approved" && current !== "contract") {
         return res.status(409).json({ error: `Cannot revert to Approved from status '${current}'.` });
       }
+
+      // Once a client invoice has been approved, the contract it claims against
+      // is committed — reverting would release the frozen sum and move the basis
+      // under a receivable that is already live in Xero. Drafts don't block:
+      // nothing has been billed yet.
+      if (current === "contract" && project.contractedEstimateId === req.params.id) {
+        const projectInvoices = await storage.getClientInvoices(existing.projectId, undefined, userCompanyId);
+        const committed = (projectInvoices || []).filter(
+          (inv: any) => inv.status && inv.status !== "draft",
+        );
+        if (committed.length > 0) {
+          const numbers = committed.slice(0, 3).map((i: any) => i.invoiceNumber || i.name).join(", ");
+          return res.status(409).json({
+            error: "CONTRACT_HAS_INVOICES",
+            message:
+              `Cannot revert the contract: ${committed.length} client invoice${committed.length === 1 ? " has" : "s have"} ` +
+              `already been approved against it (${numbers}${committed.length > 3 ? ", …" : ""}). ` +
+              `Void or delete those invoices first, or raise a variation instead.`,
+          });
+        }
+      }
       if (target === "draft" && current === "draft") {
         return res.status(409).json({ error: "Estimate is already a Draft." });
       }
