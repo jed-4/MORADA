@@ -3832,10 +3832,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/field-categories", async (req, res) => {
     try {
       const categories = await storage.getFieldCategories();
-      
+
+      // The table holds several rows per key (no company column, seeded more
+      // than once), so this listed six identical "Estimate Statuses" and an
+      // edit could land on a copy nothing reads. Collapse to one row per key,
+      // choosing the same one getFieldCategoryByKey resolves to — the oldest —
+      // so Field Settings edits the category the rest of the app reads.
+      const rank = (c: any): number => new Date(c.createdAt ?? 0).getTime();
+      const byKey: Record<string, any> = {};
+      for (const category of categories as any[]) {
+        const existing = byKey[category.key];
+        const isOlder =
+          !existing ||
+          rank(category) < rank(existing) ||
+          (rank(category) === rank(existing) &&
+            String(category.id) < String(existing.id));
+        if (isOlder) byKey[category.key] = category;
+      }
+      const deduped: any[] = Object.values(byKey).sort(
+        (a: any, b: any) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0),
+      );
+
       // Fetch options for each category to return FieldCategoryWithOptions[]
       const categoriesWithOptions = await Promise.all(
-        categories.map(async (category) => {
+        deduped.map(async (category) => {
           const options = await storage.getFieldOptions(category.id);
           return {
             ...category,
@@ -3843,7 +3863,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           };
         })
       );
-      
+
       res.json(categoriesWithOptions);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch field categories" });

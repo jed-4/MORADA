@@ -7409,8 +7409,9 @@ export class DbStorage implements IStorage {
         return [
           { id: 'opt-estimate-status-draft', categoryId, key: 'draft', name: 'Draft', color: '#6B7280', isDefault: true, isCompleted: false, sortOrder: 0 },
           { id: 'opt-estimate-status-working', categoryId, key: 'working', name: 'Working', color: '#F59E0B', isDefault: false, isCompleted: false, sortOrder: 1 },
-          { id: 'opt-estimate-status-locked', categoryId, key: 'locked', name: 'Locked', color: '#3B82F6', isDefault: false, isCompleted: false, sortOrder: 2 },
-          { id: 'opt-estimate-status-approved', categoryId, key: 'approved', name: 'Approved', color: '#10B981', isDefault: false, isCompleted: true, sortOrder: 3 },
+          // No "locked" status: locking is the estimates.is_locked flag, set by
+          // Mark as Contract and the manual Lock action, not a workflow stage.
+          { id: 'opt-estimate-status-approved', categoryId, key: 'approved', name: 'Approved', color: '#10B981', isDefault: false, isCompleted: true, sortOrder: 2 },
         ];
       case 'defect.status':
         return [
@@ -14036,9 +14037,16 @@ export class DbStorage implements IStorage {
     return category;
   }
   
+  // field_categories has no company column and the DB holds several rows per
+  // key, so an unordered limit(1) returned an arbitrary copy — meaning the
+  // board could read one copy while Field Settings edited another. Pin the
+  // choice to the oldest row so every caller resolves the same category.
+  // (The real fix is per-company field settings; this just makes the current
+  // behaviour deterministic.)
   async getFieldCategoryByKey(key: string): Promise<FieldCategory | undefined> {
     const [category] = await db.select().from(schema.fieldCategories)
       .where(eq(schema.fieldCategories.key, key))
+      .orderBy(schema.fieldCategories.createdAt, schema.fieldCategories.id)
       .limit(1);
     return category;
   }
