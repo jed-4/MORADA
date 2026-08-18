@@ -10,6 +10,7 @@ import { InvoiceDocument } from "@/components/invoices/pdf/InvoiceDocument";
 import { SendInvoiceDialog } from "@/components/invoices/SendInvoiceDialog";
 import { DocumentPreviewModal } from "@/components/ui/DocumentPreviewModal";
 import { XeroContactLinkModal } from "@/components/invoices/XeroContactLinkModal";
+import { InvoiceAttachments } from "@/components/invoices/InvoiceAttachments";
 import {
   ArrowLeft,
   Plus,
@@ -99,6 +100,7 @@ import type {
   Variation,
   Bill,
   Contact,
+  ClientInvoiceAttachment,
 } from "@shared/schema";
 import {
   summariseClaimsElsewhere,
@@ -244,6 +246,7 @@ export default function ClientInvoiceDetail() {
 
   // ── core state ──────────────────────────────────────────────────────────────
   const [customLines, setCustomLines] = useState<CustomLine[]>([]);
+  const [invoiceAttachments, setInvoiceAttachments] = useState<ClientInvoiceAttachment[]>([]);
   const [selectedEstimateId, setSelectedEstimateId] = useState<string>("");
   const [selectedVariationIds, setSelectedVariationIds] = useState<string[]>([]);
   const [selectedBillIds, setSelectedBillIds] = useState<string[]>([]);
@@ -552,6 +555,8 @@ export default function ClientInvoiceDetail() {
         setShowAmountsIncTax((invoice as any).showAmountsIncTax);
       }
       setTermsAndConditions((invoice as any).termsAndConditions || "");
+      const files = (invoice as any).attachments;
+      if (Array.isArray(files)) setInvoiceAttachments(files as ClientInvoiceAttachment[]);
       if ((invoice as any).contractClaimRows && Array.isArray((invoice as any).contractClaimRows)) {
         setContractClaimRows((invoice as any).contractClaimRows as ContractClaimRow[]);
       }
@@ -1177,6 +1182,7 @@ export default function ClientInvoiceDetail() {
       introductionText: data.introductionText,
       closingText: data.closingText,
       termsAndConditions: termsAndConditions || null,
+      attachments: invoiceAttachments,
       subtotal: totals.subtotal,
       markupAmount: totals.markupAmount,
       gstAmount: totals.gstAmount,
@@ -1668,6 +1674,7 @@ export default function ClientInvoiceDetail() {
       const balanceDueCents = totalCents - paidCents;
       const blob = await pdf(
         <InvoiceDocument
+          attachments={invoiceAttachments}
           invoiceNumber={form.watch("invoiceNumber") || invoice?.invoiceNumber || "Invoice"}
           issueDate={form.watch("invoiceDate") || invoice?.invoiceDate}
           dueDate={form.watch("dueDate") || invoice?.dueDate}
@@ -3753,11 +3760,11 @@ export default function ClientInvoiceDetail() {
                       <span className="text-xs font-medium">Attachments</span>
                     </div>
                   </div>
-                  <div className="px-4 py-3">
-                    <p className="text-sm text-muted-foreground text-center py-2">
-                      No attachments
-                    </p>
-                  </div>
+                  <InvoiceAttachments
+                    invoiceId={effectiveInvoiceId || null}
+                    attachments={invoiceAttachments}
+                    onChange={setInvoiceAttachments}
+                  />
                 </div>
               </div>{/* end Card 3: Documentation */}
 
@@ -4707,6 +4714,7 @@ export default function ClientInvoiceDetail() {
           onOpenChange={setInvoicePreviewOpen}
           document={
             <InvoiceDocument
+              attachments={invoiceAttachments}
               invoiceNumber={form.watch("invoiceNumber") || invoice.invoiceNumber || "Invoice"}
               issueDate={form.watch("invoiceDate") || invoice.invoiceDate}
               dueDate={form.watch("dueDate") || invoice.dueDate}

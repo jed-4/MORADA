@@ -2496,6 +2496,10 @@ export const clientInvoices = pgTable("client_invoices", {
   // from, so the Xero total always equals what Morada displayed at save time.
   // Shape: InvoiceLineBreakdownEntry[] (see invoiceLineBreakdownEntrySchema).
   lineBreakdown: jsonb("line_breakdown"),
+  // Array of { name, url, size?, type?, includeInPdf? }. `url` is the
+  // object-storage path from /api/uploads/request-url. Mirrors
+  // variations.attachments so both documents carry files the same way.
+  attachments: jsonb("attachments").notNull().default([]),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({
@@ -2523,11 +2527,22 @@ export const invoiceLineBreakdownEntrySchema = z.object({
 
 export type InvoiceLineBreakdownEntry = z.infer<typeof invoiceLineBreakdownEntrySchema>;
 
+export const clientInvoiceAttachmentSchema = z.object({
+  name: z.string().min(1),
+  url: z.string().min(1),
+  size: z.number().optional(),
+  type: z.string().optional(),
+  /** Append this file to the rendered PDF instead of only linking to it. */
+  includeInPdf: z.boolean().optional(),
+});
+export type ClientInvoiceAttachment = z.infer<typeof clientInvoiceAttachmentSchema>;
+
 export const insertClientInvoiceSchema = createInsertSchema(clientInvoices).omit({
   id: true,
   createdAt: true,
   updatedAt: true,
 }).extend({
+  attachments: z.array(clientInvoiceAttachmentSchema).optional(),
   invoiceNumber: z.string().optional().nullable(),
   name: z.string().min(1, "Name is required"),
   invoicingMethod: z.enum(["progress_payments", "cost_plus"]).default("progress_payments"),
