@@ -3902,74 +3902,72 @@ export default function ClientInvoiceDetail() {
                    at the bottom of the page. */}
                 {isEditMode && (
                   <div className="rounded-lg border border-border bg-card overflow-hidden" data-testid="section-payments-history">
-                    <div className="h-8 flex items-center justify-between px-3 gap-2 border-b border-border/50">
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs font-medium">Payments ({payments.length})</span>
+                    {sectionHeader({
+                      label: `Payments (${payments.length})`,
+                      right: (
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); setPaymentDialogOpen(true); }}
+                          className="h-6 px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-0.5"
+                          data-testid="button-record-payment"
+                        >
+                          <Plus className="w-3 h-3" />
+                          <span>Record Payment</span>
+                        </button>
+                      ),
+                    })}
+                    {payments.length > 0 && (
+                      <div className="px-3 py-2">
+                        <LineItemTable
+                          fixedLayout
+                          filler
+                          resizeNamespace="client-invoice-payments"
+                          headerClassName={GRID_HEADER}
+                          data={payments}
+                          rowKey={(p) => p.id}
+                          rowTestId={(p) => `row-payment-${p.id}`}
+                          testId="payments-lines"
+                          rowClassName={(p) => ((p as any).isVoided ? "opacity-50" : "")}
+                          columns={[
+                            {
+                              key: "date", header: "Date", width: 120,
+                              cell: (p) => (p.paymentDate ? format(new Date(p.paymentDate), "d MMM yyyy") : "—"),
+                            },
+                            {
+                              key: "amount", header: "Amount", align: "right", width: 120, className: "font-medium",
+                              cell: (p) => (
+                                <span className={cn((p as any).isVoided && "line-through")}>
+                                  {formatCurrency(p.amount / 100)}
+                                </span>
+                              ),
+                            },
+                            {
+                              key: "method", header: "Method", width: 140, className: "text-muted-foreground",
+                              cell: (p) => p.paymentMethod || "—",
+                            },
+                            {
+                              key: "reference", header: "Reference", width: 160, className: "text-muted-foreground",
+                              cell: (p) => p.reference || "—",
+                            },
+                          ]}
+                          actions={(p) =>
+                            (p as any).isVoided ? (
+                              <Badge variant="secondary" className="text-data h-4 px-1.5">Voided</Badge>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => voidPaymentMutation.mutate(p.id)}
+                                disabled={voidPaymentMutation.isPending}
+                                className="h-5 px-1.5 text-data border rounded text-muted-foreground hover-elevate flex items-center gap-0.5"
+                                data-testid={`button-void-payment-${p.id}`}
+                              >
+                                Void
+                              </button>
+                            )
+                          }
+                        />
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => setPaymentDialogOpen(true)}
-                        className="h-6 px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-0.5"
-                        data-testid="button-record-payment"
-                      >
-                        <Plus className="w-3 h-3" />
-                        <span>Record Payment</span>
-                      </button>
-                    </div>
-                    <div className="px-4 py-3">
-                      {payments.length > 0 ? (
-                        <Table>
-                          <TableHeader>
-                            <TableRow className="[&>th]:border-b-2 [&>th]:border-border [&>th]:text-foreground/75 [&>th]:font-semibold">
-                              <TableHead>Date</TableHead>
-                              <TableHead className="text-right">Amount</TableHead>
-                              <TableHead>Method</TableHead>
-                              <TableHead>Reference</TableHead>
-                              <TableHead className="w-16 py-0 px-2" />
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                            {payments.map((payment) => (
-                              <TableRow key={payment.id} className={cn("h-9", (payment as any).isVoided && "opacity-50")}>
-                                <TableCell className="text-table px-2">
-                                  {payment.paymentDate
-                                    ? format(new Date(payment.paymentDate), "d MMM yyyy")
-                                    : "-"}
-                                </TableCell>
-                                <TableCell className={cn("text-right text-sm font-medium px-2", (payment as any).isVoided && "line-through")}>
-                                  {formatCurrency(payment.amount / 100)}
-                                </TableCell>
-                                <TableCell className="text-table text-muted-foreground px-2">
-                                  {payment.paymentMethod || "-"}
-                                </TableCell>
-                                <TableCell className="text-table text-muted-foreground px-2">
-                                  {payment.reference || "-"}
-                                </TableCell>
-                                <TableCell className="px-2 w-16">
-                                  {(payment as any).isVoided ? (
-                                    <Badge variant="secondary" className="text-data h-4 px-1.5">Voided</Badge>
-                                  ) : (
-                                    <button
-                                      type="button"
-                                      onClick={() => voidPaymentMutation.mutate(payment.id)}
-                                      disabled={voidPaymentMutation.isPending}
-                                      className="h-5 px-1.5 text-data border rounded text-muted-foreground hover-elevate flex items-center gap-0.5"
-                                      data-testid={`button-void-payment-${payment.id}`}
-                                    >
-                                      Void
-                                    </button>
-                                  )}
-                                </TableCell>
-                              </TableRow>
-                            ))}
-                          </TableBody>
-                        </Table>
-                      ) : (
-                        <p className="text-table text-muted-foreground text-center py-2">
-                          No payments recorded
-                        </p>
-                      )}
-                    </div>
+                    )}
                   </div>
                 )}
 
