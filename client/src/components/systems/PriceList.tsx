@@ -36,7 +36,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import type { PriceListItem, PriceListCategory, Contact, CostCode } from "@shared/schema";
+import type { PriceListItem, PriceListGroup, Contact, CostCode } from "@shared/schema";
 import { formatCents, dollarsToCents, centsToDollars, incGstFromEx, exGstFromInc, toNumber } from "@shared/money";
 import { UnitSelect } from "@/components/UnitSelect";
 
@@ -44,7 +44,7 @@ export interface PriceListHandle {
   openAddModal: () => void;
 }
 
-type GroupBy = "none" | "category" | "supplier";
+type GroupBy = "none" | "group" | "supplier";
 
 interface PriceListProps {
   searchQuery?: string;
@@ -57,11 +57,11 @@ interface PriceListProps {
 export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQuery: externalSearch = "", priceListId, kind = "internal" }, ref) => {
   const { toast } = useToast();
   const [internalSearch, setInternalSearch] = useState("");
-  const [groupBy, setGroupBy] = useState<GroupBy>("category");
+  const [groupBy, setGroupBy] = useState<GroupBy>("group");
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingItem, setEditingItem] = useState<PriceListItem | null>(null);
-  const [filterCategory, setFilterCategory] = useState<string>("all");
+  const [filterGroup, setFilterGroup] = useState<string>("all");
   const [filterSupplier, setFilterSupplier] = useState<string>("all");
   const [filterStatus, setFilterStatus] = useState<string>("all");
 
@@ -72,20 +72,22 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
   }));
 
   const { data: items = [], isLoading: isLoadingItems } = useQuery<PriceListItem[]>({
-    queryKey: ["/api/price-list/items", priceListId, searchQuery, filterCategory, filterSupplier, filterStatus],
+    queryKey: ["/api/price-list/items", priceListId, searchQuery, filterGroup, filterSupplier, filterStatus],
     queryFn: async () => {
       const params = new URLSearchParams();
       if (priceListId) params.set("priceListId", priceListId);
       if (searchQuery) params.set("search", searchQuery);
-      if (filterCategory !== "all") params.set("categoryId", filterCategory);
+      if (filterGroup !== "all") params.set("groupId", filterGroup);
       if (filterSupplier !== "all") params.set("supplierId", filterSupplier);
       if (filterStatus !== "all") params.set("isActive", filterStatus === "active" ? "true" : "false");
       return apiRequest(`/api/price-list/items?${params.toString()}`, "GET");
     },
   });
 
-  const { data: categories = [] } = useQuery<PriceListCategory[]>({
-    queryKey: ["/api/price-list/categories"],
+  const { data: priceListGroups = [] } = useQuery<PriceListGroup[]>({
+    queryKey: ["/api/price-list/groups", priceListId],
+    queryFn: () => apiRequest(
+      `/api/price-list/groups${priceListId ? `?priceListId=${priceListId}` : ""}`, "GET"),
   });
 
   // price_list_items.supplierId FKs contacts.id. The old picker was fed /api/suppliers
@@ -111,6 +113,34 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
     },
   });
 
+  const invalidateGroups = () => {
+    queryClient.invalidateQueries({ queryKey: ["/api/price-list/groups"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/price-list/items"] });
+  };
+
+  const createGroupMutation = useMutation({
+    mutationFn: (name: string) =>
+      apiRequest("/api/price-list/groups", "POST", { name, priceListId }),
+    onSuccess: () => { invalidateGroups(); toast({ title: "Group added" }); },
+    onError: (error: any) =>
+      toast({ title: "Failed to add group", description: error.message, variant: "destructive" }),
+  });
+
+  const renameGroupMutation = useMutation({
+    mutationFn: ({ id, name }: { id: string; name: string }) =>
+      apiRequest(`/api/price-list/groups/${id}`, "PATCH", { name }),
+    onSuccess: () => { invalidateGroups(); toast({ title: "Group renamed" }); },
+    onError: (error: any) =>
+      toast({ title: "Failed to rename group", description: error.message, variant: "destructive" }),
+  });
+
+  const deleteGroupMutation = useMutation({
+    mutationFn: (id: string) => apiRequest(`/api/price-list/groups/${id}`, "DELETE"),
+    onSuccess: () => { invalidateGroups(); toast({ title: "Group deleted", description: "Its items moved to Ungrouped." }); },
+    onError: (error: any) =>
+      toast({ title: "Failed to delete group", description: error.message, variant: "destructive" }),
+  });
+
   const toggleGroup = (groupId: string) => {
     const newExpanded = new Set(expandedGroups);
     if (newExpanded.has(groupId)) {
@@ -123,9 +153,9 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
 
   const expandAll = () => {
     const allIds = new Set<string>();
-    if (groupBy === "category") {
-      categories.forEach((c) => allIds.add(c.id));
-      allIds.add("uncategorized");
+    if (groupBy === "group") {
+      priceListGroups.forEach((g) => allIds.add(g.id));
+      allIds.add("ungrouped");
     } else if (groupBy === "supplier") {
       items.forEach((i) => allIds.add(i.supplierId || "no-supplier"));
     }
@@ -141,22 +171,24 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
       return [{ id: "all", name: "All Items", items: items }];
     }
 
-    if (groupBy === "category") {
+    if (groupBy === "group") {
       const grouped = new Map<string, PriceListItem[]>();
+      // Show every group in the list, even empty ones — an empty section is a
+      // place to drop items into, not something to hide.
+      priceListGroups.forEach((g) => grouped.set(g.id, []));
       items.forEach((item) => {
-        const key = item.categoryId || "uncategorized";
+        const key = item.groupId && grouped.has(item.groupId) ? item.groupId : "ungrouped";
         if (!grouped.has(key)) grouped.set(key, []);
         grouped.get(key)!.push(item);
       });
 
-      return Array.from(grouped.entries()).map(([key, groupItems]) => {
-        const category = categories.find((c) => c.id === key);
-        return {
-          id: key,
-          name: category?.name || "Uncategorized",
-          items: groupItems,
-        };
-      });
+      const ordered = [
+        ...priceListGroups.map((g) => ({ id: g.id, name: g.name, items: grouped.get(g.id) ?? [] })),
+        ...(grouped.has("ungrouped")
+          ? [{ id: "ungrouped", name: "Ungrouped", items: grouped.get("ungrouped")! }]
+          : []),
+      ];
+      return ordered;
     }
 
     if (groupBy === "supplier") {
@@ -367,7 +399,7 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
     [suppliers],
   );
 
-  const groups = useMemo(() => groupedItems(), [groupBy, items, categories, suppliers]);
+  const groups = useMemo(() => groupedItems(), [groupBy, items, priceListGroups, suppliers]);
 
   // Recalibrate expandedGroups when groups change
   useEffect(() => {
@@ -381,7 +413,7 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
   }, [groups, groupBy]);
 
   const activeFilterCount =
-    (filterCategory !== "all" ? 1 : 0) +
+    (filterGroup !== "all" ? 1 : 0) +
     (filterSupplier !== "all" ? 1 : 0) +
     (filterStatus !== "all" ? 1 : 0);
 
@@ -468,15 +500,15 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
 
             <PopoverContent align="start" className="w-56 p-3 space-y-3">
               <div className="space-y-1.5">
-                <Label className="text-xs text-muted-foreground">Category</Label>
-                <Select value={filterCategory} onValueChange={setFilterCategory}>
-                  <SelectTrigger className="h-7 text-xs" data-testid="select-filter-category">
+                <Label className="text-xs text-muted-foreground">Group</Label>
+                <Select value={filterGroup} onValueChange={setFilterGroup}>
+                  <SelectTrigger className="h-7 text-xs" data-testid="select-filter-group">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">All categories</SelectItem>
-                    {categories.map((cat) => (
-                      <SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>
+                    <SelectItem value="all">All groups</SelectItem>
+                    {priceListGroups.map((g) => (
+                      <SelectItem key={g.id} value={g.id}>{g.name}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -516,7 +548,7 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
 
               {activeFilterCount > 0 && (
                 <button
-                  onClick={() => { setFilterCategory("all"); setFilterSupplier("all"); setFilterStatus("all"); }}
+                  onClick={() => { setFilterGroup("all"); setFilterSupplier("all"); setFilterStatus("all"); }}
                   className="w-full h-6 text-xs rounded-md border border-border/50 hover-elevate active-elevate-2"
                   data-testid="button-clear-item-filters"
                 >
@@ -539,7 +571,7 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="none">None</SelectItem>
-              <SelectItem value="category">Category</SelectItem>
+              <SelectItem value="group">Group</SelectItem>
               <SelectItem value="supplier">Supplier</SelectItem>
             </SelectContent>
           </Select>
@@ -569,21 +601,53 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
             {groups.map((group) => (
               <div key={group.id} className="mb-3">
                 {groupBy !== "none" && (
-                  <button
-                    onClick={() => toggleGroup(group.id)}
-                    className="w-full flex items-center gap-2 px-2 py-1.5 text-xs font-medium text-foreground hover-elevate rounded-md mb-1"
-                    data-testid={`button-toggle-group-${group.id}`}
-                  >
-                    {expandedGroups.has(group.id) ? (
-                      <ChevronDown className="h-3 w-3" />
-                    ) : (
-                      <ChevronRight className="h-3 w-3" />
+                  <div className="group/hdr flex items-center gap-1 mb-1">
+                    <button
+                      onClick={() => toggleGroup(group.id)}
+                      className="flex-1 flex items-center gap-2 px-2 py-1.5 text-xs font-medium text-foreground hover-elevate rounded-md text-left"
+                      data-testid={`button-toggle-group-${group.id}`}
+                    >
+                      {expandedGroups.has(group.id) ? (
+                        <ChevronDown className="h-3 w-3" />
+                      ) : (
+                        <ChevronRight className="h-3 w-3" />
+                      )}
+                      <span>{group.name}</span>
+                      <Badge variant="outline" className="h-4 text-data ml-1">
+                        {group.items.length}
+                      </Badge>
+                    </button>
+
+                    {/* "Ungrouped" is a bucket, not a real row — nothing to rename. */}
+                    {groupBy === "group" && group.id !== "ungrouped" && (
+                      <div className="flex items-center gap-0.5 opacity-0 group-hover/hdr:opacity-100 transition-opacity">
+                        <button
+                          onClick={() => {
+                            const name = window.prompt("Rename group", group.name)?.trim();
+                            if (name && name !== group.name) renameGroupMutation.mutate({ id: group.id, name });
+                          }}
+                          className="h-5 w-5 flex items-center justify-center rounded-md border border-border/50 text-muted-foreground hover-elevate active-elevate-2"
+                          data-testid={`button-rename-group-${group.id}`}
+                          aria-label="Rename group"
+                        >
+                          <Edit className="h-3 w-3" />
+                        </button>
+                        <button
+                          onClick={() => {
+                            const msg = group.items.length
+                              ? `Delete "${group.name}"? Its ${group.items.length} items move to Ungrouped.`
+                              : `Delete "${group.name}"?`;
+                            if (window.confirm(msg)) deleteGroupMutation.mutate(group.id);
+                          }}
+                          className="h-5 w-5 flex items-center justify-center rounded-md border border-border/50 text-destructive hover-elevate active-elevate-2"
+                          data-testid={`button-delete-group-${group.id}`}
+                          aria-label="Delete group"
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </button>
+                      </div>
                     )}
-                    <span>{group.name}</span>
-                    <Badge variant="outline" className="h-4 text-data ml-1">
-                      {group.items.length}
-                    </Badge>
-                  </button>
+                  </div>
                 )}
 
                 {(groupBy === "none" || expandedGroups.has(group.id)) && (
@@ -598,6 +662,20 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
                 )}
               </div>
             ))}
+
+            {groupBy === "group" && priceListId && (
+              <button
+                onClick={() => {
+                  const name = window.prompt("New group name")?.trim();
+                  if (name) createGroupMutation.mutate(name);
+                }}
+                className="h-6 w-auto px-2 text-xs border border-dashed border-border rounded-md text-muted-foreground hover-elevate active-elevate-2 flex items-center gap-1"
+                data-testid="button-add-group"
+              >
+                <Plus className="h-3 w-3" />
+                Add group
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -611,7 +689,7 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
           }
         }}
         item={editingItem}
-        categories={categories}
+        groups={priceListGroups}
         suppliers={suppliers}
         costCodes={costCodes}
         priceListId={priceListId}
@@ -627,14 +705,14 @@ interface PriceListItemModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   item: PriceListItem | null;
-  categories: PriceListCategory[];
+  groups: PriceListGroup[];
   suppliers: Contact[];
   costCodes: CostCode[];
   priceListId?: string;
   kind: "supplier" | "labour" | "internal";
 }
 
-function PriceListItemModal({ open, onOpenChange, item, categories, suppliers, costCodes, priceListId, kind }: PriceListItemModalProps) {
+function PriceListItemModal({ open, onOpenChange, item, groups, suppliers, costCodes, priceListId, kind }: PriceListItemModalProps) {
   const { toast } = useToast();
   const isEditing = !!item;
   const [enterIncGst, setEnterIncGst] = useState(false);
@@ -644,7 +722,7 @@ function PriceListItemModal({ open, onOpenChange, item, categories, suppliers, c
     nickname: "",
     code: "",
     description: "",
-    categoryId: "",
+    groupId: "",
     costCodeId: "",
     unitType: "each",
     costPrice: "",
@@ -693,7 +771,7 @@ function PriceListItemModal({ open, onOpenChange, item, categories, suppliers, c
           nickname: item.nickname || "",
           code: item.code || "",
           description: item.description || "",
-          categoryId: item.categoryId || "",
+          groupId: item.groupId || "",
           unitType: item.unitType || "each",
           costPrice: item.costPrice ? String(centsToDollars(item.costPrice)) : "",
           sellPrice: item.sellPrice ? String(centsToDollars(item.sellPrice)) : "",
@@ -715,7 +793,7 @@ function PriceListItemModal({ open, onOpenChange, item, categories, suppliers, c
           nickname: "",
           code: "",
           description: "",
-          categoryId: "",
+          groupId: "",
           costCodeId: "",
           unitType: "each",
           costPrice: "",
@@ -775,7 +853,7 @@ function PriceListItemModal({ open, onOpenChange, item, categories, suppliers, c
       nickname: formData.nickname || null,
       code: formData.code || null,
       description: formData.description || null,
-      categoryId: formData.categoryId || null,
+      groupId: formData.groupId || null,
       costCodeId: formData.costCodeId || null,
       unitType: formData.unitType || "each",
       // Dollars in the form, integer CENTS on the wire. Sending "12.50" to an integer
@@ -844,15 +922,15 @@ function PriceListItemModal({ open, onOpenChange, item, categories, suppliers, c
           {/* Category, Code, Unit - Compact Grid */}
           <div className="grid grid-cols-3 gap-1.5">
             <div>
-              <Label className="text-data text-muted-foreground">Category</Label>
-              <Select value={formData.categoryId} onValueChange={(v) => updateField("categoryId", v)}>
-                <SelectTrigger className="h-7 text-table" data-testid="select-category">
+              <Label className="text-data text-muted-foreground">Group</Label>
+              <Select value={formData.groupId} onValueChange={(v) => updateField("groupId", v)}>
+                <SelectTrigger className="h-7 text-table" data-testid="select-group">
                   <SelectValue placeholder="Select" />
                 </SelectTrigger>
                 <SelectContent>
-                  {categories.map((cat) => (
-                    <SelectItem key={cat.id} value={cat.id} className="text-table">
-                      {cat.name}
+                  {groups.map((g) => (
+                    <SelectItem key={g.id} value={g.id} className="text-table">
+                      {g.name}
                     </SelectItem>
                   ))}
                 </SelectContent>

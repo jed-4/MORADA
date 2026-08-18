@@ -163,7 +163,7 @@ import type { SupplierLabel, InsertSupplierLabel, SupplierLabelAssignment, Inser
 import type { SupplierInsurance, InsertSupplierInsurance, SupplierContact, InsertSupplierContact } from "@shared/schema";
 import type { ContactInsurance, InsertContactInsurance } from "@shared/schema";
 import { contactInsurances as contactInsurancesTable } from "@shared/schema";
-import type { PriceList, InsertPriceList, PriceListCategory, InsertPriceListCategory, PriceListItem, InsertPriceListItem, BillLineItemPriceLink, InsertBillLineItemPriceLink } from "@shared/schema";
+import type { PriceList, InsertPriceList, PriceListGroup, InsertPriceListGroup, PriceListItem, InsertPriceListItem, BillLineItemPriceLink, InsertBillLineItemPriceLink } from "@shared/schema";
 import type { DashboardView, InsertDashboardView, DashboardViewPermission, InsertDashboardViewPermission, UserDashboardPreference } from "@shared/schema";
 import type { NoteGroup, InsertNoteGroup } from "@shared/schema";
 import type { Notification as InAppNotification, InsertNotification } from "@shared/schema";
@@ -1407,15 +1407,16 @@ export interface IStorage {
   updatePriceList(id: string, list: Partial<InsertPriceList>, companyId: string): Promise<PriceList | undefined>;
   deletePriceList(id: string, companyId: string): Promise<boolean>;
 
-  // Price List Categories CRUD
-  getPriceListCategories(companyId: string): Promise<PriceListCategory[]>;
-  getPriceListCategory(id: string, companyId: string): Promise<PriceListCategory | undefined>;
-  createPriceListCategory(category: InsertPriceListCategory & { companyId: string }): Promise<PriceListCategory>;
-  updatePriceListCategory(id: string, category: Partial<InsertPriceListCategory>, companyId: string): Promise<PriceListCategory | undefined>;
-  deletePriceListCategory(id: string, companyId: string): Promise<boolean>;
+  // Price List Groups (sections inside one list) CRUD
+  getPriceListGroups(companyId: string, priceListId?: string): Promise<PriceListGroup[]>;
+  getPriceListGroup(id: string, companyId: string): Promise<PriceListGroup | undefined>;
+  createPriceListGroup(group: InsertPriceListGroup & { companyId: string }): Promise<PriceListGroup>;
+  updatePriceListGroup(id: string, group: Partial<InsertPriceListGroup>, companyId: string): Promise<PriceListGroup | undefined>;
+  deletePriceListGroup(id: string, companyId: string): Promise<boolean>;
+  reorderPriceListGroups(orderedIds: string[], companyId: string): Promise<PriceListGroup[]>;
 
   // Price List Items CRUD
-  getPriceListItems(companyId: string, filters?: { priceListId?: string; categoryId?: string; supplierId?: string; isActive?: boolean; search?: string }): Promise<PriceListItem[]>;
+  getPriceListItems(companyId: string, filters?: { priceListId?: string; groupId?: string; supplierId?: string; isActive?: boolean; search?: string }): Promise<PriceListItem[]>;
   getPriceListItem(id: string, companyId: string): Promise<PriceListItem | undefined>;
   createPriceListItem(item: InsertPriceListItem & { companyId: string }): Promise<PriceListItem>;
   updatePriceListItem(id: string, item: Partial<InsertPriceListItem>, companyId: string): Promise<PriceListItem | undefined>;
@@ -25010,75 +25011,115 @@ export class DbStorage implements IStorage {
     }
   }
 
-  // Price List Categories CRUD
-  async getPriceListCategories(companyId: string): Promise<PriceListCategory[]> {
+  // Price List Groups (sections inside one list) CRUD
+  async getPriceListGroups(companyId: string, priceListId?: string): Promise<PriceListGroup[]> {
     try {
-      return await db.select().from(schema.priceListCategories)
-        .where(eq(schema.priceListCategories.companyId, companyId))
-        .orderBy(asc(schema.priceListCategories.sortOrder), asc(schema.priceListCategories.name));
+      const conditions = [eq(schema.priceListGroups.companyId, companyId)];
+      if (priceListId) {
+        conditions.push(eq(schema.priceListGroups.priceListId, priceListId));
+      }
+      return await db.select().from(schema.priceListGroups)
+        .where(and(...conditions))
+        .orderBy(asc(schema.priceListGroups.sortOrder), asc(schema.priceListGroups.name));
     } catch (error) {
-      console.error("Database error in getPriceListCategories:", error);
+      console.error("Database error in getPriceListGroups:", error);
       throw error;
     }
   }
 
-  async getPriceListCategory(id: string, companyId: string): Promise<PriceListCategory | undefined> {
+  async getPriceListGroup(id: string, companyId: string): Promise<PriceListGroup | undefined> {
     try {
-      const result = await db.select().from(schema.priceListCategories)
+      const result = await db.select().from(schema.priceListGroups)
         .where(and(
-          eq(schema.priceListCategories.id, id),
-          eq(schema.priceListCategories.companyId, companyId)
+          eq(schema.priceListGroups.id, id),
+          eq(schema.priceListGroups.companyId, companyId)
         ));
       return result[0];
     } catch (error) {
-      console.error("Database error in getPriceListCategory:", error);
+      console.error("Database error in getPriceListGroup:", error);
       throw error;
     }
   }
 
-  async createPriceListCategory(category: InsertPriceListCategory & { companyId: string }): Promise<PriceListCategory> {
+  async createPriceListGroup(group: InsertPriceListGroup & { companyId: string }): Promise<PriceListGroup> {
     try {
-      const result = await db.insert(schema.priceListCategories).values(category).returning();
+      // New groups land at the bottom of their list unless told otherwise.
+      let sortOrder = group.sortOrder;
+      if (sortOrder === undefined || sortOrder === null) {
+        const [row] = await db
+          .select({ maxOrder: sql<number>`coalesce(max(${schema.priceListGroups.sortOrder}), -1)::int` })
+          .from(schema.priceListGroups)
+          .where(eq(schema.priceListGroups.priceListId, group.priceListId));
+        sortOrder = (row?.maxOrder ?? -1) + 1;
+      }
+      const result = await db.insert(schema.priceListGroups)
+        .values({ ...group, sortOrder } as any)
+        .returning();
       return result[0];
     } catch (error) {
-      console.error("Database error in createPriceListCategory:", error);
+      console.error("Database error in createPriceListGroup:", error);
       throw error;
     }
   }
 
-  async updatePriceListCategory(id: string, category: Partial<InsertPriceListCategory>, companyId: string): Promise<PriceListCategory | undefined> {
+  async updatePriceListGroup(id: string, group: Partial<InsertPriceListGroup>, companyId: string): Promise<PriceListGroup | undefined> {
     try {
-      const result = await db.update(schema.priceListCategories)
-        .set({ ...category, updatedAt: new Date() })
+      const result = await db.update(schema.priceListGroups)
+        .set({ ...group, updatedAt: new Date() } as any)
         .where(and(
-          eq(schema.priceListCategories.id, id),
-          eq(schema.priceListCategories.companyId, companyId)
+          eq(schema.priceListGroups.id, id),
+          eq(schema.priceListGroups.companyId, companyId)
         ))
         .returning();
       return result[0];
     } catch (error) {
-      console.error("Database error in updatePriceListCategory:", error);
+      console.error("Database error in updatePriceListGroup:", error);
       throw error;
     }
   }
 
-  async deletePriceListCategory(id: string, companyId: string): Promise<boolean> {
+  async deletePriceListGroup(id: string, companyId: string): Promise<boolean> {
     try {
-      const result = await db.delete(schema.priceListCategories)
+      // items.groupId is ON DELETE SET NULL — deleting a section must not delete the
+      // prices inside it. They fall back to "Ungrouped".
+      const result = await db.delete(schema.priceListGroups)
         .where(and(
-          eq(schema.priceListCategories.id, id),
-          eq(schema.priceListCategories.companyId, companyId)
+          eq(schema.priceListGroups.id, id),
+          eq(schema.priceListGroups.companyId, companyId)
         ))
         .returning();
       return result.length > 0;
     } catch (error) {
-      console.error("Database error in deletePriceListCategory:", error);
+      console.error("Database error in deletePriceListGroup:", error);
+      throw error;
+    }
+  }
+
+  async reorderPriceListGroups(orderedIds: string[], companyId: string): Promise<PriceListGroup[]> {
+    if (orderedIds.length === 0) return [];
+    try {
+      return await db.transaction(async (tx) => {
+        const results: PriceListGroup[] = [];
+        for (let i = 0; i < orderedIds.length; i++) {
+          const [row] = await tx.update(schema.priceListGroups)
+            .set({ sortOrder: i, updatedAt: new Date() })
+            .where(and(
+              eq(schema.priceListGroups.id, orderedIds[i]),
+              eq(schema.priceListGroups.companyId, companyId)
+            ))
+            .returning();
+          if (row) results.push(row);
+        }
+        return results;
+      });
+    } catch (error) {
+      console.error("Database error in reorderPriceListGroups:", error);
       throw error;
     }
   }
 
   // Price List Items CRUD
-  async getPriceListItems(companyId: string, filters?: { priceListId?: string; categoryId?: string; supplierId?: string; isActive?: boolean; search?: string }): Promise<PriceListItem[]> {
+  async getPriceListItems(companyId: string, filters?: { priceListId?: string; groupId?: string; supplierId?: string; isActive?: boolean; search?: string }): Promise<PriceListItem[]> {
     try {
       let conditions = [eq(schema.priceListItems.companyId, companyId)];
 
@@ -25087,8 +25128,8 @@ export class DbStorage implements IStorage {
       if (filters?.priceListId) {
         conditions.push(eq(schema.priceListItems.priceListId, filters.priceListId));
       }
-      if (filters?.categoryId) {
-        conditions.push(eq(schema.priceListItems.categoryId, filters.categoryId));
+      if (filters?.groupId) {
+        conditions.push(eq(schema.priceListItems.groupId, filters.groupId));
       }
       if (filters?.supplierId) {
         conditions.push(eq(schema.priceListItems.supplierId, filters.supplierId));

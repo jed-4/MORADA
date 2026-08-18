@@ -6328,31 +6328,40 @@ export const insertPriceListSchema = createInsertSchema(priceLists).omit({
 export type InsertPriceList = z.infer<typeof insertPriceListSchema>;
 export type PriceList = typeof priceLists.$inferSelect;
 
-// Price List Categories (configurable grouping for price list items)
-export const priceListCategories = pgTable("price_list_categories", {
+// A GROUP is a section INSIDE one price list — "Plasterboard", "Cornice",
+// "Compounds" belong to The Plaster Shop's book and nowhere else. This replaces the
+// old company-global `price_list_categories`, which sat outside any list and made the
+// layering ambiguous. Same shape as `estimate_groups`, so the grid can reuse its
+// reorder/collapse behaviour.
+export const priceListGroups = pgTable("price_list_groups", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  priceListId: varchar("price_list_id").notNull().references(() => priceLists.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   description: text("description"),
-  color: text("color"), // Hex color for visual grouping
+  colour: text("colour"),
   sortOrder: integer("sort_order").notNull().default(0),
-  isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({
-  companyIdx: index("price_list_categories_company_idx").on(table.companyId),
-  uniqueNamePerCompany: uniqueIndex("price_list_categories_name_unique").on(table.companyId, table.name),
+  companyIdx: index("price_list_groups_company_idx").on(table.companyId),
+  priceListIdx: index("price_list_groups_price_list_idx").on(table.priceListId),
+  uniqueNamePerList: uniqueIndex("price_list_groups_name_unique").on(table.priceListId, table.name),
 }));
 
-export const insertPriceListCategorySchema = createInsertSchema(priceListCategories).omit({
+export const insertPriceListGroupSchema = createInsertSchema(priceListGroups).omit({
   id: true,
   companyId: true,
   createdAt: true,
   updatedAt: true,
+}).extend({
+  name: z.string().trim().min(1, "Name is required"),
+  priceListId: z.string().min(1, "A price list is required"),
+  sortOrder: z.number().int().default(0),
 });
 
-export type InsertPriceListCategory = z.infer<typeof insertPriceListCategorySchema>;
-export type PriceListCategory = typeof priceListCategories.$inferSelect;
+export type InsertPriceListGroup = z.infer<typeof insertPriceListGroupSchema>;
+export type PriceListGroup = typeof priceListGroups.$inferSelect;
 
 // Unit of measure is FREE TEXT, deliberately. The canonical per-company list comes from
 // Field Settings (`estimate_item.unit`), and `shared/units.ts` reconciles spellings across
@@ -6371,7 +6380,8 @@ export const priceListItems = pgTable("price_list_items", {
   nickname: text("nickname"), // What the team calls it
   code: text("code"), // SKU / internal reference code
   description: text("description"), // Detailed notes, specifications
-  categoryId: varchar("category_id").references(() => priceListCategories.id, { onDelete: "set null" }),
+  // The section within the list. Null = ungrouped, shown under "Ungrouped".
+  groupId: varchar("group_id").references(() => priceListGroups.id, { onDelete: "set null" }),
   // Carried onto an estimate line with the item, so provenance keeps its cost code.
   costCodeId: varchar("cost_code_id").references(() => costCodes.id, { onDelete: "set null" }),
   unitType: text("unit_type").notNull().default("each"),
@@ -6405,7 +6415,7 @@ export const priceListItems = pgTable("price_list_items", {
 }, (table) => ({
   companyIdx: index("price_list_items_company_idx").on(table.companyId),
   priceListIdx: index("price_list_items_price_list_idx").on(table.priceListId),
-  categoryIdx: index("price_list_items_category_idx").on(table.categoryId),
+  groupIdx: index("price_list_items_group_idx").on(table.groupId),
   supplierIdx: index("price_list_items_supplier_idx").on(table.supplierId),
   codeIdx: index("price_list_items_code_idx").on(table.companyId, table.code),
 }));
@@ -6418,6 +6428,7 @@ export const insertPriceListItemSchema = createInsertSchema(priceListItems).omit
 }).extend({
   priceListId: z.string().min(1, "A price list is required"),
   name: z.string().trim().min(1, "Name is required"),
+  groupId: z.string().nullable().optional(),
   unitType: z.string().trim().min(1).default("each"),
   costCodeId: z.string().nullable().optional(),
   // CENTS, integer — never dollars. The form converts at the boundary.

@@ -38,8 +38,27 @@ CREATE INDEX IF NOT EXISTS price_lists_company_idx  ON price_lists (company_id);
 CREATE INDEX IF NOT EXISTS price_lists_supplier_idx ON price_lists (supplier_id);
 CREATE UNIQUE INDEX IF NOT EXISTS price_lists_name_unique ON price_lists (company_id, name);
 
--- 3. Items belong to exactly one list; and carry a cost code into estimates.
+-- 2b. Groups: a section INSIDE one price list ("Plasterboard", "Cornice").
+--     Replaces the company-global price_list_categories, which sat outside any list.
+CREATE TABLE IF NOT EXISTS price_list_groups (
+  id            varchar PRIMARY KEY DEFAULT gen_random_uuid(),
+  company_id    varchar NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  price_list_id varchar NOT NULL REFERENCES price_lists(id) ON DELETE CASCADE,
+  name          text NOT NULL,
+  description   text,
+  colour        text,
+  sort_order    integer NOT NULL DEFAULT 0,
+  created_at    timestamp NOT NULL DEFAULT now(),
+  updated_at    timestamp NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS price_list_groups_company_idx    ON price_list_groups (company_id);
+CREATE INDEX IF NOT EXISTS price_list_groups_price_list_idx ON price_list_groups (price_list_id);
+CREATE UNIQUE INDEX IF NOT EXISTS price_list_groups_name_unique ON price_list_groups (price_list_id, name);
+
+-- 3. Items belong to exactly one list, sit in a group, and carry a cost code.
 ALTER TABLE price_list_items ADD COLUMN IF NOT EXISTS price_list_id varchar;
+ALTER TABLE price_list_items ADD COLUMN IF NOT EXISTS group_id      varchar;
 ALTER TABLE price_list_items ADD COLUMN IF NOT EXISTS cost_code_id  varchar;
 
 -- 4. Unit of measure: pgEnum -> text.
@@ -99,4 +118,38 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 
+DO $$ BEGIN
+  ALTER TABLE price_list_items
+    ADD CONSTRAINT price_list_items_group_id_fk
+    FOREIGN KEY (group_id) REFERENCES price_list_groups(id) ON DELETE SET NULL;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
 CREATE INDEX IF NOT EXISTS price_list_items_price_list_idx ON price_list_items (price_list_id);
+CREATE INDEX IF NOT EXISTS price_list_items_group_idx      ON price_list_items (group_id);
+
+-- 7. Retire the company-global categories, superseded by per-list groups.
+--    Any existing category becomes a group on the list its items landed in; a
+--    category with no items is dropped. Expected to be a no-op (0 rows).
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'price_list_categories') THEN
+
+    INSERT INTO price_list_groups (company_id, price_list_id, name, description, colour, sort_order)
+    SELECT DISTINCT ON (pli.price_list_id, plc.name)
+           plc.company_id, pli.price_list_id, plc.name, plc.description, plc.color, plc.sort_order
+    FROM price_list_categories plc
+    JOIN price_list_items pli ON pli.category_id = plc.id
+    ON CONFLICT (price_list_id, name) DO NOTHING;
+
+    UPDATE price_list_items pli
+    SET group_id = plg.id
+    FROM price_list_categories plc
+    JOIN price_list_groups plg ON plg.name = plc.name
+    WHERE pli.category_id = plc.id
+      AND plg.price_list_id = pli.price_list_id
+      AND pli.group_id IS NULL;
+
+    ALTER TABLE price_list_items DROP COLUMN IF EXISTS category_id;
+    DROP TABLE price_list_categories;
+  END IF;
+END $$;
