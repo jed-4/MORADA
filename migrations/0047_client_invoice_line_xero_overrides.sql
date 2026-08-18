@@ -2,15 +2,15 @@
 -- full set of things a line needs to post correctly: account, GST treatment,
 -- and tracking options.
 --
--- 0044 stored Record<lineKey, accountCode>. This rewrites it to
+-- 0046 stored Record<lineKey, accountCode>. This rewrites it to
 --   Record<lineKey, { account?: string, taxable?: boolean,
 --                     tracking?: Record<trackingCategoryId, trackingOptionId> }>
 -- and renames the column to match. Absent keys still mean "use the company
 -- default account, charge GST, and inherit the project's tracking option", so
 -- existing invoices are unaffected.
 --
--- 0044 has not reached Replit-dev or prod, so on those this is simply an ADD.
--- On any database where 0044 did land (Jed's local dev), the rename and the
+-- 0046 has not reached Replit-dev or prod, so on those this is simply an ADD.
+-- On any database where 0046 did land (Jed's local dev), the rename and the
 -- value rewrite below carry the saved account codes across.
 
 DO $$
