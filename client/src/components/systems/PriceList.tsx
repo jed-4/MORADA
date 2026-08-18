@@ -34,7 +34,9 @@ import {
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import type { PriceListItem, PriceListCategory, Supplier } from "@shared/schema";
+import type { PriceListItem, PriceListCategory, Contact, CostCode } from "@shared/schema";
+import { formatCents, dollarsToCents, centsToDollars, incGstFromEx, exGstFromInc, toNumber } from "@shared/money";
+import { UnitSelect } from "@/components/UnitSelect";
 
 export interface PriceListHandle {
   openAddModal: () => void;
@@ -44,9 +46,13 @@ type GroupBy = "none" | "category" | "supplier";
 
 interface PriceListProps {
   searchQuery?: string;
+  /** The list these items belong to. Omitted = cross-list view (read-only). */
+  priceListId?: string;
+  /** Drives which columns/fields make sense: a rate card has no lead time. */
+  kind?: "supplier" | "labour" | "internal";
 }
 
-export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQuery: externalSearch = "" }, ref) => {
+export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQuery: externalSearch = "", priceListId, kind = "internal" }, ref) => {
   const { toast } = useToast();
   const [internalSearch, setInternalSearch] = useState("");
   const [groupBy, setGroupBy] = useState<GroupBy>("category");
@@ -64,16 +70,15 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
   }));
 
   const { data: items = [], isLoading: isLoadingItems } = useQuery<PriceListItem[]>({
-    queryKey: ["/api/price-list/items", searchQuery, filterCategory, filterSupplier, filterStatus],
+    queryKey: ["/api/price-list/items", priceListId, searchQuery, filterCategory, filterSupplier, filterStatus],
     queryFn: async () => {
       const params = new URLSearchParams();
+      if (priceListId) params.set("priceListId", priceListId);
       if (searchQuery) params.set("search", searchQuery);
       if (filterCategory !== "all") params.set("categoryId", filterCategory);
       if (filterSupplier !== "all") params.set("supplierId", filterSupplier);
       if (filterStatus !== "all") params.set("isActive", filterStatus === "active" ? "true" : "false");
-      const res = await fetch(`/api/price-list/items?${params.toString()}`);
-      if (!res.ok) throw new Error("Failed to fetch items");
-      return res.json();
+      return apiRequest(`/api/price-list/items?${params.toString()}`, "GET");
     },
   });
 
@@ -81,15 +86,26 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
     queryKey: ["/api/price-list/categories"],
   });
 
-  const { data: suppliers = [] } = useQuery<Supplier[]>({
-    queryKey: ["/api/suppliers"],
+  // price_list_items.supplierId FKs contacts.id. The old picker was fed /api/suppliers
+  // (the deprecated `suppliers` table), so every saved supplier was a dangling id.
+  const { data: suppliers = [] } = useQuery<Contact[]>({
+    queryKey: ["/api/contacts", "supplier"],
+    queryFn: () => apiRequest("/api/contacts?contactType=supplier", "GET"),
+  });
+
+  const { data: costCodes = [] } = useQuery<CostCode[]>({
+    queryKey: ["/api/cost-codes"],
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (id: string) => apiRequest(`/api/price-list/items/${id}`, { method: "DELETE" }),
+    mutationFn: (id: string) => apiRequest(`/api/price-list/items/${id}`, "DELETE"),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/price-list/items"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/price-lists"] });
       toast({ title: "Item deleted successfully" });
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed to delete item", description: error.message, variant: "destructive" });
     },
   });
 
@@ -162,17 +178,17 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
     return [];
   };
 
-  const formatCurrency = (amount: string | number | null | undefined) => {
-    if (!amount) return "-";
-    const num = typeof amount === "string" ? parseFloat(amount) : amount;
-    return new Intl.NumberFormat("en-AU", { style: "currency", currency: "AUD" }).format(num);
+  // costPrice/sellPrice are integer CENTS. These used to parseFloat and format the raw
+  // value as dollars, so a stored 1250 rendered as $1,250.00 instead of $12.50.
+  // shared/money.ts is the only sanctioned formatter (see CLAUDE.md).
+  const formatCurrency = (cents: number | null | undefined) => {
+    if (cents === null || cents === undefined) return "-";
+    return formatCents(cents);
   };
 
-  const formatCurrencyIncGst = (amount: string | number | null | undefined) => {
-    if (!amount) return "-";
-    const num = typeof amount === "string" ? parseFloat(amount) : amount;
-    const incGst = num * 1.1; // Australian GST is 10%
-    return new Intl.NumberFormat("en-AU", { style: "currency", currency: "AUD" }).format(incGst);
+  const formatCurrencyIncGst = (cents: number | null | undefined) => {
+    if (cents === null || cents === undefined) return "-";
+    return formatCents(incGstFromEx(cents));
   };
 
   const getMarkup = (cost: string | number | null, sell: string | number | null) => {
@@ -543,6 +559,9 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
         item={editingItem}
         categories={categories}
         suppliers={suppliers}
+        costCodes={costCodes}
+        priceListId={priceListId}
+        kind={kind}
       />
     </div>
   );
@@ -555,10 +574,13 @@ interface PriceListItemModalProps {
   onOpenChange: (open: boolean) => void;
   item: PriceListItem | null;
   categories: PriceListCategory[];
-  suppliers: Supplier[];
+  suppliers: Contact[];
+  costCodes: CostCode[];
+  priceListId?: string;
+  kind: "supplier" | "labour" | "internal";
 }
 
-function PriceListItemModal({ open, onOpenChange, item, categories, suppliers }: PriceListItemModalProps) {
+function PriceListItemModal({ open, onOpenChange, item, categories, suppliers, costCodes, priceListId, kind }: PriceListItemModalProps) {
   const { toast } = useToast();
   const isEditing = !!item;
   const [enterIncGst, setEnterIncGst] = useState(false);
@@ -569,6 +591,7 @@ function PriceListItemModal({ open, onOpenChange, item, categories, suppliers }:
     code: "",
     description: "",
     categoryId: "",
+    costCodeId: "",
     unitType: "each",
     costPrice: "",
     sellPrice: "",
@@ -618,10 +641,11 @@ function PriceListItemModal({ open, onOpenChange, item, categories, suppliers }:
           description: item.description || "",
           categoryId: item.categoryId || "",
           unitType: item.unitType || "each",
-          costPrice: item.costPrice || "",
-          sellPrice: item.sellPrice || "",
+          costPrice: item.costPrice ? String(centsToDollars(item.costPrice)) : "",
+          sellPrice: item.sellPrice ? String(centsToDollars(item.sellPrice)) : "",
           markupPercent: item.markupPercent || "",
           supplierId: item.supplierId || "",
+          costCodeId: item.costCodeId || "",
           supplierCode: item.supplierCode || "",
           leadTimeDays: item.leadTimeDays?.toString() || "",
           brand: item.brand || "",
@@ -638,6 +662,7 @@ function PriceListItemModal({ open, onOpenChange, item, categories, suppliers }:
           code: "",
           description: "",
           categoryId: "",
+          costCodeId: "",
           unitType: "each",
           costPrice: "",
           sellPrice: "",
@@ -657,9 +682,10 @@ function PriceListItemModal({ open, onOpenChange, item, categories, suppliers }:
   }, [open, item]);
 
   const createMutation = useMutation({
-    mutationFn: (data: any) => apiRequest("/api/price-list/items", { method: "POST", body: JSON.stringify(data) }),
+    mutationFn: (data: any) => apiRequest("/api/price-list/items", "POST", data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/price-list/items"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/price-lists"] });
       toast({ title: "Item created successfully" });
       onOpenChange(false);
     },
@@ -669,7 +695,7 @@ function PriceListItemModal({ open, onOpenChange, item, categories, suppliers }:
   });
 
   const updateMutation = useMutation({
-    mutationFn: (data: any) => apiRequest(`/api/price-list/items/${item?.id}`, { method: "PATCH", body: JSON.stringify(data) }),
+    mutationFn: (data: any) => apiRequest(`/api/price-list/items/${item?.id}`, "PATCH", data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/price-list/items"] });
       toast({ title: "Item updated successfully" });
@@ -689,14 +715,19 @@ function PriceListItemModal({ open, onOpenChange, item, categories, suppliers }:
     }
 
     const data = {
+      // The list this item belongs to — required by the server.
+      ...(priceListId ? { priceListId } : {}),
       name: formData.name,
       nickname: formData.nickname || null,
       code: formData.code || null,
       description: formData.description || null,
       categoryId: formData.categoryId || null,
+      costCodeId: formData.costCodeId || null,
       unitType: formData.unitType || "each",
-      costPrice: formData.costPrice || null,
-      sellPrice: formData.sellPrice || null,
+      // Dollars in the form, integer CENTS on the wire. Sending "12.50" to an integer
+      // column was a hard Postgres 22P02 reject; "12" silently stored 12 cents.
+      costPrice: formData.costPrice ? dollarsToCents(formData.costPrice) : 0,
+      sellPrice: formData.sellPrice ? dollarsToCents(formData.sellPrice) : null,
       markupPercent: formData.markupPercent || null,
       supplierId: formData.supplierId || null,
       supplierCode: formData.supplierCode || null,
@@ -787,32 +818,15 @@ function PriceListItemModal({ open, onOpenChange, item, categories, suppliers }:
 
             <div>
               <Label className="text-data text-muted-foreground">Unit</Label>
-              <Select value={formData.unitType} onValueChange={(v) => updateField("unitType", v)}>
-                <SelectTrigger className="h-7 text-table" data-testid="select-unit-type">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="each" className="text-table">Each</SelectItem>
-                  <SelectItem value="m" className="text-table">m</SelectItem>
-                  <SelectItem value="m2" className="text-table">m2</SelectItem>
-                  <SelectItem value="m3" className="text-table">m3</SelectItem>
-                  <SelectItem value="lm" className="text-table">lm</SelectItem>
-                  <SelectItem value="kg" className="text-table">kg</SelectItem>
-                  <SelectItem value="t" className="text-table">t</SelectItem>
-                  <SelectItem value="l" className="text-table">L</SelectItem>
-                  <SelectItem value="hr" className="text-table">hr</SelectItem>
-                  <SelectItem value="day" className="text-table">day</SelectItem>
-                  <SelectItem value="pack" className="text-table">pack</SelectItem>
-                  <SelectItem value="box" className="text-table">box</SelectItem>
-                  <SelectItem value="roll" className="text-table">roll</SelectItem>
-                  <SelectItem value="sheet" className="text-table">sheet</SelectItem>
-                  <SelectItem value="bag" className="text-table">bag</SelectItem>
-                  <SelectItem value="pallet" className="text-table">pallet</SelectItem>
-                  <SelectItem value="item" className="text-table">item</SelectItem>
-                  <SelectItem value="lot" className="text-table">lot</SelectItem>
-                  <SelectItem value="allowance" className="text-table">allowance</SelectItem>
-                </SelectContent>
-              </Select>
+              {/* Units come from Field Settings, not a hardcoded list. The old inline
+                  dropdown offered 19 options against a 14-value pgEnum — 12 of them
+                  were guaranteed insert errors. */}
+              <UnitSelect
+                value={formData.unitType}
+                onValueChange={(v) => updateField("unitType", v)}
+                triggerClassName="h-7 text-table"
+                data-testid="select-unit-type"
+              />
             </div>
           </div>
 
@@ -836,7 +850,9 @@ function PriceListItemModal({ open, onOpenChange, item, categories, suppliers }:
             </div>
             <div className="grid grid-cols-3 gap-2">
               <div>
-                <Label className="text-data text-muted-foreground">Cost {enterIncGst ? '(inc)' : '(ex)'}</Label>
+                <Label className="text-data text-muted-foreground">
+                  {kind === "labour" ? "Cost rate" : "Cost"} {enterIncGst ? '(inc)' : '(ex)'}
+                </Label>
                 <div className="relative">
                   <span className="absolute left-2 top-1/2 -translate-y-1/2 text-data text-muted-foreground">$</span>
                   <Input
@@ -880,7 +896,9 @@ function PriceListItemModal({ open, onOpenChange, item, categories, suppliers }:
               </div>
 
               <div>
-                <Label className="text-data text-muted-foreground">Sell {enterIncGst ? '(inc)' : '(ex)'}</Label>
+                <Label className="text-data text-muted-foreground">
+                  {kind === "labour" ? "Charge rate" : "Sell"} {enterIncGst ? '(inc)' : '(ex)'}
+                </Label>
                 <div className="relative">
                   <span className="absolute left-2 top-1/2 -translate-y-1/2 text-data text-muted-foreground">$</span>
                   <Input
@@ -914,24 +932,44 @@ function PriceListItemModal({ open, onOpenChange, item, categories, suppliers }:
             )}
           </div>
 
-          {/* Supplier Row */}
+          {/* Supplier row. On a supplier list the supplier is inherited from the list
+              itself, so that slot becomes the cost code instead. A labour rate card has
+              no supplier, no supplier code and no lead time at all. */}
           <div className="grid grid-cols-3 gap-1.5">
             <div>
-              <Label className="text-data text-muted-foreground">Supplier</Label>
-              <Select value={formData.supplierId} onValueChange={(v) => updateField("supplierId", v)}>
-                <SelectTrigger className="h-7 text-table" data-testid="select-supplier">
-                  <SelectValue placeholder="Select" />
-                </SelectTrigger>
-                <SelectContent>
-                  {suppliers.map((sup) => (
-                    <SelectItem key={sup.id} value={sup.id} className="text-table">
-                      {sup.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Label className="text-data text-muted-foreground">
+                {kind === "supplier" ? "Cost Code" : "Supplier"}
+              </Label>
+              {kind === "supplier" ? (
+                <Select value={formData.costCodeId} onValueChange={(v) => updateField("costCodeId", v)}>
+                  <SelectTrigger className="h-7 text-table" data-testid="select-cost-code">
+                    <SelectValue placeholder="Select" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {costCodes.map((cc) => (
+                      <SelectItem key={cc.id} value={cc.id} className="text-table">
+                        {cc.code ? `${cc.code} — ${cc.title}` : cc.title}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <Select value={formData.supplierId} onValueChange={(v) => updateField("supplierId", v)}>
+                  <SelectTrigger className="h-7 text-table" data-testid="select-supplier">
+                    <SelectValue placeholder="Select" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {suppliers.map((sup) => (
+                      <SelectItem key={sup.id} value={sup.id} className="text-table">
+                        {sup.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
             </div>
 
+            {kind !== "labour" && (
             <div>
               <Label className="text-data text-muted-foreground">Supplier Code</Label>
               <Input
@@ -942,7 +980,9 @@ function PriceListItemModal({ open, onOpenChange, item, categories, suppliers }:
                 data-testid="input-supplier-code"
               />
             </div>
+            )}
 
+            {kind !== "labour" && (
             <div>
               <Label className="text-data text-muted-foreground">Lead Time</Label>
               <div className="relative">
@@ -957,6 +997,7 @@ function PriceListItemModal({ open, onOpenChange, item, categories, suppliers }:
                 <span className="absolute right-2 top-1/2 -translate-y-1/2 text-data text-muted-foreground">days</span>
               </div>
             </div>
+            )}
           </div>
 
           {/* Description - 2 line preview like rapid approval */}

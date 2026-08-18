@@ -38,7 +38,8 @@ import {
   Search,
   AlertCircle,
 } from "lucide-react";
-import type { BillLineItem, Bill, Supplier, PriceListItem, PriceListCategory } from "@shared/schema";
+import type { BillLineItem, Bill, Contact, PriceListItem, PriceListCategory, PriceList } from "@shared/schema";
+import { dollarsToCents, formatCents } from "@shared/money";
 import { useAuth } from "@/hooks/use-auth";
 
 export interface AIPriceListReviewHandle {
@@ -50,7 +51,7 @@ interface Props {
 }
 
 interface BillWithSupplier extends Bill {
-  supplier?: Supplier;
+  supplier?: Contact;
 }
 
 interface BillLineItemWithBill extends BillLineItem {
@@ -111,25 +112,38 @@ const AIPriceListReview = forwardRef<AIPriceListReviewHandle, Props>(({ searchQu
     markup: 0,
     categoryId: "",
     supplierId: "",
+    priceListId: "",
   });
 
   const { data: unreviewedItems, isLoading: loadingItems, refetch } = useQuery<BillLineItemWithBill[]>({
-    queryKey: ['/api/bill-line-items/unlinked', companyId],
+    queryKey: ['/api/bill-line-items/unlinked'],
     enabled: !!companyId,
   });
 
   const { data: priceListItems } = useQuery<PriceListItem[]>({
-    queryKey: ['/api/price-list/items', companyId],
+    queryKey: ['/api/price-list/items'],
     enabled: !!companyId,
   });
 
   const { data: categories } = useQuery<PriceListCategory[]>({
-    queryKey: ['/api/price-list/categories', companyId],
+    queryKey: ['/api/price-list/categories'],
     enabled: !!companyId,
   });
 
-  const { data: suppliers } = useQuery<Supplier[]>({
-    queryKey: ['/api/suppliers', companyId],
+  const { data: priceLists = [] } = useQuery<Array<PriceList & { itemCount: number }>>({
+    queryKey: ['/api/price-lists'],
+    enabled: !!companyId,
+  });
+
+  // Default the target list to whichever is marked default, else the first.
+  const defaultPriceListId = useMemo(
+    () => priceLists.find(l => l.isDefault)?.id ?? priceLists[0]?.id ?? "",
+    [priceLists],
+  );
+
+  const { data: suppliers } = useQuery<Contact[]>({
+    queryKey: ['/api/contacts', 'supplier'],
+    queryFn: () => apiRequest('/api/contacts?contactType=supplier', 'GET'),
     enabled: !!companyId,
   });
 
@@ -171,6 +185,7 @@ const AIPriceListReview = forwardRef<AIPriceListReviewHandle, Props>(({ searchQu
         markup: 0,
         categoryId: "",
         supplierId: "",
+        priceListId: "",
       });
     },
   });
@@ -182,7 +197,7 @@ const AIPriceListReview = forwardRef<AIPriceListReviewHandle, Props>(({ searchQu
     
     for (const item of unreviewedItems) {
       const supplierId = item.bill?.supplierId || "unknown";
-      const supplierName = item.bill?.supplier?.businessName || "Unknown Supplier";
+      const supplierName = item.bill?.supplier?.name || "Unknown Supplier";
       
       if (!groups.has(supplierId)) {
         groups.set(supplierId, {
@@ -236,6 +251,7 @@ const AIPriceListReview = forwardRef<AIPriceListReviewHandle, Props>(({ searchQu
   const openCreateModal = (item: BillLineItemWithBill) => {
     setSelectedLineItem(item);
     setCreateForm({
+      priceListId: defaultPriceListId,
       name: item.description,
       nickname: "",
       code: "",
@@ -260,15 +276,15 @@ const AIPriceListReview = forwardRef<AIPriceListReviewHandle, Props>(({ searchQu
   };
 
   const handleCreateAndLink = () => {
-    if (selectedLineItem && createForm.name) {
+    const priceListId = createForm.priceListId || defaultPriceListId;
+    if (selectedLineItem && createForm.name && priceListId) {
       createAndLinkMutation.mutate({
         lineItemId: selectedLineItem.id,
         priceListItem: {
           ...createForm,
-          companyId,
-          costPrice: Math.round(createForm.costPrice * 100),
-          sellPrice: Math.round(createForm.sellPrice * 100),
-          status: "active",
+          priceListId,
+          costPrice: dollarsToCents(createForm.costPrice),
+          sellPrice: dollarsToCents(createForm.sellPrice),
         },
       });
     }
@@ -478,20 +494,43 @@ const AIPriceListReview = forwardRef<AIPriceListReviewHandle, Props>(({ searchQu
                 />
               </div>
             </div>
-            <div>
-              <label className="text-xs text-muted-foreground">Category</label>
-              <select
-                value={createForm.categoryId}
-                onChange={(e) => setCreateForm({ ...createForm, categoryId: e.target.value })}
-                className="w-full h-8 text-sm border rounded-md px-2 bg-background"
-              >
-                <option value="">No category</option>
-                {categories?.map(cat => (
-                  <option key={cat.id} value={cat.id}>{cat.name}</option>
-                ))}
-              </select>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs text-muted-foreground">Price list</label>
+                <select
+                  value={createForm.priceListId || defaultPriceListId}
+                  onChange={(e) => setCreateForm({ ...createForm, priceListId: e.target.value })}
+                  className="w-full h-8 text-sm border rounded-md px-2 bg-background"
+                  data-testid="select-target-price-list"
+                >
+                  {priceLists.length === 0 && <option value="">No price lists yet</option>}
+                  {priceLists.map(list => (
+                    <option key={list.id} value={list.id}>
+                      {list.name}{list.isDefault ? " (default)" : ""}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground">Category</label>
+                <select
+                  value={createForm.categoryId}
+                  onChange={(e) => setCreateForm({ ...createForm, categoryId: e.target.value })}
+                  className="w-full h-8 text-sm border rounded-md px-2 bg-background"
+                >
+                  <option value="">No category</option>
+                  {categories?.map(cat => (
+                    <option key={cat.id} value={cat.id}>{cat.name}</option>
+                  ))}
+                </select>
+              </div>
             </div>
           </div>
+          {priceLists.length === 0 && (
+            <p className="text-xs text-muted-foreground">
+              Create a price list first — items have to live in one.
+            </p>
+          )}
           
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowCreateModal(false)}>
@@ -499,7 +538,7 @@ const AIPriceListReview = forwardRef<AIPriceListReviewHandle, Props>(({ searchQu
             </Button>
             <Button
               onClick={handleCreateAndLink}
-              disabled={!createForm.name || createAndLinkMutation.isPending}
+              disabled={!createForm.name || !(createForm.priceListId || defaultPriceListId) || createAndLinkMutation.isPending}
               className="bg-primary hover:bg-primary/90"
             >
               {createAndLinkMutation.isPending ? "Creating..." : "Create & Link"}
@@ -551,7 +590,7 @@ function MatchSuggestion({ description, priceListItems, onSelect }: {
               {match.nickname && (
                 <p className="text-muted-foreground truncate">"{match.nickname}"</p>
               )}
-              <p className="text-muted-foreground">${(match.sellPrice / 100).toFixed(2)}</p>
+              <p className="text-muted-foreground">{formatCents(match.sellPrice ?? 0)}</p>
             </button>
           ))}
         </div>
@@ -633,7 +672,7 @@ function PriceListItemSelect({ items, value, onChange, description }: {
                     )}
                   </div>
                   <span className="text-xs text-muted-foreground">
-                    ${(item.sellPrice / 100).toFixed(2)}
+                    {formatCents(item.sellPrice ?? 0)}
                   </span>
                 </CommandItem>
               ))}
