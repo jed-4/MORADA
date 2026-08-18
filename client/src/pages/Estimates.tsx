@@ -19,6 +19,9 @@ import {
   LayoutList,
   Columns3,
   SlidersHorizontal,
+  MoreHorizontal,
+  Archive,
+  ArrowLeft,
   Download,
   ChevronDown,
   GripVertical,
@@ -31,6 +34,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { type ColumnDef } from "@tanstack/react-table";
 import {
   DataTable,
@@ -82,6 +91,8 @@ import { EmptyState } from "@/components/EmptyState";
 type ViewMode = 'list' | 'kanban';
 /** Where a "back" from an estimate opened on this page should land. */
 const ALL_ESTIMATES_PATH = "/estimates";
+/** Estimates in this status are held back from the normal views. */
+const ARCHIVED_STATUS = "archived";
 type CardWidth = 'compact' | 'comfortable' | 'spacious';
 const VIEW_KEY = "estimates-view";
 const CARD_WIDTH_KEY = "estimates-card-width";
@@ -109,6 +120,10 @@ export default function Estimates() {
       /* noop — private browsing / storage disabled */
     }
   }, [currentView]);
+  // The archive is a separate destination rather than a filter: archived
+  // estimates stay out of the normal list and board entirely, and are reached
+  // from the overflow menu.
+  const [showArchived, setShowArchived] = useState(false);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [hoveredColumnId, setHoveredColumnId] = useState<string | null>(null);
   // Persisted alongside the view — the card density you chose should survive
@@ -402,10 +417,24 @@ export default function Estimates() {
       const matchesSearch = searchableContent.includes(searchTerm.toLowerCase());
       const matchesProject = selectedProject === 'All' || estimate.projectId === selectedProject;
       const matchesStatus = selectedStatus === 'All' || estimate.status === selectedStatus;
-        
-      return matchesSearch && matchesProject && matchesStatus;
+      // Archived estimates were previously mixed into the "All" list; they now
+      // live only behind the archive view.
+      const matchesArchive = showArchived
+        ? estimate.status === ARCHIVED_STATUS
+        : estimate.status !== ARCHIVED_STATUS;
+
+      return matchesSearch && matchesProject && matchesStatus && matchesArchive;
     });
-  }, [estimates, searchTerm, selectedProject, selectedStatus, projects]);
+  }, [estimates, searchTerm, selectedProject, selectedStatus, projects, showArchived]);
+
+  const archivedCount = useMemo(
+    () => estimates.filter((e) => e.status === ARCHIVED_STATUS).length,
+    [estimates],
+  );
+
+  // The board's columns come from the configured statuses, and "archived"
+  // isn't one — so the archive is always the list.
+  const effectiveView: ViewMode = showArchived ? 'list' : currentView;
 
   const EstimateTotalCell = ({ estimateId }: { estimateId: string }) => {
     const { data: summary } = useQuery<EstimateSummary>({
@@ -498,28 +527,89 @@ export default function Estimates() {
       <div className="flex items-center gap-1 px-4 pt-3 pb-1 flex-shrink-0">
         <span className="text-xs text-muted-foreground">All Projects</span>
         <ChevronRight className="h-3 w-3 text-muted-foreground/50 flex-shrink-0" />
-        <span className="text-xs font-medium text-foreground" data-testid="text-page-title">Estimates</span>
+        {showArchived ? (
+          <>
+            <button
+              className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+              onClick={() => setShowArchived(false)}
+              data-testid="breadcrumb-estimates"
+            >
+              Estimates
+            </button>
+            <ChevronRight className="h-3 w-3 text-muted-foreground/50 flex-shrink-0" />
+            <span className="text-xs font-medium text-foreground" data-testid="text-page-title">Archived</span>
+          </>
+        ) : (
+          <span className="text-xs font-medium text-foreground" data-testid="text-page-title">Estimates</span>
+        )}
       </div>
       {/* Row 1 - Actions (36px). The page name lives in the breadcrumb above —
           a second title here read as a duplicate breadcrumb. */}
       <div className="h-9 bg-background flex items-center justify-end px-2 gap-4 flex-shrink-0">
-        {/* Right: New Estimate Button */}
+        {/* Right: New Estimate + overflow */}
         <div className="flex items-center gap-1.5">
-          <button
-            className="h-6 w-auto px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-0.5"
-            onClick={handleNewEstimate}
-            data-testid="button-new-estimate"
-          >
-            <Plus className="w-3 h-3" />
-            <span>New Estimate</span>
-          </button>
+          {showArchived ? (
+            <button
+              className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
+              onClick={() => setShowArchived(false)}
+              data-testid="button-back-to-active"
+            >
+              <ArrowLeft className="w-3 h-3" />
+              <span>Back to estimates</span>
+            </button>
+          ) : (
+            <button
+              className="h-6 w-auto px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-0.5"
+              onClick={handleNewEstimate}
+              data-testid="button-new-estimate"
+            >
+              <Plus className="w-3 h-3" />
+              <span>New Estimate</span>
+            </button>
+          )}
+
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center flex-shrink-0"
+                data-testid="button-more-actions"
+                aria-label="More actions"
+              >
+                <MoreHorizontal className="w-3.5 h-3.5" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-52">
+              <DropdownMenuItem
+                onSelect={() => setShowArchived((v) => !v)}
+                data-testid="menu-item-archived-estimates"
+              >
+                {showArchived ? (
+                  <ArrowLeft className="w-3.5 h-3.5 mr-2" />
+                ) : (
+                  <Archive className="w-3.5 h-3.5 mr-2" />
+                )}
+                <span className="flex-1">
+                  {showArchived ? "Back to estimates" : "Archived estimates"}
+                </span>
+                {!showArchived && archivedCount > 0 && (
+                  <span className="ml-2 text-[10px] font-semibold tabular-nums text-muted-foreground">
+                    {archivedCount}
+                  </span>
+                )}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
 
       {/* Row 2 - View Tabs (36px) */}
       <div className="h-9 bg-background flex items-center justify-between px-2 border-b border-border flex-shrink-0">
-        {/* Left: View toggle (icon only) */}
-        <div className="bg-muted/40 rounded-md p-0.5 h-[28px] flex" data-testid="view-toggle">
+        {/* Left: View toggle (icon only). Hidden in the archive, which has no
+            board columns to drop into. */}
+        <div
+          className={`bg-muted/40 rounded-md p-0.5 h-[28px] flex ${showArchived ? 'invisible' : ''}`}
+          data-testid="view-toggle"
+        >
           <button
             onClick={() => setCurrentView('list')}
             className={`w-7 h-full flex items-center justify-center rounded transition-colors ${
@@ -549,7 +639,7 @@ export default function Estimates() {
         </div>
 
         {/* Right: Card Width Toggle (only visible in kanban view) */}
-        {currentView === 'kanban' && (
+        {effectiveView === 'kanban' && (
           <Popover>
             <PopoverTrigger asChild>
               <button 
@@ -658,7 +748,7 @@ export default function Estimates() {
         </div>
 
         {/* Right: Column picker (list view only) */}
-        {currentView === 'list' && (
+        {effectiveView === 'list' && (
           <Popover>
             <PopoverTrigger asChild>
               <button
@@ -686,22 +776,37 @@ export default function Estimates() {
           </div>
         ) : filteredEstimates.length === 0 ? (
           <EmptyState
-            icon={DollarSign}
-            title={searchTerm || selectedProject !== "All" || selectedStatus !== "All" ? "No estimates found" : "No estimates yet"}
+            icon={showArchived ? Archive : DollarSign}
+            title={
+              showArchived
+                ? "Nothing archived"
+                : searchTerm || selectedProject !== "All" || selectedStatus !== "All"
+                  ? "No estimates found"
+                  : "No estimates yet"
+            }
             description={
-              searchTerm || selectedProject !== "All" || selectedStatus !== "All"
-                ? "Try adjusting your search or filter criteria"
-                : "Start by creating your first estimate for a project"
+              showArchived
+                ? "Estimates you archive are kept here, out of the main list."
+                : searchTerm || selectedProject !== "All" || selectedStatus !== "All"
+                  ? "Try adjusting your search or filter criteria"
+                  : "Start by creating your first estimate for a project"
             }
             action={
-              !searchTerm && selectedProject === "All" && selectedStatus === "All"
+              showArchived
                 ? {
-                    label: "Create Your First Estimate",
-                    onClick: handleNewEstimate,
-                    icon: Plus,
-                    "data-testid": "button-create-first-estimate",
+                    label: "Back to estimates",
+                    onClick: () => setShowArchived(false),
+                    icon: ArrowLeft,
+                    "data-testid": "button-empty-back-to-active",
                   }
-                : undefined
+                : !searchTerm && selectedProject === "All" && selectedStatus === "All"
+                  ? {
+                      label: "Create Your First Estimate",
+                      onClick: handleNewEstimate,
+                      icon: Plus,
+                      "data-testid": "button-create-first-estimate",
+                    }
+                  : undefined
             }
             variant="card"
             className="mt-6"
@@ -709,7 +814,7 @@ export default function Estimates() {
         ) : (
           <>
             {/* List View */}
-            {currentView === 'list' && (
+            {effectiveView === 'list' && (
               <div className="w-full h-full">
                 <DataTable
                   data={filteredEstimates}
@@ -723,7 +828,7 @@ export default function Estimates() {
             )}
 
             {/* Kanban View */}
-            {currentView === 'kanban' && (
+            {effectiveView === 'kanban' && (
               <DndContext
                 sensors={sensors}
                 collisionDetection={closestCorners}
