@@ -2496,6 +2496,18 @@ export const clientInvoices = pgTable("client_invoices", {
   // from, so the Xero total always equals what Morada displayed at save time.
   // Shape: InvoiceLineBreakdownEntry[] (see invoiceLineBreakdownEntrySchema).
   lineBreakdown: jsonb("line_breakdown"),
+  // Per-line Xero overrides, keyed by the stable line identity
+  // (`contract:<rowId>`, `variation:<id>`, `allowance:<estimateItemId>`,
+  // `bill:<id>`, `selection:<id>`, `labour`, `markup`). Custom lines carry
+  // their own account on client_invoice_items instead.
+  // Shape: Record<lineKey, { account?, taxable?, tracking?: Record<catId, optId> }>.
+  // An absent key means "company default account, GST charged, project's own
+  // tracking option" — see resolveClientInvoiceFallbackAccount.
+  lineXeroOverrides: jsonb("line_xero_overrides").notNull().default({}),
+  // Array of { name, url, size?, type?, includeInPdf? }. `url` is the
+  // object-storage path from /api/uploads/request-url. Mirrors
+  // variations.attachments so both documents carry files the same way.
+  attachments: jsonb("attachments").notNull().default([]),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({
@@ -2505,8 +2517,9 @@ export const clientInvoices = pgTable("client_invoices", {
 
 // One line of the persisted invoice money snapshot. All amounts are integer
 // cents; amountExCents + gstCents must equal amountIncCents (validated).
-// `taxable: false` lines must carry gstCents 0. `accountCode` is the optional
-// per-line Xero account override (custom lines only today).
+// `taxable: false` lines must carry gstCents 0. `accountCode` is the resolved
+// per-line Xero account: a custom line's own code, or the override recorded in
+// clientInvoices.lineXeroOverrides for every other source.
 export const invoiceLineBreakdownEntrySchema = z.object({
   source: z.enum(["contract", "variation", "allowance", "labour", "bill", "selection", "markup", "custom"]),
   description: z.string().min(1),
@@ -2515,6 +2528,16 @@ export const invoiceLineBreakdownEntrySchema = z.object({
   amountIncCents: z.number().int(),
   taxable: z.boolean(),
   accountCode: z.string().optional().nullable(),
+  // The Xero TaxType this line posts under (OUTPUT, EXEMPTOUTPUT, …). Absent
+  // falls back to OUTPUT/NONE derived from `taxable`, which is what pre-tax-rate
+  // invoices carry.
+  taxType: z.string().optional().nullable(),
+  // Resolved per-line tracking, ready to hand to Xero. Empty/absent means the
+  // push falls back to the project's own tracking option.
+  tracking: z
+    .array(z.object({ categoryId: z.string(), optionId: z.string() }))
+    .optional()
+    .nullable(),
 }).refine((l) => l.amountExCents + l.gstCents === l.amountIncCents, {
   message: "amountExCents + gstCents must equal amountIncCents",
 }).refine((l) => l.taxable || l.gstCents === 0, {
@@ -2523,11 +2546,22 @@ export const invoiceLineBreakdownEntrySchema = z.object({
 
 export type InvoiceLineBreakdownEntry = z.infer<typeof invoiceLineBreakdownEntrySchema>;
 
+export const clientInvoiceAttachmentSchema = z.object({
+  name: z.string().min(1),
+  url: z.string().min(1),
+  size: z.number().optional(),
+  type: z.string().optional(),
+  /** Append this file to the rendered PDF instead of only linking to it. */
+  includeInPdf: z.boolean().optional(),
+});
+export type ClientInvoiceAttachment = z.infer<typeof clientInvoiceAttachmentSchema>;
+
 export const insertClientInvoiceSchema = createInsertSchema(clientInvoices).omit({
   id: true,
   createdAt: true,
   updatedAt: true,
 }).extend({
+  attachments: z.array(clientInvoiceAttachmentSchema).optional(),
   invoiceNumber: z.string().optional().nullable(),
   name: z.string().min(1, "Name is required"),
   invoicingMethod: z.enum(["progress_payments", "cost_plus"]).default("progress_payments"),

@@ -74,6 +74,14 @@ export interface LineItemTableProps<T> {
   /** Extra classes for the `<thead>` — e.g. a section-accent tint so the
    *  header row reads as a header rather than blending into the card. */
   headerClassName?: string;
+  /**
+   * Adds a width-less filler column before the actions column. With
+   * `fixedLayout` and every column pixel-sized, the filler absorbs the leftover
+   * width, so dragging a handle moves only that column's edge instead of making
+   * the browser re-solve a flexible neighbour (which reads as columns moving on
+   * both sides). Matches the shared DataTable's behaviour.
+   */
+  filler?: boolean;
 }
 
 const alignClass = (align: LineItemColumn<unknown>["align"]) =>
@@ -103,6 +111,7 @@ export function LineItemTable<T>({
   fixedLayout = false,
   resizeNamespace,
   headerClassName,
+  filler = false,
 }: LineItemTableProps<T>) {
   const textSize = size === "sm" ? "text-xs" : "text-table";
   const cellPad = "px-2 py-1";
@@ -197,6 +206,7 @@ export function LineItemTable<T>({
                 </TableHead>
               );
             })}
+            {filler && <TableHead className={cellPad} />}
             {actions && (
               <TableHead className={cn("w-10 text-right", cellPad)}>
                 {actionsHeader}
@@ -209,7 +219,7 @@ export function LineItemTable<T>({
             <TableRow>
               <TableCell
                 colSpan={
-                  columns.length + (selection ? 1 : 0) + (actions ? 1 : 0)
+                  columns.length + (selection ? 1 : 0) + (filler ? 1 : 0) + (actions ? 1 : 0)
                 }
                 className={cn(cellPad, "text-center text-muted-foreground")}
               >
@@ -274,6 +284,7 @@ export function LineItemTable<T>({
                       </TableCell>
                     );
                   })}
+                  {filler && <TableCell className={cellPad} />}
                   {actions && (
                     <TableCell
                       className={cn(cellPad, "w-10 text-right")}

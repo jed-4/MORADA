@@ -910,6 +910,53 @@ export default function Settings() {
       if (xeroStatus?.trackingCategory2Id) setTc2Id(xeroStatus.trackingCategory2Id);
     }, [xeroStatus]);
 
+    // Default account fallbacks. These used to live under Terms & Conditions,
+    // which is why nobody could find them — they belong with the connection
+    // whose pushes fail without them.
+    const { data: companySettings } = useQuery<{
+      clientInvoiceDefaultXeroAccount?: string | null;
+      billDefaultXeroAccount?: string | null;
+    }>({
+      queryKey: ["/api/company-settings"],
+    });
+
+    const { data: xeroAccounts = [] } = useQuery<Array<{ code: string; name: string; type: string; accountId: string }>>({
+      queryKey: ["/api/xero/accounts"],
+      enabled: !!xeroStatus?.connected,
+    });
+
+    // Revenue/Sales accounts for the client-invoice default (bills post to expense accounts).
+    const { data: xeroRevenueAccounts = [] } = useQuery<Array<{ code: string; name: string; type: string; accountId: string }>>({
+      queryKey: ["/api/xero/accounts?kind=revenue"],
+      enabled: !!xeroStatus?.connected,
+    });
+
+    const saveDefaultAccountMutation = useMutation({
+      mutationFn: async (accountCode: string | null) => {
+        return await apiRequest("/api/company-settings", "PATCH", { clientInvoiceDefaultXeroAccount: accountCode });
+      },
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: ["/api/company-settings"] });
+        toast({ title: "Default account saved" });
+      },
+      onError: () => {
+        toast({ title: "Failed to save default account", variant: "destructive" });
+      },
+    });
+
+    const saveBillDefaultAccountMutation = useMutation({
+      mutationFn: async (accountCode: string | null) => {
+        return await apiRequest("/api/company-settings", "PATCH", { billDefaultXeroAccount: accountCode });
+      },
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: ["/api/company-settings"] });
+        toast({ title: "Default bill account saved" });
+      },
+      onError: () => {
+        toast({ title: "Failed to save default bill account", variant: "destructive" });
+      },
+    });
+
     const connectXeroMutation = useMutation({
       mutationFn: async () => {
         return await apiRequest("/api/xero/connect", "GET");
@@ -1081,6 +1128,70 @@ export default function Settings() {
                 >
                   {saveTrackingSettingsMutation.isPending ? (<><Loader2 className="w-4 h-4 mr-2 animate-spin" />Saving...</>) : "Save Mapping"}
                 </Button>
+              </div>
+
+              <div className="border rounded-lg p-4 space-y-4">
+                <h4 className="font-medium text-sm">Default Accounts</h4>
+                <p className="text-xs text-muted-foreground">
+                  Used when a line has no account of its own. Without a client-invoice
+                  default, progress claims and variations have no account to post to and
+                  the push is rejected.
+                </p>
+
+                {!companySettings?.clientInvoiceDefaultXeroAccount && (
+                  <div
+                    className="flex items-start gap-2 rounded-md border border-status-warning/40 bg-status-warning-bg p-3"
+                    data-testid="alert-no-default-sales-account"
+                  >
+                    <AlertCircle className="h-4 w-4 text-status-warning mt-0.5 flex-shrink-0" />
+                    <p className="text-xs text-status-warning">
+                      No sales account set. Client invoices will fail to sync until you choose one below.
+                    </p>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium">Client Invoices (sales)</label>
+                    <SearchableSelect
+                      value={companySettings?.clientInvoiceDefaultXeroAccount || ""}
+                      onValueChange={(val) => saveDefaultAccountMutation.mutate(val || null)}
+                      disabled={saveDefaultAccountMutation.isPending}
+                      allowClear
+                      placeholder="Select account..."
+                      searchPlaceholder="Search accounts..."
+                      emptyMessage="No sales accounts found."
+                      triggerClassName="w-full"
+                      data-testid="select-default-xero-account"
+                      options={[...xeroRevenueAccounts]
+                        .sort((a, b) => (a.name || "").localeCompare(b.name || ""))
+                        .map((acc) => ({ value: acc.code, label: `${acc.code} — ${acc.name}` }))}
+                    />
+                    <p className="text-data text-muted-foreground">
+                      Override per line in the invoice's Xero Accounts panel
+                    </p>
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium">Bills (expense)</label>
+                    <SearchableSelect
+                      value={companySettings?.billDefaultXeroAccount || ""}
+                      onValueChange={(val) => saveBillDefaultAccountMutation.mutate(val || null)}
+                      disabled={saveBillDefaultAccountMutation.isPending}
+                      allowClear
+                      placeholder="Select account..."
+                      searchPlaceholder="Search accounts..."
+                      emptyMessage="No accounts found."
+                      triggerClassName="w-full"
+                      data-testid="select-bill-default-xero-account"
+                      options={[...xeroAccounts]
+                        .sort((a, b) => (a.name || "").localeCompare(b.name || ""))
+                        .map((acc) => ({ value: acc.code, label: `${acc.code} — ${acc.name}` }))}
+                    />
+                    <p className="text-data text-muted-foreground">
+                      Applies when the line and the supplier both have none
+                    </p>
+                  </div>
+                </div>
               </div>
 
               <p className="text-sm text-muted-foreground">
@@ -2762,43 +2873,8 @@ const DEFAULT_CLIENT_INVOICE_TERMS = "This payment claim is in accordance with y
 function TermsConditionsSection() {
   const { toast } = useToast();
 
-  const { data: companySettings } = useQuery<{ termsAndConditions?: string; termsTemplates?: Array<{ id: string; name: string; content: string; defaultFor: string[] }>; clientInvoiceDefaultXeroAccount?: string | null; billDefaultXeroAccount?: string | null }>({
+  const { data: companySettings } = useQuery<{ termsAndConditions?: string; termsTemplates?: Array<{ id: string; name: string; content: string; defaultFor: string[] }> }>({
     queryKey: ["/api/company-settings"],
-  });
-
-  const { data: xeroAccounts = [] } = useQuery<Array<{ code: string; name: string; type: string; accountId: string }>>({
-    queryKey: ["/api/xero/accounts"],
-  });
-
-  // Revenue/Sales accounts for the client-invoice default (bills use expense accounts above).
-  const { data: xeroRevenueAccounts = [] } = useQuery<Array<{ code: string; name: string; type: string; accountId: string }>>({
-    queryKey: ["/api/xero/accounts?kind=revenue"],
-  });
-
-  const saveDefaultAccountMutation = useMutation({
-    mutationFn: async (accountCode: string | null) => {
-      return await apiRequest("/api/company-settings", "PATCH", { clientInvoiceDefaultXeroAccount: accountCode });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/company-settings"] });
-      toast({ title: "Default account saved" });
-    },
-    onError: () => {
-      toast({ title: "Failed to save default account", variant: "destructive" });
-    },
-  });
-
-  const saveBillDefaultAccountMutation = useMutation({
-    mutationFn: async (accountCode: string | null) => {
-      return await apiRequest("/api/company-settings", "PATCH", { billDefaultXeroAccount: accountCode });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/company-settings"] });
-      toast({ title: "Default bill account saved" });
-    },
-    onError: () => {
-      toast({ title: "Failed to save default bill account", variant: "destructive" });
-    },
   });
 
   const saveTermsMutation = useMutation({
@@ -2965,65 +3041,6 @@ function TermsConditionsSection() {
           </Card>
         ))}
       </div>
-
-      {/* Xero Defaults */}
-      <Card className="border-2">
-        <CardContent className="p-4">
-          <div className="flex items-center justify-between gap-4 flex-wrap">
-            <div>
-              <h4 className="font-semibold text-sm">Default Xero Account (Client Invoices)</h4>
-              <p className="text-sm text-muted-foreground mt-0.5">Sales account used as a fallback for client-invoice lines with no account code when pushing to Xero</p>
-            </div>
-            {xeroRevenueAccounts.length > 0 ? (
-              <SearchableSelect
-                value={companySettings?.clientInvoiceDefaultXeroAccount || ""}
-                onValueChange={(val) => saveDefaultAccountMutation.mutate(val || null)}
-                disabled={saveDefaultAccountMutation.isPending}
-                allowClear
-                placeholder="Select account..."
-                searchPlaceholder="Search accounts..."
-                emptyMessage="No sales accounts found."
-                triggerClassName="w-64"
-                data-testid="select-default-xero-account"
-                options={[...xeroRevenueAccounts]
-                  .sort((a, b) => (a.name || "").localeCompare(b.name || ""))
-                  .map((acc) => ({ value: acc.code, label: `${acc.code} — ${acc.name}` }))}
-              />
-            ) : (
-              <p className="text-sm text-muted-foreground italic">Connect Xero in Integrations to enable this setting</p>
-            )}
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card className="border-2">
-        <CardContent className="p-4">
-          <div className="flex items-center justify-between gap-4 flex-wrap">
-            <div>
-              <h4 className="font-semibold text-sm">Default Xero Account (Bills)</h4>
-              <p className="text-sm text-muted-foreground mt-0.5">Used as a fallback when a bill line item has no account code and the supplier has no Xero default account set</p>
-            </div>
-            {xeroAccounts.length > 0 ? (
-              <SearchableSelect
-                value={companySettings?.billDefaultXeroAccount || ""}
-                onValueChange={(val) => saveBillDefaultAccountMutation.mutate(val || null)}
-                disabled={saveBillDefaultAccountMutation.isPending}
-                allowClear
-                placeholder="Select account..."
-                searchPlaceholder="Search accounts..."
-                emptyMessage="No accounts found."
-                triggerClassName="w-64"
-                data-testid="select-bill-default-xero-account"
-                options={[...xeroAccounts]
-                  .sort((a, b) => (a.name || "").localeCompare(b.name || ""))
-                  .map((acc) => ({ value: acc.code, label: `${acc.code} — ${acc.name}` }))}
-              />
-            ) : (
-              <p className="text-sm text-muted-foreground italic">Connect Xero in Integrations to enable this setting</p>
-            )}
-          </div>
-        </CardContent>
-      </Card>
 
       {/* Client Invoices T&C editor modal */}
       {editingClientInvoice && (

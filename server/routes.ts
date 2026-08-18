@@ -661,9 +661,31 @@ export async function pushBillToXeroInternal(
       companyDefaultAccountCode = settings?.billDefaultXeroAccount || undefined;
     } catch {}
 
+    // Which tax type a GST-free expense line should carry. Australian Xero orgs
+    // book these against "GST Free Expenses" (EXEMPTEXPENSES); "NONE" is a
+    // different thing (no tax at all, BAS-excluded) and many AU orgs do not
+    // have it active — in which case the pre-flight below rejects the push with
+    // "tax type NONE is not configured", which is what a GST-free bill looked
+    // like from the outside. Resolve against the org's real rates, preferring
+    // the GST-free expense rate and falling back the way it used to behave.
+    let gstFreeExpenseTaxType = "NONE";
+    try {
+      const rates = await xeroService.getTaxRates(connection.id);
+      const active = new Set(
+        (rates || [])
+          .filter((tr: any) => !tr.Status || tr.Status === "ACTIVE")
+          .map((tr: any) => tr.TaxType),
+      );
+      for (const candidate of ["EXEMPTEXPENSES", "NONE", "BASEXCLUDED"]) {
+        if (active.has(candidate)) { gstFreeExpenseTaxType = candidate; break; }
+      }
+    } catch {
+      // Rates unavailable — keep the previous behaviour rather than block.
+    }
+
     const xeroLineItems = lineItems.map((item: any) => {
       let taxType = "INPUT";
-      if (item.tax === "No GST" || item.tax === "NONE") taxType = "NONE";
+      if (item.tax === "No GST" || item.tax === "NONE") taxType = gstFreeExpenseTaxType;
 
       const tracking: any[] = [];
       if (item.costCodeId && tc1Id) {
@@ -702,7 +724,7 @@ export async function pushBillToXeroInternal(
       const issues: XeroValidationIssue[] = missingAcctIdx.map((i) => ({
         scope: "lineItem",
         lineIndex: i,
-        message: `Line ${i + 1}: missing AccountCode. Set an account on the line item, on the supplier (Xero default account), or set a company-wide default in Settings → Documents → Default Xero Account for Bills.`,
+        message: `Line ${i + 1}: missing AccountCode. Set an account on the line item, on the supplier (Xero default account), or set a company-wide default in Settings → Integrations → Xero.`,
       }));
       const msg = issues[0].message;
       await writeSyncStatus("failed", msg);
@@ -36966,18 +36988,45 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
         description: l.description,
         quantity: 1,
         unitAmount: l.amountExCents / 100,
-        taxType: l.taxable ? "OUTPUT" : "NONE",
+        taxType: (l as any).taxType || (l.taxable ? "OUTPUT" : "NONE"),
         taxAmount: l.gstCents / 100,
         accountCode: l.accountCode || fallbackAccountCode || undefined,
-        tracking: lineTracking.length > 0 ? lineTracking : undefined,
+        // A line's own tracking wins; otherwise it inherits the project's
+        // option, which is what every line used to get unconditionally.
+        tracking: (() => {
+          const own = (l as any).tracking as Array<{ categoryId: string; optionId: string }> | null | undefined;
+          if (own?.length) {
+            return own.map((t) => ({ TrackingCategoryID: t.categoryId, TrackingOptionID: t.optionId }));
+          }
+          return lineTracking.length > 0 ? lineTracking : undefined;
+        })(),
       }));
+
+      try {
+        const taxRates = await xeroService.getTaxRates(connection.id);
+        if (Array.isArray(taxRates) && taxRates.length > 0) {
+          const valid = new Set(
+            taxRates.filter((tr: any) => !tr.Status || tr.Status === "ACTIVE").map((tr: any) => tr.TaxType),
+          );
+          const bad = xeroLineItems.find((li) => li.taxType && !valid.has(li.taxType));
+          if (bad) {
+            return res.status(422).json({
+              error: "INVALID_TAX_TYPE",
+              message: `Tax rate "${bad.taxType}" is not configured on this Xero organisation.`,
+            });
+          }
+        }
+      } catch {
+        // If the rate list can't be fetched, let Xero be the judge rather than
+        // blocking a push that would have succeeded.
+      }
 
       // Clear, actionable pre-flight errors (short enough for a toast) instead of
       // letting Xero return a raw validation blob.
       if (xeroLineItems.some((li) => !li.accountCode)) {
         return res.status(422).json({
           error: "MISSING_ACCOUNT_CODE",
-          message: "Set a default Xero sales account in Settings → Company, or add an account code to each invoice line.",
+          message: "One or more lines have no Xero account. Set an account per line in the invoice's Xero Accounts panel, or a company default in Settings → Integrations → Xero.",
         });
       }
 
@@ -37119,7 +37168,7 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
       if (breakdown.some((l) => !l.accountCode && !fallbackAccountCode)) {
         return res.status(422).json({
           error: "MISSING_ACCOUNT_CODE",
-          message: "Set a default Xero sales account in Settings → Company, or add an account code to each invoice line.",
+          message: "One or more lines have no Xero account. Set an account per line in the invoice's Xero Accounts panel, or a company default in Settings → Integrations → Xero.",
         });
       }
 
@@ -37136,10 +37185,16 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
           Description: l.description,
           Quantity: 1,
           UnitAmount: l.amountExCents / 100,
-          TaxType: l.taxable ? "OUTPUT" : "NONE",
+          TaxType: (l as any).taxType || (l.taxable ? "OUTPUT" : "NONE"),
           TaxAmount: l.gstCents / 100,
           AccountCode: l.accountCode || fallbackAccountCode,
-          ...(lineTracking.length ? { Tracking: lineTracking } : {}),
+          ...(() => {
+            const own = (l as any).tracking as Array<{ categoryId: string; optionId: string }> | null | undefined;
+            if (own?.length) {
+              return { Tracking: own.map((t) => ({ TrackingCategoryID: t.categoryId, TrackingOptionID: t.optionId })) };
+            }
+            return lineTracking.length ? { Tracking: lineTracking } : {};
+          })(),
         })),
         LineAmountTypes: "Exclusive",
         Status: "AUTHORISED",
@@ -38330,6 +38385,34 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
   });
 
   // Xero: Fetch tracking categories from Xero org
+  // Sales-side tax rates for client invoices. Bills already validate their
+  // taxType against this list on push; exposing it lets the invoice editor
+  // offer the org's real rates instead of a hardcoded GST/No-GST pair.
+  app.get("/api/xero/tax-rates", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+
+      const connection = await storage.getXeroConnectionByCompanyId(companyId);
+      if (!connection) return res.status(400).json({ error: "Xero is not connected" });
+
+      const rates = await xeroService.getTaxRates(connection.id);
+      // Xero exposes both sides of the ledger on one endpoint; an ACCREC line
+      // can only carry a sales rate, so filter the expense ones out rather than
+      // letting someone pick a rate Xero will reject.
+      const salesish = (rates || []).filter(
+        (tr: any) =>
+          (!tr.Status || tr.Status === "ACTIVE") &&
+          !/EXPENSE|INPUT|CAPEX/i.test(tr.TaxType || ""),
+      );
+      res.json(salesish.map((tr: any) => ({ taxType: tr.TaxType, name: tr.Name })));
+    } catch (error: any) {
+      console.error("Error fetching Xero tax rates:", error);
+      res.status(500).json({ error: error?.message || "Failed to fetch tax rates" });
+    }
+  });
+
   app.get("/api/xero/tracking-categories", requireAuth, async (req, res) => {
     try {
       const user = req.user as any;

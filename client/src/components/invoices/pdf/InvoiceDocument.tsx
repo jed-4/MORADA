@@ -1,4 +1,4 @@
-import { Document, Page, Text, View } from "@react-pdf/renderer";
+import { Document, Page, Text, View, Link, Image } from "@react-pdf/renderer";
 import { format } from "date-fns";
 import { DocBrandedHeader } from "@/components/pdf/shared/DocBrandedHeader";
 import { DocProjectBar } from "@/components/pdf/shared/DocProjectBar";
@@ -40,6 +40,15 @@ interface InvoiceDocumentProps {
   paymentDetails?: string | null;
   termsAndConditions?: string | null;
   status?: string | null;
+  /** Files attached to the invoice. Listed as links; the ones flagged
+   *  includeInPdf and holding an image are also appended as full pages. */
+  attachments?: Array<{ name: string; url: string; type?: string; includeInPdf?: boolean }>;
+}
+
+function absoluteUrl(path: string): string {
+  if (/^https?:\/\//i.test(path)) return path;
+  const origin = typeof window !== "undefined" ? window.location.origin : "";
+  return `${origin}${path.startsWith("/") ? "" : "/"}${path}`;
 }
 
 function formatAUD(cents: number): string {
@@ -95,6 +104,7 @@ export function InvoiceDocument({
   logoUrl,
   paymentDetails,
   termsAndConditions,
+  attachments = [],
   status,
 }: InvoiceDocumentProps) {
   const isS2 = documentStyle === "style2";
@@ -514,6 +524,34 @@ export function InvoiceDocument({
               </Text>
             </View>
           ) : null}
+
+          {/* Attachments — listed with their link, so the client can open them
+              from the emailed PDF without needing an account. */}
+          {attachments.length > 0 ? (
+            <View style={{ marginBottom: 12 }}>
+              <Text
+                style={{
+                  fontSize: 7,
+                  fontFamily: "Helvetica-Bold",
+                  color: "#9ca3af",
+                  textTransform: "uppercase",
+                  letterSpacing: 0.5,
+                  marginBottom: 4,
+                }}
+              >
+                Attachments
+              </Text>
+              {attachments.map((a, i) => (
+                <Link
+                  key={`${a.url}-${i}`}
+                  src={absoluteUrl(a.url)}
+                  style={{ fontSize: 8, color: brandColor || "#1d4ed8", marginBottom: 2 }}
+                >
+                  {a.name}
+                </Link>
+              ))}
+            </View>
+          ) : null}
         </View>
 
         <DocFooter
@@ -522,6 +560,15 @@ export function InvoiceDocument({
           docStyle={documentStyle}
         />
       </Page>
+
+      {attachments
+        .filter((a) => a.includeInPdf && (a.type || "").startsWith("image/"))
+        .map((a, i) => (
+          <Page key={`att-${i}`} size="A4" style={{ padding: 24 }}>
+            <Text style={{ fontSize: 8, color: "#9ca3af", marginBottom: 8 }}>{a.name}</Text>
+            <Image src={absoluteUrl(a.url)} style={{ width: "100%", objectFit: "contain" }} />
+          </Page>
+        ))}
     </Document>
   );
 }
