@@ -2039,7 +2039,14 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
               const start = parseHHmm(ts.startTime);
               if (start === null) return;
               let end = parseHHmm(ts.endTime);
-              if (end === null) end = start + getNetHours(ts);
+              // Legacy entries saved before an end time was required: duration
+              // is NET of the break, but the block occupies wall-clock time, so
+              // the break has to be added back or the block renders short and
+              // stops meeting the hour gridlines. New entries always have an
+              // end time and take the branch above.
+              if (end === null) {
+                end = start + getNetHours(ts) + (parseFloat(ts.breakDuration || "0") || 0);
+              }
               if (end <= start) end += 24; // overnight (e.g. 22:00 → 06:00)
               const dk = format(parseISO(ts.date as unknown as string), "yyyy-MM-dd");
               if (end > 24) {
