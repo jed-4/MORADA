@@ -1950,6 +1950,37 @@ export default function ClientInvoiceDetail() {
         );
       },
     });
+    // One column per mapped Xero tracking category (Xero allows two per line).
+    // Rendered only when the connection actually has categories, so an org that
+    // doesn't use tracking keeps a narrower grid.
+    for (const cat of (xeroTrackingCategories ?? []).slice(0, 2)) {
+      cols.push({
+        key: `tracking-${cat.trackingCategoryId}`, header: cat.name, width: 128, truncate: false,
+        cell: (l) => (
+          <Select
+            value={lineXeroOverrides[l.xeroKey]?.tracking?.[cat.trackingCategoryId] || "__none__"}
+            onValueChange={(v) =>
+              setXeroByKey(l.xeroKey, {
+                tracking: {
+                  ...(lineXeroOverrides[l.xeroKey]?.tracking ?? {}),
+                  [cat.trackingCategoryId]: v === "__none__" ? "" : v,
+                },
+              })
+            }
+          >
+            <SelectTrigger className="h-7 text-table border-0 bg-transparent shadow-none focus:ring-1 focus:ring-ring px-1.5 rounded-sm w-full" data-testid={`select-tracking-${cat.trackingCategoryId}-${l.xeroKey}`}>
+              <SelectValue placeholder={`— ${cat.name} —`} />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__none__"><span className="text-muted-foreground">— Project default —</span></SelectItem>
+              {(cat.options ?? []).map((o) => (
+                <SelectItem key={o.trackingOptionId} value={o.trackingOptionId}>{o.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        ),
+      });
+    }
     cols.push({
       key: "account", header: "Account", width: 128, truncate: false,
       cell: (l) => {
@@ -2620,7 +2651,80 @@ export default function ClientInvoiceDetail() {
 
                 {/* Card 2 — Financials */}
                 <div className="rounded-lg border border-border bg-card overflow-hidden">
-                  {sectionHeader({ label: "Financials", variant: "card" })}
+                  {sectionHeader({
+                    label: "Financials",
+                    variant: "card",
+                    // The one thing the removed Xero panel did that a row can't:
+                    // set a field down every line at once. Tucked behind a
+                    // popover so it costs a single icon when unused.
+                    right: xeroStatus?.connected ? (
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <button
+                            type="button"
+                            className="h-6 px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1 text-muted-foreground"
+                            data-testid="button-xero-set-all"
+                          >
+                            <SiXero className="w-3 h-3" />
+                            Set all
+                          </button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-64 p-3 space-y-3" align="end">
+                          <p className="text-[9px] uppercase tracking-wide font-semibold text-muted-foreground">
+                            Apply to every line
+                          </p>
+                          <div className="space-y-1.5">
+                            <label className="text-[9px] uppercase tracking-wide font-semibold text-muted-foreground">Account</label>
+                            <SearchableSelect
+                              value=""
+                              onValueChange={(v) => v && setXeroForAll({ account: v })}
+                              placeholder="Select account…"
+                              searchPlaceholder="Search accounts..."
+                              emptyMessage="No accounts found."
+                              triggerClassName="w-full h-7 text-[11px]"
+                              data-testid="select-all-lines-account"
+                              options={[...xeroAccounts]
+                                .sort((a, b) => (a.name || "").localeCompare(b.name || ""))
+                                .map((acc) => ({ value: acc.code, label: `${acc.code} — ${acc.name}` }))}
+                            />
+                          </div>
+                          <div className="space-y-1.5">
+                            <label className="text-[9px] uppercase tracking-wide font-semibold text-muted-foreground">Tax</label>
+                            <Select onValueChange={(v) => setXeroForAll({ taxType: v })}>
+                              <SelectTrigger className="w-full h-7 text-[11px]" data-testid="select-all-lines-tax">
+                                <SelectValue placeholder="Select rate…" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {(xeroTaxRates.length > 0
+                                  ? xeroTaxRates
+                                  : [{ taxType: "OUTPUT", name: "GST on Income" }, { taxType: "NONE", name: "No GST" }]
+                                ).map((r) => (
+                                  <SelectItem key={r.taxType} value={r.taxType}>{r.name}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          {(xeroTrackingCategories ?? []).slice(0, 2).map((cat) => (
+                            <div key={cat.trackingCategoryId} className="space-y-1.5">
+                              <label className="text-[9px] uppercase tracking-wide font-semibold text-muted-foreground">{cat.name}</label>
+                              <Select
+                                onValueChange={(v) => setXeroForAll({ tracking: { [cat.trackingCategoryId]: v } })}
+                              >
+                                <SelectTrigger className="w-full h-7 text-[11px]" data-testid={`select-all-tracking-${cat.trackingCategoryId}`}>
+                                  <SelectValue placeholder={`Select ${cat.name.toLowerCase()}…`} />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {(cat.options ?? []).map((o) => (
+                                    <SelectItem key={o.trackingOptionId} value={o.trackingOptionId}>{o.name}</SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                          ))}
+                        </PopoverContent>
+                      </Popover>
+                    ) : undefined,
+                  })}
 
                 {invoiceType === "progress_payments" && (
                   <>
@@ -3579,142 +3683,6 @@ export default function ClientInvoiceDetail() {
                   </div>{/* end custom lines content */}
                 </div>{/* end custom lines sub-section */}
 
-              {/* ── Xero posting ──
-                  Every line needs an account before Xero will accept the
-                  invoice, and only custom lines can carry one on the line
-                  itself — so without this panel a progress-claim invoice
-                  depends entirely on the company default. GST and tracking sit
-                  here too: this is the last look before the money leaves.
-                  Blank account = company default; blank tracking = the
-                  project's own option. */}
-              {xeroStatus?.connected && (() => {
-                const lines = buildInvoiceLineBreakdown();
-                if (lines.length === 0) return null;
-                const defaultAccount = companySettings?.clientInvoiceDefaultXeroAccount || null;
-                const unresolved = lines.filter((l) => !l.accountCode && !defaultAccount).length;
-                const accountOptions = [...xeroAccounts]
-                  .sort((a, b) => (a.name || "").localeCompare(b.name || ""))
-                  .map((acc) => ({ value: acc.code, label: `${acc.code} — ${acc.name}` }));
-                // Xero accepts at most two tracking categories per line.
-                const cats = (xeroTrackingCategories ?? []).slice(0, 2);
-
-                const accountCell = (value: string | null, onPick: (v: string | null) => void, testId: string) =>
-                  accountOptions.length > 0 ? (
-                    <SearchableSelect
-                      value={value || ""}
-                      onValueChange={(v) => onPick(v || null)}
-                      allowClear
-                      placeholder={defaultAccount ? `Default (${defaultAccount})` : "Account…"}
-                      searchPlaceholder="Search accounts..."
-                      emptyMessage="No accounts found."
-                      triggerClassName={cn("w-44 h-7 text-[11px]", !value && !defaultAccount && "border-status-warning/60")}
-                      data-testid={testId}
-                      options={accountOptions}
-                    />
-                  ) : (
-                    <input
-                      value={value || ""}
-                      onChange={(e) => onPick(e.target.value || null)}
-                      placeholder="Account"
-                      className="h-7 w-44 px-2 text-[11px] border rounded-md bg-transparent focus:outline-none focus:ring-1 focus:ring-ring"
-                      data-testid={testId}
-                    />
-                  );
-
-                const trackingCell = (
-                  cat: any,
-                  value: string,
-                  onPick: (v: string) => void,
-                  testId: string,
-                ) => (
-                  <SearchableSelect
-                    value={value}
-                    onValueChange={onPick}
-                    allowClear
-                    placeholder={cat.name}
-                    searchPlaceholder={`Search ${cat.name}...`}
-                    emptyMessage="No options found."
-                    triggerClassName="w-36 h-7 text-[11px]"
-                    data-testid={testId}
-                    options={(cat.options ?? []).map((o: any) => ({ value: o.trackingOptionId, label: o.name }))}
-                  />
-                );
-
-                return (
-                  <div data-testid="xero-posting-panel">
-                    {sectionHeader({
-                      label: "Xero Posting",
-                      icon: <SiXero className="w-3 h-3" />,
-                      right:
-                        unresolved > 0 ? (
-                          <span className="text-xs text-status-warning flex items-center gap-1" data-testid="text-unresolved-accounts">
-                            <AlertCircle className="w-3 h-3" />
-                            {unresolved} line{unresolved === 1 ? "" : "s"} will fail
-                          </span>
-                        ) : undefined,
-                    })}
-                    <div className="px-3 py-2 overflow-x-auto">
-                      {/* Set-all row — applies one field down every line. */}
-                      <div className="flex items-center gap-2 pb-2 mb-1 border-b border-border/50">
-                        <span className="text-[9px] uppercase tracking-wide font-semibold text-muted-foreground w-40 flex-shrink-0">
-                          Set all
-                        </span>
-                        {accountCell(null, (v) => setXeroForAll({ account: v }), "select-all-lines-account")}
-                        <div className="flex items-center rounded-md border border-input overflow-hidden h-7 flex-shrink-0">
-                          <button type="button" onClick={() => setXeroForAll({ taxable: true })}
-                            className="px-2 h-full text-[11px] text-muted-foreground hover:text-foreground" data-testid="button-all-gst">
-                            GST
-                          </button>
-                          <div className="w-px h-full bg-border" />
-                          <button type="button" onClick={() => setXeroForAll({ taxable: false })}
-                            className="px-2 h-full text-[11px] text-muted-foreground hover:text-foreground" data-testid="button-all-nogst">
-                            No GST
-                          </button>
-                        </div>
-                        {cats.map((cat: any) =>
-                          trackingCell(cat, "", (v) => setXeroForAll({ tracking: { [cat.trackingCategoryId]: v } }),
-                            `select-all-tracking-${cat.trackingCategoryId}`),
-                        )}
-                      </div>
-
-                      {lines.map((line) => {
-                        const key = line.accountKey!;
-                        const own = lineXeroOverrides[key] ?? {};
-                        return (
-                          <div key={key} className="flex items-center gap-2 py-0.5">
-                            <span className="truncate w-40 flex-shrink-0 text-[11px] text-muted-foreground" title={line.description}>
-                              {line.description}
-                            </span>
-                            {accountCell(line.accountCode ?? null, (v) => setXeroByKey(key, { account: v }), `select-line-account-${key}`)}
-                            <button
-                              type="button"
-                              onClick={() => setXeroByKey(key, { taxable: !line.taxable })}
-                              className={cn(
-                                "h-7 px-2 text-[11px] rounded-md border flex-shrink-0 w-20",
-                                line.taxable ? "border-input text-foreground" : "border-input text-muted-foreground",
-                              )}
-                              data-testid={`button-line-gst-${key}`}
-                            >
-                              {line.taxable ? "GST 10%" : "No GST"}
-                            </button>
-                            {cats.map((cat: any) =>
-                              trackingCell(
-                                cat,
-                                own.tracking?.[cat.trackingCategoryId] ?? "",
-                                (v) => setXeroByKey(key, { tracking: { ...(own.tracking ?? {}), [cat.trackingCategoryId]: v } }),
-                                `select-line-tracking-${cat.trackingCategoryId}-${key}`,
-                              ),
-                            )}
-                            <span className="ml-auto tabular-nums text-[11px] text-muted-foreground w-24 text-right flex-shrink-0">
-                              {formatCurrency(line.amountIncCents / 100)}
-                            </span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                );
-              })()}
 
               {/* ── Invoice Summary ── */}
               <div data-testid="summary-panel">
