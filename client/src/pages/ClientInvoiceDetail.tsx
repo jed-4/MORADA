@@ -2292,12 +2292,11 @@ export default function ClientInvoiceDetail() {
                           so the option is only offered before it is approved. */}
                       <DropdownMenuItem
                         onClick={() => setDeleteConfirmOpen(true)}
-                        disabled={!!invoice?.xeroInvoiceId}
                         className="text-destructive focus:text-destructive"
                         data-testid="menu-delete-invoice"
                       >
                         <Trash2 className="w-3.5 h-3.5 mr-2" />
-                        {invoice?.xeroInvoiceId ? "Delete (in Xero — void first)" : "Delete"}
+                        {invoice?.xeroInvoiceId ? "Void & delete" : "Delete"}
                       </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
@@ -4904,26 +4903,73 @@ export default function ClientInvoiceDetail() {
       {/* Delete confirmation — only reachable before the invoice exists in Xero. */}
       <Dialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
         <DialogContent data-testid="dialog-delete-invoice">
-          <DialogHeader>
-            <DialogTitle>Delete this invoice?</DialogTitle>
-          </DialogHeader>
-          <p className="text-sm text-muted-foreground">
-            {invoice?.name || "This invoice"} will be permanently removed, along with its
-            line items and any recorded payments. This cannot be undone.
-          </p>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteConfirmOpen(false)}>
-              Cancel
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={() => { setDeleteConfirmOpen(false); deleteInvoiceMutation.mutate(); }}
-              disabled={deleteInvoiceMutation.isPending}
-              data-testid="button-confirm-delete-invoice"
-            >
-              Delete invoice
-            </Button>
-          </DialogFooter>
+          {(() => {
+            const inXero = !!invoice?.xeroInvoiceId;
+            const hasPayments = (invoice?.paidAmount ?? 0) > 0;
+            const label = invoice?.invoiceNumber || invoice?.name || "This invoice";
+            return (
+              <>
+                <DialogHeader>
+                  <DialogTitle>
+                    {hasPayments
+                      ? "This invoice can't be deleted"
+                      : inXero
+                      ? "Void in Xero and delete?"
+                      : "Delete this invoice?"}
+                  </DialogTitle>
+                </DialogHeader>
+
+                {hasPayments ? (
+                  <p className="text-sm text-muted-foreground">
+                    {label} has {formatCurrency((invoice?.paidAmount ?? 0) / 100)} in payments
+                    recorded against it. Xero won't void an invoice that has been paid, and
+                    withdrawing money already received is a credit note, not a deletion.
+                    Raise a credit note in Xero instead.
+                  </p>
+                ) : inXero ? (
+                  <div className="space-y-2 text-sm text-muted-foreground">
+                    <p>{label} exists in Xero, so two things will happen:</p>
+                    <ul className="list-disc pl-5 space-y-1">
+                      <li>
+                        It will be <strong>voided in Xero</strong>. Xero keeps the voided invoice
+                        as a record, but <strong>voiding cannot be undone</strong> — the number
+                        can't be reused and the invoice can't be reinstated.
+                      </li>
+                      <li>
+                        It will then be <strong>deleted from Morada</strong>, along with its line
+                        items and claim links.
+                      </li>
+                    </ul>
+                    <p>
+                      If Xero refuses the void, nothing is deleted here either — you'll get the
+                      reason and the invoice stays as it is.
+                    </p>
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    {label} has never been sent to Xero. It will be permanently removed from
+                    Morada, along with its line items and claim links. This can't be undone.
+                  </p>
+                )}
+
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setDeleteConfirmOpen(false)}>
+                    {hasPayments ? "Close" : "Cancel"}
+                  </Button>
+                  {!hasPayments && (
+                    <Button
+                      variant="destructive"
+                      onClick={() => { setDeleteConfirmOpen(false); deleteInvoiceMutation.mutate(); }}
+                      disabled={deleteInvoiceMutation.isPending}
+                      data-testid="button-confirm-delete-invoice"
+                    >
+                      {inXero ? "Void in Xero and delete" : "Delete invoice"}
+                    </Button>
+                  )}
+                </DialogFooter>
+              </>
+            );
+          })()}
         </DialogContent>
       </Dialog>
 
