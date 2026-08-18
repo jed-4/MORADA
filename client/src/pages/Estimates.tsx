@@ -185,15 +185,6 @@ export default function Estimates() {
     return estimateStatusesData?.options || [];
   }, [estimateStatusesData]);
 
-  // Calculate status counts
-  const statusCounts = useMemo(() => {
-    const counts: Record<string, number> = {};
-    estimates.forEach(estimate => {
-      counts[estimate.status] = (counts[estimate.status] || 0) + 1;
-    });
-    return counts;
-  }, [estimates]);
-
   // Drag and drop sensors - require 8px movement before drag starts to prevent accidental drags on click
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -879,7 +870,6 @@ export default function Estimates() {
                           key={status.key}
                           status={status}
                           estimates={columnEstimates}
-                          count={statusCounts[status.key] || 0}
                           projects={projects}
                           cardWidth={cardWidth}
                           isHighlighted={hoveredColumnId === status.key}
@@ -907,10 +897,9 @@ export default function Estimates() {
 }
 
 // Kanban Column Component
-function KanbanColumn({ status, estimates, count, projects, cardWidth, isHighlighted }: {
+function KanbanColumn({ status, estimates, projects, cardWidth, isHighlighted }: {
   status: FieldOption;
   estimates: Estimate[];
-  count: number;
   projects: Project[];
   cardWidth: CardWidth;
   isHighlighted: boolean;
@@ -918,20 +907,6 @@ function KanbanColumn({ status, estimates, count, projects, cardWidth, isHighlig
   const { setNodeRef } = useDroppable({
     id: status.key,
   });
-
-  // Mirrors StatusBadge: a 6-digit hex gets the translucent-tint treatment,
-  // anything else falls back to the theme's neutral chrome.
-  const isHex6 = /^#[0-9a-fA-F]{6}$/.test(status.color || "");
-  const accentStyle = isHex6
-    ? { backgroundColor: status.color as string }
-    : { backgroundColor: "hsl(var(--border))" };
-  const countStyle = isHex6
-    ? {
-        backgroundColor: `${status.color}20`,
-        color: status.color as string,
-        borderColor: `${status.color}40`,
-      }
-    : undefined;
 
   const getWidthClass = () => {
     switch (cardWidth) {
@@ -949,25 +924,16 @@ function KanbanColumn({ status, estimates, count, projects, cardWidth, isHighlig
           isHighlighted ? 'border-2 border-primary border-dashed bg-primary/10' : 'border-border/50'
         }`}
       >
-        {/* Accent strip in the status's own colour (Field Settings), the same
-            treatment the Defects board uses. Cards no longer carry a status
-            chip, so the column itself has to say what the status is. */}
-        <div
-          className="h-1 rounded-t-[11px]"
-          style={accentStyle}
-          data-testid={`kanban-column-accent-${status.key}`}
-        />
+        {/* The status name IS the header, as a chip in its own colour — the
+            same pill the rest of the app uses for a status. */}
         <div className="px-3 py-2 border-b border-border/50 bg-muted/30">
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-bold text-foreground">{status.name}</h3>
-            <Badge
-              variant="outline"
-              className="text-xs px-2 py-0.5 h-5 rounded-full no-default-hover-elevate font-semibold"
-              style={countStyle}
-            >
-              {count}
-            </Badge>
-          </div>
+          <StatusBadge
+            status={status.key}
+            label={status.name}
+            color={status.color || undefined}
+            className="h-[22px] px-2.5 text-xs"
+            data-testid={`kanban-column-status-${status.key}`}
+          />
         </div>
 
         <div
