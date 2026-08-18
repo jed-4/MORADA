@@ -80,6 +80,8 @@ import { logActivity } from "@/lib/activityLogger";
 import { EmptyState } from "@/components/EmptyState";
 
 type ViewMode = 'list' | 'kanban';
+/** Where a "back" from an estimate opened on this page should land. */
+const ALL_ESTIMATES_PATH = "/estimates";
 type CardWidth = 'compact' | 'comfortable' | 'spacious';
 const VIEW_KEY = "estimates-view";
 const CARD_WIDTH_KEY = "estimates-card-width";
@@ -484,8 +486,9 @@ export default function Estimates() {
 
   const handleRowClick = (estimate: Estimate) => {
     // Open the estimate directly (matches the kanban card) — no redundant hop
-    // through the per-project estimate list.
-    setLocation(`/projects/${estimate.projectId}/estimates/${estimate.id}`);
+    // through the per-project estimate list. `from` tells the estimate's back
+    // button to return here rather than to the project's own estimate list.
+    setLocation(`/projects/${estimate.projectId}/estimates/${estimate.id}?from=${encodeURIComponent(ALL_ESTIMATES_PATH)}`);
   };
 
 
@@ -741,7 +744,6 @@ export default function Estimates() {
                           status={status}
                           estimates={columnEstimates}
                           count={statusCounts[status.key] || 0}
-                          estimateStatuses={estimateStatuses}
                           projects={projects}
                           cardWidth={cardWidth}
                           isHighlighted={hoveredColumnId === status.key}
@@ -769,11 +771,10 @@ export default function Estimates() {
 }
 
 // Kanban Column Component
-function KanbanColumn({ status, estimates, count, estimateStatuses, projects, cardWidth, isHighlighted }: { 
-  status: FieldOption; 
-  estimates: Estimate[]; 
+function KanbanColumn({ status, estimates, count, projects, cardWidth, isHighlighted }: {
+  status: FieldOption;
+  estimates: Estimate[];
   count: number;
-  estimateStatuses: FieldOption[];
   projects: Project[];
   cardWidth: CardWidth;
   isHighlighted: boolean;
@@ -781,6 +782,20 @@ function KanbanColumn({ status, estimates, count, estimateStatuses, projects, ca
   const { setNodeRef } = useDroppable({
     id: status.key,
   });
+
+  // Mirrors StatusBadge: a 6-digit hex gets the translucent-tint treatment,
+  // anything else falls back to the theme's neutral chrome.
+  const isHex6 = /^#[0-9a-fA-F]{6}$/.test(status.color || "");
+  const accentStyle = isHex6
+    ? { backgroundColor: status.color as string }
+    : { backgroundColor: "hsl(var(--border))" };
+  const countStyle = isHex6
+    ? {
+        backgroundColor: `${status.color}20`,
+        color: status.color as string,
+        borderColor: `${status.color}40`,
+      }
+    : undefined;
 
   const getWidthClass = () => {
     switch (cardWidth) {
@@ -798,10 +813,22 @@ function KanbanColumn({ status, estimates, count, estimateStatuses, projects, ca
           isHighlighted ? 'border-2 border-primary border-dashed bg-primary/10' : 'border-border/50'
         }`}
       >
+        {/* Accent strip in the status's own colour (Field Settings), the same
+            treatment the Defects board uses. Cards no longer carry a status
+            chip, so the column itself has to say what the status is. */}
+        <div
+          className="h-1 rounded-t-[11px]"
+          style={accentStyle}
+          data-testid={`kanban-column-accent-${status.key}`}
+        />
         <div className="px-3 py-2 border-b border-border/50 bg-muted/30">
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-bold text-foreground">{status.name}</h3>
-            <Badge variant="secondary" className="text-xs px-2 py-0.5 h-5 rounded-full bg-primary/10 text-primary border-primary/20 no-default-hover-elevate font-semibold">
+            <Badge
+              variant="outline"
+              className="text-xs px-2 py-0.5 h-5 rounded-full no-default-hover-elevate font-semibold"
+              style={countStyle}
+            >
               {count}
             </Badge>
           </div>
@@ -813,10 +840,9 @@ function KanbanColumn({ status, estimates, count, estimateStatuses, projects, ca
         >
           <SortableContext id={status.key} items={estimates.map(e => e.id)} strategy={verticalListSortingStrategy}>
             {estimates.map(estimate => (
-              <SortableEstimateCard 
-                key={estimate.id} 
+              <SortableEstimateCard
+                key={estimate.id}
                 estimate={estimate}
-                estimateStatuses={estimateStatuses}
                 projects={projects}
               />
             ))}
@@ -828,9 +854,8 @@ function KanbanColumn({ status, estimates, count, estimateStatuses, projects, ca
 }
 
 // Sortable Estimate Card Component for Kanban
-function SortableEstimateCard({ estimate, estimateStatuses, projects }: { 
+function SortableEstimateCard({ estimate, projects }: {
   estimate: Estimate;
-  estimateStatuses: FieldOption[];
   projects: Project[];
 }) {
   const [, setLocation] = useLocation();
@@ -861,7 +886,7 @@ function SortableEstimateCard({ estimate, estimateStatuses, projects }: {
       e.preventDefault();
       return;
     }
-    setLocation(`/estimates/${estimate.id}`);
+    setLocation(`/projects/${estimate.projectId}/estimates/${estimate.id}?from=${encodeURIComponent(ALL_ESTIMATES_PATH)}`);
   };
 
   const getProjectName = (projectId: string) => {
@@ -880,8 +905,6 @@ function SortableEstimateCard({ estimate, estimateStatuses, projects }: {
       maximumFractionDigits: 2
     }).format(amount);
   };
-
-  const getStatusBadge = (estimate: Estimate) => renderEstimateStatusBadge(estimate, estimateStatuses);
 
   return (
     <div
@@ -908,15 +931,19 @@ function SortableEstimateCard({ estimate, estimateStatuses, projects }: {
         <p className="text-data text-muted-foreground mb-2 line-clamp-1">
           {estimate.name}
         </p>
-        {/* wrap + min-w-0: status pills are whitespace-nowrap, so on a compact
-            card a long status name used to push out past the card edge. */}
-        <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 min-w-0">
+        {/* No status chip: the column the card sits in already says the
+            status. Lock state isn't implied by the column, so it stays. */}
+        <div className="flex items-center gap-1.5 min-w-0">
           <span className="text-xs font-semibold">
             {summary ? formatCurrency(summary.total) : 'Loading...'}
           </span>
-          <span className="min-w-0 max-w-full overflow-hidden">
-            {getStatusBadge(estimate)}
-          </span>
+          {estimate.isLocked && (
+            <Lock
+              className="w-3 h-3 text-muted-foreground flex-shrink-0"
+              aria-label="Locked"
+              data-testid={`kanban-card-locked-${estimate.id}`}
+            />
+          )}
         </div>
       </div>
     </div>

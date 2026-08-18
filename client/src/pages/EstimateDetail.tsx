@@ -78,7 +78,9 @@ import { EstimateGroupCard } from "@/components/estimates/EstimateGroupCard";
 import { useUndoStack } from "@/hooks/useUndoStack";
 import { CreateRFQDialog } from "@/components/rfq/CreateRFQDialog";
 import { CreatePOFromEstimateDialog } from "@/components/estimates/CreatePOFromEstimateDialog";
-import { Package, Undo2, ChevronsUpDown, Search, ShoppingCart, Pencil, X, SlidersHorizontal, LayoutTemplate } from "lucide-react";
+import { Package, Undo2, ChevronsUpDown, Search, ShoppingCart, Pencil, X, SlidersHorizontal, LayoutTemplate, Briefcase } from "lucide-react";
+import { EmptyState } from "@/components/EmptyState";
+import { ProjectIcon } from "@/components/ProjectIcon";
 import {
   DropdownMenuSub,
   DropdownMenuSubContent,
@@ -499,6 +501,14 @@ export default function EstimateDetail() {
   const urlParams = new URLSearchParams(window.location.search);
   const projectIdFromQuery = urlParams.get('projectId');
   const effectiveProjectId = projectIdFromParams || projectIdFromQuery;
+
+  // Where "back" should go. Pages that can open an estimate from outside the
+  // project (the All Projects estimates list) pass ?from=<path>; without it we
+  // fall back to the project's own estimate list. Only same-origin absolute
+  // paths are honoured, so the param can't be used to bounce elsewhere.
+  const fromParam = urlParams.get('from');
+  const backTarget =
+    fromParam && fromParam.startsWith('/') && !fromParam.startsWith('//') ? fromParam : null;
   
   // Inline editing state
   const [isEditingName, setIsEditingName] = useState(false);
@@ -1886,50 +1896,97 @@ export default function EstimateDetail() {
   // For new estimates without project ID, show project selection
   if (isNewEstimate && !effectiveProjectId) {
     return (
-      <div className="flex h-full flex-col">
-        <div className="border-b border-border p-4">
-          <div className="flex items-center space-x-4">
-            <Button variant="ghost" size="icon" onClick={() => setLocation("/estimates")} aria-label="Back to Estimates">
-              <ArrowLeft className="w-4 h-4" />
-            </Button>
-            <h1 className="text-2xl font-semibold">New Estimate</h1>
-          </div>
+      <div className="flex h-full flex-col" data-testid="new-estimate-project-picker">
+        {/* Same breadcrumb row every other page uses, instead of the old
+            full-bleed bar with a text-2xl heading. */}
+        <div className="flex items-center gap-1 px-4 pt-3 pb-1 flex-shrink-0">
+          <span className="text-xs text-muted-foreground">All Projects</span>
+          <ChevronRight className="h-3 w-3 text-muted-foreground/50 flex-shrink-0" />
+          <button
+            className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+            onClick={() => setLocation("/estimates")}
+            data-testid="breadcrumb-estimates"
+          >
+            Estimates
+          </button>
+          <ChevronRight className="h-3 w-3 text-muted-foreground/50 flex-shrink-0" />
+          <span className="text-xs font-medium text-foreground" data-testid="text-page-title">New Estimate</span>
         </div>
-        
-        <div className="flex-1 p-6">
-          <div className="max-w-md mx-auto">
-            <div className="space-y-6">
-              <div>
-                <h2 className="text-lg font-medium mb-2">Select Project</h2>
-                <p className="text-sm text-muted-foreground mb-4">
-                  Choose which project to create the estimate for.
-                </p>
+
+        <div className="h-9 bg-background flex items-center px-2 gap-2 flex-shrink-0">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-6 w-6 flex-shrink-0"
+            onClick={() => setLocation("/estimates")}
+            aria-label="Back to Estimates"
+            data-testid="button-back-to-estimates"
+          >
+            <ArrowLeft className="w-3 h-3" />
+          </Button>
+          <h2 className="text-sm font-semibold">Which project is this estimate for?</h2>
+        </div>
+
+        <div className="flex-1 overflow-auto p-2">
+          <div className="max-w-2xl mx-auto mt-2">
+            {projectsLoading ? (
+              <div className="space-y-2" data-testid="project-picker-loading">
+                {[0, 1, 2].map((i) => (
+                  <div key={i} className="rounded-lg border border-border bg-card p-3 flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-md bg-muted animate-pulse flex-shrink-0" />
+                    <div className="flex-1 space-y-1.5">
+                      <div className="h-3 bg-muted rounded animate-pulse w-1/3" />
+                      <div className="h-2.5 bg-muted rounded animate-pulse w-2/3" />
+                    </div>
+                  </div>
+                ))}
               </div>
-              
-              <div className="space-y-3">
-                {projectsLoading ? (
-                  <div className="text-center py-4">
-                    <div className="text-muted-foreground">Loading projects...</div>
-                  </div>
-                ) : projects.length === 0 ? (
-                  <div className="text-center py-4">
-                    <div className="text-muted-foreground">No projects available</div>
-                  </div>
-                ) : (
-                  projects.map((project) => (
-                    <Card 
-                      key={project.id}
-                      className="hover-elevate cursor-pointer p-4"
-                      onClick={() => setLocation(`/estimates/new?projectId=${project.id}`)}
-                      data-testid={`button-select-project-${project.id}`}
+            ) : projects.length === 0 ? (
+              <EmptyState
+                icon={Briefcase}
+                title="No projects yet"
+                description="An estimate belongs to a project, so create one first."
+                action={{
+                  label: "Create a project",
+                  onClick: () => setLocation("/projects"),
+                  icon: Plus,
+                  "data-testid": "button-create-first-project",
+                }}
+                variant="card"
+                className="mt-6"
+              />
+            ) : (
+              <div className="space-y-1.5">
+                {projects.map((project) => (
+                  <Card
+                    key={project.id}
+                    className="hover-elevate cursor-pointer p-3 flex items-center gap-3"
+                    onClick={() => setLocation(`/estimates/new?projectId=${project.id}`)}
+                    data-testid={`button-select-project-${project.id}`}
+                  >
+                    <div
+                      className="w-8 h-8 rounded-md flex items-center justify-center flex-shrink-0"
+                      style={{ backgroundColor: `${project.color || "#3b82f6"}1A` }}
                     >
-                      <div className="font-medium">{project.name}</div>
-                      <div className="text-sm text-muted-foreground">{project.description || 'No description'}</div>
-                    </Card>
-                  ))
-                )}
+                      <ProjectIcon
+                        icon={project.icon || "Briefcase"}
+                        color={project.color || "#3b82f6"}
+                        className="w-4 h-4"
+                      />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="text-xs font-medium truncate">{project.name}</div>
+                      {project.description ? (
+                        <div className="text-data text-muted-foreground line-clamp-1">
+                          {project.description}
+                        </div>
+                      ) : null}
+                    </div>
+                    <ChevronRight className="w-3.5 h-3.5 text-muted-foreground/50 flex-shrink-0" />
+                  </Card>
+                ))}
               </div>
-            </div>
+            )}
           </div>
         </div>
       </div>
@@ -5360,7 +5417,7 @@ export default function EstimateDetail() {
             variant="ghost" 
             size="icon" 
             className="h-6 w-6 flex-shrink-0"
-            onClick={() => setLocation(`/projects/${project?.id}/estimates`)} 
+            onClick={() => setLocation(backTarget ?? `/projects/${project?.id}/estimates`)}
             data-testid="button-back-to-estimates" 
             aria-label="Back to Estimates"
           >
