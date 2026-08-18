@@ -18,6 +18,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/use-auth";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import type { PriceList, Contact } from "@shared/schema";
 
@@ -60,8 +61,13 @@ interface Props {
   list: PriceList | null;
 }
 
+/** Sentinel for "this list is ours, not an outside supplier's". */
+const OWN_BUSINESS = "__business__";
+
 export function PriceListFormModal({ open, onOpenChange, list }: Props) {
   const { toast } = useToast();
+  const { user } = useAuth();
+  const businessName = (user as any)?.companyNickname || "Our Business";
   const isEditing = !!list;
 
   const form = useForm<FormValues>({
@@ -102,8 +108,8 @@ export function PriceListFormModal({ open, onOpenChange, list }: Props) {
       const payload = {
         name: values.name.trim(),
         kind: values.kind,
-        // Only a supplier list is bound to a contact.
-        supplierId: values.kind === "supplier" ? values.supplierId : null,
+        // null = the business's own list (or simply unassigned).
+        supplierId: values.supplierId,
         description: values.description || null,
         effectiveFrom: values.effectiveFrom || null,
         effectiveTo: values.effectiveTo || null,
@@ -193,8 +199,7 @@ export function PriceListFormModal({ open, onOpenChange, list }: Props) {
               name="name"
               render={({ field }) => (
                 <FormItem>
-                  {/* A labour rate card has no supplier, so the label follows the type. */}
-                  <FormLabel>{kind === "supplier" ? "Supplier name *" : "List name *"}</FormLabel>
+                  <FormLabel>Price List Name *</FormLabel>
                   <FormControl>
                     <Input data-testid="input-list-name" {...field} />
                   </FormControl>
@@ -203,35 +208,35 @@ export function PriceListFormModal({ open, onOpenChange, list }: Props) {
               )}
             />
 
-            {kind === "supplier" && (
-              <FormField
-                control={form.control}
-                name="supplierId"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Linked supplier</FormLabel>
-                    <Select
-                      value={field.value ?? "__none__"}
-                      onValueChange={(v) => field.onChange(v === "__none__" ? null : v)}
-                    >
-                      <FormControl>
-                        <SelectTrigger data-testid="select-list-supplier">
-                          <SelectValue placeholder="Select a supplier" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        <SelectItem value="__none__">No supplier</SelectItem>
-                        {suppliers.map((s) => (
-                          <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FormDescription>Links this book to a contact for bills and orders.</FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            )}
+            <FormField
+              control={form.control}
+              name="supplierId"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Supplier</FormLabel>
+                  <Select
+                    value={field.value ?? (kind === "supplier" ? "__none__" : OWN_BUSINESS)}
+                    onValueChange={(v) => field.onChange(v === "__none__" || v === OWN_BUSINESS ? null : v)}
+                  >
+                    <FormControl>
+                      <SelectTrigger data-testid="select-list-supplier">
+                        <SelectValue placeholder="Select a supplier" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      {/* Our own lists (design items, labour rates) belong to the business. */}
+                      <SelectItem value={OWN_BUSINESS}>{businessName}</SelectItem>
+                      <SelectItem value="__none__">No supplier</SelectItem>
+                      {suppliers.map((s) => (
+                        <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <FormDescription>Whose prices these are. Links the list to a contact for bills and orders.</FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
 
             <FormField
               control={form.control}
