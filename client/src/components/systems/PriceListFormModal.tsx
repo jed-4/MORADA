@@ -140,8 +140,11 @@ export function PriceListFormModal({ open, onOpenChange, list }: Props) {
 
   return (
     <Dialog open={open} onOpenChange={(next) => (next ? onOpenChange(true) : handleClose())}>
-      <DialogContent className="sm:max-w-md" data-testid="modal-price-list">
-        <DialogHeader>
+      <DialogContent
+        className="sm:max-w-md max-h-[90vh] flex flex-col overflow-hidden"
+        data-testid="modal-price-list"
+      >
+        <DialogHeader className="flex-shrink-0">
           <DialogTitle>{isEditing ? "Edit Price List" : "New Price List"}</DialogTitle>
           <DialogDescription>
             {isEditing
@@ -151,7 +154,11 @@ export function PriceListFormModal({ open, onOpenChange, list }: Props) {
         </DialogHeader>
 
         <Form {...form}>
-          <form onSubmit={form.handleSubmit((v) => mutation.mutate(v))} className="space-y-4">
+          <form
+            onSubmit={form.handleSubmit((v) => mutation.mutate(v))}
+            className="flex min-h-0 flex-1 flex-col"
+          >
+            <div className="flex-1 overflow-y-auto space-y-4 pr-1">
             {/* Type first — it decides what the rest of the form means. */}
             <FormField
               control={form.control}
@@ -305,7 +312,9 @@ export function PriceListFormModal({ open, onOpenChange, list }: Props) {
               )}
             />
 
-            <div className="flex justify-end gap-3 pt-4">
+            </div>
+
+            <div className="flex flex-shrink-0 justify-end gap-3 border-t pt-4 mt-4">
               <Button type="button" variant="outline" onClick={handleClose} data-testid="button-cancel-list">
                 Cancel
               </Button>

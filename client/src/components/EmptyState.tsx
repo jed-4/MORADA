@@ -66,19 +66,23 @@ export function EmptyState({
         <p className="mt-1 max-w-md text-sm text-muted-foreground">{description}</p>
       ) : null}
       {action ? (
-        <Button
-          className="mt-4"
+        // Same token button as the toolbar CTAs (design-tokens.md): h-6 / text-xs /
+        // primary fill. A default-size shadcn <Button> here read as an oversized slab
+        // that matched nothing else on the page.
+        <button
+          type="button"
+          className="mt-4 h-6 w-auto px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-0.5 disabled:opacity-60 disabled:pointer-events-none"
           onClick={action.onClick}
           disabled={action.disabled || action.loading}
           data-testid={action["data-testid"] ?? "empty-state-action"}
         >
           {action.loading ? (
-            <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+            <Loader2 className="h-3 w-3 animate-spin" />
           ) : ActionIcon ? (
-            <ActionIcon className="mr-1.5 h-4 w-4" />
+            <ActionIcon className="h-3 w-3" />
           ) : null}
-          {action.label}
-        </Button>
+          <span>{action.label}</span>
+        </button>
       ) : null}
     </div>
   );
