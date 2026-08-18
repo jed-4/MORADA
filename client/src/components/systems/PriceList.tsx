@@ -1,7 +1,7 @@
 import { useState, useEffect, forwardRef, useImperativeHandle, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { Plus, Search, Filter, Edit, Trash2, ChevronRight, ChevronDown, Building, Tag, DollarSign, Box, Loader2, ChevronsUpDown, ChevronsDownUp, ToggleLeft, ToggleRight } from "lucide-react";
+import { Plus, Search, Filter, Edit, Trash2, ChevronRight, ChevronDown, Building, Tag, DollarSign, Box, Loader2, ChevronsUpDown, ChevronsDownUp, ToggleLeft, ToggleRight, X } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -32,6 +32,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import type { PriceListItem, PriceListCategory, Contact, CostCode } from "@shared/schema";
@@ -378,6 +380,11 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
     });
   }, [groups, groupBy]);
 
+  const activeFilterCount =
+    (filterCategory !== "all" ? 1 : 0) +
+    (filterSupplier !== "all" ? 1 : 0) +
+    (filterStatus !== "all" ? 1 : 0);
+
   const allExpanded = groups.length > 0 && groups.every(g => expandedGroups.has(g.id));
   
   const toggleExpandCollapse = () => {
@@ -391,104 +398,151 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
 
   return (
     <div className="flex flex-col h-full" data-testid="price-list">
-      <div className="h-9 bg-background flex items-center justify-between px-2 border-b border-border flex-shrink-0 gap-2">
-        <div className="flex items-center gap-2">
+      {/* Grid toolbar — second row inside the page card. Filters collapse behind a
+          single control with a count badge, matching Tasks. */}
+      <div className="h-9 flex items-center justify-between px-3 border-b border-border/50 flex-shrink-0 gap-2">
+        <div className="flex items-center gap-1 min-w-0">
           {groupBy !== "none" && (
-            <button
-              onClick={toggleExpandCollapse}
-              className="h-6 w-6 flex items-center justify-center border rounded-md hover-elevate active-elevate-2"
-              title={allExpanded ? "Collapse all" : "Expand all"}
-              data-testid="button-toggle-expand"
-            >
-              {allExpanded ? (
-                <ChevronsDownUp className="h-3 w-3" />
-              ) : (
-                <ChevronsUpDown className="h-3 w-3" />
-              )}
-            </button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={toggleExpandCollapse}
+                  className="h-6 w-6 flex items-center justify-center rounded-md border border-border/50 text-muted-foreground hover-elevate active-elevate-2"
+                  data-testid="button-toggle-expand"
+                  aria-label={allExpanded ? "Collapse all" : "Expand all"}
+                >
+                  {allExpanded ? <ChevronsDownUp className="h-3 w-3" /> : <ChevronsUpDown className="h-3 w-3" />}
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">{allExpanded ? "Collapse all" : "Expand all"}</TooltipContent>
+            </Tooltip>
           )}
 
-          <Select value={filterCategory} onValueChange={setFilterCategory}>
-            <SelectTrigger 
-              className={`h-6 px-2 text-xs rounded-md ${
-                filterCategory !== "all" 
-                  ? "bg-primary/10 text-primary border-primary/30" 
-                  : ""
-              }`}
-              data-testid="select-filter-category"
-            >
-              <Tag className="h-3 w-3 mr-1" />
-              <SelectValue placeholder="Category" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Categories</SelectItem>
-              {categories.map((cat) => (
-                <SelectItem key={cat.id} value={cat.id}>
-                  {cat.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          <Select value={filterSupplier} onValueChange={setFilterSupplier}>
-            <SelectTrigger 
-              className={`h-6 px-2 text-xs rounded-md ${
-                filterSupplier !== "all" 
-                  ? "bg-primary/10 text-primary border-primary/30" 
-                  : ""
-              }`}
-              data-testid="select-filter-supplier"
-            >
-              <Building className="h-3 w-3 mr-1" />
-              <SelectValue placeholder="Supplier" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Suppliers</SelectItem>
-              {suppliers.map((sup) => (
-                <SelectItem key={sup.id} value={sup.id}>
-                  {sup.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          <Select value={filterStatus} onValueChange={setFilterStatus}>
-            <SelectTrigger 
-              className={`h-6 px-2 text-xs rounded-md ${
-                filterStatus !== "all" 
-                  ? "bg-primary/10 text-primary border-primary/30" 
-                  : ""
-              }`}
-              data-testid="select-filter-status"
-            >
-              <SelectValue placeholder="Status" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Status</SelectItem>
-              <SelectItem value="active">Active</SelectItem>
-              <SelectItem value="inactive">Inactive</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <div className="flex items-center gap-1 text-xs text-muted-foreground">
-            <span>Group:</span>
-            <Select value={groupBy} onValueChange={(v) => setGroupBy(v as GroupBy)}>
-              <SelectTrigger className="h-6 w-24 text-xs border-0 bg-transparent" data-testid="select-group-by">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">None</SelectItem>
-                <SelectItem value="category">Category</SelectItem>
-                <SelectItem value="supplier">Supplier</SelectItem>
-              </SelectContent>
-            </Select>
+          <div className="relative w-44 flex-shrink-0">
+            <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground pointer-events-none" />
+            <Input
+              placeholder="Search items..."
+              value={internalSearch}
+              onChange={(e) => setInternalSearch(e.target.value)}
+              className="h-6 pl-7 pr-6 text-xs"
+              data-testid="input-search-items"
+            />
+            {internalSearch && (
+              <button
+                onClick={() => setInternalSearch("")}
+                className="absolute right-1.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                aria-label="Clear search"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            )}
           </div>
 
-          <Badge variant="secondary" className="h-5 text-data">
-            {items.length} items
-          </Badge>
+          <Popover>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <PopoverTrigger asChild>
+                  <button
+                    className={`relative h-6 w-6 flex items-center justify-center rounded-md border transition-all hover-elevate active-elevate-2 ${
+                      activeFilterCount > 0
+                        ? "bg-primary/10 text-primary border-primary/20"
+                        : "border-border/50 text-muted-foreground"
+                    }`}
+                    data-testid="button-filter-items"
+                    aria-label="Filter"
+                  >
+                    <Filter className="h-3 w-3" />
+                    {activeFilterCount > 0 && (
+                      <span
+                        className="absolute -top-1 -right-1 min-w-[14px] h-[14px] px-1 rounded-full bg-primary text-white text-[9px] leading-[14px] font-semibold text-center"
+                        data-testid="badge-item-filter-count"
+                      >
+                        {activeFilterCount}
+                      </span>
+                    )}
+                  </button>
+                </PopoverTrigger>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">Filter</TooltipContent>
+            </Tooltip>
+
+            <PopoverContent align="start" className="w-56 p-3 space-y-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">Category</Label>
+                <Select value={filterCategory} onValueChange={setFilterCategory}>
+                  <SelectTrigger className="h-7 text-xs" data-testid="select-filter-category">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All categories</SelectItem>
+                    {categories.map((cat) => (
+                      <SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* A supplier list IS one supplier — filtering by it would be a no-op. */}
+              {kind !== "supplier" && (
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-muted-foreground">Supplier</Label>
+                  <Select value={filterSupplier} onValueChange={setFilterSupplier}>
+                    <SelectTrigger className="h-7 text-xs" data-testid="select-filter-supplier">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All suppliers</SelectItem>
+                      {suppliers.map((sup) => (
+                        <SelectItem key={sup.id} value={sup.id}>{sup.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">Status</Label>
+                <Select value={filterStatus} onValueChange={setFilterStatus}>
+                  <SelectTrigger className="h-7 text-xs" data-testid="select-filter-status">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All statuses</SelectItem>
+                    <SelectItem value="active">Active</SelectItem>
+                    <SelectItem value="inactive">Inactive</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {activeFilterCount > 0 && (
+                <button
+                  onClick={() => { setFilterCategory("all"); setFilterSupplier("all"); setFilterStatus("all"); }}
+                  className="w-full h-6 text-xs rounded-md border border-border/50 hover-elevate active-elevate-2"
+                  data-testid="button-clear-item-filters"
+                >
+                  Clear filters
+                </button>
+              )}
+            </PopoverContent>
+          </Popover>
+
+          <span className="text-xs text-muted-foreground ml-1 truncate">
+            {items.length} {items.length === 1 ? "item" : "items"}
+          </span>
+        </div>
+
+        <div className="flex items-center gap-1 flex-shrink-0">
+          <span className="text-xs text-muted-foreground">Group</span>
+          <Select value={groupBy} onValueChange={(v) => setGroupBy(v as GroupBy)}>
+            <SelectTrigger className="h-6 w-24 text-xs" data-testid="select-group-by">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">None</SelectItem>
+              <SelectItem value="category">Category</SelectItem>
+              <SelectItem value="supplier">Supplier</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
       </div>
 

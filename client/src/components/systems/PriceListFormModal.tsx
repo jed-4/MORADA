@@ -1,19 +1,24 @@
-import { useState, useEffect } from "react";
+import { useEffect } from "react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { queryClient, apiRequest } from "@/lib/queryClient";
+import { z } from "zod";
 import { Loader2, Building2, HardHat, Package } from "lucide-react";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
+} from "@/components/ui/dialog";
+import {
+  Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage,
+} from "@/components/ui/form";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
-import {
-  Dialog, DialogContent, DialogHeader, DialogTitle,
-} from "@/components/ui/dialog";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
+import { queryClient, apiRequest } from "@/lib/queryClient";
 import type { PriceList, Contact } from "@shared/schema";
 
 type Kind = "supplier" | "labour" | "internal";
@@ -24,37 +29,50 @@ const KINDS: Array<{ value: Kind; label: string; icon: typeof Building2; hint: s
   { value: "internal", label: "Internal", icon: Package, hint: "Your own items — what you charge" },
 ];
 
-interface Props {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  list: PriceList | null;
-}
+const formSchema = z.object({
+  name: z.string().trim().min(1, "Name is required"),
+  kind: z.enum(["supplier", "labour", "internal"]),
+  supplierId: z.string().nullable(),
+  description: z.string(),
+  effectiveFrom: z.string(),
+  effectiveTo: z.string(),
+  sourceNote: z.string(),
+  isDefault: z.boolean(),
+});
 
-/** Date <-> yyyy-mm-dd for the native date inputs. */
+type FormValues = z.infer<typeof formSchema>;
+
+const EMPTY: FormValues = {
+  name: "", kind: "supplier", supplierId: null, description: "",
+  effectiveFrom: "", effectiveTo: "", sourceNote: "", isDefault: false,
+};
+
+/** Date -> yyyy-mm-dd for the native date inputs. */
 function toDateInput(value: unknown): string {
   if (!value) return "";
   const d = new Date(value as string);
   return Number.isNaN(d.getTime()) ? "" : d.toISOString().slice(0, 10);
 }
 
+interface Props {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  list: PriceList | null;
+}
+
 export function PriceListFormModal({ open, onOpenChange, list }: Props) {
   const { toast } = useToast();
   const isEditing = !!list;
 
-  const [form, setForm] = useState({
-    name: "",
-    kind: "supplier" as Kind,
-    supplierId: "",
-    description: "",
-    effectiveFrom: "",
-    effectiveTo: "",
-    sourceNote: "",
-    isDefault: false,
+  const form = useForm<FormValues>({
+    resolver: zodResolver(formSchema),
+    defaultValues: EMPTY,
   });
 
+  const kind = form.watch("kind");
+
   // Suppliers come from CONTACTS (contactType='supplier'). The legacy `suppliers`
-  // table is deprecated, and price_lists.supplier_id FKs contacts.id — the old
-  // picker wrote a suppliers.id into that column, which could never resolve.
+  // table is deprecated, and price_lists.supplier_id FKs contacts.id.
   const { data: suppliers = [] } = useQuery<Contact[]>({
     queryKey: ["/api/contacts", "supplier"],
     queryFn: () => apiRequest("/api/contacts?contactType=supplier", "GET"),
@@ -63,210 +81,247 @@ export function PriceListFormModal({ open, onOpenChange, list }: Props) {
 
   useEffect(() => {
     if (!open) return;
-    if (list) {
-      setForm({
-        name: list.name || "",
-        kind: (list.kind as Kind) || "supplier",
-        supplierId: list.supplierId || "",
-        description: list.description || "",
-        effectiveFrom: toDateInput(list.effectiveFrom),
-        effectiveTo: toDateInput(list.effectiveTo),
-        sourceNote: list.sourceNote || "",
-        isDefault: list.isDefault ?? false,
-      });
-    } else {
-      setForm({
-        name: "", kind: "supplier", supplierId: "", description: "",
-        effectiveFrom: "", effectiveTo: "", sourceNote: "", isDefault: false,
-      });
-    }
-  }, [open, list]);
+    form.reset(
+      list
+        ? {
+            name: list.name || "",
+            kind: (list.kind as Kind) || "supplier",
+            supplierId: list.supplierId || null,
+            description: list.description || "",
+            effectiveFrom: toDateInput(list.effectiveFrom),
+            effectiveTo: toDateInput(list.effectiveTo),
+            sourceNote: list.sourceNote || "",
+            isDefault: list.isDefault ?? false,
+          }
+        : EMPTY,
+    );
+  }, [open, list, form]);
 
-  const save = useMutation({
-    mutationFn: (payload: any) =>
-      isEditing
+  const mutation = useMutation({
+    mutationFn: (values: FormValues) => {
+      const payload = {
+        name: values.name.trim(),
+        kind: values.kind,
+        // Only a supplier list is bound to a contact.
+        supplierId: values.kind === "supplier" ? values.supplierId : null,
+        description: values.description || null,
+        effectiveFrom: values.effectiveFrom || null,
+        effectiveTo: values.effectiveTo || null,
+        sourceNote: values.sourceNote || null,
+        isDefault: values.isDefault,
+      };
+      return isEditing
         ? apiRequest(`/api/price-lists/${list!.id}`, "PATCH", payload)
-        : apiRequest("/api/price-lists", "POST", payload),
+        : apiRequest("/api/price-lists", "POST", payload);
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/price-lists"] });
-      toast({ title: isEditing ? "Price list updated" : "Price list created" });
+      toast({
+        title: isEditing ? "Price list updated" : "Price list created",
+        description: isEditing
+          ? "The price list has been updated successfully."
+          : "The price list has been created successfully.",
+      });
       onOpenChange(false);
     },
     onError: (error: any) => {
       toast({
         title: isEditing ? "Failed to update price list" : "Failed to create price list",
-        description: error.message,
+        description: error.message || "An error occurred while saving the price list.",
         variant: "destructive",
       });
     },
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!form.name.trim()) {
-      toast({ title: "Name is required", variant: "destructive" });
-      return;
-    }
-    save.mutate({
-      name: form.name.trim(),
-      kind: form.kind,
-      // Only a supplier list is bound to a contact.
-      supplierId: form.kind === "supplier" ? (form.supplierId || null) : null,
-      description: form.description || null,
-      effectiveFrom: form.effectiveFrom || null,
-      effectiveTo: form.effectiveTo || null,
-      sourceNote: form.sourceNote || null,
-      isDefault: form.isDefault,
-    });
+  const handleClose = () => {
+    form.reset(EMPTY);
+    onOpenChange(false);
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[460px]" data-testid="modal-price-list">
-        <DialogHeader className="pb-2">
-          <DialogTitle className="text-sm">
-            {isEditing ? "Edit Price List" : "New Price List"}
-          </DialogTitle>
+    <Dialog open={open} onOpenChange={(next) => (next ? onOpenChange(true) : handleClose())}>
+      <DialogContent className="sm:max-w-md" data-testid="modal-price-list">
+        <DialogHeader>
+          <DialogTitle>{isEditing ? "Edit Price List" : "New Price List"}</DialogTitle>
+          <DialogDescription>
+            {isEditing
+              ? "Update this price list's details."
+              : "Create a price list for a supplier, your labour rates, or your own items."}
+          </DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit} className="space-y-3">
-          <div>
-            <Label className="text-data text-muted-foreground mb-0.5 block">Name *</Label>
-            <Input
-              value={form.name}
-              onChange={(e) => setForm(f => ({ ...f, name: e.target.value }))}
-              placeholder="The Plaster Shop"
-              className="h-7 text-table"
-              data-testid="input-list-name"
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit((v) => mutation.mutate(v))} className="space-y-4">
+            {/* Type first — it decides what the rest of the form means. */}
+            <FormField
+              control={form.control}
+              name="kind"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Type</FormLabel>
+                  <div className="grid grid-cols-3 gap-2">
+                    {KINDS.map(({ value, label, icon: Icon }) => (
+                      <button
+                        key={value}
+                        type="button"
+                        onClick={() => field.onChange(value)}
+                        className={`flex flex-col items-center gap-1 rounded-md border px-2 py-2 text-xs hover-elevate active-elevate-2 ${
+                          field.value === value ? "bg-primary/10 text-primary border-primary/20" : "border-border"
+                        }`}
+                        data-testid={`button-kind-${value}`}
+                      >
+                        <Icon className="h-4 w-4" />
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  <FormDescription>{KINDS.find((k) => k.value === field.value)?.hint}</FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
             />
-          </div>
 
-          {/* Kind drives which fields the items inside this list will show. */}
-          <div>
-            <Label className="text-data text-muted-foreground mb-1 block">Type</Label>
-            <div className="grid grid-cols-3 gap-1.5">
-              {KINDS.map(({ value, label, icon: Icon }) => (
-                <button
-                  key={value}
-                  type="button"
-                  onClick={() => setForm(f => ({ ...f, kind: value }))}
-                  className={`flex flex-col items-center gap-1 rounded-md border px-2 py-2 text-xs hover-elevate active-elevate-2 ${
-                    form.kind === value ? "bg-primary/10 text-primary border-primary/30" : ""
-                  }`}
-                  data-testid={`button-kind-${value}`}
-                >
-                  <Icon className="h-3.5 w-3.5" />
-                  {label}
-                </button>
-              ))}
-            </div>
-            <p className="text-label text-muted-foreground mt-1">
-              {KINDS.find(k => k.value === form.kind)?.hint}
-            </p>
-          </div>
-
-          {form.kind === "supplier" && (
-            <div>
-              <Label className="text-data text-muted-foreground mb-0.5 block">Supplier</Label>
-              <Select
-                value={form.supplierId || "none"}
-                onValueChange={(v) => setForm(f => ({ ...f, supplierId: v === "none" ? "" : v }))}
-              >
-                <SelectTrigger className="h-7 text-table" data-testid="select-list-supplier">
-                  <SelectValue placeholder="Select supplier" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none" className="text-table">No supplier</SelectItem>
-                  {suppliers.map((s) => (
-                    <SelectItem key={s.id} value={s.id} className="text-table">{s.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
-
-          <div>
-            <Label className="text-data text-muted-foreground mb-0.5 block">Description</Label>
-            <Textarea
-              value={form.description}
-              onChange={(e) => setForm(f => ({ ...f, description: e.target.value }))}
-              placeholder="Trade account pricing"
-              className="text-table min-h-[40px] resize-none"
-              rows={2}
-              data-testid="input-list-description"
+            <FormField
+              control={form.control}
+              name="name"
+              render={({ field }) => (
+                <FormItem>
+                  {/* A labour rate card has no supplier, so the label follows the type. */}
+                  <FormLabel>{kind === "supplier" ? "Supplier name *" : "List name *"}</FormLabel>
+                  <FormControl>
+                    <Input data-testid="input-list-name" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
             />
-          </div>
 
-          {/* Supplier price books are dated — keep last quarter's for audit. */}
-          <div className="grid grid-cols-2 gap-1.5">
-            <div>
-              <Label className="text-data text-muted-foreground mb-0.5 block">Effective from</Label>
-              <Input
-                type="date"
-                value={form.effectiveFrom}
-                onChange={(e) => setForm(f => ({ ...f, effectiveFrom: e.target.value }))}
-                className="h-7 text-table"
-                data-testid="input-effective-from"
+            {kind === "supplier" && (
+              <FormField
+                control={form.control}
+                name="supplierId"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Linked supplier</FormLabel>
+                    <Select
+                      value={field.value ?? "__none__"}
+                      onValueChange={(v) => field.onChange(v === "__none__" ? null : v)}
+                    >
+                      <FormControl>
+                        <SelectTrigger data-testid="select-list-supplier">
+                          <SelectValue placeholder="Select a supplier" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="__none__">No supplier</SelectItem>
+                        {suppliers.map((s) => (
+                          <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormDescription>Links this book to a contact for bills and orders.</FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            )}
+
+            <FormField
+              control={form.control}
+              name="description"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Description</FormLabel>
+                  <FormControl>
+                    <Textarea rows={2} className="resize-none" data-testid="input-list-description" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            {/* Supplier price books are dated — keep last quarter's for audit. */}
+            <div className="grid grid-cols-2 gap-3">
+              <FormField
+                control={form.control}
+                name="effectiveFrom"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Effective from</FormLabel>
+                    <FormControl>
+                      <Input type="date" data-testid="input-effective-from" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="effectiveTo"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Effective to</FormLabel>
+                    <FormControl>
+                      <Input type="date" data-testid="input-effective-to" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
               />
             </div>
-            <div>
-              <Label className="text-data text-muted-foreground mb-0.5 block">Effective to</Label>
-              <Input
-                type="date"
-                value={form.effectiveTo}
-                onChange={(e) => setForm(f => ({ ...f, effectiveTo: e.target.value }))}
-                className="h-7 text-table"
-                data-testid="input-effective-to"
-              />
-            </div>
-          </div>
 
-          <div>
-            <Label className="text-data text-muted-foreground mb-0.5 block">Source</Label>
-            <Input
-              value={form.sourceNote}
-              onChange={(e) => setForm(f => ({ ...f, sourceNote: e.target.value }))}
-              placeholder="Q3 2026 trade price book (PDF)"
-              className="h-7 text-table"
-              data-testid="input-source-note"
+            <FormField
+              control={form.control}
+              name="sourceNote"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Source</FormLabel>
+                  <FormControl>
+                    <Input data-testid="input-source-note" {...field} />
+                  </FormControl>
+                  <FormDescription>Where these prices came from, for future reference.</FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
             />
-          </div>
 
-          <div className="flex items-center justify-between pt-2 border-t">
-            <label className="flex items-center gap-2 text-table cursor-pointer">
-              <Switch
-                checked={form.isDefault}
-                onCheckedChange={(v) => setForm(f => ({ ...f, isDefault: v }))}
-                className="h-4 w-7 data-[state=checked]:bg-primary"
-                data-testid="switch-is-default"
-              />
-              <span className="text-muted-foreground">Default for estimating</span>
-            </label>
+            <FormField
+              control={form.control}
+              name="isDefault"
+              render={({ field }) => (
+                <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3">
+                  <div className="space-y-0.5">
+                    <FormLabel>Default for estimating</FormLabel>
+                    <FormDescription>New items land here unless another list is chosen.</FormDescription>
+                  </div>
+                  <FormControl>
+                    <Switch
+                      checked={!!field.value}
+                      onCheckedChange={field.onChange}
+                      data-testid="switch-is-default"
+                    />
+                  </FormControl>
+                </FormItem>
+              )}
+            />
 
-            <div className="flex items-center gap-1.5">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="h-7 text-table"
-                onClick={() => onOpenChange(false)}
-                data-testid="button-cancel-list"
-              >
+            <div className="flex justify-end gap-3 pt-4">
+              <Button type="button" variant="outline" onClick={handleClose} data-testid="button-cancel-list">
                 Cancel
               </Button>
-              <Button
-                type="submit"
-                size="sm"
-                className="h-7 text-table"
-                disabled={save.isPending}
-                data-testid="button-save-list"
-              >
-                {save.isPending && <Loader2 className="h-3 w-3 mr-1 animate-spin" />}
-                {isEditing ? "Update" : "Create"}
+              <Button type="submit" disabled={mutation.isPending} data-testid="button-save-list">
+                {mutation.isPending ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    {isEditing ? "Saving..." : "Creating..."}
+                  </>
+                ) : (
+                  isEditing ? "Save Changes" : "Create Price List"
+                )}
               </Button>
             </div>
-          </div>
-        </form>
+          </form>
+        </Form>
       </DialogContent>
     </Dialog>
   );

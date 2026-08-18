@@ -4,6 +4,7 @@ import { Link, useLocation } from "wouter";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import {
   Plus, Search, Building2, HardHat, Package, Archive, Star, MoreVertical, Pencil, Trash2,
+  ChevronRight, Filter, X, ArrowLeftRight,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,6 +17,9 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import type { PriceList } from "@shared/schema";
 import { PriceListFormModal } from "@/components/systems/PriceListFormModal";
@@ -94,75 +98,144 @@ export default function PriceListsPage() {
 
   const totalItems = useMemo(() => lists.reduce((sum, l) => sum + (l.itemCount || 0), 0), [lists]);
 
+  const activeFilterCount = (kindFilter !== "all" ? 1 : 0) + (showArchived ? 1 : 0);
+
   return (
-    <div className="flex flex-col h-full" data-testid="price-lists-page">
-      <div className="h-9 bg-background flex items-center justify-between px-2 border-b border-border flex-shrink-0 gap-2">
-        <div className="flex items-center gap-2">
-          <h2 className="text-sm font-semibold">Price Lists</h2>
-          <div className="relative w-64">
-            <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
-            <Input
-              placeholder="Search price lists…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="h-6 pl-7 text-xs border rounded-md"
-              data-testid="input-search-price-lists"
-            />
+    <div className="flex h-full flex-col" data-testid="price-lists-page">
+      {/* Breadcrumb strip — matches Tasks / Timesheets. */}
+      <div className="flex items-center gap-1 px-4 pt-3 pb-1 flex-shrink-0">
+        <span className="text-xs text-muted-foreground">Resources</span>
+        <ChevronRight className="h-3 w-3 text-muted-foreground/50 flex-shrink-0" />
+        <span className="text-xs font-medium text-foreground" data-testid="text-page-title">Price Lists</span>
+      </div>
+
+      {/* Header panel — single condensed row, card top. */}
+      <div className="border border-border rounded-t-lg bg-card flex-shrink-0">
+        <div className="h-9 flex items-center justify-between px-3 gap-2">
+          {/* LEFT: search + filters */}
+          <div className="flex items-center gap-1 min-w-0">
+            <div className="relative w-44 flex-shrink-0">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground pointer-events-none" />
+              <Input
+                placeholder="Search..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="h-6 pl-7 pr-6 text-xs"
+                data-testid="input-search-price-lists"
+              />
+              {search && (
+                <button
+                  onClick={() => setSearch("")}
+                  className="absolute right-1.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  aria-label="Clear search"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              )}
+            </div>
+
+            {/* One filter control with a count badge, rather than a row of selects. */}
+            <Popover>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <PopoverTrigger asChild>
+                    <button
+                      className={`relative h-6 w-6 flex items-center justify-center rounded-md border transition-all hover-elevate active-elevate-2 ${
+                        activeFilterCount > 0
+                          ? "bg-primary/10 text-primary border-primary/20"
+                          : "border-border/50 text-muted-foreground"
+                      }`}
+                      data-testid="button-filter-price-lists"
+                      aria-label="Filter"
+                    >
+                      <Filter className="h-3 w-3" />
+                      {activeFilterCount > 0 && (
+                        <span
+                          className="absolute -top-1 -right-1 min-w-[14px] h-[14px] px-1 rounded-full bg-primary text-white text-[9px] leading-[14px] font-semibold text-center"
+                          data-testid="badge-filter-count"
+                        >
+                          {activeFilterCount}
+                        </span>
+                      )}
+                    </button>
+                  </PopoverTrigger>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">Filter</TooltipContent>
+              </Tooltip>
+
+              <PopoverContent align="start" className="w-56 p-3 space-y-3">
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-muted-foreground">Type</Label>
+                  <Select value={kindFilter} onValueChange={setKindFilter}>
+                    <SelectTrigger className="h-7 text-xs" data-testid="select-filter-kind">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All types</SelectItem>
+                      <SelectItem value="supplier">Supplier</SelectItem>
+                      <SelectItem value="labour">Labour</SelectItem>
+                      <SelectItem value="internal">Internal</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <label className="flex items-center justify-between gap-2 cursor-pointer">
+                  <span className="text-xs text-muted-foreground">Show archived</span>
+                  <input
+                    type="checkbox"
+                    checked={showArchived}
+                    onChange={(e) => setShowArchived(e.target.checked)}
+                    className="h-3.5 w-3.5 rounded"
+                    data-testid="checkbox-show-archived"
+                  />
+                </label>
+
+                {activeFilterCount > 0 && (
+                  <button
+                    onClick={() => { setKindFilter("all"); setShowArchived(false); }}
+                    className="w-full h-6 text-xs rounded-md border border-border/50 hover-elevate active-elevate-2"
+                    data-testid="button-clear-filters"
+                  >
+                    Clear filters
+                  </button>
+                )}
+              </PopoverContent>
+            </Popover>
+
+            <span className="text-xs text-muted-foreground ml-1 truncate">
+              {lists.length} {lists.length === 1 ? "list" : "lists"} · {totalItems} items
+            </span>
           </div>
 
-          <Select value={kindFilter} onValueChange={setKindFilter}>
-            <SelectTrigger
-              className={`h-6 w-32 px-2 text-xs rounded-md ${kindFilter !== "all" ? "bg-primary/10 text-primary border-primary/30" : ""}`}
-              data-testid="select-filter-kind"
+          {/* RIGHT: compare + primary CTA */}
+          <div className="flex items-center gap-1 flex-shrink-0">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={() => navigate("/price-lists/search")}
+                  className="h-6 w-6 flex items-center justify-center rounded-md border border-border/50 text-muted-foreground hover-elevate active-elevate-2"
+                  data-testid="button-compare-prices"
+                  aria-label="Compare prices"
+                >
+                  <ArrowLeftRight className="h-3 w-3" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">Compare prices across lists</TooltipContent>
+            </Tooltip>
+
+            <button
+              className="h-6 w-auto px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-0.5"
+              onClick={() => { setEditingList(null); setShowFormModal(true); }}
+              data-testid="button-new-price-list"
             >
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All types</SelectItem>
-              <SelectItem value="supplier">Supplier</SelectItem>
-              <SelectItem value="labour">Labour</SelectItem>
-              <SelectItem value="internal">Internal</SelectItem>
-            </SelectContent>
-          </Select>
-
-          <button
-            onClick={() => setShowArchived(v => !v)}
-            className={`h-6 px-2 text-xs border rounded-md flex items-center gap-1 hover-elevate active-elevate-2 ${showArchived ? "bg-primary/10 text-primary border-primary/30" : ""}`}
-            data-testid="button-toggle-archived"
-          >
-            <Archive className="h-3 w-3" />
-            Archived
-          </button>
-        </div>
-
-        <div className="flex items-center gap-2">
-          {/* Cross-list search is the reason to keep more than one list. */}
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-6 px-2 text-xs"
-            onClick={() => navigate("/price-lists/search")}
-            data-testid="button-compare-prices"
-          >
-            <Search className="h-3 w-3 mr-1" />
-            Compare prices
-          </Button>
-          <Badge variant="secondary" className="h-5 text-data">
-            {lists.length} {lists.length === 1 ? "list" : "lists"} · {totalItems} items
-          </Badge>
-          <Button
-            size="sm"
-            className="h-6 px-2 text-xs"
-            onClick={() => { setEditingList(null); setShowFormModal(true); }}
-            data-testid="button-new-price-list"
-          >
-            <Plus className="h-3 w-3 mr-1" />
-            New Price List
-          </Button>
+              <Plus className="w-3 h-3" />
+              <span>New Price List</span>
+            </button>
+          </div>
         </div>
       </div>
 
-      <div className="flex-1 overflow-auto p-3">
+      <div className="flex-1 overflow-auto border-x border-b border-border rounded-b-lg bg-card p-3">
         {isLoading ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
             {Array.from({ length: 4 }).map((_, i) => (
@@ -177,7 +250,7 @@ export default function PriceListsPage() {
             description={
               search
                 ? "Try a different search."
-                : "Create one per supplier (The Plaster Shop, Bunnings), plus your own labour rates and design items."
+                : "Create one per supplier, plus your own labour rates and design items."
             }
             action={search ? undefined : {
               label: "New Price List",
