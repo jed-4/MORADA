@@ -18819,6 +18819,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
             console.error("[PO bulk-status] linked timesheet update failed:", err);
           }
         }
+      } else {
+        // Leaving "paid" in bulk reverts the stamp too, matching the single PATCH.
+        for (const prev of existing) {
+          if (!prev || prev.status !== "paid") continue;
+          try {
+            const reverted = await db
+              .update(schema.timesheets)
+              .set({ poStatus: "on_po", updatedAt: new Date() })
+              .where(and(
+                eq(schema.timesheets.linkedPurchaseOrderId, prev.id),
+                eq(schema.timesheets.poStatus, "paid"),
+              ))
+              .returning({ id: schema.timesheets.id });
+            if (reverted.length > 0) {
+              console.log(`[PO bulk-status] ${prev.poNumber} un-paid — reverted ${reverted.length} timesheet(s)`);
+            }
+          } catch (err) {
+            console.error("[PO bulk-status] linked timesheet revert failed:", err);
+          }
+        }
       }
 
       res.json({ updated: ids.length });
@@ -19851,6 +19871,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Update purchase order
+  // Unmarking a PO as paid must put its timesheets back to 'on_po'. The
+  // forward propagation (into 'paid') has always existed; without the reverse,
+  // a timesheet stayed stamped 'paid' after the PO was un-paid, so the
+  // documented escape hatch — un-pay the PO, then delete it — left the
+  // timesheets stranded as 'paid' with no PO and no way back into the queue.
+  const unpayTimesheetsForPO = async (poId: string): Promise<number> => {
+    const reverted = await db
+      .update(schema.timesheets)
+      .set({ poStatus: "on_po", updatedAt: new Date() })
+      .where(and(
+        eq(schema.timesheets.linkedPurchaseOrderId, poId),
+        eq(schema.timesheets.poStatus, "paid"),
+      ))
+      .returning({ id: schema.timesheets.id });
+    return reverted.length;
+  };
+
   app.patch("/api/purchase-orders/:id", async (req, res) => {
     try {
       if (!req.user?.companyId) {
@@ -19891,6 +19928,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         } catch (err) {
           console.error("Failed to update linked timesheet PO statuses:", err);
         }
+      } else if (existingPo.status === "paid" && po.status !== "paid") {
+        try {
+          const reverted = await unpayTimesheetsForPO(po.id);
+          if (reverted > 0) {
+            console.log(`[po-patch] ${po.poNumber} un-paid — reverted ${reverted} timesheet(s) to on_po`);
+          }
+        } catch (err) {
+          console.error("Failed to revert linked timesheet PO statuses:", err);
+        }
       }
 
       res.json(po);
@@ -19901,6 +19947,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Delete purchase order
+  // Put subcontractor timesheets back in the "Awaiting PO" queue when the PO
+  // they were pushed onto goes away. Without this the timesheet keeps
+  // po_status='on_po' and a dangling link, and nothing in the UI can recover
+  // it: the approve flow only re-queues entries where BOTH fields are empty,
+  // and the "Remove Awaiting PO" row action only renders for 'awaiting_po'.
+  // Must run BEFORE the delete — the FK's ON DELETE SET NULL would otherwise
+  // clear the links first and leave nothing to find.
+  const releaseTimesheetsFromPO = async (poId: string): Promise<number> => {
+    const released = await db
+      .update(schema.timesheets)
+      .set({
+        poStatus: "awaiting_po",
+        linkedPurchaseOrderId: null,
+        updatedAt: new Date(),
+      })
+      .where(and(
+        eq(schema.timesheets.linkedPurchaseOrderId, poId),
+        // Paid is terminal. Guarded here too, not just at the delete check.
+        or(isNull(schema.timesheets.poStatus), ne(schema.timesheets.poStatus, "paid")),
+      ))
+      .returning({ id: schema.timesheets.id });
+    return released.length;
+  };
+
   app.delete("/api/purchase-orders/:id", async (req, res) => {
     try {
       if (!req.user?.companyId) {
@@ -19910,6 +19980,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const existingPo = await storage.getPurchaseOrder(req.params.id);
       if (!existingPo || existingPo.companyId !== req.user.companyId) {
         return res.status(404).json({ error: "Purchase order not found" });
+      }
+
+      // A paid PO is settled — deleting it would drag already-paid timesheets
+      // back into the Sub PO queue, where they could be pushed onto a second PO
+      // and paid twice. Unmark the payment first if it genuinely needs removing.
+      // partially_paid counts: money has already moved against it.
+      if (existingPo.status === "paid" || existingPo.status === "partially_paid") {
+        return res.status(409).json({
+          error: "Purchase order is paid",
+          message: `${existingPo.poNumber} is marked ${existingPo.status === "paid" ? "paid" : "partially paid"} and cannot be deleted. Change its status first if it really needs to be removed.`,
+        });
+      }
+
+      const releasedCount = await releaseTimesheetsFromPO(req.params.id);
+      if (releasedCount > 0) {
+        console.log(`[po-delete] Released ${releasedCount} timesheet(s) from ${existingPo.poNumber} back to Awaiting PO`);
       }
 
       const deleted = await storage.deletePurchaseOrder(req.params.id);
@@ -20285,6 +20371,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!deleted) {
         return res.status(404).json({ error: "Purchase order item not found" });
       }
+
+      // Pulling a timesheet line off a PO releases that timesheet back to the
+      // queue, same as deleting the whole PO. Scoped to this PO so a timesheet
+      // that has since been linked elsewhere is left alone.
+      const sourceTimesheetId = (existingItem as any).sourceTimesheetId;
+      if (sourceTimesheetId) {
+        await db
+          .update(schema.timesheets)
+          .set({
+            poStatus: "awaiting_po",
+            linkedPurchaseOrderId: null,
+            updatedAt: new Date(),
+          })
+          .where(and(
+            eq(schema.timesheets.id, sourceTimesheetId),
+            eq(schema.timesheets.linkedPurchaseOrderId, req.params.poId),
+            or(isNull(schema.timesheets.poStatus), ne(schema.timesheets.poStatus, "paid")),
+          ));
+      }
+
       res.status(204).send();
     } catch (error) {
       console.error("Failed to delete purchase order item:", error);
@@ -20797,6 +20903,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // in the Sub PO modal. (Retroactive inclusion of approved-but-
       // unflagged subbie timesheets was removed at user request — those
       // can be queued individually from the Timesheets row action.)
+      // A PO can also disappear through the projects -> purchase_orders cascade,
+      // which never runs the delete handler: ON DELETE SET NULL clears the link
+      // but leaves po_status reading 'on_po'. Treat "flagged as on a PO, but no
+      // longer linked to one" as awaiting_po and heal the row, so the queue
+      // recovers itself and the Timesheets list stops showing a stale badge.
+      // Only 'on_po' recovers. A paid timesheet whose PO vanished (the project
+      // cascade can still take a paid PO, since it bypasses the delete guard)
+      // stays paid — re-queueing settled work risks paying it a second time.
+      const stranded = allTimesheets.filter(
+        (t: any) => !t.linkedPurchaseOrderId && t.poStatus === "on_po",
+      );
+      if (stranded.length > 0) {
+        // One round trip, not one per row.
+        await db
+          .update(schema.timesheets)
+          .set({ poStatus: "awaiting_po", updatedAt: new Date() })
+          .where(inArray(schema.timesheets.id, stranded.map((t: any) => t.id)));
+        for (const t of stranded) t.poStatus = "awaiting_po";
+        console.log(`[awaiting-po] Recovered ${stranded.length} timesheet(s) stranded by a deleted PO`);
+      }
+
       const awaitingPo = allTimesheets.filter((t: any) => {
         if (t.linkedPurchaseOrderId) return false;
         return t.poStatus === "awaiting_po";
@@ -20839,6 +20966,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const subUser = await storage.getUser(timesheets[0].userId);
+
+      // The PO prices every line off the subcontractor's PROFILE cost rate
+      // (their timesheets are intentionally $0 — the cost comes from the bill).
+      // With no rate on the profile this used to build a PO of $0 lines with no
+      // warning, which is impossible to spot until the PO is opened.
+      const profileRate = subUser?.hourlyRate ? parseFloat(subUser.hourlyRate) : 0;
+      if (!(profileRate > 0)) {
+        const who = subUser
+          ? `${subUser.firstName || ""} ${subUser.lastName || ""}`.trim() || subUser.email || "This team member"
+          : "This team member";
+        return res.status(400).json({
+          error: "Missing cost rate",
+          message: `${who} has no cost rate set on their user profile, so every line on this PO would be $0. Add their cost rate in user settings, then generate the PO again.`,
+        });
+      }
+
+      // All lines are priced at subUser's rate, so a mixed-user selection would
+      // silently bill everyone at the first person's rate. A subcontractor PO
+      // is per-person by definition — reject the mix rather than misprice it.
+      const distinctUserIds = Array.from(new Set(timesheets.map((ts) => ts.userId)));
+      if (distinctUserIds.length > 1) {
+        return res.status(400).json({
+          error: "Multiple team members selected",
+          message: "A subcontractor PO covers one person. Select timesheets for a single team member and generate a separate PO for each.",
+        });
+      }
+
       const poNumber = await storage.getNextPONumber(req.user.companyId, "main");
       
       let subtotalCents = 0;
@@ -20862,7 +21016,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const costCode = ts.costCodeId ? allCostCodes.find((cc: any) => cc.id === ts.costCodeId) : null;
 
         const netHours = parseFloat(ts.duration || "0");
-        const payRate = subUser?.hourlyRate ? parseFloat(subUser.hourlyRate) : 0;
+        const payRate = profileRate; // validated non-zero above
         const lineTotal = Math.round(netHours * payRate * 100);
 
         const dateStr = ts.date ? new Date(ts.date).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "2-digit" }) : "";
