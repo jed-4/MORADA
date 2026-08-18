@@ -3518,7 +3518,11 @@ export const timesheets = pgTable("timesheets", {
 
   // Subcontractor PO tracking
   poStatus: text("po_status"), // null for employees, "awaiting_po" | "on_po" | "paid" for subcontractors
-  linkedPurchaseOrderId: varchar("linked_purchase_order_id"), // Reference to PO when status is on_po or paid
+  // FK with ON DELETE SET NULL: deleting a PO (including via the project
+  // cascade, which bypasses the route handler) must not leave timesheets
+  // pointing at a PO that no longer exists — that state is unrecoverable
+  // from the UI, since the approve flow refuses to re-queue a linked entry.
+  linkedPurchaseOrderId: varchar("linked_purchase_order_id").references(() => purchaseOrders.id, { onDelete: "set null" }), // Reference to PO when status is on_po or paid
   
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),

@@ -97,9 +97,13 @@ export function SubcontractorPODialog({ open, onOpenChange, projectId, userIdFil
       toast({ title: "Purchase order created from subcontractor timesheets" });
     },
     onError: (error: any) => {
+      // The server sends a short `error` label plus an actionable `message`
+      // (e.g. which person is missing a cost rate). throwIfResNotOk collapses
+      // the label into error.message, so read the detail off the payload.
+      const detail = error?.payload?.message;
       toast({
-        title: "Failed to generate purchase order",
-        description: error.message || "Please try again.",
+        title: error?.payload?.error || "Failed to generate purchase order",
+        description: detail || error.message || "Please try again.",
         variant: "destructive",
       });
     },

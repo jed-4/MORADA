@@ -146,6 +146,73 @@ function parseCurrency(value: string): number {
   return Math.round(parseFloat(clean || "0") * 100);
 }
 
+/**
+ * Numeric cell that keeps the typed characters until the field is left.
+ *
+ * These cells used to render a formatted value straight out of state — the
+ * unit price was `value={(cents / 100).toFixed(2)}` — so every keystroke
+ * rewrote the field and threw the caret to the end. Typing "65" gave "6.00",
+ * then "6.005", which rounded to 601 cents and showed "6.01": the number
+ * could never be entered. Holding a draft until blur also turns one PATCH per
+ * keystroke into one per edit.
+ *
+ * Enter commits, Escape reverts.
+ */
+function DraftNumberInput({
+  value,
+  onCommit,
+  disabled,
+  className,
+  placeholder,
+  testId,
+}: {
+  value: string;
+  onCommit: (raw: string) => void;
+  disabled?: boolean;
+  className?: string;
+  placeholder?: string;
+  testId?: string;
+}) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const cancelled = useRef(false);
+
+  const commit = () => {
+    if (cancelled.current) {
+      cancelled.current = false;
+      setDraft(null);
+      return;
+    }
+    if (draft !== null && draft !== value) onCommit(draft);
+    setDraft(null);
+  };
+
+  return (
+    <Input
+      type="text"
+      inputMode="decimal"
+      value={draft ?? value}
+      onChange={(e) => setDraft(e.target.value)}
+      onFocus={(e) => {
+        setDraft(value);
+        e.currentTarget.select();
+      }}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") {
+          e.currentTarget.blur();
+        } else if (e.key === "Escape") {
+          cancelled.current = true;
+          e.currentTarget.blur();
+        }
+      }}
+      placeholder={placeholder}
+      className={className}
+      disabled={disabled}
+      data-testid={testId}
+    />
+  );
+}
+
 function getInitials(name: string): string {
   if (!name) return "?";
   return name
@@ -299,18 +366,19 @@ function SortableItemRow({
         data-testid={`po-item-description-${item.id}`}
       />
 
-      <Input
-        type="number"
-        value={item.quantity}
-        onChange={(e) => {
-          const qty = e.target.value;
-          const newTotal = Math.round(parseFloat(qty || "0") * unitPrice);
-          onUpdate(item.id, { quantity: qty, total: newTotal });
+      <DraftNumberInput
+        value={item.quantity ?? ""}
+        onCommit={(raw) => {
+          const qty = parseFloat(raw.replace(/[^0-9.-]/g, "")) || 0;
+          onUpdate(item.id, {
+            quantity: String(qty),
+            total: Math.round(qty * unitPrice),
+          });
         }}
         placeholder="1"
         className="h-8 text-sm text-right border-0 bg-transparent hover:bg-[#f5f4f0] focus:bg-white focus:border focus:border-[#eaeae8] focus-visible:ring-0 rounded px-2"
         disabled={disabled}
-        data-testid={`po-item-qty-${item.id}`}
+        testId={`po-item-qty-${item.id}`}
       />
 
       <Input
@@ -322,18 +390,19 @@ function SortableItemRow({
         data-testid={`po-item-unit-${item.id}`}
       />
 
-      <Input
-        type="text"
+      <DraftNumberInput
         value={(unitPrice / 100).toFixed(2)}
-        onChange={(e) => {
-          const price = parseCurrency(e.target.value);
-          const newTotal = Math.round(quantity * price);
-          onUpdate(item.id, { unitPrice: price, total: newTotal });
+        onCommit={(raw) => {
+          const price = parseCurrency(raw);
+          onUpdate(item.id, {
+            unitPrice: price,
+            total: Math.round(quantity * price),
+          });
         }}
         placeholder="0.00"
         className="h-8 text-sm text-right border-0 bg-transparent hover:bg-[#f5f4f0] focus:bg-white focus:border focus:border-[#eaeae8] focus-visible:ring-0 rounded px-2"
         disabled={disabled}
-        data-testid={`po-item-price-${item.id}`}
+        testId={`po-item-price-${item.id}`}
       />
 
       <div
@@ -1000,8 +1069,8 @@ export default function PurchaseOrderDetail() {
     },
     onError: (error: any) => {
       toast({
-        title: "Failed to delete",
-        description: error.message,
+        title: error?.payload?.error || "Failed to delete",
+        description: error?.payload?.message || error.message,
         variant: "destructive",
       });
     },
