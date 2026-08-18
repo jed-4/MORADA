@@ -247,6 +247,7 @@ export default function ClientInvoiceDetail() {
   // ── core state ──────────────────────────────────────────────────────────────
   const [customLines, setCustomLines] = useState<CustomLine[]>([]);
   const [invoiceAttachments, setInvoiceAttachments] = useState<ClientInvoiceAttachment[]>([]);
+  const [attachmentsCollapsed, setAttachmentsCollapsed] = useState(true);
   const [selectedEstimateId, setSelectedEstimateId] = useState<string>("");
   const [selectedVariationIds, setSelectedVariationIds] = useState<string[]>([]);
   const [selectedBillIds, setSelectedBillIds] = useState<string[]>([]);
@@ -3753,18 +3754,31 @@ export default function ClientInvoiceDetail() {
 
                 {/* Attachments sub-section */}
                 <div className="border-t border-border/50" data-testid="section-attachments">
-                  <div className="h-8 flex items-center justify-between px-3 gap-2 border-b border-border/50 bg-muted/40">
+                  <div
+                    className="h-8 flex items-center justify-between px-3 gap-2 border-b border-border/50 bg-muted/40 cursor-pointer"
+                    onClick={() => setAttachmentsCollapsed((v) => !v)}
+                  >
                     <div className="flex items-center gap-2">
                       <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-muted-foreground/40" />
-                      <Paperclip className="h-3 w-3 text-muted-foreground flex-shrink-0" />
                       <span className="text-xs font-medium">Attachments</span>
+                      <Paperclip className="h-3 w-3 text-muted-foreground flex-shrink-0" />
+                      {invoiceAttachments.length > 0 && (
+                        <span className="text-xs text-muted-foreground">{invoiceAttachments.length}</span>
+                      )}
                     </div>
+                    {attachmentsCollapsed ? (
+                      <ChevronDown className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+                    ) : (
+                      <ChevronUp className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+                    )}
                   </div>
+                  {!attachmentsCollapsed && (
                   <InvoiceAttachments
                     invoiceId={effectiveInvoiceId || null}
                     attachments={invoiceAttachments}
                     onChange={setInvoiceAttachments}
                   />
+                  )}
                 </div>
               </div>{/* end Card 3: Documentation */}
 
