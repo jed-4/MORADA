@@ -10316,15 +10316,24 @@ export class DbStorage implements IStorage {
       if (!estimate) {
         return undefined;
       }
-      
-      if (estimate.isLocked) {
-        throw new Error("Cannot update locked estimate. Unlock the estimate first.");
-      }
-      
+
       const sanitizedUpdate = { ...updateEstimate };
       delete sanitizedUpdate.version;
       delete sanitizedUpdate.isLocked;
-      
+
+      // A lock freezes the estimate's CONTENT (line items, pricing, cost
+      // codes), not its place in the workflow. Status is board metadata, so a
+      // status-only change — archiving a signed contract, dragging it across
+      // the kanban board — stays allowed while locked. Anything that touches
+      // the priced content is still refused.
+      if (estimate.isLocked) {
+        const touchedFields = Object.keys(sanitizedUpdate);
+        const statusOnly = touchedFields.length > 0 && touchedFields.every((f) => f === "status");
+        if (!statusOnly) {
+          throw new Error("Cannot update locked estimate. Unlock the estimate first.");
+        }
+      }
+
       const result = await db.update(schema.estimates)
         .set({ ...sanitizedUpdate, updatedAt: new Date() })
         .where(eq(schema.estimates.id, id))
@@ -10332,6 +10341,25 @@ export class DbStorage implements IStorage {
       return result[0];
     } catch (error) {
       console.error("Database error in updateEstimate:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Sets the lock flag on its own. The generic updateEstimate deliberately
+   * strips isLocked so the editor can never become a side-door around the
+   * lifecycle; this is the one sanctioned writer, reached only through the
+   * /lock, /unlock, /contract and /revert endpoints.
+   */
+  async setEstimateLock(id: string, isLocked: boolean): Promise<Estimate | undefined> {
+    try {
+      const result = await db.update(schema.estimates)
+        .set({ isLocked, updatedAt: new Date() })
+        .where(eq(schema.estimates.id, id))
+        .returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in setEstimateLock:", error);
       throw error;
     }
   }

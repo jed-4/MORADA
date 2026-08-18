@@ -2260,8 +2260,37 @@ export default function EstimateDetail() {
     onError: (error: any) => toast({ title: "Error", description: error.message || "Failed to revert estimate.", variant: "destructive" }),
   });
 
-  // Lock state is no longer toggled manually — it is owned entirely by the
-  // two-stage flow: Mark as Contract locks/freezes, Revert to Approved unlocks.
+  // Manual lock — freezes an estimate's content so it can be sent knowing it
+  // won't drift afterwards. This is the same snapshot "New revision" takes of
+  // the revision it branches from, without having to branch. A CONTRACT
+  // estimate is excluded: its lock is owned by the lifecycle and paired with a
+  // frozen contract price, so it is released only via Revert to Approved.
+  const lockMutation = useMutation({
+    mutationFn: async (estimateId?: string) =>
+      apiRequest(`/api/estimates/${estimateId ?? effectiveEstimateId}/lock`, "POST"),
+    onSuccess: () => {
+      invalidateEstimateAndProject();
+      queryClient.invalidateQueries({ queryKey: ["/api/estimates", effectiveEstimateId, "versions"] });
+      toast({
+        title: "Estimate locked",
+        description: "The pricing is frozen. Unlock it if you need to make changes.",
+      });
+    },
+    onError: (error: any) =>
+      toast({ title: "Couldn't lock", description: error.message || "Failed to lock estimate.", variant: "destructive" }),
+  });
+
+  const unlockMutation = useMutation({
+    mutationFn: async (estimateId?: string) =>
+      apiRequest(`/api/estimates/${estimateId ?? effectiveEstimateId}/unlock`, "POST"),
+    onSuccess: () => {
+      invalidateEstimateAndProject();
+      queryClient.invalidateQueries({ queryKey: ["/api/estimates", effectiveEstimateId, "versions"] });
+      toast({ title: "Estimate unlocked", description: "It's editable again." });
+    },
+    onError: (error: any) =>
+      toast({ title: "Couldn't unlock", description: error.message || "Failed to unlock estimate.", variant: "destructive" }),
+  });
 
   const createVersionMutation = useMutation({
     mutationFn: async (sourceId?: string) => {
@@ -2291,15 +2320,20 @@ export default function EstimateDetail() {
     onError: () => toast({ title: "Error", description: "Failed to rename.", variant: "destructive" }),
   });
 
+  // Unlocks a revision from the revisions list. Previously PATCHed isLocked
+  // directly, which the route strips — so the button did nothing at all.
   const setAsWorkingMutation = useMutation({
     mutationFn: async (id: string) => {
-      return await apiRequest(`/api/estimates/${id}`, "PATCH", { isLocked: false });
+      return await apiRequest(`/api/estimates/${id}/unlock`, "POST");
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/estimates"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/estimates", effectiveEstimateId, "versions"] });
+      invalidateEstimateAndProject();
       toast({ title: "Set as working", description: "This revision is now unlocked for editing." });
     },
-    onError: () => toast({ title: "Error", description: "Failed to set as working.", variant: "destructive" }),
+    onError: (error: any) =>
+      toast({ title: "Error", description: error.message || "Failed to set as working.", variant: "destructive" }),
   });
 
   // setAsContractMutation removed: the single Approve action below now does
@@ -5632,6 +5666,32 @@ export default function EstimateDetail() {
                   Browse catalog
                 </button>
                 <Separator className="my-1" />
+                {/* Manual lock — snapshot the pricing before sending a quote
+                    out. Hidden on contract estimates, whose lock is owned by
+                    the lifecycle and released only via Revert to Approved. */}
+                {estimate && estimate.status !== "contract" && (
+                  estimate.isLocked ? (
+                    <button
+                      className="flex items-center gap-2 px-2 py-1.5 text-xs rounded-md hover-elevate w-full text-left disabled:opacity-40 disabled:cursor-not-allowed"
+                      onClick={() => unlockMutation.mutate(undefined)}
+                      disabled={unlockMutation.isPending}
+                      data-testid="button-unlock-estimate"
+                    >
+                      <LockOpen className="w-3.5 h-3.5 text-muted-foreground" />
+                      Unlock estimate
+                    </button>
+                  ) : (
+                    <button
+                      className="flex items-center gap-2 px-2 py-1.5 text-xs rounded-md hover-elevate w-full text-left disabled:opacity-40 disabled:cursor-not-allowed"
+                      onClick={() => lockMutation.mutate(undefined)}
+                      disabled={lockMutation.isPending}
+                      data-testid="button-lock-estimate"
+                    >
+                      <Lock className="w-3.5 h-3.5 text-muted-foreground" />
+                      Lock estimate
+                    </button>
+                  )
+                )}
                 {/* Stage 1 — Approve: available for draft/working estimates.
                     Promotes to the live (editable) selected estimate. */}
                 {estimate && estimate.status !== "approved" && estimate.status !== "contract" && (

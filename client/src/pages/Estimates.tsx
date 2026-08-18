@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { usePageTitle } from "@/hooks/usePageTitle";
@@ -16,8 +16,9 @@ import {
   Lock, 
   Search,
   DollarSign,
-  LayoutGrid,
+  LayoutList,
   Columns3,
+  SlidersHorizontal,
   Download,
   ChevronDown,
   GripVertical,
@@ -78,18 +79,51 @@ import { ProjectIcon } from "@/components/ProjectIcon";
 import { logActivity } from "@/lib/activityLogger";
 import { EmptyState } from "@/components/EmptyState";
 
+type ViewMode = 'list' | 'kanban';
+type CardWidth = 'compact' | 'comfortable' | 'spacious';
+const VIEW_KEY = "estimates-view";
+const CARD_WIDTH_KEY = "estimates-card-width";
+
 export default function Estimates() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const { user } = useAuth();
-  const pageTitle = usePageTitle({ pageName: "Estimates" });
+  // Sets document.title; the visible page name comes from the breadcrumb.
+  usePageTitle({ pageName: "Estimates" });
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedProject, setSelectedProject] = useState("All");
   const [selectedStatus, setSelectedStatus] = useState("All");
-  const [currentView, setCurrentView] = useState<'grid' | 'kanban'>('grid');
+  // Remembers the last view between visits — coming back to this page should
+  // land you where you left off, not reset to the list every time.
+  const [currentView, setCurrentView] = useState<ViewMode>(() => {
+    if (typeof window === "undefined") return 'list';
+    return window.localStorage.getItem(VIEW_KEY) === 'kanban' ? 'kanban' : 'list';
+  });
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(VIEW_KEY, currentView);
+    } catch {
+      /* noop — private browsing / storage disabled */
+    }
+  }, [currentView]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [hoveredColumnId, setHoveredColumnId] = useState<string | null>(null);
-  const [cardWidth, setCardWidth] = useState<'compact' | 'comfortable' | 'spacious'>('comfortable');
+  // Persisted alongside the view — the card density you chose should survive
+  // leaving the page, same as the view itself.
+  const [cardWidth, setCardWidth] = useState<CardWidth>(() => {
+    if (typeof window === "undefined") return 'comfortable';
+    const saved = window.localStorage.getItem(CARD_WIDTH_KEY);
+    return saved === 'compact' || saved === 'spacious' ? saved : 'comfortable';
+  });
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(CARD_WIDTH_KEY, cardWidth);
+    } catch {
+      /* noop — private browsing / storage disabled */
+    }
+  }, [cardWidth]);
 
   const handleNewEstimate = () => {
     setLocation('/estimates/new');
@@ -110,9 +144,19 @@ export default function Estimates() {
     },
   });
 
-  // Fetch all projects for display
+  // Include archived projects: an estimate outlives its project being
+  // archived, and must still show which project it belongs to.
   const { data: projects = [] } = useQuery<Project[]>({
-    queryKey: ["/api/projects"],
+    queryKey: ["/api/projects", { includeArchived: true }],
+    queryFn: async () => {
+      const response = await fetch("/api/projects?includeArchived=1", {
+        credentials: "include",
+      });
+      if (!response.ok) {
+        throw new Error(`${response.status}: ${response.statusText}`);
+      }
+      return response.json();
+    },
   });
 
   // Fetch estimate status options from field settings
@@ -453,18 +497,9 @@ export default function Estimates() {
         <ChevronRight className="h-3 w-3 text-muted-foreground/50 flex-shrink-0" />
         <span className="text-xs font-medium text-foreground" data-testid="text-page-title">Estimates</span>
       </div>
-      {/* Row 1 - Title & Actions (36px) */}
-      <div className="h-9 bg-background flex items-center justify-between px-2 gap-4 flex-shrink-0">
-        {/* Left: Title + Count */}
-        <div className="flex items-center gap-3">
-          <h2 className="text-sm font-semibold" data-testid="text-page-title">
-            {pageTitle}
-          </h2>
-          <Badge variant="secondary" className="text-xs" data-testid="text-estimate-count">
-            {filteredEstimates.length} estimates
-          </Badge>
-        </div>
-
+      {/* Row 1 - Actions (36px). The page name lives in the breadcrumb above —
+          a second title here read as a duplicate breadcrumb. */}
+      <div className="h-9 bg-background flex items-center justify-end px-2 gap-4 flex-shrink-0">
         {/* Right: New Estimate Button */}
         <div className="flex items-center gap-1.5">
           <button
@@ -480,31 +515,33 @@ export default function Estimates() {
 
       {/* Row 2 - View Tabs (36px) */}
       <div className="h-9 bg-background flex items-center justify-between px-2 border-b border-border flex-shrink-0">
-        {/* Left: View Tabs */}
-        <div className="flex items-center gap-0.5">
+        {/* Left: View toggle (icon only) */}
+        <div className="bg-muted/40 rounded-md p-0.5 h-[28px] flex" data-testid="view-toggle">
           <button
-            onClick={() => setCurrentView('grid')}
-            className={`h-6 w-auto px-2 text-xs border rounded-md ${
-              currentView === 'grid' 
-                ? 'bg-primary text-white border-primary/20 hover:bg-primary/90' 
-                : 'hover-elevate'
-            } active-elevate-2 flex items-center gap-1`}
-            data-testid="button-grid-view"
+            onClick={() => setCurrentView('list')}
+            className={`w-7 h-full flex items-center justify-center rounded transition-colors ${
+              currentView === 'list'
+                ? 'bg-card shadow-sm text-foreground'
+                : 'text-muted-foreground'
+            }`}
+            data-testid="button-list-view"
+            aria-label="List view"
+            title="List view"
           >
-            <LayoutGrid className="w-3 h-3" />
-            <span>Grid</span>
+            <LayoutList className="w-3.5 h-3.5" />
           </button>
           <button
             onClick={() => setCurrentView('kanban')}
-            className={`h-6 w-auto px-2 text-xs border rounded-md ${
-              currentView === 'kanban' 
-                ? 'bg-primary text-white border-primary/20 hover:bg-primary/90' 
-                : 'hover-elevate'
-            } active-elevate-2 flex items-center gap-1`}
+            className={`w-7 h-full flex items-center justify-center rounded transition-colors ${
+              currentView === 'kanban'
+                ? 'bg-card shadow-sm text-foreground'
+                : 'text-muted-foreground'
+            }`}
             data-testid="button-kanban-view"
+            aria-label="Kanban view"
+            title="Kanban view"
           >
-            <Columns3 className="w-3 h-3" />
-            <span>Kanban</span>
+            <Columns3 className="w-3.5 h-3.5" />
           </button>
         </div>
 
@@ -617,8 +654,8 @@ export default function Estimates() {
           </Popover>
         </div>
 
-        {/* Right: Column picker (grid view only) */}
-        {currentView === 'grid' && (
+        {/* Right: Column picker (list view only) */}
+        {currentView === 'list' && (
           <Popover>
             <PopoverTrigger asChild>
               <button
@@ -627,7 +664,7 @@ export default function Estimates() {
                 title="Columns"
                 aria-label="Columns"
               >
-                <Columns3 className="w-3 h-3" />
+                <SlidersHorizontal className="w-3 h-3" />
               </button>
             </PopoverTrigger>
             <PopoverContent align="end" className="p-0">
@@ -668,8 +705,8 @@ export default function Estimates() {
           />
         ) : (
           <>
-            {/* Grid View */}
-            {currentView === 'grid' && (
+            {/* List View */}
+            {currentView === 'list' && (
               <div className="w-full h-full">
                 <DataTable
                   data={filteredEstimates}
@@ -738,7 +775,7 @@ function KanbanColumn({ status, estimates, count, estimateStatuses, projects, ca
   count: number;
   estimateStatuses: FieldOption[];
   projects: Project[];
-  cardWidth: 'compact' | 'comfortable' | 'spacious';
+  cardWidth: CardWidth;
   isHighlighted: boolean;
 }) {
   const { setNodeRef } = useDroppable({
@@ -863,15 +900,23 @@ function SortableEstimateCard({ estimate, estimateStatuses, projects }: {
         <GripVertical className="h-4 w-4 text-muted-foreground/50" />
       </div>
       <div className="flex-1 min-w-0">
-        <h4 className="font-medium text-sm mb-0.5 line-clamp-1">{estimate.name}</h4>
-        <p className="text-data text-muted-foreground mb-2">
+        {/* Project leads the card — it's how you find the job at a glance;
+            the estimate/revision name is the qualifier underneath. */}
+        <h4 className="font-medium text-sm mb-0.5 line-clamp-1">
           {getProjectName(estimate.projectId)}
+        </h4>
+        <p className="text-data text-muted-foreground mb-2 line-clamp-1">
+          {estimate.name}
         </p>
-        <div className="flex items-center justify-between gap-2">
+        {/* wrap + min-w-0: status pills are whitespace-nowrap, so on a compact
+            card a long status name used to push out past the card edge. */}
+        <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 min-w-0">
           <span className="text-xs font-semibold">
             {summary ? formatCurrency(summary.total) : 'Loading...'}
           </span>
-          {getStatusBadge(estimate)}
+          <span className="min-w-0 max-w-full overflow-hidden">
+            {getStatusBadge(estimate)}
+          </span>
         </div>
       </div>
     </div>
