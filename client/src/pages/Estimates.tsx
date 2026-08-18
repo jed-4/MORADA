@@ -436,6 +436,39 @@ export default function Estimates() {
   // isn't one — so the archive is always the list.
   const effectiveView: ViewMode = showArchived ? 'list' : currentView;
 
+  // Field settings are the user's to change, so an estimate can end up in a
+  // status with no configured option — "contract" is one today. Those used to
+  // get no column and vanish from the board with nothing to say they existed.
+  // Give every status that actually holds estimates a column, appending the
+  // unconfigured ones after the configured order.
+  const boardColumns = useMemo<FieldOption[]>(() => {
+    const configured = estimateStatuses
+      .filter((status) => status.isActive)
+      .sort((a, b) => a.sortOrder - b.sortOrder);
+    const known = new Set(configured.map((s) => s.key));
+
+    const orphanKeys = Array.from(
+      new Set(
+        estimates
+          .map((e) => e.status)
+          .filter((key): key is string => !!key && key !== ARCHIVED_STATUS && !known.has(key)),
+      ),
+    ).sort();
+
+    const orphanColumns = orphanKeys.map((key, i) => ({
+      // Enough of a FieldOption to render a column. No colour, so it picks up
+      // the neutral accent and reads as the odd one out that it is.
+      id: `unconfigured-${key}`,
+      key,
+      name: key.replace(/[_-]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()),
+      color: null,
+      isActive: true,
+      sortOrder: configured.length + i,
+    })) as unknown as FieldOption[];
+
+    return [...configured, ...orphanColumns];
+  }, [estimateStatuses, estimates]);
+
   const EstimateTotalCell = ({ estimateId }: { estimateId: string }) => {
     const { data: summary } = useQuery<EstimateSummary>({
       queryKey: ["/api/estimates", estimateId, "summary"],
@@ -837,9 +870,7 @@ export default function Estimates() {
                 onDragEnd={handleDragEnd}
               >
                 <div className="flex gap-4 overflow-x-auto pb-4">
-                  {estimateStatuses
-                    .filter(status => status.isActive)
-                    .sort((a, b) => a.sortOrder - b.sortOrder)
+                  {boardColumns
                     .map(status => {
                       const columnEstimates = filteredEstimates.filter(est => est.status === status.key);
                       
