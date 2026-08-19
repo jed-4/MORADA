@@ -4723,8 +4723,15 @@ export default function EstimateDetail() {
     // The cursor is a soft tint instead, and editing looks identical to it —
     // only the caret arrives.
     const cellHighlight = "bg-primary/[0.07]";
+    // Figures read right-aligned, and the editor has to agree with the display
+    // or the number jumps sides the moment you click it.
+    const NUMERIC_COLUMNS = new Set([
+      'quantity', 'unitCostExTax', 'unitCostIncTax', 'builderCost', 'builderCostIncTax',
+      'markup', 'markupDollarAmount', 'clientPriceExTax', 'clientTax', 'clientPriceIncTax',
+    ]);
     const cellBase =
       "h-9 px-2 flex items-center text-sm overflow-hidden" +
+      (NUMERIC_COLUMNS.has(columnId) ? " justify-end text-right tabular-nums" : "") +
       (isCursor ? ` ${cellHighlight}` : "");
     const cellActive = cellHighlight;
     // Editable cell hover: layout-neutral bottom-border underline (border-b space pre-reserved)
@@ -4880,7 +4887,7 @@ export default function EstimateDetail() {
                 onKeyDown={(e) => handleCellKeyDown(e, item, 'name')}
                 onBlur={() => handleCellSave(item, 'name')}
                 onFocus={(e) => e.target.select()}
-                className="h-full w-full bg-transparent border-0 shadow-none focus-visible:ring-0 px-0 text-xs md:text-xs font-medium"
+                className="h-full w-full bg-transparent border-0 border-none rounded-none shadow-none outline-none focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0 focus-visible:ring-offset-0 px-0 text-xs md:text-xs font-medium"
                 autoFocus
                 data-testid={`input-edit-name-${item.id}`}
               />
@@ -5149,7 +5156,7 @@ export default function EstimateDetail() {
                 onBlur={() => handleCellSave(item, 'quantity')}
                 onFocus={(e) => e.target.select()}
                 onDoubleClick={(e) => e.stopPropagation()}
-                className="h-full w-full bg-transparent border-0 shadow-none focus-visible:ring-0 px-0 text-sm md:text-sm [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                className="h-full w-full bg-transparent border-0 border-none rounded-none shadow-none outline-none focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0 focus-visible:ring-offset-0 px-0 text-sm md:text-sm text-right [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                 autoFocus
                 min="0"
                 step="0.01"
@@ -5237,7 +5244,7 @@ export default function EstimateDetail() {
                 data-testid={`select-edit-unitType-${item.id}`}
                 defaultOpen
               >
-                <SelectTrigger className="h-full w-full px-0 text-xs border-0 shadow-none focus:ring-0 bg-transparent">
+                <SelectTrigger className="h-full w-full px-0 text-sm bg-transparent border-0 border-none rounded-none shadow-none outline-none focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0 focus-visible:ring-offset-0">
                   <SelectValue placeholder="Unit" />
                 </SelectTrigger>
                 <SelectContent>
@@ -5281,7 +5288,7 @@ export default function EstimateDetail() {
                 onBlur={() => handleCellSave(item, 'unitCostExTax')}
                 onFocus={(e) => e.target.select()}
                 onDoubleClick={(e) => e.stopPropagation()}
-                className="h-full w-full bg-transparent border-0 shadow-none focus-visible:ring-0 px-0 text-sm md:text-sm [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                className="h-full w-full bg-transparent border-0 border-none rounded-none shadow-none outline-none focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0 focus-visible:ring-offset-0 px-0 text-sm md:text-sm text-right [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                 autoFocus
                 min="0"
                 step="0.01"
@@ -5319,7 +5326,7 @@ export default function EstimateDetail() {
                 onBlur={() => handleCellSave(item, 'unitCostIncTax')}
                 onFocus={(e) => e.target.select()}
                 onDoubleClick={(e) => e.stopPropagation()}
-                className="h-full w-full bg-transparent border-0 shadow-none focus-visible:ring-0 px-0 text-sm md:text-sm [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                className="h-full w-full bg-transparent border-0 border-none rounded-none shadow-none outline-none focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0 focus-visible:ring-offset-0 px-0 text-sm md:text-sm text-right [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                 autoFocus
                 min="0"
                 step="0.01"
@@ -5376,7 +5383,7 @@ export default function EstimateDetail() {
                 onBlur={() => handleCellSave(item, 'markup')}
                 onFocus={(e) => e.target.select()}
                 onDoubleClick={(e) => e.stopPropagation()}
-                className="h-full w-full bg-transparent border-0 shadow-none focus-visible:ring-0 px-0 text-sm md:text-sm [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                className="h-full w-full bg-transparent border-0 border-none rounded-none shadow-none outline-none focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0 focus-visible:ring-offset-0 px-0 text-sm md:text-sm text-right [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                 autoFocus
                 min="0"
                 step="1"
