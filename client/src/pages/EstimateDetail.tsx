@@ -166,9 +166,12 @@ type ColumnConfig = { id: string; label: string; visible: boolean; widthPx: numb
 // one is a tick away in the column picker, and saved layouts are untouched;
 // this only changes where a new company begins.
 const DEFAULT_COLUMNS: ColumnConfig[] = [
+  // Item leads. The leftmost column is the most valuable space on the row and
+  // it was holding a cost code that is often blank; the thing that identifies
+  // the line belongs there.
+  { id: 'item', label: 'Item', visible: true, widthPx: 200 },
   { id: 'costCode', label: 'Cost Code', visible: true, widthPx: 90 },
   { id: 'type', label: 'Type', visible: true, widthPx: 80 },
-  { id: 'item', label: 'Item', visible: true, widthPx: 140 },
   { id: 'description', label: 'Description', visible: true, widthPx: 160 },
   { id: 'status', label: 'Status', visible: true, widthPx: 85 },
   { id: 'proposalVisible', label: 'Proposal', visible: true, widthPx: 70 },
@@ -309,6 +312,7 @@ function CellChip({
   onClick,
   onPickFromList,
   disabled,
+  className,
   title,
   testId,
   children,
@@ -317,6 +321,7 @@ function CellChip({
   /** Right-click: jump straight to a value instead of cycling to it. */
   onPickFromList?: () => void;
   disabled?: boolean;
+  className?: string;
   title?: string;
   testId: string;
   children: React.ReactNode;
@@ -334,7 +339,7 @@ function CellChip({
       }}
       disabled={disabled}
       title={title}
-      className="inline-flex rounded-[9px] hover-elevate active-elevate-2 disabled:opacity-60 disabled:cursor-not-allowed disabled:pointer-events-none"
+      className={`inline-flex rounded-[9px] hover-elevate active-elevate-2 disabled:opacity-60 disabled:cursor-not-allowed disabled:pointer-events-none ${className || ''}`}
       data-testid={testId}
     >
       {children}
@@ -4298,7 +4303,10 @@ export default function EstimateDetail() {
       const lc = (rowItem.status || '').toString().toLowerCase();
       if (lc === 'done' || lc === 'complete') return "bg-sage/10";
       if (lc === 'not relevant' || lc === 'not_relevant') return "bg-muted/70";
-      return idx % 2 === 0 ? "bg-card" : "bg-muted/20";
+      // No zebra striping. Rows already answer "which one am I on" three
+      // ways — hover, selection tint and the cell cursor — and a fourth
+      // signal underneath them was just noise.
+      return "bg-card";
     };
 
     let itemClassName = buildRowBg(item, rowIndex);
@@ -4752,10 +4760,22 @@ export default function EstimateDetail() {
     // reads as symmetric rather than ragged, without forcing every chip to a
     // fixed width and going back to the blocky look.
     const CENTERED_COLUMNS = new Set(['status', 'shownAs', 'allowance', 'type']);
+    // Computed from the entered figures — nothing here is typed. Muted so the
+    // numbers you can actually change come forward. The line's final client
+    // price stays at full weight: it's the answer the row exists to give.
+    const DERIVED_COLUMNS = new Set([
+      'unitCostIncTax', 'builderCost', 'builderCostIncTax',
+      'clientTax', 'markupDollarAmount', 'clientPriceExTax',
+    ]);
+    // Where entering stops and pricing begins. One hairline gives the eye a
+    // landmark instead of sixteen columns of equal weight.
+    const MONEY_BOUNDARY = 'unitCostExTax';
     const cellBase =
       "h-9 px-2 flex items-center text-sm overflow-hidden" +
       (NUMERIC_COLUMNS.has(columnId) ? " justify-end text-right tabular-nums" : "") +
       (CENTERED_COLUMNS.has(columnId) ? " justify-center" : "") +
+      (DERIVED_COLUMNS.has(columnId) ? " text-muted-foreground" : "") +
+      (columnId === MONEY_BOUNDARY ? " border-l border-border" : "") +
       (isCursor ? ` ${cellHighlight}` : "");
     const cellActive = cellHighlight;
     // Editable cell hover: layout-neutral bottom-border underline (border-b space pre-reserved)
@@ -5141,11 +5161,18 @@ export default function EstimateDetail() {
           allowanceType === 'Prime Cost' ? 'PC' : 
           allowanceType === 'Provisional Sum' ? 'PS' : 
           '-';
+        // Most lines carry no allowance, and a column of grey dashes saying
+        // "nothing" is noise. It fades in on row hover so the cell is still
+        // obviously clickable when you want to set one.
+        const allowanceFade = allowanceType === 'None'
+          ? 'opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity'
+          : '';
         
         return (
           <div className={cellBase} role="gridcell" key={`${item.id}-allowance`} data-testid={`cell-allowance-${item.id}`}>
             <CellChip
               disabled={isLocked}
+              className={allowanceFade}
               title={isLocked ? undefined : `Allowance: ${allowanceType}. Click to change.`}
               testId={`button-toggle-allowance-${item.id}`}
               onClick={() => {

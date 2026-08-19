@@ -218,7 +218,7 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
         <div className="absolute -bottom-[2px] left-0 right-0 h-1 bg-primary z-50 rounded-full shadow-[0_0_8px_rgba(168,144,212,0.6)]" />
       )}
     <Card
-      className={`rounded-xl border border-border bg-card shadow-sm mb-2 overflow-hidden ${isGroupSelected ? 'ring-2 ring-primary' : ''}`}
+      className={`rounded-xl border border-border bg-card shadow-sm mb-4 overflow-hidden ${isGroupSelected ? 'ring-2 ring-primary' : ''}`}
       data-testid={`card-group-${group.id}`}
     >
       {/* Group Header - CSS Grid */}
@@ -276,7 +276,7 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
                       <ChevronDown className="h-4 w-4" />
                     )}
                   </Button>
-                  <span className="font-semibold text-sm flex-shrink-0">{group.name}</span>
+                  <span className="font-semibold text-[15px] tracking-tight flex-shrink-0">{group.name}</span>
                   {group.description && (
                     // The name keeps its full width; the description takes what
                     // is left. Previously both truncated equally, so a real
