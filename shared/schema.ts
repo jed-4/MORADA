@@ -1064,7 +1064,10 @@ export const insertEstimateGroupSchema = createInsertSchema(estimateGroups).omit
   createdAt: true,
   updatedAt: true,
 }).extend({
-  status: z.enum(ESTIMATE_GROUP_STATUSES).optional(),
+  // Section status is configurable in Field Settings (estimate_group.status),
+  // so any option key is valid — ESTIMATE_GROUP_STATUSES are just the seeded
+  // defaults, not the permitted set.
+  status: z.string().min(1).optional(),
 });
 
 export type InsertEstimateGroup = z.infer<typeof insertEstimateGroupSchema>;

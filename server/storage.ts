@@ -7749,6 +7749,10 @@ export class DbStorage implements IStorage {
       { id: 'cat-selection-categories', key: 'selection.category', label: 'Selection Categories', entity: 'selection', description: 'Categories for selections', sortOrder: 4 },
       { id: 'cat-location-rooms', key: 'selection.room', label: 'Locations/Rooms', entity: 'selection', description: 'Room/location options for selections', sortOrder: 5 },
       { id: 'cat-checklist-type', key: 'checklist.type', label: 'Checklist Types', entity: 'checklist', description: 'Type categories for checklist templates', sortOrder: 6 },
+      // 'estimate_group.status' belongs here, but field_categories.company_id
+      // is NOT NULL in the database while this code has no companyId to give
+      // it, so the insert fails. EstimateGroupCard falls back to the three
+      // seeded defaults until field settings are company-scoped (a8d802e8).
     ];
     
     // Check which categories are missing
@@ -7780,6 +7784,15 @@ export class DbStorage implements IStorage {
     let optionsToInsert: { id: string; categoryId: string; key: string; name: string; color: string; isDefault: boolean; isCompleted?: boolean; sortOrder: number }[] = [];
     
     switch (categoryKey) {
+      case 'estimate_group.status':
+        // The three that used to be hardcoded in EstimateGroupCard. Seeded so
+        // existing rows keep their meaning; companies can add their own.
+        optionsToInsert = [
+          { id: 'opt-estimate-group-status-not-started', categoryId, key: 'not_started', name: 'Not Started', color: '#6B7280', isDefault: true, isCompleted: false, sortOrder: 0 },
+          { id: 'opt-estimate-group-status-in-progress', categoryId, key: 'in_progress', name: 'In Progress', color: '#F59E0B', isDefault: false, isCompleted: false, sortOrder: 1 },
+          { id: 'opt-estimate-group-status-complete', categoryId, key: 'complete', name: 'Complete', color: '#10B981', isDefault: false, isCompleted: true, sortOrder: 2 },
+        ];
+        break;
       case 'checklist.type':
         optionsToInsert = [
           { id: 'opt-checklist-type-task', categoryId, key: 'Task', name: 'Task', color: '#3B82F6', isDefault: true, sortOrder: 0 },
@@ -25812,13 +25825,11 @@ export class DbStorage implements IStorage {
 
       // estimate_groups: progress status per group section.
       await db.execute(sql`ALTER TABLE estimate_groups ADD COLUMN IF NOT EXISTS status text NOT NULL DEFAULT 'not_started'`);
+      // Section status is configurable in Field Settings, so the column can
+      // hold any option key the company defines. The old CHECK pinned it to
+      // the three seeded defaults and rejected every custom one.
       await db.execute(sql`
-        DO $$ BEGIN
-          ALTER TABLE estimate_groups
-            ADD CONSTRAINT estimate_groups_status_check
-            CHECK (status IN ('not_started', 'in_progress', 'complete'));
-        EXCEPTION WHEN duplicate_object THEN NULL;
-        END $$
+        ALTER TABLE estimate_groups DROP CONSTRAINT IF EXISTS estimate_groups_status_check
       `);
 
       // Backfill company_id from the creating user's company where missing.
