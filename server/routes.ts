@@ -7775,6 +7775,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (target === "approved" && current !== "contract") {
         return res.status(409).json({ error: `Cannot revert to Approved from status '${current}'.` });
       }
+
+      // Once a client invoice has been approved, the contract it claims against
+      // is committed — reverting would release the frozen sum and move the basis
+      // under a receivable that is already live in Xero. Drafts don't block:
+      // nothing has been billed yet.
+      if (current === "contract" && project.contractedEstimateId === req.params.id) {
+        const projectInvoices = await storage.getClientInvoices(existing.projectId, undefined, userCompanyId);
+        const committed = (projectInvoices || []).filter(
+          (inv: any) => inv.status && inv.status !== "draft",
+        );
+        if (committed.length > 0) {
+          const numbers = committed.slice(0, 3).map((i: any) => i.invoiceNumber || i.name).join(", ");
+          return res.status(409).json({
+            error: "CONTRACT_HAS_INVOICES",
+            message:
+              `Cannot revert the contract: ${committed.length} client invoice${committed.length === 1 ? " has" : "s have"} ` +
+              `already been approved against it (${numbers}${committed.length > 3 ? ", …" : ""}). ` +
+              `Void or delete those invoices first, or raise a variation instead.`,
+          });
+        }
+      }
       if (target === "draft" && current === "draft") {
         return res.status(409).json({ error: "Estimate is already a Draft." });
       }
@@ -22300,12 +22321,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Mark the invoice as sent — but never clobber payment-derived states
       // (re-emailing a paid/partial invoice must not revert it to "sent").
-      const statusUpdate = invoice.status === "draft" ? { status: "sent" as const } : {};
+      // "approved" advances too: in Xero both approved and sent are AUTHORISED,
+      // separated only by SentToContact, so emailing is what moves it on.
+      const statusUpdate =
+        invoice.status === "draft" || invoice.status === "approved"
+          ? { status: "sent" as const }
+          : {};
       // Leaving draft locks the invoice to the contract price at that moment.
       let lockUpdate: any = {};
       if (invoice.status === "draft" && (invoice as any).lockedContractPrice == null) {
         const priceCents = await computeProjectContractPriceCents(invoice.projectId);
         if (priceCents != null) lockUpdate = { lockedContractPrice: priceCents };
+      }
+
+      // Tell Xero it has been sent, so the two systems agree on the flag that
+      // distinguishes approved from sent. Best-effort: the client has the email
+      // either way, and failing the request here would be a lie about that.
+      if ((invoice as any).xeroInvoiceId) {
+        try {
+          const conn = await storage.getXeroConnectionByCompanyId((req.user as any)?.companyId);
+          if (conn) await xeroService.markInvoiceSentToContact(conn.id, (invoice as any).xeroInvoiceId);
+        } catch (e: any) {
+          console.warn("[client-invoice] emailed, but could not flag SentToContact in Xero:", e?.message || e);
+        }
       }
       await storage.updateClientInvoice(invoice.id, {
         ...statusUpdate,
@@ -37043,11 +37081,24 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
       });
 
       if (xeroInvoice?.InvoiceID) {
-        await storage.updateClientInvoice(invoiceId, {
+        // The invoice is AUTHORISED in Xero the moment this succeeds, so it is
+        // no longer a draft here either. Leaving it draft is what let a later
+        // estimate edit move the claim basis underneath a live receivable: every
+        // contract-price guard is written as `status !== "draft"`.
+        const leavingDraft = invoice.status === "draft";
+        const patch: any = {
           xeroInvoiceId: xeroInvoice.InvoiceID,
           xeroInvoiceNumber: xeroInvoice.InvoiceNumber || null,
           sendToXero: true,
-        } as any);
+        };
+        if (leavingDraft) {
+          patch.status = "approved";
+          if ((invoice as any).lockedContractPrice == null) {
+            const priceCents = await computeProjectContractPriceCents(invoice.projectId);
+            if (priceCents != null) patch.lockedContractPrice = priceCents;
+          }
+        }
+        await storage.updateClientInvoice(invoiceId, patch);
       }
 
       res.json({
@@ -37268,6 +37319,13 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
       const amountPaidCents = Math.round((xeroInvoice.AmountPaid || 0) * 100);
       const xeroStatus: string = xeroInvoice.Status;
       const amountDueCents = Math.round((xeroInvoice.AmountDue || 0) * 100);
+
+      // Xero keeps "sent" off the status axis entirely — it is a SentToContact
+      // flag on the invoice. Mirror it so an invoice sent from inside Xero
+      // still reads as sent here. Never walk backwards over a payment state.
+      if (xeroInvoice.SentToContact && (invoice.status === "approved" || invoice.status === "draft")) {
+        await storage.updateClientInvoice(invoice.id, { status: "sent" } as any);
+      }
 
       // Record the Xero-side payment increase as a payment row, then let
       // syncClientInvoicePaidStatus recompute paid/balance/status from the

@@ -1321,6 +1321,34 @@ export class XeroService {
     return data.Payments?.[0] || null;
   }
 
+  /**
+   * Flag an invoice as sent to the contact in Xero.
+   *
+   * Xero has no SENT status — AUTHORISED covers both "approved" and "sent", and
+   * SentToContact is the boolean that separates them. Morada carries those as
+   * two statuses, so emailing from here has to write the flag back or Xero
+   * keeps showing the invoice as never sent.
+   */
+  async markInvoiceSentToContact(connectionId: string, invoiceId: string): Promise<void> {
+    const accessToken = await this.getValidToken(connectionId);
+    const connection = await storage.getXeroConnection(connectionId);
+    if (!connection) throw new Error("Xero connection not found");
+
+    const response = await fetch(`${XERO_API_BASE}/Invoices`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Xero-Tenant-Id": connection.tenantId,
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify({ Invoices: [{ InvoiceID: invoiceId, SentToContact: true }] }),
+    });
+    if (!response.ok) {
+      throw new Error(summarizeXeroError(await response.text()));
+    }
+  }
+
   async getInvoice(connectionId: string, invoiceId: string): Promise<any> {
     const accessToken = await this.getValidToken(connectionId);
     const connection = await storage.getXeroConnection(connectionId);

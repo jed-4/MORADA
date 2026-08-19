@@ -53,6 +53,7 @@ import { EmptyState } from "@/components/EmptyState";
 const STATUS_OPTIONS = [
   { value: "all",     label: "All statuses" },
   { value: "draft",   label: "Draft" },
+  { value: "approved", label: "Approved" },
   { value: "sent",    label: "Sent" },
   { value: "partial", label: "Partial" },
   { value: "paid",    label: "Paid" },
@@ -60,12 +61,12 @@ const STATUS_OPTIONS = [
 ];
 
 const STATUS_LABEL: Record<string, string> = {
-  draft: "Draft", sent: "Sent", partial: "Partial", paid: "Paid", overdue: "Overdue",
+  draft: "Draft", approved: "Approved", sent: "Sent", partial: "Partial", paid: "Paid", overdue: "Overdue",
 };
 
 // An invoice only carries a real amount "Due" once it has been issued. Drafts are
 // not yet a receivable; paid invoices have a zero balance (and show "Paid").
-const ISSUED_INVOICE_STATUSES = new Set(["sent", "partial", "overdue"]);
+const ISSUED_INVOICE_STATUSES = new Set(["approved", "sent", "partial", "overdue"]);
 const isIssuedInvoice = (status: string) => ISSUED_INVOICE_STATUSES.has(status);
 
 function StatusChip({ status }: { status: string }) {

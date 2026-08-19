@@ -2290,22 +2290,37 @@ export default function ClientInvoiceDetail() {
                   </button>
                 )}
 
-                {/* Manual push button — only shown when sendToXero is off and no xeroInvoiceId */}
-                {isEditMode && xeroStatus?.connected && !invoice?.xeroInvoiceId && !sendToXero && (
+                {/* Approve — distinct from saving. Saving records what the
+                    invoice says; approving authorises it in Xero, which makes it
+                    a live receivable and locks the contract price it claims
+                    against. Shown until the invoice has been approved. */}
+                {isEditMode && xeroStatus?.connected && !invoice?.xeroInvoiceId && (
                   <button
                     type="button"
                     onClick={handlePushToXero}
                     disabled={xeroPushing}
-                    className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1 text-status-info border-status-info/30"
-                    data-testid="button-send-to-xero"
+                    className="h-6 w-auto px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-1"
+                    data-testid="button-approve-invoice"
                   >
                     {xeroPushing ? (
                       <Loader2 className="w-3 h-3 animate-spin" />
                     ) : (
-                      <Send className="w-3 h-3" />
+                      <Check className="w-3 h-3" />
                     )}
-                    <span>Push to Xero</span>
+                    <span>Approve</span>
                   </button>
+                )}
+
+                {/* Approved but not yet sent — the two are separate in Xero
+                    (AUTHORISED vs SentToContact) and now separate here too. */}
+                {isEditMode && invoice?.status === "approved" && (
+                  <span
+                    className="text-data text-status-info flex items-center gap-1 px-1.5 h-6 border border-status-info/30 rounded-md"
+                    data-testid="badge-approved"
+                  >
+                    <Check className="w-3 h-3" />
+                    Approved
+                  </span>
                 )}
               </div>
             </div>
@@ -2845,6 +2860,25 @@ export default function ClientInvoiceDetail() {
                               (now {formatCurrency((contractMetrics?.originalContractPriceIncGstCents ?? 0) / 100)},
                               invoiced at {formatCurrency((invoice?.lockedContractPrice ?? 0) / 100)}).
                               This invoice keeps the amount it was sent with.
+                            </span>
+                          </div>
+                        )}
+
+                        {/* Committed, but claiming against a price that can still
+                            move. True for the invoices backfilled by 0050: they
+                            were approved in Xero before Morada stamped a price,
+                            and that moment cannot be reconstructed. */}
+                        {!!invoice && invoice.status !== "draft" && invoice.lockedContractPrice == null && (
+                          <div
+                            className="flex items-start gap-2 rounded-md border px-3 py-2 text-sm"
+                            style={{ borderColor: "hsl(var(--amber))", backgroundColor: "hsl(var(--amber-light))" }}
+                            data-testid="banner-contract-price-unconfirmed"
+                          >
+                            <Lock className="w-4 h-4 mt-0.5 shrink-0" style={{ color: "hsl(var(--amber))" }} />
+                            <span>
+                              Contract price not confirmed on this invoice — it reads the project's
+                              live contract price, so editing the contract estimate will change what
+                              this invoice claims against. Re-approving stamps the current price.
                             </span>
                           </div>
                         )}
