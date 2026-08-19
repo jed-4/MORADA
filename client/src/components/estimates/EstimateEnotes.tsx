@@ -407,7 +407,7 @@ function AttachmentPanel({
   return (
     <>
       <Dialog open={open} onOpenChange={v => { if (!v) onClose(); }}>
-        <DialogContent className="max-w-xl w-full">
+        <DialogContent className="max-w-xl w-full max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="text-sm font-semibold flex items-center gap-2">
               <Paperclip className="w-4 h-4 text-muted-foreground" />
@@ -1283,7 +1283,7 @@ export default function EstimateEnotes({ estimateId }: Props) {
 
       {/* Save as Template Dialog */}
       <Dialog open={saveTemplateOpen} onOpenChange={setSaveTemplateOpen}>
-        <DialogContent className="max-w-sm">
+        <DialogContent className="max-w-sm max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Save as Details Template</DialogTitle>
           </DialogHeader>
@@ -1328,7 +1328,7 @@ export default function EstimateEnotes({ estimateId }: Props) {
 
       {/* Apply Template Dialog */}
       <Dialog open={applyTemplateOpen} onOpenChange={setApplyTemplateOpen}>
-        <DialogContent className="max-w-sm">
+        <DialogContent className="max-w-sm max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Apply Details Template</DialogTitle>
           </DialogHeader>

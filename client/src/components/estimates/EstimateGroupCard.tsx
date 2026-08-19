@@ -203,7 +203,7 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
   ]);
   const DERIVED_COLUMNS = new Set([
     'unitCostIncTax', 'builderCost', 'builderCostIncTax',
-    'clientTax', 'markupDollarAmount', 'clientPriceExTax',
+    'clientTax', 'markupDollarAmount', 'clientPriceExTax', 'clientPriceIncTax',
   ]);
   const columnCellClass = (columnId: string) =>
     `${cellBase}` +

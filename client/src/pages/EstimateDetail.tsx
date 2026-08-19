@@ -4765,7 +4765,7 @@ export default function EstimateDetail() {
     // price stays at full weight: it's the answer the row exists to give.
     const DERIVED_COLUMNS = new Set([
       'unitCostIncTax', 'builderCost', 'builderCostIncTax',
-      'clientTax', 'markupDollarAmount', 'clientPriceExTax',
+      'clientTax', 'markupDollarAmount', 'clientPriceExTax', 'clientPriceIncTax',
     ]);
     // Where entering stops and pricing begins. One hairline gives the eye a
     // landmark instead of sixteen columns of equal weight.
@@ -6563,7 +6563,7 @@ export default function EstimateDetail() {
                         <SortableContext items={allSortableIds} strategy={verticalListSortingStrategy}>
                           {/* CSS Grid Header */}
                           <div 
-                            className="bg-card border-b border-border sticky top-0 z-[10] pl-px"
+                            className="bg-card border-b border-border sticky top-0 z-30 pl-px"
                             role="row"
                             style={{ 
                               display: 'grid', 
