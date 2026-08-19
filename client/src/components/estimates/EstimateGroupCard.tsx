@@ -271,9 +271,17 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
                       <ChevronDown className="h-4 w-4" />
                     )}
                   </Button>
-                  <span className="font-semibold text-sm truncate">{group.name}</span>
+                  <span className="font-semibold text-sm flex-shrink-0">{group.name}</span>
                   {group.description && (
-                    <span className="text-xs text-muted-foreground truncate">- {group.description}</span>
+                    // The name keeps its full width; the description takes what
+                    // is left. Previously both truncated equally, so a real
+                    // description squeezed the group name down to a few letters.
+                    <span
+                      className="text-xs text-muted-foreground truncate min-w-0"
+                      title={group.description}
+                    >
+                      {group.description}
+                    </span>
                   )}
                   {(group as any).defaultCostCode && costCodes.length > 0 && (() => {
                     const code = costCodes.find(c => c.id === (group as any).defaultCostCode);
