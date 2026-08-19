@@ -251,7 +251,7 @@ export function BulkEditDropdown({
       </DropdownMenu>
 
       <Dialog open={openField !== null} onOpenChange={(o) => !o && setOpenField(null)}>
-        <DialogContent className="max-w-sm rounded-xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-sm rounded-xl">
           <DialogHeader>
             <DialogTitle>{currentField ? `Set ${currentField.label}` : ""}</DialogTitle>
           </DialogHeader>

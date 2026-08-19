@@ -7850,7 +7850,7 @@ export default function EstimateDetail() {
 
       {/* Add Group Dialog */}
       <Dialog open={isAddGroupOpen} onOpenChange={(open) => { if (!open) handleCloseAddGroup(); }}>
-        <DialogContent className="max-w-md rounded-xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-md rounded-xl">
           <DialogHeader>
             <DialogTitle>{editingGroupId ? 'Edit Group' : parentGroupForNewSubgroup ? 'Add Subgroup' : 'Add Estimate Group'}</DialogTitle>
           </DialogHeader>
@@ -7959,7 +7959,7 @@ export default function EstimateDetail() {
           }
         }}
       >
-        <DialogContent className="max-w-2xl rounded-xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-2xl rounded-xl">
           <DialogHeader>
             <DialogTitle>Edit Description</DialogTitle>
           </DialogHeader>
@@ -8017,7 +8017,7 @@ export default function EstimateDetail() {
 
       {/* Load from Template Dialog */}
       <Dialog open={isTemplatePickerOpen} onOpenChange={(open) => { if (!open) { setIsTemplatePickerOpen(false); setTemplateSearch(""); } }}>
-        <DialogContent className="rounded-xl max-w-lg max-h-[90vh] overflow-y-auto">
+        <DialogContent className="rounded-xl max-w-lg">
           <DialogHeader>
             <DialogTitle>Load from Template</DialogTitle>
             <DialogDescription>
@@ -8096,7 +8096,7 @@ export default function EstimateDetail() {
 
       {/* Edit Estimate Dialog */}
       <Dialog open={isEditEstimateDialogOpen} onOpenChange={setIsEditEstimateDialogOpen}>
-        <DialogContent className="rounded-xl max-w-md max-h-[90vh] overflow-y-auto">
+        <DialogContent className="rounded-xl max-w-md">
           <DialogHeader>
             <DialogTitle>Edit Estimate</DialogTitle>
           </DialogHeader>
@@ -8157,7 +8157,7 @@ export default function EstimateDetail() {
 
       {/* Group Delete Confirmation Dialog */}
       <Dialog open={isDeleteGroupDialogOpen} onOpenChange={setIsDeleteGroupDialogOpen}>
-        <DialogContent className="rounded-xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="rounded-xl">
           <DialogHeader>
             <DialogTitle>Delete Group</DialogTitle>
           </DialogHeader>
@@ -8189,7 +8189,7 @@ export default function EstimateDetail() {
 
       {/* Single Item Delete Confirmation Dialog */}
       <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
-        <DialogContent className="rounded-xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="rounded-xl">
           <DialogHeader>
             <DialogTitle>Delete Item</DialogTitle>
           </DialogHeader>
@@ -8220,7 +8220,7 @@ export default function EstimateDetail() {
 
       {/* Bulk Delete Confirmation Dialog */}
       <Dialog open={isBulkDeleteDialogOpen} onOpenChange={setIsBulkDeleteDialogOpen}>
-        <DialogContent className="rounded-xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="rounded-xl">
           <DialogHeader>
             <DialogTitle>Delete {selectedGroups.size > 0 ? 'Groups and Items' : 'Items'}</DialogTitle>
           </DialogHeader>
@@ -8242,7 +8242,7 @@ export default function EstimateDetail() {
 
       {/* Bulk Change Status Dialog */}
       <Dialog open={isBulkStatusDialogOpen} onOpenChange={setIsBulkStatusDialogOpen}>
-        <DialogContent className="rounded-xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="rounded-xl">
           <DialogHeader>
             <DialogTitle>Change Status</DialogTitle>
           </DialogHeader>
@@ -8282,7 +8282,7 @@ export default function EstimateDetail() {
 
       {/* Bulk Change Group Dialog */}
       <Dialog open={isBulkGroupDialogOpen} onOpenChange={setIsBulkGroupDialogOpen}>
-        <DialogContent className="rounded-xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="rounded-xl">
           <DialogHeader>
             <DialogTitle>Move to Group</DialogTitle>
           </DialogHeader>
@@ -8317,7 +8317,7 @@ export default function EstimateDetail() {
       
       {/* Bulk Markup Dialog */}
       <Dialog open={isBulkMarkupDialogOpen} onOpenChange={setIsBulkMarkupDialogOpen}>
-        <DialogContent className="rounded-xl max-w-sm max-h-[90vh] overflow-y-auto">
+        <DialogContent className="rounded-xl max-w-sm">
           <DialogHeader>
             <DialogTitle>Set Markup %</DialogTitle>
           </DialogHeader>
@@ -8569,7 +8569,7 @@ export default function EstimateDetail() {
         open={approveDialogRevisionId !== null}
         onOpenChange={(open) => { if (!open) setApproveDialogRevisionId(null); }}
       >
-        <DialogContent className="max-h-[90vh] overflow-y-auto" data-testid="dialog-approve-estimate">
+        <DialogContent data-testid="dialog-approve-estimate">
           <DialogHeader>
             <DialogTitle>
               {project?.selectedEstimateId && project.selectedEstimateId !== approveDialogRevisionId
@@ -8615,7 +8615,7 @@ export default function EstimateDetail() {
         open={contractDialogRevisionId !== null}
         onOpenChange={(open) => { if (!open) setContractDialogRevisionId(null); }}
       >
-        <DialogContent className="max-h-[90vh] overflow-y-auto" data-testid="dialog-mark-contract">
+        <DialogContent data-testid="dialog-mark-contract">
           <DialogHeader>
             <DialogTitle>Mark this estimate as the contract?</DialogTitle>
             <DialogDescription>
@@ -8673,7 +8673,7 @@ export default function EstimateDetail() {
           status to "archived" — whether from the options menu or the Edit
           Estimate dialog — is always a deliberate, confirmed action. */}
       <Dialog open={archiveDialogOpen} onOpenChange={setArchiveDialogOpen}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto" data-testid="dialog-archive-estimate">
+        <DialogContent data-testid="dialog-archive-estimate">
           <DialogHeader>
             <DialogTitle>Archive this estimate?</DialogTitle>
             <DialogDescription>

@@ -43,7 +43,7 @@ export function ConfirmDialog({
 }: ConfirmDialogProps) {
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
-      <AlertDialogContent className="max-h-[90vh] overflow-y-auto" data-testid="confirm-dialog">
+      <AlertDialogContent data-testid="confirm-dialog">
         <AlertDialogHeader>
           <AlertDialogTitle>{title}</AlertDialogTitle>
           {description && <AlertDialogDescription>{description}</AlertDialogDescription>}
