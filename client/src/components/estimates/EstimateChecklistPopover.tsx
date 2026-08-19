@@ -10,7 +10,14 @@ import {
 } from "@/components/ui/popover";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Progress } from "@/components/ui/progress";
-import { ClipboardList, ChevronDown, ChevronRight, Loader2, ExternalLink } from "lucide-react";
+import { ClipboardList, ChevronDown, ChevronRight, Loader2, ExternalLink, ListFilter } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { useLocation } from "wouter";
 
 interface ChecklistInstance {
@@ -21,6 +28,8 @@ interface ChecklistInstance {
   completedCount: number;
   totalCount: number;
   templateId?: string;
+  /** From the instance's template: "Task" | "Job" | "Estimation" | "Lead". */
+  templateType?: string | null;
 }
 
 interface ChecklistGroup {
@@ -222,8 +231,16 @@ function GroupPanel({ group, instanceId }: { group: ChecklistGroup; instanceId: 
   );
 }
 
+/** Checklists belonging to the estimating phase, which is what an estimate wants. */
+const ESTIMATION_TYPE = "Estimation";
+const TYPE_FILTERS = [ESTIMATION_TYPE, "Job", "Task", "Lead", "all"] as const;
+
 export function EstimateChecklistPopover({ estimateId: _estimateId, projectId, wide }: EstimateChecklistPopoverProps) {
   const [isOpen, setIsOpen] = useState(false);
+  // A project carries checklists for everything it does; only the estimating
+  // ones belong on an estimate. Anything else is reachable via this filter,
+  // including checklists made without a template, which have no type at all.
+  const [typeFilter, setTypeFilter] = useState<string>(ESTIMATION_TYPE);
 
   const { data: instances = [], isLoading } = useQuery<ChecklistInstance[]>({
     queryKey: ["/api/checklist-instances", { projectId }],
@@ -237,11 +254,16 @@ export function EstimateChecklistPopover({ estimateId: _estimateId, projectId, w
     enabled: !!projectId,
   });
 
-  const totalCompleted = instances.reduce((sum, i) => sum + (i.completedCount ?? 0), 0);
-  const totalItems = instances.reduce((sum, i) => sum + (i.totalCount ?? 0), 0);
+  const visibleInstances =
+    typeFilter === "all"
+      ? instances
+      : instances.filter(i => (i.templateType ?? null) === typeFilter);
+
+  const totalCompleted = visibleInstances.reduce((sum, i) => sum + (i.completedCount ?? 0), 0);
+  const totalItems = visibleInstances.reduce((sum, i) => sum + (i.totalCount ?? 0), 0);
   const hasItems = totalItems > 0;
-  const firstName = instances[0]?.name ?? "Checklists";
-  const label = instances.length > 1 ? `${instances.length} Checklists` : firstName;
+  const firstName = visibleInstances[0]?.name ?? "Checklists";
+  const label = visibleInstances.length > 1 ? `${visibleInstances.length} Checklists` : firstName;
   const progressPct = hasItems ? Math.round((totalCompleted / totalItems) * 100) : 0;
 
   return (
@@ -283,11 +305,38 @@ export function EstimateChecklistPopover({ estimateId: _estimateId, projectId, w
               <h4 className="font-medium text-sm">Estimate Checklists</h4>
               <p className="text-xs text-muted-foreground">Track your estimating process</p>
             </div>
-            {hasItems && (
-              <span className="text-xs font-medium text-muted-foreground">
-                {totalCompleted}/{totalItems}
-              </span>
-            )}
+            <div className="flex items-center gap-2">
+              {hasItems && (
+                <span className="text-xs font-medium text-muted-foreground">
+                  {totalCompleted}/{totalItems}
+                </span>
+              )}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    className="h-6 w-6 border rounded-md hover-elevate active-elevate-2 flex items-center justify-center flex-shrink-0"
+                    title={typeFilter === "all" ? "Showing all checklists" : `Showing ${typeFilter} checklists`}
+                    aria-label="Filter checklists by type"
+                    data-testid="button-checklist-type-filter"
+                  >
+                    <ListFilter className="w-3 h-3" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-40">
+                  <DropdownMenuRadioGroup value={typeFilter} onValueChange={setTypeFilter}>
+                    {TYPE_FILTERS.map(t => (
+                      <DropdownMenuRadioItem
+                        key={t}
+                        value={t}
+                        data-testid={`checklist-filter-${t}`}
+                      >
+                        {t === "all" ? "All checklists" : t}
+                      </DropdownMenuRadioItem>
+                    ))}
+                  </DropdownMenuRadioGroup>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
           </div>
           {hasItems && (
             <Progress
@@ -302,17 +351,25 @@ export function EstimateChecklistPopover({ estimateId: _estimateId, projectId, w
             <div className="flex items-center justify-center py-8">
               <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
             </div>
-          ) : instances.length === 0 ? (
+          ) : visibleInstances.length === 0 ? (
             <div className="text-center py-8 px-4">
               <ClipboardList className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
-              <p className="text-sm text-muted-foreground">No checklists on this project yet.</p>
+              <p className="text-sm text-muted-foreground">
+                {instances.length === 0
+                  ? "No checklists on this project yet."
+                  : typeFilter === "all"
+                    ? "No checklists on this project yet."
+                    : `No ${typeFilter} checklists on this project.`}
+              </p>
               <p className="text-xs text-muted-foreground mt-1">
-                Create checklists from the Project Checklists tab.
+                {instances.length > 0 && typeFilter !== "all"
+                  ? `This project has ${instances.length} other checklist${instances.length === 1 ? "" : "s"} — switch the filter to see them.`
+                  : "Create checklists from the Project Checklists tab."}
               </p>
             </div>
           ) : (
             <div className="p-2 space-y-2">
-              {instances.map((instance) => (
+              {visibleInstances.map((instance) => (
                 <InstancePanel
                   key={instance.id}
                   instance={instance}

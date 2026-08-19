@@ -19067,14 +19067,24 @@ export class DbStorage implements IStorage {
         projectId ? eq(schema.checklistInstances.projectId, projectId) : undefined
       );
 
-      const query = db.select()
+      // An instance has no type of its own — it inherits one from its template
+      // ("Task" | "Job" | "Estimation" | "Lead"). Surfacing it here lets callers
+      // show only the checklists that belong to what they are: the estimate
+      // page wants the Estimation ones, not every checklist on the project.
+      // A checklist created without a template has no type, hence the null.
+      const query = db.select({
+        instance: schema.checklistInstances,
+        templateType: schema.checklistTemplates.type,
+      })
         .from(schema.checklistInstances)
+        .leftJoin(
+          schema.checklistTemplates,
+          eq(schema.checklistInstances.templateId, schema.checklistTemplates.id),
+        )
         .orderBy(desc(schema.checklistInstances.createdAt));
 
-      if (whereClause) {
-        return await query.where(whereClause);
-      }
-      return await query;
+      const rows = whereClause ? await query.where(whereClause) : await query;
+      return rows.map(r => ({ ...r.instance, templateType: r.templateType ?? null })) as ChecklistInstance[];
     } catch (error) {
       console.error("Database error in getChecklistInstances:", error);
       throw error;

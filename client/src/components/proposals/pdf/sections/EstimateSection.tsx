@@ -225,6 +225,14 @@ export function EstimateSection({
       marginTop: 15,
       marginBottom: 0,
     },
+    groupDescription: {
+      fontSize: 9,
+      color: "#444444",
+      lineHeight: 1.4,
+      paddingTop: 6,
+      paddingBottom: 2,
+      paddingHorizontal: 2,
+    },
     tableHeader: {
       flexDirection: "row",
       backgroundColor: isS2 ? resolvedColor + "14" : "#f5f5f5",
@@ -374,6 +382,11 @@ export function EstimateSection({
         <View style={styles.groupHeader}>
           <Text style={{ color: "#ffffff" }}>{group.name}</Text>
         </View>
+        {/* The group's description is the section's specification — it reads as
+            the blurb under the heading, above that section's lines. */}
+        {group.description ? (
+          <Text style={styles.groupDescription}>{group.description}</Text>
+        ) : null}
         {!hideLineItems && directItems.length > 0 && renderTableHeader()}
         {!hideLineItems && directItems.map(renderTableRow)}
         {subgroups.map((sg) => renderGroup(sg))}

@@ -17,6 +17,7 @@ import {
   DragEndEvent,
   DragStartEvent,
   MeasuringStrategy,
+  DragOverlay,
 } from '@dnd-kit/core';
 import {
   SortableContext,
@@ -156,11 +157,21 @@ interface EstimateDetailParams {
 type ColumnConfig = { id: string; label: string; visible: boolean; widthPx: number };
 
 // Default columns - defined outside component to maintain stable reference
-// Compact widths to fit more data on screen
+// Compact widths to fit more data on screen.
+//
+// What starts visible is the estimating loop: what the line is, how it's
+// priced, and what the client pays. The derived views — unit inc, builder
+// cost ex/inc, and per-line tax — start hidden, because the summary bar above
+// already totals all of them and they were a third of the grid's width. Every
+// one is a tick away in the column picker, and saved layouts are untouched;
+// this only changes where a new company begins.
 const DEFAULT_COLUMNS: ColumnConfig[] = [
+  // Item leads. The leftmost column is the most valuable space on the row and
+  // it was holding a cost code that is often blank; the thing that identifies
+  // the line belongs there.
+  { id: 'item', label: 'Item', visible: true, widthPx: 200 },
   { id: 'costCode', label: 'Cost Code', visible: true, widthPx: 90 },
   { id: 'type', label: 'Type', visible: true, widthPx: 80 },
-  { id: 'item', label: 'Item', visible: true, widthPx: 140 },
   { id: 'description', label: 'Description', visible: true, widthPx: 160 },
   { id: 'status', label: 'Status', visible: true, widthPx: 85 },
   { id: 'proposalVisible', label: 'Proposal', visible: true, widthPx: 70 },
@@ -169,14 +180,14 @@ const DEFAULT_COLUMNS: ColumnConfig[] = [
   { id: 'quantity', label: 'Qty', visible: true, widthPx: 60 },
   { id: 'wastage', label: 'Waste', visible: true, widthPx: 55 },
   { id: 'unitType', label: 'Unit', visible: true, widthPx: 55 },
-  { id: 'unitCostExTax', label: 'Unit Cost', visible: true, widthPx: 90 },
-  { id: 'unitCostIncTax', label: 'Unit Inc', visible: true, widthPx: 85 },
-  { id: 'builderCost', label: 'Builder Cost', visible: true, widthPx: 100 },
-  { id: 'builderCostIncTax', label: 'Builder Inc', visible: true, widthPx: 95 },
+  { id: 'unitCostExTax', label: 'Unit Cost ex', visible: true, widthPx: 90 },
+  { id: 'unitCostIncTax', label: 'Unit Cost inc', visible: false, widthPx: 85 },
+  { id: 'builderCost', label: 'Builder Cost', visible: false, widthPx: 100 },
+  { id: 'builderCostIncTax', label: 'Builder Inc', visible: false, widthPx: 95 },
   { id: 'markup', label: 'Markup', visible: true, widthPx: 65 },
   { id: 'markupDollarAmount', label: 'Markup $', visible: false, widthPx: 90 },
   { id: 'clientPriceExTax', label: 'Amount', visible: true, widthPx: 90 },
-  { id: 'clientTax', label: 'Tax', visible: true, widthPx: 70 },
+  { id: 'clientTax', label: 'Tax', visible: false, widthPx: 70 },
   { id: 'clientPriceIncTax', label: 'Amount Inc', visible: true, widthPx: 95 },
   { id: 'notes', label: 'Notes', visible: true, widthPx: 60 },
 ];
@@ -299,13 +310,18 @@ function FormattedNumberInput({
  */
 function CellChip({
   onClick,
+  onPickFromList,
   disabled,
+  className,
   title,
   testId,
   children,
 }: {
   onClick: () => void;
+  /** Right-click: jump straight to a value instead of cycling to it. */
+  onPickFromList?: () => void;
   disabled?: boolean;
+  className?: string;
   title?: string;
   testId: string;
   children: React.ReactNode;
@@ -314,9 +330,16 @@ function CellChip({
     <button
       type="button"
       onClick={(e) => { e.stopPropagation(); if (!disabled) onClick(); }}
+      onDoubleClick={(e) => e.stopPropagation()}
+      onContextMenu={(e) => {
+        if (!onPickFromList || disabled) return;
+        e.preventDefault();
+        e.stopPropagation();
+        onPickFromList();
+      }}
       disabled={disabled}
       title={title}
-      className="inline-flex rounded-[9px] hover-elevate active-elevate-2 disabled:opacity-60 disabled:cursor-not-allowed disabled:pointer-events-none"
+      className={`inline-flex rounded-[9px] hover-elevate active-elevate-2 disabled:opacity-60 disabled:cursor-not-allowed disabled:pointer-events-none ${className || ''}`}
       data-testid={testId}
     >
       {children}
@@ -372,15 +395,13 @@ const SortableRow = React.memo(({ id, children, className, isDraggable = true, g
           height: lastHeightRef.current, 
           minHeight: lastHeightRef.current,
         }}
-        className="relative bg-muted/50 border-b border-border"
+        className="relative bg-muted/40 border-b border-border"
         data-testid={`row-placeholder-${id}`}
         data-sortable-id={id}
       >
-        {/* Dashed placeholder visual overlay */}
-        <div 
-          className="absolute inset-1 rounded border-2 border-dashed border-muted-foreground/30 pointer-events-none"
-          style={{ gridColumn: '1 / -1' }}
-        />
+        {/* The row being dragged just holds its space. It used to also carry a
+            dashed outline, which made three things saying the same thing at
+            once: the ghost under the cursor, the drop indicator, and this. */}
         {/* Render children with visibility hidden to maintain column widths */}
         <div style={{ display: 'contents', visibility: 'hidden' }}>
           {children}
@@ -389,15 +410,13 @@ const SortableRow = React.memo(({ id, children, className, isDraggable = true, g
     );
   }
 
-  // Normal rendering when not dragging
-  // Only apply Y-axis transform to prevent horizontal shifting
-  // Skip transform when a group is being dragged (items shouldn't fly around)
-  const isGroupBeingDragged = activeDragId && String(activeDragId).startsWith('group-');
+  // Normal rendering when not dragging.
+  // Rows deliberately do NOT shift out of the way. A drop indicator already
+  // says exactly where the row will land, so sliding every other row as well
+  // was a second, noisier answer to the same question.
   const style: React.CSSProperties = {
     display: 'grid',
     gridTemplateColumns: gridTemplate,
-    transform: (transform && !isGroupBeingDragged) ? `translateY(${Math.round(transform.y)}px)` : undefined,
-    transition: transition || 'transform 150ms ease',
   };
 
   return (
@@ -412,10 +431,10 @@ const SortableRow = React.memo(({ id, children, className, isDraggable = true, g
     >
       {/* Drop indicator line - shows above or below based on position */}
       {dropIndicator === 'above' && (
-        <div className="absolute -top-[2px] left-0 right-0 h-1 bg-primary z-50 rounded-full shadow-[0_0_8px_rgba(168,144,212,0.6)]" />
+        <div className="absolute -top-px left-0 right-0 h-0.5 bg-primary z-50" />
       )}
       {dropIndicator === 'below' && (
-        <div className="absolute -bottom-[2px] left-0 right-0 h-1 bg-primary z-50 rounded-full shadow-[0_0_8px_rgba(168,144,212,0.6)]" />
+        <div className="absolute -bottom-px left-0 right-0 h-0.5 bg-primary z-50" />
       )}
       {/* Drag handle — its own 20px lane at the left (checkbox is shifted right),
           so it no longer overlaps the checkbox and is actually grabbable. */}
@@ -492,7 +511,7 @@ const SortableGroup = React.memo(({ id, children, className }: SortableGroupProp
           width: lastWidthRef.current,
           minWidth: lastWidthRef.current,
         }}
-        className={`${className} bg-muted/50 rounded-lg border-2 border-dashed border-muted-foreground/30`}
+        className={`${className} bg-muted/40 rounded-lg`}
         data-testid={`group-placeholder-${id}`}
       >
         {/* Render children invisibly to maintain any internal layout */}
@@ -503,11 +522,9 @@ const SortableGroup = React.memo(({ id, children, className }: SortableGroupProp
     );
   }
 
-  // Normal rendering - only apply Y-axis transform to prevent horizontal shifting
-  const style: React.CSSProperties = {
-    transform: transform ? `translateY(${Math.round(transform.y)}px)` : undefined,
-    transition: transition || 'transform 150ms ease',
-  };
+  // Groups hold their position while one is dragged, for the same reason the
+  // rows do: the drop indicator already shows where it will land.
+  const style: React.CSSProperties = {};
 
   return (
     <div ref={combinedRef} style={style} className={className}>
@@ -584,6 +601,9 @@ export default function EstimateDetail() {
 
   // State for bulk selection
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
+  // The cell the keyboard is on. Separate from editingCell: you can sit on a
+  // cell without opening it, which is what makes arrow keys mean anything.
+  const [activeCell, setActiveCell] = useState<{ itemId: string; field: string } | null>(null);
   const [selectedGroups, setSelectedGroups] = useState<Set<string>>(new Set());
   
   // Bulk action dialogs
@@ -995,7 +1015,9 @@ export default function EstimateDetail() {
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
-        distance: 3, // Reduced to 3px for faster, more responsive drag activation
+        // 8px, matching every other board in the app. At 3px an imprecise
+        // click on a click-to-edit cell started a drag instead of editing.
+        distance: 8,
       },
     }),
     useSensor(KeyboardSensor, {
@@ -1388,19 +1410,22 @@ export default function EstimateDetail() {
         zIndex: '9999',
         pointerEvents: 'none',
         width: `${sourceRect.width}px`,
-        height: '32px',
+        height: `${Math.round(sourceRect.height) || 32}px`,
         top: `${sourceRect.top}px`,
         left: `${sourceRect.left}px`,
         display: 'flex',
         alignItems: 'center',
         padding: '0 12px',
-        background: 'rgba(168, 144, 212,0.25)',
+        // Tokens, not a baked lavender — the literal ignored dark mode.
+        background: 'hsl(var(--primary) / 0.25)',
         borderLeft: '2px solid hsl(var(--primary))',
         boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
         cursor: 'grabbing',
         overflow: 'hidden',
         fontSize: '12px',
-        color: 'var(--foreground)',
+        // The theme tokens are bare HSL triplets: `var(--foreground)` on its
+        // own is not a valid colour, so this silently fell back to inherited.
+        color: 'hsl(var(--foreground))',
         whiteSpace: 'nowrap',
         textOverflow: 'ellipsis',
       });
@@ -1771,8 +1796,16 @@ export default function EstimateDetail() {
         .filter(item => !item.parentItemId && (item.groupId || null) === targetGroupId)
         .sort((a, b) => (a.order || 0) - (b.order || 0));
       
+      // Honour which side of the target row you dropped on, exactly as the
+      // same-group path does. Ignoring it meant a drop BELOW a row inserted AT
+      // that row's index, landing the item one position higher than the
+      // indicator promised — every time you dragged between groups.
       const targetIndex = targetContainerItems.findIndex(item => item.id === effectiveOverId);
-      const insertionIndex = targetIndex >= 0 ? targetIndex : targetContainerItems.length;
+      const insertBelow = capturedDropTarget?.position === 'below';
+      const insertionIndex =
+        targetIndex >= 0
+          ? targetIndex + (insertBelow ? 1 : 0)
+          : targetContainerItems.length;
       
       // Remove from source, add to target at insertion point
       const remainingSourceItems = sourceContainerItems.filter(item => item.id !== draggedItem.id);
@@ -2762,7 +2795,10 @@ export default function EstimateDetail() {
 
   // Handlers for inline cell editing
   const handleCellEdit = (item: EstimateItem, field: string) => {
-    
+    // Wherever you click is where the keyboard now is, so arrows carry on from
+    // there. Set before the lock check: a locked estimate is still navigable.
+    setActiveCell({ itemId: item.id, field });
+
     if (estimate?.isLocked) {
       toast({
         title: "Cannot Edit",
@@ -2943,66 +2979,169 @@ export default function EstimateDetail() {
   };
 
   // Define editable fields in order for Tab navigation
+  /**
+   * Columns you can act on, and what Enter does there. Everything else
+   * (builder cost, amounts, tax — all computed) is skipped by the cursor.
+   *
+   * "edit" opens an editor. "toggle" activates the cell's own control, which
+   * is how the status / shown-as / allowance chips already cycle on click.
+   */
+  const INTERACTIVE_COLUMNS: Record<string, 'edit' | 'toggle'> = {
+    costCode: 'edit',
+    type: 'toggle',
+    item: 'edit',
+    description: 'edit',
+    status: 'toggle',
+    proposalVisible: 'toggle',
+    shownAs: 'toggle',
+    allowance: 'toggle',
+    quantity: 'edit',
+    unitType: 'edit',
+    unitCostExTax: 'edit',
+    unitCostIncTax: 'edit',
+    markup: 'edit',
+  };
+
+  /** The field a column edits — only the item column differs from its id. */
+  const fieldForColumn = (columnId: string) => (columnId === 'item' ? 'name' : columnId);
+
+  /**
+   * The cursor walks the columns in the order they are actually drawn, not a
+   * hardcoded list. The old list ran name → quantity → unit → unit cost →
+   * markup → cost code → description, which jumps back and forth across the
+   * table and skips every chip.
+   */
+  const navigableColumns = (): string[] =>
+    columns.filter(c => c.visible && INTERACTIVE_COLUMNS[c.id]).map(c => c.id);
+
   const editableFields = ['name', 'quantity', 'unitType', 'unitCostExTax', 'markup', 'costCode', 'description'];
+
+  /**
+   * Every visible row, top to bottom, exactly as the grid draws it: ungrouped
+   * items first, then each expanded group's items, with sub-items following
+   * their parent. Collapsed groups are skipped because you can't see them.
+   * Tab traversal and the cell cursor both walk this.
+   */
+  const getVisibleItemsInOrder = (): EstimateItem[] => {
+    const { sortedGroups, groupedItems, ungroupedItems } = organizeItemsByGroups();
+    const ordered: EstimateItem[] = [];
+    const pushWithSubItems = (i: EstimateItem) => {
+      ordered.push(i);
+      items.filter(sub => sub.parentItemId === i.id).forEach(sub => ordered.push(sub));
+    };
+    ungroupedItems.forEach(pushWithSubItems);
+    sortedGroups.forEach(group => {
+      if (!group.isCollapsed && groupedItems[group.id]) {
+        groupedItems[group.id].forEach(pushWithSubItems);
+      }
+    });
+    return ordered;
+  };
+
+  /**
+   * The cell the keyboard is "on", which is not the same as the cell being
+   * edited. A spreadsheet always has a cursor somewhere: arrows move it, Enter
+   * or typing promotes it to editing, Escape drops back to it. Without this
+   * there is nothing for the arrow keys to move.
+   */
+  const moveActiveCell = (
+    from: { itemId: string; field: string },
+    direction: 'up' | 'down' | 'left' | 'right',
+  ): { itemId: string; field: string } | null => {
+    const ordered = getVisibleItemsInOrder();
+    const cols = navigableColumns();
+    const rowIndex = ordered.findIndex(i => i.id === from.itemId);
+    const colIndex = cols.findIndex(c => fieldForColumn(c) === from.field);
+    if (rowIndex === -1 || colIndex === -1) return null;
+
+    if (direction === 'up' || direction === 'down') {
+      const nextRow = rowIndex + (direction === 'down' ? 1 : -1);
+      if (nextRow < 0 || nextRow >= ordered.length) return null;
+      return { itemId: ordered[nextRow].id, field: from.field };
+    }
+
+    // Left/right wrap onto the neighbouring row, as Tab does in a spreadsheet.
+    const nextCol = colIndex + (direction === 'right' ? 1 : -1);
+    if (nextCol >= 0 && nextCol < cols.length) {
+      return { itemId: from.itemId, field: fieldForColumn(cols[nextCol]) };
+    }
+    const wrapRow = rowIndex + (direction === 'right' ? 1 : -1);
+    if (wrapRow < 0 || wrapRow >= ordered.length) return null;
+    return {
+      itemId: ordered[wrapRow].id,
+      field: fieldForColumn(direction === 'right' ? cols[0] : cols[cols.length - 1]),
+    };
+  };
+
+  /**
+   * Carriage return: down one row and back to the leftmost column, so you can
+   * run along a line and start the next one without reaching for the mouse.
+   */
+  const newLineCell = (from: { itemId: string; field: string }) => {
+    const ordered = getVisibleItemsInOrder();
+    const cols = navigableColumns();
+    const rowIndex = ordered.findIndex(i => i.id === from.itemId);
+    if (rowIndex === -1 || rowIndex + 1 >= ordered.length || cols.length === 0) return null;
+    return { itemId: ordered[rowIndex + 1].id, field: fieldForColumn(cols[0]) };
+  };
+
+  /** The column currently under the cursor, so Enter knows what to do. */
+  const columnForField = (field: string) =>
+    navigableColumns().find(c => fieldForColumn(c) === field);
+
+  /**
+   * Enter on a cell. Editors open; chips activate their own control, which
+   * keeps one implementation of the cycling rather than a keyboard copy.
+   */
+  const activateCell = (itemId: string, field: string) => {
+    if (estimate?.isLocked) return;
+    const item = items.find(i => i.id === itemId);
+    const columnId = columnForField(field);
+    if (!item || !columnId) return;
+
+    if (INTERACTIVE_COLUMNS[columnId] === 'toggle') {
+      const control = document.querySelector<HTMLElement>(
+        `[data-testid="button-toggle-${columnId}-${itemId}"], [data-testid="button-toggle-${field}-${itemId}"], [data-testid="button-proposal-${itemId}"]`,
+      );
+      control?.click();
+      return;
+    }
+    handleCellEdit(item, field);
+  };
   
   const handleCellKeyDown = (e: React.KeyboardEvent, item: EstimateItem, field: string) => {
+    // Up/Down commit and move, so a column can be filled without leaving the
+    // keyboard. Clicking a cell opens its editor, so without this the arrows
+    // appeared dead — the grid-level handler only runs when nothing is open.
+    // Left/Right stay as caret movement inside the text.
+    if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+      e.preventDefault();
+      handleCellSave(item, field);
+      const next = moveActiveCell({ itemId: item.id, field }, e.key === "ArrowDown" ? 'down' : 'up');
+      setActiveCell(next ?? { itemId: item.id, field });
+      return;
+    }
     if (e.key === "Enter") {
       e.preventDefault();
       handleCellSave(item, field);
+      // Commit and drop a row, the way a spreadsheet does — the cell below is
+      // left selected, not open, so typing starts the next entry. Shift+Enter
+      // also returns to the first column, to start the next line.
+      const here = { itemId: item.id, field };
+      const next = e.shiftKey ? newLineCell(here) : moveActiveCell(here, 'down');
+      setActiveCell(next ?? here);
     } else if (e.key === "Escape") {
       e.preventDefault();
       handleCellCancel();
+      setActiveCell({ itemId: item.id, field });
     } else if (e.key === "Tab") {
+      // Tab moves, Enter acts. Committing and moving the cursor — rather than
+      // opening the next cell — is what lets you run along a row through the
+      // chips as well as the editors.
       e.preventDefault();
       handleCellSave(item, field);
-      
-      // Find next editable cell
-      const currentFieldIndex = editableFields.indexOf(field);
-      const isShift = e.shiftKey;
-      
-      // Get all visible items in order
-      const { sortedGroups, groupedItems, ungroupedItems } = organizeItemsByGroups();
-      const allItems: EstimateItem[] = [];
-      
-      // Add ungrouped items first
-      ungroupedItems.forEach(i => {
-        allItems.push(i);
-        // Add sub-items
-        items.filter(sub => sub.parentItemId === i.id).forEach(sub => allItems.push(sub));
-      });
-      
-      // Add grouped items
-      sortedGroups.forEach(group => {
-        if (!group.isCollapsed && groupedItems[group.id]) {
-          groupedItems[group.id].forEach(i => {
-            allItems.push(i);
-            // Add sub-items
-            items.filter(sub => sub.parentItemId === i.id).forEach(sub => allItems.push(sub));
-          });
-        }
-      });
-      
-      const currentItemIndex = allItems.findIndex(i => i.id === item.id);
-      
-      if (isShift) {
-        // Move backwards
-        if (currentFieldIndex > 0) {
-          // Previous field in same item
-          handleCellEdit(item, editableFields[currentFieldIndex - 1]);
-        } else if (currentItemIndex > 0) {
-          // Last field of previous item
-          handleCellEdit(allItems[currentItemIndex - 1], editableFields[editableFields.length - 1]);
-        }
-      } else {
-        // Move forwards
-        if (currentFieldIndex < editableFields.length - 1) {
-          // Next field in same item
-          handleCellEdit(item, editableFields[currentFieldIndex + 1]);
-        } else if (currentItemIndex < allItems.length - 1) {
-          // First field of next item
-          handleCellEdit(allItems[currentItemIndex + 1], editableFields[0]);
-        }
-      }
+      const next = moveActiveCell({ itemId: item.id, field }, e.shiftKey ? 'left' : 'right');
+      setActiveCell(next ?? { itemId: item.id, field });
     }
   };
 
@@ -4164,7 +4303,10 @@ export default function EstimateDetail() {
       const lc = (rowItem.status || '').toString().toLowerCase();
       if (lc === 'done' || lc === 'complete') return "bg-sage/10";
       if (lc === 'not relevant' || lc === 'not_relevant') return "bg-muted/70";
-      return idx % 2 === 0 ? "bg-card" : "bg-muted/20";
+      // No zebra striping. Rows already answer "which one am I on" three
+      // ways — hover, selection tint and the cell cursor — and a fourth
+      // signal underneath them was just noise.
+      return "bg-card";
     };
 
     let itemClassName = buildRowBg(item, rowIndex);
@@ -4498,7 +4640,9 @@ export default function EstimateDetail() {
   // scroll — matching the shared DataTable standard. A callback ref attaches the
   // listener whenever the container mounts (e.g. after switching to this tab).
   const scrollAutohideCleanup = React.useRef<(() => void) | null>(null);
+  const gridEl = React.useRef<HTMLDivElement | null>(null);
   const gridScrollRef = React.useCallback((el: HTMLDivElement | null) => {
+    gridEl.current = el;
     if (scrollAutohideCleanup.current) {
       scrollAutohideCleanup.current();
       scrollAutohideCleanup.current = null;
@@ -4517,17 +4661,123 @@ export default function EstimateDetail() {
     };
   }, []);
 
+  // When an editor closes, focus falls to the body and the arrow keys stop
+  // reaching the grid. Hand it back so the cursor keeps working. preventScroll
+  // matters: focusing a scroll container otherwise jumps it to the top.
+  useEffect(() => {
+    if (!editingCell && activeCell && gridEl.current) {
+      const el = gridEl.current;
+      if (!el.contains(document.activeElement)) {
+        el.focus({ preventScroll: true });
+      }
+    }
+  }, [editingCell, activeCell]);
+
+  /**
+   * Keys handled while a cell is selected but NOT being edited. Once an editor
+   * is open it owns the keyboard and handleCellKeyDown takes over.
+   */
+  const handleGridKeyDown = (e: React.KeyboardEvent) => {
+    if (!activeCell || editingCell) return;
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+
+    const arrows: Record<string, 'up' | 'down' | 'left' | 'right'> = {
+      ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right',
+    };
+
+    if (arrows[e.key]) {
+      e.preventDefault();
+      setActiveCell(prev => (prev ? moveActiveCell(prev, arrows[e.key]) ?? prev : prev));
+      return;
+    }
+
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      const dir = e.shiftKey ? 'left' : 'right';
+      setActiveCell(prev => (prev ? moveActiveCell(prev, dir) ?? prev : prev));
+      return;
+    }
+
+    if (e.key === 'Enter' && e.shiftKey) {
+      e.preventDefault();
+      setActiveCell(prev => (prev ? newLineCell(prev) ?? prev : prev));
+      return;
+    }
+
+    if (e.key === 'Enter' || e.key === 'F2' || e.key === ' ') {
+      e.preventDefault();
+      activateCell(activeCell.itemId, activeCell.field);
+      return;
+    }
+
+    if (e.key === 'Escape') {
+      setActiveCell(null);
+      return;
+    }
+
+    // Type to replace: a printable key opens the cell so the keystroke starts
+    // the value, rather than being swallowed. Chips have nothing to type into.
+    if (e.key.length === 1 && !estimate?.isLocked) {
+      const columnId = columnForField(activeCell.field);
+      if (columnId && INTERACTIVE_COLUMNS[columnId] === 'edit') {
+        const item = items.find(i => i.id === activeCell.itemId);
+        if (item) {
+          e.preventDefault();
+          handleCellEdit(item, activeCell.field);
+          setEditingValue(e.key);
+        }
+      }
+    }
+  };
+
   // Render cell based on column ID - returns grid-compatible div elements
   const renderCell = (item: EstimateItem, columnId: string) => {
-    const isEditing = editingCell?.itemId === item.id && editingCell?.field === columnId;
+    // The name is edited as the field "name" but lives in the column "item",
+    // so both checks below match on the field the column actually edits.
+    const cursorField = columnId === 'item' ? 'name' : columnId;
+    const isEditing = editingCell?.itemId === item.id && editingCell?.field === cursorField;
+    const isCursor =
+      !isEditing && activeCell?.itemId === item.id && activeCell?.field === cursorField;
     const isLocked = estimate?.isLocked;
     const pricingValues = calculatePricingValues(item);
     const cellKey = `${item.id}-${columnId}`;
     
-    // Common grid cell base class
-    const cellBase = "h-9 px-2 flex items-center text-sm overflow-hidden";
-    // Active cell: inset ring on the cell container (not on the input itself)
-    const cellActive = "ring-1 ring-inset ring-primary/60 rounded-[2px]";
+    // No outline in either state. A ring around the cell read as a box
+    // appearing the moment you clicked, which is the thing that looked wrong.
+    // The cursor is a soft tint instead, and editing looks identical to it —
+    // only the caret arrives.
+    const cellHighlight = "bg-primary/[0.07]";
+    // Figures read right-aligned, and the editor has to agree with the display
+    // or the number jumps sides the moment you click it.
+    const NUMERIC_COLUMNS = new Set([
+      'quantity', 'unitCostExTax', 'unitCostIncTax', 'builderCost', 'builderCostIncTax',
+      'markup', 'markupDollarAmount', 'clientPriceExTax', 'clientTax', 'clientPriceIncTax',
+    ]);
+    // The status chip sits in a narrow column and reads better centred under
+    // its heading than pinned to the left edge.
+    // Chips sit in narrow columns and vary in width with their label — a
+    // "Confirmed" is 75px against a "Todo" at 43px. Centred, that variation
+    // reads as symmetric rather than ragged, without forcing every chip to a
+    // fixed width and going back to the blocky look.
+    const CENTERED_COLUMNS = new Set(['status', 'shownAs', 'allowance', 'type']);
+    // Computed from the entered figures — nothing here is typed. Muted so the
+    // numbers you can actually change come forward. The line's final client
+    // price stays at full weight: it's the answer the row exists to give.
+    const DERIVED_COLUMNS = new Set([
+      'unitCostIncTax', 'builderCost', 'builderCostIncTax',
+      'clientTax', 'markupDollarAmount', 'clientPriceExTax', 'clientPriceIncTax',
+    ]);
+    // Where entering stops and pricing begins. One hairline gives the eye a
+    // landmark instead of sixteen columns of equal weight.
+    const MONEY_BOUNDARY = 'unitCostExTax';
+    const cellBase =
+      "h-9 px-2 flex items-center text-sm overflow-hidden" +
+      (NUMERIC_COLUMNS.has(columnId) ? " justify-end text-right tabular-nums" : "") +
+      (CENTERED_COLUMNS.has(columnId) ? " justify-center" : "") +
+      (DERIVED_COLUMNS.has(columnId) ? " text-muted-foreground bg-muted/40" : "") +
+      (columnId === MONEY_BOUNDARY ? " border-l border-border" : "") +
+      (isCursor ? ` ${cellHighlight}` : "");
+    const cellActive = cellHighlight;
     // Editable cell hover: layout-neutral bottom-border underline (border-b space pre-reserved)
     const cellEditable = !isLocked ? "border-b border-transparent hover:border-primary/30 transition-colors cursor-pointer" : "";
 
@@ -4555,7 +4805,7 @@ export default function EstimateDetail() {
           );
         }
         const matchedCode = costCodes.find(code => code.id === item.costCode);
-        const displayCode = matchedCode ? `${matchedCode.code} - ${matchedCode.title}` : (item.costCode || '-');
+        const displayCode = matchedCode ? `${matchedCode.code} - ${matchedCode.title}` : (item.costCode || '');
         return (
           <div 
             className={`${cellBase} truncate ${cellEditable}`}
@@ -4681,7 +4931,7 @@ export default function EstimateDetail() {
                 onKeyDown={(e) => handleCellKeyDown(e, item, 'name')}
                 onBlur={() => handleCellSave(item, 'name')}
                 onFocus={(e) => e.target.select()}
-                className="h-full w-full bg-transparent border-0 shadow-none focus-visible:ring-0 px-0 text-xs md:text-xs font-medium"
+                className="h-full w-full bg-transparent border-0 border-none rounded-none shadow-none outline-none focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0 focus-visible:ring-offset-0 px-0 text-xs md:text-xs font-medium"
                 autoFocus
                 data-testid={`input-edit-name-${item.id}`}
               />
@@ -4753,7 +5003,7 @@ export default function EstimateDetail() {
             <HoverCard openDelay={200}>
               <HoverCardTrigger asChild>
                 <div 
-                  className={`truncate max-w-[200px] ${!isLocked ? 'cursor-pointer border-b border-transparent hover:border-primary/30 transition-colors' : ''}`}
+                  className={`truncate w-full min-w-0 ${!isLocked ? 'cursor-pointer border-b border-transparent hover:border-primary/30 transition-colors' : ''}`}
                   onClick={(e) => {
                     e.stopPropagation();
                     if (!isLocked) {
@@ -4761,7 +5011,7 @@ export default function EstimateDetail() {
                     }
                   }}
                   dangerouslySetInnerHTML={{ 
-                    __html: item.description || '<span class="text-muted-foreground">-</span>' 
+                    __html: item.description || '' 
                   }}
                 />
               </HoverCardTrigger>
@@ -4784,7 +5034,8 @@ export default function EstimateDetail() {
               variant="ghost"
               size="icon"
               className="h-6 w-6"
-              onClick={() => {
+              onClick={(e) => {
+                e.stopPropagation();
                 if (isLocked) {
                   toast({
                     title: "Cannot Edit",
@@ -4798,6 +5049,7 @@ export default function EstimateDetail() {
                   data: { proposalVisible: !item.proposalVisible }
                 });
               }}
+              onDoubleClick={(e) => e.stopPropagation()}
               disabled={isLocked}
               data-testid={`button-toggle-proposalVisible-${item.id}`}
             >
@@ -4888,8 +5140,7 @@ export default function EstimateDetail() {
               <StatusBadge
                 status={currentStatus}
                 label={statusLabel}
-                color={statusOption?.color || undefined}
-                tone={statusOption?.color ? undefined : legacyStatusTone}
+                tone={legacyStatusTone}
               />
             </CellChip>
           </div>
@@ -4910,11 +5161,18 @@ export default function EstimateDetail() {
           allowanceType === 'Prime Cost' ? 'PC' : 
           allowanceType === 'Provisional Sum' ? 'PS' : 
           '-';
+        // Most lines carry no allowance, and a column of grey dashes saying
+        // "nothing" is noise. It fades in on row hover so the cell is still
+        // obviously clickable when you want to set one.
+        const allowanceFade = allowanceType === 'None'
+          ? 'opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity'
+          : '';
         
         return (
           <div className={cellBase} role="gridcell" key={`${item.id}-allowance`} data-testid={`cell-allowance-${item.id}`}>
             <CellChip
               disabled={isLocked}
+              className={allowanceFade}
               title={isLocked ? undefined : `Allowance: ${allowanceType}. Click to change.`}
               testId={`button-toggle-allowance-${item.id}`}
               onClick={() => {
@@ -4949,7 +5207,7 @@ export default function EstimateDetail() {
                 onBlur={() => handleCellSave(item, 'quantity')}
                 onFocus={(e) => e.target.select()}
                 onDoubleClick={(e) => e.stopPropagation()}
-                className="h-full w-full bg-transparent border-0 shadow-none focus-visible:ring-0 px-0 text-xs md:text-xs"
+                className="h-full w-full bg-transparent border-0 border-none rounded-none shadow-none outline-none focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0 focus-visible:ring-offset-0 px-0 text-sm md:text-sm text-right [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                 autoFocus
                 min="0"
                 step="0.01"
@@ -5030,10 +5288,14 @@ export default function EstimateDetail() {
                     data: { unitType: value }
                   });
                   setEditingCell(null);
+                  // Stay on the cell so the next Tab continues along the row
+                  // instead of falling out of the grid onto the notes button.
+                  setActiveCell({ itemId: item.id, field: 'unitType' });
                 }}
                 data-testid={`select-edit-unitType-${item.id}`}
+                defaultOpen
               >
-                <SelectTrigger className="h-8 text-sm border-0 shadow-none focus:ring-0 bg-transparent">
+                <SelectTrigger className="h-full w-full px-0 text-sm bg-transparent border-0 border-none rounded-none shadow-none outline-none focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0 focus-visible:ring-offset-0">
                   <SelectValue placeholder="Unit" />
                 </SelectTrigger>
                 <SelectContent>
@@ -5061,7 +5323,7 @@ export default function EstimateDetail() {
             }}
             data-testid={`cell-unitType-${item.id}`}
           >
-            {item.unitType || '-'}
+            {item.unitType || ''}
           </div>
         );
       
@@ -5077,7 +5339,7 @@ export default function EstimateDetail() {
                 onBlur={() => handleCellSave(item, 'unitCostExTax')}
                 onFocus={(e) => e.target.select()}
                 onDoubleClick={(e) => e.stopPropagation()}
-                className="h-full w-full bg-transparent border-0 shadow-none focus-visible:ring-0 px-0 text-xs md:text-xs"
+                className="h-full w-full bg-transparent border-0 border-none rounded-none shadow-none outline-none focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0 focus-visible:ring-offset-0 px-0 text-sm md:text-sm text-right [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                 autoFocus
                 min="0"
                 step="0.01"
@@ -5115,7 +5377,7 @@ export default function EstimateDetail() {
                 onBlur={() => handleCellSave(item, 'unitCostIncTax')}
                 onFocus={(e) => e.target.select()}
                 onDoubleClick={(e) => e.stopPropagation()}
-                className="h-full w-full bg-transparent border-0 shadow-none focus-visible:ring-0 px-0 text-xs md:text-xs"
+                className="h-full w-full bg-transparent border-0 border-none rounded-none shadow-none outline-none focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0 focus-visible:ring-offset-0 px-0 text-sm md:text-sm text-right [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                 autoFocus
                 min="0"
                 step="0.01"
@@ -5172,7 +5434,7 @@ export default function EstimateDetail() {
                 onBlur={() => handleCellSave(item, 'markup')}
                 onFocus={(e) => e.target.select()}
                 onDoubleClick={(e) => e.stopPropagation()}
-                className="h-full w-full bg-transparent border-0 shadow-none focus-visible:ring-0 px-0 text-xs md:text-xs"
+                className="h-full w-full bg-transparent border-0 border-none rounded-none shadow-none outline-none focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0 focus-visible:ring-offset-0 px-0 text-sm md:text-sm text-right [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                 autoFocus
                 min="0"
                 step="1"
@@ -5336,23 +5598,21 @@ export default function EstimateDetail() {
   const getStatusBadge = (estimate: Estimate) => {
     // Workflow statuses take precedence over the legacy "Locked" pill so users
     // can always tell at a glance whether an estimate is the Contract one.
+    // These were 24px Badges with hand-written colours while the rest of the
+    // app uses the 18px StatusBadge pill. Same component and palette now.
     if (estimate.status === "contract") {
-      return <Badge variant="secondary" className="h-6 px-2 text-xs bg-primary/15 text-primary border-primary/30"><Lock className="w-3 h-3 mr-1" />Contract</Badge>;
+      return <StatusBadge status="contract" label="Contract" tone="success" />;
     }
     if (estimate.status === "approved") {
-      return <Badge variant="secondary" className="h-6 px-2 text-xs"><Lock className="w-3 h-3 mr-1" />Approved</Badge>;
+      return <StatusBadge status="approved" label="Approved" tone="success" />;
     }
     if (estimate.isLocked) {
-      return <Badge variant="secondary" className="h-6 px-2 text-xs bg-primary/10 text-primary border-primary/20"><Lock className="w-3 h-3 mr-1" />Locked</Badge>;
+      return <StatusBadge status="locked" label="Locked" tone="info" />;
     }
 
-    // Use field settings for status
+    // Configured status: label from Field Settings, colour from the app's
+    // palette — the configured hex renders as a bright wash that doesn't match.
     const statusOption = estimateStatuses.find(s => s.key === estimate.status);
-    if (statusOption && statusOption.color) {
-      return <StatusBadge status={statusOption.key} label={statusOption.name} color={statusOption.color} />;
-    }
-
-    // Fallback
     return <StatusBadge status={estimate.status || "Draft"} label={statusOption?.name} />;
   };
 
@@ -5758,6 +6018,16 @@ export default function EstimateDetail() {
                   <Package className="w-3.5 h-3.5 text-muted-foreground" />
                   Browse catalog
                 </button>
+                <button
+                  className="flex items-center gap-2 px-2 py-1.5 text-xs rounded-md hover-elevate w-full text-left"
+                  onClick={() => setHideAddLines(v => !v)}
+                  data-testid="button-toggle-add-lines"
+                >
+                  {hideAddLines
+                    ? <Eye className="w-3.5 h-3.5 text-muted-foreground" />
+                    : <EyeOff className="w-3.5 h-3.5 text-muted-foreground" />}
+                  {hideAddLines ? 'Show "Add Line" rows' : 'Hide "Add Line" rows'}
+                </button>
                 <Separator className="my-1" />
                 {/* Manual lock — snapshot the pricing before sending a quote
                     out. Hidden on contract estimates, whose lock is owned by
@@ -6024,22 +6294,6 @@ export default function EstimateDetail() {
                   </TooltipProvider>
                 )}
                 
-                {/* Hide/Show Add Lines toggle */}
-                <TooltipProvider>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <button
-                        className={`h-6 w-6 text-xs border rounded-md flex items-center justify-center ${hideAddLines ? 'bg-muted' : ''} hover-elevate active-elevate-2`}
-                        onClick={() => setHideAddLines(!hideAddLines)}
-                        data-testid="button-toggle-add-lines"
-                      >
-                        {hideAddLines ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
-                      </button>
-                    </TooltipTrigger>
-                    <TooltipContent>{hideAddLines ? 'Show add line rows' : 'Hide add line rows'}</TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
-
                 {/* Search Input */}
                 <div className="relative">
                   <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
@@ -6190,7 +6444,13 @@ export default function EstimateDetail() {
               </div>
         </div>
         {/* Scrollable content area — only this scrolls horizontally */}
-        <div ref={gridScrollRef} className="flex-1 overflow-auto min-h-0 dt-autohide-scrollbar">
+        <div
+          ref={gridScrollRef}
+          className="flex-1 overflow-auto min-h-0 dt-autohide-scrollbar focus:outline-none"
+          tabIndex={0}
+          onKeyDown={handleGridKeyDown}
+          data-testid="estimate-grid-scroll"
+        >
           <div className="inline-block min-w-full">
             <div className="bg-background">
               {itemsLoading || groupsLoading ? (
@@ -6200,60 +6460,50 @@ export default function EstimateDetail() {
                     ))}
                   </div>
                 ) : items.length === 0 && groups.length === 0 ? (
-                  <div className="text-center py-8">
-                    <FileText className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
-                    <h3 className="text-lg font-medium mb-2">No items or groups added yet</h3>
-                    <p className="text-muted-foreground mb-4">
-                      Add a group to organize items, or add items directly.
-                    </p>
-                    <div className="flex items-center justify-center gap-2">
-                      <Button 
-                        data-testid="button-add-first-group" 
-                        onClick={handleAddGroup}
-                        disabled={estimate?.isLocked}
-                        variant={estimate?.isLocked ? "secondary" : "outline"}
-                      >
-                        <FolderPlus className="w-4 h-4 mr-2" />
-                        Add Group
-                      </Button>
-                      <Button 
-                        data-testid="button-add-first-item" 
-                        onClick={handleAddItem}
-                        disabled={estimate?.isLocked}
-                        variant={estimate?.isLocked ? "secondary" : "default"}
-                      >
-                        <Plus className="w-4 h-4 mr-2" />
-                        Add Item
-                      </Button>
-                      <Button 
-                        data-testid="button-import-items" 
-                        onClick={() => setIsImportOpen(true)}
-                        disabled={estimate?.isLocked}
-                        variant={estimate?.isLocked ? "secondary" : "outline"}
-                      >
-                        <Upload className="w-4 h-4 mr-2" />
-                        Import Items
-                      </Button>
-                      <Button 
-                        data-testid="button-load-template-empty" 
-                        onClick={() => setIsTemplatePickerOpen(true)}
-                        disabled={estimate?.isLocked}
-                        variant={estimate?.isLocked ? "secondary" : "outline"}
-                      >
-                        <LayoutTemplate className="w-4 h-4 mr-2" />
-                        Load Template
-                      </Button>
-                      <Button 
-                        data-testid="button-open-catalog" 
-                        onClick={() => setIsCatalogOpen(true)}
-                        disabled={estimate?.isLocked}
-                        variant={estimate?.isLocked ? "secondary" : "outline"}
-                      >
-                        <Package className="w-4 h-4 mr-2" />
-                        Catalog
-                      </Button>
-                    </div>
-                  </div>
+                  <EmptyState
+                    icon={FileText}
+                    title="Nothing in this estimate yet"
+                    description="Add a group to organise items, or start adding items directly."
+                    action={{
+                      label: "Add Item",
+                      onClick: handleAddItem,
+                      icon: Plus,
+                      disabled: estimate?.isLocked,
+                      "data-testid": "button-add-first-item",
+                    }}
+                    secondaryActions={[
+                      {
+                        label: "Add Group",
+                        onClick: handleAddGroup,
+                        icon: FolderPlus,
+                        disabled: estimate?.isLocked,
+                        "data-testid": "button-add-first-group",
+                      },
+                      {
+                        label: "Import Items",
+                        onClick: () => setIsImportOpen(true),
+                        icon: Upload,
+                        disabled: estimate?.isLocked,
+                        "data-testid": "button-import-items",
+                      },
+                      {
+                        label: "Load Template",
+                        onClick: () => setIsTemplatePickerOpen(true),
+                        icon: LayoutTemplate,
+                        disabled: estimate?.isLocked,
+                        "data-testid": "button-load-template-empty",
+                      },
+                      {
+                        label: "Catalog",
+                        onClick: () => setIsCatalogOpen(true),
+                        icon: Package,
+                        disabled: estimate?.isLocked,
+                        "data-testid": "button-open-catalog",
+                      },
+                    ]}
+                    variant="inline"
+                    className="py-16"
+                  />
                 ) : (
                   <DndContext 
                     sensors={sensors} 
@@ -6313,7 +6563,7 @@ export default function EstimateDetail() {
                         <SortableContext items={allSortableIds} strategy={verticalListSortingStrategy}>
                           {/* CSS Grid Header */}
                           <div 
-                            className="bg-card border-b border-border sticky top-0 z-[10] pl-px"
+                            className="bg-card border-b border-border sticky top-0 z-30 pl-px"
                             role="row"
                             style={{ 
                               display: 'grid', 
@@ -6337,9 +6587,11 @@ export default function EstimateDetail() {
                               <div 
                                 key={column.id}
                                 role="columnheader"
-                                className="h-9 px-2 flex items-center relative group/header"
+                                className={`h-9 px-2 flex items-center relative group/header${
+                                  ['status', 'shownAs', 'allowance', 'type'].includes(column.id) ? ' justify-center' : ''
+                                }`}
                               >
-                                <span className="truncate text-xs font-medium text-muted-foreground uppercase tracking-wide">{column.label}</span>
+                                <span className="truncate text-[10px] font-medium text-muted-foreground uppercase tracking-wider">{column.label}</span>
                                 {/* Resize handle — hidden only on the last column */}
                                 {index < visibleCols.length - 1 && (
                                   <div
