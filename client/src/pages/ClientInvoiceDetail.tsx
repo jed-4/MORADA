@@ -2865,7 +2865,7 @@ export default function ClientInvoiceDetail() {
                         )}
 
                         {/* Committed, but claiming against a price that can still
-                            move. True for the invoices backfilled by 0049: they
+                            move. True for the invoices backfilled by 0050: they
                             were approved in Xero before Morada stamped a price,
                             and that moment cannot be reconstructed. */}
                         {!!invoice && invoice.status !== "draft" && invoice.lockedContractPrice == null && (
