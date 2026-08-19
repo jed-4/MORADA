@@ -15,7 +15,6 @@ import {
   DollarSign,
   LayoutList,
   Columns3,
-  SlidersHorizontal,
   MoreHorizontal,
   Archive,
   ArrowLeft,
@@ -36,7 +35,6 @@ import {
 import { type ColumnDef } from "@tanstack/react-table";
 import {
   DataTable,
-  DataTableColumnPicker,
   type DataTableColumnMeta,
 } from "@/components/data-table/DataTable";
 import {
@@ -67,7 +65,10 @@ import { getRevLabel } from "@/lib/estimateRevisions";
 function renderEstimateStatusBadge(estimate: Estimate, statuses: FieldOption[]) {
   const statusOption = statuses.find((s) => s.key === estimate.status);
   if (statusOption) {
-    return <StatusBadge status={statusOption.key} label={statusOption.name} color={statusOption.color} />;
+    // Label from Field Settings, colour from the app's status palette — the
+    // configured hex renders as a bright wash that doesn't match the chips
+    // used everywhere else.
+    return <StatusBadge status={statusOption.key} label={statusOption.name} />;
   }
   // Fallback to isLocked for backward compatibility
   if (estimate.isLocked) {
@@ -108,6 +109,20 @@ export default function EstimatesView({ projectId, embedded }: EstimatesViewProp
 
   /** Where this view lives, so an opened estimate knows where "back" returns to. */
   const selfPath = scoped ? `/projects/${projectId}/estimates` : ALL_ESTIMATES_PATH;
+
+  const tableStorageKey = scoped ? "project-estimates" : "estimates";
+
+  // Every column is shown and there is no picker to change that, so drop any
+  // visibility saved by the picker that used to be here — otherwise a column
+  // someone hid stays hidden with no way back. Runs during render, before
+  // DataTable reads the key on mount.
+  useMemo(() => {
+    try {
+      window.localStorage.removeItem(`buildpro_table_hidden_${tableStorageKey}`);
+    } catch {
+      /* noop — private browsing / storage disabled */
+    }
+  }, [tableStorageKey]);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedProject, setSelectedProject] = useState("All");
   const [selectedStatus, setSelectedStatus] = useState("All");
@@ -591,16 +606,6 @@ export default function EstimatesView({ projectId, embedded }: EstimatesViewProp
   // eslint-disable-next-line react-hooks/exhaustive-deps
   ], [projects, estimateStatuses, scoped, revisionCounts]);
 
-  const pickerColumns = useMemo(
-    () => [
-      { id: "name", label: "Name" },
-      ...(scoped ? [] : [{ id: "project", label: "Project" }]),
-      { id: "status", label: "Status" },
-      { id: "total", label: "Total" },
-    ],
-    [scoped],
-  );
-
   const handleRowClick = (estimate: Estimate) => {
     // `from` tells the estimate's back button to return to whichever view
     // opened it — this project's list, or the cross-project one.
@@ -744,25 +749,6 @@ export default function EstimatesView({ projectId, embedded }: EstimatesViewProp
           </button>
         </div>
 
-        {/* Column picker (list view only) */}
-        {effectiveView === 'list' && (
-          <Popover>
-            <PopoverTrigger asChild>
-              <button
-                className="h-6 w-6 py-0 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
-                data-testid="button-columns"
-                title="Columns"
-                aria-label="Columns"
-              >
-                <SlidersHorizontal className="w-3 h-3" />
-              </button>
-            </PopoverTrigger>
-            <PopoverContent align="end" className="p-0">
-              <DataTableColumnPicker storageKey={scoped ? "project-estimates" : "estimates"} columns={pickerColumns} />
-            </PopoverContent>
-          </Popover>
-        )}
-        <div className="flex items-center gap-1.5 flex-shrink-0">
           {showArchived ? (
             <button
               className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
@@ -840,7 +826,6 @@ export default function EstimatesView({ projectId, embedded }: EstimatesViewProp
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
-        </div>
       </div>
 
       {/* Content */}
@@ -895,7 +880,7 @@ export default function EstimatesView({ projectId, embedded }: EstimatesViewProp
                 <DataTable
                   data={visibleEstimates}
                   columns={estimateColumns}
-                  storageKey={scoped ? "project-estimates" : "estimates"}
+                  storageKey={tableStorageKey}
                   legacyConfigKey={scoped ? undefined : "estimates-column-config-v1"}
                   rowKey={(e) => e.id}
                   onRowClick={handleRowClick}

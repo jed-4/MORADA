@@ -4667,8 +4667,12 @@ export default function EstimateDetail() {
         const isCollapsed = collapsedItems.has(item.id);
         const isSubItem = !!item.parentItemId;
         const indentClass = isSubItem ? 'pl-6' : '';
-        
-        if (isEditing) {
+        // This column is "item" but it edits the `name` field, and the shared
+        // isEditing above compares the field against the COLUMN id — so it was
+        // always false here and clicking the name never opened an input.
+        const isEditingName = editingCell?.itemId === item.id && editingCell?.field === 'name';
+
+        if (isEditingName) {
           return (
             <div className={`${cellBase} ${indentClass} ${cellActive}`} role="gridcell">
               <Input
@@ -4676,7 +4680,8 @@ export default function EstimateDetail() {
                 onChange={(e) => setEditingValue(e.target.value)}
                 onKeyDown={(e) => handleCellKeyDown(e, item, 'name')}
                 onBlur={() => handleCellSave(item, 'name')}
-                className="h-full w-full bg-transparent border-0 shadow-none focus-visible:ring-0 text-sm"
+                onFocus={(e) => e.target.select()}
+                className="h-full w-full bg-transparent border-0 shadow-none focus-visible:ring-0 px-0 text-xs md:text-xs font-medium"
                 autoFocus
                 data-testid={`input-edit-name-${item.id}`}
               />
@@ -4699,7 +4704,7 @@ export default function EstimateDetail() {
               if (!isLocked) handleCellEdit(item, 'name');
             }}
           >
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 min-w-0 w-full">
               {hasSubItems && (
                 <Button
                   variant="ghost"
@@ -4718,8 +4723,8 @@ export default function EstimateDetail() {
                   )}
                 </Button>
               )}
-              <span 
-                className="font-medium truncate max-w-[180px] block text-xs"
+              <span
+                className="font-medium truncate text-xs flex-1 min-w-0"
                 title={isLocked ? item.name : 'Click to edit'}
               >
                 {item.name}
@@ -4944,7 +4949,7 @@ export default function EstimateDetail() {
                 onBlur={() => handleCellSave(item, 'quantity')}
                 onFocus={(e) => e.target.select()}
                 onDoubleClick={(e) => e.stopPropagation()}
-                className="h-full w-full bg-transparent border-0 shadow-none focus-visible:ring-0 text-sm"
+                className="h-full w-full bg-transparent border-0 shadow-none focus-visible:ring-0 px-0 text-xs md:text-xs"
                 autoFocus
                 min="0"
                 step="0.01"
@@ -5072,7 +5077,7 @@ export default function EstimateDetail() {
                 onBlur={() => handleCellSave(item, 'unitCostExTax')}
                 onFocus={(e) => e.target.select()}
                 onDoubleClick={(e) => e.stopPropagation()}
-                className="h-full w-full bg-transparent border-0 shadow-none focus-visible:ring-0 text-sm"
+                className="h-full w-full bg-transparent border-0 shadow-none focus-visible:ring-0 px-0 text-xs md:text-xs"
                 autoFocus
                 min="0"
                 step="0.01"
@@ -5110,7 +5115,7 @@ export default function EstimateDetail() {
                 onBlur={() => handleCellSave(item, 'unitCostIncTax')}
                 onFocus={(e) => e.target.select()}
                 onDoubleClick={(e) => e.stopPropagation()}
-                className="h-full w-full bg-transparent border-0 shadow-none focus-visible:ring-0 text-sm"
+                className="h-full w-full bg-transparent border-0 shadow-none focus-visible:ring-0 px-0 text-xs md:text-xs"
                 autoFocus
                 min="0"
                 step="0.01"
@@ -5167,7 +5172,7 @@ export default function EstimateDetail() {
                 onBlur={() => handleCellSave(item, 'markup')}
                 onFocus={(e) => e.target.select()}
                 onDoubleClick={(e) => e.stopPropagation()}
-                className="h-full w-full bg-transparent border-0 shadow-none focus-visible:ring-0 text-sm"
+                className="h-full w-full bg-transparent border-0 shadow-none focus-visible:ring-0 px-0 text-xs md:text-xs"
                 autoFocus
                 min="0"
                 step="1"
