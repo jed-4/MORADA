@@ -21393,6 +21393,44 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const owned = await getOwnedClientInvoice(req, res, req.params.id, "Client invoice not found");
       if (!owned) return;
+
+      // An invoice that reached Xero is AUTHORISED there and cannot be deleted
+      // through Xero's API — voiding is the only way to withdraw it. Deleting
+      // only the Morada row would strand a live receivable in Xero with nothing
+      // pointing at it, so deleting here voids there first and only removes the
+      // local row once Xero has accepted it.
+      if ((owned as any).xeroInvoiceId) {
+        // Xero refuses to void an invoice carrying payments, and so do we —
+        // withdrawing money already received is a credit note, not a delete.
+        if (((owned as any).paidAmount ?? 0) > 0) {
+          return res.status(409).json({
+            error: "INVOICE_HAS_PAYMENTS",
+            message:
+              "This invoice has payments against it, so it can't be voided. " +
+              "Raise a credit note in Xero instead.",
+          });
+        }
+
+        const connection = await storage.getXeroConnectionByCompanyId((req.user as any)?.companyId);
+        if (!connection) {
+          return res.status(409).json({
+            error: "XERO_DISCONNECTED",
+            message:
+              "This invoice exists in Xero, but Xero isn't connected — reconnect it so the " +
+              "invoice can be voided there, otherwise it would be left behind as a live receivable.",
+          });
+        }
+        try {
+          await xeroService.voidInvoice(connection.id, (owned as any).xeroInvoiceId);
+        } catch (e: any) {
+          // Never delete locally if the void failed: that is the orphan case.
+          return res.status(502).json({
+            error: "XERO_VOID_FAILED",
+            message: `Could not void the invoice in Xero, so nothing was deleted: ${e?.message || e}`,
+          });
+        }
+      }
+
       const deleted = await storage.deleteClientInvoice(req.params.id);
       if (!deleted) {
         return res.status(404).json({ error: "Client invoice not found" });

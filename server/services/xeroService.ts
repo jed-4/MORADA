@@ -1329,6 +1329,34 @@ export class XeroService {
    * two statuses, so emailing from here has to write the flag back or Xero
    * keeps showing the invoice as never sent.
    */
+  /**
+   * Void an invoice in Xero.
+   *
+   * An AUTHORISED invoice cannot be deleted through the API — voiding is the
+   * only way to withdraw it, and it is irreversible. Xero refuses to void an
+   * invoice carrying payments; that needs a credit note instead, so callers
+   * must check before reaching this.
+   */
+  async voidInvoice(connectionId: string, invoiceId: string): Promise<void> {
+    const accessToken = await this.getValidToken(connectionId);
+    const connection = await storage.getXeroConnection(connectionId);
+    if (!connection) throw new Error("Xero connection not found");
+
+    const response = await fetch(`${XERO_API_BASE}/Invoices`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Xero-Tenant-Id": connection.tenantId,
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify({ Invoices: [{ InvoiceID: invoiceId, Status: "VOIDED" }] }),
+    });
+    if (!response.ok) {
+      throw new Error(summarizeXeroError(await response.text()));
+    }
+  }
+
   async markInvoiceSentToContact(connectionId: string, invoiceId: string): Promise<void> {
     const accessToken = await this.getValidToken(connectionId);
     const connection = await storage.getXeroConnection(connectionId);

@@ -38,10 +38,20 @@ import {
   ArrowUpDown,
   LayoutGrid,
   AlertCircle,
+  MoreVertical,
+  Trash2,
+  Copy,
 } from "lucide-react";
 import { SiXero } from "react-icons/si";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { LineItemTable, type LineItemColumn } from "@/components/LineItemTable";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -120,6 +130,9 @@ const GST_RATE = 0.1;
 type ColumnId =
   | "name"
   | "description"
+  | "tax"
+  | "account"
+  | "tracking"
   | "contractTotal"
   | "remaining"
   | "claimPercent"
@@ -149,6 +162,9 @@ const INVOICE_BILL_COLUMNS = [
 const ALL_COLUMNS: ColumnDef[] = [
   { id: "name", label: "Name", required: true, defaultVisible: true },
   { id: "description", label: "Description", required: false, defaultVisible: true },
+  { id: "tax", label: "Tax", required: false, defaultVisible: true },
+  { id: "account", label: "Xero Account", required: false, defaultVisible: true },
+  { id: "tracking", label: "Xero Tracking", required: false, defaultVisible: true },
   { id: "contractTotal", label: "Contract Total", required: false, defaultVisible: true },
   { id: "remaining", label: "Remaining", required: false, defaultVisible: true },
   { id: "claimPercent", label: "Claim %", required: true, defaultVisible: true },
@@ -322,7 +338,6 @@ export default function ClientInvoiceDetail() {
     ];
   });
   const [customLineColPickerOpen, setCustomLineColPickerOpen] = useState(false);
-  const [bulkAccountCode, setBulkAccountCode] = useState("");
   // Per-line Xero overrides for the non-custom sources, keyed by
   // lineAccountKey(). The breakdown is rebuilt from source data on every
   // render, so an override cannot live on the derived line — it is keyed by the
@@ -343,13 +358,18 @@ export default function ClientInvoiceDetail() {
   const [modalSelectionOptionIds, setModalSelectionOptionIds] = useState<string[]>([]);
 
   // ── queries ──────────────────────────────────────────────────────────────────
-  const { data: xeroStatus } = useQuery<{ connected: boolean }>({
+  const { data: xeroStatus } = useQuery<{
+    connected: boolean;
+    trackingCategory1Id?: string;
+    trackingCategory2Id?: string;
+  }>({
     queryKey: ["/api/xero/status"],
   });
 
   // T004: PDF + email state
   const [invoicePdfGenerating, setInvoicePdfGenerating] = useState(false);
   const [invoicePreviewOpen, setInvoicePreviewOpen] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [invoiceSendModalOpen, setInvoiceSendModalOpen] = useState(false);
   const [invoiceSendData, setInvoiceSendData] = useState<{
     lineItems: Array<{ label: string; description?: string | null; claimPct?: number | null; amountExTax: number; gst: number; amountIncTax: number }>;
@@ -1014,6 +1034,11 @@ export default function ClientInvoiceDetail() {
   // Stable identity for a non-custom line, used to key its Xero account
   // override. `labour` and `markup` are single lines per invoice and so need
   // no id. Custom lines are excluded — they carry their own account column.
+  // The project already answers the Jobs category — the push falls back to it,
+  // so the cell should say so instead of reading as unset.
+  const projectTrackingOptionName =
+    ((currentProject as any)?.xeroTrackingOptionName as string | undefined) || undefined;
+
   const lineAccountKey = (source: BreakdownLine["source"], id?: string) =>
     id ? `${source}:${id}` : source;
   const overrideFor = (source: BreakdownLine["source"], id?: string): LineXeroOverride =>
@@ -1717,6 +1742,49 @@ export default function ClientInvoiceDetail() {
     }
   };
 
+  const duplicateInvoiceMutation = useMutation({
+    mutationFn: async () => {
+      const payload = buildInvoicePayload(form.getValues());
+      const copy = await apiRequest("/api/client-invoices/full", "POST", {
+        invoice: {
+          ...payload,
+          // A duplicate is a fresh draft: it must not inherit the original's
+          // number, Xero link, payments or approved state.
+          invoiceNumber: undefined,
+          name: `${payload.name} (copy)`,
+          status: "draft",
+          paidAmount: 0,
+          balanceAmount: payload.totalAmount,
+          sendToXero: false,
+        },
+        ...buildInvoiceChildren(),
+      });
+      return copy as ClientInvoice;
+    },
+    onSuccess: (copy) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/client-invoices"] });
+      toast({ title: "Invoice duplicated" });
+      setLocation(
+        projectIdFromParams
+          ? `/projects/${projectIdFromParams}/client-invoices/${copy.id}`
+          : `/client-invoices/${copy.id}`,
+      );
+    },
+    onError: (e: any) =>
+      toast({ title: "Could not duplicate", description: e?.message, variant: "destructive" }),
+  });
+
+  const deleteInvoiceMutation = useMutation({
+    mutationFn: async () => apiRequest(`/api/client-invoices/${effectiveInvoiceId}`, "DELETE"),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/client-invoices"] });
+      toast({ title: "Invoice deleted" });
+      handleCancel();
+    },
+    onError: (e: any) =>
+      toast({ title: "Could not delete", description: e?.message, variant: "destructive" }),
+  });
+
   const handlePushToXero = async () => {
     if (!effectiveInvoiceId || xeroPushing) return;
     setXeroPushing(true);
@@ -1926,7 +1994,7 @@ export default function ClientInvoiceDetail() {
     // Tax and Account sit inline, exactly as they do on Custom Lines — the Xero
     // Posting panel is for setting them in bulk and for tracking, not the only
     // way to reach them.
-    cols.push({
+    if (isColVisible("tax")) cols.push({
       key: "taxType", header: "Tax", width: 128, truncate: false,
       cell: (l) => {
         const current = lineXeroOverrides[l.xeroKey]?.taxType
@@ -1953,7 +2021,7 @@ export default function ClientInvoiceDetail() {
     // One column per mapped Xero tracking category (Xero allows two per line).
     // Rendered only when the connection actually has categories, so an org that
     // doesn't use tracking keeps a narrower grid.
-    for (const cat of (xeroTrackingCategories ?? []).slice(0, 2)) {
+    for (const cat of (isColVisible("tracking") ? (xeroTrackingCategories ?? []).slice(0, 2) : [])) {
       cols.push({
         key: `tracking-${cat.trackingCategoryId}`, header: cat.name, width: 128, truncate: false,
         cell: (l) => (
@@ -1969,10 +2037,22 @@ export default function ClientInvoiceDetail() {
             }
           >
             <SelectTrigger className="h-7 text-table border-0 bg-transparent shadow-none focus:ring-1 focus:ring-ring px-1.5 rounded-sm w-full" data-testid={`select-tracking-${cat.trackingCategoryId}-${l.xeroKey}`}>
-              <SelectValue placeholder={`— ${cat.name} —`} />
+              <SelectValue
+                placeholder={
+                  cat.trackingCategoryId === xeroStatus?.trackingCategory2Id && projectTrackingOptionName
+                    ? projectTrackingOptionName
+                    : `— ${cat.name} —`
+                }
+              />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="__none__"><span className="text-muted-foreground">— Project default —</span></SelectItem>
+              <SelectItem value="__none__">
+                <span className="text-muted-foreground">
+                  {cat.trackingCategoryId === xeroStatus?.trackingCategory2Id && projectTrackingOptionName
+                    ? `${projectTrackingOptionName} (from project)`
+                    : "— Project default —"}
+                </span>
+              </SelectItem>
               {(cat.options ?? []).map((o) => (
                 <SelectItem key={o.trackingOptionId} value={o.trackingOptionId}>{o.name}</SelectItem>
               ))}
@@ -1981,7 +2061,7 @@ export default function ClientInvoiceDetail() {
         ),
       });
     }
-    cols.push({
+    if (isColVisible("account")) cols.push({
       key: "account", header: "Account", width: 128, truncate: false,
       cell: (l) => {
         const value = lineXeroOverrides[l.xeroKey]?.account || "";
@@ -2144,37 +2224,19 @@ export default function ClientInvoiceDetail() {
               </div>
 
               <div className="flex items-center gap-1.5">
+                {/* Email stays inline — for an invoice, sending it is a primary
+                    act, not an occasional one. Preview/PDF/sync/duplicate/delete
+                    move into the overflow menu, matching PurchaseOrderDetail. */}
                 {isEditMode && (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => setInvoicePreviewOpen(true)}
-                      className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
-                      data-testid="button-preview-invoice"
-                    >
-                      <Eye className="w-3 h-3" />
-                      <span>Preview</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleDownloadInvoicePdf}
-                      disabled={invoicePdfGenerating}
-                      className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
-                      data-testid="button-download-invoice-pdf"
-                    >
-                      {invoicePdfGenerating ? <Loader2 className="w-3 h-3 animate-spin" /> : <Download className="w-3 h-3" />}
-                      <span>PDF</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleOpenInvoiceSendModal}
-                      className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
-                      data-testid="button-email-invoice"
-                    >
-                      <Mail className="w-3 h-3" />
-                      <span>Email</span>
-                    </button>
-                  </>
+                  <button
+                    type="button"
+                    onClick={handleOpenInvoiceSendModal}
+                    className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
+                    data-testid="button-email-invoice"
+                  >
+                    <Mail className="w-3 h-3" />
+                    <span>Email</span>
+                  </button>
                 )}
                 <button
                   type="submit"
@@ -2189,6 +2251,56 @@ export default function ClientInvoiceDetail() {
                   )}
                   <span>{isEditMode ? "Update" : "Create"} Invoice</span>
                 </button>
+
+                {isEditMode && (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <button
+                        type="button"
+                        className="h-6 w-6 flex items-center justify-center rounded-md hover-elevate active-elevate-2 text-muted-foreground"
+                        data-testid="button-invoice-actions"
+                      >
+                        <MoreVertical className="w-3.5 h-3.5" />
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-52">
+                      <DropdownMenuItem onClick={() => setInvoicePreviewOpen(true)} data-testid="menu-preview-invoice">
+                        <Eye className="w-3.5 h-3.5 mr-2" />
+                        Preview
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={handleDownloadInvoicePdf} disabled={invoicePdfGenerating} data-testid="menu-download-invoice-pdf">
+                        <Download className="w-3.5 h-3.5 mr-2" />
+                        Download PDF
+                      </DropdownMenuItem>
+                      {xeroStatus?.connected && invoice?.xeroInvoiceId && (
+                        <DropdownMenuItem
+                          onClick={() => pullFromXeroMutation.mutate()}
+                          disabled={pullFromXeroMutation.isPending}
+                          data-testid="menu-sync-from-xero"
+                        >
+                          <RefreshCw className="w-3.5 h-3.5 mr-2" />
+                          Refresh status from Xero
+                        </DropdownMenuItem>
+                      )}
+                      <DropdownMenuItem onClick={() => duplicateInvoiceMutation.mutate()} disabled={duplicateInvoiceMutation.isPending} data-testid="menu-duplicate-invoice">
+                        <Copy className="w-3.5 h-3.5 mr-2" />
+                        Duplicate
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      {/* Deleting an invoice that exists in Xero would strand an
+                          AUTHORISED receivable there with nothing pointing at it,
+                          so the option is only offered before it is approved. */}
+                      <DropdownMenuItem
+                        onClick={() => setDeleteConfirmOpen(true)}
+                        className="text-destructive focus:text-destructive"
+                        data-testid="menu-delete-invoice"
+                      >
+                        <Trash2 className="w-3.5 h-3.5 mr-2" />
+                        {invoice?.xeroInvoiceId ? "Void & delete" : "Delete"}
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )}
               </div>
             </div>
 
@@ -3493,42 +3605,6 @@ export default function ClientInvoiceDetail() {
                       <span className="text-xs font-medium">Custom Lines</span>
                     </div>
                     <div className="flex items-center gap-1.5">
-                      {customLines.length > 0 && (
-                        <>
-                          {xeroAccounts.length > 0 ? (
-                            <Select value={bulkAccountCode || "__none__"} onValueChange={setBulkAccountCode}>
-                              <SelectTrigger className="h-6 w-36 text-xs border-dashed" data-testid="select-bulk-xero-account">
-                                <SelectValue placeholder="Xero account…" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="__none__"><span className="text-muted-foreground">— None —</span></SelectItem>
-                                {xeroAccounts.map((acc) => (
-                                  <SelectItem key={acc.code} value={acc.code}>{acc.code} — {acc.name}</SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          ) : (
-                            <input
-                              value={bulkAccountCode}
-                              onChange={(e) => setBulkAccountCode(e.target.value)}
-                              placeholder="Account"
-                              className="h-6 w-24 px-2 text-xs border border-dashed rounded-md bg-transparent focus:outline-none focus:ring-1 focus:ring-ring"
-                              data-testid="input-bulk-xero-account"
-                            />
-                          )}
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const code = bulkAccountCode === "__none__" ? null : bulkAccountCode || null;
-                              setCustomLines(customLines.map((l) => ({ ...l, xeroAccountCode: code })));
-                            }}
-                            className="h-6 px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
-                            data-testid="button-set-all-account"
-                          >
-                            Set all
-                          </button>
-                        </>
-                      )}
                       <Popover open={customLineColPickerOpen} onOpenChange={setCustomLineColPickerOpen}>
                         <PopoverTrigger asChild>
                           <button type="button" className="h-6 w-6 flex items-center justify-center rounded hover-elevate text-muted-foreground">
@@ -3537,7 +3613,7 @@ export default function ClientInvoiceDetail() {
                         </PopoverTrigger>
                         <PopoverContent className="w-44 p-2" align="end">
                           <p className="text-xs font-medium text-muted-foreground mb-2 px-1">Columns</p>
-                          {ALL_COLUMNS.filter((c) => !c.required && ["description", "amountExTax", "amountTax", "amountIncTax"].includes(c.id)).map((col) => (
+                          {ALL_COLUMNS.filter((c) => !c.required).map((col) => (
                             <button
                               key={col.id}
                               type="button"
@@ -3649,7 +3725,7 @@ export default function ClientInvoiceDetail() {
                               />
                             ),
                           });
-                          cols.push({
+                          if (isColVisible("tax")) cols.push({
                             key: "taxable", header: "Tax", width: 112, truncate: false,
                             cell: (line, index) => (
                               <button
@@ -3661,7 +3737,7 @@ export default function ClientInvoiceDetail() {
                               </button>
                             ),
                           });
-                          cols.push({
+                          if (isColVisible("account")) cols.push({
                             key: "account", header: "Account", width: 128, truncate: false,
                             cell: (line, index) =>
                               xeroAccounts.length > 0 ? (
@@ -4821,6 +4897,79 @@ export default function ClientInvoiceDetail() {
               Add {modalSelectionOptionIds.length > 0 ? `${modalSelectionOptionIds.length} ` : ""}to Invoice
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete confirmation — only reachable before the invoice exists in Xero. */}
+      <Dialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
+        <DialogContent data-testid="dialog-delete-invoice">
+          {(() => {
+            const inXero = !!invoice?.xeroInvoiceId;
+            const hasPayments = (invoice?.paidAmount ?? 0) > 0;
+            const label = invoice?.invoiceNumber || invoice?.name || "This invoice";
+            return (
+              <>
+                <DialogHeader>
+                  <DialogTitle>
+                    {hasPayments
+                      ? "This invoice can't be deleted"
+                      : inXero
+                      ? "Void in Xero and delete?"
+                      : "Delete this invoice?"}
+                  </DialogTitle>
+                </DialogHeader>
+
+                {hasPayments ? (
+                  <p className="text-sm text-muted-foreground">
+                    {label} has {formatCurrency((invoice?.paidAmount ?? 0) / 100)} in payments
+                    recorded against it. Xero won't void an invoice that has been paid, and
+                    withdrawing money already received is a credit note, not a deletion.
+                    Raise a credit note in Xero instead.
+                  </p>
+                ) : inXero ? (
+                  <div className="space-y-2 text-sm text-muted-foreground">
+                    <p>{label} exists in Xero, so two things will happen:</p>
+                    <ul className="list-disc pl-5 space-y-1">
+                      <li>
+                        It will be <strong>voided in Xero</strong>. Xero keeps the voided invoice
+                        as a record, but <strong>voiding cannot be undone</strong> — the number
+                        can't be reused and the invoice can't be reinstated.
+                      </li>
+                      <li>
+                        It will then be <strong>deleted from Morada</strong>, along with its line
+                        items and claim links.
+                      </li>
+                    </ul>
+                    <p>
+                      If Xero refuses the void, nothing is deleted here either — you'll get the
+                      reason and the invoice stays as it is.
+                    </p>
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    {label} has never been sent to Xero. It will be permanently removed from
+                    Morada, along with its line items and claim links. This can't be undone.
+                  </p>
+                )}
+
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setDeleteConfirmOpen(false)}>
+                    {hasPayments ? "Close" : "Cancel"}
+                  </Button>
+                  {!hasPayments && (
+                    <Button
+                      variant="destructive"
+                      onClick={() => { setDeleteConfirmOpen(false); deleteInvoiceMutation.mutate(); }}
+                      disabled={deleteInvoiceMutation.isPending}
+                      data-testid="button-confirm-delete-invoice"
+                    >
+                      {inXero ? "Void in Xero and delete" : "Delete invoice"}
+                    </Button>
+                  )}
+                </DialogFooter>
+              </>
+            );
+          })()}
         </DialogContent>
       </Dialog>
 
