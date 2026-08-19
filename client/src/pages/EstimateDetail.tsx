@@ -579,6 +579,9 @@ export default function EstimateDetail() {
 
   // State for bulk selection
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
+  // The cell the keyboard is on. Separate from editingCell: you can sit on a
+  // cell without opening it, which is what makes arrow keys mean anything.
+  const [activeCell, setActiveCell] = useState<{ itemId: string; field: string } | null>(null);
   const [selectedGroups, setSelectedGroups] = useState<Set<string>>(new Set());
   
   // Bulk action dialogs
@@ -2762,7 +2765,10 @@ export default function EstimateDetail() {
 
   // Handlers for inline cell editing
   const handleCellEdit = (item: EstimateItem, field: string) => {
-    
+    // Wherever you click is where the keyboard now is, so arrows carry on from
+    // there. Set before the lock check: a locked estimate is still navigable.
+    setActiveCell({ itemId: item.id, field });
+
     if (estimate?.isLocked) {
       toast({
         title: "Cannot Edit",
@@ -2944,14 +2950,75 @@ export default function EstimateDetail() {
 
   // Define editable fields in order for Tab navigation
   const editableFields = ['name', 'quantity', 'unitType', 'unitCostExTax', 'markup', 'costCode', 'description'];
+
+  /**
+   * Every visible row, top to bottom, exactly as the grid draws it: ungrouped
+   * items first, then each expanded group's items, with sub-items following
+   * their parent. Collapsed groups are skipped because you can't see them.
+   * Tab traversal and the cell cursor both walk this.
+   */
+  const getVisibleItemsInOrder = (): EstimateItem[] => {
+    const { sortedGroups, groupedItems, ungroupedItems } = organizeItemsByGroups();
+    const ordered: EstimateItem[] = [];
+    const pushWithSubItems = (i: EstimateItem) => {
+      ordered.push(i);
+      items.filter(sub => sub.parentItemId === i.id).forEach(sub => ordered.push(sub));
+    };
+    ungroupedItems.forEach(pushWithSubItems);
+    sortedGroups.forEach(group => {
+      if (!group.isCollapsed && groupedItems[group.id]) {
+        groupedItems[group.id].forEach(pushWithSubItems);
+      }
+    });
+    return ordered;
+  };
+
+  /**
+   * The cell the keyboard is "on", which is not the same as the cell being
+   * edited. A spreadsheet always has a cursor somewhere: arrows move it, Enter
+   * or typing promotes it to editing, Escape drops back to it. Without this
+   * there is nothing for the arrow keys to move.
+   */
+  const moveActiveCell = (
+    from: { itemId: string; field: string },
+    direction: 'up' | 'down' | 'left' | 'right',
+  ): { itemId: string; field: string } | null => {
+    const ordered = getVisibleItemsInOrder();
+    const rowIndex = ordered.findIndex(i => i.id === from.itemId);
+    const colIndex = editableFields.indexOf(from.field);
+    if (rowIndex === -1 || colIndex === -1) return null;
+
+    if (direction === 'up' || direction === 'down') {
+      const nextRow = rowIndex + (direction === 'down' ? 1 : -1);
+      if (nextRow < 0 || nextRow >= ordered.length) return null;
+      return { itemId: ordered[nextRow].id, field: from.field };
+    }
+
+    // Left/right wrap onto the neighbouring row, the way Tab already does.
+    const nextCol = colIndex + (direction === 'right' ? 1 : -1);
+    if (nextCol >= 0 && nextCol < editableFields.length) {
+      return { itemId: from.itemId, field: editableFields[nextCol] };
+    }
+    const wrapRow = rowIndex + (direction === 'right' ? 1 : -1);
+    if (wrapRow < 0 || wrapRow >= ordered.length) return null;
+    return {
+      itemId: ordered[wrapRow].id,
+      field: direction === 'right' ? editableFields[0] : editableFields[editableFields.length - 1],
+    };
+  };
   
   const handleCellKeyDown = (e: React.KeyboardEvent, item: EstimateItem, field: string) => {
     if (e.key === "Enter") {
       e.preventDefault();
       handleCellSave(item, field);
+      // Commit and drop a row, the way a spreadsheet does — the cell below is
+      // left selected, not open, so typing starts the next entry.
+      const next = moveActiveCell({ itemId: item.id, field }, e.shiftKey ? 'up' : 'down');
+      setActiveCell(next ?? { itemId: item.id, field });
     } else if (e.key === "Escape") {
       e.preventDefault();
       handleCellCancel();
+      setActiveCell({ itemId: item.id, field });
     } else if (e.key === "Tab") {
       e.preventDefault();
       handleCellSave(item, field);
@@ -2960,28 +3027,7 @@ export default function EstimateDetail() {
       const currentFieldIndex = editableFields.indexOf(field);
       const isShift = e.shiftKey;
       
-      // Get all visible items in order
-      const { sortedGroups, groupedItems, ungroupedItems } = organizeItemsByGroups();
-      const allItems: EstimateItem[] = [];
-      
-      // Add ungrouped items first
-      ungroupedItems.forEach(i => {
-        allItems.push(i);
-        // Add sub-items
-        items.filter(sub => sub.parentItemId === i.id).forEach(sub => allItems.push(sub));
-      });
-      
-      // Add grouped items
-      sortedGroups.forEach(group => {
-        if (!group.isCollapsed && groupedItems[group.id]) {
-          groupedItems[group.id].forEach(i => {
-            allItems.push(i);
-            // Add sub-items
-            items.filter(sub => sub.parentItemId === i.id).forEach(sub => allItems.push(sub));
-          });
-        }
-      });
-      
+      const allItems = getVisibleItemsInOrder();
       const currentItemIndex = allItems.findIndex(i => i.id === item.id);
       
       if (isShift) {
@@ -4498,7 +4544,9 @@ export default function EstimateDetail() {
   // scroll — matching the shared DataTable standard. A callback ref attaches the
   // listener whenever the container mounts (e.g. after switching to this tab).
   const scrollAutohideCleanup = React.useRef<(() => void) | null>(null);
+  const gridEl = React.useRef<HTMLDivElement | null>(null);
   const gridScrollRef = React.useCallback((el: HTMLDivElement | null) => {
+    gridEl.current = el;
     if (scrollAutohideCleanup.current) {
       scrollAutohideCleanup.current();
       scrollAutohideCleanup.current = null;
@@ -4517,15 +4565,77 @@ export default function EstimateDetail() {
     };
   }, []);
 
+  // When an editor closes, focus falls to the body and the arrow keys stop
+  // reaching the grid. Hand it back so the cursor keeps working. preventScroll
+  // matters: focusing a scroll container otherwise jumps it to the top.
+  useEffect(() => {
+    if (!editingCell && activeCell && gridEl.current) {
+      const el = gridEl.current;
+      if (!el.contains(document.activeElement)) {
+        el.focus({ preventScroll: true });
+      }
+    }
+  }, [editingCell, activeCell]);
+
+  /**
+   * Keys handled while a cell is selected but NOT being edited. Once an editor
+   * is open it owns the keyboard and handleCellKeyDown takes over.
+   */
+  const handleGridKeyDown = (e: React.KeyboardEvent) => {
+    if (!activeCell || editingCell) return;
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+
+    const arrows: Record<string, 'up' | 'down' | 'left' | 'right'> = {
+      ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right',
+    };
+
+    if (arrows[e.key]) {
+      e.preventDefault();
+      const next = moveActiveCell(activeCell, arrows[e.key]);
+      if (next) setActiveCell(next);
+      return;
+    }
+
+    if (e.key === 'Enter' || e.key === 'F2') {
+      e.preventDefault();
+      const item = items.find(i => i.id === activeCell.itemId);
+      if (item && !estimate?.isLocked) handleCellEdit(item, activeCell.field);
+      return;
+    }
+
+    if (e.key === 'Escape') {
+      setActiveCell(null);
+      return;
+    }
+
+    // Type to replace: a printable key opens the cell so the keystroke starts
+    // the value, rather than being swallowed.
+    if (e.key.length === 1 && !estimate?.isLocked) {
+      const item = items.find(i => i.id === activeCell.itemId);
+      if (item) {
+        e.preventDefault();
+        handleCellEdit(item, activeCell.field);
+        setEditingValue(e.key);
+      }
+    }
+  };
+
   // Render cell based on column ID - returns grid-compatible div elements
   const renderCell = (item: EstimateItem, columnId: string) => {
     const isEditing = editingCell?.itemId === item.id && editingCell?.field === columnId;
+    // The name column edits the `name` field, so the cursor has to be matched
+    // against the field this column actually edits, not the column id.
+    const cursorField = columnId === 'item' ? 'name' : columnId;
+    const isCursor =
+      !isEditing && activeCell?.itemId === item.id && activeCell?.field === cursorField;
     const isLocked = estimate?.isLocked;
     const pricingValues = calculatePricingValues(item);
     const cellKey = `${item.id}-${columnId}`;
     
     // Common grid cell base class
-    const cellBase = "h-9 px-2 flex items-center text-sm overflow-hidden";
+    const cellBase =
+      "h-9 px-2 flex items-center text-sm overflow-hidden" +
+      (isCursor ? " ring-1 ring-inset ring-primary rounded-[2px] bg-primary/5" : "");
     // Active cell: inset ring on the cell container (not on the input itself)
     const cellActive = "ring-1 ring-inset ring-primary/60 rounded-[2px]";
     // Editable cell hover: layout-neutral bottom-border underline (border-b space pre-reserved)
@@ -4555,7 +4665,7 @@ export default function EstimateDetail() {
           );
         }
         const matchedCode = costCodes.find(code => code.id === item.costCode);
-        const displayCode = matchedCode ? `${matchedCode.code} - ${matchedCode.title}` : (item.costCode || '-');
+        const displayCode = matchedCode ? `${matchedCode.code} - ${matchedCode.title}` : (item.costCode || '');
         return (
           <div 
             className={`${cellBase} truncate ${cellEditable}`}
@@ -4761,7 +4871,7 @@ export default function EstimateDetail() {
                     }
                   }}
                   dangerouslySetInnerHTML={{ 
-                    __html: item.description || '<span class="text-muted-foreground">-</span>' 
+                    __html: item.description || '' 
                   }}
                 />
               </HoverCardTrigger>
@@ -4949,7 +5059,7 @@ export default function EstimateDetail() {
                 onBlur={() => handleCellSave(item, 'quantity')}
                 onFocus={(e) => e.target.select()}
                 onDoubleClick={(e) => e.stopPropagation()}
-                className="h-full w-full bg-transparent border-0 shadow-none focus-visible:ring-0 px-0 text-xs md:text-xs"
+                className="h-full w-full bg-transparent border-0 shadow-none focus-visible:ring-0 px-0 text-xs md:text-xs [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                 autoFocus
                 min="0"
                 step="0.01"
@@ -5032,8 +5142,9 @@ export default function EstimateDetail() {
                   setEditingCell(null);
                 }}
                 data-testid={`select-edit-unitType-${item.id}`}
+                defaultOpen
               >
-                <SelectTrigger className="h-8 text-sm border-0 shadow-none focus:ring-0 bg-transparent">
+                <SelectTrigger className="h-full w-full px-0 text-xs border-0 shadow-none focus:ring-0 bg-transparent">
                   <SelectValue placeholder="Unit" />
                 </SelectTrigger>
                 <SelectContent>
@@ -5061,7 +5172,7 @@ export default function EstimateDetail() {
             }}
             data-testid={`cell-unitType-${item.id}`}
           >
-            {item.unitType || '-'}
+            {item.unitType || ''}
           </div>
         );
       
@@ -5077,7 +5188,7 @@ export default function EstimateDetail() {
                 onBlur={() => handleCellSave(item, 'unitCostExTax')}
                 onFocus={(e) => e.target.select()}
                 onDoubleClick={(e) => e.stopPropagation()}
-                className="h-full w-full bg-transparent border-0 shadow-none focus-visible:ring-0 px-0 text-xs md:text-xs"
+                className="h-full w-full bg-transparent border-0 shadow-none focus-visible:ring-0 px-0 text-xs md:text-xs [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                 autoFocus
                 min="0"
                 step="0.01"
@@ -5115,7 +5226,7 @@ export default function EstimateDetail() {
                 onBlur={() => handleCellSave(item, 'unitCostIncTax')}
                 onFocus={(e) => e.target.select()}
                 onDoubleClick={(e) => e.stopPropagation()}
-                className="h-full w-full bg-transparent border-0 shadow-none focus-visible:ring-0 px-0 text-xs md:text-xs"
+                className="h-full w-full bg-transparent border-0 shadow-none focus-visible:ring-0 px-0 text-xs md:text-xs [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                 autoFocus
                 min="0"
                 step="0.01"
@@ -5172,7 +5283,7 @@ export default function EstimateDetail() {
                 onBlur={() => handleCellSave(item, 'markup')}
                 onFocus={(e) => e.target.select()}
                 onDoubleClick={(e) => e.stopPropagation()}
-                className="h-full w-full bg-transparent border-0 shadow-none focus-visible:ring-0 px-0 text-xs md:text-xs"
+                className="h-full w-full bg-transparent border-0 shadow-none focus-visible:ring-0 px-0 text-xs md:text-xs [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                 autoFocus
                 min="0"
                 step="1"
@@ -6190,7 +6301,13 @@ export default function EstimateDetail() {
               </div>
         </div>
         {/* Scrollable content area — only this scrolls horizontally */}
-        <div ref={gridScrollRef} className="flex-1 overflow-auto min-h-0 dt-autohide-scrollbar">
+        <div
+          ref={gridScrollRef}
+          className="flex-1 overflow-auto min-h-0 dt-autohide-scrollbar focus:outline-none"
+          tabIndex={0}
+          onKeyDown={handleGridKeyDown}
+          data-testid="estimate-grid-scroll"
+        >
           <div className="inline-block min-w-full">
             <div className="bg-background">
               {itemsLoading || groupsLoading ? (
