@@ -195,6 +195,22 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
   const gridTemplate = parentGridTemplate || `40px ${visibleCols.map(c => `${c.widthPx}px`).join(' ')} 80px`;
   const cellBase = "h-9 px-2 flex items-center text-sm overflow-hidden";
 
+  // Kept in step with the line-item cells in EstimateDetail: same numeric
+  // right-alignment, same muted band on computed figures, same money boundary.
+  const NUMERIC_COLUMNS = new Set([
+    'quantity', 'unitCostExTax', 'unitCostIncTax', 'builderCost', 'builderCostIncTax',
+    'markup', 'markupDollarAmount', 'clientPriceExTax', 'clientTax', 'clientPriceIncTax',
+  ]);
+  const DERIVED_COLUMNS = new Set([
+    'unitCostIncTax', 'builderCost', 'builderCostIncTax',
+    'clientTax', 'markupDollarAmount', 'clientPriceExTax',
+  ]);
+  const columnCellClass = (columnId: string) =>
+    `${cellBase}` +
+    (NUMERIC_COLUMNS.has(columnId) ? ' justify-end text-right tabular-nums' : '') +
+    (DERIVED_COLUMNS.has(columnId) ? ' text-muted-foreground bg-muted/40' : '') +
+    (columnId === 'unitCostExTax' ? ' border-l border-border' : '');
+
   // Right-click opens the full list; left click just cycles.
   const [statusMenuOpen, setStatusMenuOpen] = useState(false);
   const statusOptions = useGroupStatusOptions();
@@ -261,8 +277,11 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
         {visibleCols.map(column => {
           if (column.id === 'item') {
             return (
-              <div key={column.id} className={`${cellBase} font-semibold`} role="gridcell">
-                <div className="flex items-center gap-2 min-w-0">
+              <div key={column.id} className={`${columnCellClass(column.id)} font-semibold`} role="gridcell">
+                {/* w-full so the total's ml-auto has room to push into: the name
+                    sits left, the amount pins to the right edge of the column,
+                    and the amounts line up down the page. */}
+                <div className="flex items-center gap-2 min-w-0 w-full">
                   <Button
                     variant="ghost"
                     size="sm"
@@ -276,7 +295,7 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
                       <ChevronDown className="h-4 w-4" />
                     )}
                   </Button>
-                  <span className="font-semibold text-[15px] tracking-tight flex-shrink-0">{group.name}</span>
+                  <span className="font-semibold text-sm flex-shrink-0">{group.name}</span>
                   {group.description && (
                     // The name keeps its full width; the description takes what
                     // is left. Previously both truncated equally, so a real
@@ -310,7 +329,7 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
           // line-item status cells below it.
           if (column.id === 'status') {
             return (
-              <div key={column.id} className={cellBase} role="gridcell">
+              <div key={column.id} className={columnCellClass(column.id)} role="gridcell">
                 {onUpdateStatus && !isLocked ? (
                   <DropdownMenu open={statusMenuOpen} onOpenChange={setStatusMenuOpen}>
                     <DropdownMenuTrigger asChild>
@@ -383,7 +402,7 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
           return (
             <div
               key={column.id}
-              className={`${cellBase} font-semibold`}
+              className={`${columnCellClass(column.id)} font-semibold`}
               role="gridcell"
               data-testid={cellContent ? `group-total-${column.id}-${group.id}` : undefined}
             >
