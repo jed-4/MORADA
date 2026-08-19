@@ -6206,60 +6206,50 @@ export default function EstimateDetail() {
                     ))}
                   </div>
                 ) : items.length === 0 && groups.length === 0 ? (
-                  <div className="text-center py-8">
-                    <FileText className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
-                    <h3 className="text-lg font-medium mb-2">No items or groups added yet</h3>
-                    <p className="text-muted-foreground mb-4">
-                      Add a group to organize items, or add items directly.
-                    </p>
-                    <div className="flex items-center justify-center gap-2">
-                      <Button 
-                        data-testid="button-add-first-group" 
-                        onClick={handleAddGroup}
-                        disabled={estimate?.isLocked}
-                        variant={estimate?.isLocked ? "secondary" : "outline"}
-                      >
-                        <FolderPlus className="w-4 h-4 mr-2" />
-                        Add Group
-                      </Button>
-                      <Button 
-                        data-testid="button-add-first-item" 
-                        onClick={handleAddItem}
-                        disabled={estimate?.isLocked}
-                        variant={estimate?.isLocked ? "secondary" : "default"}
-                      >
-                        <Plus className="w-4 h-4 mr-2" />
-                        Add Item
-                      </Button>
-                      <Button 
-                        data-testid="button-import-items" 
-                        onClick={() => setIsImportOpen(true)}
-                        disabled={estimate?.isLocked}
-                        variant={estimate?.isLocked ? "secondary" : "outline"}
-                      >
-                        <Upload className="w-4 h-4 mr-2" />
-                        Import Items
-                      </Button>
-                      <Button 
-                        data-testid="button-load-template-empty" 
-                        onClick={() => setIsTemplatePickerOpen(true)}
-                        disabled={estimate?.isLocked}
-                        variant={estimate?.isLocked ? "secondary" : "outline"}
-                      >
-                        <LayoutTemplate className="w-4 h-4 mr-2" />
-                        Load Template
-                      </Button>
-                      <Button 
-                        data-testid="button-open-catalog" 
-                        onClick={() => setIsCatalogOpen(true)}
-                        disabled={estimate?.isLocked}
-                        variant={estimate?.isLocked ? "secondary" : "outline"}
-                      >
-                        <Package className="w-4 h-4 mr-2" />
-                        Catalog
-                      </Button>
-                    </div>
-                  </div>
+                  <EmptyState
+                    icon={FileText}
+                    title="Nothing in this estimate yet"
+                    description="Add a group to organise items, or start adding items directly."
+                    action={{
+                      label: "Add Item",
+                      onClick: handleAddItem,
+                      icon: Plus,
+                      disabled: estimate?.isLocked,
+                      "data-testid": "button-add-first-item",
+                    }}
+                    secondaryActions={[
+                      {
+                        label: "Add Group",
+                        onClick: handleAddGroup,
+                        icon: FolderPlus,
+                        disabled: estimate?.isLocked,
+                        "data-testid": "button-add-first-group",
+                      },
+                      {
+                        label: "Import Items",
+                        onClick: () => setIsImportOpen(true),
+                        icon: Upload,
+                        disabled: estimate?.isLocked,
+                        "data-testid": "button-import-items",
+                      },
+                      {
+                        label: "Load Template",
+                        onClick: () => setIsTemplatePickerOpen(true),
+                        icon: LayoutTemplate,
+                        disabled: estimate?.isLocked,
+                        "data-testid": "button-load-template-empty",
+                      },
+                      {
+                        label: "Catalog",
+                        onClick: () => setIsCatalogOpen(true),
+                        icon: Package,
+                        disabled: estimate?.isLocked,
+                        "data-testid": "button-open-catalog",
+                      },
+                    ]}
+                    variant="card"
+                    className="my-6"
+                  />
                 ) : (
                   <DndContext 
                     sensors={sensors} 

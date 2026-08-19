@@ -20,6 +20,18 @@ export interface EmptyStateProps {
     loading?: boolean;
     "data-testid"?: string;
   };
+  /**
+   * Further ways in, shown as a quieter row under the primary action. For
+   * empty states with several equally valid starting points — import, load a
+   * template, browse a catalog — rather than one obvious next step.
+   */
+  secondaryActions?: Array<{
+    label: string;
+    onClick: () => void;
+    icon?: LucideIcon;
+    disabled?: boolean;
+    "data-testid"?: string;
+  }>;
   /** Choose how prominent the empty state should look.
    *  - "card"  : full bordered card, suitable for the body of a list page
    *  - "inline": no border, suitable for embedding inside other surfaces */
@@ -37,6 +49,7 @@ export function EmptyState({
   title,
   description,
   action,
+  secondaryActions,
   variant = "card",
   className,
   ...rest
@@ -79,6 +92,27 @@ export function EmptyState({
           ) : null}
           {action.label}
         </Button>
+      ) : null}
+      {secondaryActions?.length ? (
+        <div className="mt-3 flex flex-wrap items-center justify-center gap-1.5">
+          {secondaryActions.map((secondary) => {
+            const SecondaryIcon = secondary.icon;
+            return (
+              <Button
+                key={secondary.label}
+                variant="outline"
+                size="sm"
+                className="h-7 text-xs"
+                onClick={secondary.onClick}
+                disabled={secondary.disabled}
+                data-testid={secondary["data-testid"]}
+              >
+                {SecondaryIcon ? <SecondaryIcon className="mr-1.5 h-3.5 w-3.5" /> : null}
+                {secondary.label}
+              </Button>
+            );
+          })}
+        </div>
       ) : null}
     </div>
   );
