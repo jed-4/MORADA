@@ -291,6 +291,39 @@ function FormattedNumberInput({
   );
 }
 
+/**
+ * A grid-cell chip. The visual is the app's StatusBadge — same pill everywhere
+ * else in Morada — wrapped in a button so it can cycle its value on click.
+ * A real <button> also makes these keyboard-reachable, which the old
+ * onClick-on-a-div version was not.
+ */
+function CellChip({
+  onClick,
+  disabled,
+  title,
+  testId,
+  children,
+}: {
+  onClick: () => void;
+  disabled?: boolean;
+  title?: string;
+  testId: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={(e) => { e.stopPropagation(); if (!disabled) onClick(); }}
+      disabled={disabled}
+      title={title}
+      className="inline-flex rounded-[9px] hover-elevate active-elevate-2 disabled:opacity-60 disabled:cursor-not-allowed disabled:pointer-events-none"
+      data-testid={testId}
+    >
+      {children}
+    </button>
+  );
+}
+
 const SortableRow = React.memo(({ id, children, className, isDraggable = true, gridTemplate, dropIndicator, activeDragId, onDoubleClick }: SortableRowProps) => {
   const {
     attributes,
@@ -4773,33 +4806,36 @@ export default function EstimateDetail() {
         const currentShownAs = item.shownAs || 'price';
         const currentIndex = shownAsOptions.indexOf(currentShownAs);
         const validIndex = currentIndex >= 0 ? currentIndex : 1; // Default to 'price' if invalid
-        
-        // Chip color based on shown as value
-        const shownAsChipClass = 
-          currentShownAs === 'price' ? 'bg-primary/20 text-[#7c5bb0] border-primary/30' :
-          currentShownAs === 'included' ? 'bg-status-success-bg text-status-success border-status-success/30' :
-          currentShownAs === 'excluded' ? 'bg-status-danger-bg text-status-danger border-status-danger/30' :
-          'bg-muted text-muted-foreground border-border';
-        
+
+        // Semantic tones rather than hand-picked classes. "price" used a raw
+        // #7c5bb0 literal that sat off Morada's lavender and couldn't follow
+        // the theme; "action" is the palette's plum and keeps it purple.
+        const shownAsTone =
+          currentShownAs === 'price' ? 'action' :
+          currentShownAs === 'included' ? 'success' :
+          currentShownAs === 'excluded' ? 'danger' :
+          'neutral';
+
         return (
           <div className={cellBase} role="gridcell" key={`${item.id}-shownAs`} data-testid={`cell-shownAs-${item.id}`}>
-            <Badge
-              variant="outline"
-              className={`h-5 w-16 px-2 text-xs capitalize cursor-pointer hover-elevate justify-center ${shownAsChipClass} ${isLocked ? 'cursor-not-allowed opacity-60' : ''}`}
+            <CellChip
+              disabled={isLocked}
+              title={isLocked ? undefined : 'Click to change how this line is shown'}
+              testId={`button-toggle-shownAs-${item.id}`}
               onClick={() => {
-                if (isLocked) return;
-                // Cycle through options
                 const nextIndex = (validIndex + 1) % shownAsOptions.length;
-                const nextShownAs = shownAsOptions[nextIndex];
                 updateItemMutation.mutate({
                   itemId: item.id,
-                  data: { shownAs: nextShownAs }
+                  data: { shownAs: shownAsOptions[nextIndex] }
                 });
               }}
-              data-testid={`button-toggle-shownAs-${item.id}`}
             >
-              {currentShownAs}
-            </Badge>
+              <StatusBadge
+                status={currentShownAs}
+                tone={shownAsTone}
+                label={currentShownAs.charAt(0).toUpperCase() + currentShownAs.slice(1)}
+              />
+            </CellChip>
           </div>
         );
       
@@ -4812,72 +4848,45 @@ export default function EstimateDetail() {
         const currentStatus = item.status || statusOptionsKeys[0] || 'incomplete';
         const statusIndex = statusOptionsKeys.indexOf(currentStatus);
         const validStatusIndex = statusIndex >= 0 ? statusIndex : 0;
-        
+
         // Find the status option from field settings to get color and name
         const statusOption = activeStatusOptions.find((opt: any) => opt.key === currentStatus);
-        
-        // Get color from field settings or use fallback colors
-        const getStatusChipStyle = () => {
-          if (statusOption?.color) {
-            const color = statusOption.color;
-            // Check if it's a valid hex color
-            if (color.startsWith('#') && (color.length === 4 || color.length === 7)) {
-              // Use hex color from field settings with alpha
-              return {
-                backgroundColor: `${color}20`,
-                color: color,
-                borderColor: `${color}40`
-              };
-            }
-            // For non-hex colors (tailwind tokens, css variables), use a mapping
-            const colorMap: Record<string, string> = {
-              'green': 'bg-status-success-bg text-status-success border-status-success/30',
-              'amber': 'bg-status-warning-bg text-status-warning border-status-warning/30',
-              'red': 'bg-status-danger-bg text-status-danger border-status-danger/30',
-              'blue': 'bg-status-info-bg text-status-info border-status-info/30',
-              'gray': 'bg-muted text-muted-foreground border-border',
-              'muted': 'bg-muted text-muted-foreground border-border',
-            };
-            // Try to find a matching color class
-            const lowerColor = color.toLowerCase();
-            for (const [key, className] of Object.entries(colorMap)) {
-              if (lowerColor.includes(key)) {
-                return { className };
-              }
-            }
-          }
-          // Fallback to hardcoded colors for legacy statuses
+
+        // StatusBadge already turns a configured hex into the tint treatment,
+        // so it just gets the colour. Legacy statuses that predate field
+        // settings have no option to read, and keep their meaning via a tone.
+        const legacyStatusTone = (() => {
           const lc = currentStatus?.toLowerCase?.() ?? '';
-          if (lc === 'done' || lc === 'complete') return { className: 'bg-status-success-bg text-status-success' };
-          if (lc === 'not relevant' || lc === 'not_relevant') return { className: 'bg-muted text-muted-foreground dark:bg-muted/50' };
-          if (lc === 'in progress' || lc === 'in_progress') return { className: 'bg-primary/10 text-primary dark:bg-primary/20' };
-          return { className: 'bg-status-warning-bg text-status-warning' }; // incomplete/todo/pending/default
-        };
-        
-        const statusChipStyle = getStatusChipStyle();
+          if (lc === 'done' || lc === 'complete') return 'success' as const;
+          if (lc === 'not relevant' || lc === 'not_relevant') return 'neutral' as const;
+          if (lc === 'in progress' || lc === 'in_progress') return 'info' as const;
+          return 'warning' as const; // incomplete / todo / pending
+        })();
+
         const statusLabel = statusOption?.name || 
           (currentStatus === 'done' ? 'Done' : currentStatus === 'not relevant' ? 'N/A' : 'Todo');
-        
+
         return (
           <div className={cellBase} role="gridcell" key={`${item.id}-status`} data-testid={`cell-status-${item.id}`}>
-            <Badge
-              variant="outline"
-              className={`h-5 min-w-[84px] px-2 text-xs cursor-pointer hover-elevate justify-center ${statusChipStyle.className || ''} ${isLocked ? 'cursor-not-allowed opacity-60' : ''}`}
-              style={statusChipStyle.className ? undefined : statusChipStyle as React.CSSProperties}
+            <CellChip
+              disabled={isLocked}
+              title={isLocked ? undefined : 'Click to change status'}
+              testId={`button-toggle-status-${item.id}`}
               onClick={() => {
-                if (isLocked) return;
-                // Cycle through options
                 const nextStatusIndex = (validStatusIndex + 1) % statusOptionsKeys.length;
-                const nextStatus = statusOptionsKeys[nextStatusIndex];
                 updateItemMutation.mutate({
                   itemId: item.id,
-                  data: { status: nextStatus }
+                  data: { status: statusOptionsKeys[nextStatusIndex] }
                 });
               }}
-              data-testid={`button-toggle-status-${item.id}`}
             >
-              {statusLabel}
-            </Badge>
+              <StatusBadge
+                status={currentStatus}
+                label={statusLabel}
+                color={statusOption?.color || undefined}
+                tone={statusOption?.color ? undefined : legacyStatusTone}
+              />
+            </CellChip>
           </div>
         );
       
@@ -4885,11 +4894,13 @@ export default function EstimateDetail() {
         const allowanceType = item.allowance || 'None';
         
         // Chip styling for allowance
-        const allowanceChipClass = 
-          allowanceType === 'Prime Cost' ? 'bg-status-info-bg text-status-info border-status-info/30' :
-          allowanceType === 'Provisional Sum' ? 'bg-status-warning-bg text-status-warning border-status-warning/30' :
-          'bg-muted/50 text-muted-foreground border-border';
-        
+        // Blue, as it was — and distinct from the plum "Price" chip that sits
+        // next to it in the same row.
+        const allowanceTone =
+          allowanceType === 'Prime Cost' ? 'info' as const :
+          allowanceType === 'Provisional Sum' ? 'warning' as const :
+          'neutral' as const;
+
         const allowanceLabel = 
           allowanceType === 'Prime Cost' ? 'PC' : 
           allowanceType === 'Provisional Sum' ? 'PS' : 
@@ -4897,11 +4908,11 @@ export default function EstimateDetail() {
         
         return (
           <div className={cellBase} role="gridcell" key={`${item.id}-allowance`} data-testid={`cell-allowance-${item.id}`}>
-            <Badge
-              variant="outline"
-              className={`h-5 w-8 px-2 text-xs cursor-pointer hover-elevate justify-center ${allowanceChipClass} ${isLocked ? 'cursor-not-allowed opacity-60' : ''}`}
+            <CellChip
+              disabled={isLocked}
+              title={isLocked ? undefined : `Allowance: ${allowanceType}. Click to change.`}
+              testId={`button-toggle-allowance-${item.id}`}
               onClick={() => {
-                if (isLocked) return;
                 // Cycle through: None -> Prime Cost -> Provisional Sum -> None
                 const nextAllowance = 
                   item.allowance === 'None' ? 'Prime Cost' :
@@ -4911,10 +4922,13 @@ export default function EstimateDetail() {
                   data: { allowance: nextAllowance }
                 });
               }}
-              data-testid={`button-toggle-allowance-${item.id}`}
             >
-              {allowanceLabel}
-            </Badge>
+              <StatusBadge
+                status={allowanceType}
+                tone={allowanceTone}
+                label={allowanceLabel}
+              />
+            </CellChip>
           </div>
         );
       
@@ -5409,45 +5423,62 @@ export default function EstimateDetail() {
       {/* Header — breadcrumb floats on the deep page canvas; summary sits in its own floating card */}
       <div className="flex-shrink-0">
 
-      {/* Row 1 - Breadcrumb + Actions (floating, no box) */}
-      <div className="h-8 flex items-center justify-between px-1 pt-1">
-        {/* Left: Breadcrumb + Status */}
+      {/* Breadcrumb — the same row every other page opens with: muted parents,
+          chevrons, current page in bold. The estimate name stays click-to-edit. */}
+      <div className="flex items-center gap-1 px-4 pt-3 pb-1 flex-shrink-0">
+        <button
+          className="text-xs text-muted-foreground hover:text-foreground transition-colors truncate max-w-[220px]"
+          onClick={() => project?.id && setLocation(`/projects/${project.id}`)}
+          data-testid="breadcrumb-project"
+        >
+          {project?.name || 'Project'}
+        </button>
+        <ChevronRight className="h-3 w-3 text-muted-foreground/50 flex-shrink-0" />
+        <button
+          className="text-xs text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"
+          onClick={() => setLocation(backTarget ?? `/projects/${project?.id}/estimates`)}
+          data-testid="breadcrumb-estimates"
+        >
+          Estimates
+        </button>
+        <ChevronRight className="h-3 w-3 text-muted-foreground/50 flex-shrink-0" />
+        {isEditingName ? (
+          <Input
+            value={editingName}
+            onChange={(e) => setEditingName(e.target.value)}
+            onKeyDown={handleNameKeyDown}
+            onBlur={handleNameSave}
+            className="h-5 text-xs font-medium bg-transparent border-b border-primary p-0 px-1 focus-visible:ring-0 focus-visible:ring-offset-0"
+            data-testid="input-estimate-name"
+            autoFocus
+          />
+        ) : (
+          <span
+            className="text-xs font-medium text-foreground truncate cursor-pointer hover:text-primary transition-colors"
+            data-testid="text-estimate-title"
+            onClick={handleNameEdit}
+            title="Click to edit estimate name"
+          >
+            {estimate?.name || 'Estimate'}
+          </span>
+        )}
+      </div>
+
+      {/* Row 1 - Back + Status + Actions */}
+      <div className="h-8 flex items-center justify-between px-2 gap-2">
+        {/* Left: Back + Status */}
         <div className="flex items-center gap-2 min-w-0">
-          <Button 
-            variant="ghost" 
-            size="icon" 
+          <Button
+            variant="ghost"
+            size="icon"
             className="h-6 w-6 flex-shrink-0"
             onClick={() => setLocation(backTarget ?? `/projects/${project?.id}/estimates`)}
-            data-testid="button-back-to-estimates" 
+            data-testid="button-back-to-estimates"
             aria-label="Back to Estimates"
           >
             <ArrowLeft className="w-3 h-3" />
           </Button>
-          <div className="flex items-center gap-1.5 text-xs min-w-0">
-            <span className="text-muted-foreground flex-shrink-0">{project?.name || 'Project'}</span>
-            <span className="text-muted-foreground flex-shrink-0">/</span>
-            {isEditingName ? (
-              <Input
-                value={editingName}
-                onChange={(e) => setEditingName(e.target.value)}
-                onKeyDown={handleNameKeyDown}
-                onBlur={handleNameSave}
-                className="h-6 text-xs font-semibold bg-transparent border-b border-primary p-0 px-1 focus-visible:ring-0 focus-visible:ring-offset-0"
-                data-testid="input-estimate-name"
-                autoFocus
-              />
-            ) : (
-              <span 
-                className="font-semibold cursor-pointer hover:text-primary transition-colors truncate" 
-                data-testid="text-estimate-title"
-                onClick={handleNameEdit}
-                title="Click to edit estimate name"
-              >
-                {estimate?.name || 'Estimate'}
-              </span>
-            )}
-            {estimate && <span className="flex-shrink-0">{getStatusBadge(estimate)}</span>}
-          </div>
+          {estimate && <span className="flex-shrink-0">{getStatusBadge(estimate)}</span>}
         </div>
 
         {/* Right: Notes + Collapse summary + Options popover */}
