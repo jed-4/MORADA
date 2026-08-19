@@ -3043,6 +3043,18 @@ export default function EstimateDetail() {
     };
   };
 
+  /**
+   * Carriage return: down one row and back to the leftmost column, so you can
+   * run along a line and start the next one without reaching for the mouse.
+   */
+  const newLineCell = (from: { itemId: string; field: string }) => {
+    const ordered = getVisibleItemsInOrder();
+    const cols = navigableColumns();
+    const rowIndex = ordered.findIndex(i => i.id === from.itemId);
+    if (rowIndex === -1 || rowIndex + 1 >= ordered.length || cols.length === 0) return null;
+    return { itemId: ordered[rowIndex + 1].id, field: fieldForColumn(cols[0]) };
+  };
+
   /** The column currently under the cursor, so Enter knows what to do. */
   const columnForField = (field: string) =>
     navigableColumns().find(c => fieldForColumn(c) === field);
@@ -3072,9 +3084,11 @@ export default function EstimateDetail() {
       e.preventDefault();
       handleCellSave(item, field);
       // Commit and drop a row, the way a spreadsheet does — the cell below is
-      // left selected, not open, so typing starts the next entry.
-      const next = moveActiveCell({ itemId: item.id, field }, e.shiftKey ? 'up' : 'down');
-      setActiveCell(next ?? { itemId: item.id, field });
+      // left selected, not open, so typing starts the next entry. Shift+Enter
+      // also returns to the first column, to start the next line.
+      const here = { itemId: item.id, field };
+      const next = e.shiftKey ? newLineCell(here) : moveActiveCell(here, 'down');
+      setActiveCell(next ?? here);
     } else if (e.key === "Escape") {
       e.preventDefault();
       handleCellCancel();
@@ -4640,6 +4654,12 @@ export default function EstimateDetail() {
       return;
     }
 
+    if (e.key === 'Enter' && e.shiftKey) {
+      e.preventDefault();
+      setActiveCell(prev => (prev ? newLineCell(prev) ?? prev : prev));
+      return;
+    }
+
     if (e.key === 'Enter' || e.key === 'F2' || e.key === ' ') {
       e.preventDefault();
       activateCell(activeCell.itemId, activeCell.field);
@@ -4678,12 +4698,14 @@ export default function EstimateDetail() {
     const pricingValues = calculatePricingValues(item);
     const cellKey = `${item.id}-${columnId}`;
     
-    // Common grid cell base class
+    // One outline for both states. Selecting a cell and typing in it look the
+    // same, so nothing appears or shifts the moment editing starts — only the
+    // caret arrives. Two different rings is what read as boxes appearing.
+    const cellOutline = "ring-1 ring-inset ring-primary/50 rounded-[2px]";
     const cellBase =
       "h-9 px-2 flex items-center text-sm overflow-hidden" +
-      (isCursor ? " ring-1 ring-inset ring-primary rounded-[2px] bg-primary/5" : "");
-    // Active cell: inset ring on the cell container (not on the input itself)
-    const cellActive = "ring-1 ring-inset ring-primary/60 rounded-[2px]";
+      (isCursor ? ` ${cellOutline}` : "");
+    const cellActive = cellOutline;
     // Editable cell hover: layout-neutral bottom-border underline (border-b space pre-reserved)
     const cellEditable = !isLocked ? "border-b border-transparent hover:border-primary/30 transition-colors cursor-pointer" : "";
 
@@ -5044,8 +5066,7 @@ export default function EstimateDetail() {
               <StatusBadge
                 status={currentStatus}
                 label={statusLabel}
-                color={statusOption?.color || undefined}
-                tone={statusOption?.color ? undefined : legacyStatusTone}
+                tone={legacyStatusTone}
               />
             </CellChip>
           </div>
