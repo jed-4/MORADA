@@ -2,18 +2,15 @@ import { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { usePageTitle } from "@/hooks/usePageTitle";
-import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { 
-  Plus, 
-  FileText, 
-  Lock, 
+  Plus,
+  Lock,
   Search,
   DollarSign,
   LayoutList,
@@ -22,22 +19,18 @@ import {
   MoreHorizontal,
   Archive,
   ArrowLeft,
-  Download,
-  ChevronDown,
+  Filter,
   GripVertical,
   ChevronRight,
 } from "lucide-react";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { type ColumnDef } from "@tanstack/react-table";
@@ -567,11 +560,45 @@ export default function Estimates() {
           <span className="text-xs font-medium text-foreground" data-testid="text-page-title">Estimates</span>
         )}
       </div>
-      {/* Row 1 - Actions (36px). The page name lives in the breadcrumb above —
-          a second title here read as a duplicate breadcrumb. */}
-      <div className="h-9 bg-background flex items-center justify-end px-2 gap-4 flex-shrink-0">
+      {/* Toolbar (36px) — view toggle left, actions right. New Estimate used to
+          own a row of its own; folding it in here buys back the vertical space. */}
+      <div className="h-9 bg-background flex items-center justify-between px-2 gap-2 border-b border-border flex-shrink-0">
+        {/* Left: View toggle (icon only). Hidden in the archive, which has no
+            board columns to drop into. */}
+        <div
+          className={`bg-muted/40 rounded-md p-0.5 h-[28px] flex ${showArchived ? 'invisible' : ''}`}
+          data-testid="view-toggle"
+        >
+          <button
+            onClick={() => setCurrentView('list')}
+            className={`w-7 h-full flex items-center justify-center rounded transition-colors ${
+              currentView === 'list'
+                ? 'bg-card shadow-sm text-foreground'
+                : 'text-muted-foreground'
+            }`}
+            data-testid="button-list-view"
+            aria-label="List view"
+            title="List view"
+          >
+            <LayoutList className="w-3.5 h-3.5" />
+          </button>
+          <button
+            onClick={() => setCurrentView('kanban')}
+            className={`w-7 h-full flex items-center justify-center rounded transition-colors ${
+              currentView === 'kanban'
+                ? 'bg-card shadow-sm text-foreground'
+                : 'text-muted-foreground'
+            }`}
+            data-testid="button-kanban-view"
+            aria-label="Kanban view"
+            title="Kanban view"
+          >
+            <Columns3 className="w-3.5 h-3.5" />
+          </button>
+        </div>
+
         {/* Right: New Estimate + overflow */}
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1.5 flex-shrink-0">
           {showArchived ? (
             <button
               className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
@@ -621,92 +648,34 @@ export default function Estimates() {
                   </span>
                 )}
               </DropdownMenuItem>
+
+              {/* Card density lives here rather than in the toolbar — it's a
+                  set-once preference, not something reached for every visit. */}
+              {effectiveView === 'kanban' && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuLabel className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium">
+                    Card width
+                  </DropdownMenuLabel>
+                  <DropdownMenuRadioGroup
+                    value={cardWidth}
+                    onValueChange={(v) => setCardWidth(v as CardWidth)}
+                  >
+                    <DropdownMenuRadioItem value="compact" data-testid="button-width-compact">
+                      Compact
+                    </DropdownMenuRadioItem>
+                    <DropdownMenuRadioItem value="comfortable" data-testid="button-width-comfortable">
+                      Comfortable
+                    </DropdownMenuRadioItem>
+                    <DropdownMenuRadioItem value="spacious" data-testid="button-width-spacious">
+                      Spacious
+                    </DropdownMenuRadioItem>
+                  </DropdownMenuRadioGroup>
+                </>
+              )}
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
-      </div>
-
-      {/* Row 2 - View Tabs (36px) */}
-      <div className="h-9 bg-background flex items-center justify-between px-2 border-b border-border flex-shrink-0">
-        {/* Left: View toggle (icon only). Hidden in the archive, which has no
-            board columns to drop into. */}
-        <div
-          className={`bg-muted/40 rounded-md p-0.5 h-[28px] flex ${showArchived ? 'invisible' : ''}`}
-          data-testid="view-toggle"
-        >
-          <button
-            onClick={() => setCurrentView('list')}
-            className={`w-7 h-full flex items-center justify-center rounded transition-colors ${
-              currentView === 'list'
-                ? 'bg-card shadow-sm text-foreground'
-                : 'text-muted-foreground'
-            }`}
-            data-testid="button-list-view"
-            aria-label="List view"
-            title="List view"
-          >
-            <LayoutList className="w-3.5 h-3.5" />
-          </button>
-          <button
-            onClick={() => setCurrentView('kanban')}
-            className={`w-7 h-full flex items-center justify-center rounded transition-colors ${
-              currentView === 'kanban'
-                ? 'bg-card shadow-sm text-foreground'
-                : 'text-muted-foreground'
-            }`}
-            data-testid="button-kanban-view"
-            aria-label="Kanban view"
-            title="Kanban view"
-          >
-            <Columns3 className="w-3.5 h-3.5" />
-          </button>
-        </div>
-
-        {/* Right: Card Width Toggle (only visible in kanban view) */}
-        {effectiveView === 'kanban' && (
-          <Popover>
-            <PopoverTrigger asChild>
-              <button 
-                className="h-6 w-auto px-2 py-0 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
-                data-testid="button-card-width-toggle"
-              >
-                <span className="capitalize">{cardWidth}</span>
-                <ChevronDown className="w-3 h-3" />
-              </button>
-            </PopoverTrigger>
-            <PopoverContent className="w-40 p-2" align="end">
-              <div className="space-y-1">
-                <button
-                  onClick={() => setCardWidth('compact')}
-                  className={`w-full text-left px-2 py-1.5 text-sm rounded hover:bg-muted transition-colors ${
-                    cardWidth === 'compact' ? "bg-primary/10 text-primary font-medium" : ""
-                  }`}
-                  data-testid="button-width-compact"
-                >
-                  Compact
-                </button>
-                <button
-                  onClick={() => setCardWidth('comfortable')}
-                  className={`w-full text-left px-2 py-1.5 text-sm rounded hover:bg-muted transition-colors ${
-                    cardWidth === 'comfortable' ? "bg-primary/10 text-primary font-medium" : ""
-                  }`}
-                  data-testid="button-width-comfortable"
-                >
-                  Comfortable
-                </button>
-                <button
-                  onClick={() => setCardWidth('spacious')}
-                  className={`w-full text-left px-2 py-1.5 text-sm rounded hover:bg-muted transition-colors ${
-                    cardWidth === 'spacious' ? "bg-primary/10 text-primary font-medium" : ""
-                  }`}
-                  data-testid="button-width-spacious"
-                >
-                  Spacious
-                </button>
-              </div>
-            </PopoverContent>
-          </Popover>
-        )}
       </div>
 
       {/* Row 3 - Search & Filters (36px) */}
@@ -728,15 +697,18 @@ export default function Estimates() {
           {/* Status Filter */}
           <Popover>
             <PopoverTrigger asChild>
-              <button 
-                className="h-6 w-auto px-2 py-0 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5"
+              <button
+                className="relative h-6 w-6 py-0 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
                 data-testid="filter-status-popover"
+                title={selectedStatus === "All" ? "Filter by status" : "Filtered by status"}
+                aria-label="Filter by status"
               >
-                <span>Status</span>
+                <Filter className="w-3 h-3" />
                 {selectedStatus !== "All" && (
-                  <Badge variant="destructive" className="ml-1 h-3 w-3 p-0 text-data flex items-center justify-center">
-                    1
-                  </Badge>
+                  <span
+                    className="absolute -top-1 -right-1 h-2 w-2 rounded-full bg-primary ring-2 ring-background"
+                    aria-hidden="true"
+                  />
                 )}
               </button>
             </PopoverTrigger>
@@ -931,7 +903,6 @@ function KanbanColumn({ status, estimates, projects, cardWidth, isHighlighted }:
             status={status.key}
             label={status.name}
             color={status.color || undefined}
-            className="h-[22px] px-2.5 text-xs"
             data-testid={`kanban-column-status-${status.key}`}
           />
         </div>
