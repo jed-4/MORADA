@@ -315,6 +315,7 @@ function CellChip({
     <button
       type="button"
       onClick={(e) => { e.stopPropagation(); if (!disabled) onClick(); }}
+      onDoubleClick={(e) => e.stopPropagation()}
       disabled={disabled}
       title={title}
       className="inline-flex rounded-[9px] hover-elevate active-elevate-2 disabled:opacity-60 disabled:cursor-not-allowed disabled:pointer-events-none"
@@ -3088,6 +3089,17 @@ export default function EstimateDetail() {
   };
   
   const handleCellKeyDown = (e: React.KeyboardEvent, item: EstimateItem, field: string) => {
+    // Up/Down commit and move, so a column can be filled without leaving the
+    // keyboard. Clicking a cell opens its editor, so without this the arrows
+    // appeared dead — the grid-level handler only runs when nothing is open.
+    // Left/Right stay as caret movement inside the text.
+    if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+      e.preventDefault();
+      handleCellSave(item, field);
+      const next = moveActiveCell({ itemId: item.id, field }, e.key === "ArrowDown" ? 'down' : 'up');
+      setActiveCell(next ?? { itemId: item.id, field });
+      return;
+    }
     if (e.key === "Enter") {
       e.preventDefault();
       handleCellSave(item, field);
@@ -4706,14 +4718,15 @@ export default function EstimateDetail() {
     const pricingValues = calculatePricingValues(item);
     const cellKey = `${item.id}-${columnId}`;
     
-    // One outline for both states. Selecting a cell and typing in it look the
-    // same, so nothing appears or shifts the moment editing starts — only the
-    // caret arrives. Two different rings is what read as boxes appearing.
-    const cellOutline = "ring-1 ring-inset ring-primary/50 rounded-[2px]";
+    // No outline in either state. A ring around the cell read as a box
+    // appearing the moment you clicked, which is the thing that looked wrong.
+    // The cursor is a soft tint instead, and editing looks identical to it —
+    // only the caret arrives.
+    const cellHighlight = "bg-primary/[0.07]";
     const cellBase =
       "h-9 px-2 flex items-center text-sm overflow-hidden" +
-      (isCursor ? ` ${cellOutline}` : "");
-    const cellActive = cellOutline;
+      (isCursor ? ` ${cellHighlight}` : "");
+    const cellActive = cellHighlight;
     // Editable cell hover: layout-neutral bottom-border underline (border-b space pre-reserved)
     const cellEditable = !isLocked ? "border-b border-transparent hover:border-primary/30 transition-colors cursor-pointer" : "";
 
@@ -4970,7 +4983,8 @@ export default function EstimateDetail() {
               variant="ghost"
               size="icon"
               className="h-6 w-6"
-              onClick={() => {
+              onClick={(e) => {
+                e.stopPropagation();
                 if (isLocked) {
                   toast({
                     title: "Cannot Edit",
@@ -4984,6 +4998,7 @@ export default function EstimateDetail() {
                   data: { proposalVisible: !item.proposalVisible }
                 });
               }}
+              onDoubleClick={(e) => e.stopPropagation()}
               disabled={isLocked}
               data-testid={`button-toggle-proposalVisible-${item.id}`}
             >
@@ -5134,7 +5149,7 @@ export default function EstimateDetail() {
                 onBlur={() => handleCellSave(item, 'quantity')}
                 onFocus={(e) => e.target.select()}
                 onDoubleClick={(e) => e.stopPropagation()}
-                className="h-full w-full bg-transparent border-0 shadow-none focus-visible:ring-0 px-0 text-xs md:text-xs [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                className="h-full w-full bg-transparent border-0 shadow-none focus-visible:ring-0 px-0 text-sm md:text-sm [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                 autoFocus
                 min="0"
                 step="0.01"
@@ -5266,7 +5281,7 @@ export default function EstimateDetail() {
                 onBlur={() => handleCellSave(item, 'unitCostExTax')}
                 onFocus={(e) => e.target.select()}
                 onDoubleClick={(e) => e.stopPropagation()}
-                className="h-full w-full bg-transparent border-0 shadow-none focus-visible:ring-0 px-0 text-xs md:text-xs [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                className="h-full w-full bg-transparent border-0 shadow-none focus-visible:ring-0 px-0 text-sm md:text-sm [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                 autoFocus
                 min="0"
                 step="0.01"
@@ -5304,7 +5319,7 @@ export default function EstimateDetail() {
                 onBlur={() => handleCellSave(item, 'unitCostIncTax')}
                 onFocus={(e) => e.target.select()}
                 onDoubleClick={(e) => e.stopPropagation()}
-                className="h-full w-full bg-transparent border-0 shadow-none focus-visible:ring-0 px-0 text-xs md:text-xs [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                className="h-full w-full bg-transparent border-0 shadow-none focus-visible:ring-0 px-0 text-sm md:text-sm [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                 autoFocus
                 min="0"
                 step="0.01"
@@ -5361,7 +5376,7 @@ export default function EstimateDetail() {
                 onBlur={() => handleCellSave(item, 'markup')}
                 onFocus={(e) => e.target.select()}
                 onDoubleClick={(e) => e.stopPropagation()}
-                className="h-full w-full bg-transparent border-0 shadow-none focus-visible:ring-0 px-0 text-xs md:text-xs [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                className="h-full w-full bg-transparent border-0 shadow-none focus-visible:ring-0 px-0 text-sm md:text-sm [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                 autoFocus
                 min="0"
                 step="1"
