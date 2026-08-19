@@ -4729,9 +4729,13 @@ export default function EstimateDetail() {
       'quantity', 'unitCostExTax', 'unitCostIncTax', 'builderCost', 'builderCostIncTax',
       'markup', 'markupDollarAmount', 'clientPriceExTax', 'clientTax', 'clientPriceIncTax',
     ]);
+    // The status chip sits in a narrow column and reads better centred under
+    // its heading than pinned to the left edge.
+    const CENTERED_COLUMNS = new Set(['status']);
     const cellBase =
       "h-9 px-2 flex items-center text-sm overflow-hidden" +
       (NUMERIC_COLUMNS.has(columnId) ? " justify-end text-right tabular-nums" : "") +
+      (CENTERED_COLUMNS.has(columnId) ? " justify-center" : "") +
       (isCursor ? ` ${cellHighlight}` : "");
     const cellActive = cellHighlight;
     // Editable cell hover: layout-neutral bottom-border underline (border-b space pre-reserved)
@@ -6536,7 +6540,9 @@ export default function EstimateDetail() {
                               <div 
                                 key={column.id}
                                 role="columnheader"
-                                className="h-9 px-2 flex items-center relative group/header"
+                                className={`h-9 px-2 flex items-center relative group/header${
+                                  column.id === 'status' ? ' justify-center' : ''
+                                }`}
                               >
                                 <span className="truncate text-xs font-medium text-muted-foreground uppercase tracking-wide">{column.label}</span>
                                 {/* Resize handle — hidden only on the last column */}
