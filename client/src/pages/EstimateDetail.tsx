@@ -17,6 +17,7 @@ import {
   DragEndEvent,
   DragStartEvent,
   MeasuringStrategy,
+  DragOverlay,
 } from '@dnd-kit/core';
 import {
   SortableContext,
@@ -995,7 +996,9 @@ export default function EstimateDetail() {
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
-        distance: 3, // Reduced to 3px for faster, more responsive drag activation
+        // 8px, matching every other board in the app. At 3px an imprecise
+        // click on a click-to-edit cell started a drag instead of editing.
+        distance: 8,
       },
     }),
     useSensor(KeyboardSensor, {
@@ -1388,19 +1391,22 @@ export default function EstimateDetail() {
         zIndex: '9999',
         pointerEvents: 'none',
         width: `${sourceRect.width}px`,
-        height: '32px',
+        height: `${Math.round(sourceRect.height) || 32}px`,
         top: `${sourceRect.top}px`,
         left: `${sourceRect.left}px`,
         display: 'flex',
         alignItems: 'center',
         padding: '0 12px',
-        background: 'rgba(168, 144, 212,0.25)',
+        // Tokens, not a baked lavender — the literal ignored dark mode.
+        background: 'hsl(var(--primary) / 0.25)',
         borderLeft: '2px solid hsl(var(--primary))',
         boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
         cursor: 'grabbing',
         overflow: 'hidden',
         fontSize: '12px',
-        color: 'var(--foreground)',
+        // The theme tokens are bare HSL triplets: `var(--foreground)` on its
+        // own is not a valid colour, so this silently fell back to inherited.
+        color: 'hsl(var(--foreground))',
         whiteSpace: 'nowrap',
         textOverflow: 'ellipsis',
       });
