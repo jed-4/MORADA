@@ -1774,8 +1774,16 @@ export default function EstimateDetail() {
         .filter(item => !item.parentItemId && (item.groupId || null) === targetGroupId)
         .sort((a, b) => (a.order || 0) - (b.order || 0));
       
+      // Honour which side of the target row you dropped on, exactly as the
+      // same-group path does. Ignoring it meant a drop BELOW a row inserted AT
+      // that row's index, landing the item one position higher than the
+      // indicator promised — every time you dragged between groups.
       const targetIndex = targetContainerItems.findIndex(item => item.id === effectiveOverId);
-      const insertionIndex = targetIndex >= 0 ? targetIndex : targetContainerItems.length;
+      const insertBelow = capturedDropTarget?.position === 'below';
+      const insertionIndex =
+        targetIndex >= 0
+          ? targetIndex + (insertBelow ? 1 : 0)
+          : targetContainerItems.length;
       
       // Remove from source, add to target at insertion point
       const remainingSourceItems = sourceContainerItems.filter(item => item.id !== draggedItem.id);
@@ -4931,7 +4939,7 @@ export default function EstimateDetail() {
             <HoverCard openDelay={200}>
               <HoverCardTrigger asChild>
                 <div 
-                  className={`truncate max-w-[200px] ${!isLocked ? 'cursor-pointer border-b border-transparent hover:border-primary/30 transition-colors' : ''}`}
+                  className={`truncate w-full min-w-0 ${!isLocked ? 'cursor-pointer border-b border-transparent hover:border-primary/30 transition-colors' : ''}`}
                   onClick={(e) => {
                     e.stopPropagation();
                     if (!isLocked) {
