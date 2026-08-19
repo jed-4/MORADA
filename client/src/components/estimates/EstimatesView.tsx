@@ -983,10 +983,13 @@ function KanbanColumn({ status, estimates, projects, cardWidth, isHighlighted, r
         {/* The status name IS the header, as a chip in its own colour — the
             same pill the rest of the app uses for a status. */}
         <div className="px-3 py-2 border-b border-border/50 bg-muted/30">
+          {/* Tone, not the raw Field Settings hex. The hex path paints the
+              label in the configured accent colour, which reads bright and
+              low-contrast at this size; the tone palette is the one Client
+              Invoices and the line-item chips already use. */}
           <StatusBadge
             status={status.key}
             label={status.name}
-            color={status.color || undefined}
             data-testid={`kanban-column-status-${status.key}`}
           />
         </div>
