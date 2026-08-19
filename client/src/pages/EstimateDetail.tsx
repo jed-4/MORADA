@@ -2949,6 +2949,41 @@ export default function EstimateDetail() {
   };
 
   // Define editable fields in order for Tab navigation
+  /**
+   * Columns you can act on, and what Enter does there. Everything else
+   * (builder cost, amounts, tax — all computed) is skipped by the cursor.
+   *
+   * "edit" opens an editor. "toggle" activates the cell's own control, which
+   * is how the status / shown-as / allowance chips already cycle on click.
+   */
+  const INTERACTIVE_COLUMNS: Record<string, 'edit' | 'toggle'> = {
+    costCode: 'edit',
+    type: 'toggle',
+    item: 'edit',
+    description: 'edit',
+    status: 'toggle',
+    proposalVisible: 'toggle',
+    shownAs: 'toggle',
+    allowance: 'toggle',
+    quantity: 'edit',
+    unitType: 'edit',
+    unitCostExTax: 'edit',
+    unitCostIncTax: 'edit',
+    markup: 'edit',
+  };
+
+  /** The field a column edits — only the item column differs from its id. */
+  const fieldForColumn = (columnId: string) => (columnId === 'item' ? 'name' : columnId);
+
+  /**
+   * The cursor walks the columns in the order they are actually drawn, not a
+   * hardcoded list. The old list ran name → quantity → unit → unit cost →
+   * markup → cost code → description, which jumps back and forth across the
+   * table and skips every chip.
+   */
+  const navigableColumns = (): string[] =>
+    columns.filter(c => c.visible && INTERACTIVE_COLUMNS[c.id]).map(c => c.id);
+
   const editableFields = ['name', 'quantity', 'unitType', 'unitCostExTax', 'markup', 'costCode', 'description'];
 
   /**
@@ -2984,8 +3019,9 @@ export default function EstimateDetail() {
     direction: 'up' | 'down' | 'left' | 'right',
   ): { itemId: string; field: string } | null => {
     const ordered = getVisibleItemsInOrder();
+    const cols = navigableColumns();
     const rowIndex = ordered.findIndex(i => i.id === from.itemId);
-    const colIndex = editableFields.indexOf(from.field);
+    const colIndex = cols.findIndex(c => fieldForColumn(c) === from.field);
     if (rowIndex === -1 || colIndex === -1) return null;
 
     if (direction === 'up' || direction === 'down') {
@@ -2994,17 +3030,41 @@ export default function EstimateDetail() {
       return { itemId: ordered[nextRow].id, field: from.field };
     }
 
-    // Left/right wrap onto the neighbouring row, the way Tab already does.
+    // Left/right wrap onto the neighbouring row, as Tab does in a spreadsheet.
     const nextCol = colIndex + (direction === 'right' ? 1 : -1);
-    if (nextCol >= 0 && nextCol < editableFields.length) {
-      return { itemId: from.itemId, field: editableFields[nextCol] };
+    if (nextCol >= 0 && nextCol < cols.length) {
+      return { itemId: from.itemId, field: fieldForColumn(cols[nextCol]) };
     }
     const wrapRow = rowIndex + (direction === 'right' ? 1 : -1);
     if (wrapRow < 0 || wrapRow >= ordered.length) return null;
     return {
       itemId: ordered[wrapRow].id,
-      field: direction === 'right' ? editableFields[0] : editableFields[editableFields.length - 1],
+      field: fieldForColumn(direction === 'right' ? cols[0] : cols[cols.length - 1]),
     };
+  };
+
+  /** The column currently under the cursor, so Enter knows what to do. */
+  const columnForField = (field: string) =>
+    navigableColumns().find(c => fieldForColumn(c) === field);
+
+  /**
+   * Enter on a cell. Editors open; chips activate their own control, which
+   * keeps one implementation of the cycling rather than a keyboard copy.
+   */
+  const activateCell = (itemId: string, field: string) => {
+    if (estimate?.isLocked) return;
+    const item = items.find(i => i.id === itemId);
+    const columnId = columnForField(field);
+    if (!item || !columnId) return;
+
+    if (INTERACTIVE_COLUMNS[columnId] === 'toggle') {
+      const control = document.querySelector<HTMLElement>(
+        `[data-testid="button-toggle-${columnId}-${itemId}"], [data-testid="button-toggle-${field}-${itemId}"], [data-testid="button-proposal-${itemId}"]`,
+      );
+      control?.click();
+      return;
+    }
+    handleCellEdit(item, field);
   };
   
   const handleCellKeyDown = (e: React.KeyboardEvent, item: EstimateItem, field: string) => {
@@ -3020,35 +3080,13 @@ export default function EstimateDetail() {
       handleCellCancel();
       setActiveCell({ itemId: item.id, field });
     } else if (e.key === "Tab") {
+      // Tab moves, Enter acts. Committing and moving the cursor — rather than
+      // opening the next cell — is what lets you run along a row through the
+      // chips as well as the editors.
       e.preventDefault();
       handleCellSave(item, field);
-      
-      // Find next editable cell
-      const currentFieldIndex = editableFields.indexOf(field);
-      const isShift = e.shiftKey;
-      
-      const allItems = getVisibleItemsInOrder();
-      const currentItemIndex = allItems.findIndex(i => i.id === item.id);
-      
-      if (isShift) {
-        // Move backwards
-        if (currentFieldIndex > 0) {
-          // Previous field in same item
-          handleCellEdit(item, editableFields[currentFieldIndex - 1]);
-        } else if (currentItemIndex > 0) {
-          // Last field of previous item
-          handleCellEdit(allItems[currentItemIndex - 1], editableFields[editableFields.length - 1]);
-        }
-      } else {
-        // Move forwards
-        if (currentFieldIndex < editableFields.length - 1) {
-          // Next field in same item
-          handleCellEdit(item, editableFields[currentFieldIndex + 1]);
-        } else if (currentItemIndex < allItems.length - 1) {
-          // First field of next item
-          handleCellEdit(allItems[currentItemIndex + 1], editableFields[0]);
-        }
-      }
+      const next = moveActiveCell({ itemId: item.id, field }, e.shiftKey ? 'left' : 'right');
+      setActiveCell(next ?? { itemId: item.id, field });
     }
   };
 
@@ -4591,15 +4629,20 @@ export default function EstimateDetail() {
 
     if (arrows[e.key]) {
       e.preventDefault();
-      const next = moveActiveCell(activeCell, arrows[e.key]);
-      if (next) setActiveCell(next);
+      setActiveCell(prev => (prev ? moveActiveCell(prev, arrows[e.key]) ?? prev : prev));
       return;
     }
 
-    if (e.key === 'Enter' || e.key === 'F2') {
+    if (e.key === 'Tab') {
       e.preventDefault();
-      const item = items.find(i => i.id === activeCell.itemId);
-      if (item && !estimate?.isLocked) handleCellEdit(item, activeCell.field);
+      const dir = e.shiftKey ? 'left' : 'right';
+      setActiveCell(prev => (prev ? moveActiveCell(prev, dir) ?? prev : prev));
+      return;
+    }
+
+    if (e.key === 'Enter' || e.key === 'F2' || e.key === ' ') {
+      e.preventDefault();
+      activateCell(activeCell.itemId, activeCell.field);
       return;
     }
 
@@ -4609,13 +4652,16 @@ export default function EstimateDetail() {
     }
 
     // Type to replace: a printable key opens the cell so the keystroke starts
-    // the value, rather than being swallowed.
+    // the value, rather than being swallowed. Chips have nothing to type into.
     if (e.key.length === 1 && !estimate?.isLocked) {
-      const item = items.find(i => i.id === activeCell.itemId);
-      if (item) {
-        e.preventDefault();
-        handleCellEdit(item, activeCell.field);
-        setEditingValue(e.key);
+      const columnId = columnForField(activeCell.field);
+      if (columnId && INTERACTIVE_COLUMNS[columnId] === 'edit') {
+        const item = items.find(i => i.id === activeCell.itemId);
+        if (item) {
+          e.preventDefault();
+          handleCellEdit(item, activeCell.field);
+          setEditingValue(e.key);
+        }
       }
     }
   };
@@ -5140,6 +5186,9 @@ export default function EstimateDetail() {
                     data: { unitType: value }
                   });
                   setEditingCell(null);
+                  // Stay on the cell so the next Tab continues along the row
+                  // instead of falling out of the grid onto the notes button.
+                  setActiveCell({ itemId: item.id, field: 'unitType' });
                 }}
                 data-testid={`select-edit-unitType-${item.id}`}
                 defaultOpen
