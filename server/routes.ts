@@ -3833,12 +3833,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const categories = await storage.getFieldCategories();
 
-      // NOTE: this list is NOT company-scoped. The database carries a
-      // company_id on field_categories (the per-company migration has been
-      // applied there) but this code does not model it, so every company's
-      // categories come back. Collapsing by key was worse — it silently
-      // picked one company's row — so the rows are returned as they are until
-      // the scoping lands. See a8d802e8 on feat/allowances.
+      // NOTE: this list is NOT scoped per tenant. The database already carries
+      // the per-tenant column on field_categories (that migration has been
+      // applied there) but this code does not model it, so every tenant's
+      // categories come back. Collapsing by key was worse — it silently picked
+      // one tenant's row — so rows are returned as they are until the scoping
+      // lands. See a8d802e8 on feat/allowances.
+      // (Worded without the usual identifier on purpose: the tenancy ratchet
+      // scans this body for it, and a mention in a comment alone would make
+      // the route look fixed while it is still wide open.)
       // Fetch options for each category to return FieldCategoryWithOptions[]
       const categoriesWithOptions = await Promise.all(
         categories.map(async (category) => {
