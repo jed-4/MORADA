@@ -4731,7 +4731,11 @@ export default function EstimateDetail() {
     ]);
     // The status chip sits in a narrow column and reads better centred under
     // its heading than pinned to the left edge.
-    const CENTERED_COLUMNS = new Set(['status']);
+    // Chips sit in narrow columns and vary in width with their label — a
+    // "Confirmed" is 75px against a "Todo" at 43px. Centred, that variation
+    // reads as symmetric rather than ragged, without forcing every chip to a
+    // fixed width and going back to the blocky look.
+    const CENTERED_COLUMNS = new Set(['status', 'shownAs', 'allowance', 'type']);
     const cellBase =
       "h-9 px-2 flex items-center text-sm overflow-hidden" +
       (NUMERIC_COLUMNS.has(columnId) ? " justify-end text-right tabular-nums" : "") +
@@ -6541,7 +6545,7 @@ export default function EstimateDetail() {
                                 key={column.id}
                                 role="columnheader"
                                 className={`h-9 px-2 flex items-center relative group/header${
-                                  column.id === 'status' ? ' justify-center' : ''
+                                  ['status', 'shownAs', 'allowance', 'type'].includes(column.id) ? ' justify-center' : ''
                                 }`}
                               >
                                 <span className="truncate text-xs font-medium text-muted-foreground uppercase tracking-wide">{column.label}</span>

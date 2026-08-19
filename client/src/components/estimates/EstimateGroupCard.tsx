@@ -32,9 +32,8 @@ import type { EstimateGroup, EstimateItem, CostCode, CostCategory, FieldCategory
 type GroupStatus = string;
 
 /**
- * Mirrors the options seeded for estimate_group.status, so the chip still
- * renders correctly before that query resolves, and on an older database
- * where the category hasn't been created yet.
+ * Used only until the field settings query resolves, or on a company that has
+ * no estimate item statuses configured at all.
  */
 const FALLBACK_STATUS_OPTIONS: Pick<FieldOption, "key" | "name" | "color">[] = [
   { key: "not_started", name: "Not Started", color: null },
@@ -42,10 +41,14 @@ const FALLBACK_STATUS_OPTIONS: Pick<FieldOption, "key" | "name" | "color">[] = [
   { key: "complete", name: "Complete", color: null },
 ];
 
-/** Section statuses as configured in Field Settings. */
+/**
+ * A section and the lines inside it are the same kind of thing at different
+ * scales, so they share one list of statuses — the estimate_item.status
+ * options from Field Settings. Configure them once and both follow.
+ */
 function useGroupStatusOptions() {
   const { data } = useQuery<FieldCategoryWithOptions>({
-    queryKey: ["/api/field-categories/by-key/estimate_group.status"],
+    queryKey: ["/api/field-categories/by-key/estimate_item.status"],
     staleTime: 5 * 60 * 1000,
     retry: false,
   });
