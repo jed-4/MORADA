@@ -373,15 +373,13 @@ const SortableRow = React.memo(({ id, children, className, isDraggable = true, g
           height: lastHeightRef.current, 
           minHeight: lastHeightRef.current,
         }}
-        className="relative bg-muted/50 border-b border-border"
+        className="relative bg-muted/40 border-b border-border"
         data-testid={`row-placeholder-${id}`}
         data-sortable-id={id}
       >
-        {/* Dashed placeholder visual overlay */}
-        <div 
-          className="absolute inset-1 rounded border-2 border-dashed border-muted-foreground/30 pointer-events-none"
-          style={{ gridColumn: '1 / -1' }}
-        />
+        {/* The row being dragged just holds its space. It used to also carry a
+            dashed outline, which made three things saying the same thing at
+            once: the ghost under the cursor, the drop indicator, and this. */}
         {/* Render children with visibility hidden to maintain column widths */}
         <div style={{ display: 'contents', visibility: 'hidden' }}>
           {children}
@@ -390,15 +388,13 @@ const SortableRow = React.memo(({ id, children, className, isDraggable = true, g
     );
   }
 
-  // Normal rendering when not dragging
-  // Only apply Y-axis transform to prevent horizontal shifting
-  // Skip transform when a group is being dragged (items shouldn't fly around)
-  const isGroupBeingDragged = activeDragId && String(activeDragId).startsWith('group-');
+  // Normal rendering when not dragging.
+  // Rows deliberately do NOT shift out of the way. A drop indicator already
+  // says exactly where the row will land, so sliding every other row as well
+  // was a second, noisier answer to the same question.
   const style: React.CSSProperties = {
     display: 'grid',
     gridTemplateColumns: gridTemplate,
-    transform: (transform && !isGroupBeingDragged) ? `translateY(${Math.round(transform.y)}px)` : undefined,
-    transition: transition || 'transform 150ms ease',
   };
 
   return (
@@ -413,10 +409,10 @@ const SortableRow = React.memo(({ id, children, className, isDraggable = true, g
     >
       {/* Drop indicator line - shows above or below based on position */}
       {dropIndicator === 'above' && (
-        <div className="absolute -top-[2px] left-0 right-0 h-1 bg-primary z-50 rounded-full shadow-[0_0_8px_rgba(168,144,212,0.6)]" />
+        <div className="absolute -top-px left-0 right-0 h-0.5 bg-primary z-50" />
       )}
       {dropIndicator === 'below' && (
-        <div className="absolute -bottom-[2px] left-0 right-0 h-1 bg-primary z-50 rounded-full shadow-[0_0_8px_rgba(168,144,212,0.6)]" />
+        <div className="absolute -bottom-px left-0 right-0 h-0.5 bg-primary z-50" />
       )}
       {/* Drag handle — its own 20px lane at the left (checkbox is shifted right),
           so it no longer overlaps the checkbox and is actually grabbable. */}
@@ -493,7 +489,7 @@ const SortableGroup = React.memo(({ id, children, className }: SortableGroupProp
           width: lastWidthRef.current,
           minWidth: lastWidthRef.current,
         }}
-        className={`${className} bg-muted/50 rounded-lg border-2 border-dashed border-muted-foreground/30`}
+        className={`${className} bg-muted/40 rounded-lg`}
         data-testid={`group-placeholder-${id}`}
       >
         {/* Render children invisibly to maintain any internal layout */}
@@ -504,11 +500,9 @@ const SortableGroup = React.memo(({ id, children, className }: SortableGroupProp
     );
   }
 
-  // Normal rendering - only apply Y-axis transform to prevent horizontal shifting
-  const style: React.CSSProperties = {
-    transform: transform ? `translateY(${Math.round(transform.y)}px)` : undefined,
-    transition: transition || 'transform 150ms ease',
-  };
+  // Groups hold their position while one is dragged, for the same reason the
+  // rows do: the drop indicator already shows where it will land.
+  const style: React.CSSProperties = {};
 
   return (
     <div ref={combinedRef} style={style} className={className}>
@@ -6247,8 +6241,8 @@ export default function EstimateDetail() {
                         "data-testid": "button-open-catalog",
                       },
                     ]}
-                    variant="card"
-                    className="my-6"
+                    variant="inline"
+                    className="py-16"
                   />
                 ) : (
                   <DndContext 
