@@ -55,6 +55,9 @@ export function EmptyState({
   ...rest
 }: EmptyStateProps) {
   const ActionIcon = action?.icon;
+  // A lone primary keeps its full size. As soon as it heads a row of
+  // alternatives, the whole row matches — the primary leads on fill, not bulk.
+  const hasSecondary = !!secondaryActions?.length;
   const wrapper =
     variant === "card"
       ? "rounded-lg border border-border bg-card"
@@ -81,6 +84,7 @@ export function EmptyState({
       {action ? (
         <Button
           className="mt-4"
+          size={hasSecondary ? "sm" : "default"}
           onClick={action.onClick}
           disabled={action.disabled || action.loading}
           data-testid={action["data-testid"] ?? "empty-state-action"}
@@ -94,7 +98,7 @@ export function EmptyState({
         </Button>
       ) : null}
       {secondaryActions?.length ? (
-        <div className="mt-3 flex flex-wrap items-center justify-center gap-1.5">
+        <div className="mt-2 flex flex-wrap items-center justify-center gap-2">
           {secondaryActions.map((secondary) => {
             const SecondaryIcon = secondary.icon;
             return (
@@ -102,7 +106,6 @@ export function EmptyState({
                 key={secondary.label}
                 variant="outline"
                 size="sm"
-                className="h-7 text-xs"
                 onClick={secondary.onClick}
                 disabled={secondary.disabled}
                 data-testid={secondary["data-testid"]}
