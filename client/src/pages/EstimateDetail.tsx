@@ -5547,23 +5547,21 @@ export default function EstimateDetail() {
   const getStatusBadge = (estimate: Estimate) => {
     // Workflow statuses take precedence over the legacy "Locked" pill so users
     // can always tell at a glance whether an estimate is the Contract one.
+    // These were 24px Badges with hand-written colours while the rest of the
+    // app uses the 18px StatusBadge pill. Same component and palette now.
     if (estimate.status === "contract") {
-      return <Badge variant="secondary" className="h-6 px-2 text-xs bg-primary/15 text-primary border-primary/30"><Lock className="w-3 h-3 mr-1" />Contract</Badge>;
+      return <StatusBadge status="contract" label="Contract" tone="success" />;
     }
     if (estimate.status === "approved") {
-      return <Badge variant="secondary" className="h-6 px-2 text-xs"><Lock className="w-3 h-3 mr-1" />Approved</Badge>;
+      return <StatusBadge status="approved" label="Approved" tone="success" />;
     }
     if (estimate.isLocked) {
-      return <Badge variant="secondary" className="h-6 px-2 text-xs bg-primary/10 text-primary border-primary/20"><Lock className="w-3 h-3 mr-1" />Locked</Badge>;
+      return <StatusBadge status="locked" label="Locked" tone="info" />;
     }
 
-    // Use field settings for status
+    // Configured status: label from Field Settings, colour from the app's
+    // palette — the configured hex renders as a bright wash that doesn't match.
     const statusOption = estimateStatuses.find(s => s.key === estimate.status);
-    if (statusOption && statusOption.color) {
-      return <StatusBadge status={statusOption.key} label={statusOption.name} color={statusOption.color} />;
-    }
-
-    // Fallback
     return <StatusBadge status={estimate.status || "Draft"} label={statusOption?.name} />;
   };
 
@@ -5969,6 +5967,16 @@ export default function EstimateDetail() {
                   <Package className="w-3.5 h-3.5 text-muted-foreground" />
                   Browse catalog
                 </button>
+                <button
+                  className="flex items-center gap-2 px-2 py-1.5 text-xs rounded-md hover-elevate w-full text-left"
+                  onClick={() => setHideAddLines(v => !v)}
+                  data-testid="button-toggle-add-lines"
+                >
+                  {hideAddLines
+                    ? <Eye className="w-3.5 h-3.5 text-muted-foreground" />
+                    : <EyeOff className="w-3.5 h-3.5 text-muted-foreground" />}
+                  {hideAddLines ? 'Show "Add Line" rows' : 'Hide "Add Line" rows'}
+                </button>
                 <Separator className="my-1" />
                 {/* Manual lock — snapshot the pricing before sending a quote
                     out. Hidden on contract estimates, whose lock is owned by
@@ -6235,22 +6243,6 @@ export default function EstimateDetail() {
                   </TooltipProvider>
                 )}
                 
-                {/* Hide/Show Add Lines toggle */}
-                <TooltipProvider>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <button
-                        className={`h-6 w-6 text-xs border rounded-md flex items-center justify-center ${hideAddLines ? 'bg-muted' : ''} hover-elevate active-elevate-2`}
-                        onClick={() => setHideAddLines(!hideAddLines)}
-                        data-testid="button-toggle-add-lines"
-                      >
-                        {hideAddLines ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
-                      </button>
-                    </TooltipTrigger>
-                    <TooltipContent>{hideAddLines ? 'Show add line rows' : 'Hide add line rows'}</TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
-
                 {/* Search Input */}
                 <div className="relative">
                   <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
