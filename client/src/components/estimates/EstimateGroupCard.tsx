@@ -195,6 +195,8 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
   const gridTemplate = parentGridTemplate || `40px ${visibleCols.map(c => `${c.widthPx}px`).join(' ')} 80px`;
   const cellBase = "h-9 px-2 flex items-center text-sm overflow-hidden";
 
+  // Right-click opens the full list; left click just cycles.
+  const [statusMenuOpen, setStatusMenuOpen] = useState(false);
   const statusOptions = useGroupStatusOptions();
   const currentStatus = ((group as any).status as GroupStatus) || statusOptions[0]?.key || "not_started";
   const currentStatusOption = statusOptions.find((o) => o.key === currentStatus);
@@ -310,13 +312,29 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
             return (
               <div key={column.id} className={cellBase} role="gridcell">
                 {onUpdateStatus && !isLocked ? (
-                  <DropdownMenu>
+                  <DropdownMenu open={statusMenuOpen} onOpenChange={setStatusMenuOpen}>
                     <DropdownMenuTrigger asChild>
                       <button
                         type="button"
                         className="inline-flex rounded-[9px] hover-elevate active-elevate-2 flex-shrink-0"
                         data-testid={`badge-group-status-${group.id}`}
-                        onClick={(e) => e.stopPropagation()}
+                        title="Click to cycle, right-click to choose"
+                        // Left click cycles, matching the line-item chips below
+                        // it. The full list is a right-click away, for jumping
+                        // straight to a status rather than clicking through.
+                        onPointerDown={(e) => e.preventDefault()}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const i = statusOptions.findIndex(o => o.key === currentStatus);
+                          const next = statusOptions[(i + 1) % statusOptions.length];
+                          if (next) onUpdateStatus(group.id, next.key);
+                        }}
+                        onDoubleClick={(e) => e.stopPropagation()}
+                        onContextMenu={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setStatusMenuOpen(true);
+                        }}
                       >
                         <StatusBadge status={currentStatus} label={statusLabel} />
                       </button>
@@ -328,6 +346,7 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
                           onClick={(e) => {
                             e.stopPropagation();
                             onUpdateStatus(group.id, option.key);
+                            setStatusMenuOpen(false);
                           }}
                           className={currentStatus === option.key ? "font-medium" : ""}
                           data-testid={`menu-item-status-${option.key}-${group.id}`}

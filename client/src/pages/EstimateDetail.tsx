@@ -157,7 +157,14 @@ interface EstimateDetailParams {
 type ColumnConfig = { id: string; label: string; visible: boolean; widthPx: number };
 
 // Default columns - defined outside component to maintain stable reference
-// Compact widths to fit more data on screen
+// Compact widths to fit more data on screen.
+//
+// What starts visible is the estimating loop: what the line is, how it's
+// priced, and what the client pays. The derived views — unit inc, builder
+// cost ex/inc, and per-line tax — start hidden, because the summary bar above
+// already totals all of them and they were a third of the grid's width. Every
+// one is a tick away in the column picker, and saved layouts are untouched;
+// this only changes where a new company begins.
 const DEFAULT_COLUMNS: ColumnConfig[] = [
   { id: 'costCode', label: 'Cost Code', visible: true, widthPx: 90 },
   { id: 'type', label: 'Type', visible: true, widthPx: 80 },
@@ -171,13 +178,13 @@ const DEFAULT_COLUMNS: ColumnConfig[] = [
   { id: 'wastage', label: 'Waste', visible: true, widthPx: 55 },
   { id: 'unitType', label: 'Unit', visible: true, widthPx: 55 },
   { id: 'unitCostExTax', label: 'Unit Cost', visible: true, widthPx: 90 },
-  { id: 'unitCostIncTax', label: 'Unit Inc', visible: true, widthPx: 85 },
-  { id: 'builderCost', label: 'Builder Cost', visible: true, widthPx: 100 },
-  { id: 'builderCostIncTax', label: 'Builder Inc', visible: true, widthPx: 95 },
+  { id: 'unitCostIncTax', label: 'Unit Inc', visible: false, widthPx: 85 },
+  { id: 'builderCost', label: 'Builder Cost', visible: false, widthPx: 100 },
+  { id: 'builderCostIncTax', label: 'Builder Inc', visible: false, widthPx: 95 },
   { id: 'markup', label: 'Markup', visible: true, widthPx: 65 },
   { id: 'markupDollarAmount', label: 'Markup $', visible: false, widthPx: 90 },
   { id: 'clientPriceExTax', label: 'Amount', visible: true, widthPx: 90 },
-  { id: 'clientTax', label: 'Tax', visible: true, widthPx: 70 },
+  { id: 'clientTax', label: 'Tax', visible: false, widthPx: 70 },
   { id: 'clientPriceIncTax', label: 'Amount Inc', visible: true, widthPx: 95 },
   { id: 'notes', label: 'Notes', visible: true, widthPx: 60 },
 ];
@@ -300,12 +307,15 @@ function FormattedNumberInput({
  */
 function CellChip({
   onClick,
+  onPickFromList,
   disabled,
   title,
   testId,
   children,
 }: {
   onClick: () => void;
+  /** Right-click: jump straight to a value instead of cycling to it. */
+  onPickFromList?: () => void;
   disabled?: boolean;
   title?: string;
   testId: string;
@@ -316,6 +326,12 @@ function CellChip({
       type="button"
       onClick={(e) => { e.stopPropagation(); if (!disabled) onClick(); }}
       onDoubleClick={(e) => e.stopPropagation()}
+      onContextMenu={(e) => {
+        if (!onPickFromList || disabled) return;
+        e.preventDefault();
+        e.stopPropagation();
+        onPickFromList();
+      }}
       disabled={disabled}
       title={title}
       className="inline-flex rounded-[9px] hover-elevate active-elevate-2 disabled:opacity-60 disabled:cursor-not-allowed disabled:pointer-events-none"
