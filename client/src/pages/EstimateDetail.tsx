@@ -4622,10 +4622,10 @@ export default function EstimateDetail() {
 
   // Render cell based on column ID - returns grid-compatible div elements
   const renderCell = (item: EstimateItem, columnId: string) => {
-    const isEditing = editingCell?.itemId === item.id && editingCell?.field === columnId;
-    // The name column edits the `name` field, so the cursor has to be matched
-    // against the field this column actually edits, not the column id.
+    // The name is edited as the field "name" but lives in the column "item",
+    // so both checks below match on the field the column actually edits.
     const cursorField = columnId === 'item' ? 'name' : columnId;
+    const isEditing = editingCell?.itemId === item.id && editingCell?.field === cursorField;
     const isCursor =
       !isEditing && activeCell?.itemId === item.id && activeCell?.field === cursorField;
     const isLocked = estimate?.isLocked;
