@@ -3832,7 +3832,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/field-categories", async (req, res) => {
     try {
       const categories = await storage.getFieldCategories();
-      
+
+      // NOTE: this list is NOT scoped per tenant. The database already carries
+      // the per-tenant column on field_categories (that migration has been
+      // applied there) but this code does not model it, so every tenant's
+      // categories come back. Collapsing by key was worse — it silently picked
+      // one tenant's row — so rows are returned as they are until the scoping
+      // lands. See a8d802e8 on feat/allowances.
+      // (Worded without the usual identifier on purpose: the tenancy ratchet
+      // scans this body for it, and a mention in a comment alone would make
+      // the route look fixed while it is still wide open.)
       // Fetch options for each category to return FieldCategoryWithOptions[]
       const categoriesWithOptions = await Promise.all(
         categories.map(async (category) => {
@@ -3843,7 +3852,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           };
         })
       );
-      
+
       res.json(categoriesWithOptions);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch field categories" });
@@ -4424,9 +4433,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.json([]); // Return empty array if user has no company
       }
 
-      // Filter projects by company for multi-tenant isolation
+      // Filter projects by company for multi-tenant isolation.
+      // Archived projects are hidden by default, but cross-project list views
+      // (Estimates, etc.) need them to resolve names — an estimate on an
+      // archived project would otherwise render as "Unknown Project".
+      const includeArchived = req.query.includeArchived === "true" || req.query.includeArchived === "1";
       const allProjects = await storage.getProjects();
-      const companyProjects = allProjects.filter(p => p.companyId === user.companyId && !p.isBusiness && !p.isArchived);
+      const companyProjects = allProjects.filter(p =>
+        p.companyId === user.companyId && !p.isBusiness && (includeArchived || !p.isArchived));
 
       // Check if user is admin (admins see all company projects)
       const isAdmin = user.roleName?.toLowerCase()?.includes('admin') ||
@@ -7628,8 +7642,51 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Manual lock/unlock endpoints were removed: lock state is owned exclusively
-  // by the two-stage lifecycle (Mark as Contract locks/freezes, Revert unlocks).
+  // ── Manual lock / unlock ─────────────────────────────────────────────────
+  // Locking an estimate freezes its content so a quote can be sent knowing it
+  // can't drift afterwards — the same snapshot guarantee "New revision" gives
+  // when it locks the revision it branched from.
+  //
+  // A CONTRACT estimate is deliberately out of scope for both: its lock is
+  // owned by the lifecycle and paired with a frozen contractPrice, so it can
+  // only be released via /revert. Without that carve-out this endpoint would
+  // be a side-door letting a signed contract be edited while its frozen price
+  // stayed put.
+  app.post("/api/estimates/:id/lock", requireAuth, async (req: any, res) => {
+    try {
+      const existing = await getOwnedEstimate(req, res, req.params.id);
+      if (!existing) return;
+      if (existing.isLocked) {
+        return res.json(existing);
+      }
+      const updated = await storage.setEstimateLock(req.params.id, true);
+      res.json(updated);
+    } catch (error: any) {
+      console.error("Error locking estimate:", error.message);
+      res.status(500).json({ error: "Failed to lock estimate" });
+    }
+  });
+
+  app.post("/api/estimates/:id/unlock", requireAuth, async (req: any, res) => {
+    try {
+      const existing = await getOwnedEstimate(req, res, req.params.id);
+      if (!existing) return;
+      if (existing.status === "contract") {
+        return res.status(409).json({
+          error: "This estimate is locked as the signed contract. Use \u201cRevert to Approved\u201d to unlock it.",
+          code: "USE_LIFECYCLE_ENDPOINT",
+        });
+      }
+      if (!existing.isLocked) {
+        return res.json(existing);
+      }
+      const updated = await storage.setEstimateLock(req.params.id, false);
+      res.json(updated);
+    } catch (error: any) {
+      console.error("Error unlocking estimate:", error.message);
+      res.status(500).json({ error: "Failed to unlock estimate" });
+    }
+  });
 
   // ── Estimate status transitions ──────────────────────────────────────────
   // Workflow: Draft → Approved → Contract. Only the Contract estimate feeds

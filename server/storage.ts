@@ -7409,8 +7409,9 @@ export class DbStorage implements IStorage {
         return [
           { id: 'opt-estimate-status-draft', categoryId, key: 'draft', name: 'Draft', color: '#6B7280', isDefault: true, isCompleted: false, sortOrder: 0 },
           { id: 'opt-estimate-status-working', categoryId, key: 'working', name: 'Working', color: '#F59E0B', isDefault: false, isCompleted: false, sortOrder: 1 },
-          { id: 'opt-estimate-status-locked', categoryId, key: 'locked', name: 'Locked', color: '#3B82F6', isDefault: false, isCompleted: false, sortOrder: 2 },
-          { id: 'opt-estimate-status-approved', categoryId, key: 'approved', name: 'Approved', color: '#10B981', isDefault: false, isCompleted: true, sortOrder: 3 },
+          // No "locked" status: locking is the estimates.is_locked flag, set by
+          // Mark as Contract and the manual Lock action, not a workflow stage.
+          { id: 'opt-estimate-status-approved', categoryId, key: 'approved', name: 'Approved', color: '#10B981', isDefault: false, isCompleted: true, sortOrder: 2 },
         ];
       case 'defect.status':
         return [
@@ -7748,6 +7749,10 @@ export class DbStorage implements IStorage {
       { id: 'cat-selection-categories', key: 'selection.category', label: 'Selection Categories', entity: 'selection', description: 'Categories for selections', sortOrder: 4 },
       { id: 'cat-location-rooms', key: 'selection.room', label: 'Locations/Rooms', entity: 'selection', description: 'Room/location options for selections', sortOrder: 5 },
       { id: 'cat-checklist-type', key: 'checklist.type', label: 'Checklist Types', entity: 'checklist', description: 'Type categories for checklist templates', sortOrder: 6 },
+      // 'estimate_group.status' belongs here, but field_categories.company_id
+      // is NOT NULL in the database while this code has no companyId to give
+      // it, so the insert fails. EstimateGroupCard falls back to the three
+      // seeded defaults until field settings are company-scoped (a8d802e8).
     ];
     
     // Check which categories are missing
@@ -7779,6 +7784,15 @@ export class DbStorage implements IStorage {
     let optionsToInsert: { id: string; categoryId: string; key: string; name: string; color: string; isDefault: boolean; isCompleted?: boolean; sortOrder: number }[] = [];
     
     switch (categoryKey) {
+      case 'estimate_group.status':
+        // The three that used to be hardcoded in EstimateGroupCard. Seeded so
+        // existing rows keep their meaning; companies can add their own.
+        optionsToInsert = [
+          { id: 'opt-estimate-group-status-not-started', categoryId, key: 'not_started', name: 'Not Started', color: '#6B7280', isDefault: true, isCompleted: false, sortOrder: 0 },
+          { id: 'opt-estimate-group-status-in-progress', categoryId, key: 'in_progress', name: 'In Progress', color: '#F59E0B', isDefault: false, isCompleted: false, sortOrder: 1 },
+          { id: 'opt-estimate-group-status-complete', categoryId, key: 'complete', name: 'Complete', color: '#10B981', isDefault: false, isCompleted: true, sortOrder: 2 },
+        ];
+        break;
       case 'checklist.type':
         optionsToInsert = [
           { id: 'opt-checklist-type-task', categoryId, key: 'Task', name: 'Task', color: '#3B82F6', isDefault: true, sortOrder: 0 },
@@ -10316,15 +10330,24 @@ export class DbStorage implements IStorage {
       if (!estimate) {
         return undefined;
       }
-      
-      if (estimate.isLocked) {
-        throw new Error("Cannot update locked estimate. Unlock the estimate first.");
-      }
-      
+
       const sanitizedUpdate = { ...updateEstimate };
       delete sanitizedUpdate.version;
       delete sanitizedUpdate.isLocked;
-      
+
+      // A lock freezes the estimate's CONTENT (line items, pricing, cost
+      // codes), not its place in the workflow. Status is board metadata, so a
+      // status-only change — archiving a signed contract, dragging it across
+      // the kanban board — stays allowed while locked. Anything that touches
+      // the priced content is still refused.
+      if (estimate.isLocked) {
+        const touchedFields = Object.keys(sanitizedUpdate);
+        const statusOnly = touchedFields.length > 0 && touchedFields.every((f) => f === "status");
+        if (!statusOnly) {
+          throw new Error("Cannot update locked estimate. Unlock the estimate first.");
+        }
+      }
+
       const result = await db.update(schema.estimates)
         .set({ ...sanitizedUpdate, updatedAt: new Date() })
         .where(eq(schema.estimates.id, id))
@@ -10332,6 +10355,25 @@ export class DbStorage implements IStorage {
       return result[0];
     } catch (error) {
       console.error("Database error in updateEstimate:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Sets the lock flag on its own. The generic updateEstimate deliberately
+   * strips isLocked so the editor can never become a side-door around the
+   * lifecycle; this is the one sanctioned writer, reached only through the
+   * /lock, /unlock, /contract and /revert endpoints.
+   */
+  async setEstimateLock(id: string, isLocked: boolean): Promise<Estimate | undefined> {
+    try {
+      const result = await db.update(schema.estimates)
+        .set({ isLocked, updatedAt: new Date() })
+        .where(eq(schema.estimates.id, id))
+        .returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in setEstimateLock:", error);
       throw error;
     }
   }
@@ -14008,9 +14050,16 @@ export class DbStorage implements IStorage {
     return category;
   }
   
+  // field_categories has no company column and the DB holds several rows per
+  // key, so an unordered limit(1) returned an arbitrary copy — meaning the
+  // board could read one copy while Field Settings edited another. Pin the
+  // choice to the oldest row so every caller resolves the same category.
+  // (The real fix is per-company field settings; this just makes the current
+  // behaviour deterministic.)
   async getFieldCategoryByKey(key: string): Promise<FieldCategory | undefined> {
     const [category] = await db.select().from(schema.fieldCategories)
       .where(eq(schema.fieldCategories.key, key))
+      .orderBy(schema.fieldCategories.createdAt, schema.fieldCategories.id)
       .limit(1);
     return category;
   }
@@ -25776,13 +25825,11 @@ export class DbStorage implements IStorage {
 
       // estimate_groups: progress status per group section.
       await db.execute(sql`ALTER TABLE estimate_groups ADD COLUMN IF NOT EXISTS status text NOT NULL DEFAULT 'not_started'`);
+      // Section status is configurable in Field Settings, so the column can
+      // hold any option key the company defines. The old CHECK pinned it to
+      // the three seeded defaults and rejected every custom one.
       await db.execute(sql`
-        DO $$ BEGIN
-          ALTER TABLE estimate_groups
-            ADD CONSTRAINT estimate_groups_status_check
-            CHECK (status IN ('not_started', 'in_progress', 'complete'));
-        EXCEPTION WHEN duplicate_object THEN NULL;
-        END $$
+        ALTER TABLE estimate_groups DROP CONSTRAINT IF EXISTS estimate_groups_status_check
       `);
 
       // Backfill company_id from the creating user's company where missing.

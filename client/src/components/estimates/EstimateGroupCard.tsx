@@ -23,25 +23,35 @@ import {
   Tag,
 } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
+import { useQuery } from "@tanstack/react-query";
 import { useSortable } from '@dnd-kit/sortable';
-import type { EstimateGroup, EstimateItem, CostCode, CostCategory } from "@shared/schema";
+import { StatusBadge } from "@/components/StatusBadge";
+import type { EstimateGroup, EstimateItem, CostCode, CostCategory, FieldCategoryWithOptions, FieldOption } from "@shared/schema";
 
-type GroupStatus = "not_started" | "in_progress" | "complete";
+/** Any key configured under Field Settings > Estimate Section Statuses. */
+type GroupStatus = string;
 
-const STATUS_CONFIG: Record<GroupStatus, { label: string; className: string }> = {
-  not_started: {
-    label: "Not Started",
-    className: "bg-muted text-muted-foreground border-border",
-  },
-  in_progress: {
-    label: "In Progress",
-    className: "bg-status-warning-bg text-status-warning border-status-warning/30",
-  },
-  complete: {
-    label: "Complete",
-    className: "bg-status-success-bg text-status-success border-status-success/30",
-  },
-};
+/**
+ * Mirrors the options seeded for estimate_group.status, so the chip still
+ * renders correctly before that query resolves, and on an older database
+ * where the category hasn't been created yet.
+ */
+const FALLBACK_STATUS_OPTIONS: Pick<FieldOption, "key" | "name" | "color">[] = [
+  { key: "not_started", name: "Not Started", color: null },
+  { key: "in_progress", name: "In Progress", color: null },
+  { key: "complete", name: "Complete", color: null },
+];
+
+/** Section statuses as configured in Field Settings. */
+function useGroupStatusOptions() {
+  const { data } = useQuery<FieldCategoryWithOptions>({
+    queryKey: ["/api/field-categories/by-key/estimate_group.status"],
+    staleTime: 5 * 60 * 1000,
+    retry: false,
+  });
+  const configured = (data?.options || []).filter((o) => o.isActive);
+  return configured.length > 0 ? configured : FALLBACK_STATUS_OPTIONS;
+}
 
 type ColumnConfig = { id: string; label: string; visible: boolean; widthPx: number };
 
@@ -182,8 +192,12 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
   const gridTemplate = parentGridTemplate || `40px ${visibleCols.map(c => `${c.widthPx}px`).join(' ')} 80px`;
   const cellBase = "h-9 px-2 flex items-center text-sm overflow-hidden";
 
-  const currentStatus = ((group as any).status as GroupStatus) || "not_started";
-  const statusCfg = STATUS_CONFIG[currentStatus] || STATUS_CONFIG.not_started;
+  const statusOptions = useGroupStatusOptions();
+  const currentStatus = ((group as any).status as GroupStatus) || statusOptions[0]?.key || "not_started";
+  const currentStatusOption = statusOptions.find((o) => o.key === currentStatus);
+  // A status removed from Field Settings after the fact still has to render.
+  const statusLabel = currentStatusOption?.name
+    ?? currentStatus.replace(/[_-]+/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase());
 
   return (
     <div
@@ -287,44 +301,35 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
                 {onUpdateStatus && !isLocked ? (
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                      <Badge
-                        variant="outline"
-                        className={`text-xs px-1.5 py-0 h-5 min-w-[84px] justify-center flex-shrink-0 cursor-pointer no-default-hover-elevate no-default-active-elevate border ${statusCfg.className}`}
+                      <button
+                        type="button"
+                        className="inline-flex rounded-[9px] hover-elevate active-elevate-2 flex-shrink-0"
                         data-testid={`badge-group-status-${group.id}`}
                         onClick={(e) => e.stopPropagation()}
                       >
-                        {statusCfg.label}
-                      </Badge>
+                        <StatusBadge status={currentStatus} label={statusLabel} />
+                      </button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="start" onClick={(e) => e.stopPropagation()}>
-                      {(Object.keys(STATUS_CONFIG) as GroupStatus[]).map((s) => (
+                      {statusOptions.map((option) => (
                         <DropdownMenuItem
-                          key={s}
+                          key={option.key}
                           onClick={(e) => {
                             e.stopPropagation();
-                            onUpdateStatus(group.id, s);
+                            onUpdateStatus(group.id, option.key);
                           }}
-                          className={currentStatus === s ? "font-medium" : ""}
-                          data-testid={`menu-item-status-${s}-${group.id}`}
+                          className={currentStatus === option.key ? "font-medium" : ""}
+                          data-testid={`menu-item-status-${option.key}-${group.id}`}
                         >
-                          <span className={`inline-block w-2 h-2 rounded-full mr-2 flex-shrink-0 ${
-                            s === 'not_started' ? 'bg-muted-foreground/50' :
-                            s === 'in_progress' ? 'bg-amber' :
-                            'bg-sage'
-                          }`} />
-                          {STATUS_CONFIG[s].label}
+                          <StatusBadge status={option.key} label={option.name} />
                         </DropdownMenuItem>
                       ))}
                     </DropdownMenuContent>
                   </DropdownMenu>
                 ) : (
-                  <Badge
-                    variant="outline"
-                    className={`text-xs px-1.5 py-0 h-5 min-w-[84px] justify-center flex-shrink-0 border ${statusCfg.className}`}
-                    data-testid={`badge-group-status-${group.id}`}
-                  >
-                    {statusCfg.label}
-                  </Badge>
+                  <span className="flex-shrink-0" data-testid={`badge-group-status-${group.id}`}>
+                    <StatusBadge status={currentStatus} label={statusLabel} />
+                  </span>
                 )}
               </div>
             );
