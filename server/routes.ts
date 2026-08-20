@@ -196,6 +196,7 @@ import {
   readTimesheetBreakFromRow,
 } from "@shared/import";
 import { computeEstimateItemPrice, resolveEstimateStoredPrice } from "@shared/pricing";
+import { compareNumberedNames } from "@shared/utils";
 import { scheduleItemTier, computeProjectBands } from "@shared/scheduleVisibility";
 import { reflowLinkedTasks, scheduleDatesChanged, SCHEDULE_BOOKING_REFERENCE } from "./utils/scheduleTaskLinks";
 import { z } from "zod";
@@ -262,6 +263,24 @@ function isHoliday(d: Date, holidays: Set<string>): boolean {
 }
 
 /**
+ * A template's groups or items in the sequence their author intended: the
+ * `order` column first, then the number they typed at the front of the name.
+ *
+ * Templates built before `order` was populated carry 0 on every row, so the
+ * column can't separate them and the database is free to return them in any
+ * sequence. Sorting a copy here — and renumbering it from its position — is
+ * what stops a numbered checklist arriving at an instance scrambled.
+ */
+function inAuthoredOrder<T extends { order?: number | null }>(
+  rows: T[],
+  nameOf: (row: T) => string | null | undefined,
+): T[] {
+  return [...rows].sort(
+    (a, b) => (a.order ?? 0) - (b.order ?? 0) || compareNumberedNames(nameOf(a), nameOf(b)),
+  );
+}
+
+/**
  * Snapshot the answerable configuration of a checklist template item onto a new
  * instance item. Every field the template author can set must be listed here —
  * previously only description/tooltip/order were copied, so a template item
@@ -282,11 +301,11 @@ function instanceItemFieldsFromTemplate(templateItem: {
   order?: number | null;
   responseType?: string | null;
   responseOptions?: unknown;
-}) {
+}, order?: number) {
   return {
     description: templateItem.description,
     tooltip: templateItem.tooltip ?? null,
-    order: templateItem.order ?? 0,
+    order: order ?? templateItem.order ?? 0,
     responseType: (templateItem.responseType ?? "checkbox") as
       "checkbox" | "text" | "single_choice" | "multiple_choice",
     responseOptions: Array.isArray(templateItem.responseOptions)
@@ -5112,24 +5131,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
                   assigneeId: null,
                 } as any);
 
-                const groups = await storage.getChecklistTemplateGroups(template.id);
-                for (const group of groups) {
+                const groups = inAuthoredOrder(
+                  await storage.getChecklistTemplateGroups(template.id),
+                  g => g.name,
+                );
+                for (let groupIndex = 0; groupIndex < groups.length; groupIndex++) {
+                  const group = groups[groupIndex];
                   const instanceGroup = await storage.createChecklistInstanceGroup({
                     instanceId: instance.id,
                     name: group.name,
-                    order: group.order,
+                    // Renumber from position rather than copying the template's
+                    // order, which is 0 on every row of a legacy template.
+                    order: groupIndex,
                     status: "active",
                     priority: "low",
                   });
 
-                  const templateItems = await storage.getChecklistTemplateItems(group.id);
-                  for (const templateItem of templateItems) {
+                  const templateItems = inAuthoredOrder(
+                    await storage.getChecklistTemplateItems(group.id),
+                    i => i.description,
+                  );
+                  for (let itemIndex = 0; itemIndex < templateItems.length; itemIndex++) {
+                    const templateItem = templateItems[itemIndex];
                     await storage.createChecklistInstanceItem({
                       instanceId: instance.id,
                       groupId: instanceGroup.id,
                       groupName: group.name,
-                      groupOrder: group.order,
-                      ...instanceItemFieldsFromTemplate(templateItem),
+                      groupOrder: groupIndex,
+                      ...instanceItemFieldsFromTemplate(templateItem, itemIndex),
                     });
                   }
                 }
@@ -26079,19 +26108,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
         companyId: (req.user as any)?.companyId,
       });
       
-      // Get original groups and items
-      const groups = await storage.getChecklistTemplateGroups(id);
+      // Get original groups and items, in the sequence they read in. A copy is
+      // a fresh chance to give a legacy template real order values, so the
+      // duplicate is numbered from position rather than inheriting all-zeroes.
+      const groups = inAuthoredOrder(await storage.getChecklistTemplateGroups(id), g => g.name);
       
       // Duplicate each group and its items
-      for (const group of groups) {
+      for (let groupIndex = 0; groupIndex < groups.length; groupIndex++) {
+        const group = groups[groupIndex];
         const duplicateGroup = await storage.createChecklistTemplateGroup({
           templateId: duplicateTemplate.id,
           name: group.name,
-          order: group.order,
+          order: groupIndex,
         });
         
-        const items = await storage.getChecklistTemplateItems(group.id);
-        for (const item of items) {
+        const items = inAuthoredOrder(
+          await storage.getChecklistTemplateItems(group.id),
+          i => i.description,
+        );
+        for (let itemIndex = 0; itemIndex < items.length; itemIndex++) {
+          const item = items[itemIndex];
           // Copy the whole item, not just description/order — a duplicate that
           // silently drops response types, options, tooltips and role
           // assignments isn't a duplicate.
@@ -26099,7 +26135,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             groupId: duplicateGroup.id,
             description: item.description,
             tooltip: item.tooltip ?? null,
-            order: item.order,
+            order: itemIndex,
             responseType: (item.responseType ?? "checkbox") as
               "checkbox" | "text" | "single_choice" | "multiple_choice",
             responseOptions: Array.isArray(item.responseOptions)
@@ -26738,25 +26774,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
           ? groups.filter(g => selectedGroupIds.includes(g.id))
           : groups;
         
-        for (const group of filteredGroups) {
-          // Create the instance group record
+        const orderedGroups = inAuthoredOrder(filteredGroups, g => g.name);
+        for (let groupIndex = 0; groupIndex < orderedGroups.length; groupIndex++) {
+          const group = orderedGroups[groupIndex];
+          // Create the instance group record. Its order is the position in the
+          // sorted copy, not the template's own order — a legacy template
+          // carries 0 on every group and can't express a sequence at all.
           const instanceGroup = await storage.createChecklistInstanceGroup({
             instanceId: instance.id,
             name: group.name,
-            order: group.order,
+            order: groupIndex,
             status: "active",
             priority: "low",
           });
           
           // Create items linked to this group
-          const templateItems = await storage.getChecklistTemplateItems(group.id);
-          for (const templateItem of templateItems) {
+          const templateItems = inAuthoredOrder(
+            await storage.getChecklistTemplateItems(group.id),
+            i => i.description,
+          );
+          for (let itemIndex = 0; itemIndex < templateItems.length; itemIndex++) {
+            const templateItem = templateItems[itemIndex];
             await storage.createChecklistInstanceItem({
               instanceId: instance.id,
               groupId: instanceGroup.id,
               groupName: group.name,
-              groupOrder: group.order,
-              ...instanceItemFieldsFromTemplate(templateItem),
+              groupOrder: groupIndex,
+              ...instanceItemFieldsFromTemplate(templateItem, itemIndex),
             });
           }
         }

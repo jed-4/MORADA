@@ -9,7 +9,7 @@ import {
   type ChecklistTemplateItem,
   type UserRole,
 } from "@shared/schema";
-import { compareNames } from "@shared/utils";
+import { compareNumberedNames } from "@shared/utils";
 import {
   DndContext,
   closestCenter,
@@ -130,7 +130,12 @@ export default function ChecklistTemplateDetail() {
     queryFn: async () => {
       const res = await fetch(`/api/checklist-templates/${templateId}/groups`);
       if (!res.ok) throw new Error("Failed to fetch groups");
-      return res.json();
+      const data: ChecklistTemplateGroup[] = await res.json();
+      // Authored order, then the number at the front of the name. Legacy
+      // templates carry order 0 on every group, so without the second key the
+      // editor shows them in whatever sequence the database happened to return.
+      return data.sort((a, b) =>
+        (a.order ?? 0) - (b.order ?? 0) || compareNumberedNames(a.name, b.name));
     },
     enabled: !!templateId,
   });
@@ -265,7 +270,10 @@ export default function ChecklistTemplateDetail() {
     () =>
       allItems
         .filter(item => item.groupId === selectedGroupId)
-        .sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || compareNames(a.description, b.description)),
+        // Ties fall back to the number at the front of the description, not a
+        // full name sort — an unnumbered list would otherwise be alphabetised
+        // away from the sequence it was entered in.
+        .sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || compareNumberedNames(a.description, b.description)),
     [allItems, selectedGroupId],
   );
 
