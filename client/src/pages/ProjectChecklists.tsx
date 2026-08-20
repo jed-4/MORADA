@@ -18,7 +18,7 @@ import {
   type User,
   type ScheduleItem,
 } from "@shared/schema";
-import { compareNames, compareCreatedAt } from "@shared/utils";
+import { compareNames, compareCreatedAt, compareNumberedNames } from "@shared/utils";
 
 type Task = {
   id: string;
@@ -338,7 +338,8 @@ export default function ProjectChecklists() {
       // is stable), which the server makes deterministic. Sorting ties by
       // description alphabetised whole checklists whose items shared an order.
       Object.keys(itemsMap).forEach(groupId => {
-        itemsMap[groupId].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+        itemsMap[groupId].sort((a, b) =>
+          (a.order ?? 0) - (b.order ?? 0) || compareNumberedNames(a.description, b.description));
       });
       return itemsMap;
     },
@@ -777,9 +778,10 @@ export default function ProjectChecklists() {
     // Start from instances so even those with no groups are included
     const result = instances.map(instance => {
       const groups = groupsByInstanceId[instance.id] || [];
-      // Authored order only — matching the widget, the instance detail page
-      // and mobile. Ties keep the server's (deterministic) sequence.
-      groups.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+      // Authored order then leading number — matching the widget, the instance
+      // detail page and mobile. Unnumbered ties keep the server's
+      // (deterministic) sequence.
+      groups.sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || compareNumberedNames(a.name, b.name));
       return { instance, groups };
     });
     

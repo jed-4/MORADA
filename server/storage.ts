@@ -18908,7 +18908,15 @@ export class DbStorage implements IStorage {
       return await db.select()
         .from(schema.checklistTemplateGroups)
         .where(eq(schema.checklistTemplateGroups.templateId, templateId))
-        .orderBy(schema.checklistTemplateGroups.order);
+        // createdAt/id are only reached by rows that tie on `order` — legacy
+        // groups written before the order column was populated. Without them
+        // Postgres returns ties in an arbitrary sequence, which is then baked
+        // into every instance created from this template.
+        .orderBy(
+          schema.checklistTemplateGroups.order,
+          schema.checklistTemplateGroups.createdAt,
+          schema.checklistTemplateGroups.id,
+        );
     } catch (error) {
       console.error("Database error in getChecklistTemplateGroups:", error);
       throw error;
@@ -18972,7 +18980,12 @@ export class DbStorage implements IStorage {
       return await db.select()
         .from(schema.checklistTemplateItems)
         .where(eq(schema.checklistTemplateItems.groupId, groupId))
-        .orderBy(schema.checklistTemplateItems.order);
+        // Same deterministic tie-break as getChecklistTemplateGroups.
+        .orderBy(
+          schema.checklistTemplateItems.order,
+          schema.checklistTemplateItems.createdAt,
+          schema.checklistTemplateItems.id,
+        );
     } catch (error) {
       console.error("Database error in getChecklistTemplateItems:", error);
       throw error;

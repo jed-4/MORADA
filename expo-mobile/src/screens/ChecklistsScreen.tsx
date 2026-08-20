@@ -82,20 +82,44 @@ function compareCreatedAt(
   return at - bt;
 }
 
-// Items render in their authored `order`, nothing else. Ties keep the order
-// the server sent (Array.sort is stable) — falling back to description sorted
-// whole checklists alphabetically whenever their items shared an order.
+// The number a user typed at the front of a name: "3. Slab" -> 3, "ITP013 -
+// Dilapidation" -> 13. Mirrors leadingSequenceNumber in shared/utils.ts —
+// mobile can't reach the web app's @shared alias, so it keeps its own copy.
+function leadingSequenceNumber(name: string | null | undefined): number | null {
+  const text = (name || '').trim();
+  if (!text) return null;
+  const separated = text.match(/^(\d+)(?:\s*[.)\-:\u2013\u2014]\s*\S|$)/);
+  if (separated) return parseInt(separated[1], 10);
+  const prefixed = text.match(/^[A-Za-z]{1,6}[-_]?(\d+)(?![\w])/);
+  if (prefixed) return parseInt(prefixed[1], 10);
+  return null;
+}
+
+// Mirrors compareNumberedNames in shared/utils.ts: 0 unless both names are
+// numbered, so an unnumbered list keeps the sequence it was stored in.
+function compareNumberedNames(a: string | null | undefined, b: string | null | undefined): number {
+  const an = leadingSequenceNumber(a);
+  const bn = leadingSequenceNumber(b);
+  if (an === null || bn === null) return 0;
+  return an - bn;
+}
+
+// Items render in their authored `order`, then by the number at the front of
+// the description. Ties that aren't numbered keep the order the server sent
+// (Array.sort is stable) rather than being alphabetised out of it.
 function compareItems(a: ChecklistItem, b: ChecklistItem): number {
-  return (a.order ?? 0) - (b.order ?? 0);
+  return (a.order ?? 0) - (b.order ?? 0) || compareNumberedNames(a.description, b.description);
 }
 
 // Groups render in the order their checklist was authored — each item carries
-// its parent's position in groupOrder. Ties keep insertion order.
+// its parent's position in groupOrder — then by leading number. Unnumbered
+// ties keep insertion order.
 function compareGroupEntries(
-  [, itemsA]: [string, ChecklistItem[]],
-  [, itemsB]: [string, ChecklistItem[]],
+  [nameA, itemsA]: [string, ChecklistItem[]],
+  [nameB, itemsB]: [string, ChecklistItem[]],
 ): number {
-  return (itemsA[0]?.groupOrder ?? 0) - (itemsB[0]?.groupOrder ?? 0);
+  return (itemsA[0]?.groupOrder ?? 0) - (itemsB[0]?.groupOrder ?? 0)
+    || compareNumberedNames(nameA, nameB);
 }
 
 export default function ChecklistsScreen({ navigation, route }: Props) {
