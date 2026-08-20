@@ -8,7 +8,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { useResizableColumns, ColResizeHandle } from "@/components/useResizableColumns";
-import { useGridNavigation } from "@/components/spreadsheet/useGridNavigation";
 import { EmptyState } from "@/components/EmptyState";
 import {
   Dialog,
@@ -270,11 +269,10 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
     setDraftValue(EDITABLE[key].get(item));
   };
 
-  const commitEdit = (item: PriceListItem, move?: "down" | "none") => {
+  const commitEdit = (item: PriceListItem) => {
     if (!editing) return;
     const spec = EDITABLE[editing.key];
     setEditing(null);
-    nav.endEdit({ move: move === "down" ? "down" : "none" });
     if (!spec) return;
     if (draftValue === spec.get(item)) return;   // untouched — don't burn a request
     const payload = spec.toPayload(draftValue);
@@ -545,42 +543,6 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
   // Trailing 72px is the fixed (non-draggable) actions cell.
   const gridCols = useResizableColumns("price-list", orderedColumns, 72);
   const gridTemplate = `32px ${gridCols.gridTemplate}`;
-
-  // One navigable grid across every expanded group, so arrows cross group
-  // boundaries the way they would in a spreadsheet rather than trapping you in a
-  // section. Row index here is the index into this flat list.
-  const navRows = useMemo(
-    () => groups.flatMap((g) =>
-      (groupBy === "none" || expandedGroups.has(g.id)) ? g.items : []),
-    [groups, groupBy, expandedGroups],
-  );
-  const navRowIndex = useMemo(() => {
-    const m = new Map<string, number>();
-    navRows.forEach((it, i) => m.set(it.id, i));
-    return m;
-  }, [navRows]);
-
-  const nav = useGridNavigation({
-    getDimensions: () => ({ rows: navRows.length, cols: orderedColumns.length }),
-    focusCell: ({ row, col }) => {
-      const el = document.querySelector<HTMLElement>(
-        `[data-grid-row="${row}"][data-grid-col="${col}"]`,
-      );
-      el?.focus({ preventScroll: false });
-    },
-    beginEdit: ({ row, col }, initialKey) => {
-      const item = navRows[row];
-      const column = orderedColumns[col];
-      if (!item || !column) return false;
-      const spec = EDITABLE[column.key];
-      if (!spec) return false;                       // read-only column: let nav have the key
-      setEditing({ id: item.id, key: column.key });
-      // Typing a printable character replaces the cell, as a spreadsheet does;
-      // Enter/Space opens it with the existing value for amending.
-      setDraftValue(initialKey && initialKey.length === 1 && initialKey !== " " ? initialKey : spec.get(item));
-      return true;
-    },
-  });
 
   const activeFilterCount =
     (filterGroup !== "all" ? 1 : 0) +
@@ -953,12 +915,7 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
                     </div>
 
                     {expanded && (
-                      <div
-                        className="mt-3 border-t border-border overflow-x-auto dt-autohide-scrollbar outline-none"
-                        tabIndex={0}
-                        onKeyDown={nav.onKeyDown}
-                        data-testid={`grid-${group.id}`}
-                      >
+                      <div className="mt-3 border-t border-border overflow-x-auto dt-autohide-scrollbar">
                         <div style={{ minWidth: gridCols.minWidth + 32 }}>
                           {/* column labels */}
                           <div
@@ -1022,8 +979,7 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
                                   />
                                 </div>
                                 {/* Cells follow the header order, so reordering moves both. */}
-                                {orderedColumns.map((c, colIdx) => {
-                                  const rowIdx = navRowIndex.get(item.id) ?? -1;
+                                {orderedColumns.map((c) => {
                                   const isEditing = editing?.id === item.id && editing.key === c.key;
                                   if (isEditing) {
                                     return (
@@ -1032,13 +988,10 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
                                           autoFocus
                                           value={draftValue}
                                           onChange={(e) => setDraftValue(e.target.value)}
-                                          onBlur={() => commitEdit(item, "none")}
+                                          onBlur={() => commitEdit(item)}
                                           onKeyDown={(e) => {
-                                            // The cell's editor owns its keys while open; the grid
-                                            // only resumes once we hand control back.
-                                            e.stopPropagation();
-                                            if (e.key === "Enter") { e.preventDefault(); commitEdit(item, "down"); }
-                                            if (e.key === "Escape") { e.preventDefault(); setEditing(null); nav.endEdit(); }
+                                            if (e.key === "Enter") { e.preventDefault(); commitEdit(item); }
+                                            if (e.key === "Escape") { e.preventDefault(); setEditing(null); }
                                           }}
                                           className={`h-6 px-1 py-0 text-xs border bg-transparent ${c.align === "right" ? "text-right" : ""}`}
                                           data-testid={`edit-${c.key}-${item.id}`}
@@ -1049,20 +1002,8 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
                                   return (
                                     <div
                                       key={c.key}
-                                      tabIndex={-1}
-                                      data-grid-row={rowIdx}
-                                      data-grid-col={colIdx}
-                                      className={`min-w-0 rounded-sm outline-none ${
-                                        EDITABLE[c.key] ? "cursor-text" : ""
-                                      } ${
-                                        nav.isActive(rowIdx, colIdx)
-                                          ? "ring-2 ring-primary/70 ring-inset bg-primary/5"
-                                          : EDITABLE[c.key] ? "hover:bg-muted/50" : ""
-                                      }`}
-                                      onClick={() => {
-                                        nav.setActive({ row: rowIdx, col: colIdx });
-                                        beginEdit(item, c.key);
-                                      }}
+                                      className={`min-w-0 ${EDITABLE[c.key] ? "cursor-text rounded-sm hover:bg-muted/50" : ""}`}
+                                      onClick={() => beginEdit(item, c.key)}
                                       data-testid={`cell-${c.key}-${item.id}`}
                                     >
                                       {renderCell(c.key, item)}
