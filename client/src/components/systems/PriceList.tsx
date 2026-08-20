@@ -1,7 +1,7 @@
 import { useState, useEffect, forwardRef, useImperativeHandle, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { Plus, Search, Filter, Edit, Trash2, ChevronRight, ChevronDown, Building, Tag, DollarSign, Box, Loader2, ChevronsUpDown, ChevronsDownUp, ToggleLeft, ToggleRight, X } from "lucide-react";
+import { Plus, Search, Filter, Edit, Trash2, ChevronRight, ChevronDown, Building, Tag, DollarSign, Box, Loader2, ChevronsUpDown, ChevronsDownUp, ToggleLeft, ToggleRight, X, MoreVertical, FolderPlus } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -82,9 +82,11 @@ interface PriceListProps {
   priceListId?: string;
   /** Drives which columns/fields make sense: a rate card has no lead time. */
   kind?: "supplier" | "labour" | "internal";
+  /** Opens the parent page's list-details modal from the overflow menu. */
+  onEditList?: () => void;
 }
 
-export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQuery: externalSearch = "", priceListId, kind = "internal" }, ref) => {
+export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQuery: externalSearch = "", priceListId, kind = "internal", onEditList }, ref) => {
   const { toast } = useToast();
   const [internalSearch, setInternalSearch] = useState("");
   const [groupBy, setGroupBy] = useState<GroupBy>("group");
@@ -285,9 +287,9 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
       case "unit":
         return <p className="text-[11px] text-muted-foreground truncate">{item.unitType || "—"}</p>;
       case "cost":
-        return <p className="text-xs font-mono text-right tabular-nums">{formatCurrency(item.costPrice)}</p>;
+        return <p className="text-xs text-foreground text-right tabular-nums">{formatCurrency(item.costPrice)}</p>;
       case "sell":
-        return <p className="text-xs font-mono text-right tabular-nums">{formatCurrency(item.sellPrice)}</p>;
+        return <p className="text-xs text-foreground text-right tabular-nums">{formatCurrency(item.sellPrice)}</p>;
       case "markup":
         return (
           <p className="text-[11px] text-muted-foreground text-right tabular-nums">
@@ -550,9 +552,52 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
               )}
             </PopoverContent>
           </Popover>
-
         </div>
 
+        <div className="flex items-center gap-1 flex-shrink-0">
+          <button
+            className="h-6 w-auto px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-0.5"
+            onClick={() => setShowAddModal(true)}
+            data-testid="button-add-price-list-item"
+          >
+            <Plus className="w-3 h-3" />
+            <span>Add Item</span>
+          </button>
+
+          {/* Everything that isn't the primary action lives here rather than as a
+              loose button under the last group. */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                className="h-6 w-6 flex items-center justify-center rounded-md border border-border/50 text-muted-foreground hover-elevate active-elevate-2"
+                data-testid="button-list-overflow"
+                aria-label="More actions"
+              >
+                <MoreVertical className="h-3 w-3" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              {priceListId && (
+                <DropdownMenuItem
+                  onClick={() => {
+                    const name = window.prompt("New group name")?.trim();
+                    if (name) createGroupMutation.mutate(name);
+                  }}
+                  data-testid="button-add-group"
+                >
+                  <FolderPlus className="h-3 w-3 mr-2" />
+                  Add group
+                </DropdownMenuItem>
+              )}
+              {onEditList && (
+                <DropdownMenuItem onClick={onEditList} data-testid="button-edit-list-details">
+                  <Edit className="h-3 w-3 mr-2" />
+                  List details
+                </DropdownMenuItem>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       </div>
 
       {/* Each group is its own section card on the page ground — same shape as the
@@ -733,19 +778,6 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
               );
             })}
 
-            {priceListId && (
-              <button
-                onClick={() => {
-                  const name = window.prompt("New group name")?.trim();
-                  if (name) createGroupMutation.mutate(name);
-                }}
-                className="h-7 w-auto px-3 text-xs border border-dashed border-border rounded-lg text-muted-foreground hover-elevate active-elevate-2 flex items-center gap-1"
-                data-testid="button-add-group"
-              >
-                <Plus className="h-3 w-3" />
-                Add group
-              </button>
-            )}
           </>
         )}
       </div>
