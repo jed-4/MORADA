@@ -264,25 +264,27 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
         size: 90,
         meta: { defaultWidth: 90, headerLabel: "Code" } satisfies DataTableColumnMeta,
       },
-      {
+      // On a supplier list every row carries the list's own supplier, so the column
+      // is a wall of "-". Spend the width on something that varies.
+      ...(kind === "supplier" ? [] : [{
         id: "supplier",
         header: "Supplier",
-        accessorFn: (i) => suppliers.find((s) => s.id === i.supplierId)?.name || "",
-        cell: ({ row }) => (
+        accessorFn: (i: PriceListItem) => suppliers.find((s) => s.id === i.supplierId)?.name || "",
+        cell: ({ row }: { row: { original: PriceListItem } }) => (
           <span className="text-xs">
             {suppliers.find((s) => s.id === row.original.supplierId)?.name || "-"}
           </span>
         ),
         size: 120,
         meta: { defaultWidth: 120, headerLabel: "Supplier" } satisfies DataTableColumnMeta,
-      },
+      }]),
       {
         id: "unit",
         header: "Unit",
         accessorFn: (i) => i.unitType || "",
         cell: ({ row }) => <span className="text-xs">{row.original.unitType || "-"}</span>,
-        size: 60,
-        meta: { defaultWidth: 60, headerLabel: "Unit" } satisfies DataTableColumnMeta,
+        size: 72,
+        meta: { defaultWidth: 72, headerLabel: "Unit" } satisfies DataTableColumnMeta,
       },
       {
         id: "costEx",
@@ -291,8 +293,8 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
         cell: ({ row }) => (
           <span className="text-xs font-mono">{formatCurrency(row.original.costPrice)}</span>
         ),
-        size: 90,
-        meta: { defaultWidth: 90, align: "right", headerLabel: "Cost (ex)" } satisfies DataTableColumnMeta,
+        size: 104,
+        meta: { defaultWidth: 104, align: "right", headerLabel: "Cost (ex)" } satisfies DataTableColumnMeta,
       },
       {
         id: "costInc",
@@ -303,8 +305,8 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
             {formatCurrencyIncGst(row.original.costPrice)}
           </span>
         ),
-        size: 90,
-        meta: { defaultWidth: 90, align: "right", headerLabel: "Cost (inc)" } satisfies DataTableColumnMeta,
+        size: 104,
+        meta: { defaultWidth: 104, align: "right", headerLabel: "Cost (inc)" } satisfies DataTableColumnMeta,
       },
       {
         id: "sellEx",
@@ -313,8 +315,8 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
         cell: ({ row }) => (
           <span className="text-xs font-mono">{formatCurrency(row.original.sellPrice)}</span>
         ),
-        size: 90,
-        meta: { defaultWidth: 90, align: "right", headerLabel: "Sell (ex)" } satisfies DataTableColumnMeta,
+        size: 104,
+        meta: { defaultWidth: 104, align: "right", headerLabel: "Sell (ex)" } satisfies DataTableColumnMeta,
       },
       {
         id: "sellInc",
@@ -325,8 +327,8 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
             {formatCurrencyIncGst(row.original.sellPrice)}
           </span>
         ),
-        size: 90,
-        meta: { defaultWidth: 90, align: "right", headerLabel: "Sell (inc)" } satisfies DataTableColumnMeta,
+        size: 104,
+        meta: { defaultWidth: 104, align: "right", headerLabel: "Sell (inc)" } satisfies DataTableColumnMeta,
       },
       {
         id: "markup",
@@ -340,8 +342,8 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
         cell: ({ row }) => (
           <span className="text-xs">{getMarkup(row.original.costPrice, row.original.sellPrice)}</span>
         ),
-        size: 70,
-        meta: { defaultWidth: 70, align: "right", headerLabel: "Markup" } satisfies DataTableColumnMeta,
+        size: 84,
+        meta: { defaultWidth: 84, align: "right", headerLabel: "Markup" } satisfies DataTableColumnMeta,
       },
       {
         id: "status",
@@ -355,8 +357,8 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
             {row.original.isActive ? "Active" : "Inactive"}
           </Badge>
         ),
-        size: 80,
-        meta: { defaultWidth: 80, headerLabel: "Status" } satisfies DataTableColumnMeta,
+        size: 88,
+        meta: { defaultWidth: 88, headerLabel: "Status" } satisfies DataTableColumnMeta,
       },
       {
         id: "actions",
@@ -396,7 +398,7 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
       },
     ],
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [suppliers],
+    [suppliers, costCodes, kind],
   );
 
   const groups = useMemo(() => groupedItems(), [groupBy, items, priceListGroups, suppliers]);
@@ -456,7 +458,7 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
               placeholder="Search items..."
               value={internalSearch}
               onChange={(e) => setInternalSearch(e.target.value)}
-              className="h-6 pl-7 pr-6 text-xs"
+              className="h-6 pl-7 pr-6 py-0 text-xs border bg-transparent"
               data-testid="input-search-items"
             />
             {internalSearch && (
@@ -546,6 +548,20 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
                 </Select>
               </div>
 
+              <div className="space-y-1.5 border-t pt-3">
+                <Label className="text-xs text-muted-foreground">Group by</Label>
+                <Select value={groupBy} onValueChange={(v) => setGroupBy(v as GroupBy)}>
+                  <SelectTrigger className="h-7 text-xs" data-testid="select-group-by">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="group">Group</SelectItem>
+                    <SelectItem value="supplier">Supplier</SelectItem>
+                    <SelectItem value="none">None</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
               {activeFilterCount > 0 && (
                 <button
                   onClick={() => { setFilterGroup("all"); setFilterSupplier("all"); setFilterStatus("all"); }}
@@ -558,24 +574,8 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
             </PopoverContent>
           </Popover>
 
-          <span className="text-xs text-muted-foreground ml-1 truncate">
-            {items.length} {items.length === 1 ? "item" : "items"}
-          </span>
         </div>
 
-        <div className="flex items-center gap-1 flex-shrink-0">
-          <span className="text-xs text-muted-foreground">Group</span>
-          <Select value={groupBy} onValueChange={(v) => setGroupBy(v as GroupBy)}>
-            <SelectTrigger className="h-6 w-24 text-xs" data-testid="select-group-by">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="none">None</SelectItem>
-              <SelectItem value="group">Group</SelectItem>
-              <SelectItem value="supplier">Supplier</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
       </div>
 
       <div className="flex-1 overflow-auto">
@@ -663,13 +663,13 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
               </div>
             ))}
 
-            {groupBy === "group" && priceListId && (
+            {priceListId && (
               <button
                 onClick={() => {
                   const name = window.prompt("New group name")?.trim();
                   if (name) createGroupMutation.mutate(name);
                 }}
-                className="h-6 w-auto px-2 text-xs border border-dashed border-border rounded-md text-muted-foreground hover-elevate active-elevate-2 flex items-center gap-1"
+                className="mt-1 h-6 w-auto px-2 text-xs border border-dashed border-border rounded-md text-muted-foreground hover-elevate active-elevate-2 flex items-center gap-1"
                 data-testid="button-add-group"
               >
                 <Plus className="h-3 w-3" />
