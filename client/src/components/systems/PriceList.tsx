@@ -459,6 +459,12 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
   const [draftValue, setDraftValue] = useState("");
   /** Per-group "type a name to add an item" row. */
   const [newRow, setNewRow] = useState<Record<string, string>>({});
+  /** Groups whose blank add-row is currently open. */
+  const [addingIn, setAddingIn] = useState<Set<string>>(new Set());
+  const openAddRow = (groupId: string) =>
+    setAddingIn((prev) => new Set(prev).add(groupId));
+  const closeAddRow = (groupId: string) =>
+    setAddingIn((prev) => { const next = new Set(prev); next.delete(groupId); return next; });
 
   const [hiddenColumns, setHiddenColumns] = useState<Record<string, boolean>>(
     () => loadHiddenColumns("price-list"),
@@ -952,11 +958,7 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
                             <span />
                           </div>
 
-                          {group.items.length === 0 ? (
-                            <p className="py-6 text-center text-xs text-muted-foreground">
-                              Nothing in this group yet.
-                            </p>
-                          ) : (
+                          {group.items.length === 0 ? null : (
                             group.items.map((item) => (
                               <div
                                 key={item.id}
@@ -1036,28 +1038,56 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
                             ))
                           )}
 
-                          {/* Type a name, press Enter — the item lands in this group. */}
+                          {/* One affordance: the blank row only exists once asked for. */}
                           {priceListId && (
-                            <div
-                              className="grid items-center py-1.5 gap-2"
-                              style={{ gridTemplateColumns: gridTemplate }}
-                            >
-                              <span />
-                              <Input
-                                value={newRow[group.id] ?? ""}
-                                onChange={(e) => setNewRow((p) => ({ ...p, [group.id]: e.target.value }))}
-                                onKeyDown={(e) => {
-                                  if (e.key !== "Enter") return;
-                                  const name = (newRow[group.id] ?? "").trim();
-                                  if (!name) return;
-                                  quickAdd.mutate({ name, groupId: group.id === "ungrouped" ? null : group.id });
-                                  setNewRow((p) => ({ ...p, [group.id]: "" }));
-                                }}
-                                placeholder="Add an item…"
-                                className="h-6 px-1 py-0 text-xs border-0 bg-transparent placeholder:text-muted-foreground/60 focus-visible:ring-0"
-                                data-testid={`input-new-item-${group.id}`}
-                              />
-                            </div>
+                            addingIn.has(group.id) ? (
+                              <div
+                                className="grid items-center py-1.5 gap-2"
+                                style={{ gridTemplateColumns: gridTemplate }}
+                              >
+                                <span />
+                                <Input
+                                  autoFocus
+                                  value={newRow[group.id] ?? ""}
+                                  onChange={(e) => setNewRow((p) => ({ ...p, [group.id]: e.target.value }))}
+                                  onBlur={() => {
+                                    const name = (newRow[group.id] ?? "").trim();
+                                    if (name) {
+                                      quickAdd.mutate({ name, groupId: group.id === "ungrouped" ? null : group.id });
+                                      setNewRow((p) => ({ ...p, [group.id]: "" }));
+                                    }
+                                    closeAddRow(group.id);
+                                  }}
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Escape") {
+                                      e.preventDefault();
+                                      setNewRow((p) => ({ ...p, [group.id]: "" }));
+                                      closeAddRow(group.id);
+                                      return;
+                                    }
+                                    if (e.key !== "Enter") return;
+                                    e.preventDefault();
+                                    const name = (newRow[group.id] ?? "").trim();
+                                    if (!name) { closeAddRow(group.id); return; }
+                                    quickAdd.mutate({ name, groupId: group.id === "ungrouped" ? null : group.id });
+                                    // Stay open so a run of items can be typed in one go.
+                                    setNewRow((p) => ({ ...p, [group.id]: "" }));
+                                  }}
+                                  placeholder="Item name, then Enter"
+                                  className="h-6 px-1 py-0 text-xs border bg-transparent"
+                                  data-testid={`input-new-item-${group.id}`}
+                                />
+                              </div>
+                            ) : (
+                              <button
+                                onClick={() => openAddRow(group.id)}
+                                className="mt-1 flex items-center gap-1 px-1 py-1.5 text-xs text-muted-foreground hover:text-foreground"
+                                data-testid={`button-add-item-${group.id}`}
+                              >
+                                <Plus className="h-3 w-3" />
+                                Add an item
+                              </button>
+                            )
                           )}
                         </div>
                       </div>
