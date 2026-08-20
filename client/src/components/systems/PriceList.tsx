@@ -198,7 +198,7 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
 
   const groupedItems = () => {
     if (groupBy === "none") {
-      return [{ id: "all", name: "All Items", items: items }];
+      return [{ id: "all", name: "All Items", colour: null, items }];
     }
 
     if (groupBy === "group") {
@@ -213,9 +213,11 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
       });
 
       const ordered = [
-        ...priceListGroups.map((g) => ({ id: g.id, name: g.name, items: grouped.get(g.id) ?? [] })),
+        ...priceListGroups.map((g) => ({
+          id: g.id, name: g.name, colour: g.colour ?? null, items: grouped.get(g.id) ?? [],
+        })),
         ...(grouped.has("ungrouped")
-          ? [{ id: "ungrouped", name: "Ungrouped", items: grouped.get("ungrouped")! }]
+          ? [{ id: "ungrouped", name: "Ungrouped", colour: null, items: grouped.get("ungrouped")! }]
           : []),
       ];
       return ordered;
@@ -234,6 +236,7 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
         return {
           id: key,
           name: supplier?.name || "No Supplier",
+          colour: null,
           items: groupItems,
         };
       });
@@ -253,6 +256,17 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
   const formatCurrencyIncGst = (cents: number | null | undefined) => {
     if (cents === null || cents === undefined) return "-";
     return formatCents(incGstFromEx(cents));
+  };
+
+  /** "12 items · $4.20 – $24.90" — what you actually scan a supplier's book for. */
+  const groupSummary = (groupItems: PriceListItem[]) => {
+    const n = groupItems.length;
+    const label = `${n} ${n === 1 ? "item" : "items"}`;
+    const costs = groupItems.map((i) => i.costPrice).filter((c): c is number => typeof c === "number" && c > 0);
+    if (costs.length === 0) return label;
+    const lo = Math.min(...costs);
+    const hi = Math.max(...costs);
+    return `${label} · ${lo === hi ? formatCents(lo) : `${formatCents(lo)} – ${formatCents(hi)}`}`;
   };
 
   const renderCell = (key: string, item: PriceListItem) => {
@@ -397,7 +411,7 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
     <div className="flex flex-col h-full" data-testid="price-list">
       {/* Grid toolbar — second row inside the page card. Filters collapse behind a
           single control with a count badge, matching Tasks. */}
-      <div className="h-9 flex items-center justify-between px-3 gap-2 flex-shrink-0 mt-2">
+      <div className="h-9 flex items-center justify-between px-4 gap-2 flex-shrink-0">
         <div className="flex items-center gap-1 min-w-0">
           {groupBy !== "none" && (
             <Tooltip>
@@ -569,14 +583,11 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
               return (
                 <div
                   key={group.id}
-                  className="relative bg-card rounded-xl border border-border overflow-hidden"
+                  className="bg-card rounded-md border border-border overflow-hidden"
+                  style={{ boxShadow: "var(--shadow-card)" }}
                   data-testid={`section-group-${group.id}`}
                 >
-                  <div
-                    className="absolute left-0 top-0 bottom-0 w-[3px]"
-                    style={{ background: "hsl(var(--primary))" }}
-                  />
-                  <div className="px-5 py-3 pl-6">
+                  <div className="px-4 py-3">
                     <div className="group/hdr flex items-center justify-between gap-2">
                       <button
                         onClick={() => groupBy !== "none" && toggleGroup(group.id)}
@@ -589,10 +600,19 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
                             : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
                         )}
                         <div className="min-w-0">
-                          <p className="text-sm font-semibold text-foreground truncate">{group.name}</p>
-                          <p className="text-xs text-muted-foreground">
-                            {group.items.length} {group.items.length === 1 ? "item" : "item(s)"}
-                          </p>
+                          <div className="flex items-center gap-1.5">
+                            {/* Only drawn when the group actually has a colour set — an
+                                accent every group shares tells you nothing. */}
+                            {group.colour && (
+                              <span
+                                className="h-2 w-2 rounded-full flex-shrink-0"
+                                style={{ background: group.colour }}
+                                aria-hidden="true"
+                              />
+                            )}
+                            <p className="text-sm font-semibold text-foreground truncate">{group.name}</p>
+                          </div>
+                          <p className="text-xs text-muted-foreground">{groupSummary(group.items)}</p>
                         </div>
                       </button>
 
@@ -631,7 +651,7 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
                     </div>
 
                     {expanded && (
-                      <div className="mt-2 overflow-x-auto dt-autohide-scrollbar">
+                      <div className="mt-3 border-t border-border overflow-x-auto dt-autohide-scrollbar">
                         <div style={{ minWidth: gridCols.minWidth }}>
                           {/* column labels */}
                           <div

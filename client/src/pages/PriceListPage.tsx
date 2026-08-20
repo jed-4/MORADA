@@ -100,9 +100,9 @@ export default function PriceListPage() {
         {list.isDefault && <Star className="h-3 w-3 fill-primary text-primary flex-shrink-0" aria-label="Default list" />}
       </div>
 
-      {/* Header panel — single condensed row, card top. */}
-      <div className="border border-border rounded-t-lg bg-card flex-shrink-0">
-        <div className="h-9 flex items-center justify-between px-3 gap-2">
+      {/* Floats on the page ground — the group cards are the only card surfaces. */}
+      <div className="flex-shrink-0">
+        <div className="h-9 flex items-center justify-between px-4 gap-2">
           <div className="flex items-center gap-1.5 min-w-0">
             <KindIcon className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
             <Badge variant="outline" className="h-4 text-label flex-shrink-0">{meta.label}</Badge>
