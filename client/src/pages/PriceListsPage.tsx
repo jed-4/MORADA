@@ -120,7 +120,7 @@ export default function PriceListsPage() {
                 placeholder="Search..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                className="h-6 pl-7 pr-6 text-xs"
+                className="h-6 pl-7 pr-6 py-0 text-xs border bg-transparent"
                 data-testid="input-search-price-lists"
               />
               {search && (
