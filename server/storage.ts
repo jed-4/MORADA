@@ -1425,8 +1425,8 @@ export interface IStorage {
 
   // Bill Line Item Price Links (for AI Review)
   getBillLineItemPriceLinks(companyId: string, status?: string): Promise<(BillLineItemPriceLink & { billLineItem?: import("@shared/schema").BillLineItem; bill?: import("@shared/schema").Bill })[]>;
-  createBillLineItemPriceLink(link: InsertBillLineItemPriceLink): Promise<BillLineItemPriceLink>;
-  updateBillLineItemPriceLink(id: string, link: Partial<InsertBillLineItemPriceLink>): Promise<BillLineItemPriceLink | undefined>;
+  createBillLineItemPriceLink(link: InsertBillLineItemPriceLink, companyId: string): Promise<BillLineItemPriceLink | undefined>;
+  updateBillLineItemPriceLink(id: string, link: Partial<InsertBillLineItemPriceLink>, companyId: string): Promise<BillLineItemPriceLink | undefined>;
   getUnlinkedBillLineItems(companyId: string): Promise<Array<import("@shared/schema").BillLineItem & { bill: import("@shared/schema").Bill; supplier: import("@shared/schema").Contact | null }>>;
 
   // Dashboard Views CRUD
@@ -25327,8 +25327,28 @@ export class DbStorage implements IStorage {
     }
   }
 
-  async createBillLineItemPriceLink(link: InsertBillLineItemPriceLink): Promise<BillLineItemPriceLink> {
+  async createBillLineItemPriceLink(link: InsertBillLineItemPriceLink, companyId: string): Promise<BillLineItemPriceLink | undefined> {
     try {
+      // The bill line must belong to this company — bill line -> bill -> project.
+      // Without this, any authenticated user could attach a link to another
+      // tenant's bill line by guessing an id.
+      const [owned] = await db
+        .select({ id: schema.billLineItems.id })
+        .from(schema.billLineItems)
+        .innerJoin(schema.bills, eq(schema.billLineItems.billId, schema.bills.id))
+        .innerJoin(schema.projects, eq(schema.bills.projectId, schema.projects.id))
+        .where(and(
+          eq(schema.billLineItems.id, link.billLineItemId),
+          eq(schema.projects.companyId, companyId),
+        ));
+      if (!owned) return undefined;
+
+      // A link may only point at one of OUR price list items.
+      if (link.priceListItemId) {
+        const item = await this.getPriceListItem(link.priceListItemId, companyId);
+        if (!item) return undefined;
+      }
+
       const result = await db.insert(schema.billLineItemPriceLinks).values(link).returning();
       return result[0];
     } catch (error) {
@@ -25337,8 +25357,28 @@ export class DbStorage implements IStorage {
     }
   }
 
-  async updateBillLineItemPriceLink(id: string, link: Partial<InsertBillLineItemPriceLink>): Promise<BillLineItemPriceLink | undefined> {
+  async updateBillLineItemPriceLink(id: string, link: Partial<InsertBillLineItemPriceLink>, companyId: string): Promise<BillLineItemPriceLink | undefined> {
     try {
+      // This row had NO company scoping at all: any authenticated user could
+      // mutate any company's link by id. Confirm ownership through the same
+      // bill line -> bill -> project chain before touching it.
+      const [owned] = await db
+        .select({ id: schema.billLineItemPriceLinks.id })
+        .from(schema.billLineItemPriceLinks)
+        .innerJoin(schema.billLineItems, eq(schema.billLineItemPriceLinks.billLineItemId, schema.billLineItems.id))
+        .innerJoin(schema.bills, eq(schema.billLineItems.billId, schema.bills.id))
+        .innerJoin(schema.projects, eq(schema.bills.projectId, schema.projects.id))
+        .where(and(
+          eq(schema.billLineItemPriceLinks.id, id),
+          eq(schema.projects.companyId, companyId),
+        ));
+      if (!owned) return undefined;
+
+      if (link.priceListItemId) {
+        const item = await this.getPriceListItem(link.priceListItemId, companyId);
+        if (!item) return undefined;
+      }
+
       const result = await db.update(schema.billLineItemPriceLinks)
         .set(link)
         .where(eq(schema.billLineItemPriceLinks.id, id))
