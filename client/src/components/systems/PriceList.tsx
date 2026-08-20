@@ -79,7 +79,7 @@ function saveColumnOrder(namespace: string, order: string[]) {
  *  column picker — the fields exist on an item but would crowd the default view. */
 const GRID_COLUMNS = [
   { key: "name",         label: "Item",        defaultWidth: 260, required: true },
-  { key: "code",         label: "Code",        defaultWidth: 110, defaultVisible: false },
+  { key: "code",         label: "SKU",         defaultWidth: 120 },
   { key: "nickname",     label: "Nickname",    defaultWidth: 140, defaultVisible: false },
   { key: "supplier",     label: "Supplier",    defaultWidth: 150, defaultVisible: false },
   { key: "supplierCode", label: "Supplier ref", defaultWidth: 120, defaultVisible: false },
@@ -91,7 +91,6 @@ const GRID_COLUMNS = [
   { key: "sellInc",      label: "Sell (inc)",  defaultWidth: 110, align: "right" as const, defaultVisible: false },
   { key: "markup",       label: "Markup",      defaultWidth: 90,  align: "right" as const },
   { key: "leadTime",     label: "Lead time",   defaultWidth: 100, align: "right" as const, defaultVisible: false },
-  { key: "status",       label: "Status",      defaultWidth: 90 },
 ];
 
 type GridColumn = (typeof GRID_COLUMNS)[number];
@@ -213,6 +212,73 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
       toast({ title: "Failed to delete group", description: error.message, variant: "destructive" }),
   });
 
+  const patchItem = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: Record<string, unknown> }) =>
+      apiRequest(`/api/price-list/items/${id}`, "PATCH", data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/price-list/items"] });
+    },
+    onError: (error: any) =>
+      toast({ title: "Failed to save", description: error.message, variant: "destructive" }),
+  });
+
+  const quickAdd = useMutation({
+    mutationFn: ({ name, groupId }: { name: string; groupId: string | null }) =>
+      apiRequest("/api/price-list/items", "POST", {
+        name, priceListId, groupId, unitType: "ea", costPrice: 0,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/price-list/items"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/price-lists"] });
+    },
+    onError: (error: any) =>
+      toast({ title: "Failed to add item", description: error.message, variant: "destructive" }),
+  });
+
+  const bulkDelete = useMutation({
+    mutationFn: async (ids: string[]) => {
+      await Promise.all(ids.map((id) => apiRequest(`/api/price-list/items/${id}`, "DELETE")));
+    },
+    onSuccess: (_d, ids) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/price-list/items"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/price-lists"] });
+      setSelected(new Set());
+      toast({ title: `${ids.length} item${ids.length === 1 ? "" : "s"} deleted` });
+    },
+    onError: (error: any) =>
+      toast({ title: "Failed to delete", description: error.message, variant: "destructive" }),
+  });
+
+  /** Which fields can be typed into directly, and how their text maps to the API. */
+  const EDITABLE: Record<string, { get: (i: PriceListItem) => string; toPayload: (v: string) => Record<string, unknown> | null }> = {
+    name: { get: (i) => i.name ?? "", toPayload: (v) => (v.trim() ? { name: v.trim() } : null) },
+    code: { get: (i) => i.code ?? "", toPayload: (v) => ({ code: v.trim() || null }) },
+    nickname: { get: (i) => i.nickname ?? "", toPayload: (v) => ({ nickname: v.trim() || null }) },
+    supplierCode: { get: (i) => i.supplierCode ?? "", toPayload: (v) => ({ supplierCode: v.trim() || null }) },
+    brand: { get: (i) => i.brand ?? "", toPayload: (v) => ({ brand: v.trim() || null }) },
+    unit: { get: (i) => i.unitType ?? "", toPayload: (v) => (v.trim() ? { unitType: v.trim() } : null) },
+    // Typed in dollars, stored in cents — the boundary that caused the original bug.
+    cost: { get: (i) => (i.costPrice ? String(centsToDollars(i.costPrice)) : ""), toPayload: (v) => ({ costPrice: v.trim() ? dollarsToCents(v) : 0 }) },
+    sell: { get: (i) => (i.sellPrice ? String(centsToDollars(i.sellPrice)) : ""), toPayload: (v) => ({ sellPrice: v.trim() ? dollarsToCents(v) : null }) },
+    leadTime: { get: (i) => (i.leadTimeDays ? String(i.leadTimeDays) : ""), toPayload: (v) => ({ leadTimeDays: v.trim() ? parseInt(v, 10) : null }) },
+  };
+
+  const beginEdit = (item: PriceListItem, key: string) => {
+    if (!EDITABLE[key]) return;
+    setEditing({ id: item.id, key });
+    setDraftValue(EDITABLE[key].get(item));
+  };
+
+  const commitEdit = (item: PriceListItem) => {
+    if (!editing) return;
+    const spec = EDITABLE[editing.key];
+    setEditing(null);
+    if (!spec) return;
+    if (draftValue === spec.get(item)) return;   // untouched — don't burn a request
+    const payload = spec.toPayload(draftValue);
+    if (payload) patchItem.mutate({ id: item.id, data: payload });
+  };
+
   const toggleGroup = (groupId: string) => {
     const newExpanded = new Set(expandedGroups);
     if (newExpanded.has(groupId)) {
@@ -306,10 +372,8 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
         return (
           <>
             <p className="text-xs font-semibold text-foreground truncate">{item.name}</p>
-            {(item.nickname || item.code) && (
-              <p className="text-[10px] text-muted-foreground truncate">
-                {[item.nickname, item.code].filter(Boolean).join(" · ")}
-              </p>
+            {item.nickname && (
+              <p className="text-[10px] text-muted-foreground truncate">{item.nickname}</p>
             )}
           </>
         );
@@ -357,15 +421,6 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
             {getMarkup(item.costPrice, item.sellPrice)}
           </p>
         );
-      case "status":
-        return item.isActive ? null : (
-          <span
-            className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold w-fit"
-            style={{ background: "hsl(var(--muted))", color: "hsl(var(--muted-foreground))" }}
-          >
-            Inactive
-          </span>
-        );
       default:
         return null;
     }
@@ -398,6 +453,12 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
   );
   const [dragKey, setDragKey] = useState<string | null>(null);
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  /** Which cell is open for editing, and the text currently in it. */
+  const [editing, setEditing] = useState<{ id: string; key: string } | null>(null);
+  const [draftValue, setDraftValue] = useState("");
+  /** Per-group "type a name to add an item" row. */
+  const [newRow, setNewRow] = useState<Record<string, string>>({});
 
   const [hiddenColumns, setHiddenColumns] = useState<Record<string, boolean>>(
     () => loadHiddenColumns("price-list"),
@@ -446,14 +507,14 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
     const targetIndex = { current: columnOrder.indexOf(key) };
 
     const onMove = (ev: MouseEvent) => {
-      const rect = row.getBoundingClientRect();
-      const x = ev.clientX - rect.left;
-      let acc = 0;
-      let idx = orderedColumns.length - 1;
-      for (let i = 0; i < orderedColumns.length; i++) {
-        const w = gridCols.widthFor(orderedColumns[i].key, orderedColumns[i].defaultWidth) + 8; // + gap-2
-        if (x < acc + w) { idx = i; break; }
-        acc += w;
+      const cells = Array.from(
+        row.querySelectorAll<HTMLElement>('[data-testid^="col-header-"]'),
+      );
+      if (cells.length === 0) return;
+      let idx = cells.length - 1;
+      for (let i = 0; i < cells.length; i++) {
+        const r = cells[i].getBoundingClientRect();
+        if (ev.clientX < r.left + r.width / 2) { idx = i; break; }
       }
       targetIndex.current = idx;
       setHoverIndex(idx);
@@ -475,6 +536,7 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
 
   // Trailing 72px is the fixed (non-draggable) actions cell.
   const gridCols = useResizableColumns("price-list", orderedColumns, 72);
+  const gridTemplate = `32px ${gridCols.gridTemplate}`;
 
   const activeFilterCount =
     (filterGroup !== "all" ? 1 : 0) +
@@ -497,6 +559,30 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
       {/* Grid toolbar — second row inside the page card. Filters collapse behind a
           single control with a count badge, matching Tasks. */}
       <div className="h-9 flex items-center justify-between px-4 gap-2 flex-shrink-0">
+        {selected.size > 0 ? (
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="text-xs font-medium">{selected.size} selected</span>
+            <button
+              onClick={() => {
+                if (window.confirm(`Delete ${selected.size} item${selected.size === 1 ? "" : "s"}?`)) {
+                  bulkDelete.mutate(Array.from(selected));
+                }
+              }}
+              className="h-6 px-2 text-xs rounded-md border border-border/50 text-destructive hover-elevate active-elevate-2 flex items-center gap-1"
+              data-testid="button-bulk-delete"
+            >
+              <Trash2 className="h-3 w-3" />
+              Delete
+            </button>
+            <button
+              onClick={() => setSelected(new Set())}
+              className="h-6 px-2 text-xs rounded-md border border-border/50 text-muted-foreground hover-elevate active-elevate-2"
+              data-testid="button-clear-selection"
+            >
+              Clear
+            </button>
+          </div>
+        ) : (
         <div className="flex items-center gap-1 min-w-0">
           {groupBy !== "none" && (
             <Tooltip>
@@ -636,6 +722,7 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
             </PopoverContent>
           </Popover>
         </div>
+        )}
 
         <div className="flex items-center gap-1 flex-shrink-0">
           <Popover>
@@ -823,12 +910,24 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
 
                     {expanded && (
                       <div className="mt-3 border-t border-border overflow-x-auto dt-autohide-scrollbar">
-                        <div style={{ minWidth: gridCols.minWidth }}>
+                        <div style={{ minWidth: gridCols.minWidth + 32 }}>
                           {/* column labels */}
                           <div
                             className="grid text-[9px] font-semibold text-muted-foreground uppercase tracking-wide py-2 border-b border-border gap-2"
-                            style={{ gridTemplateColumns: gridCols.gridTemplate }}
+                            style={{ gridTemplateColumns: gridTemplate }}
                           >
+                            <span className="flex items-center justify-center">
+                              <Checkbox
+                                checked={group.items.length > 0 && group.items.every((i) => selected.has(i.id))}
+                                onCheckedChange={(v) => setSelected((prev) => {
+                                  const next = new Set(prev);
+                                  group.items.forEach((i) => v ? next.add(i.id) : next.delete(i.id));
+                                  return next;
+                                })}
+                                aria-label="Select all in group"
+                                data-testid={`select-all-${group.id}`}
+                              />
+                            </span>
                             {orderedColumns.map((c, idx) => (
                               <span
                                 key={c.key}
@@ -862,13 +961,53 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
                               <div
                                 key={item.id}
                                 className="group/row grid items-center py-2.5 border-b border-border gap-2 hover:bg-muted/30 rounded-sm"
-                                style={{ gridTemplateColumns: gridCols.gridTemplate }}
+                                style={{ gridTemplateColumns: gridTemplate }}
                                 data-testid={`row-item-${item.id}`}
                               >
+                                <div className="flex items-center justify-center">
+                                  <Checkbox
+                                    checked={selected.has(item.id)}
+                                    onCheckedChange={(v) => setSelected((prev) => {
+                                      const next = new Set(prev);
+                                      v ? next.add(item.id) : next.delete(item.id);
+                                      return next;
+                                    })}
+                                    aria-label={`Select ${item.name}`}
+                                    data-testid={`select-row-${item.id}`}
+                                  />
+                                </div>
                                 {/* Cells follow the header order, so reordering moves both. */}
-                                {orderedColumns.map((c) => (
-                                  <div key={c.key} className="min-w-0">{renderCell(c.key, item)}</div>
-                                ))}
+                                {orderedColumns.map((c) => {
+                                  const isEditing = editing?.id === item.id && editing.key === c.key;
+                                  if (isEditing) {
+                                    return (
+                                      <div key={c.key} className="min-w-0">
+                                        <Input
+                                          autoFocus
+                                          value={draftValue}
+                                          onChange={(e) => setDraftValue(e.target.value)}
+                                          onBlur={() => commitEdit(item)}
+                                          onKeyDown={(e) => {
+                                            if (e.key === "Enter") { e.preventDefault(); commitEdit(item); }
+                                            if (e.key === "Escape") { e.preventDefault(); setEditing(null); }
+                                          }}
+                                          className={`h-6 px-1 py-0 text-xs border bg-transparent ${c.align === "right" ? "text-right" : ""}`}
+                                          data-testid={`edit-${c.key}-${item.id}`}
+                                        />
+                                      </div>
+                                    );
+                                  }
+                                  return (
+                                    <div
+                                      key={c.key}
+                                      className={`min-w-0 ${EDITABLE[c.key] ? "cursor-text rounded-sm hover:bg-muted/50" : ""}`}
+                                      onClick={() => beginEdit(item, c.key)}
+                                      data-testid={`cell-${c.key}-${item.id}`}
+                                    >
+                                      {renderCell(c.key, item)}
+                                    </div>
+                                  );
+                                })}
                                 <div className="flex items-center justify-end gap-0.5 opacity-0 group-hover/row:opacity-100 transition-opacity">
                                   <Button
                                     variant="ghost"
@@ -895,6 +1034,30 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
                                 </div>
                               </div>
                             ))
+                          )}
+
+                          {/* Type a name, press Enter — the item lands in this group. */}
+                          {priceListId && (
+                            <div
+                              className="grid items-center py-1.5 gap-2"
+                              style={{ gridTemplateColumns: gridTemplate }}
+                            >
+                              <span />
+                              <Input
+                                value={newRow[group.id] ?? ""}
+                                onChange={(e) => setNewRow((p) => ({ ...p, [group.id]: e.target.value }))}
+                                onKeyDown={(e) => {
+                                  if (e.key !== "Enter") return;
+                                  const name = (newRow[group.id] ?? "").trim();
+                                  if (!name) return;
+                                  quickAdd.mutate({ name, groupId: group.id === "ungrouped" ? null : group.id });
+                                  setNewRow((p) => ({ ...p, [group.id]: "" }));
+                                }}
+                                placeholder="Add an item…"
+                                className="h-6 px-1 py-0 text-xs border-0 bg-transparent placeholder:text-muted-foreground/60 focus-visible:ring-0"
+                                data-testid={`input-new-item-${group.id}`}
+                              />
+                            </div>
                           )}
                         </div>
                       </div>
