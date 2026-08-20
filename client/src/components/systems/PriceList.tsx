@@ -260,17 +260,6 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
     return formatCents(incGstFromEx(cents));
   };
 
-  /** "12 items · $4.20 – $24.90" — what you actually scan a supplier's book for. */
-  const groupSummary = (groupItems: PriceListItem[]) => {
-    const n = groupItems.length;
-    const label = `${n} ${n === 1 ? "item" : "items"}`;
-    const costs = groupItems.map((i) => i.costPrice).filter((c): c is number => typeof c === "number" && c > 0);
-    if (costs.length === 0) return label;
-    const lo = Math.min(...costs);
-    const hi = Math.max(...costs);
-    return `${label} · ${lo === hi ? formatCents(lo) : `${formatCents(lo)} – ${formatCents(hi)}`}`;
-  };
-
   const renderCell = (key: string, item: PriceListItem) => {
     switch (key) {
       case "name":
@@ -657,7 +646,6 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
                             )}
                             <p className="text-sm font-semibold text-foreground truncate">{group.name}</p>
                           </div>
-                          <p className="text-xs text-muted-foreground">{groupSummary(group.items)}</p>
                         </div>
                       </button>
 
