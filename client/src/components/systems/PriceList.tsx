@@ -1,8 +1,9 @@
 import { useState, useEffect, forwardRef, useImperativeHandle, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { Plus, Search, Filter, Edit, Trash2, ChevronRight, ChevronDown, Building, Tag, DollarSign, Box, Loader2, ChevronsUpDown, ChevronsDownUp, ToggleLeft, ToggleRight, X, MoreVertical, FolderPlus } from "lucide-react";
+import { Plus, Search, Filter, Edit, Trash2, ChevronRight, ChevronDown, Building, Tag, DollarSign, Box, Loader2, ChevronsUpDown, ChevronsDownUp, ToggleLeft, ToggleRight, X, MoreVertical, FolderPlus, Columns3 } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -51,8 +52,16 @@ function loadColumnOrder(namespace: string, defaults: string[]): string[] {
     const saved: unknown = all?.[namespace];
     if (!Array.isArray(saved)) return defaults;
     const known = saved.filter((k): k is string => defaults.includes(k));
-    // Columns added since the order was saved go on the end rather than vanishing.
-    return [...known, ...defaults.filter((k) => !known.includes(k))];
+    // Columns the saved order predates are spliced in at their catalogue position
+    // rather than appended, so enabling one drops it beside its neighbours instead
+    // of at the far right. Appending would be tidier to code and worse to use.
+    const result = [...known];
+    defaults.forEach((k, i) => {
+      if (result.includes(k)) return;
+      const before = defaults.slice(0, i).reverse().find((d) => result.includes(d));
+      result.splice(before ? result.indexOf(before) + 1 : 0, 0, k);
+    });
+    return result;
   } catch {
     return defaults;
   }
@@ -66,15 +75,46 @@ function saveColumnOrder(namespace: string, order: string[]) {
   } catch { /* ignore */ }
 }
 
-/** Pixel widths for the bespoke grid; widths persist per namespace. */
+/** Every column the grid can show. `defaultVisible: false` ones are opt-in via the
+ *  column picker — the fields exist on an item but would crowd the default view. */
 const GRID_COLUMNS = [
-  { key: "name", label: "Item", defaultWidth: 260 },
-  { key: "unit", label: "Unit", defaultWidth: 80 },
-  { key: "cost", label: "Cost (ex)", defaultWidth: 110, align: "right" as const },
-  { key: "sell", label: "Sell (ex)", defaultWidth: 110, align: "right" as const },
-  { key: "markup", label: "Markup", defaultWidth: 90, align: "right" as const },
-  { key: "status", label: "", defaultWidth: 90 },
+  { key: "name",         label: "Item",        defaultWidth: 260, required: true },
+  { key: "code",         label: "Code",        defaultWidth: 110, defaultVisible: false },
+  { key: "nickname",     label: "Nickname",    defaultWidth: 140, defaultVisible: false },
+  { key: "supplier",     label: "Supplier",    defaultWidth: 150, defaultVisible: false },
+  { key: "supplierCode", label: "Supplier ref", defaultWidth: 120, defaultVisible: false },
+  { key: "brand",        label: "Brand",       defaultWidth: 120, defaultVisible: false },
+  { key: "unit",         label: "Unit",        defaultWidth: 80 },
+  { key: "cost",         label: "Cost (ex)",   defaultWidth: 110, align: "right" as const },
+  { key: "costInc",      label: "Cost (inc)",  defaultWidth: 110, align: "right" as const, defaultVisible: false },
+  { key: "sell",         label: "Sell (ex)",   defaultWidth: 110, align: "right" as const },
+  { key: "sellInc",      label: "Sell (inc)",  defaultWidth: 110, align: "right" as const, defaultVisible: false },
+  { key: "markup",       label: "Markup",      defaultWidth: 90,  align: "right" as const },
+  { key: "leadTime",     label: "Lead time",   defaultWidth: 100, align: "right" as const, defaultVisible: false },
+  { key: "status",       label: "Status",      defaultWidth: 90 },
 ];
+
+type GridColumn = (typeof GRID_COLUMNS)[number];
+
+const COLUMN_HIDDEN_KEY = "grid-col-hidden-v1";
+
+/** Hidden-key map per namespace. Absent = fall back to the column's default. */
+function loadHiddenColumns(namespace: string): Record<string, boolean> {
+  try {
+    const all = JSON.parse(localStorage.getItem(COLUMN_HIDDEN_KEY) || "{}");
+    return all?.[namespace] ?? {};
+  } catch {
+    return {};
+  }
+}
+
+function saveHiddenColumns(namespace: string, hidden: Record<string, boolean>) {
+  try {
+    const all = JSON.parse(localStorage.getItem(COLUMN_HIDDEN_KEY) || "{}");
+    all[namespace] = hidden;
+    localStorage.setItem(COLUMN_HIDDEN_KEY, JSON.stringify(all));
+  } catch { /* ignore */ }
+}
 
 interface PriceListProps {
   searchQuery?: string;
@@ -273,8 +313,40 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
             )}
           </>
         );
+      case "code":
+        return <p className="text-[11px] text-muted-foreground truncate">{item.code || "—"}</p>;
+      case "nickname":
+        return <p className="text-[11px] text-muted-foreground truncate">{item.nickname || "—"}</p>;
+      case "supplier":
+        return (
+          <p className="text-[11px] text-muted-foreground truncate">
+            {suppliers.find((sp) => sp.id === item.supplierId)?.name || "—"}
+          </p>
+        );
+      case "supplierCode":
+        return <p className="text-[11px] text-muted-foreground truncate">{item.supplierCode || "—"}</p>;
+      case "brand":
+        return <p className="text-[11px] text-muted-foreground truncate">{item.brand || "—"}</p>;
       case "unit":
         return <p className="text-[11px] text-muted-foreground truncate">{item.unitType || "—"}</p>;
+      case "costInc":
+        return (
+          <p className="text-xs text-muted-foreground text-right tabular-nums">
+            {item.costPrice ? formatCents(incGstFromEx(item.costPrice)) : "—"}
+          </p>
+        );
+      case "sellInc":
+        return (
+          <p className="text-xs text-muted-foreground text-right tabular-nums">
+            {item.sellPrice ? formatCents(incGstFromEx(item.sellPrice)) : "—"}
+          </p>
+        );
+      case "leadTime":
+        return (
+          <p className="text-[11px] text-muted-foreground text-right tabular-nums">
+            {item.leadTimeDays ? `${item.leadTimeDays}d` : "—"}
+          </p>
+        );
       case "cost":
         return <p className="text-xs text-foreground text-right tabular-nums">{formatCurrency(item.costPrice)}</p>;
       case "sell":
@@ -327,11 +399,33 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
   const [dragKey, setDragKey] = useState<string | null>(null);
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
 
+  const [hiddenColumns, setHiddenColumns] = useState<Record<string, boolean>>(
+    () => loadHiddenColumns("price-list"),
+  );
+
+  const isColumnVisible = (c: GridColumn) =>
+    hiddenColumns[c.key] ?? (c.defaultVisible !== false);
+
+  const toggleColumn = (key: string) => {
+    setHiddenColumns((prev) => {
+      const col = GRID_COLUMNS.find((c) => c.key === key);
+      if (!col || col.required) return prev;
+      const current = prev[key] ?? (col.defaultVisible !== false);
+      const next = { ...prev, [key]: !current };
+      saveHiddenColumns("price-list", next);
+      return next;
+    });
+  };
+
   const orderedColumns = useMemo(
     () => columnOrder
       .map((k) => GRID_COLUMNS.find((c) => c.key === k))
-      .filter((c): c is (typeof GRID_COLUMNS)[number] => !!c),
-    [columnOrder],
+      .filter((c): c is GridColumn => !!c)
+      // A supplier list's rows all carry the list's own supplier — never useful here.
+      .filter((c) => !(kind === "supplier" && c.key === "supplier"))
+      .filter((c) => hiddenColumns[c.key] ?? (c.defaultVisible !== false)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [columnOrder, hiddenColumns, kind],
   );
 
   const moveColumn = (from: string, toIndex: number) => {
@@ -544,6 +638,50 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
         </div>
 
         <div className="flex items-center gap-1 flex-shrink-0">
+          <Popover>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <PopoverTrigger asChild>
+                  <button
+                    className="h-6 w-6 flex items-center justify-center rounded-md border border-border/50 text-muted-foreground hover-elevate active-elevate-2"
+                    data-testid="button-columns"
+                    aria-label="Columns"
+                  >
+                    <Columns3 className="h-3 w-3" />
+                  </button>
+                </PopoverTrigger>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">Columns</TooltipContent>
+            </Tooltip>
+            <PopoverContent align="end" className="w-56 p-1">
+              <div className="px-1.5 pt-1 text-sm font-semibold">Columns</div>
+              <p className="px-1.5 pb-2 text-xs text-muted-foreground">Toggle to show or hide.</p>
+              <div className="max-h-80 overflow-y-auto space-y-0.5 pr-0.5">
+                {GRID_COLUMNS
+                  .filter((c) => !(kind === "supplier" && c.key === "supplier"))
+                  .map((c) => (
+                    <div
+                      key={c.key}
+                      className={`flex items-center gap-2 px-1.5 py-1 rounded-md ${
+                        c.required ? "opacity-50" : "hover:bg-muted cursor-pointer"
+                      }`}
+                      onClick={() => !c.required && toggleColumn(c.key)}
+                      data-testid={`column-toggle-${c.key}`}
+                    >
+                      <Checkbox
+                        checked={isColumnVisible(c)}
+                        disabled={c.required}
+                        onCheckedChange={() => !c.required && toggleColumn(c.key)}
+                        onClick={(e) => e.stopPropagation()}
+                        className="flex-shrink-0"
+                      />
+                      <span className="truncate text-sm flex-1">{c.label || c.key}</span>
+                    </div>
+                  ))}
+              </div>
+            </PopoverContent>
+          </Popover>
+
           <button
             className="h-6 w-auto px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-0.5"
             onClick={() => setShowAddModal(true)}
