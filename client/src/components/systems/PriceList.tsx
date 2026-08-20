@@ -1074,7 +1074,7 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
                                     setNewRow((p) => ({ ...p, [group.id]: "" }));
                                   }}
                                   placeholder="Item name, then Enter"
-                                  className="h-6 px-1 py-0 text-xs border bg-transparent"
+                                  className="h-6 px-1 py-0 text-xs border-0 bg-transparent placeholder:text-muted-foreground/60 focus-visible:ring-0"
                                   data-testid={`input-new-item-${group.id}`}
                                 />
                               </div>
