@@ -139,7 +139,9 @@ export default function PriceListPage() {
         </div>
       </div>
 
-      <div className="flex-1 min-h-0 overflow-hidden border-x border-b border-border rounded-b-lg bg-card">
+      {/* No card here any more — each group brings its own, like the sections on an
+          allowance. A single full-bleed white panel stood out against the page. */}
+      <div className="flex-1 min-h-0 overflow-hidden">
         <PriceList
           ref={priceListRef}
           priceListId={list.id}

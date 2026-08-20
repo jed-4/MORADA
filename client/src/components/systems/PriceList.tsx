@@ -6,11 +6,7 @@ import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { type ColumnDef } from "@tanstack/react-table";
-import {
-  DataTable,
-  type DataTableColumnMeta,
-} from "@/components/data-table/DataTable";
+import { useResizableColumns, ColResizeHandle } from "@/components/useResizableColumns";
 import { EmptyState } from "@/components/EmptyState";
 import {
   Dialog,
@@ -45,6 +41,16 @@ export interface PriceListHandle {
 }
 
 type GroupBy = "none" | "group" | "supplier";
+
+/** Pixel widths for the bespoke grid; widths persist per namespace. */
+const GRID_COLUMNS = [
+  { key: "name", label: "Item", defaultWidth: 260 },
+  { key: "unit", label: "Unit", defaultWidth: 80 },
+  { key: "cost", label: "Cost (ex)", defaultWidth: 110, align: "right" as const },
+  { key: "sell", label: "Sell (ex)", defaultWidth: 110, align: "right" as const },
+  { key: "markup", label: "Markup", defaultWidth: 90, align: "right" as const },
+  { key: "status", label: "", defaultWidth: 90 },
+];
 
 interface PriceListProps {
   searchQuery?: string;
@@ -234,173 +240,6 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
     return `${markup.toFixed(1)}%`;
   };
 
-  const columns = useMemo<ColumnDef<PriceListItem, unknown>[]>(
-    () => [
-      {
-        id: "name",
-        header: "Name",
-        accessorFn: (i) => i.name || "",
-        cell: ({ row }) => <span className="text-xs font-medium">{row.original.name}</span>,
-        size: 180,
-        meta: { defaultWidth: 180, headerLabel: "Name" } satisfies DataTableColumnMeta,
-      },
-      {
-        id: "nickname",
-        header: "Nickname",
-        accessorFn: (i) => i.nickname || "",
-        cell: ({ row }) => (
-          <span className="text-xs text-muted-foreground">{row.original.nickname || "-"}</span>
-        ),
-        size: 110,
-        meta: { defaultWidth: 110, headerLabel: "Nickname" } satisfies DataTableColumnMeta,
-      },
-      {
-        id: "code",
-        header: "Code",
-        accessorFn: (i) => i.code || "",
-        cell: ({ row }) => (
-          <span className="text-xs font-mono">{row.original.code || "-"}</span>
-        ),
-        size: 90,
-        meta: { defaultWidth: 90, headerLabel: "Code" } satisfies DataTableColumnMeta,
-      },
-      // On a supplier list every row carries the list's own supplier, so the column
-      // is a wall of "-". Spend the width on something that varies.
-      ...(kind === "supplier" ? [] : [{
-        id: "supplier",
-        header: "Supplier",
-        accessorFn: (i: PriceListItem) => suppliers.find((s) => s.id === i.supplierId)?.name || "",
-        cell: ({ row }: { row: { original: PriceListItem } }) => (
-          <span className="text-xs">
-            {suppliers.find((s) => s.id === row.original.supplierId)?.name || "-"}
-          </span>
-        ),
-        size: 120,
-        meta: { defaultWidth: 120, headerLabel: "Supplier" } satisfies DataTableColumnMeta,
-      }]),
-      {
-        id: "unit",
-        header: "Unit",
-        accessorFn: (i) => i.unitType || "",
-        cell: ({ row }) => <span className="text-xs">{row.original.unitType || "-"}</span>,
-        size: 72,
-        meta: { defaultWidth: 72, headerLabel: "Unit" } satisfies DataTableColumnMeta,
-      },
-      {
-        id: "costEx",
-        header: "Cost (ex)",
-        accessorFn: (i) => Number(i.costPrice) || 0,
-        cell: ({ row }) => (
-          <span className="text-xs font-mono">{formatCurrency(row.original.costPrice)}</span>
-        ),
-        size: 104,
-        meta: { defaultWidth: 104, align: "right", headerLabel: "Cost (ex)" } satisfies DataTableColumnMeta,
-      },
-      {
-        id: "costInc",
-        header: "Cost (inc)",
-        accessorFn: (i) => Number(i.costPrice) || 0,
-        cell: ({ row }) => (
-          <span className="text-xs font-mono text-muted-foreground">
-            {formatCurrencyIncGst(row.original.costPrice)}
-          </span>
-        ),
-        size: 104,
-        meta: { defaultWidth: 104, align: "right", headerLabel: "Cost (inc)" } satisfies DataTableColumnMeta,
-      },
-      {
-        id: "sellEx",
-        header: "Sell (ex)",
-        accessorFn: (i) => Number(i.sellPrice) || 0,
-        cell: ({ row }) => (
-          <span className="text-xs font-mono">{formatCurrency(row.original.sellPrice)}</span>
-        ),
-        size: 104,
-        meta: { defaultWidth: 104, align: "right", headerLabel: "Sell (ex)" } satisfies DataTableColumnMeta,
-      },
-      {
-        id: "sellInc",
-        header: "Sell (inc)",
-        accessorFn: (i) => Number(i.sellPrice) || 0,
-        cell: ({ row }) => (
-          <span className="text-xs font-mono text-muted-foreground">
-            {formatCurrencyIncGst(row.original.sellPrice)}
-          </span>
-        ),
-        size: 104,
-        meta: { defaultWidth: 104, align: "right", headerLabel: "Sell (inc)" } satisfies DataTableColumnMeta,
-      },
-      {
-        id: "markup",
-        header: "Markup",
-        accessorFn: (i) => {
-          const cost = Number(i.costPrice);
-          const sell = Number(i.sellPrice);
-          if (!cost || !sell) return -Infinity;
-          return ((sell - cost) / cost) * 100;
-        },
-        cell: ({ row }) => (
-          <span className="text-xs">{getMarkup(row.original.costPrice, row.original.sellPrice)}</span>
-        ),
-        size: 84,
-        meta: { defaultWidth: 84, align: "right", headerLabel: "Markup" } satisfies DataTableColumnMeta,
-      },
-      {
-        id: "status",
-        header: "Status",
-        accessorFn: (i) => (i.isActive ? "Active" : "Inactive"),
-        cell: ({ row }) => (
-          <Badge
-            variant={row.original.isActive ? "outline" : "secondary"}
-            className="h-4 text-label"
-          >
-            {row.original.isActive ? "Active" : "Inactive"}
-          </Badge>
-        ),
-        size: 88,
-        meta: { defaultWidth: 88, headerLabel: "Status" } satisfies DataTableColumnMeta,
-      },
-      {
-        id: "actions",
-        header: "",
-        enableSorting: false,
-        cell: ({ row }) => (
-          <div className="flex items-center justify-center gap-1">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-5 w-5"
-              onClick={() => setEditingItem(row.original)}
-              data-testid={`button-edit-${row.original.id}`}
-            >
-              <Edit className="h-3 w-3" />
-            </Button>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon" className="h-5 w-5">
-                  <Trash2 className="h-3 w-3 text-destructive" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent>
-                <DropdownMenuItem
-                  className="text-destructive"
-                  onClick={() => deleteMutation.mutate(row.original.id)}
-                  data-testid={`button-confirm-delete-${row.original.id}`}
-                >
-                  Confirm Delete
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-        ),
-        size: 64,
-        meta: { defaultWidth: 64, align: "center", headerLabel: "Actions" } satisfies DataTableColumnMeta,
-      },
-    ],
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [suppliers, costCodes, kind],
-  );
-
   const groups = useMemo(() => groupedItems(), [groupBy, items, priceListGroups, suppliers]);
 
   // Recalibrate expandedGroups when groups change
@@ -413,6 +252,9 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
       return filtered.size !== prev.size ? filtered : prev;
     });
   }, [groups, groupBy]);
+
+  // Trailing 72px is the fixed (non-draggable) actions cell.
+  const gridCols = useResizableColumns("price-list", GRID_COLUMNS, 72);
 
   const activeFilterCount =
     (filterGroup !== "all" ? 1 : 0) +
@@ -434,7 +276,7 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
     <div className="flex flex-col h-full" data-testid="price-list">
       {/* Grid toolbar — second row inside the page card. Filters collapse behind a
           single control with a count badge, matching Tasks. */}
-      <div className="h-9 flex items-center justify-between px-3 border-b border-border/50 flex-shrink-0 gap-2">
+      <div className="h-9 flex items-center justify-between px-3 gap-2 flex-shrink-0 border-x border-b border-border rounded-b-lg bg-card">
         <div className="flex items-center gap-1 min-w-0">
           {groupBy !== "none" && (
             <Tooltip>
@@ -578,14 +420,17 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
 
       </div>
 
-      <div className="flex-1 overflow-auto">
+      {/* Each group is its own section card on the page ground — same shape as the
+          bills / timesheets sections on an allowance. The old single full-bleed
+          white panel read as one big slab against the cream page. */}
+      <div className="flex-1 overflow-auto px-3 py-3 space-y-3">
         {isLoadingItems ? (
           <div className="flex items-center justify-center h-32">
             <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
           </div>
-        ) : items.length === 0 ? (
+        ) : items.length === 0 && priceListGroups.length === 0 ? (
           <EmptyState
-            variant="inline"
+            variant="card"
             icon={Box}
             title="No price list items yet"
             description="Add your first item to start building your price list."
@@ -597,71 +442,163 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
             }}
           />
         ) : (
-          <div className="p-2">
-            {groups.map((group) => (
-              <div key={group.id} className="mb-3">
-                {groupBy !== "none" && (
-                  <div className="group/hdr flex items-center gap-1 mb-1">
-                    <button
-                      onClick={() => toggleGroup(group.id)}
-                      className="flex-1 flex items-center gap-2 px-2 py-1.5 text-xs font-medium text-foreground hover-elevate rounded-md text-left"
-                      data-testid={`button-toggle-group-${group.id}`}
-                    >
-                      {expandedGroups.has(group.id) ? (
-                        <ChevronDown className="h-3 w-3" />
-                      ) : (
-                        <ChevronRight className="h-3 w-3" />
-                      )}
-                      <span>{group.name}</span>
-                      <Badge variant="outline" className="h-4 text-data ml-1">
-                        {group.items.length}
-                      </Badge>
-                    </button>
+          <>
+            {groups.map((group) => {
+              const expanded = groupBy === "none" || expandedGroups.has(group.id);
+              return (
+                <div
+                  key={group.id}
+                  className="relative bg-card rounded-xl border border-border overflow-hidden"
+                  data-testid={`section-group-${group.id}`}
+                >
+                  <div
+                    className="absolute left-0 top-0 bottom-0 w-[3px]"
+                    style={{ background: "hsl(var(--primary))" }}
+                  />
+                  <div className="px-5 py-3 pl-6">
+                    <div className="group/hdr flex items-center justify-between gap-2">
+                      <button
+                        onClick={() => groupBy !== "none" && toggleGroup(group.id)}
+                        className="flex items-center gap-2 min-w-0 text-left"
+                        data-testid={`button-toggle-group-${group.id}`}
+                      >
+                        {groupBy !== "none" && (
+                          expanded
+                            ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+                            : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+                        )}
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold text-foreground truncate">{group.name}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {group.items.length} {group.items.length === 1 ? "item" : "item(s)"}
+                          </p>
+                        </div>
+                      </button>
 
-                    {/* "Ungrouped" is a bucket, not a real row — nothing to rename. */}
-                    {groupBy === "group" && group.id !== "ungrouped" && (
-                      <div className="flex items-center gap-0.5 opacity-0 group-hover/hdr:opacity-100 transition-opacity">
-                        <button
-                          onClick={() => {
-                            const name = window.prompt("Rename group", group.name)?.trim();
-                            if (name && name !== group.name) renameGroupMutation.mutate({ id: group.id, name });
-                          }}
-                          className="h-5 w-5 flex items-center justify-center rounded-md border border-border/50 text-muted-foreground hover-elevate active-elevate-2"
-                          data-testid={`button-rename-group-${group.id}`}
-                          aria-label="Rename group"
-                        >
-                          <Edit className="h-3 w-3" />
-                        </button>
-                        <button
-                          onClick={() => {
-                            const msg = group.items.length
-                              ? `Delete "${group.name}"? Its ${group.items.length} items move to Ungrouped.`
-                              : `Delete "${group.name}"?`;
-                            if (window.confirm(msg)) deleteGroupMutation.mutate(group.id);
-                          }}
-                          className="h-5 w-5 flex items-center justify-center rounded-md border border-border/50 text-destructive hover-elevate active-elevate-2"
-                          data-testid={`button-delete-group-${group.id}`}
-                          aria-label="Delete group"
-                        >
-                          <Trash2 className="h-3 w-3" />
-                        </button>
+                      {groupBy === "group" && group.id !== "ungrouped" && (
+                        <div className="flex items-center gap-1 opacity-0 group-hover/hdr:opacity-100 transition-opacity">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6"
+                            onClick={() => {
+                              const name = window.prompt("Rename group", group.name)?.trim();
+                              if (name && name !== group.name) renameGroupMutation.mutate({ id: group.id, name });
+                            }}
+                            data-testid={`button-rename-group-${group.id}`}
+                            aria-label="Rename group"
+                          >
+                            <Edit className="h-3 w-3" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6 text-destructive"
+                            onClick={() => {
+                              const msg = group.items.length
+                                ? `Delete "${group.name}"? Its ${group.items.length} items move to Ungrouped.`
+                                : `Delete "${group.name}"?`;
+                              if (window.confirm(msg)) deleteGroupMutation.mutate(group.id);
+                            }}
+                            data-testid={`button-delete-group-${group.id}`}
+                            aria-label="Delete group"
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+
+                    {expanded && (
+                      <div className="mt-2 overflow-x-auto dt-autohide-scrollbar">
+                        <div style={{ minWidth: gridCols.minWidth }}>
+                          {/* column labels */}
+                          <div
+                            className="grid text-[9px] font-semibold text-muted-foreground uppercase tracking-wide py-2 border-b border-border gap-2"
+                            style={{ gridTemplateColumns: gridCols.gridTemplate }}
+                          >
+                            {GRID_COLUMNS.map((c) => (
+                              <span key={c.key} className={`relative ${c.align === "right" ? "text-right" : ""}`}>
+                                {c.label}
+                                <ColResizeHandle
+                                  testId={`resize-${c.key}`}
+                                  onStart={(e) => gridCols.startResize(c.key, e.clientX, gridCols.widthFor(c.key, c.defaultWidth))}
+                                />
+                              </span>
+                            ))}
+                            <span />
+                          </div>
+
+                          {group.items.length === 0 ? (
+                            <p className="py-6 text-center text-xs text-muted-foreground">
+                              Nothing in this group yet.
+                            </p>
+                          ) : (
+                            group.items.map((item) => (
+                              <div
+                                key={item.id}
+                                className="group/row grid items-center py-2.5 border-b border-border gap-2 hover:bg-muted/30 rounded-sm"
+                                style={{ gridTemplateColumns: gridCols.gridTemplate }}
+                                data-testid={`row-item-${item.id}`}
+                              >
+                                <div className="min-w-0">
+                                  <p className="text-xs font-semibold text-foreground truncate">{item.name}</p>
+                                  {(item.nickname || item.code) && (
+                                    <p className="text-[10px] text-muted-foreground truncate">
+                                      {[item.nickname, item.code].filter(Boolean).join(" · ")}
+                                    </p>
+                                  )}
+                                </div>
+                                <p className="text-[11px] text-muted-foreground truncate">{item.unitType || "—"}</p>
+                                <p className="text-xs font-mono text-right tabular-nums">{formatCurrency(item.costPrice)}</p>
+                                <p className="text-xs font-mono text-right tabular-nums">{formatCurrency(item.sellPrice)}</p>
+                                <p className="text-[11px] text-muted-foreground text-right tabular-nums">
+                                  {getMarkup(item.costPrice, item.sellPrice)}
+                                </p>
+                                <div>
+                                  {!item.isActive && (
+                                    <span
+                                      className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold w-fit"
+                                      style={{ background: "hsl(var(--muted))", color: "hsl(var(--muted-foreground))" }}
+                                    >
+                                      Inactive
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="flex items-center justify-end gap-0.5 opacity-0 group-hover/row:opacity-100 transition-opacity">
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-6 w-6"
+                                    onClick={() => setEditingItem(item)}
+                                    data-testid={`button-edit-${item.id}`}
+                                    aria-label="Edit item"
+                                  >
+                                    <Edit className="h-3 w-3" />
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-6 w-6 text-destructive"
+                                    onClick={() => {
+                                      if (window.confirm(`Delete "${item.name}"?`)) deleteMutation.mutate(item.id);
+                                    }}
+                                    data-testid={`button-delete-${item.id}`}
+                                    aria-label="Delete item"
+                                  >
+                                    <Trash2 className="h-3 w-3" />
+                                  </Button>
+                                </div>
+                              </div>
+                            ))
+                          )}
+                        </div>
                       </div>
                     )}
                   </div>
-                )}
-
-                {(groupBy === "none" || expandedGroups.has(group.id)) && (
-                  <DataTable
-                    data={group.items}
-                    columns={columns}
-                    storageKey="price-list"
-                    rowKey={(item) => `item-${item.id}`}
-                    rowHeight={28}
-                    emptyState={<EmptyState variant="inline" title="No items" />}
-                  />
-                )}
-              </div>
-            ))}
+                </div>
+              );
+            })}
 
             {priceListId && (
               <button
@@ -669,14 +606,14 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
                   const name = window.prompt("New group name")?.trim();
                   if (name) createGroupMutation.mutate(name);
                 }}
-                className="mt-1 h-6 w-auto px-2 text-xs border border-dashed border-border rounded-md text-muted-foreground hover-elevate active-elevate-2 flex items-center gap-1"
+                className="h-7 w-auto px-3 text-xs border border-dashed border-border rounded-lg text-muted-foreground hover-elevate active-elevate-2 flex items-center gap-1"
                 data-testid="button-add-group"
               >
                 <Plus className="h-3 w-3" />
                 Add group
               </button>
             )}
-          </div>
+          </>
         )}
       </div>
 
