@@ -1,7 +1,7 @@
 import { useState, useRef } from "react";
 import { useParams, Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
-import { Plus, ChevronRight, Building2, HardHat, Package, Star, Pencil } from "lucide-react";
+import { ChevronLeft, Building2, HardHat, Package } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -43,8 +43,8 @@ export default function PriceListPage() {
   if (isLoading) {
     return (
       <div className="flex h-full flex-col" data-testid="price-list-page">
-        <div className="flex items-center gap-1 px-4 pt-3 pb-1 flex-shrink-0">
-          <Skeleton className="h-3 w-32" />
+        <div className="px-4 pt-3 pb-2 flex-shrink-0">
+          <Skeleton className="h-5 w-48" />
         </div>
         <div className="border border-border rounded-lg bg-card flex-shrink-0">
           <div className="h-9 flex items-center px-3">
@@ -65,10 +65,8 @@ export default function PriceListPage() {
       <div className="flex h-full flex-col" data-testid="price-list-page">
         <div className="flex items-center gap-1 px-4 pt-3 pb-1 flex-shrink-0">
           <Link href="/price-lists" className="text-xs text-muted-foreground hover:text-foreground">
-            Price Lists
+            ← Price Lists
           </Link>
-          <ChevronRight className="h-3 w-3 text-muted-foreground/50 flex-shrink-0" />
-          <span className="text-xs font-medium text-foreground">Not found</span>
         </div>
         <EmptyState
           variant="inline"
@@ -86,25 +84,17 @@ export default function PriceListPage() {
 
   return (
     <div className="flex h-full flex-col" data-testid="price-list-page">
-      {/* Breadcrumb strip — the list name lives here, not in the toolbar. */}
-      <div className="flex items-center gap-1 px-4 pt-3 pb-1 flex-shrink-0">
-        <Link
-          href="/price-lists"
-          className="text-xs text-muted-foreground hover:text-foreground"
-          data-testid="link-back-to-lists"
-        >
-          Price Lists
-        </Link>
-        <ChevronRight className="h-3 w-3 text-muted-foreground/50 flex-shrink-0" />
-        <span className="text-xs font-medium text-foreground truncate" data-testid="text-page-title">
-          {list.name}
-        </span>
-        {list.isDefault && <Star className="h-3 w-3 fill-primary text-primary flex-shrink-0" aria-label="Default list" />}
-      </div>
-
       {/* Whose prices these are. Controls all live in the toolbar below. */}
-      <div className="flex-shrink-0 px-4 pt-1 pb-2">
+      <div className="flex-shrink-0 px-4 pt-3 pb-2">
         <div className="flex items-baseline gap-2 min-w-0">
+          <Link
+            href="/price-lists"
+            className="self-center text-muted-foreground hover:text-foreground flex-shrink-0"
+            aria-label="Back to price lists"
+            data-testid="link-back-to-lists"
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </Link>
           <h1 className="text-lg font-semibold tracking-tight truncate" data-testid="text-list-supplier">
             {list.supplierName || list.name}
           </h1>
