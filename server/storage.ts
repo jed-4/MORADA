@@ -1422,6 +1422,11 @@ export interface IStorage {
   updatePriceListItem(id: string, item: Partial<InsertPriceListItem>, companyId: string): Promise<PriceListItem | undefined>;
   deletePriceListItem(id: string, companyId: string): Promise<boolean>;
   bulkUpdatePriceListItems(updates: Array<{ id: string; data: Partial<InsertPriceListItem> }>, companyId: string): Promise<PriceListItem[]>;
+  importPriceListItems(
+    priceListId: string,
+    rows: Array<Partial<InsertPriceListItem> & { name: string; code?: string | null; groupName?: string | null }>,
+    companyId: string,
+  ): Promise<{ created: number; updated: number; skipped: number; groupsCreated: number }>;
 
   // Bill Line Item Price Links (for AI Review)
   getBillLineItemPriceLinks(companyId: string, status?: string): Promise<(BillLineItemPriceLink & { billLineItem?: import("@shared/schema").BillLineItem; bill?: import("@shared/schema").Bill })[]>;
@@ -25221,6 +25226,113 @@ export class DbStorage implements IStorage {
       });
     } catch (error) {
       console.error("Database error in bulkUpdatePriceListItems:", error);
+      throw error;
+    }
+  }
+
+  async importPriceListItems(
+    priceListId: string,
+    rows: Array<Partial<InsertPriceListItem> & { name: string; code?: string | null; groupName?: string | null }>,
+    companyId: string,
+  ): Promise<{ created: number; updated: number; skipped: number; groupsCreated: number }> {
+    try {
+      const list = await this.getPriceList(priceListId, companyId);
+      if (!list) throw new Error("Price list not found");
+
+      // Existing items keyed by SKU. A supplier's book is re-sent with the same
+      // codes each quarter, so SKU is the identity that makes re-import an update
+      // rather than a duplicate. Rows without a SKU can only ever be inserts.
+      const existing = await db.select().from(schema.priceListItems)
+        .where(and(
+          eq(schema.priceListItems.companyId, companyId),
+          eq(schema.priceListItems.priceListId, priceListId),
+        ));
+      const bySku = new Map<string, PriceListItem>();
+      for (const it of existing) {
+        if (it.code) bySku.set(it.code.trim().toLowerCase(), it);
+      }
+
+      const groups = await this.getPriceListGroups(companyId, priceListId);
+      const groupByName = new Map(groups.map((g) => [g.name.trim().toLowerCase(), g]));
+
+      let created = 0, updated = 0, skipped = 0, groupsCreated = 0;
+      const now = new Date();
+
+      for (const row of rows) {
+        const name = (row.name ?? "").trim();
+        if (!name) { skipped++; continue; }
+
+        // A named group that doesn't exist yet is created rather than dropped —
+        // otherwise a supplier's section headings are silently lost on import.
+        let groupId: string | null = row.groupId ?? null;
+        const groupName = (row.groupName ?? "").trim();
+        if (!groupId && groupName) {
+          const key = groupName.toLowerCase();
+          let g = groupByName.get(key);
+          if (!g) {
+            g = await this.createPriceListGroup({ name: groupName, priceListId, companyId } as any);
+            groupByName.set(key, g);
+            groupsCreated++;
+          }
+          groupId = g.id;
+        }
+
+        const sku = (row.code ?? "").trim();
+        const match = sku ? bySku.get(sku.toLowerCase()) : undefined;
+
+        if (match) {
+          const patch: any = { updatedAt: now };
+          for (const f of ["name", "nickname", "description", "unitType", "supplierCode", "brand", "leadTimeDays"] as const) {
+            if (row[f] !== undefined) patch[f] = row[f];
+          }
+          if (groupId) patch.groupId = groupId;
+
+          const costChanged = row.costPrice !== undefined && row.costPrice !== match.costPrice;
+          const sellChanged = row.sellPrice !== undefined && row.sellPrice !== match.sellPrice;
+          if (costChanged) patch.costPrice = row.costPrice;
+          if (sellChanged) patch.sellPrice = row.sellPrice;
+          if (costChanged || sellChanged) {
+            patch.lastPriceUpdate = now;
+            patch.priceHistory = ((match.priceHistory as any[]) || []).concat({
+              date: now.toISOString(),
+              costPrice: row.costPrice ?? match.costPrice,
+              sellPrice: row.sellPrice ?? match.sellPrice,
+              source: "import",
+            });
+          }
+
+          await db.update(schema.priceListItems)
+            .set(patch)
+            .where(and(
+              eq(schema.priceListItems.id, match.id),
+              eq(schema.priceListItems.companyId, companyId),
+            ));
+          updated++;
+        } else {
+          const [row2] = await db.insert(schema.priceListItems).values({
+            ...row,
+            groupName: undefined,
+            name,
+            code: sku || null,
+            priceListId,
+            companyId,
+            groupId,
+            costPrice: row.costPrice ?? 0,
+            unitType: row.unitType || "ea",
+            lastPriceUpdate: now,
+          } as any).returning();
+          if (row2?.code) bySku.set(row2.code.trim().toLowerCase(), row2);
+          created++;
+        }
+      }
+
+      await db.update(schema.priceLists)
+        .set({ lastImportedAt: now, updatedAt: now })
+        .where(and(eq(schema.priceLists.id, priceListId), eq(schema.priceLists.companyId, companyId)));
+
+      return { created, updated, skipped, groupsCreated };
+    } catch (error) {
+      console.error("Database error in importPriceListItems:", error);
       throw error;
     }
   }
