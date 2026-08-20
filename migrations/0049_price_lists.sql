@@ -85,7 +85,7 @@ UPDATE price_list_items SET unit_type = 'hr' WHERE unit_type = 'hour';
 INSERT INTO price_lists (company_id, name, kind, description)
 SELECT DISTINCT pli.company_id,
        'General',
-       'internal',
+       'internal'::price_list_kind,
        'Auto-created by migration 0049 to hold items that predated price lists.'
 FROM price_list_items pli
 WHERE pli.price_list_id IS NULL
