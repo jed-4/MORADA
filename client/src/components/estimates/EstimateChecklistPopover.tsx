@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
@@ -8,7 +8,6 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Progress } from "@/components/ui/progress";
 import { ClipboardList, ChevronDown, ChevronRight, Loader2, ExternalLink, ListFilter } from "lucide-react";
 import {
@@ -19,6 +18,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useLocation } from "wouter";
+import { compareNumberedNames } from "@shared/utils";
 
 interface ChecklistInstance {
   id: string;
@@ -37,6 +37,9 @@ interface ChecklistGroup {
   instanceId: string;
   name: string;
   order: number;
+  /** Sent with the group so a collapsed one can still show its progress. */
+  completedCount: number;
+  totalCount: number;
 }
 
 interface ChecklistItem {
@@ -74,6 +77,22 @@ function InstancePanel({ instance, projectId }: { instance: ChecklistInstance; p
   const progressPct = instance.totalCount > 0
     ? Math.round((instance.completedCount / instance.totalCount) * 100)
     : 0;
+
+  // Authored order, then the number at the front of the name for rows that tie
+  // on it. See compareNumberedNames.
+  const sortedGroups = useMemo(
+    () => [...groups].sort((a, b) => a.order - b.order || compareNumberedNames(a.name, b.name)),
+    [groups],
+  );
+
+  // Land on the group there's still work in, so opening the popover shows the
+  // job in hand rather than a wall of collapsed headers. Empty groups aren't
+  // candidates — they render nothing. If everything is done, open the first.
+  const autoExpandId = useMemo(() => {
+    const withItems = sortedGroups.filter(g => (g.totalCount ?? 0) > 0);
+    const unfinished = withItems.find(g => (g.completedCount ?? 0) < (g.totalCount ?? 0));
+    return (unfinished ?? withItems[0])?.id ?? null;
+  }, [sortedGroups]);
 
   return (
     <div className="border rounded-md overflow-hidden">
@@ -121,16 +140,14 @@ function InstancePanel({ instance, projectId }: { instance: ChecklistInstance; p
           ) : groups.length === 0 ? (
             <div className="px-3 py-3 text-xs text-muted-foreground italic">No items</div>
           ) : (
-            groups
-              .slice()
-              .sort((a, b) => a.order - b.order)
-              .map((group) => (
-                <GroupPanel
-                  key={group.id}
-                  group={group}
-                  instanceId={instance.id}
-                />
-              ))
+            sortedGroups.map((group) => (
+              <GroupPanel
+                key={group.id}
+                group={group}
+                instanceId={instance.id}
+                defaultExpanded={group.id === autoExpandId}
+              />
+            ))
           )}
         </div>
       )}
@@ -138,7 +155,22 @@ function InstancePanel({ instance, projectId }: { instance: ChecklistInstance; p
   );
 }
 
-function GroupPanel({ group, instanceId }: { group: ChecklistGroup; instanceId: string }) {
+function GroupPanel({
+  group,
+  instanceId,
+  defaultExpanded = false,
+}: {
+  group: ChecklistGroup;
+  instanceId: string;
+  defaultExpanded?: boolean;
+}) {
+  // Collapsed unless this is the group being landed on. A full estimating
+  // checklist runs to a couple of hundred items across a dozen groups, and
+  // opening all of it at once buries the group you wanted in one unbroken
+  // list. Initial state only: a later refetch changing the counts must not
+  // yank a group open or shut under someone mid-tick.
+  const [expanded, setExpanded] = useState(defaultExpanded);
+
   const { data: items = [], isLoading } = useQuery<ChecklistItem[]>({
     queryKey: ["/api/checklist-instance-groups", group.id, "items"],
     queryFn: async () => {
@@ -148,6 +180,9 @@ function GroupPanel({ group, instanceId }: { group: ChecklistGroup; instanceId: 
       if (!res.ok) throw new Error("Failed to fetch items");
       return res.json();
     },
+    // Nothing is on screen until the group is opened, so don't fetch a dozen
+    // item lists to render a dozen collapsed headers.
+    enabled: expanded,
   });
 
   const toggleMutation = useMutation({
@@ -172,31 +207,47 @@ function GroupPanel({ group, instanceId }: { group: ChecklistGroup; instanceId: 
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/checklist-instance-groups", group.id, "items"] });
+      // Prefix match — covers the instance list's totals and the per-group
+      // counts the collapsed headers read from, which share this root key.
       queryClient.invalidateQueries({ queryKey: ["/api/checklist-instances"] });
     },
   });
 
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center py-3">
-        <Loader2 className="w-3 h-3 animate-spin text-muted-foreground" />
-      </div>
-    );
-  }
-
-  if (items.length === 0) return null;
+  // An empty group is skipped without opening it — the count comes down with
+  // the group itself.
+  if ((group.totalCount ?? 0) === 0) return null;
 
   return (
     <div>
-      <div className="px-3 py-1.5 bg-muted/20">
-        <span className="text-data font-semibold text-muted-foreground uppercase tracking-wide">
+      <button
+        className="w-full flex items-center gap-2 px-3 py-1.5 bg-muted/20 hover-elevate text-left"
+        onClick={() => setExpanded(v => !v)}
+        aria-expanded={expanded}
+        data-testid={`button-checklist-group-${group.id}`}
+      >
+        {expanded ? (
+          <ChevronDown className="w-3 h-3 flex-shrink-0 text-muted-foreground" />
+        ) : (
+          <ChevronRight className="w-3 h-3 flex-shrink-0 text-muted-foreground" />
+        )}
+        <span className="text-data font-semibold text-muted-foreground uppercase tracking-wide truncate flex-1">
           {group.name}
         </span>
-      </div>
+        <span className="text-data tabular-nums text-muted-foreground flex-shrink-0">
+          {group.completedCount ?? 0}/{group.totalCount ?? 0}
+        </span>
+      </button>
+
+      {!expanded ? null : isLoading ? (
+        <div className="flex items-center justify-center py-3">
+          <Loader2 className="w-3 h-3 animate-spin text-muted-foreground" />
+        </div>
+      ) : (
       <div className="divide-y divide-border/30">
         {items
           .slice()
-          .sort((a, b) => a.order - b.order)
+          // Same two keys as the group list above.
+          .sort((a, b) => a.order - b.order || compareNumberedNames(a.description, b.description))
           .map((item) => {
             const isChecked = item.status === "completed" || item.status === "na";
             return (
@@ -227,6 +278,7 @@ function GroupPanel({ group, instanceId }: { group: ChecklistGroup; instanceId: 
             );
           })}
       </div>
+      )}
     </div>
   );
 }
@@ -346,7 +398,7 @@ export function EstimateChecklistPopover({ estimateId: _estimateId, projectId, w
           )}
         </div>
 
-        <ScrollArea className="max-h-96">
+        <div className="max-h-96 overflow-y-auto overscroll-contain">
           {isLoading ? (
             <div className="flex items-center justify-center py-8">
               <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
@@ -378,7 +430,7 @@ export function EstimateChecklistPopover({ estimateId: _estimateId, projectId, w
               ))}
             </div>
           )}
-        </ScrollArea>
+        </div>
       </PopoverContent>
     </Popover>
   );
