@@ -1,13 +1,15 @@
 import { useState, useEffect, forwardRef, useImperativeHandle, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { Plus, Search, Filter, Edit, Trash2, ChevronRight, ChevronDown, Building, Tag, DollarSign, Box, Loader2, ChevronsUpDown, ChevronsDownUp, ToggleLeft, ToggleRight, X, MoreVertical, FolderPlus, Columns3 } from "lucide-react";
+import { Plus, Search, Filter, Edit, Trash2, ChevronRight, ChevronDown, Building, Tag, DollarSign, Box, Loader2, ChevronsUpDown, ChevronsDownUp, ToggleLeft, ToggleRight, X, MoreVertical, FolderPlus, Columns3, Upload, Download } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { useResizableColumns, ColResizeHandle } from "@/components/useResizableColumns";
+import { ImportPriceListDialog } from "@/components/systems/ImportPriceListDialog";
+import * as XLSX from "xlsx";
 import { EmptyState } from "@/components/EmptyState";
 import {
   Dialog,
@@ -131,6 +133,7 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
   const [groupBy, setGroupBy] = useState<GroupBy>("group");
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showImport, setShowImport] = useState(false);
   const [editingItem, setEditingItem] = useState<PriceListItem | null>(null);
   const [filterGroup, setFilterGroup] = useState<string>("all");
   const [filterSupplier, setFilterSupplier] = useState<string>("all");
@@ -544,6 +547,29 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
   const gridCols = useResizableColumns("price-list", orderedColumns, 72);
   const gridTemplate = `32px ${gridCols.gridTemplate}`;
 
+  /** Export the list as .xlsx using the same headers the importer expects, so a
+   *  round trip works without remapping. Money is written in dollars. */
+  const exportXlsx = () => {
+    const groupName = new Map(priceListGroups.map((g) => [g.id, g.name]));
+    const rows = items.map((i) => ({
+      "Item name": i.name,
+      SKU: i.code ?? "",
+      Group: i.groupId ? (groupName.get(i.groupId) ?? "") : "",
+      Unit: i.unitType ?? "",
+      "Cost (ex GST)": i.costPrice ? centsToDollars(i.costPrice) : 0,
+      "Sell (ex GST)": i.sellPrice ? centsToDollars(i.sellPrice) : "",
+      Nickname: i.nickname ?? "",
+      Description: i.description ?? "",
+      "Supplier ref": i.supplierCode ?? "",
+      Brand: i.brand ?? "",
+      "Lead time (days)": i.leadTimeDays ?? "",
+    }));
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Price list");
+    XLSX.writeFile(wb, `price-list-${new Date().toISOString().slice(0, 10)}.xlsx`);
+  };
+
   const activeFilterCount =
     (filterGroup !== "all" ? 1 : 0) +
     (filterSupplier !== "all" ? 1 : 0) +
@@ -809,6 +835,20 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
                   Add group
                 </DropdownMenuItem>
               )}
+              {priceListId && (
+                <DropdownMenuItem onClick={() => setShowImport(true)} data-testid="button-import-items">
+                  <Upload className="h-3 w-3 mr-2" />
+                  Import from spreadsheet
+                </DropdownMenuItem>
+              )}
+              <DropdownMenuItem
+                onClick={exportXlsx}
+                disabled={items.length === 0}
+                data-testid="button-export-items"
+              >
+                <Download className="h-3 w-3 mr-2" />
+                Export to Excel
+              </DropdownMenuItem>
               {onEditList && (
                 <DropdownMenuItem onClick={onEditList} data-testid="button-edit-list-details">
                   <Edit className="h-3 w-3 mr-2" />
@@ -1100,6 +1140,14 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
           </>
         )}
       </div>
+
+      {priceListId && (
+        <ImportPriceListDialog
+          open={showImport}
+          onOpenChange={setShowImport}
+          priceListId={priceListId}
+        />
+      )}
 
       <PriceListItemModal
         open={showAddModal || !!editingItem}

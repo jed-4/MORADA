@@ -35361,6 +35361,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.post("/api/price-lists/:id/import", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.companyId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+      const { rows } = req.body;
+      if (!Array.isArray(rows)) {
+        return res.status(400).json({ error: "rows must be an array" });
+      }
+      // A supplier book is big but not unbounded; refuse rather than time out.
+      if (rows.length > 5000) {
+        return res.status(400).json({ error: "Too many rows in one import (max 5000)" });
+      }
+      const list = await storage.getPriceList(req.params.id, user.companyId);
+      if (!list) {
+        return res.status(404).json({ error: "Price list not found" });
+      }
+      const result = await storage.importPriceListItems(req.params.id, rows, user.companyId);
+      res.json(result);
+    } catch (error: any) {
+      res.status(500).json({ error: "Failed to import price list items", details: error.message });
+    }
+  });
+
   // Price List Groups — sections inside one list.
   app.get("/api/price-list/groups", requireAuth, requireTeamMember, async (req, res) => {
     try {
