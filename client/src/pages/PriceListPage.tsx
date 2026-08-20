@@ -44,7 +44,7 @@ export default function PriceListPage() {
         <div className="flex items-center gap-1 px-4 pt-3 pb-1 flex-shrink-0">
           <Skeleton className="h-3 w-32" />
         </div>
-        <div className="border border-border rounded-t-lg bg-card flex-shrink-0">
+        <div className="border border-border rounded-lg bg-card flex-shrink-0">
           <div className="h-9 flex items-center px-3">
             <Skeleton className="h-4 w-40" />
           </div>

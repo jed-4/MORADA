@@ -42,6 +42,30 @@ export interface PriceListHandle {
 
 type GroupBy = "none" | "group" | "supplier";
 
+const COLUMN_ORDER_KEY = "grid-col-order-v1";
+
+/** Read a saved column order, dropping unknown keys and appending any new ones. */
+function loadColumnOrder(namespace: string, defaults: string[]): string[] {
+  try {
+    const all = JSON.parse(localStorage.getItem(COLUMN_ORDER_KEY) || "{}");
+    const saved: unknown = all?.[namespace];
+    if (!Array.isArray(saved)) return defaults;
+    const known = saved.filter((k): k is string => defaults.includes(k));
+    // Columns added since the order was saved go on the end rather than vanishing.
+    return [...known, ...defaults.filter((k) => !known.includes(k))];
+  } catch {
+    return defaults;
+  }
+}
+
+function saveColumnOrder(namespace: string, order: string[]) {
+  try {
+    const all = JSON.parse(localStorage.getItem(COLUMN_ORDER_KEY) || "{}");
+    all[namespace] = order;
+    localStorage.setItem(COLUMN_ORDER_KEY, JSON.stringify(all));
+  } catch { /* ignore */ }
+}
+
 /** Pixel widths for the bespoke grid; widths persist per namespace. */
 const GRID_COLUMNS = [
   { key: "name", label: "Item", defaultWidth: 260 },
@@ -231,6 +255,45 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
     return formatCents(incGstFromEx(cents));
   };
 
+  const renderCell = (key: string, item: PriceListItem) => {
+    switch (key) {
+      case "name":
+        return (
+          <>
+            <p className="text-xs font-semibold text-foreground truncate">{item.name}</p>
+            {(item.nickname || item.code) && (
+              <p className="text-[10px] text-muted-foreground truncate">
+                {[item.nickname, item.code].filter(Boolean).join(" · ")}
+              </p>
+            )}
+          </>
+        );
+      case "unit":
+        return <p className="text-[11px] text-muted-foreground truncate">{item.unitType || "—"}</p>;
+      case "cost":
+        return <p className="text-xs font-mono text-right tabular-nums">{formatCurrency(item.costPrice)}</p>;
+      case "sell":
+        return <p className="text-xs font-mono text-right tabular-nums">{formatCurrency(item.sellPrice)}</p>;
+      case "markup":
+        return (
+          <p className="text-[11px] text-muted-foreground text-right tabular-nums">
+            {getMarkup(item.costPrice, item.sellPrice)}
+          </p>
+        );
+      case "status":
+        return item.isActive ? null : (
+          <span
+            className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold w-fit"
+            style={{ background: "hsl(var(--muted))", color: "hsl(var(--muted-foreground))" }}
+          >
+            Inactive
+          </span>
+        );
+      default:
+        return null;
+    }
+  };
+
   const getMarkup = (cost: string | number | null, sell: string | number | null) => {
     if (!cost || !sell) return "-";
     const costNum = typeof cost === "string" ? parseFloat(cost) : cost;
@@ -253,8 +316,66 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
     });
   }, [groups, groupBy]);
 
+  const [columnOrder, setColumnOrder] = useState<string[]>(
+    () => loadColumnOrder("price-list", GRID_COLUMNS.map((c) => c.key)),
+  );
+  const [dragKey, setDragKey] = useState<string | null>(null);
+  const [hoverIndex, setHoverIndex] = useState<number | null>(null);
+
+  const orderedColumns = useMemo(
+    () => columnOrder
+      .map((k) => GRID_COLUMNS.find((c) => c.key === k))
+      .filter((c): c is (typeof GRID_COLUMNS)[number] => !!c),
+    [columnOrder],
+  );
+
+  const moveColumn = (from: string, toIndex: number) => {
+    setColumnOrder((prev) => {
+      const next = prev.filter((k) => k !== from);
+      next.splice(Math.max(0, Math.min(toIndex, next.length)), 0, from);
+      saveColumnOrder("price-list", next);
+      return next;
+    });
+  };
+
+  /** Drag a header cell sideways to reorder; drop index comes from cumulative widths. */
+  const startColumnDrag = (key: string, e: React.MouseEvent) => {
+    const row = e.currentTarget.parentElement as HTMLElement | null;
+    if (!row) return;
+    e.preventDefault();
+    setDragKey(key);
+    const targetIndex = { current: columnOrder.indexOf(key) };
+
+    const onMove = (ev: MouseEvent) => {
+      const rect = row.getBoundingClientRect();
+      const x = ev.clientX - rect.left;
+      let acc = 0;
+      let idx = orderedColumns.length - 1;
+      for (let i = 0; i < orderedColumns.length; i++) {
+        const w = gridCols.widthFor(orderedColumns[i].key, orderedColumns[i].defaultWidth) + 8; // + gap-2
+        if (x < acc + w) { idx = i; break; }
+        acc += w;
+      }
+      targetIndex.current = idx;
+      setHoverIndex(idx);
+    };
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      moveColumn(key, targetIndex.current);
+      setDragKey(null);
+      setHoverIndex(null);
+    };
+    document.body.style.cursor = "grabbing";
+    document.body.style.userSelect = "none";
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  };
+
   // Trailing 72px is the fixed (non-draggable) actions cell.
-  const gridCols = useResizableColumns("price-list", GRID_COLUMNS, 72);
+  const gridCols = useResizableColumns("price-list", orderedColumns, 72);
 
   const activeFilterCount =
     (filterGroup !== "all" ? 1 : 0) +
@@ -276,7 +397,7 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
     <div className="flex flex-col h-full" data-testid="price-list">
       {/* Grid toolbar — second row inside the page card. Filters collapse behind a
           single control with a count badge, matching Tasks. */}
-      <div className="h-9 flex items-center justify-between px-3 gap-2 flex-shrink-0 border-x border-b border-border rounded-b-lg bg-card">
+      <div className="h-9 flex items-center justify-between px-3 gap-2 flex-shrink-0 mt-2">
         <div className="flex items-center gap-1 min-w-0">
           {groupBy !== "none" && (
             <Tooltip>
@@ -517,8 +638,20 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
                             className="grid text-[9px] font-semibold text-muted-foreground uppercase tracking-wide py-2 border-b border-border gap-2"
                             style={{ gridTemplateColumns: gridCols.gridTemplate }}
                           >
-                            {GRID_COLUMNS.map((c) => (
-                              <span key={c.key} className={`relative ${c.align === "right" ? "text-right" : ""}`}>
+                            {orderedColumns.map((c, idx) => (
+                              <span
+                                key={c.key}
+                                onMouseDown={(e) => startColumnDrag(c.key, e)}
+                                className={`relative cursor-grab active:cursor-grabbing select-none ${
+                                  c.align === "right" ? "text-right" : ""
+                                } ${dragKey === c.key ? "opacity-40" : ""} ${
+                                  dragKey && hoverIndex === idx && dragKey !== c.key
+                                    ? "before:absolute before:-left-1 before:top-0 before:bottom-0 before:w-[2px] before:bg-primary"
+                                    : ""
+                                }`}
+                                title="Drag to reorder"
+                                data-testid={`col-header-${c.key}`}
+                              >
                                 {c.label}
                                 <ColResizeHandle
                                   testId={`resize-${c.key}`}
@@ -541,30 +674,10 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
                                 style={{ gridTemplateColumns: gridCols.gridTemplate }}
                                 data-testid={`row-item-${item.id}`}
                               >
-                                <div className="min-w-0">
-                                  <p className="text-xs font-semibold text-foreground truncate">{item.name}</p>
-                                  {(item.nickname || item.code) && (
-                                    <p className="text-[10px] text-muted-foreground truncate">
-                                      {[item.nickname, item.code].filter(Boolean).join(" · ")}
-                                    </p>
-                                  )}
-                                </div>
-                                <p className="text-[11px] text-muted-foreground truncate">{item.unitType || "—"}</p>
-                                <p className="text-xs font-mono text-right tabular-nums">{formatCurrency(item.costPrice)}</p>
-                                <p className="text-xs font-mono text-right tabular-nums">{formatCurrency(item.sellPrice)}</p>
-                                <p className="text-[11px] text-muted-foreground text-right tabular-nums">
-                                  {getMarkup(item.costPrice, item.sellPrice)}
-                                </p>
-                                <div>
-                                  {!item.isActive && (
-                                    <span
-                                      className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold w-fit"
-                                      style={{ background: "hsl(var(--muted))", color: "hsl(var(--muted-foreground))" }}
-                                    >
-                                      Inactive
-                                    </span>
-                                  )}
-                                </div>
+                                {/* Cells follow the header order, so reordering moves both. */}
+                                {orderedColumns.map((c) => (
+                                  <div key={c.key} className="min-w-0">{renderCell(c.key, item)}</div>
+                                ))}
                                 <div className="flex items-center justify-end gap-0.5 opacity-0 group-hover/row:opacity-100 transition-opacity">
                                   <Button
                                     variant="ghost"
