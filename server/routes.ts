@@ -178,6 +178,7 @@ import {
   insertPriceListSchema,
   insertPriceListGroupSchema,
   insertPriceListItemSchema,
+  insertBillLineItemPriceLinkSchema,
   type CircuitContext
 } from "@shared/schema";
 // Namespace import for table references (schema.selections etc.). Several
@@ -34906,7 +34907,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ============================================
 
   // Price Lists (the library)
-  app.get("/api/price-lists", requireAuth, async (req, res) => {
+  app.get("/api/price-lists", requireAuth, requireTeamMember, async (req, res) => {
     try {
       const user = req.user as any;
       if (!user?.companyId) {
@@ -34922,7 +34923,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/price-lists/:id", requireAuth, async (req, res) => {
+  app.get("/api/price-lists/:id", requireAuth, requireTeamMember, async (req, res) => {
     try {
       const user = req.user as any;
       if (!user?.companyId) {
@@ -34938,7 +34939,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/price-lists", requireAuth, async (req, res) => {
+  app.post("/api/price-lists", requireAuth, requireTeamMember, async (req, res) => {
     try {
       const user = req.user as any;
       if (!user?.companyId) {
@@ -34965,7 +34966,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/price-lists/:id", requireAuth, async (req, res) => {
+  app.patch("/api/price-lists/:id", requireAuth, requireTeamMember, async (req, res) => {
     try {
       const user = req.user as any;
       if (!user?.companyId) {
@@ -34991,7 +34992,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/price-lists/:id", requireAuth, async (req, res) => {
+  app.delete("/api/price-lists/:id", requireAuth, requireTeamMember, async (req, res) => {
     try {
       const user = req.user as any;
       if (!user?.companyId) {
@@ -35008,7 +35009,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Price List Groups — sections inside one list.
-  app.get("/api/price-list/groups", requireAuth, async (req, res) => {
+  app.get("/api/price-list/groups", requireAuth, requireTeamMember, async (req, res) => {
     try {
       const user = req.user as any;
       if (!user?.companyId) {
@@ -35021,7 +35022,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/price-list/groups", requireAuth, async (req, res) => {
+  app.post("/api/price-list/groups", requireAuth, requireTeamMember, async (req, res) => {
     try {
       const user = req.user as any;
       if (!user?.companyId) {
@@ -35049,7 +35050,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/price-list/groups/:id", requireAuth, async (req, res) => {
+  app.patch("/api/price-list/groups/:id", requireAuth, requireTeamMember, async (req, res) => {
     try {
       const user = req.user as any;
       if (!user?.companyId) {
@@ -35081,7 +35082,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/price-list/groups/:id", requireAuth, async (req, res) => {
+  app.delete("/api/price-list/groups/:id", requireAuth, requireTeamMember, async (req, res) => {
     try {
       const user = req.user as any;
       if (!user?.companyId) {
@@ -35097,7 +35098,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/price-list/groups/reorder", requireAuth, async (req, res) => {
+  app.post("/api/price-list/groups/reorder", requireAuth, requireTeamMember, async (req, res) => {
     try {
       const user = req.user as any;
       if (!user?.companyId) {
@@ -35115,7 +35116,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Price List Items
-  app.get("/api/price-list/items", requireAuth, async (req, res) => {
+  app.get("/api/price-list/items", requireAuth, requireTeamMember, async (req, res) => {
     try {
       const user = req.user as any;
       if (!user?.companyId) {
@@ -35136,7 +35137,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/price-list/items/:id", requireAuth, async (req, res) => {
+  app.get("/api/price-list/items/:id", requireAuth, requireTeamMember, async (req, res) => {
     try {
       const user = req.user as any;
       if (!user?.companyId) {
@@ -35152,7 +35153,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/price-list/items", requireAuth, async (req, res) => {
+  app.post("/api/price-list/items", requireAuth, requireTeamMember, async (req, res) => {
     try {
       const user = req.user as any;
       if (!user?.companyId) {
@@ -35179,7 +35180,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/price-list/items/:id", requireAuth, async (req, res) => {
+  app.patch("/api/price-list/items/:id", requireAuth, requireTeamMember, async (req, res) => {
     try {
       const user = req.user as any;
       if (!user?.companyId) {
@@ -35209,7 +35210,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/price-list/items/:id", requireAuth, async (req, res) => {
+  app.delete("/api/price-list/items/:id", requireAuth, requireTeamMember, async (req, res) => {
     try {
       const user = req.user as any;
       if (!user?.companyId) {
@@ -35225,7 +35226,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/price-list/items/bulk-update", requireAuth, async (req, res) => {
+  app.post("/api/price-list/items/bulk-update", requireAuth, requireTeamMember, async (req, res) => {
     try {
       const user = req.user as any;
       if (!user?.companyId) {
@@ -35243,7 +35244,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // AI Price List Review routes
-  app.get("/api/price-list/review/unlinked", requireAuth, async (req, res) => {
+  app.get("/api/price-list/review/unlinked", requireAuth, requireTeamMember, async (req, res) => {
     try {
       const user = req.user as any;
       if (!user?.companyId) {
@@ -35256,7 +35257,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/price-list/review/links", requireAuth, async (req, res) => {
+  app.get("/api/price-list/review/links", requireAuth, requireTeamMember, async (req, res) => {
     try {
       const user = req.user as any;
       if (!user?.companyId) {
@@ -35270,26 +35271,45 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/price-list/review/links", requireAuth, async (req, res) => {
+  app.post("/api/price-list/review/links", requireAuth, requireTeamMember, async (req, res) => {
     try {
       const user = req.user as any;
       if (!user?.companyId) {
         return res.status(401).json({ error: "Unauthorized" });
       }
-      const link = await storage.createBillLineItemPriceLink(req.body);
+      const parsed = insertBillLineItemPriceLinkSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({
+          error: "Validation failed",
+          details: fromZodError(parsed.error).toString()
+        });
+      }
+      const link = await storage.createBillLineItemPriceLink(parsed.data, user.companyId);
+      if (!link) {
+        // Not ours — same 404 as a genuinely missing row, so the endpoint can't be
+        // used to probe which ids exist in other companies.
+        return res.status(404).json({ error: "Bill line item not found" });
+      }
       res.status(201).json(link);
     } catch (error: any) {
       res.status(500).json({ error: "Failed to create price list link", details: error.message });
     }
   });
 
-  app.patch("/api/price-list/review/links/:id", requireAuth, async (req, res) => {
+  app.patch("/api/price-list/review/links/:id", requireAuth, requireTeamMember, async (req, res) => {
     try {
       const user = req.user as any;
       if (!user?.companyId) {
         return res.status(401).json({ error: "Unauthorized" });
       }
-      const link = await storage.updateBillLineItemPriceLink(req.params.id, req.body);
+      const parsed = insertBillLineItemPriceLinkSchema.partial().safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({
+          error: "Validation failed",
+          details: fromZodError(parsed.error).toString()
+        });
+      }
+      const link = await storage.updateBillLineItemPriceLink(req.params.id, parsed.data, user.companyId);
       if (!link) {
         return res.status(404).json({ error: "Link not found" });
       }
