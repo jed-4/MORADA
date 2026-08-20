@@ -11,6 +11,8 @@ import { PriceList, type PriceListHandle } from "@/components/systems/PriceList"
 import { PriceListFormModal } from "@/components/systems/PriceListFormModal";
 import type { PriceList as PriceListType } from "@shared/schema";
 
+type PriceListDetail = PriceListType & { supplierName: string | null };
+
 const KIND_META = {
   supplier: { label: "Supplier", icon: Building2 },
   labour: { label: "Labour", icon: HardHat },
@@ -32,7 +34,7 @@ export default function PriceListPage() {
   const [showEditModal, setShowEditModal] = useState(false);
   const priceListRef = useRef<PriceListHandle>(null);
 
-  const { data: list, isLoading, isError } = useQuery<PriceListType>({
+  const { data: list, isLoading, isError } = useQuery<PriceListDetail>({
     queryKey: ["/api/price-lists", id],
     queryFn: () => apiRequest(`/api/price-lists/${id}`, "GET"),
     enabled: !!id,
@@ -100,42 +102,18 @@ export default function PriceListPage() {
         {list.isDefault && <Star className="h-3 w-3 fill-primary text-primary flex-shrink-0" aria-label="Default list" />}
       </div>
 
-      {/* Floats on the page ground — the group cards are the only card surfaces. */}
-      <div className="flex-shrink-0">
-        <div className="h-9 flex items-center justify-between px-4 gap-2">
-          <div className="flex items-center gap-1.5 min-w-0">
-            <KindIcon className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
-            <Badge variant="outline" className="h-4 text-label flex-shrink-0">{meta.label}</Badge>
-            {list.isArchived && <Badge variant="secondary" className="h-4 text-label flex-shrink-0">Archived</Badge>}
-            {effective && (
-              <span className="text-xs text-muted-foreground ml-1 truncate hidden lg:inline">{effective}</span>
-            )}
-          </div>
-
-          <div className="flex items-center gap-1 flex-shrink-0">
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button
-                  onClick={() => setShowEditModal(true)}
-                  className="h-6 w-6 flex items-center justify-center rounded-md border border-border/50 text-muted-foreground hover-elevate active-elevate-2"
-                  data-testid="button-edit-list-details"
-                  aria-label="List details"
-                >
-                  <Pencil className="h-3 w-3" />
-                </button>
-              </TooltipTrigger>
-              <TooltipContent side="bottom">List details</TooltipContent>
-            </Tooltip>
-
-            <button
-              className="h-6 w-auto px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-0.5"
-              onClick={() => priceListRef.current?.openAddModal()}
-              data-testid="button-add-price-list-item"
-            >
-              <Plus className="w-3 h-3" />
-              <span>Add Item</span>
-            </button>
-          </div>
+      {/* Whose prices these are. Controls all live in the toolbar below. */}
+      <div className="flex-shrink-0 px-4 pt-1 pb-2">
+        <div className="flex items-baseline gap-2 min-w-0">
+          <h1 className="text-lg font-semibold tracking-tight truncate" data-testid="text-list-supplier">
+            {list.supplierName || list.name}
+          </h1>
+          {list.isArchived && (
+            <Badge variant="secondary" className="h-4 text-label flex-shrink-0">Archived</Badge>
+          )}
+          {effective && (
+            <span className="text-xs text-muted-foreground truncate hidden lg:inline">{effective}</span>
+          )}
         </div>
       </div>
 
@@ -146,6 +124,7 @@ export default function PriceListPage() {
           ref={priceListRef}
           priceListId={list.id}
           kind={list.kind as "supplier" | "labour" | "internal"}
+          onEditList={() => setShowEditModal(true)}
         />
       </div>
 

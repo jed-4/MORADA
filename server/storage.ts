@@ -1402,7 +1402,7 @@ export interface IStorage {
 
   // Price Lists (the library) CRUD
   getPriceLists(companyId: string, filters?: { kind?: string; includeArchived?: boolean }): Promise<Array<PriceList & { itemCount: number; supplierName: string | null }>>;
-  getPriceList(id: string, companyId: string): Promise<PriceList | undefined>;
+  getPriceList(id: string, companyId: string): Promise<(PriceList & { supplierName: string | null }) | undefined>;
   createPriceList(list: InsertPriceList & { companyId: string; createdBy?: string }): Promise<PriceList>;
   updatePriceList(id: string, list: Partial<InsertPriceList>, companyId: string): Promise<PriceList | undefined>;
   deletePriceList(id: string, companyId: string): Promise<boolean>;
@@ -24936,14 +24936,20 @@ export class DbStorage implements IStorage {
     }
   }
 
-  async getPriceList(id: string, companyId: string): Promise<PriceList | undefined> {
+  async getPriceList(id: string, companyId: string): Promise<(PriceList & { supplierName: string | null }) | undefined> {
     try {
-      const result = await db.select().from(schema.priceLists)
+      // Joined so the detail header can name the supplier without a second round
+      // trip — Neon us-east-1 from AU makes every extra hop ~400ms.
+      const result = await db
+        .select({ list: schema.priceLists, supplierName: schema.contacts.name })
+        .from(schema.priceLists)
+        .leftJoin(schema.contacts, eq(schema.priceLists.supplierId, schema.contacts.id))
         .where(and(
           eq(schema.priceLists.id, id),
           eq(schema.priceLists.companyId, companyId)
         ));
-      return result[0];
+      if (!result[0]) return undefined;
+      return { ...result[0].list, supplierName: result[0].supplierName ?? null };
     } catch (error) {
       console.error("Database error in getPriceList:", error);
       throw error;
