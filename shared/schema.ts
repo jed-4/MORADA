@@ -6274,62 +6274,117 @@ export type FolderTemplate = typeof folderTemplates.$inferSelect;
 // PRICE LIST FEATURE
 // ============================================
 
-// Price List Categories (configurable grouping for price list items)
-export const priceListCategories = pgTable("price_list_categories", {
+// A price list is a BOOK of items: one supplier's price book ("The Plaster Shop",
+// "Bunnings"), your own labour rate card, or your own internal/design catalogue.
+// `kind` drives which columns and form fields make sense — a labour rate has no
+// lead time, a supplier book is about what you PAY, an internal list about what
+// you CHARGE. Items live in exactly one list (Jed, 2026-08-18).
+export const priceListKindEnum = pgEnum("price_list_kind", [
+  "supplier",
+  "labour",
+  "internal",
+]);
+
+export const priceLists = pgTable("price_lists", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
+  kind: priceListKindEnum("kind").notNull().default("supplier"),
+  // Set when kind = 'supplier'. Points at contacts (contactType='supplier') — NOT the
+  // deprecated `suppliers` table.
+  supplierId: varchar("supplier_id").references(() => contacts.id, { onDelete: "set null" }),
   description: text("description"),
-  color: text("color"), // Hex color for visual grouping
-  sortOrder: integer("sort_order").notNull().default(0),
-  isActive: boolean("is_active").notNull().default(true),
+  colour: text("colour"),
+  isDefault: boolean("is_default").notNull().default(false),
+  isArchived: boolean("is_archived").notNull().default(false),
+  // Supplier price books are dated — keep last quarter's list for audit.
+  effectiveFrom: timestamp("effective_from"),
+  effectiveTo: timestamp("effective_to"),
+  sourceNote: text("source_note"),
+  lastImportedAt: timestamp("last_imported_at"),
+  createdBy: varchar("created_by").references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({
-  companyIdx: index("price_list_categories_company_idx").on(table.companyId),
-  uniqueNamePerCompany: uniqueIndex("price_list_categories_name_unique").on(table.companyId, table.name),
+  companyIdx: index("price_lists_company_idx").on(table.companyId),
+  supplierIdx: index("price_lists_supplier_idx").on(table.supplierId),
+  uniqueNamePerCompany: uniqueIndex("price_lists_name_unique").on(table.companyId, table.name),
 }));
 
-export const insertPriceListCategorySchema = createInsertSchema(priceListCategories).omit({
+export const insertPriceListSchema = createInsertSchema(priceLists).omit({
   id: true,
   companyId: true,
   createdAt: true,
   updatedAt: true,
+}).extend({
+  name: z.string().trim().min(1, "Name is required"),
+  kind: z.enum(["supplier", "labour", "internal"]).default("supplier"),
+  supplierId: z.string().nullable().optional(),
+  effectiveFrom: z.coerce.date().nullable().optional(),
+  effectiveTo: z.coerce.date().nullable().optional(),
+  lastImportedAt: z.coerce.date().nullable().optional(),
 });
 
-export type InsertPriceListCategory = z.infer<typeof insertPriceListCategorySchema>;
-export type PriceListCategory = typeof priceListCategories.$inferSelect;
+export type InsertPriceList = z.infer<typeof insertPriceListSchema>;
+export type PriceList = typeof priceLists.$inferSelect;
 
-// Unit Type enum for price list items
-export const unitTypeEnum = pgEnum("unit_type", [
-  "each",
-  "m2",      // Square meters
-  "lin_m",   // Linear meters
-  "m3",      // Cubic meters
-  "hour",
-  "day",
-  "week",
-  "lot",
-  "kg",
-  "tonne",
-  "litre",
-  "pack",
-  "set",
-  "pair",
-]);
+// A GROUP is a section INSIDE one price list — "Plasterboard", "Cornice",
+// "Compounds" belong to The Plaster Shop's book and nowhere else. This replaces the
+// old company-global `price_list_categories`, which sat outside any list and made the
+// layering ambiguous. Same shape as `estimate_groups`, so the grid can reuse its
+// reorder/collapse behaviour.
+export const priceListGroups = pgTable("price_list_groups", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  priceListId: varchar("price_list_id").notNull().references(() => priceLists.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  description: text("description"),
+  colour: text("colour"),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  companyIdx: index("price_list_groups_company_idx").on(table.companyId),
+  priceListIdx: index("price_list_groups_price_list_idx").on(table.priceListId),
+  uniqueNamePerList: uniqueIndex("price_list_groups_name_unique").on(table.priceListId, table.name),
+}));
+
+export const insertPriceListGroupSchema = createInsertSchema(priceListGroups).omit({
+  id: true,
+  companyId: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  name: z.string().trim().min(1, "Name is required"),
+  priceListId: z.string().min(1, "A price list is required"),
+  sortOrder: z.number().int().default(0),
+});
+
+export type InsertPriceListGroup = z.infer<typeof insertPriceListGroupSchema>;
+export type PriceListGroup = typeof priceListGroups.$inferSelect;
+
+// Unit of measure is FREE TEXT, deliberately. The canonical per-company list comes from
+// Field Settings (`estimate_item.unit`), and `shared/units.ts` reconciles spellings across
+// surfaces. This was a 14-value pgEnum while the form offered 19 options, so 12 of them
+// failed to insert. Matches `estimate_items.unitType`, which is also text.
 
 // Price List Items (main catalog of products/materials/services)
 export const priceListItems = pgTable("price_list_items", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
-  
+  // The book this item belongs to. Exactly one.
+  priceListId: varchar("price_list_id").notNull().references(() => priceLists.id, { onDelete: "cascade" }),
+
   // Core details
   name: text("name").notNull(), // Official product name
   nickname: text("nickname"), // What the team calls it
   code: text("code"), // SKU / internal reference code
   description: text("description"), // Detailed notes, specifications
-  categoryId: varchar("category_id").references(() => priceListCategories.id, { onDelete: "set null" }),
-  unitType: unitTypeEnum("unit_type").notNull().default("each"),
+  // The section within the list. Null = ungrouped, shown under "Ungrouped".
+  groupId: varchar("group_id").references(() => priceListGroups.id, { onDelete: "set null" }),
+  // Carried onto an estimate line with the item, so provenance keeps its cost code.
+  costCodeId: varchar("cost_code_id").references(() => costCodes.id, { onDelete: "set null" }),
+  unitType: text("unit_type").notNull().default("each"),
   
   // Pricing (stored in cents for accuracy)
   costPrice: integer("cost_price").notNull().default(0), // What you pay (cents, ex GST)
@@ -6359,7 +6414,8 @@ export const priceListItems = pgTable("price_list_items", {
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({
   companyIdx: index("price_list_items_company_idx").on(table.companyId),
-  categoryIdx: index("price_list_items_category_idx").on(table.categoryId),
+  priceListIdx: index("price_list_items_price_list_idx").on(table.priceListId),
+  groupIdx: index("price_list_items_group_idx").on(table.groupId),
   supplierIdx: index("price_list_items_supplier_idx").on(table.supplierId),
   codeIdx: index("price_list_items_code_idx").on(table.companyId, table.code),
 }));
@@ -6370,9 +6426,14 @@ export const insertPriceListItemSchema = createInsertSchema(priceListItems).omit
   createdAt: true,
   updatedAt: true,
 }).extend({
-  unitType: z.enum(["each", "m2", "lin_m", "m3", "hour", "day", "week", "lot", "kg", "tonne", "litre", "pack", "set", "pair"]).default("each"),
-  costPrice: z.number().default(0),
-  sellPrice: z.number().optional(),
+  priceListId: z.string().min(1, "A price list is required"),
+  name: z.string().trim().min(1, "Name is required"),
+  groupId: z.string().nullable().optional(),
+  unitType: z.string().trim().min(1).default("each"),
+  costCodeId: z.string().nullable().optional(),
+  // CENTS, integer — never dollars. The form converts at the boundary.
+  costPrice: z.number().int("Cost must be a whole number of cents").default(0),
+  sellPrice: z.number().int("Sell must be a whole number of cents").nullable().optional(),
   markupPercent: z.string().optional().transform(val => val === "" ? null : val),
   tags: z.array(z.string()).optional(),
   priceHistory: z.array(z.object({

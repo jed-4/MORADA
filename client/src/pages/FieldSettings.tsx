@@ -17,7 +17,7 @@ import { Plus, Edit2, Trash2, Settings as SettingsIcon, GripVertical, List, Arro
 import { useToast } from "@/hooks/use-toast";
 import { useLocation } from "wouter";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { FieldOption, FieldCategory, SupplierLabel, PriceListCategory, ScopeItemTypeDefinition, UserRole } from "@shared/schema";
+import { FieldOption, FieldCategory, SupplierLabel, ScopeItemTypeDefinition, UserRole } from "@shared/schema";
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent, DragStartEvent, DragOverlay } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { BUILDPRO_PALETTE } from '@/lib/colors';
@@ -218,16 +218,6 @@ export default function FieldSettings() {
     description: "",
   });
 
-  // Price List Categories state
-  const [showPriceListCategories, setShowPriceListCategories] = useState(false);
-  const [isPLCategoryDialogOpen, setIsPLCategoryDialogOpen] = useState(false);
-  const [editingPLCategory, setEditingPLCategory] = useState<PriceListCategory | null>(null);
-  const [plCategoryFormData, setPLCategoryFormData] = useState({
-    name: "",
-    color: "#3b82f6",
-    description: "",
-  });
-
   // Scope Item Types state
   const [showScopeItemTypes, setShowScopeItemTypes] = useState(false);
   const [isTypeDialogOpen, setIsTypeDialogOpen] = useState(false);
@@ -246,7 +236,6 @@ export default function FieldSettings() {
     if (section === "scope") {
       setShowScopeItemTypes(true);
       setShowSupplierLabels(false);
-      setShowPriceListCategories(false);
     }
   }, []);
 
@@ -259,12 +248,6 @@ export default function FieldSettings() {
   const { data: supplierLabels = [] } = useQuery<SupplierLabel[]>({
     queryKey: ['/api/supplier-labels'],
     enabled: showSupplierLabels,
-  });
-
-  // Fetch price list categories
-  const { data: priceListCategories = [] } = useQuery<PriceListCategory[]>({
-    queryKey: ['/api/price-list/categories'],
-    enabled: showPriceListCategories,
   });
 
   // Fetch scope item type definitions
@@ -691,124 +674,6 @@ export default function FieldSettings() {
     }
   };
 
-  // Price List Category mutations
-  const createPLCategoryMutation = useMutation({
-    mutationFn: async (data: { name: string; color: string; description?: string }) => {
-      return await apiRequest('/api/price-list/categories', 'POST', data);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/price-list/categories'] });
-      toast({
-        title: "Category created",
-        description: "The price list category has been created successfully.",
-      });
-      setIsPLCategoryDialogOpen(false);
-      resetPLCategoryForm();
-    },
-    onError: () => {
-      toast({
-        title: "Error",
-        description: "Failed to create price list category.",
-        variant: "destructive",
-      });
-    },
-  });
-
-  const updatePLCategoryMutation = useMutation({
-    mutationFn: async ({ id, data }: { id: string; data: Partial<PriceListCategory> }) => {
-      return await apiRequest(`/api/price-list/categories/${id}`, 'PATCH', data);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/price-list/categories'] });
-      toast({
-        title: "Category updated",
-        description: "The price list category has been updated successfully.",
-      });
-      setIsPLCategoryDialogOpen(false);
-      setEditingPLCategory(null);
-      resetPLCategoryForm();
-    },
-    onError: () => {
-      toast({
-        title: "Error",
-        description: "Failed to update price list category.",
-        variant: "destructive",
-      });
-    },
-  });
-
-  const deletePLCategoryMutation = useMutation({
-    mutationFn: async (id: string) => {
-      return await apiRequest(`/api/price-list/categories/${id}`, 'DELETE');
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/price-list/categories'] });
-      toast({
-        title: "Category deleted",
-        description: "The price list category has been deleted successfully.",
-      });
-    },
-    onError: () => {
-      toast({
-        title: "Error",
-        description: "Failed to delete price list category.",
-        variant: "destructive",
-      });
-    },
-  });
-
-  const resetPLCategoryForm = () => {
-    setPLCategoryFormData({
-      name: "",
-      color: "#3b82f6",
-      description: "",
-    });
-  };
-
-  const handleEditPLCategory = (category: PriceListCategory) => {
-    setEditingPLCategory(category);
-    setPLCategoryFormData({
-      name: category.name,
-      color: category.color || "#3b82f6",
-      description: category.description || "",
-    });
-    setIsPLCategoryDialogOpen(true);
-  };
-
-  const handleDeletePLCategory = (id: string) => {
-    setConfirmAction({
-      title: "Delete this price list category?",
-      description: "This cannot be undone.",
-      confirmLabel: "Delete",
-      destructive: true,
-      run: () => deletePLCategoryMutation.mutate(id),
-    });
-  };
-
-  const handleSubmitPLCategory = () => {
-    if (!plCategoryFormData.name.trim()) {
-      toast({
-        title: "Validation error",
-        description: "Category name is required.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    if (editingPLCategory) {
-      updatePLCategoryMutation.mutate({
-        id: editingPLCategory.id,
-        data: {
-          name: plCategoryFormData.name,
-          color: plCategoryFormData.color,
-          description: plCategoryFormData.description || null,
-        },
-      });
-    } else {
-      createPLCategoryMutation.mutate(plCategoryFormData);
-    }
-  };
-
   // Scope Item Type mutations
   const createTypeMutation = useMutation({
     mutationFn: async (data: { name: string; visibleToRoles: string[]; displayOrder: number }) => {
@@ -1014,7 +879,7 @@ export default function FieldSettings() {
           <PageHeader title="Field Settings" className="mb-6" />
           <nav className="space-y-1">
             {fieldCategories.map((category) => {
-              const isActive = selectedCategoryId === category.id && !showSupplierLabels && !showPriceListCategories && !showScopeItemTypes;
+              const isActive = selectedCategoryId === category.id && !showSupplierLabels && !showScopeItemTypes;
               
               return (
                 <button
@@ -1022,8 +887,7 @@ export default function FieldSettings() {
                   onClick={() => {
                     setSelectedCategoryId(category.id);
                     setShowSupplierLabels(false);
-                    setShowPriceListCategories(false);
-                    setShowScopeItemTypes(false);
+                        setShowScopeItemTypes(false);
                   }}
                   className={`w-full flex items-center gap-3 px-3 py-2 rounded-md text-left transition-colors ${
                     isActive 
@@ -1047,7 +911,6 @@ export default function FieldSettings() {
             <button
               onClick={() => {
                 setShowSupplierLabels(true);
-                setShowPriceListCategories(false);
                 setShowScopeItemTypes(false);
                 setSelectedCategoryId("");
               }}
@@ -1064,30 +927,6 @@ export default function FieldSettings() {
 
             <div className="pt-4 pb-2">
               <span className="px-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                Resources
-              </span>
-            </div>
-            
-            <button
-              onClick={() => {
-                setShowPriceListCategories(true);
-                setShowSupplierLabels(false);
-                setShowScopeItemTypes(false);
-                setSelectedCategoryId("");
-              }}
-              className={`w-full flex items-center gap-3 px-3 py-2 rounded-md text-left transition-colors ${
-                showPriceListCategories 
-                  ? "bg-primary text-white" 
-                  : "text-muted-foreground hover-elevate"
-              }`}
-              data-testid="category-price-list-categories"
-            >
-              <Tag className="h-4 w-4 flex-shrink-0" />
-              <span className="text-sm font-medium">Price List Categories</span>
-            </button>
-
-            <div className="pt-4 pb-2">
-              <span className="px-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                 Scope
               </span>
             </div>
@@ -1096,7 +935,6 @@ export default function FieldSettings() {
               onClick={() => {
                 setShowScopeItemTypes(true);
                 setShowSupplierLabels(false);
-                setShowPriceListCategories(false);
                 setSelectedCategoryId("");
               }}
               className={`w-full flex items-center gap-3 px-3 py-2 rounded-md text-left transition-colors ${
@@ -1266,168 +1104,6 @@ export default function FieldSettings() {
                                     variant="ghost"
                                     onClick={() => handleDeleteLabel(label.id)}
                                     data-testid={`button-delete-label-${label.id}`}
-                                  >
-                                    <Trash2 className="h-4 w-4" />
-                                  </Button>
-                                </div>
-                              </TableCell>
-                            </TableRow>
-                          ))
-                        )}
-                      </TableBody>
-                    </Table>
-                  </CardContent>
-                </Card>
-              </div>
-            ) : showPriceListCategories ? (
-              <div className="space-y-6">
-                {/* Price List Categories Header */}
-                <div>
-                  <h2 className="text-xl font-semibold tracking-tight">Price List Categories</h2>
-                  <p className="text-sm text-muted-foreground mt-1">
-                    Create categories to organize your price list items
-                  </p>
-                </div>
-
-                <Card>
-                  <CardHeader>
-                    <div className="flex items-center justify-between">
-                      <CardTitle>Categories</CardTitle>
-                      <Dialog open={isPLCategoryDialogOpen} onOpenChange={(open) => {
-                        if (!open) {
-                          setEditingPLCategory(null);
-                          resetPLCategoryForm();
-                        }
-                        setIsPLCategoryDialogOpen(open);
-                      }}>
-                        <DialogTrigger asChild>
-                          <Button className="bg-primary hover:bg-primary/90 text-white" data-testid="button-add-pl-category">
-                            <Plus className="h-4 w-4 mr-2" />
-                            Add Category
-                          </Button>
-                        </DialogTrigger>
-                        <DialogContent data-testid="dialog-pl-category-form">
-                          <DialogHeader>
-                            <DialogTitle>
-                              {editingPLCategory ? "Edit Category" : "Create New Category"}
-                            </DialogTitle>
-                            <DialogDescription>
-                              {editingPLCategory
-                                ? "Update the category details below."
-                                : "Add a new category for organizing price list items."}
-                            </DialogDescription>
-                          </DialogHeader>
-                          <div className="space-y-4 py-4">
-                            <div className="space-y-2">
-                              <Label htmlFor="pl-category-name">Category Name</Label>
-                              <Input
-                                id="pl-category-name"
-                                value={plCategoryFormData.name}
-                                onChange={(e) => setPLCategoryFormData({ ...plCategoryFormData, name: e.target.value })}
-                                placeholder="e.g., Timber, Hardware, Paint"
-                                data-testid="input-pl-category-name"
-                              />
-                            </div>
-                            <div className="space-y-2">
-                              <Label htmlFor="pl-category-color">Color</Label>
-                              <Select
-                                value={plCategoryFormData.color}
-                                onValueChange={(value) => setPLCategoryFormData({ ...plCategoryFormData, color: value })}
-                              >
-                                <SelectTrigger id="pl-category-color" data-testid="select-pl-category-color">
-                                  <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {STATUS_COLORS.map((color) => (
-                                    <SelectItem key={color.value} value={color.value}>
-                                      <div className="flex items-center gap-2">
-                                        <div
-                                          className="w-4 h-4 rounded"
-                                          style={{ backgroundColor: color.value }}
-                                        />
-                                        {color.label}
-                                      </div>
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                            </div>
-                            <div className="space-y-2">
-                              <Label htmlFor="pl-category-description">Description (Optional)</Label>
-                              <Input
-                                id="pl-category-description"
-                                value={plCategoryFormData.description}
-                                onChange={(e) => setPLCategoryFormData({ ...plCategoryFormData, description: e.target.value })}
-                                placeholder="Brief description of this category"
-                                data-testid="input-pl-category-description"
-                              />
-                            </div>
-                          </div>
-                          <DialogFooter>
-                            <Button
-                              variant="outline"
-                              onClick={() => setIsPLCategoryDialogOpen(false)}
-                              data-testid="button-cancel-pl-category"
-                            >
-                              Cancel
-                            </Button>
-                            <Button
-                              onClick={handleSubmitPLCategory}
-                              disabled={createPLCategoryMutation.isPending || updatePLCategoryMutation.isPending}
-                              className="bg-primary hover:bg-primary/90 text-white"
-                              data-testid="button-save-pl-category"
-                            >
-                              {editingPLCategory ? "Update" : "Create"}
-                            </Button>
-                          </DialogFooter>
-                        </DialogContent>
-                      </Dialog>
-                    </div>
-                  </CardHeader>
-                  <CardContent>
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Name</TableHead>
-                          <TableHead>Preview</TableHead>
-                          <TableHead>Description</TableHead>
-                          <TableHead className="text-right">Actions</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {priceListCategories.length === 0 ? (
-                          <TableRow>
-                            <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
-                              No categories configured. Click "Add Category" to create one.
-                            </TableCell>
-                          </TableRow>
-                        ) : (
-                          priceListCategories.map((category) => (
-                            <TableRow key={category.id} data-testid={`row-pl-category-${category.id}`}>
-                              <TableCell className="font-medium">{category.name}</TableCell>
-                              <TableCell>
-                                <Badge style={{ backgroundColor: category.color || "#3b82f6", color: "white" }}>
-                                  {category.name}
-                                </Badge>
-                              </TableCell>
-                              <TableCell className="text-muted-foreground">
-                                {category.description || "-"}
-                              </TableCell>
-                              <TableCell className="text-right">
-                                <div className="flex items-center justify-end gap-2">
-                                  <Button
-                                    size="icon"
-                                    variant="ghost"
-                                    onClick={() => handleEditPLCategory(category)}
-                                    data-testid={`button-edit-pl-category-${category.id}`}
-                                  >
-                                    <Edit2 className="h-4 w-4" />
-                                  </Button>
-                                  <Button
-                                    size="icon"
-                                    variant="ghost"
-                                    onClick={() => handleDeletePLCategory(category.id)}
-                                    data-testid={`button-delete-pl-category-${category.id}`}
                                   >
                                     <Trash2 className="h-4 w-4" />
                                   </Button>

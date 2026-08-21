@@ -163,7 +163,7 @@ import type { SupplierLabel, InsertSupplierLabel, SupplierLabelAssignment, Inser
 import type { SupplierInsurance, InsertSupplierInsurance, SupplierContact, InsertSupplierContact } from "@shared/schema";
 import type { ContactInsurance, InsertContactInsurance } from "@shared/schema";
 import { contactInsurances as contactInsurancesTable } from "@shared/schema";
-import type { PriceListCategory, InsertPriceListCategory, PriceListItem, InsertPriceListItem, BillLineItemPriceLink, InsertBillLineItemPriceLink } from "@shared/schema";
+import type { PriceList, InsertPriceList, PriceListGroup, InsertPriceListGroup, PriceListItem, InsertPriceListItem, BillLineItemPriceLink, InsertBillLineItemPriceLink } from "@shared/schema";
 import type { DashboardView, InsertDashboardView, DashboardViewPermission, InsertDashboardViewPermission, UserDashboardPreference } from "@shared/schema";
 import type { NoteGroup, InsertNoteGroup } from "@shared/schema";
 import type { Notification as InAppNotification, InsertNotification } from "@shared/schema";
@@ -1400,25 +1400,38 @@ export interface IStorage {
   getDriveFileActivityLogs(companyId: string, projectId?: string, limit?: number): Promise<import("@shared/schema").DriveFileActivityLog[]>;
   createDriveFileActivityLog(log: import("@shared/schema").InsertDriveFileActivityLog): Promise<import("@shared/schema").DriveFileActivityLog>;
 
-  // Price List Categories CRUD
-  getPriceListCategories(companyId: string): Promise<PriceListCategory[]>;
-  getPriceListCategory(id: string, companyId: string): Promise<PriceListCategory | undefined>;
-  createPriceListCategory(category: InsertPriceListCategory & { companyId: string }): Promise<PriceListCategory>;
-  updatePriceListCategory(id: string, category: Partial<InsertPriceListCategory>, companyId: string): Promise<PriceListCategory | undefined>;
-  deletePriceListCategory(id: string, companyId: string): Promise<boolean>;
+  // Price Lists (the library) CRUD
+  getPriceLists(companyId: string, filters?: { kind?: string; includeArchived?: boolean }): Promise<Array<PriceList & { itemCount: number; supplierName: string | null }>>;
+  getPriceList(id: string, companyId: string): Promise<(PriceList & { supplierName: string | null }) | undefined>;
+  createPriceList(list: InsertPriceList & { companyId: string; createdBy?: string }): Promise<PriceList>;
+  updatePriceList(id: string, list: Partial<InsertPriceList>, companyId: string): Promise<PriceList | undefined>;
+  deletePriceList(id: string, companyId: string): Promise<boolean>;
+
+  // Price List Groups (sections inside one list) CRUD
+  getPriceListGroups(companyId: string, priceListId?: string): Promise<PriceListGroup[]>;
+  getPriceListGroup(id: string, companyId: string): Promise<PriceListGroup | undefined>;
+  createPriceListGroup(group: InsertPriceListGroup & { companyId: string }): Promise<PriceListGroup>;
+  updatePriceListGroup(id: string, group: Partial<InsertPriceListGroup>, companyId: string): Promise<PriceListGroup | undefined>;
+  deletePriceListGroup(id: string, companyId: string): Promise<boolean>;
+  reorderPriceListGroups(orderedIds: string[], companyId: string): Promise<PriceListGroup[]>;
 
   // Price List Items CRUD
-  getPriceListItems(companyId: string, filters?: { categoryId?: string; supplierId?: string; isActive?: boolean; search?: string }): Promise<PriceListItem[]>;
+  getPriceListItems(companyId: string, filters?: { priceListId?: string; groupId?: string; supplierId?: string; isActive?: boolean; search?: string }): Promise<PriceListItem[]>;
   getPriceListItem(id: string, companyId: string): Promise<PriceListItem | undefined>;
   createPriceListItem(item: InsertPriceListItem & { companyId: string }): Promise<PriceListItem>;
   updatePriceListItem(id: string, item: Partial<InsertPriceListItem>, companyId: string): Promise<PriceListItem | undefined>;
   deletePriceListItem(id: string, companyId: string): Promise<boolean>;
   bulkUpdatePriceListItems(updates: Array<{ id: string; data: Partial<InsertPriceListItem> }>, companyId: string): Promise<PriceListItem[]>;
+  importPriceListItems(
+    priceListId: string,
+    rows: Array<Partial<InsertPriceListItem> & { name: string; code?: string | null; groupName?: string | null }>,
+    companyId: string,
+  ): Promise<{ created: number; updated: number; skipped: number; groupsCreated: number }>;
 
   // Bill Line Item Price Links (for AI Review)
   getBillLineItemPriceLinks(companyId: string, status?: string): Promise<(BillLineItemPriceLink & { billLineItem?: import("@shared/schema").BillLineItem; bill?: import("@shared/schema").Bill })[]>;
-  createBillLineItemPriceLink(link: InsertBillLineItemPriceLink): Promise<BillLineItemPriceLink>;
-  updateBillLineItemPriceLink(id: string, link: Partial<InsertBillLineItemPriceLink>): Promise<BillLineItemPriceLink | undefined>;
+  createBillLineItemPriceLink(link: InsertBillLineItemPriceLink, companyId: string): Promise<BillLineItemPriceLink | undefined>;
+  updateBillLineItemPriceLink(id: string, link: Partial<InsertBillLineItemPriceLink>, companyId: string): Promise<BillLineItemPriceLink | undefined>;
   getUnlinkedBillLineItems(companyId: string): Promise<Array<import("@shared/schema").BillLineItem & { bill: import("@shared/schema").Bill; supplier: import("@shared/schema").Contact | null }>>;
 
   // Dashboard Views CRUD
@@ -24895,80 +24908,239 @@ export class DbStorage implements IStorage {
   // PRICE LIST FEATURE
   // ============================================
 
-  // Price List Categories CRUD
-  async getPriceListCategories(companyId: string): Promise<PriceListCategory[]> {
+  // Price Lists (the library) CRUD
+  async getPriceLists(companyId: string, filters?: { kind?: string; includeArchived?: boolean }): Promise<Array<PriceList & { itemCount: number; supplierName: string | null }>> {
     try {
-      return await db.select().from(schema.priceListCategories)
-        .where(eq(schema.priceListCategories.companyId, companyId))
-        .orderBy(asc(schema.priceListCategories.sortOrder), asc(schema.priceListCategories.name));
+      const conditions = [eq(schema.priceLists.companyId, companyId)];
+      if (filters?.kind) {
+        conditions.push(eq(schema.priceLists.kind, filters.kind as any));
+      }
+      if (!filters?.includeArchived) {
+        conditions.push(eq(schema.priceLists.isArchived, false));
+      }
+
+      // Item counts come back in the SAME query — a per-list count() would be one
+      // round trip per card, and Neon us-east-1 ↔ AU is ~400ms each.
+      const rows = await db
+        .select({
+          list: schema.priceLists,
+          supplierName: schema.contacts.name,
+          itemCount: sql<number>`count(${schema.priceListItems.id})::int`,
+        })
+        .from(schema.priceLists)
+        .leftJoin(schema.contacts, eq(schema.priceLists.supplierId, schema.contacts.id))
+        .leftJoin(schema.priceListItems, eq(schema.priceListItems.priceListId, schema.priceLists.id))
+        .where(and(...conditions))
+        .groupBy(schema.priceLists.id, schema.contacts.name)
+        .orderBy(desc(schema.priceLists.isDefault), asc(schema.priceLists.name));
+
+      return rows.map(r => ({ ...r.list, itemCount: r.itemCount ?? 0, supplierName: r.supplierName ?? null }));
     } catch (error) {
-      console.error("Database error in getPriceListCategories:", error);
+      console.error("Database error in getPriceLists:", error);
       throw error;
     }
   }
 
-  async getPriceListCategory(id: string, companyId: string): Promise<PriceListCategory | undefined> {
+  async getPriceList(id: string, companyId: string): Promise<(PriceList & { supplierName: string | null }) | undefined> {
     try {
-      const result = await db.select().from(schema.priceListCategories)
+      // Joined so the detail header can name the supplier without a second round
+      // trip — Neon us-east-1 from AU makes every extra hop ~400ms.
+      const result = await db
+        .select({ list: schema.priceLists, supplierName: schema.contacts.name })
+        .from(schema.priceLists)
+        .leftJoin(schema.contacts, eq(schema.priceLists.supplierId, schema.contacts.id))
         .where(and(
-          eq(schema.priceListCategories.id, id),
-          eq(schema.priceListCategories.companyId, companyId)
+          eq(schema.priceLists.id, id),
+          eq(schema.priceLists.companyId, companyId)
         ));
-      return result[0];
+      if (!result[0]) return undefined;
+      return { ...result[0].list, supplierName: result[0].supplierName ?? null };
     } catch (error) {
-      console.error("Database error in getPriceListCategory:", error);
+      console.error("Database error in getPriceList:", error);
       throw error;
     }
   }
 
-  async createPriceListCategory(category: InsertPriceListCategory & { companyId: string }): Promise<PriceListCategory> {
+  async createPriceList(list: InsertPriceList & { companyId: string; createdBy?: string }): Promise<PriceList> {
     try {
-      const result = await db.insert(schema.priceListCategories).values(category).returning();
-      return result[0];
+      return await db.transaction(async (tx) => {
+        // Only one default per company.
+        if (list.isDefault) {
+          await tx.update(schema.priceLists)
+            .set({ isDefault: false })
+            .where(eq(schema.priceLists.companyId, list.companyId));
+        }
+        const result = await tx.insert(schema.priceLists).values(list as any).returning();
+        return result[0];
+      });
     } catch (error) {
-      console.error("Database error in createPriceListCategory:", error);
+      console.error("Database error in createPriceList:", error);
       throw error;
     }
   }
 
-  async updatePriceListCategory(id: string, category: Partial<InsertPriceListCategory>, companyId: string): Promise<PriceListCategory | undefined> {
+  async updatePriceList(id: string, list: Partial<InsertPriceList>, companyId: string): Promise<PriceList | undefined> {
     try {
-      const result = await db.update(schema.priceListCategories)
-        .set({ ...category, updatedAt: new Date() })
+      return await db.transaction(async (tx) => {
+        if (list.isDefault) {
+          await tx.update(schema.priceLists)
+            .set({ isDefault: false })
+            .where(and(
+              eq(schema.priceLists.companyId, companyId),
+              ne(schema.priceLists.id, id)
+            ));
+        }
+        const result = await tx.update(schema.priceLists)
+          .set({ ...list, updatedAt: new Date() } as any)
+          .where(and(
+            eq(schema.priceLists.id, id),
+            eq(schema.priceLists.companyId, companyId)
+          ))
+          .returning();
+        return result[0];
+      });
+    } catch (error) {
+      console.error("Database error in updatePriceList:", error);
+      throw error;
+    }
+  }
+
+  async deletePriceList(id: string, companyId: string): Promise<boolean> {
+    try {
+      // Items cascade with the list (FK ON DELETE CASCADE) — deleting a supplier's
+      // price book is meant to take its prices with it.
+      const result = await db.delete(schema.priceLists)
         .where(and(
-          eq(schema.priceListCategories.id, id),
-          eq(schema.priceListCategories.companyId, companyId)
-        ))
-        .returning();
-      return result[0];
-    } catch (error) {
-      console.error("Database error in updatePriceListCategory:", error);
-      throw error;
-    }
-  }
-
-  async deletePriceListCategory(id: string, companyId: string): Promise<boolean> {
-    try {
-      const result = await db.delete(schema.priceListCategories)
-        .where(and(
-          eq(schema.priceListCategories.id, id),
-          eq(schema.priceListCategories.companyId, companyId)
+          eq(schema.priceLists.id, id),
+          eq(schema.priceLists.companyId, companyId)
         ))
         .returning();
       return result.length > 0;
     } catch (error) {
-      console.error("Database error in deletePriceListCategory:", error);
+      console.error("Database error in deletePriceList:", error);
+      throw error;
+    }
+  }
+
+  // Price List Groups (sections inside one list) CRUD
+  async getPriceListGroups(companyId: string, priceListId?: string): Promise<PriceListGroup[]> {
+    try {
+      const conditions = [eq(schema.priceListGroups.companyId, companyId)];
+      if (priceListId) {
+        conditions.push(eq(schema.priceListGroups.priceListId, priceListId));
+      }
+      return await db.select().from(schema.priceListGroups)
+        .where(and(...conditions))
+        .orderBy(asc(schema.priceListGroups.sortOrder), asc(schema.priceListGroups.name));
+    } catch (error) {
+      console.error("Database error in getPriceListGroups:", error);
+      throw error;
+    }
+  }
+
+  async getPriceListGroup(id: string, companyId: string): Promise<PriceListGroup | undefined> {
+    try {
+      const result = await db.select().from(schema.priceListGroups)
+        .where(and(
+          eq(schema.priceListGroups.id, id),
+          eq(schema.priceListGroups.companyId, companyId)
+        ));
+      return result[0];
+    } catch (error) {
+      console.error("Database error in getPriceListGroup:", error);
+      throw error;
+    }
+  }
+
+  async createPriceListGroup(group: InsertPriceListGroup & { companyId: string }): Promise<PriceListGroup> {
+    try {
+      // New groups land at the bottom of their list unless told otherwise.
+      let sortOrder = group.sortOrder;
+      if (sortOrder === undefined || sortOrder === null) {
+        const [row] = await db
+          .select({ maxOrder: sql<number>`coalesce(max(${schema.priceListGroups.sortOrder}), -1)::int` })
+          .from(schema.priceListGroups)
+          .where(eq(schema.priceListGroups.priceListId, group.priceListId));
+        sortOrder = (row?.maxOrder ?? -1) + 1;
+      }
+      const result = await db.insert(schema.priceListGroups)
+        .values({ ...group, sortOrder } as any)
+        .returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in createPriceListGroup:", error);
+      throw error;
+    }
+  }
+
+  async updatePriceListGroup(id: string, group: Partial<InsertPriceListGroup>, companyId: string): Promise<PriceListGroup | undefined> {
+    try {
+      const result = await db.update(schema.priceListGroups)
+        .set({ ...group, updatedAt: new Date() } as any)
+        .where(and(
+          eq(schema.priceListGroups.id, id),
+          eq(schema.priceListGroups.companyId, companyId)
+        ))
+        .returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in updatePriceListGroup:", error);
+      throw error;
+    }
+  }
+
+  async deletePriceListGroup(id: string, companyId: string): Promise<boolean> {
+    try {
+      // items.groupId is ON DELETE SET NULL — deleting a section must not delete the
+      // prices inside it. They fall back to "Ungrouped".
+      const result = await db.delete(schema.priceListGroups)
+        .where(and(
+          eq(schema.priceListGroups.id, id),
+          eq(schema.priceListGroups.companyId, companyId)
+        ))
+        .returning();
+      return result.length > 0;
+    } catch (error) {
+      console.error("Database error in deletePriceListGroup:", error);
+      throw error;
+    }
+  }
+
+  async reorderPriceListGroups(orderedIds: string[], companyId: string): Promise<PriceListGroup[]> {
+    if (orderedIds.length === 0) return [];
+    try {
+      return await db.transaction(async (tx) => {
+        const results: PriceListGroup[] = [];
+        for (let i = 0; i < orderedIds.length; i++) {
+          const [row] = await tx.update(schema.priceListGroups)
+            .set({ sortOrder: i, updatedAt: new Date() })
+            .where(and(
+              eq(schema.priceListGroups.id, orderedIds[i]),
+              eq(schema.priceListGroups.companyId, companyId)
+            ))
+            .returning();
+          if (row) results.push(row);
+        }
+        return results;
+      });
+    } catch (error) {
+      console.error("Database error in reorderPriceListGroups:", error);
       throw error;
     }
   }
 
   // Price List Items CRUD
-  async getPriceListItems(companyId: string, filters?: { categoryId?: string; supplierId?: string; isActive?: boolean; search?: string }): Promise<PriceListItem[]> {
+  async getPriceListItems(companyId: string, filters?: { priceListId?: string; groupId?: string; supplierId?: string; isActive?: boolean; search?: string }): Promise<PriceListItem[]> {
     try {
       let conditions = [eq(schema.priceListItems.companyId, companyId)];
-      
-      if (filters?.categoryId) {
-        conditions.push(eq(schema.priceListItems.categoryId, filters.categoryId));
+
+      // Omitting priceListId is the deliberate cross-list search — "who is cheapest
+      // for 90x45 pine?" is the reason to keep more than one list.
+      if (filters?.priceListId) {
+        conditions.push(eq(schema.priceListItems.priceListId, filters.priceListId));
+      }
+      if (filters?.groupId) {
+        conditions.push(eq(schema.priceListItems.groupId, filters.groupId));
       }
       if (filters?.supplierId) {
         conditions.push(eq(schema.priceListItems.supplierId, filters.supplierId));
@@ -25079,15 +25251,160 @@ export class DbStorage implements IStorage {
   }
 
   async bulkUpdatePriceListItems(updates: Array<{ id: string; data: Partial<InsertPriceListItem> }>, companyId: string): Promise<PriceListItem[]> {
+    if (updates.length === 0) return [];
     try {
-      const results: PriceListItem[] = [];
-      for (const update of updates) {
-        const result = await this.updatePriceListItem(update.id, update.data, companyId);
-        if (result) results.push(result);
-      }
-      return results;
+      // One round trip for the reads, one transaction for the writes. This used to loop
+      // updatePriceListItem, i.e. a SELECT + UPDATE per row — ~400ms each against Neon
+      // us-east-1 from AU, so a 200-row bulk edit took ~160 seconds.
+      const ids = updates.map(u => u.id);
+      const existing = await db.select().from(schema.priceListItems)
+        .where(and(
+          inArray(schema.priceListItems.id, ids),
+          eq(schema.priceListItems.companyId, companyId)
+        ));
+      const byId = new Map(existing.map(row => [row.id, row]));
+      const now = new Date();
+
+      return await db.transaction(async (tx) => {
+        const results: PriceListItem[] = [];
+        for (const { id, data } of updates) {
+          const current = byId.get(id);
+          if (!current) continue; // not ours, or gone — skip silently as before
+
+          const updateData: any = { ...data, updatedAt: now };
+          const costChanged = data.costPrice !== undefined && data.costPrice !== current.costPrice;
+          const sellChanged = data.sellPrice !== undefined && data.sellPrice !== current.sellPrice;
+          if (costChanged || sellChanged) {
+            updateData.lastPriceUpdate = now;
+            const history = ((current.priceHistory as any[]) || []).concat({
+              date: now.toISOString(),
+              costPrice: data.costPrice ?? current.costPrice,
+              sellPrice: data.sellPrice ?? current.sellPrice,
+              source: "bulk",
+            });
+            updateData.priceHistory = history;
+          }
+
+          const [row] = await tx.update(schema.priceListItems)
+            .set(updateData)
+            .where(and(
+              eq(schema.priceListItems.id, id),
+              eq(schema.priceListItems.companyId, companyId)
+            ))
+            .returning();
+          if (row) results.push(row);
+        }
+        return results;
+      });
     } catch (error) {
       console.error("Database error in bulkUpdatePriceListItems:", error);
+      throw error;
+    }
+  }
+
+  async importPriceListItems(
+    priceListId: string,
+    rows: Array<Partial<InsertPriceListItem> & { name: string; code?: string | null; groupName?: string | null }>,
+    companyId: string,
+  ): Promise<{ created: number; updated: number; skipped: number; groupsCreated: number }> {
+    try {
+      const list = await this.getPriceList(priceListId, companyId);
+      if (!list) throw new Error("Price list not found");
+
+      // Existing items keyed by SKU. A supplier's book is re-sent with the same
+      // codes each quarter, so SKU is the identity that makes re-import an update
+      // rather than a duplicate. Rows without a SKU can only ever be inserts.
+      const existing = await db.select().from(schema.priceListItems)
+        .where(and(
+          eq(schema.priceListItems.companyId, companyId),
+          eq(schema.priceListItems.priceListId, priceListId),
+        ));
+      const bySku = new Map<string, PriceListItem>();
+      for (const it of existing) {
+        if (it.code) bySku.set(it.code.trim().toLowerCase(), it);
+      }
+
+      const groups = await this.getPriceListGroups(companyId, priceListId);
+      const groupByName = new Map(groups.map((g) => [g.name.trim().toLowerCase(), g]));
+
+      let created = 0, updated = 0, skipped = 0, groupsCreated = 0;
+      const now = new Date();
+
+      for (const row of rows) {
+        const name = (row.name ?? "").trim();
+        if (!name) { skipped++; continue; }
+
+        // A named group that doesn't exist yet is created rather than dropped —
+        // otherwise a supplier's section headings are silently lost on import.
+        let groupId: string | null = row.groupId ?? null;
+        const groupName = (row.groupName ?? "").trim();
+        if (!groupId && groupName) {
+          const key = groupName.toLowerCase();
+          let g = groupByName.get(key);
+          if (!g) {
+            g = await this.createPriceListGroup({ name: groupName, priceListId, companyId } as any);
+            groupByName.set(key, g);
+            groupsCreated++;
+          }
+          groupId = g.id;
+        }
+
+        const sku = (row.code ?? "").trim();
+        const match = sku ? bySku.get(sku.toLowerCase()) : undefined;
+
+        if (match) {
+          const patch: any = { updatedAt: now };
+          for (const f of ["name", "nickname", "description", "unitType", "supplierCode", "brand", "leadTimeDays"] as const) {
+            if (row[f] !== undefined) patch[f] = row[f];
+          }
+          if (groupId) patch.groupId = groupId;
+
+          const costChanged = row.costPrice !== undefined && row.costPrice !== match.costPrice;
+          const sellChanged = row.sellPrice !== undefined && row.sellPrice !== match.sellPrice;
+          if (costChanged) patch.costPrice = row.costPrice;
+          if (sellChanged) patch.sellPrice = row.sellPrice;
+          if (costChanged || sellChanged) {
+            patch.lastPriceUpdate = now;
+            patch.priceHistory = ((match.priceHistory as any[]) || []).concat({
+              date: now.toISOString(),
+              costPrice: row.costPrice ?? match.costPrice,
+              sellPrice: row.sellPrice ?? match.sellPrice,
+              source: "import",
+            });
+          }
+
+          await db.update(schema.priceListItems)
+            .set(patch)
+            .where(and(
+              eq(schema.priceListItems.id, match.id),
+              eq(schema.priceListItems.companyId, companyId),
+            ));
+          updated++;
+        } else {
+          const [row2] = await db.insert(schema.priceListItems).values({
+            ...row,
+            groupName: undefined,
+            name,
+            code: sku || null,
+            priceListId,
+            companyId,
+            groupId,
+            costPrice: row.costPrice ?? 0,
+            unitType: row.unitType || "ea",
+            lastPriceUpdate: now,
+          } as any).returning();
+          if (row2?.code) bySku.set(row2.code.trim().toLowerCase(), row2);
+          created++;
+        }
+      }
+
+      await db.update(schema.priceLists)
+        .set({ lastImportedAt: now, updatedAt: now })
+        .where(and(eq(schema.priceLists.id, priceListId), eq(schema.priceLists.companyId, companyId)));
+
+      return { created, updated, skipped, groupsCreated };
+    } catch (error) {
+      console.error("Database error in importPriceListItems:", error);
       throw error;
     }
   }
@@ -25122,8 +25439,28 @@ export class DbStorage implements IStorage {
     }
   }
 
-  async createBillLineItemPriceLink(link: InsertBillLineItemPriceLink): Promise<BillLineItemPriceLink> {
+  async createBillLineItemPriceLink(link: InsertBillLineItemPriceLink, companyId: string): Promise<BillLineItemPriceLink | undefined> {
     try {
+      // The bill line must belong to this company — bill line -> bill -> project.
+      // Without this, any authenticated user could attach a link to another
+      // tenant's bill line by guessing an id.
+      const [owned] = await db
+        .select({ id: schema.billLineItems.id })
+        .from(schema.billLineItems)
+        .innerJoin(schema.bills, eq(schema.billLineItems.billId, schema.bills.id))
+        .innerJoin(schema.projects, eq(schema.bills.projectId, schema.projects.id))
+        .where(and(
+          eq(schema.billLineItems.id, link.billLineItemId),
+          eq(schema.projects.companyId, companyId),
+        ));
+      if (!owned) return undefined;
+
+      // A link may only point at one of OUR price list items.
+      if (link.priceListItemId) {
+        const item = await this.getPriceListItem(link.priceListItemId, companyId);
+        if (!item) return undefined;
+      }
+
       const result = await db.insert(schema.billLineItemPriceLinks).values(link).returning();
       return result[0];
     } catch (error) {
@@ -25132,8 +25469,28 @@ export class DbStorage implements IStorage {
     }
   }
 
-  async updateBillLineItemPriceLink(id: string, link: Partial<InsertBillLineItemPriceLink>): Promise<BillLineItemPriceLink | undefined> {
+  async updateBillLineItemPriceLink(id: string, link: Partial<InsertBillLineItemPriceLink>, companyId: string): Promise<BillLineItemPriceLink | undefined> {
     try {
+      // This row had NO company scoping at all: any authenticated user could
+      // mutate any company's link by id. Confirm ownership through the same
+      // bill line -> bill -> project chain before touching it.
+      const [owned] = await db
+        .select({ id: schema.billLineItemPriceLinks.id })
+        .from(schema.billLineItemPriceLinks)
+        .innerJoin(schema.billLineItems, eq(schema.billLineItemPriceLinks.billLineItemId, schema.billLineItems.id))
+        .innerJoin(schema.bills, eq(schema.billLineItems.billId, schema.bills.id))
+        .innerJoin(schema.projects, eq(schema.bills.projectId, schema.projects.id))
+        .where(and(
+          eq(schema.billLineItemPriceLinks.id, id),
+          eq(schema.projects.companyId, companyId),
+        ));
+      if (!owned) return undefined;
+
+      if (link.priceListItemId) {
+        const item = await this.getPriceListItem(link.priceListItemId, companyId);
+        if (!item) return undefined;
+      }
+
       const result = await db.update(schema.billLineItemPriceLinks)
         .set(link)
         .where(eq(schema.billLineItemPriceLinks.id, id))
