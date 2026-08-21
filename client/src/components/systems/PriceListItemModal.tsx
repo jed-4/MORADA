@@ -22,6 +22,7 @@ import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { dollarsToCents, centsToDollars, incGstFromEx, exGstFromInc, formatCents } from "@shared/money";
 import type { PriceListItem, PriceListGroup, Contact, CostCode } from "@shared/schema";
+import { resolveSellCents } from "@shared/priceList";
 
 const NONE = "__none__";
 
@@ -99,14 +100,22 @@ export function PriceListItemModal({
     } : EMPTY);
   }, [open, item, form]);
 
-  /** Typing a markup fills the sell price from cost; the three stay consistent. */
-  const applyMarkup = (pct: string) => {
+  const markup = form.watch("markup");
+  /** Markup wins: while one is set, sell is computed from cost and not editable. */
+  const sellIsDerived = markup.trim() !== "" && Number.isFinite(parseFloat(markup));
+
+  const derivedSell = () => {
     const c = parseFloat(cost);
-    const m = parseFloat(pct);
-    if (Number.isFinite(c) && Number.isFinite(m)) {
-      form.setValue("sell", (c * (1 + m / 100)).toFixed(2));
-    }
+    const m = parseFloat(markup);
+    if (!Number.isFinite(c) || !Number.isFinite(m)) return "";
+    return (c * (1 + m / 100)).toFixed(2);
   };
+
+  // Keep the visible sell in step with cost and markup while it is derived.
+  useEffect(() => {
+    if (sellIsDerived) form.setValue("sell", derivedSell());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cost, markup, sellIsDerived]);
 
   const save = useMutation({
     mutationFn: (v: FormValues) => {
@@ -164,14 +173,23 @@ export function PriceListItemModal({
           <FormControl>
             <div className="relative">
               <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">$</span>
-              <Input type="number" step="0.01" className="pl-6" data-testid={`input-${name}`} {...field} />
+              <Input
+                type="number"
+                step="0.01"
+                className="pl-6"
+                readOnly={name === "sell" && sellIsDerived}
+                data-testid={`input-${name}`}
+                {...field}
+              />
             </div>
           </FormControl>
-          {converse(field.value) && (
+          {name === "sell" && sellIsDerived ? (
+            <FormDescription>From cost × markup</FormDescription>
+          ) : converse(field.value) ? (
             <FormDescription className="tabular-nums">
               {incGst ? "ex" : "inc"} {converse(field.value)}
             </FormDescription>
-          )}
+          ) : null}
           <FormMessage />
         </FormItem>
       )}
@@ -295,7 +313,7 @@ export function PriceListItemModal({
                               className="pr-6"
                               data-testid="input-markup"
                               {...field}
-                              onChange={(e) => { field.onChange(e); applyMarkup(e.target.value); }}
+                              onChange={field.onChange}
                             />
                             <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">%</span>
                           </div>

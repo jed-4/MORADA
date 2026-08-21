@@ -1,13 +1,15 @@
 import { useState, useEffect, forwardRef, useImperativeHandle, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { Plus, Search, Filter, Edit, Trash2, ChevronRight, ChevronDown, Building, Tag, DollarSign, Box, Loader2, ChevronsUpDown, ChevronsDownUp, ToggleLeft, ToggleRight, X, MoreVertical, FolderPlus, Columns3, Upload, Download, FileSpreadsheet } from "lucide-react";
+import { Plus, Search, Filter, Edit, Trash2, ChevronRight, ChevronDown, Building, Tag, DollarSign, Box, Loader2, ChevronsUpDown, ChevronsDownUp, ToggleLeft, ToggleRight, X, MoreVertical, FolderPlus, Columns3, Upload, Download, FileSpreadsheet, GripVertical, Pencil } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { useResizableColumns, ColResizeHandle } from "@/components/useResizableColumns";
+import { resolveSellCents, effectiveMarkup, isSellDerived } from "@shared/priceList";
+import { DndContext, DragOverlay, pointerWithin, useDraggable, useDroppable, PointerSensor, useSensor, useSensors, type DragEndEvent, type DragStartEvent } from "@dnd-kit/core";
 import { ImportPriceListDialog } from "@/components/systems/ImportPriceListDialog";
 import { PriceListItemModal } from "@/components/systems/PriceListItemModal";
 import * as XLSX from "xlsx";
@@ -128,6 +130,44 @@ interface PriceListProps {
   onEditList?: () => void;
 }
 
+/** A group card that accepts item drops while edit mode is on. */
+function GroupDropZone({
+  groupId, enabled, children,
+}: { groupId: string; enabled: boolean; children: React.ReactNode }) {
+  const { setNodeRef, isOver } = useDroppable({ id: `group-${groupId}`, disabled: !enabled });
+  return (
+    <div
+      ref={setNodeRef}
+      className={`bg-card rounded-md border overflow-hidden transition-colors ${
+        isOver ? "border-primary ring-1 ring-primary/40" : "border-border"
+      }`}
+      style={{ boxShadow: "var(--shadow-card)" }}
+      data-testid={`section-group-${groupId}`}
+    >
+      {children}
+    </div>
+  );
+}
+
+/** The grip that starts an item drag. Only rendered in edit mode. */
+function RowDragHandle({ itemId }: { itemId: string }) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: itemId });
+  return (
+    <span
+      ref={setNodeRef}
+      {...attributes}
+      {...listeners}
+      className={`flex items-center justify-center cursor-grab active:cursor-grabbing text-muted-foreground ${
+        isDragging ? "opacity-40" : ""
+      }`}
+      data-testid={`drag-handle-${itemId}`}
+      aria-label="Drag to another group"
+    >
+      <GripVertical className="h-3 w-3" />
+    </span>
+  );
+}
+
 export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQuery: externalSearch = "", priceListId, kind = "internal", onEditList }, ref) => {
   const { toast } = useToast();
   const [internalSearch, setInternalSearch] = useState("");
@@ -135,6 +175,9 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const [showAddModal, setShowAddModal] = useState(false);
   const [showImport, setShowImport] = useState(false);
+  /** Component state on purpose — leaving the list drops back to read-only. */
+  const [editMode, setEditMode] = useState(false);
+  const [draggingItem, setDraggingItem] = useState<PriceListItem | null>(null);
   const [editingItem, setEditingItem] = useState<PriceListItem | null>(null);
   const [filterGroup, setFilterGroup] = useState<string>("all");
   const [filterSupplier, setFilterSupplier] = useState<string>("all");
@@ -264,10 +307,12 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
     // Typed in dollars, stored in cents — the boundary that caused the original bug.
     cost: { get: (i) => (i.costPrice ? String(centsToDollars(i.costPrice)) : ""), toPayload: (v) => ({ costPrice: v.trim() ? dollarsToCents(v) : 0 }) },
     sell: { get: (i) => (i.sellPrice ? String(centsToDollars(i.sellPrice)) : ""), toPayload: (v) => ({ sellPrice: v.trim() ? dollarsToCents(v) : null }) },
+    markup: { get: (i) => (i.markupPercent ?? ""), toPayload: (v) => ({ markupPercent: v.trim() }) },
     leadTime: { get: (i) => (i.leadTimeDays ? String(i.leadTimeDays) : ""), toPayload: (v) => ({ leadTimeDays: v.trim() ? parseInt(v, 10) : null }) },
   };
 
   const beginEdit = (item: PriceListItem, key: string) => {
+    if (!editMode) return;
     if (!EDITABLE[key]) return;
     setEditing({ id: item.id, key });
     setDraftValue(EDITABLE[key].get(item));
@@ -403,12 +448,14 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
             {item.costPrice ? formatCents(incGstFromEx(item.costPrice)) : "—"}
           </p>
         );
-      case "sellInc":
+      case "sellInc": {
+        const sell = resolveSellCents(item);
         return (
           <p className="text-xs text-muted-foreground text-right tabular-nums">
-            {item.sellPrice ? formatCents(incGstFromEx(item.sellPrice)) : "—"}
+            {sell ? formatCents(incGstFromEx(sell)) : "—"}
           </p>
         );
+      }
       case "leadTime":
         return (
           <p className="text-[11px] text-muted-foreground text-right tabular-nums">
@@ -417,14 +464,25 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
         );
       case "cost":
         return <p className="text-xs text-foreground text-right tabular-nums">{formatCurrency(item.costPrice)}</p>;
-      case "sell":
-        return <p className="text-xs text-foreground text-right tabular-nums">{formatCurrency(item.sellPrice)}</p>;
-      case "markup":
+      case "sell": {
+        const derived = isSellDerived(item);
         return (
-          <p className="text-[11px] text-muted-foreground text-right tabular-nums">
-            {getMarkup(item.costPrice, item.sellPrice)}
+          <p
+            className={`text-xs text-right tabular-nums ${derived ? "text-muted-foreground" : "text-foreground"}`}
+            title={derived ? "Derived from cost × markup" : undefined}
+          >
+            {formatCurrency(resolveSellCents(item))}
           </p>
         );
+      }
+      case "markup": {
+        const m = effectiveMarkup(item);
+        return (
+          <p className="text-[11px] text-muted-foreground text-right tabular-nums">
+            {m === null ? "—" : `${m.toFixed(1)}%`}
+          </p>
+        );
+      }
       default:
         return null;
     }
@@ -574,7 +632,7 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
       Group: i.groupId ? (groupName.get(i.groupId) ?? "") : "",
       Unit: i.unitType ?? "",
       "Cost (ex GST)": i.costPrice ? centsToDollars(i.costPrice) : 0,
-      "Sell (ex GST)": i.sellPrice ? centsToDollars(i.sellPrice) : "",
+      "Sell (ex GST)": resolveSellCents(i) ? centsToDollars(resolveSellCents(i)!) : "",
       "Markup %": i.markupPercent ?? "",
       Nickname: i.nickname ?? "",
       Description: i.description ?? "",
@@ -586,6 +644,31 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Price list");
     XLSX.writeFile(wb, `price-list-${new Date().toISOString().slice(0, 10)}.xlsx`);
+  };
+
+  // Group-level drops only — items have no explicit order within a group, so
+  // there is nothing to sort. pointerWithin follows the cursor, which avoids the
+  // closestCenter problem the estimate grid hit (large group cards winning over
+  // the row actually under the pointer).
+  const dndSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+  );
+
+  const onDragStart = (e: DragStartEvent) => {
+    const id = String(e.active.id);
+    setDraggingItem(items.find((i) => i.id === id) ?? null);
+  };
+
+  const onDragEnd = (e: DragEndEvent) => {
+    setDraggingItem(null);
+    const overId = e.over ? String(e.over.id) : null;
+    if (!overId || !overId.startsWith("group-")) return;
+    const target = overId.slice("group-".length);
+    const item = items.find((i) => i.id === String(e.active.id));
+    if (!item) return;
+    const groupId = target === "ungrouped" ? null : target;
+    if ((item.groupId ?? null) === groupId) return;
+    patchItem.mutate({ id: item.id, data: { groupId } });
   };
 
   const activeFilterCount =
@@ -819,6 +902,28 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
             </PopoverContent>
           </Popover>
 
+          {priceListId && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={() => { setEditMode((v) => !v); setEditing(null); }}
+                  className={`h-6 w-auto px-2 text-xs border rounded-md flex items-center gap-1 transition-all hover-elevate active-elevate-2 ${
+                    editMode
+                      ? "bg-primary/10 text-primary border-primary/20"
+                      : "border-border/50 text-muted-foreground"
+                  }`}
+                  data-testid="button-edit-mode"
+                >
+                  <Pencil className="h-3 w-3" />
+                  {editMode ? "Editing" : "Edit"}
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">
+                {editMode ? "Done editing" : "Edit cells and drag items between groups"}
+              </TooltipContent>
+            </Tooltip>
+          )}
+
           <button
             className="h-6 w-auto px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-0.5"
             onClick={() => setShowAddModal(true)}
@@ -904,16 +1009,16 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
             }}
           />
         ) : (
-          <>
+          <DndContext
+            sensors={dndSensors}
+            collisionDetection={pointerWithin}
+            onDragStart={onDragStart}
+            onDragEnd={onDragEnd}
+          >
             {groups.map((group) => {
               const expanded = groupBy === "none" || expandedGroups.has(group.id);
               return (
-                <div
-                  key={group.id}
-                  className="bg-card rounded-md border border-border overflow-hidden"
-                  style={{ boxShadow: "var(--shadow-card)" }}
-                  data-testid={`section-group-${group.id}`}
-                >
+                <GroupDropZone key={group.id} groupId={group.id} enabled={editMode && groupBy === "group"}>
                   <div className="px-4 py-3">
                     <div className="group/hdr flex items-center justify-between gap-2">
                       <button
@@ -1031,6 +1136,9 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
                                 style={{ gridTemplateColumns: gridTemplate }}
                                 data-testid={`row-item-${item.id}`}
                               >
+                                {editMode && groupBy === "group" ? (
+                                  <RowDragHandle itemId={item.id} />
+                                ) : (
                                 <div className="flex items-center justify-center">
                                   <Checkbox
                                     checked={selected.has(item.id)}
@@ -1043,6 +1151,7 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
                                     data-testid={`select-row-${item.id}`}
                                   />
                                 </div>
+                                )}
                                 {/* Cells follow the header order, so reordering moves both. */}
                                 {orderedColumns.map((c) => {
                                   const isEditing = editing?.id === item.id && editing.key === c.key;
@@ -1195,11 +1304,18 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
                       </div>
                     )}
                   </div>
-                </div>
+                </GroupDropZone>
               );
             })}
 
-          </>
+            <DragOverlay dropAnimation={null}>
+              {draggingItem ? (
+                <div className="rounded-md border bg-card px-3 py-1.5 text-xs font-semibold shadow-lg">
+                  {draggingItem.name}
+                </div>
+              ) : null}
+            </DragOverlay>
+          </DndContext>
         )}
       </div>
 
