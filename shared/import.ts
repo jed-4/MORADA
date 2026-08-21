@@ -323,6 +323,7 @@ export const defaultColumnMappings: Record<string, keyof ImportEstimateItem> = {
   "price ex tax": "unitCostExTax",
   "price ex gst": "unitCostExTax",
   "unit price": "unitCostExTax",
+  "unit cost": "unitCostExTax",
   "rate": "unitCostExTax",
   "cost": "unitCostExTax",
   "unit cost ex. tax": "unitCostExTax",
@@ -856,18 +857,38 @@ export function readTimesheetBreakFromRow(
 }
 
 // Utility: Auto-detect column mappings from headers
+/**
+ * Header text as written vs. what we can match on. Spreadsheets qualify their
+ * headings — "Unit Cost (Ex Tax)", "Cost (ex GST)", "Lead time (days)" — and an
+ * exact-match lookup misses every one of them, including our own exported files.
+ * Strip the parenthetical and the punctuation, then match.
+ */
+export function normalizeHeader(header: string): string {
+  return header
+    .toLowerCase()
+    .replace(/\([^)]*\)/g, " ")   // drop "(ex GST)", "(Ex Tax)", "(days)"
+    .replace(/[^a-z0-9%\s]/g, " ") // punctuation, but keep % for "markup %"
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 export function autoDetectColumnMapping(headers: string[]): ColumnMapping {
   const mapping: ColumnMapping = {};
-  
-  headers.forEach((header, index) => {
-    const normalized = header.toLowerCase().trim();
-    const fieldKey = defaultColumnMappings[normalized];
-    
-    if (fieldKey) {
+
+  headers.forEach((header) => {
+    // Try the header verbatim first so an exact entry always wins, then the
+    // normalized form for qualified headings.
+    const fieldKey =
+      defaultColumnMappings[header.toLowerCase().trim()] ??
+      defaultColumnMappings[normalizeHeader(header)];
+
+    // First header to claim a field keeps it — a sheet carrying both "Cost" and
+    // "Price" shouldn't have the later one silently overwrite the earlier.
+    if (fieldKey && mapping[fieldKey] === undefined) {
       mapping[fieldKey] = header; // Store original header name
     }
   });
-  
+
   return mapping;
 }
 
