@@ -1025,9 +1025,16 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
                                   const isEditing = editing?.id === item.id && editing.key === c.key;
                                   if (isEditing) {
                                     return (
-                                      <div key={c.key} className="min-w-0">
+                                      <div
+                                        key={c.key}
+                                        className="min-w-0 ring-1 ring-inset ring-primary/60 rounded-[2px]"
+                                      >
                                         <Input
-                                          autoFocus
+                                          // Focus AND select on mount. autoFocus paired with
+                                          // onFocus proved unreliable here — the element ends
+                                          // up focused but the selection never lands — so the
+                                          // mount ref does both explicitly.
+                                          ref={(el) => { if (el) { el.focus(); el.select(); } }}
                                           value={draftValue}
                                           onChange={(e) => setDraftValue(e.target.value)}
                                           onBlur={() => commitEdit(item)}
@@ -1044,7 +1051,11 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
                                   return (
                                     <div
                                       key={c.key}
-                                      className={`min-w-0 rounded-sm ${EDITABLE[c.key] ? "cursor-text" : ""}`}
+                                      className={`min-w-0 rounded-sm ${
+                                        EDITABLE[c.key]
+                                          ? "border-b border-transparent hover:border-primary/30 transition-colors cursor-pointer"
+                                          : ""
+                                      }`}
                                       onClick={() => beginEdit(item, c.key)}
                                       data-testid={`cell-${c.key}-${item.id}`}
                                     >
