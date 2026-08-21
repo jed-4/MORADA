@@ -549,24 +549,17 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
 
   /** Export the list as .xlsx using the same headers the importer expects, so a
    *  round trip works without remapping. Money is written in dollars. */
-  /** Blank sheet carrying the importer's headers plus one worked example.
-   *  Exporting an empty list produces a file with no headers at all — precisely
-   *  when a starting point is most useful — so the template is its own action. */
+  /** The importer's headers and nothing else. json_to_sheet on an empty array
+   *  writes no headers at all (range A1), so the row is built explicitly with
+   *  aoa_to_sheet. Deliberately no example row — a template that ships with a
+   *  product in it gets imported as one. */
   const exportTemplate = () => {
-    const example = {
-      "Item name": "EXAMPLE ROW — delete before importing",
-      SKU: "PB-10-2412",
-      Group: "Plasterboard",
-      Unit: "sheet",
-      "Cost (ex GST)": 18.5,
-      "Sell (ex GST)": 24,
-      Nickname: "10mm sheet",
-      Description: "10mm standard plasterboard, 2400x1200",
-      "Supplier ref": "GYP-10-2412",
-      Brand: "Gyprock",
-      "Lead time (days)": 3,
-    };
-    const ws = XLSX.utils.json_to_sheet([example]);
+    const headers = [
+      "Item name", "SKU", "Group", "Unit",
+      "Cost (ex GST)", "Sell (ex GST)",
+      "Nickname", "Description", "Supplier ref", "Brand", "Lead time (days)",
+    ];
+    const ws = XLSX.utils.aoa_to_sheet([headers]);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Price list");
     XLSX.writeFile(wb, "price-list-template.xlsx");
