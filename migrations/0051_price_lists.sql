@@ -56,6 +56,44 @@ CREATE INDEX IF NOT EXISTS price_list_groups_company_idx    ON price_list_groups
 CREATE INDEX IF NOT EXISTS price_list_groups_price_list_idx ON price_list_groups (price_list_id);
 CREATE UNIQUE INDEX IF NOT EXISTS price_list_groups_name_unique ON price_list_groups (price_list_id, name);
 
+-- 2c. price_list_items was NEVER created by a .sql migration — it only ever existed
+--     as `db:push` drift captured in drizzle meta snapshots. On any database that
+--     did not receive that push the ALTERs below would fail on a missing relation
+--     and roll the whole migration back, so create it here if absent. Where the
+--     table already exists this is a no-op and step 3 adds the new columns.
+CREATE TABLE IF NOT EXISTS price_list_items (
+  id                varchar PRIMARY KEY DEFAULT gen_random_uuid(),
+  company_id        varchar NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  price_list_id     varchar,
+  name              text NOT NULL,
+  nickname          text,
+  code              text,
+  description       text,
+  group_id          varchar,
+  cost_code_id      varchar,
+  unit_type         text NOT NULL DEFAULT 'each',
+  cost_price        integer NOT NULL DEFAULT 0,
+  sell_price        integer,
+  markup_percent    numeric(10, 2),
+  gst_inclusive     boolean NOT NULL DEFAULT false,
+  supplier_id       varchar REFERENCES contacts(id) ON DELETE SET NULL,
+  supplier_code     text,
+  lead_time_days    integer,
+  brand             text,
+  image_url         text,
+  tags              json DEFAULT '[]'::json,
+  notes             text,
+  is_active         boolean NOT NULL DEFAULT true,
+  last_price_update timestamp,
+  price_history     json DEFAULT '[]'::json,
+  created_at        timestamp NOT NULL DEFAULT now(),
+  updated_at        timestamp NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS price_list_items_company_idx  ON price_list_items (company_id);
+CREATE INDEX IF NOT EXISTS price_list_items_supplier_idx ON price_list_items (supplier_id);
+CREATE INDEX IF NOT EXISTS price_list_items_code_idx     ON price_list_items (company_id, code);
+
 -- 3. Items belong to exactly one list, sit in a group, and carry a cost code.
 ALTER TABLE price_list_items ADD COLUMN IF NOT EXISTS price_list_id varchar;
 ALTER TABLE price_list_items ADD COLUMN IF NOT EXISTS group_id      varchar;
@@ -86,7 +124,7 @@ INSERT INTO price_lists (company_id, name, kind, description)
 SELECT DISTINCT pli.company_id,
        'General',
        'internal'::price_list_kind,
-       'Auto-created by migration 0049 to hold items that predated price lists.'
+       'Auto-created by migration 0051 to hold items that predated price lists.'
 FROM price_list_items pli
 WHERE pli.price_list_id IS NULL
   AND NOT EXISTS (
