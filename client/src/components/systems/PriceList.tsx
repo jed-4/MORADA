@@ -545,8 +545,8 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
   };
 
   // Trailing 72px is the fixed (non-draggable) actions cell.
-  const gridCols = useResizableColumns("price-list", orderedColumns, 72);
-  const gridTemplate = `32px ${gridCols.gridTemplate}`;
+  const gridCols = useResizableColumns("price-list", orderedColumns);
+  const gridTemplate = `32px ${gridCols.gridTemplate} 1fr 72px`;
 
   /** Export the list as .xlsx using the same headers the importer expects, so a
    *  round trip works without remapping. Money is written in dollars. */
@@ -557,7 +557,7 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
   const exportTemplate = () => {
     const headers = [
       "Item name", "SKU", "Group", "Unit",
-      "Cost (ex GST)", "Sell (ex GST)",
+      "Cost (ex GST)", "Sell (ex GST)", "Markup %",
       "Nickname", "Description", "Supplier ref", "Brand", "Lead time (days)",
     ];
     const ws = XLSX.utils.aoa_to_sheet([headers]);
@@ -575,6 +575,7 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
       Unit: i.unitType ?? "",
       "Cost (ex GST)": i.costPrice ? centsToDollars(i.costPrice) : 0,
       "Sell (ex GST)": i.sellPrice ? centsToDollars(i.sellPrice) : "",
+      "Markup %": i.markupPercent ?? "",
       Nickname: i.nickname ?? "",
       Description: i.description ?? "",
       "Supplier ref": i.supplierCode ?? "",
@@ -977,7 +978,7 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
 
                     {expanded && (
                       <div className="mt-3 border-t border-border overflow-x-auto dt-autohide-scrollbar">
-                        <div style={{ minWidth: gridCols.minWidth + 32 }}>
+                        <div style={{ minWidth: gridCols.minWidth + 32 + 72 }}>
                           {/* column labels */}
                           <div
                             className="grid text-[9px] font-semibold text-muted-foreground uppercase tracking-wide py-2 border-b border-border gap-2"
@@ -1017,6 +1018,7 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
                               </span>
                             ))}
                             <span />
+                            <span />
                           </div>
 
                           {group.items.length === 0 ? null : (
@@ -1044,6 +1046,29 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
                                 {/* Cells follow the header order, so reordering moves both. */}
                                 {orderedColumns.map((c) => {
                                   const isEditing = editing?.id === item.id && editing.key === c.key;
+                                  if (isEditing && c.key === "unit") {
+                                    return (
+                                      <div
+                                        key={c.key}
+                                        className="min-w-0 ring-1 ring-inset ring-primary/60 rounded-[2px]"
+                                      >
+                                        <UnitSelect
+                                          value={draftValue}
+                                          onValueChange={(v) => {
+                                            setDraftValue(v);
+                                            const spec = EDITABLE.unit;
+                                            setEditing(null);
+                                            if (v !== spec.get(item)) {
+                                              const payload = spec.toPayload(v);
+                                              if (payload) patchItem.mutate({ id: item.id, data: payload });
+                                            }
+                                          }}
+                                          triggerClassName="h-6 px-1 py-0 text-xs border-0 shadow-none focus:ring-0 bg-transparent"
+                                          data-testid={`edit-unit-${item.id}`}
+                                        />
+                                      </div>
+                                    );
+                                  }
                                   if (isEditing) {
                                     return (
                                       <div
@@ -1084,6 +1109,7 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
                                     </div>
                                   );
                                 })}
+                                <span />
                                 <div className="flex items-center justify-end gap-0.5 opacity-0 group-hover/row:opacity-100 transition-opacity">
                                   <Button
                                     variant="ghost"
@@ -1151,6 +1177,8 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
                                   className="h-6 px-1 py-0 text-xs border-0 bg-transparent placeholder:text-muted-foreground/60 focus-visible:ring-0"
                                   data-testid={`input-new-item-${group.id}`}
                                 />
+                                <span />
+                                <span />
                               </div>
                             ) : (
                               <button

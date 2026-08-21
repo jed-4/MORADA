@@ -118,7 +118,7 @@ export function PriceListItemModal({
         unitType: v.unitType,
         costPrice: v.cost.trim() ? dollarsToCents(v.cost) : 0,
         sellPrice: v.sell.trim() ? dollarsToCents(v.sell) : null,
-        markupPercent: v.markup.trim() || null,
+        markupPercent: v.markup.trim(),
         nickname: v.nickname.trim() || null,
         description: v.description.trim() || null,
         supplierId: v.supplierId,

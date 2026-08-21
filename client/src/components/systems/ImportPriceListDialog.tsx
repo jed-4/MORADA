@@ -22,6 +22,7 @@ const FIELDS = [
   { key: "unitType", label: "Unit" },
   { key: "costPrice", label: "Cost (ex GST)", money: true },
   { key: "sellPrice", label: "Sell (ex GST)", money: true },
+  { key: "markupPercent", label: "Markup %", percent: true },
   { key: "nickname", label: "Nickname" },
   { key: "description", label: "Description" },
   { key: "supplierCode", label: "Supplier ref" },
@@ -40,6 +41,7 @@ const GUESSES: Record<string, string> = {
   cost: "costPrice", "cost price": "costPrice", price: "costPrice", "unit price": "costPrice",
   "trade price": "costPrice", "ex gst": "costPrice", buy: "costPrice",
   sell: "sellPrice", "sell price": "sellPrice", rrp: "sellPrice", retail: "sellPrice",
+  markup: "markupPercent", "markup %": "markupPercent", margin: "markupPercent",
   nickname: "nickname", brand: "brand", manufacturer: "brand",
   "supplier ref": "supplierCode", "supplier code": "supplierCode",
   "lead time": "leadTimeDays", "lead time days": "leadTimeDays",
@@ -106,6 +108,10 @@ export function ImportPriceListDialog({ open, onOpenChange, priceListId }: Props
           const n = typeof raw === "number" ? raw : parseFloat(String(raw).replace(/[^0-9.\-]/g, ""));
           if (!Number.isFinite(n)) continue;
           out[f.key] = dollarsToCents(n);
+        } else if ((f as any).percent) {
+          // markup_percent is numeric(10,2) — Drizzle wants it as a string.
+          const n = typeof raw === "number" ? raw : parseFloat(String(raw).replace(/[^0-9.\-]/g, ""));
+          if (Number.isFinite(n)) out[f.key] = String(n);
         } else if ((f as any).number) {
           const n = typeof raw === "number" ? raw : parseInt(String(raw).replace(/[^0-9\-]/g, ""), 10);
           if (Number.isFinite(n)) out[f.key] = n;
