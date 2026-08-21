@@ -96,7 +96,6 @@ export default function PriceListsPage() {
     );
   }, [lists, search]);
 
-  const totalItems = useMemo(() => lists.reduce((sum, l) => sum + (l.itemCount || 0), 0), [lists]);
 
   const activeFilterCount = (kindFilter !== "all" ? 1 : 0) + (showArchived ? 1 : 0);
 
@@ -202,9 +201,6 @@ export default function PriceListsPage() {
               </PopoverContent>
             </Popover>
 
-            <span className="text-xs text-muted-foreground ml-1 truncate">
-              {lists.length} {lists.length === 1 ? "list" : "lists"} · {totalItems} items
-            </span>
           </div>
 
           {/* RIGHT: compare + primary CTA */}
