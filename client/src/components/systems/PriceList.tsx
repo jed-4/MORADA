@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { useResizableColumns, ColResizeHandle } from "@/components/useResizableColumns";
 import { resolveSellCents, effectiveMarkup, isSellDerived } from "@shared/priceList";
-import { DndContext, DragOverlay, pointerWithin, useDraggable, useDroppable, PointerSensor, useSensor, useSensors, type DragEndEvent, type DragStartEvent } from "@dnd-kit/core";
+import { DndContext, DragOverlay, closestCenter, pointerWithin, useDraggable, useDroppable, KeyboardSensor, PointerSensor, useSensor, useSensors, type CollisionDetection, type DragEndEvent, type DragStartEvent } from "@dnd-kit/core";
 import { ImportPriceListDialog } from "@/components/systems/ImportPriceListDialog";
 import { PriceListItemModal } from "@/components/systems/PriceListItemModal";
 import * as XLSX from "xlsx";
@@ -157,13 +157,14 @@ function RowDragHandle({ itemId }: { itemId: string }) {
       ref={setNodeRef}
       {...attributes}
       {...listeners}
-      className={`flex items-center justify-center cursor-grab active:cursor-grabbing text-muted-foreground ${
+      style={{ touchAction: "none" }}
+      className={`flex h-full min-h-[28px] w-full select-none items-center justify-center rounded-sm cursor-grab active:cursor-grabbing text-muted-foreground/60 hover:text-foreground hover:bg-muted ${
         isDragging ? "opacity-40" : ""
       }`}
       data-testid={`drag-handle-${itemId}`}
       aria-label="Drag to another group"
     >
-      <GripVertical className="h-3 w-3" />
+      <GripVertical className="h-4 w-4" />
     </span>
   );
 }
@@ -647,12 +648,24 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
   };
 
   // Group-level drops only — items have no explicit order within a group, so
-  // there is nothing to sort. pointerWithin follows the cursor, which avoids the
-  // closestCenter problem the estimate grid hit (large group cards winning over
-  // the row actually under the pointer).
+  // there is nothing to sort.
   const dndSensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+    // 8px to match the estimate grid, so a drag feels the same in both places and
+    // a slightly shaky click never turns into a move.
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(KeyboardSensor),
   );
+
+  // pointerWithin alone reports no collision whenever the cursor is released
+  // outside every card — the gutter between groups, the page margin — so a
+  // near-miss drop silently did nothing and the whole feature read as broken.
+  // Fall back to closestCenter so a release always resolves to a group. Safe
+  // here because groups are the only droppables: there is no in-group ordering
+  // for a large card to win over, which is the trap the estimate grid hit.
+  const groupCollisionDetection: CollisionDetection = (args) => {
+    const withinPointer = pointerWithin(args);
+    return withinPointer.length > 0 ? withinPointer : closestCenter(args);
+  };
 
   const onDragStart = (e: DragStartEvent) => {
     const id = String(e.active.id);
@@ -907,15 +920,16 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
               <TooltipTrigger asChild>
                 <button
                   onClick={() => { setEditMode((v) => !v); setEditing(null); }}
-                  className={`h-6 w-auto px-2 text-xs border rounded-md flex items-center gap-1 transition-all hover-elevate active-elevate-2 ${
+                  className={`h-6 w-6 border rounded-md flex items-center justify-center transition-all hover-elevate active-elevate-2 ${
                     editMode
                       ? "bg-primary/10 text-primary border-primary/20"
                       : "border-border/50 text-muted-foreground"
                   }`}
+                  aria-pressed={editMode}
+                  aria-label={editMode ? "Done editing" : "Edit items"}
                   data-testid="button-edit-mode"
                 >
                   <Pencil className="h-3 w-3" />
-                  {editMode ? "Editing" : "Edit"}
                 </button>
               </TooltipTrigger>
               <TooltipContent side="bottom">
@@ -1011,7 +1025,7 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
         ) : (
           <DndContext
             sensors={dndSensors}
-            collisionDetection={pointerWithin}
+            collisionDetection={groupCollisionDetection}
             onDragStart={onDragStart}
             onDragEnd={onDragEnd}
           >
