@@ -6434,8 +6434,8 @@ export const insertPriceListItemSchema = createInsertSchema(priceListItems).omit
   // CENTS, integer — never dollars. The form converts at the boundary.
   costPrice: z.number().int("Cost must be a whole number of cents").default(0),
   sellPrice: z.number().int("Sell must be a whole number of cents").nullable().optional(),
-  markupPercent: z.string().optional().transform(val => val === "" ? null : val),
-  tags: z.array(z.string()).optional(),
+  markupPercent: z.string().nullable().optional().transform((val) => (val === "" ? null : val)),
+  tags: z.array(z.string()).nullable().optional(),
   priceHistory: z.array(z.object({
     date: z.string(),
     costPrice: z.number(),
