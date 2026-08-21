@@ -13,6 +13,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { dollarsToCents } from "@shared/money";
+import { normalizeHeader } from "@shared/import";
 
 /** The fields an imported row can fill. `code` is the identity used for matching. */
 const FIELDS = [
@@ -78,7 +79,9 @@ export function ImportPriceListDialog({ open, onOpenChange, priceListId }: Props
       const hdrs = Object.keys(json[0]);
       const guessed: Record<string, string> = {};
       hdrs.forEach((h) => {
-        const field = GUESSES[h.toLowerCase().trim()];
+        // Verbatim first, then normalized — "Cost (ex GST)" has to reach "cost",
+        // otherwise our own exported file cannot be re-imported without remapping.
+        const field = GUESSES[h.toLowerCase().trim()] ?? GUESSES[normalizeHeader(h)];
         // First header wins a field, so a sheet with both "Price" and "Cost"
         // doesn't silently overwrite the earlier guess.
         if (field && !guessed[field]) guessed[field] = h;
