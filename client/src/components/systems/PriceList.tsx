@@ -1002,7 +1002,9 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
                             group.items.map((item) => (
                               <div
                                 key={item.id}
-                                className="group/row grid items-center py-2.5 border-b border-border gap-2 hover:bg-muted/30 rounded-sm"
+                                className={`group/row grid items-center py-2.5 border-b border-border gap-2 rounded-sm ${
+                                  editing?.id === item.id ? "bg-primary/[0.04]" : "hover:bg-muted/30"
+                                }`}
                                 style={{ gridTemplateColumns: gridTemplate }}
                                 data-testid={`row-item-${item.id}`}
                               >
@@ -1033,7 +1035,7 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
                                             if (e.key === "Enter") { e.preventDefault(); commitEdit(item); }
                                             if (e.key === "Escape") { e.preventDefault(); setEditing(null); }
                                           }}
-                                          className={`h-6 px-1 py-0 text-xs border bg-transparent ${c.align === "right" ? "text-right" : ""}`}
+                                          className={`h-6 px-1 py-0 text-xs bg-transparent border-0 shadow-none focus-visible:ring-0 ${c.align === "right" ? "text-right" : ""}`}
                                           data-testid={`edit-${c.key}-${item.id}`}
                                         />
                                       </div>
@@ -1042,7 +1044,7 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
                                   return (
                                     <div
                                       key={c.key}
-                                      className={`min-w-0 ${EDITABLE[c.key] ? "cursor-text rounded-sm hover:bg-muted/50" : ""}`}
+                                      className={`min-w-0 rounded-sm ${EDITABLE[c.key] ? "cursor-text" : ""}`}
                                       onClick={() => beginEdit(item, c.key)}
                                       data-testid={`cell-${c.key}-${item.id}`}
                                     >
