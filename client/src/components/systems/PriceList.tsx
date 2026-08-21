@@ -1,7 +1,7 @@
 import { useState, useEffect, forwardRef, useImperativeHandle, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { Plus, Search, Filter, Edit, Trash2, ChevronRight, ChevronDown, Building, Tag, DollarSign, Box, Loader2, ChevronsUpDown, ChevronsDownUp, ToggleLeft, ToggleRight, X, MoreVertical, FolderPlus, Columns3, Upload, Download } from "lucide-react";
+import { Plus, Search, Filter, Edit, Trash2, ChevronRight, ChevronDown, Building, Tag, DollarSign, Box, Loader2, ChevronsUpDown, ChevronsDownUp, ToggleLeft, ToggleRight, X, MoreVertical, FolderPlus, Columns3, Upload, Download, FileSpreadsheet } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
@@ -549,6 +549,29 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
 
   /** Export the list as .xlsx using the same headers the importer expects, so a
    *  round trip works without remapping. Money is written in dollars. */
+  /** Blank sheet carrying the importer's headers plus one worked example.
+   *  Exporting an empty list produces a file with no headers at all — precisely
+   *  when a starting point is most useful — so the template is its own action. */
+  const exportTemplate = () => {
+    const example = {
+      "Item name": "EXAMPLE ROW — delete before importing",
+      SKU: "PB-10-2412",
+      Group: "Plasterboard",
+      Unit: "sheet",
+      "Cost (ex GST)": 18.5,
+      "Sell (ex GST)": 24,
+      Nickname: "10mm sheet",
+      Description: "10mm standard plasterboard, 2400x1200",
+      "Supplier ref": "GYP-10-2412",
+      Brand: "Gyprock",
+      "Lead time (days)": 3,
+    };
+    const ws = XLSX.utils.json_to_sheet([example]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Price list");
+    XLSX.writeFile(wb, "price-list-template.xlsx");
+  };
+
   const exportXlsx = () => {
     const groupName = new Map(priceListGroups.map((g) => [g.id, g.name]));
     const rows = items.map((i) => ({
@@ -848,6 +871,10 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
               >
                 <Download className="h-3 w-3 mr-2" />
                 Export to Excel
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={exportTemplate} data-testid="button-export-template">
+                <FileSpreadsheet className="h-3 w-3 mr-2" />
+                Download import template
               </DropdownMenuItem>
               {onEditList && (
                 <DropdownMenuItem onClick={onEditList} data-testid="button-edit-list-details">
