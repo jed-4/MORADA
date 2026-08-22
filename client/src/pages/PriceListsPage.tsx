@@ -3,7 +3,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import {
-  Plus, Search, Building2, HardHat, Package, Archive, Star, MoreVertical, Pencil, Trash2,
+  Plus, Search, Building2, HardHat, Package, CircleSlash, CircleCheck, Star, MoreVertical, Pencil, Trash2,
   ChevronRight, Filter, X, ArrowLeftRight,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -74,12 +74,13 @@ export default function PriceListsPage() {
     },
   });
 
-  const archiveMutation = useMutation({
+  // isArchived is the stored field; "inactive" is what it means to the user.
+  const activeMutation = useMutation({
     mutationFn: ({ id, isArchived }: { id: string; isArchived: boolean }) =>
       apiRequest(`/api/price-lists/${id}`, "PATCH", { isArchived }),
     onSuccess: (_d, vars) => {
       queryClient.invalidateQueries({ queryKey: ["/api/price-lists"] });
-      toast({ title: vars.isArchived ? "Price list archived" : "Price list restored" });
+      toast({ title: vars.isArchived ? "Price list deactivated" : "Price list activated" });
     },
     onError: (error: any) => {
       toast({ title: "Failed to update price list", description: error.message, variant: "destructive" });
@@ -96,7 +97,6 @@ export default function PriceListsPage() {
     );
   }, [lists, search]);
 
-  const totalItems = useMemo(() => lists.reduce((sum, l) => sum + (l.itemCount || 0), 0), [lists]);
 
   const activeFilterCount = (kindFilter !== "all" ? 1 : 0) + (showArchived ? 1 : 0);
 
@@ -180,7 +180,7 @@ export default function PriceListsPage() {
                 </div>
 
                 <label className="flex items-center justify-between gap-2 cursor-pointer">
-                  <span className="text-xs text-muted-foreground">Show archived</span>
+                  <span className="text-xs text-muted-foreground">Show inactive</span>
                   <input
                     type="checkbox"
                     checked={showArchived}
@@ -202,9 +202,6 @@ export default function PriceListsPage() {
               </PopoverContent>
             </Popover>
 
-            <span className="text-xs text-muted-foreground ml-1 truncate">
-              {lists.length} {lists.length === 1 ? "list" : "lists"} · {totalItems} items
-            </span>
           </div>
 
           {/* RIGHT: compare + primary CTA */}
@@ -286,7 +283,7 @@ export default function PriceListsPage() {
                     <div className="flex items-center gap-1.5 mb-2 flex-wrap">
                       <Badge variant="outline" className="h-4 text-label">{meta.label}</Badge>
                       {list.isArchived && (
-                        <Badge variant="secondary" className="h-4 text-label">Archived</Badge>
+                        <Badge variant="secondary" className="h-4 text-label">Inactive</Badge>
                       )}
                       {list.supplierName && (
                         <span className="text-label text-muted-foreground truncate">{list.supplierName}</span>
@@ -318,10 +315,12 @@ export default function PriceListsPage() {
                           Edit details
                         </DropdownMenuItem>
                         <DropdownMenuItem
-                          onClick={() => archiveMutation.mutate({ id: list.id, isArchived: !list.isArchived })}
+                          onClick={() => activeMutation.mutate({ id: list.id, isArchived: !list.isArchived })}
+                          data-testid={`menu-toggle-active-${list.id}`}
                         >
-                          <Archive className="h-3 w-3 mr-2" />
-                          {list.isArchived ? "Restore" : "Archive"}
+                          {list.isArchived
+                            ? <><CircleCheck className="h-3 w-3 mr-2" />Set active</>
+                            : <><CircleSlash className="h-3 w-3 mr-2" />Set inactive</>}
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
                         <DropdownMenuItem
