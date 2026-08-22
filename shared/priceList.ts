@@ -144,3 +144,138 @@ export function billPriceAsItemCost(args: {
     ? incGstFromEx(args.billUnitPriceExCents)
     : args.billUnitPriceExCents;
 }
+
+// ---------------------------------------------------------------------------
+// Matching bill lines to catalogue items
+// ---------------------------------------------------------------------------
+
+/**
+ * Bill lines carry no SKU column — Jed's call, 2026-08-22: it would be noise on
+ * a bill. So matching runs on the line's free-text description.
+ *
+ * That is less certain than a real SKU match, which is why nothing here ever
+ * applies a price by itself. Every verdict is a proposal a human accepts.
+ */
+
+/** Words that appear on nearly every building invoice and carry no signal. */
+const NOISE = new Set([
+  "the", "and", "for", "with", "per", "each", "ea", "of", "to", "a",
+  "supply", "supplied", "install", "installed", "labour", "materials",
+  "item", "items", "misc", "sundry", "sundries", "charge", "fee",
+]);
+
+/** Lowercase, strip punctuation, collapse whitespace. */
+export function normaliseForMatch(value: string | null | undefined): string {
+  return (value ?? "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
+function tokens(value: string | null | undefined): string[] {
+  return normaliseForMatch(value).split(" ").filter((t) => t && !NOISE.has(t));
+}
+
+export type MatchableItem = {
+  id: string;
+  name: string;
+  nickname?: string | null;
+  code?: string | null;
+  supplierCode?: string | null;
+  description?: string | null;
+};
+
+export type MatchCandidate = {
+  item: MatchableItem;
+  score: number;
+  /** Why it matched, for showing the reviewer rather than a bare number. */
+  reason: "code" | "exact-name" | "name-contains" | "token-overlap";
+};
+
+/**
+ * Score one catalogue item against a bill line description.
+ *
+ * The code check is the interesting one: suppliers routinely print their
+ * product code inside the line text ("PB-13-2412 Plasterboard 13mm"), so a
+ * substring hit on a catalogue code buys SKU-grade precision without bills
+ * needing a SKU column at all. Codes shorter than 4 characters are ignored —
+ * "PB" would match half the catalogue.
+ */
+export function scoreItemAgainstDescription(
+  description: string,
+  item: MatchableItem,
+): MatchCandidate | null {
+  const haystack = normaliseForMatch(description);
+  if (!haystack) return null;
+
+  for (const raw of [item.code, item.supplierCode]) {
+    const code = normaliseForMatch(raw);
+    if (code.length >= 4 && haystack.includes(code)) {
+      return { item, score: 1, reason: "code" };
+    }
+  }
+
+  for (const raw of [item.name, item.nickname]) {
+    const name = normaliseForMatch(raw);
+    if (!name) continue;
+    if (name === haystack) return { item, score: 0.95, reason: "exact-name" };
+    if (name.length >= 6 && haystack.includes(name)) {
+      return { item, score: 0.85, reason: "name-contains" };
+    }
+  }
+
+  // Token overlap, measured against the item's own token count so a short
+  // catalogue name is not punished for a long, chatty invoice line.
+  const lineTokens = new Set(tokens(description));
+  const itemTokens = tokens([item.name, item.nickname, item.description].filter(Boolean).join(" "));
+  if (!itemTokens.length || !lineTokens.size) return null;
+
+  const hits = itemTokens.filter((t) => lineTokens.has(t)).length;
+  if (!hits) return null;
+
+  // Deliberately low: a weak candidate is still worth surfacing, because
+  // verdictFor turns low confidence into "ambiguous" rather than a silent drop.
+  // Discarding it here would hide the very lines that most need a human.
+  const score = (hits / itemTokens.length) * 0.8;
+  return score >= 0.2 ? { item, score, reason: "token-overlap" } : null;
+}
+
+/** Best candidates for a bill line, strongest first. */
+export function matchBillLine(
+  description: string,
+  items: MatchableItem[],
+  limit = 5,
+): MatchCandidate[] {
+  return items
+    .map((item) => scoreItemAgainstDescription(description, item))
+    .filter((c): c is MatchCandidate => c !== null)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit);
+}
+
+export type LineVerdict = "moved" | "unchanged" | "unmatched" | "ambiguous";
+
+/**
+ * Turn candidates plus a price comparison into the verdict a reviewer acts on.
+ *
+ * "ambiguous" is a deliberate outcome, not a failure: two catalogue items
+ * scoring alike on a vague description is exactly the case a human (or an LLM
+ * pass) should settle, and silently taking the top one is how wrong prices get
+ * written.
+ */
+export function verdictFor(
+  candidates: MatchCandidate[],
+  comparison: BillPriceComparison | null,
+): LineVerdict {
+  if (!candidates.length) return "unmatched";
+  const [best, next] = candidates;
+  // A clear gap only means something above a floor: a lone 0.27 candidate is
+  // not confident just because nothing else scored at all.
+  const confident =
+    best.score >= 0.85 ||
+    (best.score >= 0.5 && (!next || best.score - next.score >= 0.15));
+  if (!confident) return "ambiguous";
+  if (!comparison) return "unchanged";
+  return comparison.changed ? "moved" : "unchanged";
+}
