@@ -62,6 +62,19 @@ import { EmptyState } from "@/components/EmptyState";
 const TABLE_STORAGE_KEY = "cost-codes";
 const LEGACY_STORAGE_KEY = "cost-codes-column-config-v1";
 
+// Uncategorized has no row of its own, so it needs a stable stand-in id to sit
+// alongside the real category ids in the expanded set.
+const UNCATEGORIZED_KEY = "__uncategorized__";
+
+// Codes read as numbers ("100", "119"); anything non-numeric falls back to
+// lexical so a mixed list still lands somewhere predictable.
+const byCode = <T extends { code: string }>(a: T, b: T) => {
+  const aNum = parseFloat(a.code);
+  const bNum = parseFloat(b.code);
+  if (!isNaN(aNum) && !isNaN(bNum)) return aNum - bNum;
+  return a.code.localeCompare(b.code);
+};
+
 type CostCodeRow = CostCode & { xeroTrackingOptionName?: string };
 
 export default function CostCodes() {
@@ -69,7 +82,11 @@ export default function CostCodes() {
   const pageTitle = usePageTitle({ pageName: "Cost Codes" });
   const [searchTerm, setSearchTerm] = useState("");
   const [showArchived, setShowArchived] = useState(false);
-  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
+  // Uncategorized used to be permanently open; keep it open on first load so
+  // collapsing it stays opt-in.
+  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(
+    () => new Set([UNCATEGORIZED_KEY]),
+  );
   const [isAddCategoryOpen, setIsAddCategoryOpen] = useState(false);
   const [isAddCostCodeOpen, setIsAddCostCodeOpen] = useState(false);
   const [isImportOpen, setIsImportOpen] = useState(false);
@@ -266,7 +283,7 @@ export default function CostCodes() {
       return matchesCategory || hasCodes;
     }
     return true;
-  });
+  }).sort(byCode);
 
   const getCodesForCategory = (categoryId: string | null): CostCodeRow[] => {
     return (codes as CostCodeRow[]).filter(code => {
@@ -277,20 +294,14 @@ export default function CostCodes() {
                code.title.toLowerCase().includes(searchTerm.toLowerCase());
       }
       return true;
-    }).sort((a, b) => {
-      const aNum = parseFloat(a.code);
-      const bNum = parseFloat(b.code);
-      if (!isNaN(aNum) && !isNaN(bNum)) {
-        return aNum - bNum;
-      }
-      return a.code.localeCompare(b.code);
-    });
+    }).sort(byCode);
   };
 
   const uncategorizedCodes = getCodesForCategory(null);
 
   const expandAll = () => {
     const allCategoryIds = filteredCategories.map(cat => cat.id);
+    if (uncategorizedCodes.length > 0) allCategoryIds.push(UNCATEGORIZED_KEY);
     setExpandedCategories(new Set(allCategoryIds));
   };
 
@@ -298,8 +309,12 @@ export default function CostCodes() {
     setExpandedCategories(new Set());
   };
 
-  const allExpanded = filteredCategories.length > 0 &&
-                      filteredCategories.every(cat => expandedCategories.has(cat.id));
+  const expandableKeys = [
+    ...filteredCategories.map(cat => cat.id),
+    ...(uncategorizedCodes.length > 0 ? [UNCATEGORIZED_KEY] : []),
+  ];
+  const allExpanded = expandableKeys.length > 0 &&
+                      expandableKeys.every(key => expandedCategories.has(key));
 
   const toggleCodeSelection = (codeId: string) => {
     setSelectedCodeIds(prev => {
@@ -882,33 +897,52 @@ export default function CostCodes() {
             })}
 
             {/* Uncategorized Codes */}
-            {uncategorizedCodes.length > 0 && (
-              <Card data-testid="card-uncategorized">
-                <CardHeader className="p-4">
-                  <div className="flex items-center gap-3">
-                    <div className="w-6" />
-                    <div className="flex-1">
-                      <span className="font-semibold">Uncategorized Cost Codes</span>
+            {uncategorizedCodes.length > 0 && (() => {
+              const isExpanded = expandedCategories.has(UNCATEGORIZED_KEY);
+              return (
+                <Card data-testid="card-uncategorized">
+                  <CardHeader
+                    className="p-4 hover-elevate cursor-pointer"
+                    onClick={() => toggleCategory(UNCATEGORIZED_KEY)}
+                  >
+                    <div className="flex items-center gap-3">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6 shrink-0"
+                        data-testid="button-toggle-uncategorized"
+                      >
+                        {isExpanded ? (
+                          <ChevronDown className="h-4 w-4" />
+                        ) : (
+                          <ChevronRight className="h-4 w-4" />
+                        )}
+                      </Button>
+                      <div className="flex-1">
+                        <span className="font-semibold">Uncategorized Cost Codes</span>
+                      </div>
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                        <span>{uncategorizedCodes.length} codes</span>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <span>{uncategorizedCodes.length} codes</span>
-                    </div>
-                  </div>
-                </CardHeader>
-                <CardContent className="p-0 pt-0 pb-2">
-                  <div className="px-2" style={{ height: Math.min(uncategorizedCodes.length, 12) * 36 + 32 }}>
-                    <DataTable
-                      data={uncategorizedCodes}
-                      columns={columns}
-                      storageKey={TABLE_STORAGE_KEY}
-                      legacyConfigKey={LEGACY_STORAGE_KEY}
-                      rowKey={(c) => c.id}
-                      rowClassName={(c) => selectedCodeIds.has(c.id) ? "bg-primary/8 dark:bg-primary/10" : ""}
-                    />
-                  </div>
-                </CardContent>
-              </Card>
-            )}
+                  </CardHeader>
+                  {isExpanded && (
+                    <CardContent className="p-0 pt-0 pb-2">
+                      <div className="px-2" style={{ height: Math.min(uncategorizedCodes.length, 12) * 36 + 32 }}>
+                        <DataTable
+                          data={uncategorizedCodes}
+                          columns={columns}
+                          storageKey={TABLE_STORAGE_KEY}
+                          legacyConfigKey={LEGACY_STORAGE_KEY}
+                          rowKey={(c) => c.id}
+                          rowClassName={(c) => selectedCodeIds.has(c.id) ? "bg-primary/8 dark:bg-primary/10" : ""}
+                        />
+                      </div>
+                    </CardContent>
+                  )}
+                </Card>
+              );
+            })()}
 
             {filteredCategories.length === 0 && uncategorizedCodes.length === 0 && (
               <EmptyState
