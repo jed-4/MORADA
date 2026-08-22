@@ -1,6 +1,7 @@
 import { useState, useMemo, forwardRef, useImperativeHandle } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import type { BillPriceComparison } from "@shared/priceList";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -37,6 +38,8 @@ import {
   Building2,
   Search,
   AlertCircle,
+  TrendingUp,
+  TrendingDown,
 } from "lucide-react";
 import type { BillLineItem, Bill, Contact, PriceListItem, PriceListGroup, PriceList } from "@shared/schema";
 import { dollarsToCents, formatCents } from "@shared/money";
@@ -154,15 +157,47 @@ const AIPriceListReview = forwardRef<AIPriceListReviewHandle, Props>(({ searchQu
     refresh: () => refetch(),
   }));
 
+  // Linking used to be the end of the road. Now the server reports how the
+  // supplier's price compares to the catalogue, and when it has moved we offer
+  // to update it — that offer is the whole point of linking.
+  const [priceOffer, setPriceOffer] = useState<{
+    lineItemId: string;
+    priceListItemId: string;
+    itemName: string;
+    description: string;
+    comparison: BillPriceComparison;
+  } | null>(null);
+
   const linkMutation = useMutation({
     mutationFn: async ({ lineItemId, priceListItemId }: { lineItemId: string; priceListItemId: string }) => {
-      return apiRequest(`/api/bill-line-items/${lineItemId}/link-price-item`, "PATCH", { priceListItemId });
+      const res = await apiRequest(`/api/bill-line-items/${lineItemId}/link-price-item`, "PATCH", { priceListItemId });
+      return { res, lineItemId, priceListItemId };
     },
-    onSuccess: () => {
+    onSuccess: ({ res, lineItemId, priceListItemId }) => {
       queryClient.invalidateQueries({ queryKey: ['/api/bill-line-items/unlinked'] });
+      const comparison: BillPriceComparison | null = res?.priceComparison ?? null;
+      if (comparison?.changed) {
+        const item = priceListItems?.find((i) => i.id === priceListItemId);
+        setPriceOffer({
+          lineItemId,
+          priceListItemId,
+          itemName: item?.name ?? "this item",
+          description: selectedLineItem?.description ?? "",
+          comparison,
+        });
+      }
       setShowLinkModal(false);
       setSelectedLineItem(null);
       setSelectedPriceListItem(null);
+    },
+  });
+
+  const applyPriceMutation = useMutation({
+    mutationFn: async ({ priceListItemId, billLineItemId }: { priceListItemId: string; billLineItemId: string }) =>
+      apiRequest('/api/price-list/review/apply-price', "POST", { priceListItemId, billLineItemId }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/price-list/items'] });
+      setPriceOffer(null);
     },
   });
 
@@ -546,6 +581,71 @@ const AIPriceListReview = forwardRef<AIPriceListReviewHandle, Props>(({ searchQu
               className="bg-primary hover:bg-primary/90"
             >
               {createAndLinkMutation.isPending ? "Creating..." : "Create & Link"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!priceOffer} onOpenChange={(o) => !o && setPriceOffer(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>The supplier's price has changed</DialogTitle>
+            <DialogDescription>
+              {priceOffer?.description}
+            </DialogDescription>
+          </DialogHeader>
+
+          {priceOffer && (
+            <div className="rounded-md border border-border bg-muted/30 p-3 space-y-2">
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">Catalogue</span>
+                <span className="tabular-nums">{formatCents(priceOffer.comparison.catalogueExCents)}</span>
+              </div>
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">Charged on this bill</span>
+                <span className="tabular-nums font-medium">{formatCents(priceOffer.comparison.billExCents)}</span>
+              </div>
+              <div className="flex items-center justify-between border-t border-border pt-2 text-sm">
+                <span className="text-muted-foreground">Change</span>
+                <span
+                  className={`flex items-center gap-1 tabular-nums ${
+                    priceOffer.comparison.direction === "up" ? "text-coral" : "text-sage"
+                  }`}
+                >
+                  {priceOffer.comparison.direction === "up"
+                    ? <TrendingUp className="h-3.5 w-3.5" />
+                    : <TrendingDown className="h-3.5 w-3.5" />}
+                  {priceOffer.comparison.deltaCents > 0 ? "+" : "\u2212"}
+                  {formatCents(Math.abs(priceOffer.comparison.deltaCents))}
+                  {priceOffer.comparison.deltaPercent !== null && (
+                    <span className="text-muted-foreground">
+                      ({priceOffer.comparison.deltaPercent > 0 ? "+" : "\u2212"}
+                      {Math.abs(priceOffer.comparison.deltaPercent).toFixed(1)}%)
+                    </span>
+                  )}
+                </span>
+              </div>
+              <p className="pt-1 text-xs text-muted-foreground">
+                Prices are ex GST. Updating the cost on {priceOffer.itemName} re-prices anything
+                that marks it up.
+              </p>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPriceOffer(null)}>
+              Keep catalogue price
+            </Button>
+            <Button
+              className="bg-primary hover:bg-primary/90"
+              disabled={applyPriceMutation.isPending}
+              onClick={() => priceOffer && applyPriceMutation.mutate({
+                priceListItemId: priceOffer.priceListItemId,
+                billLineItemId: priceOffer.lineItemId,
+              })}
+              data-testid="button-apply-bill-price"
+            >
+              {applyPriceMutation.isPending ? "Updating..." : "Update catalogue"}
             </Button>
           </DialogFooter>
         </DialogContent>
