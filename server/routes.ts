@@ -35670,6 +35670,55 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Resolve the ambiguous tail of a review with the model. Proposes only --
+  // it writes nothing, and every suggestion still goes through apply-price.
+  app.post("/api/price-list/review/resolve", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.companyId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+      const { lines } = req.body ?? {};
+      if (!Array.isArray(lines) || !lines.length) {
+        return res.status(400).json({ error: "lines is required" });
+      }
+
+      // Re-read the catalogue rather than trusting candidate names from the body:
+      // the model must only ever choose among this company's own items.
+      const catalogue = await storage.getPriceListItems(user.companyId, {});
+      const byId = new Map(catalogue.map((i) => [i.id, i]));
+
+      const scoped = lines.flatMap((l: any) => {
+        const candidates = (Array.isArray(l?.candidates) ? l.candidates : [])
+          .map((c: any) => byId.get(c?.id))
+          .filter(Boolean)
+          .map((i: any) => ({ id: i.id, name: i.name, code: i.code ?? null }));
+        if (!candidates.length || typeof l?.description !== "string") return [];
+        return [{
+          lineId: String(l.lineId),
+          description: l.description,
+          supplierName: typeof l.supplierName === "string" ? l.supplierName : null,
+          candidates,
+        }];
+      });
+
+      if (!scoped.length) return res.json({ resolutions: [], configured: true });
+
+      const { resolveAmbiguousLines } = await import("./services/priceMatchAi");
+      const resolutions = await resolveAmbiguousLines(scoped);
+
+      res.json({
+        resolutions,
+        // Distinguish "the model found nothing" from "no API key on this server",
+        // so the UI can say which rather than showing a silent empty result.
+        configured: !!process.env.ANTHROPIC_API_KEY,
+      });
+    } catch (error: any) {
+      console.error("AI price match resolve failed:", error);
+      res.status(500).json({ error: "Failed to resolve matches", details: error.message });
+    }
+  });
+
   // Batch price review: sweep a set of bills, match each line against the
   // catalogue, and report a verdict per line. Read-only — it proposes, it never
   // writes a price. Applying stays the explicit per-line apply-price call.
