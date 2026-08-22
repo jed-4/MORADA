@@ -127,3 +127,85 @@ export async function resolveAmbiguousLines(lines: AmbiguousLine[]): Promise<Res
     }];
   });
 }
+
+// ---------------------------------------------------------------------------
+// Batch overview
+// ---------------------------------------------------------------------------
+
+export type ReviewStats = {
+  billsScanned: number;
+  linesScanned: number;
+  counts: Record<string, number>;
+  /** Every line whose price moved, already aggregated by the caller. */
+  movements: Array<{
+    item: string;
+    supplier: string | null;
+    fromCents: number;
+    toCents: number;
+    percent: number | null;
+  }>;
+};
+
+/**
+ * A few sentences a builder can act on, over a whole review.
+ *
+ * The arithmetic is done in code and handed over as facts; the model is asked to
+ * interpret, not to calculate. Models are unreliable at summing money and very
+ * good at "these are all plasterboard, and it is the third rise this quarter" —
+ * so each side does the part it is actually good at, and no number in the output
+ * can be one the model invented.
+ *
+ * Returns null when no API key is configured, so the caller can fall back to the
+ * counts it already has.
+ */
+export async function summariseReview(stats: ReviewStats): Promise<string | null> {
+  const anthropic = await getAnthropic();
+  if (!anthropic) return null;
+
+  const moved = stats.movements.slice(0, 60);
+  const totalCents = moved.reduce((s, m) => s + (m.toCents - m.fromCents), 0);
+  const rises = moved.filter((m) => m.toCents > m.fromCents).length;
+
+  const facts = {
+    billsScanned: stats.billsScanned,
+    linesScanned: stats.linesScanned,
+    verdictCounts: stats.counts,
+    pricesMoved: moved.length,
+    ofWhichRises: rises,
+    ofWhichFalls: moved.length - rises,
+    netChangePerUnitDollars: (totalCents / 100).toFixed(2),
+    movements: moved.map((m) => ({
+      item: m.item,
+      supplier: m.supplier ?? "unknown",
+      fromDollars: (m.fromCents / 100).toFixed(2),
+      toDollars: (m.toCents / 100).toFixed(2),
+      percent: m.percent === null ? null : Number(m.percent.toFixed(1)),
+    })),
+  };
+
+  const prompt = `You are reviewing supplier price changes for an Australian residential builder.
+
+Below are the facts from one review, already calculated. Write 2-3 short sentences telling the builder what happened and what is worth their attention.
+
+Rules:
+- Use ONLY the numbers given. Never calculate a new figure or estimate one.
+- Lead with the pattern, not a restatement of the counts: which supplier, which kind of product, roughly what size of move.
+- Call out anything that stands out — one unusually large rise, a supplier moving everything at once, prices going down.
+- If items were left unmatched or undecided, say so in a few words so it is clear the review was not exhaustive.
+- Plain Australian English, no bullet points, no headings, no preamble. Do not start with "This review" or "In summary".
+
+Facts:
+${JSON.stringify(facts, null, 1)}
+
+Return ONLY valid JSON: {"summary":"..."}`;
+
+  const response = await anthropic.messages.create({
+    model: "claude-haiku-4-5",
+    max_tokens: 700,
+    messages: [{ role: "user", content: prompt }],
+  });
+
+  const content = (response.content[0] as any)?.text ?? "";
+  const parsed = parseAiJson(content);
+  return typeof parsed?.summary === "string" ? parsed.summary.slice(0, 900) : null;
+}

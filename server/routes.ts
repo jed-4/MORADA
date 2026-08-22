@@ -35670,6 +35670,45 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // A few sentences over a whole review. The caller sends the movements it is
+  // already displaying; the arithmetic is redone here so the summary can never
+  // describe numbers the server did not produce.
+  app.post("/api/price-list/review/summary", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.companyId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+      const { billsScanned, linesScanned, counts, movements } = req.body ?? {};
+      if (!Array.isArray(movements)) {
+        return res.status(400).json({ error: "movements is required" });
+      }
+
+      const clean = movements
+        .filter((m: any) => typeof m?.fromCents === "number" && typeof m?.toCents === "number")
+        .map((m: any) => ({
+          item: String(m.item ?? "unknown").slice(0, 120),
+          supplier: m.supplier ? String(m.supplier).slice(0, 120) : null,
+          fromCents: Math.round(m.fromCents),
+          toCents: Math.round(m.toCents),
+          percent: typeof m.percent === "number" ? m.percent : null,
+        }));
+
+      const { summariseReview } = await import("./services/priceMatchAi");
+      const summary = await summariseReview({
+        billsScanned: Number(billsScanned) || 0,
+        linesScanned: Number(linesScanned) || 0,
+        counts: counts && typeof counts === "object" ? counts : {},
+        movements: clean,
+      });
+
+      res.json({ summary, configured: !!process.env.ANTHROPIC_API_KEY });
+    } catch (error: any) {
+      console.error("Review summary failed:", error);
+      res.status(500).json({ error: "Failed to summarise review", details: error.message });
+    }
+  });
+
   // Resolve the ambiguous tail of a review with the model. Proposes only --
   // it writes nothing, and every suggestion still goes through apply-price.
   app.post("/api/price-list/review/resolve", requireAuth, requireTeamMember, async (req, res) => {

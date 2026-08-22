@@ -87,6 +87,7 @@ export function BatchPriceReview({ open, onOpenChange }: { open: boolean; onOpen
   /** What actually changed when an AI-picked row was accepted. */
   const [appliedDelta, setAppliedDelta] = useState<Map<string, BillPriceComparison>>(new Map());
   const [aiUnavailable, setAiUnavailable] = useState(false);
+  const [overview, setOverview] = useState<string | null>(null);
 
   const { data: priceLists = [] } = useQuery<Array<PriceList & { itemCount: number }>>({
     queryKey: ['/api/price-lists'],
@@ -110,6 +111,7 @@ export function BatchPriceReview({ open, onOpenChange }: { open: boolean; onOpen
       setApplied(new Set());
       setResolutions(new Map());
       setAppliedDelta(new Map());
+      setOverview(null);
       setResult(data);
     },
   });
@@ -144,6 +146,26 @@ export function BatchPriceReview({ open, onOpenChange }: { open: boolean; onOpen
       const next = new Map<string, Resolution>();
       for (const r of (data?.resolutions ?? []) as Resolution[]) next.set(r.lineId, r);
       setResolutions(next);
+    },
+  });
+
+  const summarise = useMutation({
+    mutationFn: async () =>
+      apiRequest('/api/price-list/review/summary', 'POST', {
+        billsScanned: result?.billsScanned,
+        linesScanned: result?.linesScanned,
+        counts: result?.summary,
+        movements: moved.map((r) => ({
+          item: r.candidates[0]?.name ?? r.line.description,
+          supplier: r.line.supplierName,
+          fromCents: r.comparison?.catalogueExCents,
+          toCents: r.comparison?.billExCents,
+          percent: r.comparison?.deltaPercent,
+        })),
+      }),
+    onSuccess: (data: any) => {
+      setAiUnavailable(data?.configured === false);
+      setOverview(data?.summary ?? null);
     },
   });
 
@@ -232,6 +254,29 @@ export function BatchPriceReview({ open, onOpenChange }: { open: boolean; onOpen
                   <span className="font-medium">{result.catalogueSize}</span> catalogue item
                   {result.catalogueSize === 1 ? "" : "s"}.
                 </p>
+                {moved.length > 0 && (
+                  <div className="mt-2 border-t border-border pt-2">
+                    {overview ? (
+                      <p className="flex gap-2 text-muted-foreground">
+                        <Sparkles className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-primary" />
+                        <span data-testid="text-review-overview">{overview}</span>
+                      </p>
+                    ) : (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7 text-xs"
+                        disabled={summarise.isPending}
+                        onClick={() => summarise.mutate()}
+                        data-testid="button-summarise-review"
+                      >
+                        {summarise.isPending
+                          ? <><Loader2 className="mr-1 h-3 w-3 animate-spin" />Reading...</>
+                          : <><Sparkles className="mr-1 h-3 w-3" />Sum this up</>}
+                      </Button>
+                    )}
+                  </div>
+                )}
                 {moved.length > 0 && (
                   <p className="mt-1 text-muted-foreground">
                     {moved.length} price{moved.length === 1 ? "" : "s"} moved, worth{" "}
