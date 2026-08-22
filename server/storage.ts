@@ -1433,6 +1433,7 @@ export interface IStorage {
   createBillLineItemPriceLink(link: InsertBillLineItemPriceLink, companyId: string): Promise<BillLineItemPriceLink | undefined>;
   updateBillLineItemPriceLink(id: string, link: Partial<InsertBillLineItemPriceLink>, companyId: string): Promise<BillLineItemPriceLink | undefined>;
   getUnlinkedBillLineItems(companyId: string): Promise<Array<import("@shared/schema").BillLineItem & { bill: import("@shared/schema").Bill; supplier: import("@shared/schema").Contact | null }>>;
+  applyBillPriceToItem(priceListItemId: string, billLineItemId: string, companyId: string, userId: string): Promise<{ item: PriceListItem; comparison: import("@shared/priceList").BillPriceComparison } | undefined>;
 
   // Dashboard Views CRUD
   getDashboardViews(companyId: string, userId: string, viewType?: "personal" | "business"): Promise<DashboardView[]>;
@@ -25498,6 +25499,92 @@ export class DbStorage implements IStorage {
       return result[0];
     } catch (error) {
       console.error("Database error in updateBillLineItemPriceLink:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Accept a supplier's price: copy a bill line's unit price onto the catalogue
+   * item and record why it moved.
+   *
+   * The price is re-derived from the bill line here rather than taken from the
+   * caller — a client-supplied amount would let anyone set any cost by POSTing
+   * a number. Both sides are scoped to companyId, so a link cannot be used to
+   * reach another tenant's bill or item.
+   *
+   * Cost only. sellPrice is left alone deliberately: under markup-wins an item
+   * with a markup re-derives its sell from the new cost automatically, and an
+   * item without one has a sell that was set by hand and is not ours to move.
+   */
+  async applyBillPriceToItem(
+    priceListItemId: string,
+    billLineItemId: string,
+    companyId: string,
+    userId: string,
+  ): Promise<{ item: PriceListItem; comparison: import("@shared/priceList").BillPriceComparison } | undefined> {
+    try {
+      const { compareBillPriceToItem, billPriceAsItemCost } = await import("@shared/priceList");
+
+      const [item] = await db.select().from(schema.priceListItems)
+        .where(and(
+          eq(schema.priceListItems.id, priceListItemId),
+          eq(schema.priceListItems.companyId, companyId),
+        ));
+      if (!item) return undefined;
+
+      const [line] = await db
+        .select({
+          id: schema.billLineItems.id,
+          unitPrice: schema.billLineItems.unitPrice,
+          billId: schema.billLineItems.billId,
+          billNumber: schema.bills.billNumber,
+        })
+        .from(schema.billLineItems)
+        .innerJoin(schema.bills, eq(schema.bills.id, schema.billLineItems.billId))
+        .where(and(
+          eq(schema.billLineItems.id, billLineItemId),
+          eq(schema.bills.companyId, companyId),
+        ));
+      if (!line) return undefined;
+
+      const comparison = compareBillPriceToItem({
+        itemCostCents: item.costPrice,
+        itemGstInclusive: item.gstInclusive,
+        billUnitPriceExCents: line.unitPrice,
+      });
+      if (!comparison.changed) return { item, comparison };
+
+      const now = new Date();
+      const entry = {
+        date: now.toISOString(),
+        costPrice: billPriceAsItemCost({
+          itemGstInclusive: item.gstInclusive,
+          billUnitPriceExCents: line.unitPrice,
+        }),
+        sellPrice: item.sellPrice ?? undefined,
+        source: "bill" as const,
+        billId: line.billId,
+        billNumber: line.billNumber,
+        billLineItemId: line.id,
+        acceptedBy: userId,
+      };
+
+      const [updated] = await db.update(schema.priceListItems)
+        .set({
+          costPrice: entry.costPrice,
+          lastPriceUpdate: now,
+          updatedAt: now,
+          priceHistory: ((item.priceHistory as any[]) || []).concat(entry),
+        })
+        .where(and(
+          eq(schema.priceListItems.id, priceListItemId),
+          eq(schema.priceListItems.companyId, companyId),
+        ))
+        .returning();
+
+      return updated ? { item: updated, comparison } : undefined;
+    } catch (error) {
+      console.error("Database error in applyBillPriceToItem:", error);
       throw error;
     }
   }

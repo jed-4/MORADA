@@ -18537,7 +18537,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!ownedBill) return;
       const { priceListItemId } = req.body;
       const lineItem = await storage.updateBillLineItem(req.params.id, { priceListItemId });
-      res.json(lineItem);
+
+      // Linking used to end here, which is why the price list never moved. Report
+      // the gap between what the supplier charged and what the catalogue says so
+      // the client can offer to update it. Applying stays a separate, explicit call.
+      let priceComparison = null;
+      const companyId = (req.user as any)?.companyId;
+      if (priceListItemId && companyId) {
+        const { compareBillPriceToItem } = await import("@shared/priceList");
+        const { priceListItems: priceListItemsTbl } = await import("@shared/schema");
+        const [item] = await db
+          .select({ costPrice: priceListItemsTbl.costPrice, gstInclusive: priceListItemsTbl.gstInclusive })
+          .from(priceListItemsTbl)
+          .where(and(eq(priceListItemsTbl.id, priceListItemId), eq(priceListItemsTbl.companyId, companyId)));
+        if (item && lineItem) {
+          priceComparison = compareBillPriceToItem({
+            itemCostCents: item.costPrice,
+            itemGstInclusive: item.gstInclusive,
+            billUnitPriceExCents: lineItem.unitPrice,
+          });
+        }
+      }
+      res.json({ ...lineItem, priceComparison });
     } catch (error) {
       if (error instanceof Error && error.message === "Bill line item not found") {
         return res.status(404).json({ error: "Bill line item not found" });
@@ -35646,6 +35667,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(links);
     } catch (error: any) {
       res.status(500).json({ error: "Failed to fetch price list links", details: error.message });
+    }
+  });
+
+  // Accept a supplier's price onto the catalogue item. The amount is re-derived
+  // from the bill line server-side; nothing about the price is taken from the body.
+  app.post("/api/price-list/review/apply-price", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.companyId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+      const { priceListItemId, billLineItemId } = req.body ?? {};
+      if (!priceListItemId || !billLineItemId) {
+        return res.status(400).json({ error: "priceListItemId and billLineItemId are required" });
+      }
+      const result = await storage.applyBillPriceToItem(
+        priceListItemId, billLineItemId, user.companyId, user.id,
+      );
+      if (!result) {
+        return res.status(404).json({ error: "Price list item or bill line not found" });
+      }
+      res.json(result);
+    } catch (error: any) {
+      res.status(500).json({ error: "Failed to apply bill price", details: error.message });
     }
   });
 
