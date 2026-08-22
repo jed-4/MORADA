@@ -6,7 +6,7 @@ import { DataTable, DataTableColumnPicker, type DataTableColumnMeta } from "@/co
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useIsDark, financialRowTints, financialRowBgStyle, FinancialTotalsBar, FinancialTableLegend } from "@/components/data-table/financialTableChrome";
 import { usePageTitle } from "@/hooks/usePageTitle";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -243,6 +243,37 @@ export default function BudgetPage() {
     if (variance < 0) return "text-[hsl(var(--bp-coral))]";
     return "text-muted-foreground";
   };
+
+  // How much of the budget has been consumed, banded:
+  //   <95% under · 95–99% nearly there · 100–105% just over · >105% over.
+  // A zero budget with anything spent against it is over by definition.
+  const budgetTone = (budgeted: number, used: number) => {
+    if (budgeted <= 0) return used > 0 ? "over" : "neutral";
+    const percent = (used / budgeted) * 100;
+    if (percent < 95) return "under";
+    if (percent < 100) return "near";
+    if (percent <= 105) return "at";
+    return "over";
+  };
+
+  const TONE_CLASS: Record<string, string> = {
+    under: "bg-[hsl(var(--status-success-bg))] text-[hsl(var(--status-success-fg))]",
+    near: "bg-[hsl(var(--status-warning-bg))] text-[hsl(var(--status-warning-fg))]",
+    at: "bg-[hsl(var(--status-caution-bg))] text-[hsl(var(--status-caution-fg))]",
+    over: "bg-[hsl(var(--status-danger-bg))] text-[hsl(var(--status-danger-fg))]",
+    neutral: "bg-muted text-muted-foreground",
+  };
+
+  const renderVarianceChip = (value: string, budgeted: number, used: number) => (
+    <span
+      className={cn(
+        "inline-flex items-center justify-end px-2 h-5 rounded-md text-xs font-semibold tabular-nums",
+        TONE_CLASS[budgetTone(budgeted, used)],
+      )}
+    >
+      {value}
+    </span>
+  );
 
   const renderStatusChip = (value: number) => {
     const label = value > 0 ? "Under" : value < 0 ? "Over" : "On Track";
@@ -593,11 +624,11 @@ export default function BudgetPage() {
       enableSorting: false,
       cell: ({ row }) => {
         const r = row.original;
-        const value = r.kind === "category" ? r.budgeted - r.total : r.item.budgeted - r.item.total;
-        if (r.kind === "category") return renderCategoryAmountChip(value, true);
+        const budgeted = r.kind === "category" ? r.budgeted : r.item.budgeted;
+        const total = r.kind === "category" ? r.total : r.item.total;
         return (
-          <span className={cn("text-xs tabular-nums", getVarianceColor(value))} data-testid={`text-difference-${r.id}`}>
-            {formatCurrency(value)}
+          <span data-testid={`text-difference-${r.id}`}>
+            {renderVarianceChip(formatCurrency(budgeted - total), budgeted, total)}
           </span>
         );
       },
@@ -879,11 +910,11 @@ export default function BudgetPage() {
         enableSorting: false,
         cell: ({ row }) => {
           const r = row.original;
-          const value = varianceOf(r);
-          if (r.kind === "category") return renderHoursChip(value, true);
+          const budgeted = hoursOf(r, "budgetedHours");
+          const total = totalOf(r);
           return (
-            <span className={cn("text-xs tabular-nums", getVarianceColor(value))} data-testid={`text-variance-${r.id}`}>
-              {formatHours(value)}
+            <span data-testid={`text-variance-${r.id}`}>
+              {renderVarianceChip(formatHours(budgeted - total), budgeted, total)}
             </span>
           );
         },
@@ -1294,18 +1325,17 @@ export default function BudgetPage() {
           <>
             {/* Cost Code Breakdown Table */}
             <Card className="flex flex-col h-full">
-              <CardHeader className="py-2 px-3">
+              <CardHeader className="py-1.5 px-3">
                 <div className="flex items-center justify-between gap-2 flex-wrap">
-                  <div>
-                    <CardTitle className="text-sm">Cost Code Breakdown</CardTitle>
-                    <CardDescription className="text-xs">Budget vs actual costs by cost code</CardDescription>
-                  </div>
+                  <CardTitle className="text-sm">Cost Code Breakdown</CardTitle>
                   {allCategoryTitles.length > 0 && (
                     <Button
-                      size="sm"
+                      size="icon"
                       variant="ghost"
                       onClick={toggleCollapseAll}
-                      className="text-xs gap-1"
+                      className="h-7 w-7"
+                      title={allCollapsed ? "Expand all" : "Collapse all"}
+                      aria-label={allCollapsed ? "Expand all" : "Collapse all"}
                       data-testid="button-collapse-all"
                     >
                       {allCollapsed ? (
@@ -1313,7 +1343,6 @@ export default function BudgetPage() {
                       ) : (
                         <ChevronsDownUp className="h-3.5 w-3.5" />
                       )}
-                      {allCollapsed ? "Expand all" : "Collapse all"}
                     </Button>
                   )}
                 </div>
@@ -1392,9 +1421,11 @@ export default function BudgetPage() {
                     <div className="flex items-center gap-2">
                       <Button
                         variant="ghost"
-                        size="sm"
+                        size="icon"
                         onClick={toggleHoursCollapseAll}
-                        className="text-xs gap-1"
+                        className="h-7 w-7"
+                        title={allHourCategoriesCollapsed ? "Expand all" : "Collapse all"}
+                        aria-label={allHourCategoriesCollapsed ? "Expand all" : "Collapse all"}
                         data-testid="button-hours-collapse-all"
                       >
                         {allHourCategoriesCollapsed ? (
@@ -1402,17 +1433,15 @@ export default function BudgetPage() {
                         ) : (
                           <ChevronsDownUp className="h-3.5 w-3.5" />
                         )}
-                        {allHourCategoriesCollapsed ? "Expand all" : "Collapse all"}
                       </Button>
                       <Button
                         variant="ghost"
-                        size="sm"
+                        size="icon"
                         onClick={() => handleToggleEmpty(!hideEmptyCostCodes)}
                         aria-pressed={hideEmptyCostCodes}
-                        className={cn(
-                          "text-xs gap-1",
-                          hideEmptyCostCodes && "bg-muted text-foreground",
-                        )}
+                        className={cn("h-7 w-7", hideEmptyCostCodes && "bg-muted text-foreground")}
+                        title={hideEmptyCostCodes ? "Show empty cost codes" : "Hide empty cost codes"}
+                        aria-label={hideEmptyCostCodes ? "Show empty cost codes" : "Hide empty cost codes"}
                         data-testid="button-hide-empty"
                       >
                         {hideEmptyCostCodes ? (
@@ -1420,7 +1449,6 @@ export default function BudgetPage() {
                         ) : (
                           <Eye className="h-3.5 w-3.5" />
                         )}
-                        Hide empty
                       </Button>
                     </div>
                   )}
