@@ -18,9 +18,7 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { Progress } from "@/components/ui/progress";
-import { RefreshCw, DollarSign, AlertCircle, Clock, ChevronDown, ChevronRight, ChevronsDownUp, ChevronsUpDown, Columns3 } from "lucide-react";
-import { Switch } from "@/components/ui/switch";
-import { Label } from "@/components/ui/label";
+import { RefreshCw, DollarSign, AlertCircle, Clock, ChevronDown, ChevronRight, ChevronsDownUp, ChevronsUpDown, Columns3, Eye, EyeOff } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { Budget, BudgetLineItem, CostCategory, CostCode, LabourHoursBudget, Project } from "@shared/schema";
 import type { ContractMetrics } from "@shared/projectMetrics";
@@ -466,7 +464,7 @@ export default function BudgetPage() {
         return <div className="text-xs pl-5 font-medium">{r.item.costCodeTitle || "—"}</div>;
       },
       size: 280,
-      meta: { defaultWidth: 280, headerLabel: "Cost Code" },
+      meta: { defaultWidth: 280, flex: true, headerLabel: "Cost Code" },
     },
     {
       id: "budgeted",
@@ -1341,6 +1339,7 @@ export default function BudgetPage() {
                       <DataTable
                         data={costRows}
                         columns={costColumns}
+                        headerVariant="plain"
                         storageKey="budget-costs-v2"
                         rowKey={(row) => row.id}
                         onRowClick={(row) => {
@@ -1386,12 +1385,9 @@ export default function BudgetPage() {
           <>
             {/* Labour Hours Breakdown Table */}
             <Card className="flex flex-col h-full">
-              <CardHeader className="py-2 px-3">
+              <CardHeader className="py-1.5 px-3">
                 <div className="flex items-center justify-between gap-2 flex-wrap">
-                  <div>
-                    <CardTitle className="text-sm">Hours by Cost Code</CardTitle>
-                    <CardDescription className="text-xs">Labour hours budget vs actual by cost code</CardDescription>
-                  </div>
+                  <CardTitle className="text-sm">Hours by Cost Code</CardTitle>
                   {labourHours.length > 0 && (
                     <div className="flex items-center gap-2">
                       <Button
@@ -1408,14 +1404,24 @@ export default function BudgetPage() {
                         )}
                         {allHourCategoriesCollapsed ? "Expand all" : "Collapse all"}
                       </Button>
-                      <Switch
-                        id="hide-empty"
-                        checked={hideEmptyCostCodes}
-                        onCheckedChange={handleToggleEmpty}
-                      />
-                      <Label htmlFor="hide-empty" className="text-xs text-muted-foreground cursor-pointer whitespace-nowrap">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleToggleEmpty(!hideEmptyCostCodes)}
+                        aria-pressed={hideEmptyCostCodes}
+                        className={cn(
+                          "text-xs gap-1",
+                          hideEmptyCostCodes && "bg-muted text-foreground",
+                        )}
+                        data-testid="button-hide-empty"
+                      >
+                        {hideEmptyCostCodes ? (
+                          <EyeOff className="h-3.5 w-3.5" />
+                        ) : (
+                          <Eye className="h-3.5 w-3.5" />
+                        )}
                         Hide empty
-                      </Label>
+                      </Button>
                     </div>
                   )}
                 </div>
@@ -1447,6 +1453,7 @@ export default function BudgetPage() {
                       <DataTable
                         data={hoursRows}
                         columns={labourHoursColumns}
+                        headerVariant="plain"
                         storageKey="budget-hours-v2"
                         rowKey={(row) => row.id}
                         onRowClick={(row) => {
