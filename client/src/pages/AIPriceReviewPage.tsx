@@ -1,10 +1,13 @@
 import { useState, useRef } from "react";
-import { Search } from "lucide-react";
+import { Search, ScanLine } from "lucide-react";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import BatchPriceReview from "@/components/systems/BatchPriceReview";
 import AIPriceListReview, { type AIPriceListReviewHandle } from "@/components/systems/AIPriceListReview";
 
 export default function AIPriceReviewPage() {
   const [searchQuery, setSearchQuery] = useState("");
+  const [showBatch, setShowBatch] = useState(false);
   const aiReviewRef = useRef<AIPriceListReviewHandle>(null);
 
   return (
@@ -23,7 +26,19 @@ export default function AIPriceReviewPage() {
             />
           </div>
         </div>
+
+        <Button
+          variant="outline"
+          className="h-6 px-2 text-xs"
+          onClick={() => setShowBatch(true)}
+          data-testid="button-open-batch-review"
+        >
+          <ScanLine className="mr-1 h-3 w-3" />
+          Review bill prices
+        </Button>
       </div>
+
+      <BatchPriceReview open={showBatch} onOpenChange={setShowBatch} />
 
       <div className="flex-1 min-h-0 overflow-hidden">
         <AIPriceListReview ref={aiReviewRef} searchQuery={searchQuery} />
