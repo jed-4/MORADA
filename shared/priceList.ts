@@ -270,11 +270,16 @@ export function verdictFor(
 ): LineVerdict {
   if (!candidates.length) return "unmatched";
   const [best, next] = candidates;
-  // A clear gap only means something above a floor: a lone 0.27 candidate is
-  // not confident just because nothing else scored at all.
+  // Token overlap is evidence, never proof, so it can never settle a line on its
+  // own. "Plumbing rough-in - wet areas" scored 0.53 against "Electrical
+  // rough-in" purely on the shared words "rough" and "in", and was about to be
+  // treated as a confident match -- which would have written a plumbing price
+  // onto an electrical item. Only a code hit or a real name match can be
+  // confident; everything else goes to a human as ambiguous.
+  const precise = best.reason !== "token-overlap";
   const confident =
-    best.score >= 0.85 ||
-    (best.score >= 0.5 && (!next || best.score - next.score >= 0.15));
+    precise &&
+    (best.score >= 0.85 || (best.score >= 0.5 && (!next || best.score - next.score >= 0.15)));
   if (!confident) return "ambiguous";
   if (!comparison) return "unchanged";
   return comparison.changed ? "moved" : "unchanged";
