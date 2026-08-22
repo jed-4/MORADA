@@ -1434,6 +1434,7 @@ export interface IStorage {
   updateBillLineItemPriceLink(id: string, link: Partial<InsertBillLineItemPriceLink>, companyId: string): Promise<BillLineItemPriceLink | undefined>;
   getUnlinkedBillLineItems(companyId: string): Promise<Array<import("@shared/schema").BillLineItem & { bill: import("@shared/schema").Bill; supplier: import("@shared/schema").Contact | null }>>;
   applyBillPriceToItem(priceListItemId: string, billLineItemId: string, companyId: string, userId: string): Promise<{ item: PriceListItem; comparison: import("@shared/priceList").BillPriceComparison } | undefined>;
+  getBillLinesForPriceReview(companyId: string, filters: { supplierId?: string; dateFrom?: Date; dateTo?: Date; billIds?: string[] }): Promise<Array<{ lineId: string; description: string; unitPrice: number; quantity: number; unit: string | null; priceListItemId: string | null; billId: string; billNumber: string; billDate: Date | null; supplierId: string | null; supplierName: string | null }>>;
 
   // Dashboard Views CRUD
   getDashboardViews(companyId: string, userId: string, viewType?: "personal" | "business"): Promise<DashboardView[]>;
@@ -25585,6 +25586,49 @@ export class DbStorage implements IStorage {
       return updated ? { item: updated, comparison } : undefined;
     } catch (error) {
       console.error("Database error in applyBillPriceToItem:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Every bill line in scope for a batch price review, with its bill and
+   * supplier alongside so the matcher can narrow candidates by supplier.
+   *
+   * One query rather than a bill-then-lines loop: at ~400ms per round trip to
+   * Neon from AU, a fifty-bill review would otherwise take most of a minute.
+   */
+  async getBillLinesForPriceReview(
+    companyId: string,
+    filters: { supplierId?: string; dateFrom?: Date; dateTo?: Date; billIds?: string[] },
+  ) {
+    try {
+      const where = [eq(schema.bills.companyId, companyId)];
+      if (filters.supplierId) where.push(eq(schema.bills.supplierId, filters.supplierId));
+      if (filters.dateFrom) where.push(gte(schema.bills.billDate, filters.dateFrom));
+      if (filters.dateTo) where.push(lte(schema.bills.billDate, filters.dateTo));
+      if (filters.billIds?.length) where.push(inArray(schema.bills.id, filters.billIds));
+
+      return await db
+        .select({
+          lineId: schema.billLineItems.id,
+          description: schema.billLineItems.description,
+          unitPrice: schema.billLineItems.unitPrice,
+          quantity: schema.billLineItems.quantity,
+          unit: schema.billLineItems.unit,
+          priceListItemId: schema.billLineItems.priceListItemId,
+          billId: schema.bills.id,
+          billNumber: schema.bills.billNumber,
+          billDate: schema.bills.billDate,
+          supplierId: schema.bills.supplierId,
+          supplierName: schema.contacts.name,
+        })
+        .from(schema.billLineItems)
+        .innerJoin(schema.bills, eq(schema.bills.id, schema.billLineItems.billId))
+        .leftJoin(schema.contacts, eq(schema.contacts.id, schema.bills.supplierId))
+        .where(and(...where))
+        .orderBy(desc(schema.bills.billDate));
+    } catch (error) {
+      console.error("Database error in getBillLinesForPriceReview:", error);
       throw error;
     }
   }

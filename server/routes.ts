@@ -35670,6 +35670,77 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Batch price review: sweep a set of bills, match each line against the
+  // catalogue, and report a verdict per line. Read-only — it proposes, it never
+  // writes a price. Applying stays the explicit per-line apply-price call.
+  app.post("/api/price-list/review/batch", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.companyId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+      const { priceListId, supplierId, dateFrom, dateTo, billIds } = req.body ?? {};
+
+      const { matchBillLine, verdictFor, compareBillPriceToItem } = await import("@shared/priceList");
+
+      const lines = await storage.getBillLinesForPriceReview(user.companyId, {
+        supplierId: supplierId || undefined,
+        dateFrom: dateFrom ? new Date(dateFrom) : undefined,
+        dateTo: dateTo ? new Date(dateTo) : undefined,
+        billIds: Array.isArray(billIds) && billIds.length ? billIds : undefined,
+      });
+
+      const catalogue = await storage.getPriceListItems(user.companyId, { priceListId });
+
+      const results = lines.map((line) => {
+        // An existing link is a decision a human already made; respect it rather
+        // than letting the matcher second-guess it.
+        const linked = line.priceListItemId
+          ? catalogue.find((i) => i.id === line.priceListItemId)
+          : undefined;
+        const candidates = linked
+          ? [{ item: linked, score: 1, reason: "code" as const }]
+          : matchBillLine(line.description, catalogue);
+
+        const best = candidates[0];
+        const comparison = best
+          ? compareBillPriceToItem({
+              itemCostCents: (best.item as any).costPrice ?? 0,
+              itemGstInclusive: (best.item as any).gstInclusive ?? false,
+              billUnitPriceExCents: line.unitPrice,
+            })
+          : null;
+
+        return {
+          line,
+          verdict: verdictFor(candidates, comparison),
+          comparison,
+          alreadyLinked: !!linked,
+          candidates: candidates.slice(0, 3).map((c) => ({
+            id: c.item.id, name: c.item.name, code: (c.item as any).code ?? null,
+            score: Number(c.score.toFixed(3)), reason: c.reason,
+          })),
+        };
+      });
+
+      const summary = results.reduce((acc: Record<string, number>, r) => {
+        acc[r.verdict] = (acc[r.verdict] ?? 0) + 1;
+        return acc;
+      }, {});
+
+      res.json({
+        results,
+        summary,
+        billsScanned: new Set(lines.map((l) => l.billId)).size,
+        linesScanned: lines.length,
+        catalogueSize: catalogue.length,
+      });
+    } catch (error: any) {
+      console.error("Batch price review failed:", error);
+      res.status(500).json({ error: "Failed to run batch price review", details: error.message });
+    }
+  });
+
   // Accept a supplier's price onto the catalogue item. The amount is re-derived
   // from the bill line server-side; nothing about the price is taken from the body.
   app.post("/api/price-list/review/apply-price", requireAuth, requireTeamMember, async (req, res) => {
