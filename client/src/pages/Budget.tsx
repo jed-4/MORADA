@@ -22,7 +22,7 @@ import { RefreshCw, DollarSign, AlertCircle, Clock, ChevronDown, ChevronRight, C
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import type { Budget, BudgetLineItem, LabourHoursBudget, Project } from "@shared/schema";
+import type { Budget, BudgetLineItem, CostCategory, CostCode, LabourHoursBudget, Project } from "@shared/schema";
 import type { ContractMetrics } from "@shared/projectMetrics";
 import { cn } from "@/lib/utils";
 import { EmptyState } from "@/components/EmptyState";
@@ -72,6 +72,9 @@ export default function BudgetPage() {
     } catch { return false; }
   });
   const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(new Set());
+  // Kept separate from the costs tab so collapsing a category on one tab does
+  // not silently reshape the other.
+  const [collapsedHourCategories, setCollapsedHourCategories] = useState<Set<string>>(new Set());
 
   // Fetch project to get current phase
   const { data: project } = useQuery<Project>({
@@ -92,6 +95,16 @@ export default function BudgetPage() {
   const { data: labourHours = [], isLoading: labourHoursLoading } = useQuery<LabourHoursBudget[]>({
     queryKey: [`/api/projects/${projectId}/labour-hours-budget`],
     enabled: !!projectId && canViewLabour,
+  });
+
+  const { data: allCostCodes = [] } = useQuery<CostCode[]>({
+    queryKey: ["/api/cost-codes"],
+    enabled: canViewLabour,
+  });
+
+  const { data: allCostCategories = [] } = useQuery<CostCategory[]>({
+    queryKey: ["/api/cost-categories"],
+    enabled: canViewLabour,
   });
 
   const { data: contractMetrics } = useQuery<ContractMetrics>({
@@ -616,108 +629,291 @@ export default function BudgetPage() {
       })
     : labourHours;
 
-  const labourHoursColumns = useMemo<ColumnDef<LabourHoursBudget, unknown>[]>(() => [
-    {
-      id: "costCode",
-      header: "Cost Code",
-      accessorFn: (item) => item.costCodeTitle || "Uncategorized",
-      cell: ({ row }) => (
-        <span className="font-medium text-xs">{row.original.costCodeTitle || "Uncategorized"}</span>
-      ),
-      size: 220,
-      meta: { defaultWidth: 220, headerLabel: "Cost Code" },
-    },
-    {
-      id: "budgeted",
-      header: "Budgeted",
-      accessorFn: (item) => parseFloat(item.budgetedHours || "0"),
-      cell: ({ row }) => (
-        <span className="text-xs tabular-nums" data-testid={`text-budgeted-${row.original.id}`}>
-          {formatHours(parseFloat(row.original.budgetedHours || "0"))}
-        </span>
-      ),
-      size: 100,
-      meta: { defaultWidth: 100, align: "right", headerLabel: "Budgeted" },
-    },
-    {
-      id: "pending",
-      header: "Pending",
-      accessorFn: (item) => parseFloat(item.pendingHours || "0"),
-      cell: ({ row }) => (
-        <span className="text-xs tabular-nums text-[hsl(var(--bp-amber))]" data-testid={`text-pending-${row.original.id}`}>
-          {formatHours(parseFloat(row.original.pendingHours || "0"))}
-        </span>
-      ),
-      size: 100,
-      meta: { defaultWidth: 100, align: "right", headerLabel: "Pending" },
-    },
-    {
-      id: "approved",
-      header: "Approved",
-      accessorFn: (item) => parseFloat(item.approvedHours || "0"),
-      cell: ({ row }) => (
-        <span className="text-xs tabular-nums" data-testid={`text-approved-${row.original.id}`}>
-          {formatHours(parseFloat(row.original.approvedHours || "0"))}
-        </span>
-      ),
-      size: 100,
-      meta: { defaultWidth: 100, align: "right", headerLabel: "Approved" },
-    },
-    {
-      id: "total",
-      header: "Total",
-      accessorFn: (item) => parseFloat(item.pendingHours || "0") + parseFloat(item.approvedHours || "0"),
-      cell: ({ row }) => {
-        const total = parseFloat(row.original.pendingHours || "0") + parseFloat(row.original.approvedHours || "0");
-        return (
-          <span className="text-xs tabular-nums font-medium" data-testid={`text-total-${row.original.id}`}>
-            {formatHours(total)}
-          </span>
-        );
+  // labour_hours_budget caches the cost code title but not its number, so the
+  // code (and its category) has to be looked up to order rows the way the cost
+  // codes page does.
+  const costCodeMeta = useMemo(() => {
+    const categoryById = new Map(allCostCategories.map((c) => [c.id, c]));
+    const meta = new Map<string, { code: string; categoryCode: string; categoryTitle: string }>();
+    allCostCodes.forEach((cc) => {
+      const category = cc.categoryId ? categoryById.get(cc.categoryId) : undefined;
+      meta.set(cc.id, {
+        code: cc.code,
+        categoryCode: category?.code ?? "",
+        categoryTitle: category?.title ?? "Uncategorized",
+      });
+    });
+    return meta;
+  }, [allCostCodes, allCostCategories]);
+
+  // Codes read as numbers ("100", "119"); anything else falls back to lexical.
+  const compareCode = (a: string, b: string) => {
+    const aNum = parseFloat(a);
+    const bNum = parseFloat(b);
+    if (!isNaN(aNum) && !isNaN(bNum)) return aNum - bNum;
+    return a.localeCompare(b);
+  };
+
+  type HoursRow =
+    | {
+        kind: "category";
+        id: string;
+        categoryTitle: string;
+        count: number;
+        budgeted: number;
+        pending: number;
+        approved: number;
+      }
+    | { kind: "item"; id: string; item: LabourHoursBudget; code: string; zebra: boolean };
+
+  const hoursRows = useMemo<HoursRow[]>(() => {
+    type Entry = { item: LabourHoursBudget; code: string; categoryCode: string; categoryTitle: string };
+    const groups = new Map<string, { categoryCode: string; entries: Entry[] }>();
+
+    filteredLabourHours.forEach((item) => {
+      const meta = item.costCodeId ? costCodeMeta.get(item.costCodeId) : undefined;
+      // Fall back to the cached category title when the code has since been
+      // deleted, so the row still lands in a sensible group.
+      const categoryTitle = meta?.categoryTitle ?? item.categoryTitle ?? "Uncategorized";
+      const entry: Entry = {
+        item,
+        code: meta?.code ?? "",
+        categoryCode: meta?.categoryCode ?? "",
+        categoryTitle,
+      };
+      if (!groups.has(categoryTitle)) {
+        groups.set(categoryTitle, { categoryCode: entry.categoryCode, entries: [] });
+      }
+      const group = groups.get(categoryTitle)!;
+      if (!group.categoryCode && entry.categoryCode) group.categoryCode = entry.categoryCode;
+      group.entries.push(entry);
+    });
+
+    const sortedGroups = Array.from(groups.entries()).sort((a, b) => {
+      // Uncategorized has no code to sort on, so it sits at the bottom.
+      if (a[0] === "Uncategorized") return 1;
+      if (b[0] === "Uncategorized") return -1;
+      if (a[1].categoryCode && b[1].categoryCode) return compareCode(a[1].categoryCode, b[1].categoryCode);
+      return a[0].localeCompare(b[0]);
+    });
+
+    const rows: HoursRow[] = [];
+    let itemIdx = 0;
+    sortedGroups.forEach(([categoryTitle, group]) => {
+      const entries = [...group.entries].sort((a, b) => {
+        if (a.code && b.code) return compareCode(a.code, b.code);
+        if (a.code) return -1;
+        if (b.code) return 1;
+        return (a.item.costCodeTitle || "").localeCompare(b.item.costCodeTitle || "");
+      });
+      rows.push({
+        kind: "category",
+        id: `hours-cat-${categoryTitle}`,
+        categoryTitle,
+        count: entries.length,
+        budgeted: entries.reduce((sum, e) => sum + parseFloat(e.item.budgetedHours || "0"), 0),
+        pending: entries.reduce((sum, e) => sum + parseFloat(e.item.pendingHours || "0"), 0),
+        approved: entries.reduce((sum, e) => sum + parseFloat(e.item.approvedHours || "0"), 0),
+      });
+      if (collapsedHourCategories.has(categoryTitle)) return;
+      entries.forEach((e) => {
+        rows.push({ kind: "item", id: e.item.id, item: e.item, code: e.code, zebra: itemIdx % 2 === 1 });
+        itemIdx++;
+      });
+    });
+    return rows;
+  }, [filteredLabourHours, costCodeMeta, collapsedHourCategories]);
+
+  const hourCategoryTitles = useMemo(
+    () => hoursRows.filter((r) => r.kind === "category").map((r) => (r as { categoryTitle: string }).categoryTitle),
+    [hoursRows],
+  );
+  const allHourCategoriesCollapsed =
+    hourCategoryTitles.length > 0 && hourCategoryTitles.every((t) => collapsedHourCategories.has(t));
+
+  const toggleHoursCollapseAll = () => {
+    setCollapsedHourCategories(allHourCategoriesCollapsed ? new Set() : new Set(hourCategoryTitles));
+  };
+
+  const renderHoursChip = (value: number, variance = false) => {
+    const tone = variance
+      ? value > 0
+        ? "bg-[hsl(var(--status-success-bg))] text-[hsl(var(--status-success-fg))]"
+        : value < 0
+          ? "bg-[hsl(var(--status-danger-bg))] text-[hsl(var(--status-danger-fg))]"
+          : "bg-muted text-muted-foreground"
+      : "bg-[hsl(var(--bp-subtle))] text-foreground";
+    return (
+      <span
+        className={cn(
+          "inline-flex items-center justify-center px-2 h-5 rounded-md text-xs font-semibold tabular-nums",
+          tone,
+        )}
+      >
+        {formatHours(value)}
+      </span>
+    );
+  };
+
+  const labourHoursColumns = useMemo<ColumnDef<HoursRow, unknown>[]>(() => {
+    const hoursOf = (r: HoursRow, field: "budgetedHours" | "pendingHours" | "approvedHours") =>
+      r.kind === "category"
+        ? field === "budgetedHours"
+          ? r.budgeted
+          : field === "pendingHours"
+            ? r.pending
+            : r.approved
+        : parseFloat(r.item[field] || "0");
+    const totalOf = (r: HoursRow) => hoursOf(r, "pendingHours") + hoursOf(r, "approvedHours");
+    const varianceOf = (r: HoursRow) => hoursOf(r, "budgetedHours") - totalOf(r);
+
+    return [
+      {
+        id: "costCode",
+        header: "Cost Code",
+        enableSorting: false,
+        cell: ({ row }) => {
+          const r = row.original;
+          if (r.kind === "category") {
+            const isCollapsed = collapsedHourCategories.has(r.categoryTitle);
+            return (
+              <div className="flex items-center gap-1.5 font-semibold text-xs">
+                {isCollapsed ? (
+                  <ChevronRight className="h-3 w-3 flex-shrink-0 text-muted-foreground" />
+                ) : (
+                  <ChevronDown className="h-3 w-3 flex-shrink-0 text-muted-foreground" />
+                )}
+                <span className="truncate">{r.categoryTitle}</span>
+                <Badge variant="secondary" className="h-4 px-1.5 text-data">{r.count}</Badge>
+              </div>
+            );
+          }
+          const title = r.item.costCodeTitle || "Uncategorized";
+          // budget_line_items stores titles as "121 - Cleaning & Handover"; if
+          // hours rows ever do the same, don't print the code twice.
+          const titleHasCode = !!r.code && title.trimStart().startsWith(r.code);
+          return (
+            <div className="flex items-center gap-2 pl-5 min-w-0">
+              {r.code && !titleHasCode && (
+                <span className="text-xs tabular-nums text-muted-foreground shrink-0">{r.code}</span>
+              )}
+              <span className="text-xs font-medium truncate">{title}</span>
+            </div>
+          );
+        },
+        size: 260,
+        meta: { defaultWidth: 260, flex: true, headerLabel: "Cost Code" },
       },
-      size: 100,
-      meta: { defaultWidth: 100, align: "right", headerLabel: "Total" },
-    },
-    {
-      id: "variance",
-      header: "Variance",
-      accessorFn: (item) => parseFloat(item.budgetedHours || "0") - (parseFloat(item.pendingHours || "0") + parseFloat(item.approvedHours || "0")),
-      cell: ({ row }) => {
-        const budgeted = parseFloat(row.original.budgetedHours || "0");
-        const total = parseFloat(row.original.pendingHours || "0") + parseFloat(row.original.approvedHours || "0");
-        const variance = budgeted - total;
-        return (
-          <span className={cn("text-xs tabular-nums", getVarianceColor(variance))} data-testid={`text-variance-${row.original.id}`}>
-            {formatHours(variance)}
-          </span>
-        );
+      {
+        id: "budgeted",
+        header: "Budgeted",
+        enableSorting: false,
+        cell: ({ row }) => {
+          const r = row.original;
+          const value = hoursOf(r, "budgetedHours");
+          if (r.kind === "category") return renderHoursChip(value);
+          return (
+            <span className="text-xs tabular-nums" data-testid={`text-budgeted-${r.id}`}>
+              {formatHours(value)}
+            </span>
+          );
+        },
+        size: 100,
+        meta: { defaultWidth: 100, align: "right", headerLabel: "Budgeted" },
       },
-      size: 100,
-      meta: { defaultWidth: 100, align: "right", headerLabel: "Variance" },
-    },
-    {
-      id: "percentUsed",
-      header: "% Used",
-      accessorFn: (item) => {
-        const budgeted = parseFloat(item.budgetedHours || "0");
-        const total = parseFloat(item.pendingHours || "0") + parseFloat(item.approvedHours || "0");
-        return budgeted > 0 ? Math.round((total / budgeted) * 100) : 0;
+      {
+        id: "pending",
+        header: "Pending",
+        enableSorting: false,
+        cell: ({ row }) => {
+          const r = row.original;
+          const value = hoursOf(r, "pendingHours");
+          if (r.kind === "category") return renderHoursChip(value);
+          return (
+            <span
+              className="text-xs tabular-nums text-[hsl(var(--bp-amber))]"
+              data-testid={`text-pending-${r.id}`}
+            >
+              {formatHours(value)}
+            </span>
+          );
+        },
+        size: 100,
+        meta: { defaultWidth: 100, align: "right", headerLabel: "Pending" },
       },
-      cell: ({ row }) => {
-        const budgeted = parseFloat(row.original.budgetedHours || "0");
-        const total = parseFloat(row.original.pendingHours || "0") + parseFloat(row.original.approvedHours || "0");
-        const percentUsed = budgeted > 0 ? Math.round((total / budgeted) * 100) : 0;
-        return (
-          <div className="flex items-center justify-end gap-1">
-            <span className="text-xs tabular-nums">{percentUsed}%</span>
-            <Progress value={percentUsed} className="w-12 h-1.5" />
-          </div>
-        );
+      {
+        id: "approved",
+        header: "Approved",
+        enableSorting: false,
+        cell: ({ row }) => {
+          const r = row.original;
+          const value = hoursOf(r, "approvedHours");
+          if (r.kind === "category") return renderHoursChip(value);
+          return (
+            <span className="text-xs tabular-nums" data-testid={`text-approved-${r.id}`}>
+              {formatHours(value)}
+            </span>
+          );
+        },
+        size: 100,
+        meta: { defaultWidth: 100, align: "right", headerLabel: "Approved" },
       },
-      size: 110,
-      meta: { defaultWidth: 110, align: "right", headerLabel: "% Used" },
-    } satisfies ColumnDef<LabourHoursBudget, unknown> & { meta: DataTableColumnMeta },
-  ], []);
+      {
+        id: "total",
+        header: "Total",
+        enableSorting: false,
+        cell: ({ row }) => {
+          const r = row.original;
+          const value = totalOf(r);
+          if (r.kind === "category") return renderHoursChip(value);
+          return (
+            <span className="text-xs tabular-nums font-medium" data-testid={`text-total-${r.id}`}>
+              {formatHours(value)}
+            </span>
+          );
+        },
+        size: 100,
+        meta: { defaultWidth: 100, align: "right", headerLabel: "Total" },
+      },
+      {
+        id: "variance",
+        header: "Variance",
+        enableSorting: false,
+        cell: ({ row }) => {
+          const r = row.original;
+          const value = varianceOf(r);
+          if (r.kind === "category") return renderHoursChip(value, true);
+          return (
+            <span className={cn("text-xs tabular-nums", getVarianceColor(value))} data-testid={`text-variance-${r.id}`}>
+              {formatHours(value)}
+            </span>
+          );
+        },
+        size: 100,
+        meta: { defaultWidth: 100, align: "right", headerLabel: "Variance" },
+      },
+      {
+        id: "percentUsed",
+        header: "% Used",
+        enableSorting: false,
+        cell: ({ row }) => {
+          const r = row.original;
+          const budgeted = hoursOf(r, "budgetedHours");
+          const percentUsed = budgeted > 0 ? Math.round((totalOf(r) / budgeted) * 100) : 0;
+          return (
+            // The bar fills whatever room the column is given, so widening the
+            // column widens the bar.
+            <div className="flex items-center gap-2 w-full min-w-0">
+              <Progress value={percentUsed} className="flex-1 min-w-0 h-1.5" />
+              <span className="text-xs tabular-nums shrink-0 w-9 text-right">{percentUsed}%</span>
+            </div>
+          );
+        },
+        size: 140,
+        meta: { defaultWidth: 140, align: "right", headerLabel: "% Used" },
+      } satisfies ColumnDef<HoursRow, unknown> & { meta: DataTableColumnMeta },
+    ];
+  }, [collapsedHourCategories]);
 
   const handleToggleEmpty = (checked: boolean) => {
     setHideEmptyCostCodes(checked);
@@ -1198,6 +1394,20 @@ export default function BudgetPage() {
                   </div>
                   {labourHours.length > 0 && (
                     <div className="flex items-center gap-2">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={toggleHoursCollapseAll}
+                        className="text-xs gap-1"
+                        data-testid="button-hours-collapse-all"
+                      >
+                        {allHourCategoriesCollapsed ? (
+                          <ChevronsUpDown className="h-3.5 w-3.5" />
+                        ) : (
+                          <ChevronsDownUp className="h-3.5 w-3.5" />
+                        )}
+                        {allHourCategoriesCollapsed ? "Expand all" : "Collapse all"}
+                      </Button>
                       <Switch
                         id="hide-empty"
                         checked={hideEmptyCostCodes}
@@ -1235,13 +1445,24 @@ export default function BudgetPage() {
                   <>
                     <div className="flex-1 min-h-0">
                       <DataTable
-                        data={filteredLabourHours}
+                        data={hoursRows}
                         columns={labourHoursColumns}
-                        storageKey="budget-hours"
-                        legacyConfigKey="budget-column-config-v1"
+                        storageKey="budget-hours-v2"
                         rowKey={(row) => row.id}
-                        rowStyle={(_row, index) =>
-                          financialRowBgStyle(index % 2 === 1 ? rowTints.zebra : null)
+                        onRowClick={(row) => {
+                          if (row.kind === "category") {
+                            setCollapsedHourCategories((prev) => {
+                              const next = new Set(prev);
+                              if (next.has(row.categoryTitle)) next.delete(row.categoryTitle);
+                              else next.add(row.categoryTitle);
+                              return next;
+                            });
+                          }
+                        }}
+                        rowStyle={(row) =>
+                          row.kind === "category"
+                            ? financialRowBgStyle(rowTints.category)
+                            : financialRowBgStyle(row.zebra ? rowTints.zebra : null)
                         }
                       />
                     </div>

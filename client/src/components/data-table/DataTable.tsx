@@ -45,6 +45,12 @@ import { cn } from "@/lib/utils";
 export interface DataTableColumnMeta {
   /** Default width in px when no persisted width exists. */
   defaultWidth?: number;
+  /**
+   * Nominates this column to soak up leftover horizontal space, so the columns
+   * reach the right edge instead of trailing off into the blank filler gap.
+   * Every other column keeps its exact saved width. First match wins.
+   */
+  flex?: boolean;
   /** Right-aligned cell (numbers, totals). */
   align?: "left" | "right" | "center";
   /** Fixed (non-draggable, non-resizable, non-hideable) — e.g. checkbox col. */
@@ -455,10 +461,14 @@ export function DataTable<TData>({
   // scroll horizontally; next to the blank filler gap a shadow would look odd.
   const scrollRef = useRef<HTMLDivElement>(null);
   const [hasOverflow, setHasOverflow] = useState(false);
+  const [containerWidth, setContainerWidth] = useState(0);
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
-    const check = () => setHasOverflow(el.scrollWidth > el.clientWidth + 1);
+    const check = () => {
+      setHasOverflow(el.scrollWidth > el.clientWidth + 1);
+      setContainerWidth(el.clientWidth);
+    };
     check();
     const ro = new ResizeObserver(check);
     ro.observe(el);
@@ -466,7 +476,10 @@ export function DataTable<TData>({
   }, []);
   useEffect(() => {
     const el = scrollRef.current;
-    if (el) setHasOverflow(el.scrollWidth > el.clientWidth + 1);
+    if (el) {
+      setHasOverflow(el.scrollWidth > el.clientWidth + 1);
+      setContainerWidth(el.clientWidth);
+    }
   }, [columnSizing, columnVisibility, data]);
 
   // Auto-hide scrollbars, mimicking macOS overlay behaviour: visible while
@@ -506,20 +519,29 @@ export function DataTable<TData>({
   // filler goes at the very end.
   const lastVisible = visibleLeafColumns[visibleLeafColumns.length - 1];
   const pinnedRightVisible = !!lastVisible && lastVisible.id === pinnedRightId;
+  // A column flagged meta.flex takes the leftover space that would otherwise
+  // sit in the blank filler, so the columns span the full width and any
+  // pinned-right actions column lands flush against the last real column.
+  const flexColId = visibleLeafColumns.find(
+    (c) => ((c.columnDef.meta as DataTableColumnMeta | undefined) ?? {}).flex,
+  )?.id;
+  const slack = flexColId ? Math.max(0, containerWidth - totalWidth) : 0;
+  const widthFor = (c: { id: string; getSize: () => number }) =>
+    c.getSize() + (c.id === flexColId ? slack : 0);
 
   return (
     <div ref={scrollRef} className={cn("relative w-full h-full overflow-auto dt-autohide-scrollbar", className)} data-testid={`datatable-${storageKey}`}>
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
         <table
           className="border-separate border-spacing-0 text-sm"
-          style={{ width: totalWidth, minWidth: "100%", tableLayout: "fixed" }}
+          style={{ width: totalWidth + slack, minWidth: "100%", tableLayout: "fixed" }}
         >
           <colgroup>
             {(pinnedRightVisible ? visibleLeafColumns.slice(0, -1) : visibleLeafColumns).map((c) => (
-              <col key={c.id} style={{ width: c.getSize() }} />
+              <col key={c.id} style={{ width: widthFor(c) }} />
             ))}
             <col key="__filler" />
-            {pinnedRightVisible && <col key={lastVisible.id} style={{ width: lastVisible.getSize() }} />}
+            {pinnedRightVisible && <col key={lastVisible.id} style={{ width: widthFor(lastVisible) }} />}
           </colgroup>
 
           <thead className="sticky top-0 z-20">
@@ -546,7 +568,7 @@ export function DataTable<TData>({
                       <ContextMenuTrigger asChild>
                         <DraggableHeader
                           id={id}
-                          width={header.getSize()}
+                          width={widthFor(header.column)}
                           pinned={isFixed}
                           sticky={isSticky}
                           stickyRight={isPinnedRight}

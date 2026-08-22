@@ -422,7 +422,7 @@ export default function CostCodes() {
           </div>
         ),
         size: 280,
-        meta: { defaultWidth: 280, headerLabel: "Title" } satisfies DataTableColumnMeta,
+        meta: { defaultWidth: 280, flex: true, headerLabel: "Title" } satisfies DataTableColumnMeta,
       },
       {
         id: "xero",
