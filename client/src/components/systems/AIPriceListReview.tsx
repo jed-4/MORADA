@@ -2,6 +2,7 @@ import { useState, useMemo, forwardRef, useImperativeHandle } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { BillPriceComparison } from "@shared/priceList";
+import { resolveSellCents } from "@shared/priceList";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -694,7 +695,9 @@ function MatchSuggestion({ description, priceListItems, onSelect }: {
               {match.nickname && (
                 <p className="text-muted-foreground truncate">"{match.nickname}"</p>
               )}
-              <p className="text-muted-foreground">{formatCents(match.sellPrice ?? 0)}</p>
+              <p className="text-muted-foreground">
+                {resolveSellCents(match) === null ? "—" : formatCents(resolveSellCents(match)!)}
+              </p>
             </button>
           ))}
         </div>
@@ -776,7 +779,7 @@ function PriceListItemSelect({ items, value, onChange, description }: {
                     )}
                   </div>
                   <span className="text-xs text-muted-foreground">
-                    {formatCents(item.sellPrice ?? 0)}
+                    {resolveSellCents(item) === null ? "—" : formatCents(resolveSellCents(item)!)}
                   </span>
                 </CommandItem>
               ))}
