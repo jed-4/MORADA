@@ -13,7 +13,7 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { Loader2, TrendingUp, TrendingDown, HelpCircle, CircleSlash, Check } from "lucide-react";
+import { Loader2, TrendingUp, TrendingDown, HelpCircle, CircleSlash, Check, Sparkles } from "lucide-react";
 
 /** One line as the batch endpoint reports it. */
 type BatchLine = {
@@ -29,6 +29,13 @@ type BatchLine = {
   comparison: BillPriceComparison | null;
   alreadyLinked: boolean;
   candidates: Array<{ id: string; name: string; code: string | null; score: number; reason: string }>;
+};
+
+type Resolution = {
+  lineId: string;
+  chosenItemId: string | null;
+  confidence: "high" | "medium" | "low";
+  reason: string;
 };
 
 type BatchResult = {
@@ -75,6 +82,11 @@ export function BatchPriceReview({ open, onOpenChange }: { open: boolean; onOpen
   const [result, setResult] = useState<BatchResult | null>(null);
   /** Lines whose price the reviewer has accepted this run, so the row settles. */
   const [applied, setApplied] = useState<Set<string>>(new Set());
+  /** What the model made of the ambiguous tail, keyed by line. */
+  const [resolutions, setResolutions] = useState<Map<string, Resolution>>(new Map());
+  /** What actually changed when an AI-picked row was accepted. */
+  const [appliedDelta, setAppliedDelta] = useState<Map<string, BillPriceComparison>>(new Map());
+  const [aiUnavailable, setAiUnavailable] = useState(false);
 
   const { data: priceLists = [] } = useQuery<Array<PriceList & { itemCount: number }>>({
     queryKey: ['/api/price-lists'],
@@ -96,6 +108,8 @@ export function BatchPriceReview({ open, onOpenChange }: { open: boolean; onOpen
       }),
     onSuccess: (data) => {
       setApplied(new Set());
+      setResolutions(new Map());
+      setAppliedDelta(new Map());
       setResult(data);
     },
   });
@@ -103,9 +117,33 @@ export function BatchPriceReview({ open, onOpenChange }: { open: boolean; onOpen
   const applyPrice = useMutation({
     mutationFn: async ({ priceListItemId, billLineItemId }: { priceListItemId: string; billLineItemId: string }) =>
       apiRequest('/api/price-list/review/apply-price', 'POST', { priceListItemId, billLineItemId }),
-    onSuccess: (_data, vars) => {
+    onSuccess: (data: any, vars) => {
       setApplied((prev) => new Set(prev).add(vars.billLineItemId));
+      // The server re-derives the comparison against whichever item was actually
+      // chosen, so an AI-picked row reports its own real movement rather than the
+      // one the batch computed against a different candidate.
+      if (data?.comparison) {
+        setAppliedDelta((prev) => new Map(prev).set(vars.billLineItemId, data.comparison));
+      }
       queryClient.invalidateQueries({ queryKey: ['/api/price-list/items'] });
+    },
+  });
+
+  const resolveTail = useMutation({
+    mutationFn: async (rows: BatchLine[]) =>
+      apiRequest('/api/price-list/review/resolve', 'POST', {
+        lines: rows.map((r) => ({
+          lineId: r.line.lineId,
+          description: r.line.description,
+          supplierName: r.line.supplierName,
+          candidates: r.candidates.map((c) => ({ id: c.id })),
+        })),
+      }),
+    onSuccess: (data: any) => {
+      setAiUnavailable(data?.configured === false);
+      const next = new Map<string, Resolution>();
+      for (const r of (data?.resolutions ?? []) as Resolution[]) next.set(r.lineId, r);
+      setResolutions(next);
     },
   });
 
@@ -114,7 +152,7 @@ export function BatchPriceReview({ open, onOpenChange }: { open: boolean; onOpen
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl max-h-[85vh] flex flex-col">
+      <DialogContent className="flex h-[85vh] max-w-3xl flex-col">
         <DialogHeader>
           <DialogTitle>Review bill prices</DialogTitle>
           <DialogDescription>
@@ -214,8 +252,27 @@ export function BatchPriceReview({ open, onOpenChange }: { open: boolean; onOpen
                       <VerdictIcon verdict={verdict} />
                       <h4 className="text-sm font-medium">{VERDICT_LABEL[verdict]}</h4>
                       <Badge variant="secondary" className="text-xs">{rows.length}</Badge>
+                      {verdict === "ambiguous" && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="ml-auto h-7 text-xs"
+                          disabled={resolveTail.isPending}
+                          onClick={() => resolveTail.mutate(rows)}
+                          data-testid="button-resolve-tail"
+                        >
+                          {resolveTail.isPending
+                            ? <><Loader2 className="mr-1 h-3 w-3 animate-spin" />Reading...</>
+                            : <><Sparkles className="mr-1 h-3 w-3" />Work these out</>}
+                        </Button>
+                      )}
                     </div>
                     <p className="text-xs text-muted-foreground">{VERDICT_HINT[verdict]}</p>
+                    {verdict === "ambiguous" && aiUnavailable && (
+                      <p className="text-xs text-coral">
+                        No Anthropic API key on this server, so these can only be sorted out by hand.
+                      </p>
+                    )}
 
                     <div className="rounded-md border border-border bg-card">
                       {rows.map((r, i) => (
@@ -272,11 +329,61 @@ export function BatchPriceReview({ open, onOpenChange }: { open: boolean; onOpen
                             )
                           )}
 
-                          {verdict === "ambiguous" && (
-                            <span className="flex-shrink-0 text-xs text-muted-foreground">
-                              {r.candidates.length} possible match{r.candidates.length === 1 ? "" : "es"}
-                            </span>
-                          )}
+                          {verdict === "ambiguous" && (() => {
+                            const res = resolutions.get(r.line.lineId);
+                            if (!res) {
+                              return (
+                                <span className="flex-shrink-0 text-xs text-muted-foreground">
+                                  {r.candidates.length} possible match{r.candidates.length === 1 ? "" : "es"}
+                                </span>
+                              );
+                            }
+                            if (!res.chosenItemId) {
+                              return (
+                                <span className="max-w-[46%] flex-shrink-0 text-right text-xs text-muted-foreground">
+                                  None of these — {res.reason}
+                                </span>
+                              );
+                            }
+                            const picked = r.candidates.find((c) => c.id === res.chosenItemId);
+                            const delta = appliedDelta.get(r.line.lineId);
+                            return (
+                              <div className="flex max-w-[52%] flex-shrink-0 items-center gap-2">
+                                <div className="min-w-0 text-right">
+                                  <p className="truncate text-xs">
+                                    <Sparkles className="mr-1 inline h-3 w-3 text-primary" />
+                                    {picked?.name}
+                                    <span className="ml-1 text-muted-foreground">({res.confidence})</span>
+                                  </p>
+                                  <p className="truncate text-xs text-muted-foreground">{res.reason}</p>
+                                  {delta && (
+                                    <p className={`text-xs tabular-nums ${delta.direction === "up" ? "text-coral" : "text-sage"}`}>
+                                      {formatCents(delta.catalogueExCents)} &rarr; {formatCents(delta.billExCents)}
+                                    </p>
+                                  )}
+                                </div>
+                                {applied.has(r.line.lineId) ? (
+                                  <span className="flex items-center gap-1 text-xs text-sage">
+                                    <Check className="h-3.5 w-3.5" />Updated
+                                  </span>
+                                ) : (
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="h-7 text-xs"
+                                    disabled={applyPrice.isPending}
+                                    onClick={() => applyPrice.mutate({
+                                      priceListItemId: res.chosenItemId!,
+                                      billLineItemId: r.line.lineId,
+                                    })}
+                                    data-testid={`button-accept-ai-${r.line.lineId}`}
+                                  >
+                                    Use this
+                                  </Button>
+                                )}
+                              </div>
+                            );
+                          })()}
                         </div>
                       ))}
                     </div>
