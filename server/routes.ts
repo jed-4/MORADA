@@ -35670,6 +35670,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Mark bills reviewed. Called when the user accepts something the review
+  // proposed, NOT when a review merely runs -- looking is not reviewing.
+  app.post("/api/price-list/review/mark-reviewed", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.companyId) return res.status(401).json({ error: "Unauthorized" });
+      const { billIds } = req.body ?? {};
+      if (!Array.isArray(billIds) || !billIds.length) {
+        return res.status(400).json({ error: "billIds is required" });
+      }
+      const count = await storage.markBillsPriceReviewed(billIds, user.companyId, user.id);
+      res.json({ marked: count });
+    } catch (error: any) {
+      res.status(500).json({ error: "Failed to mark bills reviewed", details: error.message });
+    }
+  });
+
   // Bills a review could cover. Deliberately requires the caller to ask -- the
   // page opens empty rather than loading every bill you have ever received.
   app.get("/api/price-list/review/bills", requireAuth, requireTeamMember, async (req, res) => {
@@ -35887,14 +35904,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         acc[r.verdict] = (acc[r.verdict] ?? 0) + 1;
         return acc;
       }, {});
-
-      // Reviewed means a human has actually seen these lines, so stamp only when
-      // the caller says so -- a speculative preview should not clear the flag.
-      if (req.body?.markReviewed) {
-        await storage.markBillsPriceReviewed(
-          Array.from(new Set(lines.map((l) => l.billId))), user.companyId, user.id,
-        );
-      }
 
       res.json({
         results,

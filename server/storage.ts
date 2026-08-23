@@ -25593,6 +25593,12 @@ export class DbStorage implements IStorage {
         ))
         .returning();
 
+      if (updated) {
+        await db.update(schema.bills)
+          .set({ priceReviewedAt: now, priceReviewedBy: userId })
+          .where(and(eq(schema.bills.id, line.billId), eq(schema.bills.companyId, companyId)));
+      }
+
       return updated ? { item: updated, comparison } : undefined;
     } catch (error) {
       console.error("Database error in applyBillPriceToItem:", error);

@@ -74,13 +74,10 @@ export default function AIPriceReviewPage() {
       apiRequest("/api/price-list/review/batch", "POST", {
         billIds: Array.from(selected),
         readSkus,
-        markReviewed: true,
       }),
-    onSuccess: (data) => {
-      setResult(data);
-      setBills((prev) => prev?.map((b) =>
-        selected.has(b.id) ? { ...b, priceReviewedAt: new Date().toISOString() } : b) ?? prev);
-    },
+    // Reviewing does not mark anything: a look-only pass must write nothing.
+    // Bills become "reviewed" when something the review proposed is accepted.
+    onSuccess: (data) => setResult(data),
   });
 
   const toggleSupplier = (id: string) => setSupplierIds((prev) => {

@@ -11,6 +11,7 @@ import {
 export type BatchLine = {
   line: {
     lineId: string;
+    billId: string;
     description: string;
     unitPrice: number;
     quantity: number;
@@ -128,6 +129,10 @@ export function BillReviewResults({ result, fallbackPriceListId }: { result: Bat
       }),
     onSuccess: (_d, row) => {
       setAdded((prev) => new Set(prev).add(row.line.lineId));
+      // Adding off a bill line is an accept too, and the generic items endpoint
+      // knows nothing about bills, so say so explicitly.
+      apiRequest("/api/price-list/review/mark-reviewed", "POST", { billIds: [row.line.billId] })
+        .catch(() => {});
       queryClient.invalidateQueries({ queryKey: ["/api/price-list/items"] });
     },
   });
