@@ -25207,15 +25207,24 @@ export class DbStorage implements IStorage {
             sql`LOWER(${schema.priceListItems.name}) LIKE ${like}`,
             sql`LOWER(${schema.priceListItems.nickname}) LIKE ${like}`,
             sql`LOWER(${schema.priceListItems.code}) LIKE ${like}`,
+            // The book's name too, so typing a supplier browses their catalogue —
+            // "plaster" found nothing before, even though every item lived in "The
+            // Plaster Shop". Ranked last below, because one list name matching drags
+            // in its whole book and those rows are the weakest kind of hit.
+            sql`LOWER(${schema.priceLists.name}) LIKE ${like}`,
           )!,
         ))
         // A code hit is the strongest signal a builder can give — they typed the SKU
-        // off the invoice. Then names that START with the term, then everything else.
+        // off the invoice. Then names that START with the term, then other item-text
+        // hits, and finally rows that only matched by which book they're in.
         .orderBy(
           sql`CASE
             WHEN LOWER(${schema.priceListItems.code}) = ${term} THEN 0
             WHEN LOWER(${schema.priceListItems.name}) LIKE ${term + '%'} THEN 1
-            ELSE 2
+            WHEN LOWER(${schema.priceListItems.name}) LIKE ${like}
+              OR LOWER(${schema.priceListItems.nickname}) LIKE ${like}
+              OR LOWER(${schema.priceListItems.code}) LIKE ${like} THEN 2
+            ELSE 3
           END`,
           asc(schema.priceListItems.name),
         )
