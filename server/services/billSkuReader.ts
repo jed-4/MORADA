@@ -136,27 +136,10 @@ export async function extractSkusForBill(
   // bill, so leave it unread rather than quietly spending on every scan.
   if (text.trim().length < 50) return { skus, note: "unreadable", cached: false };
 
-  const response = await anthropic.messages.create({
-    model: "claude-sonnet-4-5",
-    max_tokens: 3000,
-    messages: [{
-      role: "user",
-      content: `${PROMPT}\n\nOur line items:\n${JSON.stringify(
-        lines.map((l) => ({ lineId: l.id, description: l.description })), null, 1,
-      )}\n\nInvoice text:\n${text.slice(0, 40_000)}`,
-    }],
-  });
-
-  const parsed = parseAiJson((response.content[0] as any)?.text ?? "");
-  const raw: any[] = Array.isArray(parsed?.lines) ? parsed.lines : [];
-  const known = new Set(lineIds);
-
-  const rows = raw.flatMap((r) => {
-    const lineId = typeof r?.lineId === "string" && known.has(r.lineId) ? r.lineId : null;
-    const code = typeof r?.code === "string" ? r.code.trim() : "";
-    if (!lineId || code.length < MIN_CODE_LENGTH) return [];
-    return [{ companyId, billLineItemId: lineId, sku: code.slice(0, 120), source: "pdf" as const }];
-  });
+  const found = await extractSkusFromText(text, lines);
+  const rows = Array.from(found.entries()).map(([billLineItemId, sku]) => ({
+    companyId, billLineItemId, sku, source: "pdf" as const,
+  }));
 
   if (rows.length) {
     await db.insert(schema.billLineItemSkus).values(rows).onConflictDoNothing();
@@ -164,4 +147,48 @@ export async function extractSkusForBill(
   }
 
   return { skus, note: "ok", cached: false };
+}
+
+
+/**
+ * The model half, with no database or object storage in sight.
+ *
+ * Split out so the part most likely to be wrong -- does it find the right code
+ * for the right line -- can be exercised without a bucket. The IO around it is
+ * ordinary; this is not.
+ *
+ * Returns lineId -> code, containing only ids that were actually offered.
+ */
+export async function extractSkusFromText(
+  invoiceText: string,
+  lines: Array<{ id: string; description: string }>,
+): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  if (!lines.length || invoiceText.trim().length < 50) return out;
+
+  const anthropic = await getAnthropic();
+  if (!anthropic) return out;
+
+  const response = await anthropic.messages.create({
+    model: "claude-sonnet-4-5",
+    max_tokens: 3000,
+    messages: [{
+      role: "user",
+      content: `${PROMPT}\n\nOur line items:\n${JSON.stringify(
+        lines.map((l) => ({ lineId: l.id, description: l.description })), null, 1,
+      )}\n\nInvoice text:\n${invoiceText.slice(0, 40_000)}`,
+    }],
+  });
+
+  const parsed = parseAiJson((response.content[0] as any)?.text ?? "");
+  const raw: any[] = Array.isArray(parsed?.lines) ? parsed.lines : [];
+  const known = new Set(lines.map((l) => l.id));
+
+  for (const r of raw) {
+    const lineId = typeof r?.lineId === "string" && known.has(r.lineId) ? r.lineId : null;
+    const code = typeof r?.code === "string" ? r.code.trim() : "";
+    if (!lineId || code.length < MIN_CODE_LENGTH) continue;
+    out.set(lineId, code.slice(0, 120));
+  }
+  return out;
 }
