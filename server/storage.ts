@@ -25167,6 +25167,105 @@ export class DbStorage implements IStorage {
     }
   }
 
+  /**
+   * Typeahead lookup for pulling a catalogue item onto an estimate line.
+   *
+   * Deliberately NOT getPriceListItems with extra filters: that one powers the price
+   * list page, where you must be able to see inactive items and archived books in
+   * order to manage them. Nothing outside the catalogue should ever offer those.
+   * Two separate switches mean "don't use this" here — the item's own isActive, and
+   * the parent book's isArchived — and filtering only one would let a retired
+   * supplier's list keep feeding new estimates.
+   *
+   * Returns the parent list's name and colour alongside each row so the picker and
+   * the line's provenance marker can say WHICH book a price came from without a
+   * second round trip (Neon is ~400ms from AU — see the perf notes).
+   */
+  async searchPriceListItemsForEstimate(
+    companyId: string,
+    query: string,
+    limit = 20,
+  ): Promise<Array<PriceListItem & { listName: string; listColour: string | null }>> {
+    try {
+      const term = query.trim().toLowerCase();
+      if (!term) return [];
+      const like = `%${term}%`;
+
+      const rows = await db
+        .select({
+          item: schema.priceListItems,
+          listName: schema.priceLists.name,
+          listColour: schema.priceLists.colour,
+        })
+        .from(schema.priceListItems)
+        .innerJoin(schema.priceLists, eq(schema.priceListItems.priceListId, schema.priceLists.id))
+        .where(and(
+          eq(schema.priceListItems.companyId, companyId),
+          eq(schema.priceListItems.isActive, true),
+          eq(schema.priceLists.isArchived, false),
+          or(
+            sql`LOWER(${schema.priceListItems.name}) LIKE ${like}`,
+            sql`LOWER(${schema.priceListItems.nickname}) LIKE ${like}`,
+            sql`LOWER(${schema.priceListItems.code}) LIKE ${like}`,
+          )!,
+        ))
+        // A code hit is the strongest signal a builder can give — they typed the SKU
+        // off the invoice. Then names that START with the term, then everything else.
+        .orderBy(
+          sql`CASE
+            WHEN LOWER(${schema.priceListItems.code}) = ${term} THEN 0
+            WHEN LOWER(${schema.priceListItems.name}) LIKE ${term + '%'} THEN 1
+            ELSE 2
+          END`,
+          asc(schema.priceListItems.name),
+        )
+        .limit(limit);
+
+      return rows.map(r => ({ ...r.item, listName: r.listName, listColour: r.listColour }));
+    } catch (error) {
+      console.error("Database error in searchPriceListItemsForEstimate:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Resolve a batch of catalogue ids to items + their book, for lines that already
+   * carry a link. One query for a whole estimate — resolving these per row would be
+   * the classic query-in-a-loop, and Neon is ~400ms away from AU.
+   *
+   * Unlike the typeahead this does NOT filter out inactive items or archived books:
+   * a line linked before its list was retired must still be able to say where its
+   * price came from. Availability governs what you can newly pick, not what history
+   * you're allowed to read.
+   */
+  async getPriceListItemsByIds(
+    companyId: string,
+    ids: string[],
+  ): Promise<Array<PriceListItem & { listName: string; listColour: string | null }>> {
+    try {
+      const unique = Array.from(new Set(ids.filter(Boolean)));
+      if (unique.length === 0) return [];
+
+      const rows = await db
+        .select({
+          item: schema.priceListItems,
+          listName: schema.priceLists.name,
+          listColour: schema.priceLists.colour,
+        })
+        .from(schema.priceListItems)
+        .innerJoin(schema.priceLists, eq(schema.priceListItems.priceListId, schema.priceLists.id))
+        .where(and(
+          eq(schema.priceListItems.companyId, companyId),
+          inArray(schema.priceListItems.id, unique),
+        ));
+
+      return rows.map(r => ({ ...r.item, listName: r.listName, listColour: r.listColour }));
+    } catch (error) {
+      console.error("Database error in getPriceListItemsByIds:", error);
+      throw error;
+    }
+  }
+
   async getPriceListItem(id: string, companyId: string): Promise<PriceListItem | undefined> {
     try {
       const result = await db.select().from(schema.priceListItems)

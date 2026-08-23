@@ -1005,6 +1005,13 @@ export const estimateItems = pgTable("estimate_items", {
   status: text("status").notNull().default("incomplete"), // "incomplete" | "not relevant" | "done" (configurable)
   unitCostExTax: doublePrecision("unit_cost_ex_tax").notNull().default(0), // Unit price ex tax in dollars
   markupPercent: doublePrecision("markup_percent"), // Optional item-specific markup % (e.g. 10, 7.5). Falls back to project markup if null
+  // Provenance: the catalogue item this line's unit cost was taken from.
+  // INVARIANT: this is set only while unitCostExTax still equals the catalogue price.
+  // Editing the unit cost CLEARS it (the line has left the catalogue and is the
+  // estimator's own number), so a drift warning can only ever mean "the supplier's
+  // book moved" — never "someone edited this on purpose". Renaming the line, or
+  // changing qty/wastage/markup, all keep the link.
+  priceListItemId: varchar("price_list_item_id").references(() => priceListItems.id, { onDelete: "set null" }),
   // taxAmount and priceIncTax are a denormalised cache of the line price.
   // They are populated ONLY by computeEstimateItemPrice in shared/pricing.ts.
   // Never compute or write these inline — always go through that function.
@@ -1035,6 +1042,7 @@ export const insertEstimateItemSchema = createInsertSchema(estimateItems).omit({
   markupPercent: z.number().optional().nullable(),
   shownAs: z.string().optional().nullable(),
   wastagePercent: z.number().default(0),
+  priceListItemId: z.string().optional().nullable(),
 });
 
 export type InsertEstimateItem = z.infer<typeof insertEstimateItemSchema>;

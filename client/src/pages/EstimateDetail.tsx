@@ -67,7 +67,7 @@ import {
 } from "lucide-react";
 import { type Estimate, type EstimateItem, type EstimateSummary, type Project, type InsertEstimateItem, insertEstimateItemSchema, type EstimateGroup, type InsertEstimateGroup, insertEstimateGroupSchema, type FieldCategoryWithOptions, type FieldOption, type CompanySettings, type CostCode, type CostCategory, type EstimateTemplate, type Selection } from "@shared/schema";
 import { computeEstimateItemPrice, isFixedPriceLine, round2, computeEstimateSummary } from "@shared/pricing";
-import { useForm } from "react-hook-form";
+import { useForm, type UseFormReturn } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { logActivity } from "@/lib/activityLogger";
@@ -79,7 +79,9 @@ import { EstimateGroupCard } from "@/components/estimates/EstimateGroupCard";
 import { useUndoStack } from "@/hooks/useUndoStack";
 import { CreateRFQDialog } from "@/components/rfq/CreateRFQDialog";
 import { CreatePOFromEstimateDialog } from "@/components/estimates/CreatePOFromEstimateDialog";
-import { Package, Undo2, ChevronsUpDown, Search, ShoppingCart, Pencil, X, SlidersHorizontal, LayoutTemplate, Briefcase } from "lucide-react";
+import { Package, Undo2, ChevronsUpDown, Search, ShoppingCart, Tag, Pencil, X, SlidersHorizontal, LayoutTemplate, Briefcase } from "lucide-react";
+import { PriceListItemPicker, priceListItemToLineFields, lookupItemExGstCents, unitCarriesToEstimate, type PriceListLookupItem } from "@/components/estimates/PriceListItemPicker";
+import { formatCents } from "@shared/money";
 import { EmptyState } from "@/components/EmptyState";
 import { ProjectIcon } from "@/components/ProjectIcon";
 import {
@@ -826,6 +828,31 @@ export default function EstimateDetail() {
     }
     return map;
   }, [poLinks]);
+
+  // Catalogue provenance for lines priced from a price list. Resolved in ONE request
+  // for the whole estimate — the ids are sorted so the query key is stable while the
+  // set of linked lines is unchanged, and the request simply doesn't fire when no
+  // line is linked (the overwhelmingly common case today).
+  const linkedPriceListIds = useMemo(
+    () => Array.from(new Set(items.map(i => i.priceListItemId).filter(Boolean) as string[])).sort(),
+    [items],
+  );
+  const { data: linkedPriceListItems = [] } = useQuery<PriceListLookupItem[]>({
+    queryKey: ["/api/price-list/items/by-ids", linkedPriceListIds.join(",")],
+    queryFn: async () => {
+      const res = await fetch(
+        `/api/price-list/items/by-ids?ids=${encodeURIComponent(linkedPriceListIds.join(","))}`,
+        { credentials: "include" },
+      );
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: linkedPriceListIds.length > 0,
+  });
+  const priceListItemMap = useMemo(
+    () => new Map(linkedPriceListItems.map(i => [i.id, i])),
+    [linkedPriceListItems],
+  );
 
   // Fetch estimate item status field category options
   const { data: estimateItemStatusCategory } = useQuery<FieldCategoryWithOptions>({
@@ -2973,6 +3000,67 @@ export default function EstimateDetail() {
     });
   };
 
+  /**
+   * A catalogue item was picked from the name cell's typeahead.
+   *
+   * Writes the name, unit, unit cost and the provenance link in ONE patch — the
+   * server recomputes the cached price from whatever the patch contains, so
+   * splitting these across mutations would briefly price the line at the old cost.
+   */
+  const handlePriceListSelect = (item: EstimateItem, picked: PriceListLookupItem) => {
+    setEditingCell(null);
+    setEditingValue('');
+    updateItemMutation.mutate({
+      itemId: item.id,
+      data: priceListItemToLineFields(picked, { allowedUnits: estimateUnitNames }) as Partial<InsertEstimateItem>,
+    });
+    toast(priceListSelectToast(picked));
+  };
+
+  /** The units this estimate's own Field Settings list actually offers. */
+  const estimateUnitNames = useMemo(
+    () => (estimateItemUnitCategory?.options ?? []).map(o => o.name).filter(Boolean) as string[],
+    [estimateItemUnitCategory],
+  );
+
+  /**
+   * One message for both entry points. Says what the price was AND calls out a unit
+   * that couldn't come across, because a silently-missing unit on a line priced per
+   * linear metre is how you quote 40 metres of cornice as 40 "each".
+   */
+  const priceListSelectToast = (picked: PriceListLookupItem) => {
+    const carried = unitCarriesToEstimate(picked.unitType, estimateUnitNames);
+    const price = `${formatCents(lookupItemExGstCents(picked))} / ${picked.unitType}`;
+    return carried
+      ? {
+          title: "Priced from catalogue",
+          description: `${picked.name} — ${price} from ${picked.listName}.`,
+        }
+      : {
+          title: "Priced from catalogue — check the unit",
+          description: `${picked.name} — ${price} from ${picked.listName}. This estimate has no "${picked.unitType}" unit, so the line kept its existing one.`,
+        };
+  };
+
+  /**
+   * The dialog equivalent of handlePriceListSelect: fill the form from the catalogue
+   * instead of patching the row. Nothing is saved until the dialog is submitted, so
+   * a mis-click here is undone by cancelling, not by a second edit.
+   */
+  const applyPriceListItemToForm = (
+    target: UseFormReturn<z.infer<typeof addItemFormSchema>>,
+    picked: PriceListLookupItem,
+  ) => {
+    const fields = priceListItemToLineFields(picked, { allowedUnits: estimateUnitNames });
+    const opts = { shouldDirty: true } as const;
+    target.setValue('name', fields.name, opts);
+    if (fields.unitType) target.setValue('unitType', fields.unitType, opts);
+    target.setValue('unitCostExTax', fields.unitCostExTax, opts);
+    if (fields.costCode) target.setValue('costCode', fields.costCode, opts);
+    target.setValue('priceListItemId', picked.id, opts);
+    toast(priceListSelectToast(picked));
+  };
+
   const handleCellCancel = () => {
     setEditingCell(null);
     setEditingValue('');
@@ -4925,12 +5013,13 @@ export default function EstimateDetail() {
         if (isEditingName) {
           return (
             <div className={`${cellBase} ${indentClass} ${cellActive}`} role="gridcell">
-              <Input
+              <PriceListItemPicker
                 value={editingValue}
-                onChange={(e) => setEditingValue(e.target.value)}
+                onChange={setEditingValue}
+                onSelect={(picked) => handlePriceListSelect(item, picked)}
+                onCommit={() => handleCellSave(item, 'name')}
+                onCancel={handleCellCancel}
                 onKeyDown={(e) => handleCellKeyDown(e, item, 'name')}
-                onBlur={() => handleCellSave(item, 'name')}
-                onFocus={(e) => e.target.select()}
                 className="h-full w-full bg-transparent border-0 border-none rounded-none shadow-none outline-none focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0 focus-visible:ring-offset-0 px-0 text-xs md:text-xs font-medium"
                 autoFocus
                 data-testid={`input-edit-name-${item.id}`}
@@ -4979,6 +5068,32 @@ export default function EstimateDetail() {
               >
                 {item.name}
               </span>
+              {/* Priced from the catalogue. Sits in the same slot as the PO marker
+                  and reads the same way: a quiet icon, the detail in the tooltip.
+                  It disappears the moment someone edits the unit cost, which is the
+                  whole point — the marker only ever claims "this IS the book price". */}
+              {item.priceListItemId && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Tag
+                      className="w-3 h-3 text-muted-foreground flex-shrink-0"
+                      style={priceListItemMap.get(item.priceListItemId)?.listColour
+                        ? { color: priceListItemMap.get(item.priceListItemId)!.listColour! }
+                        : undefined}
+                      data-testid={`marker-price-list-${item.id}`}
+                    />
+                  </TooltipTrigger>
+                  <TooltipContent side="top">
+                    <p className="text-xs">
+                      {(() => {
+                        const linked = priceListItemMap.get(item.priceListItemId!);
+                        if (!linked) return 'Priced from a price list';
+                        return [linked.listName, linked.code].filter(Boolean).join(' · ');
+                      })()}
+                    </p>
+                  </TooltipContent>
+                </Tooltip>
+              )}
               {poLinkMap.has(item.id) && (
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -6704,7 +6819,13 @@ export default function EstimateDetail() {
                   <FormItem>
                     <FormLabel>Item Name</FormLabel>
                     <FormControl>
-                      <Input placeholder="e.g. Premium Kitchen Cabinets" {...field} data-testid="input-item-name" />
+                      <PriceListItemPicker
+                        value={field.value ?? ""}
+                        onChange={field.onChange}
+                        onSelect={(picked) => applyPriceListItemToForm(form, picked)}
+                        placeholder="e.g. Premium Kitchen Cabinets — or search your price lists"
+                        data-testid="input-item-name"
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -7288,7 +7409,13 @@ export default function EstimateDetail() {
                       <FormItem>
                         <FormLabel>Item Name</FormLabel>
                         <FormControl>
-                          <Input placeholder="e.g. Premium Kitchen Cabinets" {...field} data-testid="input-edit-item-name" />
+                          <PriceListItemPicker
+                            value={field.value ?? ""}
+                            onChange={field.onChange}
+                            onSelect={(picked) => applyPriceListItemToForm(editForm, picked)}
+                            placeholder="e.g. Premium Kitchen Cabinets — or search your price lists"
+                            data-testid="input-edit-item-name"
+                          />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
