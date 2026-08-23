@@ -13,17 +13,26 @@ import {
   KeyboardAvoidingView,
   Platform,
   Alert,
+  Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { apiFetch, apiRequest } from '../services/api';
+import * as ImagePicker from 'expo-image-picker';
+import { apiFetch, apiRequest, uploadFileFromUri, getAuthedImageSource } from '../services/api';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RouteProp } from '@react-navigation/native';
 
 import { useTheme } from '../theme';
 
+interface DefectAttachment {
+  url: string;
+  name?: string;
+  type?: string;
+}
+
 interface Defect {
   id: string;
   projectId: string;
+  attachments?: DefectAttachment[] | null;
   title: string;
   description?: string | null;
   location?: string | null;
@@ -92,6 +101,34 @@ export default function DefectsScreen({ route }: Props) {
   const [draftPriority, setDraftPriority] = useState('medium');
   const [draftType, setDraftType] = useState('builder');
   const [titleError, setTitleError] = useState(false);
+  // Local URIs until save — uploading on capture would strand files in object
+  // storage whenever someone backs out of the sheet.
+  const [draftPhotos, setDraftPhotos] = useState<string[]>([]);
+
+  const addPhoto = async (source: 'camera' | 'library') => {
+    try {
+      const permission = source === 'camera'
+        ? await ImagePicker.requestCameraPermissionsAsync()
+        : await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (permission.status !== 'granted') {
+        Alert.alert(
+          'Permission needed',
+          source === 'camera'
+            ? 'Camera access is needed to photograph the defect.'
+            : 'Photo library access is needed.',
+        );
+        return;
+      }
+      const result = source === 'camera'
+        ? await ImagePicker.launchCameraAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.7 })
+        : await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.7 });
+      if (!result.canceled && result.assets?.length) {
+        setDraftPhotos(prev => [...prev, ...result.assets.map(a => a.uri)]);
+      }
+    } catch {
+      Alert.alert('Camera unavailable', 'Could not open the camera. Try choosing from your library instead.');
+    }
+  };
 
   const fetchData = useCallback(async () => {
     if (!projectId) return;
@@ -149,6 +186,7 @@ export default function DefectsScreen({ route }: Props) {
     setDraftPriority('medium');
     setDraftType('builder');
     setTitleError(false);
+    setDraftPhotos([]);
   };
 
   const submitDraft = async () => {
@@ -158,6 +196,16 @@ export default function DefectsScreen({ route }: Props) {
     }
     setSaving(true);
     try {
+      const attachments: DefectAttachment[] = [];
+      for (let i = 0; i < draftPhotos.length; i++) {
+        const { objectPath } = await uploadFileFromUri(
+          draftPhotos[i],
+          `defect_${Date.now()}_${i}.jpg`,
+          'image/jpeg',
+        );
+        attachments.push({ url: objectPath, name: `Photo ${i + 1}`, type: 'image/jpeg' });
+      }
+
       // apiRequest resolves to the raw Response; apiFetch is GET-only, so the
       // body is parsed here.
       const response = await apiRequest('/api/defects', 'POST', {
@@ -168,13 +216,14 @@ export default function DefectsScreen({ route }: Props) {
         priority: draftPriority,
         type: draftType,
         status: 'open',
+        attachments,
       });
       const created: Defect = await response.json();
       setDefects(prev => [created, ...prev]);
       setComposerOpen(false);
       resetDraft();
     } catch (e: any) {
-      Alert.alert('Could not save', e?.message || 'The defect was not created.');
+      Alert.alert('Could not save', e?.message || 'The defect was not created. Your photos have not been lost — try again.');
     } finally {
       setSaving(false);
     }
@@ -281,6 +330,22 @@ export default function DefectsScreen({ route }: Props) {
                     {item.assignedContactName}
                   </Text>
                 )}
+                {!!item.attachments?.length && (
+                  <View style={styles.thumbRow}>
+                    {item.attachments.slice(0, 4).map((a, i) => (
+                      <Image
+                        key={`${a.url}-${i}`}
+                        source={getAuthedImageSource(a.url)}
+                        style={[styles.thumb, { borderColor: theme.border }]}
+                      />
+                    ))}
+                    {item.attachments.length > 4 && (
+                      <Text style={[styles.rowMeta, { color: theme.textMuted, alignSelf: 'center' }]}>
+                        +{item.attachments.length - 4}
+                      </Text>
+                    )}
+                  </View>
+                )}
               </View>
               <View style={styles.rowRight}>
                 <View style={[styles.chip, { backgroundColor: s.color + '22' }]}>
@@ -386,6 +451,36 @@ export default function DefectsScreen({ route }: Props) {
                 })}
               </View>
 
+              <Text style={[styles.label, { color: theme.textSecondary }]}>Photos</Text>
+              <View style={styles.photoRow}>
+                {draftPhotos.map((uri, i) => (
+                  <View key={`${uri}-${i}`}>
+                    <Image source={{ uri }} style={[styles.draftThumb, { borderColor: theme.border }]} />
+                    <TouchableOpacity
+                      onPress={() => setDraftPhotos(prev => prev.filter((_, idx) => idx !== i))}
+                      style={styles.removePhoto}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    >
+                      <Ionicons name="close-circle" size={20} color="#C0453F" />
+                    </TouchableOpacity>
+                  </View>
+                ))}
+                <TouchableOpacity
+                  onPress={() => addPhoto('camera')}
+                  style={[styles.photoButton, { borderColor: theme.border, backgroundColor: theme.card }]}
+                >
+                  <Ionicons name="camera-outline" size={20} color={theme.primary} />
+                  <Text style={[styles.photoButtonText, { color: theme.textSecondary }]}>Camera</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => addPhoto('library')}
+                  style={[styles.photoButton, { borderColor: theme.border, backgroundColor: theme.card }]}
+                >
+                  <Ionicons name="images-outline" size={20} color={theme.primary} />
+                  <Text style={[styles.photoButtonText, { color: theme.textSecondary }]}>Library</Text>
+                </TouchableOpacity>
+              </View>
+
               <Text style={[styles.label, { color: theme.textSecondary }]}>Detail</Text>
               <TextInput
                 value={draftDescription}
@@ -460,6 +555,24 @@ const styles = StyleSheet.create({
   input: { borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 15 },
   textarea: { minHeight: 90, textAlignVertical: 'top' },
   errorText: { color: '#C0453F', fontSize: 12, marginTop: 4 },
+
+  thumbRow: { flexDirection: 'row', gap: 6, marginTop: 6 },
+  thumb: { width: 40, height: 40, borderRadius: 6, borderWidth: 1 },
+
+  photoRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, alignItems: 'center' },
+  draftThumb: { width: 64, height: 64, borderRadius: 8, borderWidth: 1 },
+  removePhoto: { position: 'absolute', top: -6, right: -6, backgroundColor: 'transparent' },
+  photoButton: {
+    width: 64,
+    height: 64,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 2,
+  },
+  photoButtonText: { fontSize: 10 },
 
   pillRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   pill: { borderWidth: 1, borderRadius: 16, paddingHorizontal: 12, paddingVertical: 6 },
