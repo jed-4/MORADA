@@ -1435,7 +1435,7 @@ export interface IStorage {
   getUnlinkedBillLineItems(companyId: string): Promise<Array<import("@shared/schema").BillLineItem & { bill: import("@shared/schema").Bill; supplier: import("@shared/schema").Contact | null }>>;
   applyBillPriceToItem(priceListItemId: string, billLineItemId: string, companyId: string, userId: string): Promise<{ item: PriceListItem; comparison: import("@shared/priceList").BillPriceComparison } | undefined>;
   getBillLinesForPriceReview(companyId: string, filters: { supplierId?: string; dateFrom?: Date; dateTo?: Date; billIds?: string[] }): Promise<Array<{ lineId: string; description: string; unitPrice: number; quantity: number; unit: string | null; priceListItemId: string | null; billId: string; billNumber: string; billDate: Date | null; supplierId: string | null; supplierName: string | null }>>;
-  searchBillsForPriceReview(companyId: string, filters: { supplierId?: string; dateFrom?: Date; dateTo?: Date; search?: string }): Promise<Array<{ id: string; billNumber: string; billDate: Date | null; total: number; supplierId: string | null; supplierName: string | null; lineCount: number; priceReviewedAt: Date | null; hasAttachment: boolean }>>;
+  searchBillsForPriceReview(companyId: string, filters: { supplierIds?: string[]; dateFrom?: Date; dateTo?: Date; search?: string }): Promise<Array<{ id: string; billNumber: string; billDate: Date | null; total: number; supplierId: string | null; supplierName: string | null; lineCount: number; priceReviewedAt: Date | null; hasAttachment: boolean }>>;
   markBillsPriceReviewed(billIds: string[], companyId: string, userId: string): Promise<number>;
 
   // Dashboard Views CRUD
@@ -25524,9 +25524,9 @@ export class DbStorage implements IStorage {
     billLineItemId: string,
     companyId: string,
     userId: string,
-  ): Promise<{ item: PriceListItem; comparison: import("@shared/priceList").BillPriceComparison } | undefined> {
+  ): Promise<{ item: PriceListItem; comparison: import("@shared/priceList").BillPriceComparison; superseded?: { billDate: string; billNumber: string | null } } | undefined> {
     try {
-      const { compareBillPriceToItem, billPriceAsItemCost } = await import("@shared/priceList");
+      const { compareBillPriceToItem, billPriceAsItemCost, isSupersededByNewerBill } = await import("@shared/priceList");
 
       const [item] = await db.select().from(schema.priceListItems)
         .where(and(
@@ -25541,6 +25541,7 @@ export class DbStorage implements IStorage {
           unitPrice: schema.billLineItems.unitPrice,
           billId: schema.billLineItems.billId,
           billNumber: schema.bills.billNumber,
+          billDate: schema.bills.billDate,
         })
         .from(schema.billLineItems)
         .innerJoin(schema.bills, eq(schema.bills.id, schema.billLineItems.billId))
@@ -25557,6 +25558,12 @@ export class DbStorage implements IStorage {
       });
       if (!comparison.changed) return { item, comparison };
 
+      // The newest invoice wins. Working back through older bills must not
+      // quietly restore a price a later invoice has already superseded.
+      const billDateIso = line.billDate ? new Date(line.billDate).toISOString() : null;
+      const stale = isSupersededByNewerBill(item, billDateIso);
+      if (stale.superseded) return { item, comparison, superseded: stale.by! };
+
       const now = new Date();
       const entry = {
         date: now.toISOString(),
@@ -25569,6 +25576,7 @@ export class DbStorage implements IStorage {
         billId: line.billId,
         billNumber: line.billNumber,
         billLineItemId: line.id,
+        billDate: billDateIso,
         acceptedBy: userId,
       };
 
@@ -25644,11 +25652,11 @@ export class DbStorage implements IStorage {
    */
   async searchBillsForPriceReview(
     companyId: string,
-    filters: { supplierId?: string; dateFrom?: Date; dateTo?: Date; search?: string },
+    filters: { supplierIds?: string[]; dateFrom?: Date; dateTo?: Date; search?: string },
   ) {
     try {
       const where = [eq(schema.bills.companyId, companyId)];
-      if (filters.supplierId) where.push(eq(schema.bills.supplierId, filters.supplierId));
+      if (filters.supplierIds?.length) where.push(inArray(schema.bills.supplierId, filters.supplierIds));
       if (filters.dateFrom) where.push(gte(schema.bills.billDate, filters.dateFrom));
       if (filters.dateTo) where.push(lte(schema.bills.billDate, filters.dateTo));
       if (filters.search?.trim()) {
