@@ -38,6 +38,7 @@ import NotificationsScreen from '../screens/NotificationsScreen';
 import MessagesScreen from '../screens/MessagesScreen';
 import MessageThreadScreen from '../screens/MessageThreadScreen';
 import ReceiptCaptureScreen from '../screens/ReceiptCaptureScreen';
+import LabourHoursScreen from '../screens/LabourHoursScreen';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -121,6 +122,11 @@ function ProjectsStack() {
         name="ReceiptCapture"
         component={ReceiptCaptureScreen}
         options={{ headerShown: true, title: 'Capture Receipt' }}
+      />
+      <Stack.Screen
+        name="LabourHours"
+        component={LabourHoursScreen}
+        options={{ headerShown: true, title: 'Labour Hours' }}
       />
     </Stack.Navigator>
   );

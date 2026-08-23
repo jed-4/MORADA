@@ -20,36 +20,7 @@ import { useTheme } from '../theme';
 import { useAuth } from '../contexts/AuthContext';
 import { usePermission } from '../lib/usePermission';
 
-interface LabourHoursRow {
-  budgetedHours?: string;
-  pendingHours?: string;
-  approvedHours?: string;
-}
 
-/**
- * Same bands as the web Budget page: under 95% / 95-99% / 100-105% / over,
- * plus a distinct state for hours booked against no budget at all.
- */
-function hoursTone(budgeted: number, used: number) {
-  if (budgeted <= 0) return used > 0 ? 'unbudgeted' : 'neutral';
-  const percent = (used / budgeted) * 100;
-  if (percent < 95) return 'under';
-  if (percent < 100) return 'near';
-  if (percent <= 105) return 'at';
-  return 'over';
-}
-
-const HOURS_TONE_COLOR: Record<string, string> = {
-  under: '#3F9A6A',
-  near: '#C79A3C',
-  at: '#C4692B',
-  over: '#C0453F',
-  unbudgeted: '#4874BE',
-  neutral: '#8A8A8A',
-};
-
-const formatHours = (n: number) =>
-  `${(Math.round(n * 10) / 10).toLocaleString(undefined, { maximumFractionDigits: 1 })}h`;
 interface Project {
   id: string;
   name: string;
@@ -163,39 +134,9 @@ const colors = {
     muted: theme.textMuted,
 };
 
-  // Gated on the same permission the endpoint enforces, so users without it
-  // never see the tile and never fire the request.
+  // Gates the Labour Hours tile. The endpoint behind it enforces the same
+  // permission; this only stops the UI offering it.
   const canViewLabourHours = usePermission('financial.budget_labour');
-  const [labourHours, setLabourHours] = useState<LabourHoursRow[] | null>(null);
-
-  useEffect(() => {
-    if (!projectId || !canViewLabourHours) {
-      setLabourHours(null);
-      return;
-    }
-    let cancelled = false;
-    apiFetch<LabourHoursRow[]>(`/api/projects/${projectId}/labour-hours-budget`)
-      .then(rows => { if (!cancelled) setLabourHours(rows || []); })
-      .catch(() => { if (!cancelled) setLabourHours(null); });
-    return () => { cancelled = true; };
-  }, [projectId, canViewLabourHours]);
-
-  const hoursSummary = (() => {
-    if (!labourHours || labourHours.length === 0) return null;
-    const sum = (key: keyof LabourHoursRow) =>
-      labourHours.reduce((acc, r) => acc + parseFloat((r[key] as string) || '0'), 0);
-    const budgeted = sum('budgetedHours');
-    const used = sum('pendingHours') + sum('approvedHours');
-    // Nothing budgeted and nothing booked means there is nothing to report.
-    if (budgeted === 0 && used === 0) return null;
-    return {
-      budgeted,
-      used,
-      remaining: budgeted - used,
-      percent: budgeted > 0 ? Math.round((used / budgeted) * 100) : 0,
-      tone: hoursTone(budgeted, used),
-    };
-  })();
 
   const fetchData = useCallback(async () => {
     try {
@@ -341,6 +282,10 @@ const colors = {
     { key: 'checklists', icon: 'checkmark-done-outline', label: 'Checklists', showCount: false },
     { key: 'notes', icon: 'document-text-outline', label: 'Notes', showCount: false },
     { key: 'receiptCapture', icon: 'receipt-outline', label: 'Capture Receipt', showCount: false },
+    // Only offered to users who can view the labour budget.
+    ...(canViewLabourHours
+      ? [{ key: 'labourHours', icon: 'time-outline' as const, label: 'Labour Hours', showCount: false }]
+      : []),
   ];
 
   const handleTileTap = (key: string) => {
@@ -366,6 +311,9 @@ const colors = {
         break;
       case 'receiptCapture':
         navigation.navigate('ReceiptCapture', { projectId, projectName: project.name });
+        break;
+      case 'labourHours':
+        navigation.navigate('LabourHours', { projectId, projectName: project.name });
         break;
       default:
         if (collapsed[key]) {
@@ -515,57 +463,6 @@ const colors = {
             </TouchableOpacity>
           ))}
         </ScrollView>
-
-        {hoursSummary && (
-          <View style={[styles.hoursCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <View style={styles.hoursHeader}>
-              <Ionicons name="time-outline" size={15} color={colors.accent} />
-              <Text style={[styles.hoursTitle, { color: colors.text }]}>Labour Hours</Text>
-              <Text style={[styles.hoursPercent, { color: HOURS_TONE_COLOR[hoursSummary.tone] }]}>
-                {hoursSummary.percent}%
-              </Text>
-            </View>
-
-            <View style={[styles.hoursTrack, { backgroundColor: colors.border }]}>
-              <View
-                style={[
-                  styles.hoursFill,
-                  {
-                    // Clamped: the bar can only ever run to full, the numbers
-                    // below carry any overrun.
-                    width: `${Math.min(100, Math.max(0, hoursSummary.percent))}%`,
-                    backgroundColor: HOURS_TONE_COLOR[hoursSummary.tone],
-                  },
-                ]}
-              />
-            </View>
-
-            <View style={styles.hoursStats}>
-              <View style={styles.hoursStat}>
-                <Text style={[styles.hoursStatLabel, { color: colors.muted }]}>Budgeted</Text>
-                <Text style={[styles.hoursStatValue, { color: colors.text }]}>
-                  {formatHours(hoursSummary.budgeted)}
-                </Text>
-              </View>
-              <View style={styles.hoursStat}>
-                <Text style={[styles.hoursStatLabel, { color: colors.muted }]}>Used</Text>
-                <Text style={[styles.hoursStatValue, { color: colors.text }]}>
-                  {formatHours(hoursSummary.used)}
-                </Text>
-              </View>
-              <View style={styles.hoursStat}>
-                <Text style={[styles.hoursStatLabel, { color: colors.muted }]}>
-                  {hoursSummary.remaining < 0 ? 'Over by' : 'Remaining'}
-                </Text>
-                <Text
-                  style={[styles.hoursStatValue, { color: HOURS_TONE_COLOR[hoursSummary.tone] }]}
-                >
-                  {formatHours(Math.abs(hoursSummary.remaining))}
-                </Text>
-              </View>
-            </View>
-          </View>
-        )}
 
         <View style={styles.section}>
           {renderSectionHeader('Project Info', 'projectInfo')}
@@ -974,22 +871,6 @@ const styles = StyleSheet.create({
   },
   tileBadgeText: { color: '#ffffff', fontSize: 10, fontWeight: '700' },
   tileLabel: { fontSize: 11, fontWeight: '500' },
-  hoursCard: {
-    borderWidth: 1,
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    marginBottom: 12,
-  },
-  hoursHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 10 },
-  hoursTitle: { fontSize: 13, fontWeight: '600', flex: 1 },
-  hoursPercent: { fontSize: 13, fontWeight: '700', fontVariant: ['tabular-nums'] },
-  hoursTrack: { height: 5, borderRadius: 3, overflow: 'hidden' },
-  hoursFill: { height: '100%', borderRadius: 3 },
-  hoursStats: { flexDirection: 'row', marginTop: 10 },
-  hoursStat: { flex: 1 },
-  hoursStatLabel: { fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 2 },
-  hoursStatValue: { fontSize: 14, fontWeight: '600', fontVariant: ['tabular-nums'] },
   section: { marginBottom: 4 },
   sectionHeader: {
     flexDirection: 'row',
