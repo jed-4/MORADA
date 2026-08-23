@@ -35798,7 +35798,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         billIds: Array.isArray(billIds) && billIds.length ? billIds : undefined,
       });
 
-      const catalogue = await storage.getPriceListItems(user.companyId, { priceListId });
+      // Scope by the bill's own supplier rather than making the user pick a list.
+      // A bill knows who sent it, and comparing a Plaster Shop invoice against a
+      // Bunnings list is a mistake nobody would make on purpose. Falls back to the
+      // whole catalogue when a supplier has no list of their own.
+      const catalogue = await storage.getPriceListItems(user.companyId, priceListId ? { priceListId } : {});
+      const allLists = await storage.getPriceLists(user.companyId);
+      const listBySupplier = new Map<string, string>();
+      for (const l of allLists) {
+        if (l.supplierId && !l.isArchived) listBySupplier.set(l.supplierId, l.id);
+      }
 
       // Codes read out of each bill's own document, when the caller asks for it.
       // Cached per bill, so this costs tokens once and nothing on a re-review.
@@ -35817,6 +35826,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const results = lines.map((line) => {
+        const supplierListId = line.supplierId ? listBySupplier.get(line.supplierId) : undefined;
+        const scoped = supplierListId
+          ? catalogue.filter((i) => i.priceListId === supplierListId)
+          : catalogue;
+        const pool = scoped.length ? scoped : catalogue;
         // An existing link is a decision a human already made; respect it rather
         // than letting the matcher second-guess it.
         const linked = line.priceListItemId
@@ -35827,7 +35841,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // to the description matcher.
         const sku = skuByLine.get(line.lineId);
         const bySku = sku
-          ? catalogue.find((i) =>
+          ? pool.find((i) =>
               (i.code && i.code.toLowerCase() === sku.toLowerCase()) ||
               (i.supplierCode && i.supplierCode.toLowerCase() === sku.toLowerCase()))
           : undefined;
@@ -35836,7 +35850,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           ? [{ item: linked, score: 1, reason: "code" as const }]
           : bySku
             ? [{ item: bySku, score: 1, reason: "code" as const }]
-            : matchBillLine(line.description, catalogue);
+            : matchBillLine(line.description, pool);
 
         const best = candidates[0];
         const comparison = best
@@ -35859,6 +35873,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           verdict: verdictFor(candidates, comparison),
           comparison,
           superseded: stale.superseded ? stale.by : null,
+          // Where an Add should put a new item: this supplier's own list.
+          targetPriceListId: supplierListId ?? priceListId ?? allLists[0]?.id ?? null,
           alreadyLinked: !!linked,
           candidates: candidates.slice(0, 3).map((c) => ({
             id: c.item.id, name: c.item.name, code: (c.item as any).code ?? null,

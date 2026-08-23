@@ -24,6 +24,8 @@ export type BatchLine = {
   comparison: BillPriceComparison | null;
   /** Set when a newer invoice already priced this item, so this bill must not win. */
   superseded: { billDate: string; billNumber: string | null } | null;
+  /** The supplier's own list, resolved server-side, so Add lands in the right place. */
+  targetPriceListId: string | null;
   alreadyLinked: boolean;
   candidates: Array<{ id: string; name: string; code: string | null; score: number; reason: string }>;
 };
@@ -91,7 +93,7 @@ function Chip({
   );
 }
 
-export function BillReviewResults({ result, priceListId }: { result: BatchResult; priceListId: string }) {
+export function BillReviewResults({ result, fallbackPriceListId }: { result: BatchResult; fallbackPriceListId: string }) {
   const [applied, setApplied] = useState<Set<string>>(new Set());
   const [added, setAdded] = useState<Set<string>>(new Set());
   const [resolutions, setResolutions] = useState<Map<string, Resolution>>(new Map());
@@ -119,7 +121,7 @@ export function BillReviewResults({ result, priceListId }: { result: BatchResult
     mutationFn: async (row: BatchLine) =>
       apiRequest("/api/price-list/items", "POST", {
         name: row.line.description.slice(0, 200),
-        priceListId,
+        priceListId: row.targetPriceListId ?? fallbackPriceListId,
         costPrice: row.line.unitPrice,
         unitType: row.line.unit || "each",
         supplierId: row.line.supplierId ?? undefined,
@@ -373,7 +375,7 @@ export function BillReviewResults({ result, priceListId }: { result: BatchResult
                         ) : (
                           <Chip
                             onClick={() => addItem.mutate(r)}
-                            disabled={addItem.isPending || !priceListId}
+                            disabled={addItem.isPending || !(r.targetPriceListId ?? fallbackPriceListId)}
                             testId={`button-add-item-${r.line.lineId}`}
                           >
                             <Plus className="h-3 w-3" />Add
