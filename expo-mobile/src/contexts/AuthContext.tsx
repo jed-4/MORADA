@@ -17,6 +17,13 @@ interface User {
   roleName?: string;
   userCategory?: string;
   profileImageUrl?: string;
+  /**
+   * Permission key -> allowed actions, and the admin bypass flag. Both are
+   * returned by GET /api/auth/user and mirror the web client; see
+   * usePermission in ../lib/usePermission.
+   */
+  effectivePermissions?: Record<string, string[]>;
+  isAdminLike?: boolean;
 }
 
 interface AuthContextType {
