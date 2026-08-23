@@ -1,15 +1,16 @@
 import { useState, useEffect } from "react";
-import { FileText, AlertCircle, ArrowRight } from "lucide-react";
-import { WidgetProps, Widget } from "@/types/widgets";
+import { ArrowRight } from "lucide-react";
+import { WidgetProps } from "@/types/widgets";
 import { useProject } from "@/contexts/ProjectContext";
 import { useProjectMetrics } from "@/hooks/useProjectMetrics";
 import { useFinancialPermission } from "@/hooks/use-permission";
-import { WidgetSkeleton, WidgetEmpty } from "@/components/ui/widget-states";
-import { Badge } from "@/components/ui/badge";
+import { WidgetSkeleton, WidgetEmpty, WidgetError } from "@/components/ui/widget-states";
+import { LedgerRow, SummaryAlert, DOT, SAGE_TEXT, AMBER_TEXT, TEAL_TEXT, CORAL_TEXT } from "./summary-shared";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useLocation } from "wouter";
 
 type RowKey = "total" | "paid" | "outstanding" | "partial" | "draft" | "remaining";
@@ -23,122 +24,114 @@ const ROW_CONFIG: { key: RowKey; configKey: string; label: string }[] = [
   { key: "remaining", configKey: "showRemaining", label: "Remaining to invoice" },
 ];
 
-function AmountRow({
-  label,
-  value,
-  count,
-  hint,
-  valueClass,
-  testId,
-}: {
-  label: string;
-  value: string;
-  count?: number;
-  hint?: string;
-  valueClass?: string;
-  testId?: string;
-}) {
-  return (
-    <div
-      className="flex items-center justify-between gap-2 py-1.5"
-      data-testid={testId}
-    >
-      <div className="flex items-center gap-2 min-w-0">
-        <span className="text-xs text-muted-foreground truncate">{label}</span>
-        {count != null && (
-          <Badge variant="secondary" className="text-[10px]">
-            {count}
-          </Badge>
-        )}
-      </div>
-      <div className="flex items-center gap-2 shrink-0">
-        {hint && (
-          <span className="text-[10px] text-muted-foreground tabular-nums">{hint}</span>
-        )}
-        <span className={`text-sm font-semibold tabular-nums ${valueClass ?? ""}`}>
-          {value}
-        </span>
-      </div>
-    </div>
-  );
-}
-
-export default function InvoicesSummaryWidget({ widget, onUpdate, isConfiguring, onCloseConfig }: WidgetProps) {
+export default function InvoicesSummaryWidget({ widget, onUpdate, isConfiguring, onCloseConfig, onSetHeaderActions }: WidgetProps) {
   const { currentProject } = useProject();
-  const { metrics, isLoading, formatCurrency, formatPercentage } = useProjectMetrics();
+  const { metrics, isLoading, isError, formatCurrency, formatPercentage } = useProjectMetrics();
   const allowed = useFinancialPermission();
   const [, navigate] = useLocation();
-  const [editingTitle, setEditingTitle] = useState(widget.title);
 
-  useEffect(() => {
-    setEditingTitle(widget.title);
-  }, [widget.title]);
+  const invoicesPath = currentProject?.id
+    ? `/projects/${currentProject.id}/client-invoices`
+    : "/invoices";
 
   // Default everything visible when config is absent.
   const isRowVisible = (configKey: string) => widget.config?.[configKey] !== false;
   const showOverdueAlert = widget.config?.showOverdueAlert !== false;
 
-  const updateConfig = (patch: Record<string, unknown>) => {
-    if (!onUpdate) return;
-    onUpdate({ ...widget, config: { ...(widget.config || {}), ...patch } } as Widget);
-  };
+  // Config edits stage into a draft and persist on Save
+  const [draft, setDraft] = useState<{ title: string; config: Record<string, unknown> } | null>(null);
+  useEffect(() => {
+    if (isConfiguring) setDraft({ title: widget.title, config: {} });
+    else setDraft(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isConfiguring]);
 
-  // Configuration mode
-  if (isConfiguring) {
-    const handleSaveTitle = () => {
-      if (onUpdate) onUpdate({ ...widget, title: editingTitle });
+  // Hover arrow in the widget header → client invoices page
+  useEffect(() => {
+    onSetHeaderActions?.(
+      currentProject ? (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-6 w-6 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity"
+              onClick={() => navigate(invoicesPath)}
+              data-testid="invoices-widget-open-full"
+              aria-label="Open invoices"
+            >
+              <ArrowRight className="h-3.5 w-3.5" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="top">All invoices</TooltipContent>
+        </Tooltip>
+      ) : null,
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentProject?.id]);
+
+  if (isConfiguring && draft) {
+    const cfg = { ...widget.config, ...draft.config } as Record<string, any>;
+    const stage = (key: string, value: unknown) =>
+      setDraft(prev => prev && { ...prev, config: { ...prev.config, [key]: value } });
+    const cancelConfig = () => { setDraft(null); onCloseConfig?.(); };
+    const saveConfig = () => {
+      onUpdate?.({
+        ...widget,
+        title: draft.title.trim() || widget.title,
+        config: { ...widget.config, ...draft.config },
+      });
+      setDraft(null);
+      onCloseConfig?.();
     };
 
     return (
-      <div className="space-y-4 p-3">
-        <div className="space-y-2">
-          <Label className="text-xs">Widget name</Label>
+      <div className="flex-1 overflow-y-auto p-1 space-y-5 text-[12px]" data-testid="invoices-widget-config">
+        <section>
+          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+            Widget title
+          </p>
           <Input
-            value={editingTitle}
-            onChange={(e) => setEditingTitle(e.target.value)}
-            onBlur={handleSaveTitle}
+            value={draft.title}
+            onChange={e => setDraft(prev => prev && { ...prev, title: e.target.value })}
             className="h-8 text-xs"
             placeholder="Widget title"
             data-testid="input-invoices-widget-title"
           />
-        </div>
+        </section>
 
-        <div className="space-y-1 pt-2 border-t">
-          <Label className="text-xs text-muted-foreground">Rows to show</Label>
-          {ROW_CONFIG.map((row) => (
-            <div key={row.key} className="flex items-center justify-between gap-2 py-1">
+        <section className="space-y-2">
+          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+            Rows to show
+          </p>
+          {ROW_CONFIG.map(row => (
+            <div key={row.key} className="flex items-center justify-between gap-2">
               <Label className="text-xs font-normal">{row.label}</Label>
               <Switch
-                checked={isRowVisible(row.configKey)}
-                onCheckedChange={(v) => updateConfig({ [row.configKey]: !!v })}
+                checked={cfg[row.configKey] !== false}
+                onCheckedChange={v => stage(row.configKey, !!v)}
                 aria-label={`Show ${row.label}`}
                 data-testid={`switch-invoices-${row.key}`}
               />
             </div>
           ))}
-        </div>
+          <div className="flex items-center justify-between gap-2 pt-1 border-t">
+            <Label className="text-xs font-normal">Overdue alert</Label>
+            <Switch
+              checked={cfg.showOverdueAlert !== false}
+              onCheckedChange={v => stage("showOverdueAlert", !!v)}
+              aria-label="Show overdue alert"
+              data-testid="switch-invoices-overdue-alert"
+            />
+          </div>
+        </section>
 
-        <div className="flex items-center justify-between gap-2 pt-2 border-t">
-          <Label className="text-xs font-normal">Overdue alert</Label>
-          <Switch
-            checked={showOverdueAlert}
-            onCheckedChange={(v) => updateConfig({ showOverdueAlert: !!v })}
-            aria-label="Show overdue alert"
-            data-testid="switch-invoices-overdue-alert"
-          />
-        </div>
-
-        <div className="flex items-center justify-end gap-2 pt-2 border-t">
-          <Button
-            size="sm"
-            onClick={() => {
-              handleSaveTitle();
-              onCloseConfig?.();
-            }}
-            className="h-7 px-3 text-xs"
-            data-testid="button-invoices-config-done"
-          >
-            Done
+        <div className="flex justify-end gap-2 pt-1">
+          <Button size="sm" variant="outline" onClick={cancelConfig} className="h-7 px-3 text-xs">
+            Cancel
+          </Button>
+          <Button size="sm" onClick={saveConfig} className="h-7 px-3 text-xs" data-testid="button-invoices-config-done">
+            Save
           </Button>
         </div>
       </div>
@@ -148,10 +141,7 @@ export default function InvoicesSummaryWidget({ widget, onUpdate, isConfiguring,
   if (!currentProject) return <WidgetEmpty message="Select a project to view invoices" />;
   if (!allowed) return <WidgetEmpty message="You don't have access to financial data" />;
   if (isLoading) return <WidgetSkeleton />;
-
-  const invoicesPath = currentProject?.id
-    ? `/projects/${currentProject.id}/client-invoices`
-    : "/invoices";
+  if (isError) return <WidgetError />;
 
   if (metrics.nonCancelledInvoicesCount === 0) {
     return (
@@ -164,60 +154,65 @@ export default function InvoicesSummaryWidget({ widget, onUpdate, isConfiguring,
 
   const rows: Record<RowKey, JSX.Element> = {
     total: (
-      <AmountRow
+      <LedgerRow
         key="total"
         label="Total invoiced"
-        value={formatCurrency(metrics.invoicedAmount)}
         count={metrics.nonCancelledInvoicesCount}
         hint={`${formatPercentage(metrics.invoicedPercentage)} of contract`}
+        value={formatCurrency(metrics.invoicedAmount)}
         testId="row-invoices-total"
       />
     ),
     paid: (
-      <AmountRow
+      <LedgerRow
         key="paid"
         label="Paid"
-        value={formatCurrency(metrics.paidInvoices)}
         count={metrics.paidInvoicesCount}
-        valueClass="text-bp-green"
+        value={formatCurrency(metrics.paidInvoices)}
+        valueStyle={SAGE_TEXT}
+        dot={DOT.sage}
         testId="row-invoices-paid"
       />
     ),
     outstanding: (
-      <AmountRow
+      <LedgerRow
         key="outstanding"
         label="Outstanding"
-        value={formatCurrency(metrics.sentAmount)}
         count={metrics.sentInvoicesCount}
-        valueClass="text-bp-amber"
+        value={formatCurrency(metrics.sentAmount)}
+        valueStyle={AMBER_TEXT}
+        dot={DOT.amber}
         testId="row-invoices-outstanding"
       />
     ),
     partial: (
-      <AmountRow
+      <LedgerRow
         key="partial"
         label="Partial"
-        value={formatCurrency(metrics.partialAmount)}
         count={metrics.partialInvoicesCount}
-        valueClass="text-bp-teal"
+        value={formatCurrency(metrics.partialAmount)}
+        valueStyle={TEAL_TEXT}
+        dot={DOT.teal}
         testId="row-invoices-partial"
       />
     ),
     draft: (
-      <AmountRow
+      <LedgerRow
         key="draft"
         label="Draft"
-        value={formatCurrency(metrics.draftAmount)}
         count={metrics.draftInvoicesCount}
-        valueClass="text-muted-foreground"
+        value={formatCurrency(metrics.draftAmount)}
+        valueStyle={{ color: "hsl(var(--muted-foreground))" }}
+        dot={DOT.muted}
         testId="row-invoices-draft"
       />
     ),
     remaining: (
-      <AmountRow
+      <LedgerRow
         key="remaining"
         label="Remaining to invoice"
         value={formatCurrency(metrics.remainingToInvoice)}
+        valueStyle={metrics.remainingToInvoice < 0 ? CORAL_TEXT : undefined}
         testId="row-invoices-remaining"
       />
     ),
@@ -226,43 +221,17 @@ export default function InvoicesSummaryWidget({ widget, onUpdate, isConfiguring,
   const visibleRows = ROW_CONFIG.filter((r) => isRowVisible(r.configKey));
 
   return (
-    <div className="flex flex-col h-full p-4 gap-2" data-testid="widget-invoices-summary">
-      {/* Header */}
-      <div className="flex items-center gap-2">
-        <FileText className="h-4 w-4 text-bp-amber" />
-        <span className="font-medium text-sm">{widget.title || "Client Invoices"}</span>
-      </div>
-
-      {/* Overdue alert */}
+    <div className="flex flex-col h-full gap-2" data-testid="widget-invoices-summary">
       {showOverdueAlert && metrics.overdueInvoices > 0 && (
-        <div
-          className="flex items-center gap-2 rounded-md bg-bp-coral/10 px-2.5 py-2"
-          data-testid="alert-invoices-overdue"
-        >
-          <AlertCircle className="h-4 w-4 shrink-0 text-bp-coral" />
-          <span className="text-xs text-bp-coral">
-            {metrics.overdueInvoices} overdue · {formatCurrency(metrics.overdueAmount)} · oldest{" "}
-            {metrics.oldestOverdueDays} day{metrics.oldestOverdueDays === 1 ? "" : "s"}
-          </span>
-        </div>
+        <SummaryAlert testId="alert-invoices-overdue">
+          {metrics.overdueInvoices} overdue · {formatCurrency(metrics.overdueAmount)} · oldest{" "}
+          {metrics.oldestOverdueDays} day{metrics.oldestOverdueDays === 1 ? "" : "s"}
+        </SummaryAlert>
       )}
 
-      {/* Amount list */}
-      <div className="divide-y divide-border">
+      <div className="border-t-2 border-foreground pt-1 px-0.5">
         {visibleRows.map((r) => rows[r.key])}
       </div>
-
-      {/* View All */}
-      <Button
-        variant="ghost"
-        size="sm"
-        className="mt-auto w-full justify-between text-xs"
-        onClick={() => navigate(invoicesPath)}
-        data-testid="button-view-all-invoices"
-      >
-        <span>View all invoices</span>
-        <ArrowRight className="h-3 w-3" />
-      </Button>
     </div>
   );
 }

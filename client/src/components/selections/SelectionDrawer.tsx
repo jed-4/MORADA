@@ -32,6 +32,7 @@ import {
   SelectionStatusPill,
   SelectionThumbnail,
 } from "./selectionHelpers";
+import { useSelectionPdfExport } from "./useSelectionPdfExport";
 
 export function SelectionDrawer({
   selection,
@@ -50,6 +51,7 @@ export function SelectionDrawer({
   projectId: string;
 }) {
   const { toast } = useToast();
+  const { exportPdf, isExporting } = useSelectionPdfExport();
   const [commentText, setCommentText] = useState("");
   const [sendOpen, setSendOpen] = useState(false);
   const [sendTo, setSendTo] = useState("");
@@ -164,10 +166,16 @@ export function SelectionDrawer({
               <LinkIcon className="w-3 h-3" /> {linkCopied ? "Copied!" : "Copy link"}
             </button>
             <button
-              className="h-7 px-2 rounded-md text-[11px] text-muted-foreground hover:text-foreground hover-elevate flex items-center gap-1.5"
-              onClick={() => window.open(`/api/selections/${selection.id}/pdf`, "_blank")}
+              className="h-7 px-2 rounded-md text-[11px] text-muted-foreground hover:text-foreground hover-elevate flex items-center gap-1.5 disabled:opacity-50"
+              onClick={() => exportPdf(`/api/selections/${selection.id}/pdf`, `${selection.name}.pdf`)}
+              disabled={isExporting}
             >
-              <FileText className="w-3 h-3" /> PDF
+              {isExporting ? (
+                <Loader2 className="w-3 h-3 animate-spin" />
+              ) : (
+                <FileText className="w-3 h-3" />
+              )}
+              {isExporting ? "Exporting…" : "PDF"}
             </button>
           </div>
           {sendOpen && (

@@ -173,6 +173,11 @@ function isXeroPushError(e: unknown): e is XeroPushError {
   return e instanceof Error;
 }
 
+// Fallback copy for the server's CREDIT_NOT_SUPPORTED response (the server
+// sends its own message; this only covers an empty body).
+const CREDIT_NOT_SUPPORTED_COPY =
+  "Vendor credits can't sync to Xero yet — record the credit note in Xero directly.";
+
 /**
  * Build a human-readable description for a failed Xero push. When the server
  * returned a structured `validationErrors` list (XeroValidationException, or
@@ -265,7 +270,7 @@ export default function BillDetail() {
   const [ocrPreviewOpen, setOcrPreviewOpen] = useState(false);
   const [addSupplierDialogOpen, setAddSupplierDialogOpen] = useState(false);
   const [attachmentUrls, setAttachmentUrls] = useState<string[]>([]);
-  const [attachmentMeta, setAttachmentMeta] = useState<Record<string, { filename: string; mimeType?: string }>>({});
+  const [attachmentMeta, setAttachmentMeta] = useState<Record<string, { filename: string; mimeType?: string; uploadGrant?: string }>>({});
   const [sheetPreviewUrl, setSheetPreviewUrl] = useState<string | null>(null);
   const [sheetPreviewFilename, setSheetPreviewFilename] = useState<string>("");
   const [modalPreviewFile, setModalPreviewFile] = useState<PreviewFile | null>(null);
@@ -1211,13 +1216,25 @@ export default function BillDetail() {
               toast({ title: "Bill created", description: "Supplier not linked to Xero — select the matching contact below to complete the sync." });
               return; // stay on page for mapping
             }
+            if (errData.error === "CREDIT_NOT_SUPPORTED") {
+              // A vendor credit is saved and correct in Morada; it just can't
+              // be mirrored to Xero yet (it would post as a positive bill).
+              // A limitation, not a failure — no red toast.
+              toast({ title: "Credit created", description: errData.message || CREDIT_NOT_SUPPORTED_COPY });
+              return;
+            }
             const err: XeroPushError = Object.assign(
               new Error(errData.message || errData.error || "Xero sync failed"),
               { validationErrors: errData.validationErrors as XeroValidationIssue[] | undefined },
             );
             throw err;
           }
-          toast({ title: "Bill created & synced to Xero", description: "New bill created in Xero." });
+          const pushData = await pushRes.json().catch(() => ({} as any));
+          if (pushData?.warning) {
+            toast({ title: "Bill created & synced to Xero", description: pushData.warning });
+          } else {
+            toast({ title: "Bill created & synced to Xero", description: "New bill created in Xero." });
+          }
         } catch (e) {
           const desc = formatXeroErrorDescription(e);
           toast({
@@ -1381,6 +1398,13 @@ export default function BillDetail() {
                 title: "Bill saved",
                 description: errData.message || "This bill is paid in Xero, so its line items can't be changed there.",
               });
+              if (!stayOnPage) setLocation(projectId ? `/projects/${projectId}/bills` : "/bills");
+              return;
+            }
+            if (errData.error === "CREDIT_NOT_SUPPORTED") {
+              // As above: the credit saved fine, only the Xero mirror is
+              // unavailable. Same calm treatment as INVOICE_LOCKED.
+              toast({ title: "Credit saved", description: errData.message || CREDIT_NOT_SUPPORTED_COPY });
               if (!stayOnPage) setLocation(projectId ? `/projects/${projectId}/bills` : "/bills");
               return;
             }
@@ -1610,7 +1634,7 @@ export default function BillDetail() {
   // it into pendingAttachments + attachmentUrls (the create payload picks it
   // up); for existing bills we POST it through the dedicated endpoint.
   const persistOcrAttachment = async (
-    attachment: { objectPath: string; filename?: string; mimeType?: string; size?: number },
+    attachment: { objectPath: string; filename?: string; mimeType?: string; size?: number; uploadGrant?: string },
     file: File | null,
   ): Promise<{ ok: boolean }> => {
     const filename = attachment.filename || file?.name || "invoice";
@@ -1633,7 +1657,7 @@ export default function BillDetail() {
       }
     }
     setAttachmentUrls((prev) => (prev.includes(attachment.objectPath) ? prev : [...prev, attachment.objectPath]));
-    if (filename) setAttachmentMeta(prev => ({ ...prev, [attachment.objectPath]: { filename, mimeType } }));
+    if (filename) setAttachmentMeta(prev => ({ ...prev, [attachment.objectPath]: { filename, mimeType, uploadGrant: attachment.uploadGrant } }));
     setPendingAttachments((prev) =>
       prev.some((p) => p.objectPath === attachment.objectPath)
         ? prev
@@ -1713,6 +1737,9 @@ export default function BillDetail() {
         objectPath,
         mimeType: meta?.mimeType,
         filename: meta?.filename,
+        // Proves this company uploaded this path; the server no longer trusts
+        // the company segment of objectPath, which any caller can forge.
+        uploadGrant: meta?.uploadGrant,
       });
     },
     onSuccess: (data: any) => {
@@ -1885,7 +1912,7 @@ export default function BillDetail() {
         const uploadResult = await uploadFile(file);
         if (uploadResult?.objectPath) {
           recordPendingAttachment(uploadResult.objectPath, file, "manual");
-          setAttachmentMeta(prev => ({ ...prev, [uploadResult.objectPath]: { filename: file.name, mimeType: file.type } }));
+          setAttachmentMeta(prev => ({ ...prev, [uploadResult.objectPath]: { filename: file.name, mimeType: file.type, uploadGrant: uploadResult.uploadGrant } }));
         }
         if (uploadResult?.objectPath && isEditMode && id) {
           // Persist immediately on existing bills via the dedicated endpoint
@@ -2346,6 +2373,27 @@ export default function BillDetail() {
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="flex-1 flex flex-col overflow-hidden">
             <div className="flex-1 overflow-auto p-4 space-y-3">
+            {/* A Xero void is consequential enough to state outright on the bill,
+                and it outlives the review-queue entry that first surfaced it. */}
+            {!!(bill as any)?.xeroVoidedAt && (
+              <div
+                className="flex items-start gap-2 rounded-md border p-3 text-sm"
+                style={{
+                  backgroundColor: "hsl(var(--coral-light))",
+                  borderColor: "hsl(var(--coral))",
+                }}
+                data-testid="banner-xero-voided"
+              >
+                <Ban className="w-4 h-4 mt-0.5 flex-shrink-0" style={{ color: "hsl(var(--coral))" }} />
+                <div>
+                  <p className="font-medium">Voided in Xero</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    This invoice was voided or deleted in Xero, but the bill still exists in Morada.
+                    Unlink it to keep the record without syncing, or delete it if it shouldn't be here.
+                  </p>
+                </div>
+              </div>
+            )}
             <div className={`grid grid-cols-1 gap-3 ${sheetPreviewUrl ? 'lg:grid-cols-[1fr_140px]' : 'lg:grid-cols-[1fr_280px]'}`}>
               <Card className="p-4">
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
@@ -3715,7 +3763,15 @@ export default function BillDetail() {
                     {isEditMode && (bill as any)?.xeroInvoiceId && (
                       <div className="text-table text-muted-foreground" data-testid="text-xero-sync-status">
                         {(bill as any)?.xeroLastSyncStatus === "success" && (bill as any)?.xeroLastSyncAt && (
-                          <span>Synced {format(new Date((bill as any).xeroLastSyncAt), "dd MMM HH:mm")}</span>
+                          (bill as any)?.xeroLastSyncError ? (
+                            // Success with text in the error column = non-fatal
+                            // warning (e.g. pushed without job tracking).
+                            <span style={{ color: "hsl(var(--amber))" }} title={(bill as any).xeroLastSyncError}>
+                              Synced with warning: {String((bill as any).xeroLastSyncError).slice(0, 60)}
+                            </span>
+                          ) : (
+                            <span>Synced {format(new Date((bill as any).xeroLastSyncAt), "dd MMM HH:mm")}</span>
+                          )
                         )}
                         {(bill as any)?.xeroLastSyncStatus === "failed" && (
                           <span className="text-destructive" title={(bill as any)?.xeroLastSyncError || ""}>
@@ -4121,11 +4177,11 @@ export default function BillDetail() {
             return;
           }
           try {
-            await apiRequest("/api/xero/push-bill", "POST", {
+            const pushResult: any = await apiRequest("/api/xero/push-bill", "POST", {
               billId: billIdToUse,
               xeroContactId,
             });
-            toast({ title: "Success", description: "Bill sent to Xero" });
+            toast({ title: "Success", description: pushResult?.warning || "Bill sent to Xero" });
             setUnmappedContactDialogOpen(false);
             setPendingXeroBillId(null);
             setUnmappedSupplierId(null);

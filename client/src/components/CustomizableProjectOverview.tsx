@@ -950,7 +950,7 @@ export default function CustomizableProjectOverview() {
       case "takeoff":
         return <Takeoff />;
       case "estimates":
-        return <ProjectEstimates />;
+        return <ProjectEstimates embedded />;
       case "proposals":
         return <Proposals embedded />;
       case "bills":

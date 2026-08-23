@@ -9,6 +9,7 @@ import {
 } from "@/components/variations/VariationImportDialogs";
 import { DocumentPreviewModal } from "@/components/ui/DocumentPreviewModal";
 import { useForm } from "react-hook-form";
+import { isApprovedVariationStatus } from "@shared/projectMetrics";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { format } from "date-fns";
@@ -329,16 +330,21 @@ export default function VariationDetail() {
 
   const currentProjectId = form.watch("projectId");
   const currentProject = projects.find((p) => p.id === currentProjectId);
-  const { data: approvedProjectVariations = [] } = useQuery<any[]>({
-    queryKey: [`/api/variations?projectId=${currentProjectId}&status=approved`],
+  // Fetch every variation on the project and filter locally: "approved" for
+  // contract purposes means approved OR released, and the server's
+  // ?status=approved filter matches the literal status only — so a released
+  // variation used to vanish from the Revised Contract shown here and on the
+  // variation PDF sent to the client.
+  const { data: projectVariationsForContract = [] } = useQuery<any[]>({
+    queryKey: [`/api/variations?projectId=${currentProjectId}`],
     enabled: !!currentProjectId,
   });
-  const approvedVariationsTotal = (approvedProjectVariations as any[]).reduce(
-    (sum: number, v: any) => sum + (v.totalAmount ?? 0),
+  const approvedVariationsTotal = (projectVariationsForContract as any[]).reduce(
+    (sum: number, v: any) => (isApprovedVariationStatus(v.status) ? sum + (v.totalAmount ?? 0) : sum),
     0
   );
-  // Live original contract price (inc-GST cents) from the selected estimate,
-  // not the stamped project.contractPrice snapshot.
+  // Original contract price (inc-GST cents) — the frozen contract sum once the
+  // job is contracted, otherwise the live selected-estimate total.
   const { data: variationContractMetrics } = useQuery<{ originalContractPriceIncGstCents: number }>({
     queryKey: ["/api/projects", currentProjectId, "contract-metrics"],
     queryFn: () =>

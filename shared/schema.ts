@@ -618,8 +618,10 @@ export const insertNoteSchema = createInsertSchema(notes).omit({
   assigneeIds: z.array(z.string()).optional(), // Multiple assignee user IDs
   assigneeNames: z.array(z.string()).optional(), // Cached names for performance
   dueDate: z.coerce.date().optional(), // Coerce strings to dates for JSON compatibility
-  startTime: z.string().optional(), // HH:MM format
-  endTime: z.string().optional(), // HH:MM format
+  // Nullable so a timeboxed task can be returned to the unscheduled tray. Both
+  // columns are nullable in the DB; without null here the value cannot be cleared.
+  startTime: z.string().nullable().optional(), // HH:MM format
+  endTime: z.string().nullable().optional(), // HH:MM format
   completedAt: z.coerce.date().optional(), // Coerce strings to dates for JSON compatibility
   tags: z.array(z.string()).optional(),
   labels: z.array(z.string()).optional(),
@@ -889,7 +891,18 @@ export const projects = pgTable("projects", {
   isArchived: boolean("is_archived").notNull().default(false), // Archived projects are hidden from main lists
   isBusiness: boolean("is_business").notNull().default(false), // Business-level project (vs construction project)
   invoicingMethod: text("invoicing_method").notNull().default("progress_payments"), // "progress_payments" | "cost_plus"
-  contractPrice: integer("contract_price"), // Locked agreed contract price in cents (set when project transitions to construction)
+  contractPrice: integer("contract_price"), // Live cached estimate total in cents (stamped at Approve; tracks estimate edits until contracted)
+
+  // ── Frozen contract sum ───────────────────────────────────────────────────
+  // Captured when an estimate is marked as the contract. Once set, these are
+  // the client's contract price — the live estimate no longer moves it, so an
+  // approved variation is the ONLY instrument that can change what is owed.
+  // Cleared when the contract is reverted (renegotiation), re-stamped on the
+  // next Mark as Contract. contractedAt is the "is frozen" predicate.
+  contractedTotalExGstCents: integer("contracted_total_ex_gst_cents"),
+  contractedTotalIncGstCents: integer("contracted_total_inc_gst_cents"),
+  contractedAt: timestamp("contracted_at"),
+  contractedEstimateId: varchar("contracted_estimate_id"), // Audit: which revision was signed
   percentComplete: integer("percent_complete").notNull().default(0), // Construction completion % (0-100); used by OH predictor for remaining revenue
   
   // Google Drive integration
@@ -1059,7 +1072,10 @@ export const insertEstimateGroupSchema = createInsertSchema(estimateGroups).omit
   createdAt: true,
   updatedAt: true,
 }).extend({
-  status: z.enum(ESTIMATE_GROUP_STATUSES).optional(),
+  // Section status is configurable in Field Settings (estimate_group.status),
+  // so any option key is valid — ESTIMATE_GROUP_STATUSES are just the seeded
+  // defaults, not the permitted set.
+  status: z.string().min(1).optional(),
 });
 
 export type InsertEstimateGroup = z.infer<typeof insertEstimateGroupSchema>;
@@ -1997,6 +2013,26 @@ export const bills = pgTable("bills", {
   xeroLastSyncAt: timestamp("xero_last_sync_at"), // Last successful push or pull timestamp
   xeroLastSyncStatus: text("xero_last_sync_status"), // 'success' | 'failed'
   xeroLastSyncError: text("xero_last_sync_error"), // Last error message if any
+  // ── Xero review queue ──────────────────────────────────────────────────
+  // The nightly reconcile auto-applies safe drift (payments/status) but parks
+  // "surprises" here for a human: total changed, voided, or gone from Xero.
+  // Reason non-null = in the queue. See migrations/0044_bills_xero_review.sql.
+  xeroReviewReason: text("xero_review_reason"), // null | 'total_changed' | 'voided_in_xero' | 'missing_in_xero'
+  // Human-readable diff lines ("total $1,200.00 → $1,450.00"), so the modal
+  // renders with no Xero call. Left untyped: a $type<string[]> here makes the
+  // column incompatible with storage.ts's generated bill insert/update types.
+  xeroReviewChanges: jsonb("xero_review_changes"),
+  xeroReviewFingerprint: text("xero_review_fingerprint"), // Xero-side state that raised the flag
+  xeroReviewDetectedAt: timestamp("xero_review_detected_at"),
+  // Set on dismiss. The sweep only re-flags when the live fingerprint differs
+  // from this — that's what stops the same bill notifying every single night.
+  xeroReviewAckFingerprint: text("xero_review_ack_fingerprint"),
+  xeroReviewResolvedAt: timestamp("xero_review_resolved_at"),
+  xeroReviewResolvedBy: varchar("xero_review_resolved_by"),
+  // Deliberately outside the review lifecycle: a void stays visible on the bill
+  // after the queue entry is resolved. Cleared only if Xero un-voids or the
+  // bill is unlinked.
+  xeroVoidedAt: timestamp("xero_voided_at"),
   attachmentUrls: json("attachment_urls").default([]), // Array of PDF/image URLs
   ocrProcessed: boolean("ocr_processed").notNull().default(false),
   ocrData: json("ocr_data"), // Raw OCR results
@@ -2471,6 +2507,18 @@ export const clientInvoices = pgTable("client_invoices", {
   // from, so the Xero total always equals what Morada displayed at save time.
   // Shape: InvoiceLineBreakdownEntry[] (see invoiceLineBreakdownEntrySchema).
   lineBreakdown: jsonb("line_breakdown"),
+  // Per-line Xero overrides, keyed by the stable line identity
+  // (`contract:<rowId>`, `variation:<id>`, `allowance:<estimateItemId>`,
+  // `bill:<id>`, `selection:<id>`, `labour`, `markup`). Custom lines carry
+  // their own account on client_invoice_items instead.
+  // Shape: Record<lineKey, { account?, taxable?, tracking?: Record<catId, optId> }>.
+  // An absent key means "company default account, GST charged, project's own
+  // tracking option" — see resolveClientInvoiceFallbackAccount.
+  lineXeroOverrides: jsonb("line_xero_overrides").notNull().default({}),
+  // Array of { name, url, size?, type?, includeInPdf? }. `url` is the
+  // object-storage path from /api/uploads/request-url. Mirrors
+  // variations.attachments so both documents carry files the same way.
+  attachments: jsonb("attachments").notNull().default([]),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({
@@ -2480,8 +2528,9 @@ export const clientInvoices = pgTable("client_invoices", {
 
 // One line of the persisted invoice money snapshot. All amounts are integer
 // cents; amountExCents + gstCents must equal amountIncCents (validated).
-// `taxable: false` lines must carry gstCents 0. `accountCode` is the optional
-// per-line Xero account override (custom lines only today).
+// `taxable: false` lines must carry gstCents 0. `accountCode` is the resolved
+// per-line Xero account: a custom line's own code, or the override recorded in
+// clientInvoices.lineXeroOverrides for every other source.
 export const invoiceLineBreakdownEntrySchema = z.object({
   source: z.enum(["contract", "variation", "allowance", "labour", "bill", "selection", "markup", "custom"]),
   description: z.string().min(1),
@@ -2490,6 +2539,16 @@ export const invoiceLineBreakdownEntrySchema = z.object({
   amountIncCents: z.number().int(),
   taxable: z.boolean(),
   accountCode: z.string().optional().nullable(),
+  // The Xero TaxType this line posts under (OUTPUT, EXEMPTOUTPUT, …). Absent
+  // falls back to OUTPUT/NONE derived from `taxable`, which is what pre-tax-rate
+  // invoices carry.
+  taxType: z.string().optional().nullable(),
+  // Resolved per-line tracking, ready to hand to Xero. Empty/absent means the
+  // push falls back to the project's own tracking option.
+  tracking: z
+    .array(z.object({ categoryId: z.string(), optionId: z.string() }))
+    .optional()
+    .nullable(),
 }).refine((l) => l.amountExCents + l.gstCents === l.amountIncCents, {
   message: "amountExCents + gstCents must equal amountIncCents",
 }).refine((l) => l.taxable || l.gstCents === 0, {
@@ -2498,15 +2557,39 @@ export const invoiceLineBreakdownEntrySchema = z.object({
 
 export type InvoiceLineBreakdownEntry = z.infer<typeof invoiceLineBreakdownEntrySchema>;
 
+export const clientInvoiceAttachmentSchema = z.object({
+  name: z.string().min(1),
+  url: z.string().min(1),
+  size: z.number().optional(),
+  type: z.string().optional(),
+  /** Append this file to the rendered PDF instead of only linking to it. */
+  includeInPdf: z.boolean().optional(),
+});
+export type ClientInvoiceAttachment = z.infer<typeof clientInvoiceAttachmentSchema>;
+
 export const insertClientInvoiceSchema = createInsertSchema(clientInvoices).omit({
   id: true,
   createdAt: true,
   updatedAt: true,
 }).extend({
+  attachments: z.array(clientInvoiceAttachmentSchema).optional(),
   invoiceNumber: z.string().optional().nullable(),
   name: z.string().min(1, "Name is required"),
   invoicingMethod: z.enum(["progress_payments", "cost_plus"]).default("progress_payments"),
-  status: z.enum(["draft", "sent", "partial", "paid", "overdue"]).default("draft"),
+  // Morada status -> Xero, so nothing is lost between the two systems:
+  //
+  //   draft     no Xero invoice yet (nothing is pushed until it is approved)
+  //   approved  AUTHORISED, SentToContact = false
+  //   sent      AUTHORISED, SentToContact = true
+  //   partial   AUTHORISED with payments applied (Xero keeps AUTHORISED)
+  //   paid      PAID
+  //   overdue   derived from the due date, never stored — Xero has no such
+  //             status either, it is a view over AUTHORISED
+  //
+  // Approved and sent both sit under Xero's single AUTHORISED status; the
+  // SentToContact flag is the only thing separating them, which is why emailing
+  // writes that flag back and pulling reads it.
+  status: z.enum(["draft", "approved", "sent", "partial", "paid", "overdue"]).default("draft"),
   invoiceDate: z.coerce.date(),
   dueDate: z.coerce.date().optional(),
   sentDate: z.coerce.date().optional(),
@@ -3220,6 +3303,7 @@ export const checklistInstanceGroups = pgTable("checklist_instance_groups", {
   priority: text("priority").default("low"), // "low" | "medium" | "high" | "urgent"
   assigneeId: varchar("assignee_id").references(() => users.id, { onDelete: "set null" }),
   assigneeName: text("assignee_name"),
+  dueDate: timestamp("due_date"),
   linkedTaskId: varchar("linked_task_id"),
   linkedScheduleItemId: varchar("linked_schedule_item_id"),
   completedAt: timestamp("completed_at"),
@@ -3239,6 +3323,7 @@ export const insertChecklistInstanceGroupSchema = createInsertSchema(checklistIn
   priority: z.enum(["low", "medium", "high", "urgent"]).default("low"),
   assigneeId: z.string().nullish(),
   assigneeName: z.string().nullish(),
+  dueDate: z.coerce.date().optional().nullable(),
   linkedTaskId: z.string().nullish(),
   linkedScheduleItemId: z.string().nullish(),
   completedAt: z.coerce.date().nullish(),
@@ -3491,7 +3576,11 @@ export const timesheets = pgTable("timesheets", {
 
   // Subcontractor PO tracking
   poStatus: text("po_status"), // null for employees, "awaiting_po" | "on_po" | "paid" for subcontractors
-  linkedPurchaseOrderId: varchar("linked_purchase_order_id"), // Reference to PO when status is on_po or paid
+  // FK with ON DELETE SET NULL: deleting a PO (including via the project
+  // cascade, which bypasses the route handler) must not leave timesheets
+  // pointing at a PO that no longer exists — that state is unrecoverable
+  // from the UI, since the approve flow refuses to re-queue a linked entry.
+  linkedPurchaseOrderId: varchar("linked_purchase_order_id").references(() => purchaseOrders.id, { onDelete: "set null" }), // Reference to PO when status is on_po or paid
   
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
@@ -3723,6 +3812,10 @@ export const insertScheduleItemSchema = createInsertSchema(scheduleItems).omit({
     taskId: z.string(),
     offsetDays: z.number().int().default(0),
     offsetFrom: z.enum(["start", "end"]).default("start"),
+    // Present when the link is a *time booking* rather than just a due date —
+    // "I'm at this inspection 09:00-10:00" — so the hour survives the item moving.
+    startTime: z.string().nullable().optional(),
+    endTime: z.string().nullable().optional(),
   })).optional(),
   attachments: z.array(z.object({
     url: z.string(),
@@ -6514,62 +6607,117 @@ export type FolderTemplate = typeof folderTemplates.$inferSelect;
 // PRICE LIST FEATURE
 // ============================================
 
-// Price List Categories (configurable grouping for price list items)
-export const priceListCategories = pgTable("price_list_categories", {
+// A price list is a BOOK of items: one supplier's price book ("The Plaster Shop",
+// "Bunnings"), your own labour rate card, or your own internal/design catalogue.
+// `kind` drives which columns and form fields make sense — a labour rate has no
+// lead time, a supplier book is about what you PAY, an internal list about what
+// you CHARGE. Items live in exactly one list (Jed, 2026-08-18).
+export const priceListKindEnum = pgEnum("price_list_kind", [
+  "supplier",
+  "labour",
+  "internal",
+]);
+
+export const priceLists = pgTable("price_lists", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
+  kind: priceListKindEnum("kind").notNull().default("supplier"),
+  // Set when kind = 'supplier'. Points at contacts (contactType='supplier') — NOT the
+  // deprecated `suppliers` table.
+  supplierId: varchar("supplier_id").references(() => contacts.id, { onDelete: "set null" }),
   description: text("description"),
-  color: text("color"), // Hex color for visual grouping
-  sortOrder: integer("sort_order").notNull().default(0),
-  isActive: boolean("is_active").notNull().default(true),
+  colour: text("colour"),
+  isDefault: boolean("is_default").notNull().default(false),
+  isArchived: boolean("is_archived").notNull().default(false),
+  // Supplier price books are dated — keep last quarter's list for audit.
+  effectiveFrom: timestamp("effective_from"),
+  effectiveTo: timestamp("effective_to"),
+  sourceNote: text("source_note"),
+  lastImportedAt: timestamp("last_imported_at"),
+  createdBy: varchar("created_by").references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({
-  companyIdx: index("price_list_categories_company_idx").on(table.companyId),
-  uniqueNamePerCompany: uniqueIndex("price_list_categories_name_unique").on(table.companyId, table.name),
+  companyIdx: index("price_lists_company_idx").on(table.companyId),
+  supplierIdx: index("price_lists_supplier_idx").on(table.supplierId),
+  uniqueNamePerCompany: uniqueIndex("price_lists_name_unique").on(table.companyId, table.name),
 }));
 
-export const insertPriceListCategorySchema = createInsertSchema(priceListCategories).omit({
+export const insertPriceListSchema = createInsertSchema(priceLists).omit({
   id: true,
   companyId: true,
   createdAt: true,
   updatedAt: true,
+}).extend({
+  name: z.string().trim().min(1, "Name is required"),
+  kind: z.enum(["supplier", "labour", "internal"]).default("supplier"),
+  supplierId: z.string().nullable().optional(),
+  effectiveFrom: z.coerce.date().nullable().optional(),
+  effectiveTo: z.coerce.date().nullable().optional(),
+  lastImportedAt: z.coerce.date().nullable().optional(),
 });
 
-export type InsertPriceListCategory = z.infer<typeof insertPriceListCategorySchema>;
-export type PriceListCategory = typeof priceListCategories.$inferSelect;
+export type InsertPriceList = z.infer<typeof insertPriceListSchema>;
+export type PriceList = typeof priceLists.$inferSelect;
 
-// Unit Type enum for price list items
-export const unitTypeEnum = pgEnum("unit_type", [
-  "each",
-  "m2",      // Square meters
-  "lin_m",   // Linear meters
-  "m3",      // Cubic meters
-  "hour",
-  "day",
-  "week",
-  "lot",
-  "kg",
-  "tonne",
-  "litre",
-  "pack",
-  "set",
-  "pair",
-]);
+// A GROUP is a section INSIDE one price list — "Plasterboard", "Cornice",
+// "Compounds" belong to The Plaster Shop's book and nowhere else. This replaces the
+// old company-global `price_list_categories`, which sat outside any list and made the
+// layering ambiguous. Same shape as `estimate_groups`, so the grid can reuse its
+// reorder/collapse behaviour.
+export const priceListGroups = pgTable("price_list_groups", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  priceListId: varchar("price_list_id").notNull().references(() => priceLists.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  description: text("description"),
+  colour: text("colour"),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  companyIdx: index("price_list_groups_company_idx").on(table.companyId),
+  priceListIdx: index("price_list_groups_price_list_idx").on(table.priceListId),
+  uniqueNamePerList: uniqueIndex("price_list_groups_name_unique").on(table.priceListId, table.name),
+}));
+
+export const insertPriceListGroupSchema = createInsertSchema(priceListGroups).omit({
+  id: true,
+  companyId: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  name: z.string().trim().min(1, "Name is required"),
+  priceListId: z.string().min(1, "A price list is required"),
+  sortOrder: z.number().int().default(0),
+});
+
+export type InsertPriceListGroup = z.infer<typeof insertPriceListGroupSchema>;
+export type PriceListGroup = typeof priceListGroups.$inferSelect;
+
+// Unit of measure is FREE TEXT, deliberately. The canonical per-company list comes from
+// Field Settings (`estimate_item.unit`), and `shared/units.ts` reconciles spellings across
+// surfaces. This was a 14-value pgEnum while the form offered 19 options, so 12 of them
+// failed to insert. Matches `estimate_items.unitType`, which is also text.
 
 // Price List Items (main catalog of products/materials/services)
 export const priceListItems = pgTable("price_list_items", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
-  
+  // The book this item belongs to. Exactly one.
+  priceListId: varchar("price_list_id").notNull().references(() => priceLists.id, { onDelete: "cascade" }),
+
   // Core details
   name: text("name").notNull(), // Official product name
   nickname: text("nickname"), // What the team calls it
   code: text("code"), // SKU / internal reference code
   description: text("description"), // Detailed notes, specifications
-  categoryId: varchar("category_id").references(() => priceListCategories.id, { onDelete: "set null" }),
-  unitType: unitTypeEnum("unit_type").notNull().default("each"),
+  // The section within the list. Null = ungrouped, shown under "Ungrouped".
+  groupId: varchar("group_id").references(() => priceListGroups.id, { onDelete: "set null" }),
+  // Carried onto an estimate line with the item, so provenance keeps its cost code.
+  costCodeId: varchar("cost_code_id").references(() => costCodes.id, { onDelete: "set null" }),
+  unitType: text("unit_type").notNull().default("each"),
   
   // Pricing (stored in cents for accuracy)
   costPrice: integer("cost_price").notNull().default(0), // What you pay (cents, ex GST)
@@ -6599,7 +6747,8 @@ export const priceListItems = pgTable("price_list_items", {
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({
   companyIdx: index("price_list_items_company_idx").on(table.companyId),
-  categoryIdx: index("price_list_items_category_idx").on(table.categoryId),
+  priceListIdx: index("price_list_items_price_list_idx").on(table.priceListId),
+  groupIdx: index("price_list_items_group_idx").on(table.groupId),
   supplierIdx: index("price_list_items_supplier_idx").on(table.supplierId),
   codeIdx: index("price_list_items_code_idx").on(table.companyId, table.code),
 }));
@@ -6610,9 +6759,14 @@ export const insertPriceListItemSchema = createInsertSchema(priceListItems).omit
   createdAt: true,
   updatedAt: true,
 }).extend({
-  unitType: z.enum(["each", "m2", "lin_m", "m3", "hour", "day", "week", "lot", "kg", "tonne", "litre", "pack", "set", "pair"]).default("each"),
-  costPrice: z.number().default(0),
-  sellPrice: z.number().optional(),
+  priceListId: z.string().min(1, "A price list is required"),
+  name: z.string().trim().min(1, "Name is required"),
+  groupId: z.string().nullable().optional(),
+  unitType: z.string().trim().min(1).default("each"),
+  costCodeId: z.string().nullable().optional(),
+  // CENTS, integer — never dollars. The form converts at the boundary.
+  costPrice: z.number().int("Cost must be a whole number of cents").default(0),
+  sellPrice: z.number().int("Sell must be a whole number of cents").nullable().optional(),
   markupPercent: z.string().optional().transform(val => val === "" ? null : val),
   tags: z.array(z.string()).optional(),
   priceHistory: z.array(z.object({

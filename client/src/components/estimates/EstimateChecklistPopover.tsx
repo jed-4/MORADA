@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
@@ -8,10 +8,17 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Progress } from "@/components/ui/progress";
-import { ClipboardList, ChevronDown, ChevronRight, Loader2, ExternalLink } from "lucide-react";
+import { ClipboardList, ChevronDown, ChevronRight, Loader2, ExternalLink, ListFilter } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { useLocation } from "wouter";
+import { compareNumberedNames } from "@shared/utils";
 
 interface ChecklistInstance {
   id: string;
@@ -21,6 +28,8 @@ interface ChecklistInstance {
   completedCount: number;
   totalCount: number;
   templateId?: string;
+  /** From the instance's template: "Task" | "Job" | "Estimation" | "Lead". */
+  templateType?: string | null;
 }
 
 interface ChecklistGroup {
@@ -28,6 +37,9 @@ interface ChecklistGroup {
   instanceId: string;
   name: string;
   order: number;
+  /** Sent with the group so a collapsed one can still show its progress. */
+  completedCount: number;
+  totalCount: number;
 }
 
 interface ChecklistItem {
@@ -65,6 +77,22 @@ function InstancePanel({ instance, projectId }: { instance: ChecklistInstance; p
   const progressPct = instance.totalCount > 0
     ? Math.round((instance.completedCount / instance.totalCount) * 100)
     : 0;
+
+  // Authored order, then the number at the front of the name for rows that tie
+  // on it. See compareNumberedNames.
+  const sortedGroups = useMemo(
+    () => [...groups].sort((a, b) => a.order - b.order || compareNumberedNames(a.name, b.name)),
+    [groups],
+  );
+
+  // Land on the group there's still work in, so opening the popover shows the
+  // job in hand rather than a wall of collapsed headers. Empty groups aren't
+  // candidates — they render nothing. If everything is done, open the first.
+  const autoExpandId = useMemo(() => {
+    const withItems = sortedGroups.filter(g => (g.totalCount ?? 0) > 0);
+    const unfinished = withItems.find(g => (g.completedCount ?? 0) < (g.totalCount ?? 0));
+    return (unfinished ?? withItems[0])?.id ?? null;
+  }, [sortedGroups]);
 
   return (
     <div className="border rounded-md overflow-hidden">
@@ -112,16 +140,14 @@ function InstancePanel({ instance, projectId }: { instance: ChecklistInstance; p
           ) : groups.length === 0 ? (
             <div className="px-3 py-3 text-xs text-muted-foreground italic">No items</div>
           ) : (
-            groups
-              .slice()
-              .sort((a, b) => a.order - b.order)
-              .map((group) => (
-                <GroupPanel
-                  key={group.id}
-                  group={group}
-                  instanceId={instance.id}
-                />
-              ))
+            sortedGroups.map((group) => (
+              <GroupPanel
+                key={group.id}
+                group={group}
+                instanceId={instance.id}
+                defaultExpanded={group.id === autoExpandId}
+              />
+            ))
           )}
         </div>
       )}
@@ -129,7 +155,22 @@ function InstancePanel({ instance, projectId }: { instance: ChecklistInstance; p
   );
 }
 
-function GroupPanel({ group, instanceId }: { group: ChecklistGroup; instanceId: string }) {
+function GroupPanel({
+  group,
+  instanceId,
+  defaultExpanded = false,
+}: {
+  group: ChecklistGroup;
+  instanceId: string;
+  defaultExpanded?: boolean;
+}) {
+  // Collapsed unless this is the group being landed on. A full estimating
+  // checklist runs to a couple of hundred items across a dozen groups, and
+  // opening all of it at once buries the group you wanted in one unbroken
+  // list. Initial state only: a later refetch changing the counts must not
+  // yank a group open or shut under someone mid-tick.
+  const [expanded, setExpanded] = useState(defaultExpanded);
+
   const { data: items = [], isLoading } = useQuery<ChecklistItem[]>({
     queryKey: ["/api/checklist-instance-groups", group.id, "items"],
     queryFn: async () => {
@@ -139,6 +180,9 @@ function GroupPanel({ group, instanceId }: { group: ChecklistGroup; instanceId: 
       if (!res.ok) throw new Error("Failed to fetch items");
       return res.json();
     },
+    // Nothing is on screen until the group is opened, so don't fetch a dozen
+    // item lists to render a dozen collapsed headers.
+    enabled: expanded,
   });
 
   const toggleMutation = useMutation({
@@ -163,31 +207,47 @@ function GroupPanel({ group, instanceId }: { group: ChecklistGroup; instanceId: 
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/checklist-instance-groups", group.id, "items"] });
+      // Prefix match — covers the instance list's totals and the per-group
+      // counts the collapsed headers read from, which share this root key.
       queryClient.invalidateQueries({ queryKey: ["/api/checklist-instances"] });
     },
   });
 
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center py-3">
-        <Loader2 className="w-3 h-3 animate-spin text-muted-foreground" />
-      </div>
-    );
-  }
-
-  if (items.length === 0) return null;
+  // An empty group is skipped without opening it — the count comes down with
+  // the group itself.
+  if ((group.totalCount ?? 0) === 0) return null;
 
   return (
     <div>
-      <div className="px-3 py-1.5 bg-muted/20">
-        <span className="text-data font-semibold text-muted-foreground uppercase tracking-wide">
+      <button
+        className="w-full flex items-center gap-2 px-3 py-1.5 bg-muted/20 hover-elevate text-left"
+        onClick={() => setExpanded(v => !v)}
+        aria-expanded={expanded}
+        data-testid={`button-checklist-group-${group.id}`}
+      >
+        {expanded ? (
+          <ChevronDown className="w-3 h-3 flex-shrink-0 text-muted-foreground" />
+        ) : (
+          <ChevronRight className="w-3 h-3 flex-shrink-0 text-muted-foreground" />
+        )}
+        <span className="text-data font-semibold text-muted-foreground uppercase tracking-wide truncate flex-1">
           {group.name}
         </span>
-      </div>
+        <span className="text-data tabular-nums text-muted-foreground flex-shrink-0">
+          {group.completedCount ?? 0}/{group.totalCount ?? 0}
+        </span>
+      </button>
+
+      {!expanded ? null : isLoading ? (
+        <div className="flex items-center justify-center py-3">
+          <Loader2 className="w-3 h-3 animate-spin text-muted-foreground" />
+        </div>
+      ) : (
       <div className="divide-y divide-border/30">
         {items
           .slice()
-          .sort((a, b) => a.order - b.order)
+          // Same two keys as the group list above.
+          .sort((a, b) => a.order - b.order || compareNumberedNames(a.description, b.description))
           .map((item) => {
             const isChecked = item.status === "completed" || item.status === "na";
             return (
@@ -218,12 +278,21 @@ function GroupPanel({ group, instanceId }: { group: ChecklistGroup; instanceId: 
             );
           })}
       </div>
+      )}
     </div>
   );
 }
 
+/** Checklists belonging to the estimating phase, which is what an estimate wants. */
+const ESTIMATION_TYPE = "Estimation";
+const TYPE_FILTERS = [ESTIMATION_TYPE, "Job", "Task", "Lead", "all"] as const;
+
 export function EstimateChecklistPopover({ estimateId: _estimateId, projectId, wide }: EstimateChecklistPopoverProps) {
   const [isOpen, setIsOpen] = useState(false);
+  // A project carries checklists for everything it does; only the estimating
+  // ones belong on an estimate. Anything else is reachable via this filter,
+  // including checklists made without a template, which have no type at all.
+  const [typeFilter, setTypeFilter] = useState<string>(ESTIMATION_TYPE);
 
   const { data: instances = [], isLoading } = useQuery<ChecklistInstance[]>({
     queryKey: ["/api/checklist-instances", { projectId }],
@@ -237,11 +306,16 @@ export function EstimateChecklistPopover({ estimateId: _estimateId, projectId, w
     enabled: !!projectId,
   });
 
-  const totalCompleted = instances.reduce((sum, i) => sum + (i.completedCount ?? 0), 0);
-  const totalItems = instances.reduce((sum, i) => sum + (i.totalCount ?? 0), 0);
+  const visibleInstances =
+    typeFilter === "all"
+      ? instances
+      : instances.filter(i => (i.templateType ?? null) === typeFilter);
+
+  const totalCompleted = visibleInstances.reduce((sum, i) => sum + (i.completedCount ?? 0), 0);
+  const totalItems = visibleInstances.reduce((sum, i) => sum + (i.totalCount ?? 0), 0);
   const hasItems = totalItems > 0;
-  const firstName = instances[0]?.name ?? "Checklists";
-  const label = instances.length > 1 ? `${instances.length} Checklists` : firstName;
+  const firstName = visibleInstances[0]?.name ?? "Checklists";
+  const label = visibleInstances.length > 1 ? `${visibleInstances.length} Checklists` : firstName;
   const progressPct = hasItems ? Math.round((totalCompleted / totalItems) * 100) : 0;
 
   return (
@@ -283,11 +357,38 @@ export function EstimateChecklistPopover({ estimateId: _estimateId, projectId, w
               <h4 className="font-medium text-sm">Estimate Checklists</h4>
               <p className="text-xs text-muted-foreground">Track your estimating process</p>
             </div>
-            {hasItems && (
-              <span className="text-xs font-medium text-muted-foreground">
-                {totalCompleted}/{totalItems}
-              </span>
-            )}
+            <div className="flex items-center gap-2">
+              {hasItems && (
+                <span className="text-xs font-medium text-muted-foreground">
+                  {totalCompleted}/{totalItems}
+                </span>
+              )}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    className="h-6 w-6 border rounded-md hover-elevate active-elevate-2 flex items-center justify-center flex-shrink-0"
+                    title={typeFilter === "all" ? "Showing all checklists" : `Showing ${typeFilter} checklists`}
+                    aria-label="Filter checklists by type"
+                    data-testid="button-checklist-type-filter"
+                  >
+                    <ListFilter className="w-3 h-3" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-40">
+                  <DropdownMenuRadioGroup value={typeFilter} onValueChange={setTypeFilter}>
+                    {TYPE_FILTERS.map(t => (
+                      <DropdownMenuRadioItem
+                        key={t}
+                        value={t}
+                        data-testid={`checklist-filter-${t}`}
+                      >
+                        {t === "all" ? "All checklists" : t}
+                      </DropdownMenuRadioItem>
+                    ))}
+                  </DropdownMenuRadioGroup>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
           </div>
           {hasItems && (
             <Progress
@@ -297,22 +398,30 @@ export function EstimateChecklistPopover({ estimateId: _estimateId, projectId, w
           )}
         </div>
 
-        <ScrollArea className="max-h-96">
+        <div className="max-h-96 overflow-y-auto overscroll-contain">
           {isLoading ? (
             <div className="flex items-center justify-center py-8">
               <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
             </div>
-          ) : instances.length === 0 ? (
+          ) : visibleInstances.length === 0 ? (
             <div className="text-center py-8 px-4">
               <ClipboardList className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
-              <p className="text-sm text-muted-foreground">No checklists on this project yet.</p>
+              <p className="text-sm text-muted-foreground">
+                {instances.length === 0
+                  ? "No checklists on this project yet."
+                  : typeFilter === "all"
+                    ? "No checklists on this project yet."
+                    : `No ${typeFilter} checklists on this project.`}
+              </p>
               <p className="text-xs text-muted-foreground mt-1">
-                Create checklists from the Project Checklists tab.
+                {instances.length > 0 && typeFilter !== "all"
+                  ? `This project has ${instances.length} other checklist${instances.length === 1 ? "" : "s"} — switch the filter to see them.`
+                  : "Create checklists from the Project Checklists tab."}
               </p>
             </div>
           ) : (
             <div className="p-2 space-y-2">
-              {instances.map((instance) => (
+              {visibleInstances.map((instance) => (
                 <InstancePanel
                   key={instance.id}
                   instance={instance}
@@ -321,7 +430,7 @@ export function EstimateChecklistPopover({ estimateId: _estimateId, projectId, w
               ))}
             </div>
           )}
-        </ScrollArea>
+        </div>
       </PopoverContent>
     </Popover>
   );

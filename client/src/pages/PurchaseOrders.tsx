@@ -371,9 +371,12 @@ export default function PurchaseOrders({ embedded }: { embedded?: boolean } = {}
       queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders"] });
       toast({ title: "Purchase order deleted" });
     },
-    onError: (err: Error) => toast({
-      title: "Failed to delete purchase order",
-      description: err.message,
+    // A paid/partially-paid PO is refused with 409 and an explanatory
+    // `message`; throwIfResNotOk keeps only the short label, so read the
+    // detail off the payload.
+    onError: (err: any) => toast({
+      title: err?.payload?.error || "Failed to delete purchase order",
+      description: err?.payload?.message || err.message,
       variant: "destructive",
     }),
   });

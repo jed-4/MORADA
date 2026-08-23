@@ -157,6 +157,8 @@
   --status-warning-bg: 39 72% 84%;           /* #F5E0BC */
   --status-info-fg:    220 52% 46%;          /* #3B62B2 */
   --status-info-bg:    221 62% 88%;          /* #C6D6F1 */
+  --status-caution-fg: 22 68% 36%;           /* #9B4E1D — between warning and danger */
+  --status-caution-bg: 25 78% 87%;           /* #FBDDC6 */
   --status-danger-fg:  0 58% 41%;            /* #A63030 */
   --status-danger-bg:  0 64% 89%;            /* #F5CFCF */
   --status-action-fg:  270 24% 44%;          /* #6E578C plum */
@@ -369,6 +371,8 @@
   --status-warning-bg: 42 54% 64% / 0.10;
   --status-info-fg:    219 64% 79%;          /* #A8C0EC — 5.07:1 */
   --status-info-bg:    219 64% 79% / 0.10;
+  --status-caution-fg: 24 78% 70%;           /* #F0A46E — between warning and danger */
+  --status-caution-bg: 24 78% 70% / 0.10;
   --status-danger-fg:  5 72% 77%;            /* #EFA39C — 4.70:1 */
   --status-danger-bg:  5 72% 77% / 0.10;
   --status-action-fg:  264 47% 77%;          /* #BEA8E0 — 4.51:1 */

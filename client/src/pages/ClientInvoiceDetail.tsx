@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useMemo, type ReactNode } from "react";
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
@@ -10,6 +10,7 @@ import { InvoiceDocument } from "@/components/invoices/pdf/InvoiceDocument";
 import { SendInvoiceDialog } from "@/components/invoices/SendInvoiceDialog";
 import { DocumentPreviewModal } from "@/components/ui/DocumentPreviewModal";
 import { XeroContactLinkModal } from "@/components/invoices/XeroContactLinkModal";
+import { InvoiceAttachments } from "@/components/invoices/InvoiceAttachments";
 import {
   ArrowLeft,
   Plus,
@@ -36,8 +37,21 @@ import {
   ArrowDown,
   ArrowUpDown,
   LayoutGrid,
+  AlertCircle,
+  MoreVertical,
+  Trash2,
+  Copy,
 } from "lucide-react";
 import { SiXero } from "react-icons/si";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+import { LineItemTable, type LineItemColumn } from "@/components/LineItemTable";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -99,7 +113,15 @@ import type {
   Variation,
   Bill,
   Contact,
+  ClientInvoiceAttachment,
 } from "@shared/schema";
+import {
+  summariseClaimsElsewhere,
+  // Aliased: this file already has a local `remainingClaimPercent` for the
+  // contract claim (a single number), distinct from these per-line helpers.
+  remainingClaimPercent as remainingLineClaimPercent,
+  isFullyClaimedElsewhere,
+} from "@shared/invoiceClaims";
 
 const GST_RATE = 0.1;
 
@@ -108,6 +130,9 @@ const GST_RATE = 0.1;
 type ColumnId =
   | "name"
   | "description"
+  | "tax"
+  | "account"
+  | "tracking"
   | "contractTotal"
   | "remaining"
   | "claimPercent"
@@ -137,6 +162,9 @@ const INVOICE_BILL_COLUMNS = [
 const ALL_COLUMNS: ColumnDef[] = [
   { id: "name", label: "Name", required: true, defaultVisible: true },
   { id: "description", label: "Description", required: false, defaultVisible: true },
+  { id: "tax", label: "Tax", required: false, defaultVisible: true },
+  { id: "account", label: "Xero Account", required: false, defaultVisible: true },
+  { id: "tracking", label: "Xero Tracking", required: false, defaultVisible: true },
   { id: "contractTotal", label: "Contract Total", required: false, defaultVisible: true },
   { id: "remaining", label: "Remaining", required: false, defaultVisible: true },
   { id: "claimPercent", label: "Claim %", required: true, defaultVisible: true },
@@ -237,6 +265,7 @@ export default function ClientInvoiceDetail() {
 
   // ── core state ──────────────────────────────────────────────────────────────
   const [customLines, setCustomLines] = useState<CustomLine[]>([]);
+  const [invoiceAttachments, setInvoiceAttachments] = useState<ClientInvoiceAttachment[]>([]);
   const [selectedEstimateId, setSelectedEstimateId] = useState<string>("");
   const [selectedVariationIds, setSelectedVariationIds] = useState<string[]>([]);
   const [selectedBillIds, setSelectedBillIds] = useState<string[]>([]);
@@ -254,6 +283,7 @@ export default function ClientInvoiceDetail() {
   const [introCollapsed, setIntroCollapsed] = useState(true);
   const [closingCollapsed, setClosingCollapsed] = useState(true);
   const [termsCollapsed, setTermsCollapsed] = useState(true);
+  const [attachmentsCollapsed, setAttachmentsCollapsed] = useState(true);
   const [termsAndConditions, setTermsAndConditions] = useState<string>("");
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>("");
   const [invoiceNumberOverride, setInvoiceNumberOverride] = useState(false);
@@ -308,19 +338,38 @@ export default function ClientInvoiceDetail() {
     ];
   });
   const [customLineColPickerOpen, setCustomLineColPickerOpen] = useState(false);
-  const [bulkAccountCode, setBulkAccountCode] = useState("");
+  // Per-line Xero overrides for the non-custom sources, keyed by
+  // lineAccountKey(). The breakdown is rebuilt from source data on every
+  // render, so an override cannot live on the derived line — it is keyed by the
+  // line's stable identity and persisted on the invoice. An absent field means
+  // "company default account, GST charged, project's own tracking option".
+  type LineXeroOverride = {
+    account?: string | null;
+    /** Xero TaxType, e.g. OUTPUT ("GST on Income") or EXEMPTOUTPUT. */
+    taxType?: string;
+    taxable?: boolean;
+    tracking?: Record<string, string>;
+  };
+  // Only a GST-bearing sales rate adds 10%; every other rate is 0%.
+  const GST_BEARING_TAX_TYPES = new Set(["OUTPUT", "OUTPUT2"]);
+  const [lineXeroOverrides, setLineXeroOverrides] = useState<Record<string, LineXeroOverride>>({});
   const [modalBillIds, setModalBillIds] = useState<string[]>([]);
   const [modalTimesheetIds, setModalTimesheetIds] = useState<string[]>([]);
   const [modalSelectionOptionIds, setModalSelectionOptionIds] = useState<string[]>([]);
 
   // ── queries ──────────────────────────────────────────────────────────────────
-  const { data: xeroStatus } = useQuery<{ connected: boolean }>({
+  const { data: xeroStatus } = useQuery<{
+    connected: boolean;
+    trackingCategory1Id?: string;
+    trackingCategory2Id?: string;
+  }>({
     queryKey: ["/api/xero/status"],
   });
 
   // T004: PDF + email state
   const [invoicePdfGenerating, setInvoicePdfGenerating] = useState(false);
   const [invoicePreviewOpen, setInvoicePreviewOpen] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [invoiceSendModalOpen, setInvoiceSendModalOpen] = useState(false);
   const [invoiceSendData, setInvoiceSendData] = useState<{
     lineItems: Array<{ label: string; description?: string | null; claimPct?: number | null; amountExTax: number; gst: number; amountIncTax: number }>;
@@ -346,7 +395,21 @@ export default function ClientInvoiceDetail() {
   const docStyle = (companySettings?.documentStyle as "style1" | "style2" | undefined) || "style1";
 
   const { data: xeroAccounts = [] } = useQuery<Array<{ code: string; name: string; type: string; accountId: string }>>({
-    queryKey: ["/api/xero/accounts"],
+    queryKey: ["/api/xero/accounts?kind=revenue"],
+  });
+
+  const { data: xeroTaxRates = [] } = useQuery<Array<{ taxType: string; name: string }>>({
+    queryKey: ["/api/xero/tax-rates"],
+    enabled: !!xeroStatus?.connected,
+  });
+
+  const { data: xeroTrackingCategories = [] } = useQuery<Array<{
+    trackingCategoryId: string;
+    name: string;
+    options: Array<{ trackingOptionId: string; name: string }>;
+  }>>({
+    queryKey: ["/api/xero/tracking-categories"],
+    enabled: !!xeroStatus?.connected,
   });
 
   const { data: invoice, isLoading: invoiceLoading } = useQuery<ClientInvoice>({
@@ -423,7 +486,12 @@ export default function ClientInvoiceDetail() {
 
   const { data: projectInvoices = [] } = useQuery<ClientInvoice[]>({
     queryKey: ["/api/client-invoices", selectedProjectId],
-    queryFn: () => fetch(`/api/client-invoices?projectId=${selectedProjectId}`).then(r => r.json()),
+    queryFn: () =>
+      fetch(`/api/client-invoices?projectId=${selectedProjectId}`, { credentials: "include" })
+        .then((r) => r.json())
+        // A failed request answers with an error object, not a list. Without this
+        // the page white-screens on `.filter` and blames the client.
+        .then((d) => (Array.isArray(d) ? d : [])),
     enabled: !!selectedProjectId,
   });
 
@@ -432,7 +500,7 @@ export default function ClientInvoiceDetail() {
   // percentage-based progress claims reconcile to the contract to the penny
   // instead of leaving a phantom rounding cent. claimPercent here is what each
   // OTHER invoice has billed for the same variation/allowance line.
-  const { data: projectInvoiceVariations = [] } = useQuery<Array<{ variationId: string; invoiceId: string; claimPercent: number }>>({
+  const { data: projectInvoiceVariations = [] } = useQuery<Array<{ variationId: string; invoiceId: string; invoiceNumber: string | null; claimPercent: number }>>({
     queryKey: ["/api/invoice-variations/by-project", selectedProjectId],
     queryFn: () => fetch(`/api/invoice-variations/by-project?projectId=${selectedProjectId}`, { credentials: "include" }).then(r => r.json()),
     enabled: !!selectedProjectId,
@@ -545,8 +613,14 @@ export default function ClientInvoiceDetail() {
         setShowAmountsIncTax((invoice as any).showAmountsIncTax);
       }
       setTermsAndConditions((invoice as any).termsAndConditions || "");
+      const files = (invoice as any).attachments;
+      if (Array.isArray(files)) setInvoiceAttachments(files as ClientInvoiceAttachment[]);
       if ((invoice as any).contractClaimRows && Array.isArray((invoice as any).contractClaimRows)) {
         setContractClaimRows((invoice as any).contractClaimRows as ContractClaimRow[]);
+      }
+      const overrides = (invoice as any).lineXeroOverrides;
+      if (overrides && typeof overrides === "object" && !Array.isArray(overrides)) {
+        setLineXeroOverrides(overrides as Record<string, LineXeroOverride>);
       }
       // Open intro/closing if they have content
       if (invoice.introductionText) setIntroCollapsed(false);
@@ -770,6 +844,22 @@ export default function ClientInvoiceDetail() {
     otherPct + thisPct >= 100 - CLAIM_CLOSE_TOL &&
     otherPct < 100 - CLAIM_CLOSE_TOL;
 
+  // How much of each variation is ALREADY claimed on the project's OTHER
+  // invoices — see shared/invoiceClaims.ts for why the guard is cumulative
+  // percent rather than "is it linked anywhere".
+  const otherInvoiceVariationClaims = useMemo(
+    () => summariseClaimsElsewhere(projectInvoiceVariations, (r) => r.variationId, effectiveInvoiceId),
+    [projectInvoiceVariations, effectiveInvoiceId],
+  );
+
+  // Claim percent still available for a variation on THIS invoice (0–100).
+  const getVariationRemainingPercent = (variationId: string) =>
+    remainingLineClaimPercent(otherInvoiceVariationClaims[variationId]);
+
+  // Fully claimed elsewhere — nothing left to bill, so the picker locks it.
+  const isVariationFullyClaimedElsewhere = (variationId: string) =>
+    isFullyClaimedElsewhere(otherInvoiceVariationClaims[variationId]);
+
   // Per-row contract claim cents for THIS invoice. When this invoice closes the
   // contract, the rounding residual is absorbed into the last claimed row so the
   // rows and the total reconcile exactly to the remaining contract balance.
@@ -917,6 +1007,12 @@ export default function ClientInvoiceDetail() {
     amountIncCents: number;
     taxable: boolean;
     accountCode?: string | null;
+    taxType?: string;
+    tracking?: Array<{ categoryId: string; optionId: string }>;
+    // Editor-only extras — the save payload picks fields explicitly, so these
+    // never reach the server. `accountKey` is the line's override identity;
+    // custom lines use `custom#<index>` and write through to their own column.
+    accountKey?: string;
     // PDF-only extras (stripped by the server's Zod schema on save)
     label?: string;
     pdfDescription?: string;
@@ -924,13 +1020,90 @@ export default function ClientInvoiceDetail() {
   };
 
   // Split an inc-GST cents amount into ex + gst (claims are stored inc GST).
-  const splitInc = (incCents: number) => {
+  // A GST-free line is billed at its own amount with no GST inside it, so the
+  // ex-GST figure is the amount itself and the invoice total drops by the GST.
+  const splitInc = (incCents: number, taxable = true) => {
+    if (!taxable) return { ex: incCents, gst: 0 };
     const ex = Math.round(incCents / (1 + GST_RATE));
     return { ex, gst: incCents - ex };
   };
   // GST on top of an ex-GST cents amount (cost-plus sources + custom lines).
   const gstOnEx = (exCents: number, taxable: boolean) =>
     taxable ? Math.round(exCents * GST_RATE) : 0;
+
+  // Stable identity for a non-custom line, used to key its Xero account
+  // override. `labour` and `markup` are single lines per invoice and so need
+  // no id. Custom lines are excluded — they carry their own account column.
+  // The project already answers the Jobs category — the push falls back to it,
+  // so the cell should say so instead of reading as unset.
+  const projectTrackingOptionName =
+    ((currentProject as any)?.xeroTrackingOptionName as string | undefined) || undefined;
+
+  const lineAccountKey = (source: BreakdownLine["source"], id?: string) =>
+    id ? `${source}:${id}` : source;
+  const overrideFor = (source: BreakdownLine["source"], id?: string): LineXeroOverride =>
+    lineXeroOverrides[lineAccountKey(source, id)] ?? {};
+  const accountFor = (source: BreakdownLine["source"], id?: string) =>
+    overrideFor(source, id).account || null;
+  // Lines charge GST unless explicitly marked otherwise. Marking a line GST-free
+  // does not gross it up: the line's own amount is what the client pays, and the
+  // GST inside it comes off the invoice total (same as custom lines already do).
+  const taxTypeFor = (source: BreakdownLine["source"], id?: string) =>
+    overrideFor(source, id).taxType ?? (overrideFor(source, id).taxable === false ? "NONE" : "OUTPUT");
+  const taxableFor = (source: BreakdownLine["source"], id?: string) =>
+    GST_BEARING_TAX_TYPES.has(taxTypeFor(source, id));
+  // Resolved tracking for a line: its own overrides, else the project's option
+  // on the Jobs category, which is what every line used to get unconditionally.
+  const trackingForKey = (key: string) => {
+    const own = (lineXeroOverrides[key] ?? {}).tracking ?? {};
+    const pairs = Object.entries(own).filter(([, optionId]) => !!optionId);
+    if (pairs.length > 0) return pairs.map(([categoryId, optionId]) => ({ categoryId, optionId }));
+    return undefined;
+  };
+  const trackingFor = (source: BreakdownLine["source"], id?: string) =>
+    trackingForKey(lineAccountKey(source, id));
+
+  // Write an override by the line's accountKey. Custom lines keep their account
+  // and taxable flag on their own row; everything else goes into the map.
+  const setXeroByKey = (key: string, patch: LineXeroOverride) => {
+    if (key.startsWith("custom#")) {
+      const index = Number(key.slice("custom#".length));
+      setCustomLines((prev) =>
+        prev.map((l, i) =>
+          i === index
+            ? {
+                ...l,
+                ...(patch.account !== undefined ? { xeroAccountCode: patch.account } : {}),
+                ...(patch.taxable !== undefined ? { taxable: patch.taxable } : {}),
+              }
+            : l,
+        ),
+      );
+      // A custom line still needs somewhere to keep its tracking.
+      if (patch.tracking === undefined) return;
+    }
+    setLineXeroOverrides((prev) => {
+      const next: LineXeroOverride = { ...(prev[key] ?? {}), ...patch };
+      if (patch.tracking !== undefined) {
+        next.tracking = Object.fromEntries(
+          Object.entries(patch.tracking).filter(([, v]) => !!v),
+        );
+        if (Object.keys(next.tracking).length === 0) delete next.tracking;
+      }
+      if (next.account === null || next.account === "") delete next.account;
+      if (next.taxable === true) delete next.taxable;
+      if (Object.keys(next).length === 0) {
+        const { [key]: _dropped, ...rest } = prev;
+        return rest;
+      }
+      return { ...prev, [key]: next };
+    });
+  };
+
+  // Apply one field down every line in the breakdown.
+  const setXeroForAll = (patch: LineXeroOverride) => {
+    buildInvoiceLineBreakdown().forEach((l) => l.accountKey && setXeroByKey(l.accountKey, patch));
+  };
 
   const buildInvoiceLineBreakdown = (): BreakdownLine[] => {
     const lines: BreakdownLine[] = [];
@@ -940,33 +1113,48 @@ export default function ClientInvoiceDetail() {
       for (const row of contractClaimRows) {
         if (!baseContractCents || !row.claimPercent) continue;
         const inc = contractRowCents[row.id] ?? 0;
-        const { ex, gst } = splitInc(inc);
+        const taxable = taxableFor("contract", row.id);
+        const { ex, gst } = splitInc(inc, taxable);
         lines.push({
           source: "contract",
           description: `${row.name || "Contract Claim"}${row.description ? ` — ${row.description}` : ""} (${row.claimPercent}%)`,
-          amountExCents: ex, gstCents: gst, amountIncCents: inc, taxable: true,
+          amountExCents: ex, gstCents: gst, amountIncCents: ex + gst, taxable,
+          accountCode: accountFor("contract", row.id),
+          taxType: taxTypeFor("contract", row.id),
+          tracking: trackingFor("contract", row.id),
+          accountKey: lineAccountKey("contract", row.id),
           label: row.name || "Contract Claim", pdfDescription: row.description, claimPct: row.claimPercent,
         });
       }
       for (const v of getSelectedVariations()) {
         const pct = variationClaims[v.id] ?? 100;
         const inc = getVariationClaimCents(v);
-        const { ex, gst } = splitInc(inc);
+        const taxable = taxableFor("variation", v.id);
+        const { ex, gst } = splitInc(inc, taxable);
         lines.push({
           source: "variation",
           description: `Variation ${v.variationNumber || ""}${v.name ? `: ${v.name}` : ""} (${pct}%)`,
-          amountExCents: ex, gstCents: gst, amountIncCents: inc, taxable: true,
+          amountExCents: ex, gstCents: gst, amountIncCents: ex + gst, taxable,
+          accountCode: accountFor("variation", v.id),
+          taxType: taxTypeFor("variation", v.id),
+          tracking: trackingFor("variation", v.id),
+          accountKey: lineAccountKey("variation", v.id),
           label: `Variation ${v.variationNumber || ""}`, pdfDescription: v.name || undefined, claimPct: pct,
         });
       }
       for (const item of getSelectedAllowanceItems()) {
         const pct = allowanceClaims[item.id] ?? 100;
         const inc = getAllowanceClaimCents(item);
-        const { ex, gst } = splitInc(inc);
+        const taxable = taxableFor("allowance", item.id);
+        const { ex, gst } = splitInc(inc, taxable);
         lines.push({
           source: "allowance",
           description: `Allowance — ${item.name || ""} (${pct}%)`,
-          amountExCents: ex, gstCents: gst, amountIncCents: inc, taxable: true,
+          amountExCents: ex, gstCents: gst, amountIncCents: ex + gst, taxable,
+          accountCode: accountFor("allowance", item.id),
+          taxType: taxTypeFor("allowance", item.id),
+          tracking: trackingFor("allowance", item.id),
+          accountKey: lineAccountKey("allowance", item.id),
           label: `Allowance - ${item.name || ""}`, claimPct: pct,
         });
       }
@@ -976,42 +1164,62 @@ export default function ClientInvoiceDetail() {
       const selectedTimesheets = getSelectedTimesheets();
       if (selectedTimesheets.length > 0) {
         const ex = calculateLabourTotal();
-        const gst = gstOnEx(ex, true);
+        const labourTaxable = taxableFor("labour");
+        const gst = gstOnEx(ex, labourTaxable);
         lines.push({
           source: "labour",
           description: `Labour — ${selectedTimesheets.length} timesheet${selectedTimesheets.length === 1 ? "" : "s"}`,
-          amountExCents: ex, gstCents: gst, amountIncCents: ex + gst, taxable: true,
+          amountExCents: ex, gstCents: gst, amountIncCents: ex + gst, taxable: labourTaxable,
+          accountCode: accountFor("labour"),
+          taxType: taxTypeFor("labour"),
+          tracking: trackingFor("labour"),
+          accountKey: lineAccountKey("labour"),
           label: "Labour",
         });
       }
       for (const bill of getSelectedBills()) {
         const ex = bill.total;
-        const gst = gstOnEx(ex, true);
+        const billTaxable = taxableFor("bill", bill.id);
+        const gst = gstOnEx(ex, billTaxable);
         const supplierName = (bill as any).supplierName as string | undefined;
         lines.push({
           source: "bill",
           description: `${supplierName || "Bill"}${bill.billNumber ? ` — ${bill.billNumber}` : ""}`,
-          amountExCents: ex, gstCents: gst, amountIncCents: ex + gst, taxable: true,
+          amountExCents: ex, gstCents: gst, amountIncCents: ex + gst, taxable: billTaxable,
+          accountCode: accountFor("bill", bill.id),
+          taxType: taxTypeFor("bill", bill.id),
+          tracking: trackingFor("bill", bill.id),
+          accountKey: lineAccountKey("bill", bill.id),
           label: supplierName || "Bill", pdfDescription: bill.billNumber || undefined,
         });
       }
       for (const o of getSelectedSelectionOptions()) {
         const ex = o.totalCost || 0;
-        const gst = gstOnEx(ex, true);
+        const selTaxable = taxableFor("selection", o.id);
+        const gst = gstOnEx(ex, selTaxable);
         lines.push({
           source: "selection",
           description: `Selection — ${o.name || ""}`,
-          amountExCents: ex, gstCents: gst, amountIncCents: ex + gst, taxable: true,
+          amountExCents: ex, gstCents: gst, amountIncCents: ex + gst, taxable: selTaxable,
+          accountCode: accountFor("selection", o.id),
+          taxType: taxTypeFor("selection", o.id),
+          tracking: trackingFor("selection", o.id),
+          accountKey: lineAccountKey("selection", o.id),
           label: `Selection - ${o.name || ""}`,
         });
       }
       const markupEx = Math.round(calculateMarkup() * 100);
       if (markupEx !== 0) {
-        const gst = gstOnEx(markupEx, true);
+        const markupTaxable = taxableFor("markup");
+        const gst = gstOnEx(markupEx, markupTaxable);
         lines.push({
           source: "markup",
           description: `Builder's margin (${form.watch("markupPercent") || 0}%)`,
-          amountExCents: markupEx, gstCents: gst, amountIncCents: markupEx + gst, taxable: true,
+          amountExCents: markupEx, gstCents: gst, amountIncCents: markupEx + gst, taxable: markupTaxable,
+          accountCode: accountFor("markup"),
+          taxType: taxTypeFor("markup"),
+          tracking: trackingFor("markup"),
+          accountKey: lineAccountKey("markup"),
           label: "Builder's margin",
         });
       }
@@ -1020,7 +1228,7 @@ export default function ClientInvoiceDetail() {
     // Custom lines (both methods). Prices are entered EX GST; GST applies only
     // when the line is taxable — this is the single GST convention (the row
     // display, footer, PDF, and Xero all derive from these same cents).
-    for (const line of customLines) {
+    customLines.forEach((line, customIndex) => {
       const ex = Math.round(line.totalPrice * 100);
       const gst = gstOnEx(ex, line.taxable);
       lines.push({
@@ -1028,10 +1236,12 @@ export default function ClientInvoiceDetail() {
         description: line.name || line.description || "Custom Item",
         amountExCents: ex, gstCents: gst, amountIncCents: ex + gst, taxable: line.taxable,
         accountCode: line.xeroAccountCode || null,
+        tracking: trackingForKey(`custom#${customIndex}`),
+        accountKey: `custom#${customIndex}`,
         label: line.name || line.description || "Custom Item",
         pdfDescription: line.name ? line.description || undefined : undefined,
       });
-    }
+    });
 
     return lines;
   };
@@ -1154,6 +1364,7 @@ export default function ClientInvoiceDetail() {
       introductionText: data.introductionText,
       closingText: data.closingText,
       termsAndConditions: termsAndConditions || null,
+      attachments: invoiceAttachments,
       subtotal: totals.subtotal,
       markupAmount: totals.markupAmount,
       gstAmount: totals.gstAmount,
@@ -1166,10 +1377,13 @@ export default function ClientInvoiceDetail() {
         amountIncCents: l.amountIncCents,
         taxable: l.taxable,
         accountCode: l.accountCode ?? null,
+        taxType: l.taxType ?? null,
+        tracking: l.tracking ?? null,
       })),
       columnConfig: columnConfig,
       showAmountsIncTax: showAmountsIncTax,
       contractClaimRows: contractClaimRows,
+      lineXeroOverrides: lineXeroOverrides,
       sendToXero: sendToXero,
     };
   };
@@ -1220,6 +1434,16 @@ export default function ClientInvoiceDetail() {
     }
   };
 
+  // The cross-invoice claim lists drive the "already claimed elsewhere" guard
+  // in the variation/allowance pickers. queryClient runs staleTime: Infinity,
+  // so without an explicit invalidation a save here leaves every other invoice
+  // in the session reading a stale list — the guard would miss a variation
+  // that was just claimed, and un-linking one would not free it again.
+  const invalidateProjectClaimQueries = () => {
+    queryClient.invalidateQueries({ queryKey: ["/api/invoice-variations/by-project"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/invoice-allowances/by-project"] });
+  };
+
   const createMutation = useMutation({
     mutationFn: async (data: InvoiceFormData) => {
       const payload = buildInvoicePayload(data);
@@ -1240,6 +1464,7 @@ export default function ClientInvoiceDetail() {
     },
     onSuccess: async (inv) => {
       queryClient.invalidateQueries({ queryKey: ["/api/client-invoices"] });
+      invalidateProjectClaimQueries();
       // Refresh the auto-generated number so the next new invoice advances
       // instead of reusing (and colliding with) the number we just consumed.
       queryClient.invalidateQueries({ queryKey: ["/api/client-invoices/next-number"] });
@@ -1310,6 +1535,7 @@ export default function ClientInvoiceDetail() {
       queryClient.invalidateQueries({
         queryKey: [`/api/client-invoices/${effectiveInvoiceId}`],
       });
+      invalidateProjectClaimQueries();
       if (effectiveInvoiceId) invalidateInvoiceChildQueries(effectiveInvoiceId);
       if (user?.id) {
         logActivity({
@@ -1516,6 +1742,49 @@ export default function ClientInvoiceDetail() {
     }
   };
 
+  const duplicateInvoiceMutation = useMutation({
+    mutationFn: async () => {
+      const payload = buildInvoicePayload(form.getValues());
+      const copy = await apiRequest("/api/client-invoices/full", "POST", {
+        invoice: {
+          ...payload,
+          // A duplicate is a fresh draft: it must not inherit the original's
+          // number, Xero link, payments or approved state.
+          invoiceNumber: undefined,
+          name: `${payload.name} (copy)`,
+          status: "draft",
+          paidAmount: 0,
+          balanceAmount: payload.totalAmount,
+          sendToXero: false,
+        },
+        ...buildInvoiceChildren(),
+      });
+      return copy as ClientInvoice;
+    },
+    onSuccess: (copy) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/client-invoices"] });
+      toast({ title: "Invoice duplicated" });
+      setLocation(
+        projectIdFromParams
+          ? `/projects/${projectIdFromParams}/client-invoices/${copy.id}`
+          : `/client-invoices/${copy.id}`,
+      );
+    },
+    onError: (e: any) =>
+      toast({ title: "Could not duplicate", description: e?.message, variant: "destructive" }),
+  });
+
+  const deleteInvoiceMutation = useMutation({
+    mutationFn: async () => apiRequest(`/api/client-invoices/${effectiveInvoiceId}`, "DELETE"),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/client-invoices"] });
+      toast({ title: "Invoice deleted" });
+      handleCancel();
+    },
+    onError: (e: any) =>
+      toast({ title: "Could not delete", description: e?.message, variant: "destructive" }),
+  });
+
   const handlePushToXero = async () => {
     if (!effectiveInvoiceId || xeroPushing) return;
     setXeroPushing(true);
@@ -1633,6 +1902,7 @@ export default function ClientInvoiceDetail() {
       const balanceDueCents = totalCents - paidCents;
       const blob = await pdf(
         <InvoiceDocument
+          attachments={invoiceAttachments}
           invoiceNumber={form.watch("invoiceNumber") || invoice?.invoiceNumber || "Invoice"}
           issueDate={form.watch("invoiceDate") || invoice?.invoiceDate}
           dueDate={form.watch("dueDate") || invoice?.dueDate}
@@ -1691,28 +1961,241 @@ export default function ClientInvoiceDetail() {
 
   // ── render helpers ────────────────────────────────────────────────────────────
 
-  const renderLineTableHeader = (_includeContractCols: boolean = false) => (
-    <TableRow className="h-6 bg-muted/30">
-      {isColVisible("name") && <TableHead className="w-40 text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Name</TableHead>}
-      {isColVisible("description") && <TableHead className="text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Description</TableHead>}
-      {isColVisible("claimPercent") && (
-        <TableHead className="text-right w-20 text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Claim %</TableHead>
+  // ── Progress-claim line grid ──────────────────────────────────────────────
+  // Contract claims, variations and allowances are the same seven columns with
+  // the same money maths — only the name, description and claim-% cells differ
+  // per source. One column set and one grid renderer, so the three can't drift
+  // apart the way three copies of the markup did.
+  type ClaimLine = {
+    key: string;
+    /** Override identity — `contract:<id>` etc, not the bare row id. */
+    xeroKey: string;
+    name: ReactNode;
+    description: ReactNode;
+    claimPercentCell: ReactNode;
+    /** Dollars, inc GST — the ex/tax columns derive from this. */
+    claimAmt: number;
+    onRemove: () => void;
+  };
+
+  const claimLineColumns = (): LineItemColumn<ClaimLine>[] => {
+    const exOf = (incAmt: number) => incAmt / (1 + GST_RATE);
+    const cols: LineItemColumn<ClaimLine>[] = [];
+    // Name/description/claim% hold inline editors on the contract grid, so they
+    // opt out of LineItemTable's truncating wrapper.
+    if (isColVisible("name"))
+      cols.push({ key: "name", header: "Name", width: 160, truncate: false, className: "font-medium", cell: (l) => l.name });
+    if (isColVisible("description"))
+      cols.push({ key: "description", header: "Description", width: 260, truncate: false, className: "text-muted-foreground", cell: (l) => l.description });
+    if (isColVisible("claimPercent"))
+      cols.push({ key: "claimPercent", header: "Claim %", align: "right", width: 80, truncate: false, cell: (l) => l.claimPercentCell });
+    if (isColVisible("claimAmount"))
+      cols.push({ key: "claimAmount", header: "Claim $", align: "right", width: 112, className: "font-medium", cell: (l) => formatCurrency(l.claimAmt) });
+    // Tax and Account sit inline, exactly as they do on Custom Lines — the Xero
+    // Posting panel is for setting them in bulk and for tracking, not the only
+    // way to reach them.
+    if (isColVisible("tax")) cols.push({
+      key: "taxType", header: "Tax", width: 128, truncate: false,
+      cell: (l) => {
+        const current = lineXeroOverrides[l.xeroKey]?.taxType
+          ?? (lineXeroOverrides[l.xeroKey]?.taxable === false ? "NONE" : "OUTPUT");
+        // Fall back to the two rates every AU org has when Xero isn't reachable,
+        // so the column is still usable rather than a free-text guess.
+        const rates = xeroTaxRates.length > 0
+          ? xeroTaxRates
+          : [{ taxType: "OUTPUT", name: "GST on Income" }, { taxType: "NONE", name: "No GST" }];
+        return (
+          <Select value={current} onValueChange={(v) => setXeroByKey(l.xeroKey, { taxType: v })}>
+            <SelectTrigger className="h-7 text-table border-0 bg-transparent shadow-none focus:ring-1 focus:ring-ring px-1.5 rounded-sm w-full" data-testid={`select-tax-${l.xeroKey}`}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {rates.map((r) => (
+                <SelectItem key={r.taxType} value={r.taxType}>{r.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        );
+      },
+    });
+    // One column per mapped Xero tracking category (Xero allows two per line).
+    // Rendered only when the connection actually has categories, so an org that
+    // doesn't use tracking keeps a narrower grid.
+    for (const cat of (isColVisible("tracking") ? (xeroTrackingCategories ?? []).slice(0, 2) : [])) {
+      cols.push({
+        key: `tracking-${cat.trackingCategoryId}`, header: cat.name, width: 128, truncate: false,
+        cell: (l) => (
+          <Select
+            value={lineXeroOverrides[l.xeroKey]?.tracking?.[cat.trackingCategoryId] || "__none__"}
+            onValueChange={(v) =>
+              setXeroByKey(l.xeroKey, {
+                tracking: {
+                  ...(lineXeroOverrides[l.xeroKey]?.tracking ?? {}),
+                  [cat.trackingCategoryId]: v === "__none__" ? "" : v,
+                },
+              })
+            }
+          >
+            <SelectTrigger className="h-7 text-table border-0 bg-transparent shadow-none focus:ring-1 focus:ring-ring px-1.5 rounded-sm w-full" data-testid={`select-tracking-${cat.trackingCategoryId}-${l.xeroKey}`}>
+              <SelectValue
+                placeholder={
+                  cat.trackingCategoryId === xeroStatus?.trackingCategory2Id && projectTrackingOptionName
+                    ? projectTrackingOptionName
+                    : `— ${cat.name} —`
+                }
+              />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__none__">
+                <span className="text-muted-foreground">
+                  {cat.trackingCategoryId === xeroStatus?.trackingCategory2Id && projectTrackingOptionName
+                    ? `${projectTrackingOptionName} (from project)`
+                    : "— Project default —"}
+                </span>
+              </SelectItem>
+              {(cat.options ?? []).map((o) => (
+                <SelectItem key={o.trackingOptionId} value={o.trackingOptionId}>{o.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        ),
+      });
+    }
+    if (isColVisible("account")) cols.push({
+      key: "account", header: "Account", width: 128, truncate: false,
+      cell: (l) => {
+        const value = lineXeroOverrides[l.xeroKey]?.account || "";
+        return xeroAccounts.length > 0 ? (
+          <Select
+            value={value || "__none__"}
+            onValueChange={(v) => setXeroByKey(l.xeroKey, { account: v === "__none__" ? null : v })}
+          >
+            <SelectTrigger className="h-7 text-table border-0 bg-transparent shadow-none focus:ring-1 focus:ring-ring px-1.5 rounded-sm w-full" data-testid={`select-account-${l.xeroKey}`}>
+              <SelectValue placeholder="— Account —" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__none__"><span className="text-muted-foreground">— Default —</span></SelectItem>
+              {xeroAccounts.map((acc) => (
+                <SelectItem key={acc.code} value={acc.code}>{acc.code} — {acc.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        ) : (
+          <input
+            value={value}
+            onChange={(e) => setXeroByKey(l.xeroKey, { account: e.target.value || null })}
+            placeholder="Account"
+            className="w-full h-7 px-1.5 text-table bg-transparent border-0 outline-none focus:ring-1 focus:ring-ring rounded-sm placeholder:text-muted-foreground/30"
+            data-testid={`input-account-${l.xeroKey}`}
+          />
+        );
+      },
+    });
+    if (isColVisible("amountExTax"))
+      cols.push({ key: "amountExTax", header: "Ex Tax", align: "right", width: 112, cell: (l) => formatCurrency(exOf(l.claimAmt)) });
+    if (isColVisible("amountTax"))
+      cols.push({ key: "amountTax", header: "Tax", align: "right", width: 96, cell: (l) => formatCurrency(l.claimAmt - exOf(l.claimAmt)) });
+    if (isColVisible("amountIncTax"))
+      cols.push({ key: "amountIncTax", header: "Inc Tax", align: "right", width: 112, className: "font-medium", cell: (l) => formatCurrency(l.claimAmt) });
+    return cols;
+  };
+
+  // Section header bar shared by every sub-section: accent dot, label, and a
+  // right-hand slot for the section total, its action, or a collapse chevron.
+  // One bar so the sections can't drift apart the way the grids had.
+  const sectionHeader = (opts: {
+    label: string;
+    /** "card" titles a whole card; "section" titles a band inside one. */
+    variant?: "card" | "section";
+    right?: ReactNode;
+    icon?: ReactNode;
+    onToggle?: () => void;
+    collapsed?: boolean;
+    testId?: string;
+  }) => (
+    <div
+      className={cn(
+        "flex items-center justify-between px-3 gap-2 border-b border-border/50",
+        opts.variant === "card" ? "h-9 bg-card" : "h-8 bg-muted/40",
+        opts.onToggle && "cursor-pointer",
       )}
-      {isColVisible("claimAmount") && (
-        <TableHead className="text-right w-28 text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Claim $</TableHead>
-      )}
-      {isColVisible("amountExTax") && (
-        <TableHead className="text-right w-28 text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Ex Tax</TableHead>
-      )}
-      {isColVisible("amountTax") && (
-        <TableHead className="text-right w-24 text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Tax</TableHead>
-      )}
-      {isColVisible("amountIncTax") && (
-        <TableHead className="text-right w-28 text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Inc Tax</TableHead>
-      )}
-      <TableHead className="w-8 py-0" />
-    </TableRow>
+      onClick={opts.onToggle}
+      data-testid={opts.testId}
+    >
+      <div className="flex items-center gap-2 min-w-0">
+        <span
+          className={cn(
+            "truncate",
+            opts.variant === "card"
+              ? "text-xs font-semibold text-foreground uppercase tracking-wide"
+              : "text-xs font-medium text-muted-foreground",
+          )}
+        >
+          {opts.label}
+        </span>
+        {opts.icon}
+      </div>
+      <div className="flex items-center gap-2 flex-shrink-0">
+        {opts.right}
+        {opts.collapsed !== undefined &&
+          (opts.collapsed ? (
+            <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+          ) : (
+            <ChevronUp className="h-3.5 w-3.5 text-muted-foreground" />
+          ))}
+      </div>
+    </div>
   );
+
+  // The action that opens a picker, sized to sit in a section header.
+  const sectionAction = (label: string, onClick: () => void, testId: string) => (
+    <button
+      type="button"
+      onClick={(e) => { e.stopPropagation(); onClick(); }}
+      className="h-6 px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
+      data-testid={testId}
+    >
+      <Plus className="w-3 h-3" />
+      {label}
+    </button>
+  );
+
+  // Header treatment shared by every line grid on this page, matched to the
+  // allowance grid (LineItemsTable): 9px uppercase semibold in muted-foreground
+  // — literal 9px, not the `text-label` token, because tailwind-merge reads
+  // `text-label` as a text-COLOUR utility and drops it in favour of the colour
+  // class beside it (the same reason <TableHead>'s own text-label never lands)
+  // under a hairline rule. No fill — --table-header-bg is 2% off white and
+  // vanishes on a card. The rule must sit on the th, not the thead: the table
+  // is border-separate, and that border model never paints row-group borders.
+  const GRID_HEADER =
+    "bg-transparent [&_th]:border-b [&_th]:border-border [&_th]:text-[9px] [&_th]:text-muted-foreground [&_th]:font-semibold";
+
+  // All three grids stack in one document, so they share a resize namespace —
+  // dragging a column on any of them keeps the whole invoice aligned.
+  const renderClaimGrid = (lines: ClaimLine[], testId: string) => (
+    <LineItemTable
+      fixedLayout
+      filler
+      resizeNamespace="client-invoice-claim-lines"
+      headerClassName={GRID_HEADER}
+      data={lines}
+      columns={claimLineColumns()}
+      rowKey={(l) => l.key}
+      testId={testId}
+      rowTestId={(l) => `row-${testId}-${l.key}`}
+      actions={(l) => (
+        <button
+          type="button"
+          onClick={l.onRemove}
+          className="text-muted-foreground hover:text-destructive"
+        >
+          <X className="w-3.5 h-3.5" />
+        </button>
+      )}
+    />
+  );
+
 
 
   // ── render ────────────────────────────────────────────────────────────────────
@@ -1741,37 +2224,19 @@ export default function ClientInvoiceDetail() {
               </div>
 
               <div className="flex items-center gap-1.5">
+                {/* Email stays inline — for an invoice, sending it is a primary
+                    act, not an occasional one. Preview/PDF/sync/duplicate/delete
+                    move into the overflow menu, matching PurchaseOrderDetail. */}
                 {isEditMode && (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => setInvoicePreviewOpen(true)}
-                      className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
-                      data-testid="button-preview-invoice"
-                    >
-                      <Eye className="w-3 h-3" />
-                      <span>Preview</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleDownloadInvoicePdf}
-                      disabled={invoicePdfGenerating}
-                      className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
-                      data-testid="button-download-invoice-pdf"
-                    >
-                      {invoicePdfGenerating ? <Loader2 className="w-3 h-3 animate-spin" /> : <Download className="w-3 h-3" />}
-                      <span>PDF</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleOpenInvoiceSendModal}
-                      className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
-                      data-testid="button-email-invoice"
-                    >
-                      <Mail className="w-3 h-3" />
-                      <span>Email</span>
-                    </button>
-                  </>
+                  <button
+                    type="button"
+                    onClick={handleOpenInvoiceSendModal}
+                    className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
+                    data-testid="button-email-invoice"
+                  >
+                    <Mail className="w-3 h-3" />
+                    <span>Email</span>
+                  </button>
                 )}
                 <button
                   type="submit"
@@ -1786,6 +2251,56 @@ export default function ClientInvoiceDetail() {
                   )}
                   <span>{isEditMode ? "Update" : "Create"} Invoice</span>
                 </button>
+
+                {isEditMode && (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <button
+                        type="button"
+                        className="h-6 w-6 flex items-center justify-center rounded-md hover-elevate active-elevate-2 text-muted-foreground"
+                        data-testid="button-invoice-actions"
+                      >
+                        <MoreVertical className="w-3.5 h-3.5" />
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-52">
+                      <DropdownMenuItem onClick={() => setInvoicePreviewOpen(true)} data-testid="menu-preview-invoice">
+                        <Eye className="w-3.5 h-3.5 mr-2" />
+                        Preview
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={handleDownloadInvoicePdf} disabled={invoicePdfGenerating} data-testid="menu-download-invoice-pdf">
+                        <Download className="w-3.5 h-3.5 mr-2" />
+                        Download PDF
+                      </DropdownMenuItem>
+                      {xeroStatus?.connected && invoice?.xeroInvoiceId && (
+                        <DropdownMenuItem
+                          onClick={() => pullFromXeroMutation.mutate()}
+                          disabled={pullFromXeroMutation.isPending}
+                          data-testid="menu-sync-from-xero"
+                        >
+                          <RefreshCw className="w-3.5 h-3.5 mr-2" />
+                          Refresh status from Xero
+                        </DropdownMenuItem>
+                      )}
+                      <DropdownMenuItem onClick={() => duplicateInvoiceMutation.mutate()} disabled={duplicateInvoiceMutation.isPending} data-testid="menu-duplicate-invoice">
+                        <Copy className="w-3.5 h-3.5 mr-2" />
+                        Duplicate
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      {/* Deleting an invoice that exists in Xero would strand an
+                          AUTHORISED receivable there with nothing pointing at it,
+                          so the option is only offered before it is approved. */}
+                      <DropdownMenuItem
+                        onClick={() => setDeleteConfirmOpen(true)}
+                        className="text-destructive focus:text-destructive"
+                        data-testid="menu-delete-invoice"
+                      >
+                        <Trash2 className="w-3.5 h-3.5 mr-2" />
+                        {invoice?.xeroInvoiceId ? "Void & delete" : "Delete"}
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )}
               </div>
             </div>
 
@@ -1833,7 +2348,7 @@ export default function ClientInvoiceDetail() {
                 <Tooltip>
                     <TooltipTrigger asChild>
                       <div className={cn(
-                        "flex items-center gap-1.5 px-2 h-6 border rounded-md text-xs",
+                        "relative flex items-center gap-1.5 px-2 h-6 border rounded-md text-xs",
                         xeroStatus?.connected
                           ? "text-status-info border-status-info/30"
                           : "text-muted-foreground border-border opacity-60 cursor-not-allowed"
@@ -1887,22 +2402,37 @@ export default function ClientInvoiceDetail() {
                   </button>
                 )}
 
-                {/* Manual push button — only shown when sendToXero is off and no xeroInvoiceId */}
-                {isEditMode && xeroStatus?.connected && !invoice?.xeroInvoiceId && !sendToXero && (
+                {/* Approve — distinct from saving. Saving records what the
+                    invoice says; approving authorises it in Xero, which makes it
+                    a live receivable and locks the contract price it claims
+                    against. Shown until the invoice has been approved. */}
+                {isEditMode && xeroStatus?.connected && !invoice?.xeroInvoiceId && (
                   <button
                     type="button"
                     onClick={handlePushToXero}
                     disabled={xeroPushing}
-                    className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1 text-status-info border-status-info/30"
-                    data-testid="button-send-to-xero"
+                    className="h-6 w-auto px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-1"
+                    data-testid="button-approve-invoice"
                   >
                     {xeroPushing ? (
                       <Loader2 className="w-3 h-3 animate-spin" />
                     ) : (
-                      <Send className="w-3 h-3" />
+                      <Check className="w-3 h-3" />
                     )}
-                    <span>Push to Xero</span>
+                    <span>Approve</span>
                   </button>
+                )}
+
+                {/* Approved but not yet sent — the two are separate in Xero
+                    (AUTHORISED vs SentToContact) and now separate here too. */}
+                {isEditMode && invoice?.status === "approved" && (
+                  <span
+                    className="text-data text-status-info flex items-center gap-1 px-1.5 h-6 border border-status-info/30 rounded-md"
+                    data-testid="badge-approved"
+                  >
+                    <Check className="w-3 h-3" />
+                    Approved
+                  </span>
                 )}
               </div>
             </div>
@@ -1913,58 +2443,26 @@ export default function ClientInvoiceDetail() {
           <div className="flex-1 overflow-auto">
             <div className="max-w-4xl mx-auto px-3 py-3 space-y-3">
 
-                {/* Bill To strip — shows billing recipient (client + project) */}
-                {(currentProject || clientContact) && (
-                  <div className="rounded-lg border border-border bg-card overflow-hidden">
-                    <div className="h-8 flex items-center px-3 gap-2 border-b border-border/50 bg-muted/40">
-                      <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-primary/80" />
-                      <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Bill To</span>
-                    </div>
-                    <div className="px-4 py-2.5 flex items-start gap-6">
-                      {clientContact && (
-                        <div className="min-w-0">
-                          <div className="text-xs font-semibold truncate">{clientContact.name}</div>
-                          {clientContact.company && (
-                            <div className="text-xs text-muted-foreground truncate">{clientContact.company}</div>
-                          )}
-                          {(clientContact.addressFormatted || clientContact.address) && (
-                            <div className="text-xs text-muted-foreground truncate">{clientContact.addressFormatted || clientContact.address}</div>
-                          )}
-                        </div>
-                      )}
-                      {currentProject && (
-                        <div className="min-w-0">
-                          <div className="text-data text-muted-foreground/60 uppercase tracking-wide">Project</div>
-                          <div className="text-xs font-medium truncate">{(currentProject as any).name}</div>
-                          {(currentProject as any).location && (
-                            <div className="text-xs text-muted-foreground truncate">{(currentProject as any).location}</div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
-
                 {/* Card 1 — Invoice Info */}
                 <div className="rounded-lg border border-border bg-card overflow-hidden">
 
                   {/* Section header */}
-                  <div className="h-8 flex items-center px-3 gap-2 border-b border-border/50">
-                    <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-primary/80" />
-                    <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Invoice Info</span>
-                  </div>
+                  {sectionHeader({ label: "Invoice Info", variant: "card" })}
 
-                  {/* Invoice Name + Number + Dates */}
-                  <div className="px-4 py-3 space-y-3">
-                      <div className="grid grid-cols-3 gap-4">
+                  {/* Invoice Name + Number + Dates, with the recipient alongside —
+                      an invoice header is "who" and "which invoice" read together,
+                      not two stacked cards. */}
+                  <div className="px-4 py-3 grid grid-cols-1 lg:grid-cols-3 gap-4">
+                    <div className="lg:col-span-2 space-y-3">
+                      <div className="grid grid-cols-3 gap-3">
                         <FormField
                           control={form.control}
                           name="name"
                           render={({ field }) => (
                             <FormItem className="col-span-2">
-                              <FormLabel className="h-4 leading-none flex items-center text-table text-muted-foreground/70 uppercase tracking-wide font-medium">Invoice Name*</FormLabel>
+                              <FormLabel className="h-4 leading-none flex items-center text-[9px] text-muted-foreground uppercase tracking-wide font-semibold">Invoice Name*</FormLabel>
                               <FormControl>
-                                <Input {...field} className="h-8 text-sm" data-testid="input-name" />
+                                <Input {...field} className="h-7 text-[11px]" data-testid="input-name" />
                               </FormControl>
                               <FormMessage />
                             </FormItem>
@@ -1976,7 +2474,7 @@ export default function ClientInvoiceDetail() {
                           name="invoiceNumber"
                           render={({ field }) => (
                             <FormItem>
-                              <FormLabel className="h-4 leading-none flex items-center gap-1.5 text-table text-muted-foreground/70 uppercase tracking-wide font-medium">
+                              <FormLabel className="h-4 leading-none flex items-center gap-1.5 text-[9px] text-muted-foreground uppercase tracking-wide font-semibold">
                                 Invoice Number
                                 {!isEditMode && (
                                   <Tooltip>
@@ -2018,9 +2516,9 @@ export default function ClientInvoiceDetail() {
                                   {...field}
                                   readOnly={isEditMode || !invoiceNumberOverride}
                                   className={cn(
-                                    "h-8 text-sm",
+                                    "h-7 text-[11px]",
                                     !invoiceNumberOverride && !isEditMode
-                                      ? "bg-muted text-muted-foreground cursor-default"
+                                      ? "text-muted-foreground cursor-default"
                                       : ""
                                   )}
                                   data-testid="input-invoice-number"
@@ -2032,14 +2530,14 @@ export default function ClientInvoiceDetail() {
                         />
                       </div>
 
-                      {/* Invoice Date + Due Date */}
-                      <div className="grid grid-cols-3 gap-4">
+                      {/* Invoice Date + Due Date + Type */}
+                      <div className="grid grid-cols-3 gap-3">
                         <FormField
                           control={form.control}
                           name="invoiceDate"
                           render={({ field }) => (
                             <FormItem className="flex flex-col">
-                              <FormLabel className="h-4 leading-none flex items-center text-table text-muted-foreground/70 uppercase tracking-wide font-medium">Invoice Date</FormLabel>
+                              <FormLabel className="h-4 leading-none flex items-center text-[9px] text-muted-foreground uppercase tracking-wide font-semibold">Invoice Date</FormLabel>
                               <Popover open={invoiceDateOpen} onOpenChange={setInvoiceDateOpen}>
                                 <PopoverTrigger asChild>
                                   <FormControl>
@@ -2047,13 +2545,14 @@ export default function ClientInvoiceDetail() {
                                       variant="outline"
                                       size="sm"
                                       className={cn(
-                                        "justify-start text-left font-normal text-sm",
+                                        "h-7 min-h-7 w-full justify-start text-left font-normal text-[11px] px-2",
+                                        "border-input bg-background hover:bg-background",
                                         !field.value && "text-muted-foreground"
                                       )}
                                       data-testid="button-invoice-date"
                                     >
-                                      <CalendarIcon className="mr-2 h-4 w-4" />
-                                      {field.value ? format(field.value, "PPP") : "Pick a date"}
+                                      <CalendarIcon className="mr-1.5 h-3 w-3" />
+                                      {field.value ? format(field.value, "d MMM yyyy") : "Pick a date"}
                                     </Button>
                                   </FormControl>
                                 </PopoverTrigger>
@@ -2084,7 +2583,7 @@ export default function ClientInvoiceDetail() {
                           name="dueDate"
                           render={({ field }) => (
                             <FormItem className="flex flex-col">
-                              <FormLabel className="h-4 leading-none flex items-center text-table text-muted-foreground/70 uppercase tracking-wide font-medium">Due Date</FormLabel>
+                              <FormLabel className="h-4 leading-none flex items-center text-[9px] text-muted-foreground uppercase tracking-wide font-semibold">Due Date</FormLabel>
                               <Popover open={dueDateOpen} onOpenChange={(open) => { setDueDateOpen(open); if (!open) setDueDateCustom(false); }}>
                                 <PopoverTrigger asChild>
                                   <FormControl>
@@ -2092,13 +2591,14 @@ export default function ClientInvoiceDetail() {
                                       variant="outline"
                                       size="sm"
                                       className={cn(
-                                        "justify-start text-left font-normal text-sm",
+                                        "h-7 min-h-7 w-full justify-start text-left font-normal text-[11px] px-2",
+                                        "border-input bg-background hover:bg-background",
                                         !field.value && "text-muted-foreground"
                                       )}
                                       data-testid="button-due-date"
                                     >
-                                      <CalendarIcon className="mr-2 h-4 w-4" />
-                                      {field.value ? format(field.value, "PPP") : "Pick a date"}
+                                      <CalendarIcon className="mr-1.5 h-3 w-3" />
+                                      {field.value ? format(field.value, "d MMM yyyy") : "Pick a date"}
                                     </Button>
                                   </FormControl>
                                 </PopoverTrigger>
@@ -2172,50 +2672,76 @@ export default function ClientInvoiceDetail() {
                             </FormItem>
                           )}
                         />
-                        <div />
-                      </div>
-
-                      {/* Invoice Type toggle — subtle pill */}
-                      <div className="flex items-center gap-1.5 pt-0.5">
-                        <span className="text-data text-muted-foreground/40 uppercase tracking-wide">Type:</span>
-                        <div className="flex items-center rounded-full border border-border/50 overflow-hidden">
+                        <div className="flex flex-col space-y-2">
+                          <span className="h-4 leading-none flex items-center text-[9px] text-muted-foreground uppercase tracking-wide font-semibold">Type</span>
+                          <div className="flex items-center h-7 rounded-md border border-input overflow-hidden w-full bg-background">
                           <button
                             type="button"
                             onClick={() => setInvoiceType("progress_payments")}
                             className={cn(
-                              "px-2.5 py-0.5 text-table leading-none transition-colors",
+                              "flex-1 h-full text-[11px] leading-none whitespace-nowrap transition-colors",
                               invoiceType === "progress_payments"
-                                ? "bg-muted text-foreground font-medium"
-                                : "text-muted-foreground/50 hover:text-muted-foreground"
+                                ? "bg-primary text-primary-foreground font-medium"
+                                : "text-muted-foreground hover:text-foreground"
                             )}
                           >
                             Progress
                           </button>
-                          <div className="w-px h-3 bg-border/50" />
+                          <div className="w-px h-full bg-border" />
                           <button
                             type="button"
                             onClick={() => setInvoiceType("cost_plus")}
                             className={cn(
-                              "px-2.5 py-0.5 text-table leading-none transition-colors",
+                              "flex-1 h-full text-[11px] leading-none whitespace-nowrap transition-colors",
                               invoiceType === "cost_plus"
-                                ? "bg-muted text-foreground font-medium"
-                                : "text-muted-foreground/50 hover:text-muted-foreground"
+                                ? "bg-primary text-primary-foreground font-medium"
+                                : "text-muted-foreground hover:text-foreground"
                             )}
                           >
                             Cost Plus
                           </button>
+                          </div>
                         </div>
                       </div>
                     </div>
 
-                  {/* Introduction Text — collapsible */}
+                    {/* Bill To — static context, so it reads as a panel rather than
+                        another card with its own header bar. */}
+                    {(currentProject || clientContact) && (
+                      <div className="rounded-md border border-border/60 bg-muted/30 px-3 py-2.5 space-y-2">
+                        <div className="text-[9px] text-muted-foreground uppercase tracking-wide font-semibold">Bill To</div>
+                        {clientContact && (
+                          <div className="min-w-0">
+                            <div className="text-[11px] font-semibold truncate">{clientContact.name}</div>
+                            {clientContact.company && (
+                              <div className="text-[11px] text-muted-foreground truncate">{clientContact.company}</div>
+                            )}
+                            {(clientContact.addressFormatted || clientContact.address) && (
+                              <div className="text-[11px] text-muted-foreground truncate">{clientContact.addressFormatted || clientContact.address}</div>
+                            )}
+                          </div>
+                        )}
+                        {currentProject && (
+                          <div className="min-w-0 pt-1.5 border-t border-border/50">
+                            <div className="text-[9px] text-muted-foreground uppercase tracking-wide font-semibold">Project</div>
+                            <div className="text-[11px] font-medium truncate">{(currentProject as any).name}</div>
+                            {(currentProject as any).location && (
+                              <div className="text-[11px] text-muted-foreground truncate">{(currentProject as any).location}</div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+
+                  {/* Introduction — closes out the invoice header, collapsed by default */}
                   <div className="border-t border-border/50">
                     <div
-                      className="h-8 flex items-center justify-between px-3 gap-2 cursor-pointer"
+                      className="h-8 flex items-center justify-between px-3 gap-2 border-b border-border/50 cursor-pointer bg-muted/40"
                       onClick={() => setIntroCollapsed((v) => !v)}
                     >
                       <div className="flex items-center gap-2">
-                        <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-teal/70" />
                         <span className="text-xs font-medium">Introduction</span>
                       </div>
                       {introCollapsed ? (
@@ -2225,7 +2751,7 @@ export default function ClientInvoiceDetail() {
                       )}
                     </div>
                     {!introCollapsed && (
-                      <div className="px-4 pb-3">
+                      <div className="px-4 py-3">
                         <FormField
                           control={form.control}
                           name="introductionText"
@@ -2252,10 +2778,80 @@ export default function ClientInvoiceDetail() {
 
                 {/* Card 2 — Financials */}
                 <div className="rounded-lg border border-border bg-card overflow-hidden">
-                  <div className="h-8 flex items-center px-3 gap-2 border-b border-border/50 bg-muted/40">
-                    <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-sage/70" />
-                    <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Financials</span>
-                  </div>
+                  {sectionHeader({
+                    label: "Financials",
+                    variant: "card",
+                    // The one thing the removed Xero panel did that a row can't:
+                    // set a field down every line at once. Tucked behind a
+                    // popover so it costs a single icon when unused.
+                    right: xeroStatus?.connected ? (
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <button
+                            type="button"
+                            className="h-6 px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1 text-muted-foreground"
+                            data-testid="button-xero-set-all"
+                          >
+                            <SiXero className="w-3 h-3" />
+                            Set all
+                          </button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-64 p-3 space-y-3" align="end">
+                          <p className="text-[9px] uppercase tracking-wide font-semibold text-muted-foreground">
+                            Apply to every line
+                          </p>
+                          <div className="space-y-1.5">
+                            <label className="text-[9px] uppercase tracking-wide font-semibold text-muted-foreground">Account</label>
+                            <SearchableSelect
+                              value=""
+                              onValueChange={(v) => v && setXeroForAll({ account: v })}
+                              placeholder="Select account…"
+                              searchPlaceholder="Search accounts..."
+                              emptyMessage="No accounts found."
+                              triggerClassName="w-full h-7 text-[11px]"
+                              data-testid="select-all-lines-account"
+                              options={[...xeroAccounts]
+                                .sort((a, b) => (a.name || "").localeCompare(b.name || ""))
+                                .map((acc) => ({ value: acc.code, label: `${acc.code} — ${acc.name}` }))}
+                            />
+                          </div>
+                          <div className="space-y-1.5">
+                            <label className="text-[9px] uppercase tracking-wide font-semibold text-muted-foreground">Tax</label>
+                            <Select onValueChange={(v) => setXeroForAll({ taxType: v })}>
+                              <SelectTrigger className="w-full h-7 text-[11px]" data-testid="select-all-lines-tax">
+                                <SelectValue placeholder="Select rate…" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {(xeroTaxRates.length > 0
+                                  ? xeroTaxRates
+                                  : [{ taxType: "OUTPUT", name: "GST on Income" }, { taxType: "NONE", name: "No GST" }]
+                                ).map((r) => (
+                                  <SelectItem key={r.taxType} value={r.taxType}>{r.name}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          {(xeroTrackingCategories ?? []).slice(0, 2).map((cat) => (
+                            <div key={cat.trackingCategoryId} className="space-y-1.5">
+                              <label className="text-[9px] uppercase tracking-wide font-semibold text-muted-foreground">{cat.name}</label>
+                              <Select
+                                onValueChange={(v) => setXeroForAll({ tracking: { [cat.trackingCategoryId]: v } })}
+                              >
+                                <SelectTrigger className="w-full h-7 text-[11px]" data-testid={`select-all-tracking-${cat.trackingCategoryId}`}>
+                                  <SelectValue placeholder={`Select ${cat.name.toLowerCase()}…`} />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {(cat.options ?? []).map((o) => (
+                                    <SelectItem key={o.trackingOptionId} value={o.trackingOptionId}>{o.name}</SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                          ))}
+                        </PopoverContent>
+                      </Popover>
+                    ) : undefined,
+                  })}
 
                 {invoiceType === "progress_payments" && (
                   <>
@@ -2263,9 +2859,8 @@ export default function ClientInvoiceDetail() {
                     <div data-testid="section-contract-price">
                       <div className="h-8 flex items-center justify-between px-3 gap-2 border-b border-border/50 bg-muted/40">
                         <div className="flex items-center gap-2">
-                          <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-primary/70" />
                           <span className="text-xs font-medium">Contract Price</span>
-                          {getEffectiveContractPrice() && (
+                          {!!getEffectiveContractPrice() && (
                             <Tooltip>
                               <TooltipTrigger asChild>
                                 <Badge variant="secondary" className="flex items-center gap-1 text-xs">
@@ -2381,6 +2976,25 @@ export default function ClientInvoiceDetail() {
                           </div>
                         )}
 
+                        {/* Committed, but claiming against a price that can still
+                            move. True for the invoices backfilled by 0050: they
+                            were approved in Xero before Morada stamped a price,
+                            and that moment cannot be reconstructed. */}
+                        {!!invoice && invoice.status !== "draft" && invoice.lockedContractPrice == null && (
+                          <div
+                            className="flex items-start gap-2 rounded-md border px-3 py-2 text-sm"
+                            style={{ borderColor: "hsl(var(--amber))", backgroundColor: "hsl(var(--amber-light))" }}
+                            data-testid="banner-contract-price-unconfirmed"
+                          >
+                            <Lock className="w-4 h-4 mt-0.5 shrink-0" style={{ color: "hsl(var(--amber))" }} />
+                            <span>
+                              Contract price not confirmed on this invoice — it reads the project's
+                              live contract price, so editing the contract estimate will change what
+                              this invoice claims against. Re-approving stamps the current price.
+                            </span>
+                          </div>
+                        )}
+
                         {/* Locked contract price display (read-only — sourced from contract estimate) */}
                         {(() => {
                           const baseCents = getEffectiveContractPrice();
@@ -2405,88 +3019,54 @@ export default function ClientInvoiceDetail() {
                         {/* Claim rows table */}
                         {contractClaimRows.length > 0 ? (
                           <>
-                            <Table>
-                              <TableHeader>
-                                {renderLineTableHeader()}
-                              </TableHeader>
-                              <TableBody>
-                                {(() => { const contractRowCents = getContractClaimRowCents(); return contractClaimRows.map((row) => {
-                                  const claimCents = contractRowCents[row.id] ?? 0;
-                                  const claimAmt = claimCents / 100;
-                                  const exTax = claimAmt / (1 + GST_RATE);
-                                  const tax = claimAmt - exTax;
-                                  return (
-                                    <TableRow key={row.id} className="h-9">
-                                      {isColVisible("name") && (
-                                        <TableCell className="py-1">
-                                          <Input
-                                            value={row.name}
-                                            onChange={(e) => updateContractClaimRow(row.id, "name", e.target.value)}
-                                            className="h-7 text-sm border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1 rounded-sm placeholder:text-muted-foreground/30"
-                                            placeholder="Claim name"
-                                          />
-                                        </TableCell>
-                                      )}
-                                      {isColVisible("description") && (
-                                        <TableCell className="py-1">
-                                          <Input
-                                            value={row.description}
-                                            onChange={(e) => updateContractClaimRow(row.id, "description", e.target.value)}
-                                            className="h-7 text-sm border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1 rounded-sm placeholder:text-muted-foreground/30"
-                                            placeholder="Description"
-                                          />
-                                        </TableCell>
-                                      )}
-                                      {isColVisible("claimPercent") && (
-                                        <TableCell className="text-right py-1">
-                                          <Input
-                                            type="number"
-                                            min="0"
-                                            value={row.claimPercent}
-                                            onChange={(e) =>
-                                              updateContractClaimRow(row.id, "claimPercent", parseFloat(e.target.value) || 0)
-                                            }
-                                            className="h-7 w-16 text-right text-sm ml-auto border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1 rounded-sm"
-                                          />
-                                        </TableCell>
-                                      )}
-                                      {isColVisible("claimAmount") && (
-                                        <TableCell className="text-right text-sm font-medium py-1">
-                                          {formatCurrency(claimAmt)}
-                                        </TableCell>
-                                      )}
-                                      {isColVisible("amountExTax") && (
-                                        <TableCell className="text-right text-sm py-1">
-                                          {formatCurrency(exTax)}
-                                        </TableCell>
-                                      )}
-                                      {isColVisible("amountTax") && (
-                                        <TableCell className="text-right text-sm py-1">
-                                          {formatCurrency(tax)}
-                                        </TableCell>
-                                      )}
-                                      {isColVisible("amountIncTax") && (
-                                        <TableCell className="text-right text-sm font-medium py-1">
-                                          {formatCurrency(claimAmt)}
-                                        </TableCell>
-                                      )}
-                                      <TableCell className="py-1 w-8">
-                                        <button
-                                          type="button"
-                                          onClick={() => removeContractClaimRow(row.id)}
-                                          className="text-muted-foreground hover:text-destructive"
-                                        >
-                                          <X className="w-3.5 h-3.5" />
-                                        </button>
-                                      </TableCell>
-                                    </TableRow>
-                                  );
-                                }); })()}
-                              </TableBody>
-                            </Table>
+                            {(() => {
+                              const contractRowCents = getContractClaimRowCents();
+                              return renderClaimGrid(
+                                contractClaimRows.map((row) => ({
+                                  key: row.id,
+                                  xeroKey: lineAccountKey("contract", row.id),
+                                  name: (
+                                    <Input
+                                      value={row.name}
+                                      onChange={(e) => updateContractClaimRow(row.id, "name", e.target.value)}
+                                      className="h-7 text-table border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1.5 rounded-sm placeholder:text-muted-foreground/30"
+                                      placeholder="Claim name"
+                                    />
+                                  ),
+                                  description: (
+                                    <Input
+                                      value={row.description}
+                                      onChange={(e) => updateContractClaimRow(row.id, "description", e.target.value)}
+                                      className="h-7 text-table border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1.5 rounded-sm placeholder:text-muted-foreground/30"
+                                      placeholder="Description"
+                                    />
+                                  ),
+                                  claimPercentCell: (
+                                    <Input
+                                      type="number"
+                                      min="0"
+                                      // Contract claim rows live in the contract_claim_rows jsonb
+                                      // column and are validated by a bare z.number(), so fractional
+                                      // claims (7.5% progress payments) are storable. Without an
+                                      // explicit step, type="number" defaults to step="1" and the
+                                      // browser treats 7.5 as a stepMismatch.
+                                      step="0.01"
+                                      value={row.claimPercent}
+                                      onChange={(e) =>
+                                        updateContractClaimRow(row.id, "claimPercent", parseFloat(e.target.value) || 0)
+                                      }
+                                      className="h-7 w-16 text-right text-table ml-auto border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1.5 rounded-sm"
+                                    />
+                                  ),
+                                  claimAmt: (contractRowCents[row.id] ?? 0) / 100,
+                                  onRemove: () => removeContractClaimRow(row.id),
+                                })),
+                                "contract-claim-lines",
+                              );
+                            })()}
                           </>
                         ) : (
-                          <p className="text-sm text-muted-foreground text-center py-2">
+                          <p className="text-table text-muted-foreground text-center py-2">
                             {hasContractEstimate
                               ? 'No claim rows yet. Click "Add Claim Row" to begin.'
                               : "Claiming is disabled until an estimate is marked as Contract."}
@@ -2494,7 +3074,7 @@ export default function ClientInvoiceDetail() {
                         )}
 
                         <div className="mt-1 flex items-center gap-3">
-                          {contractClaimRows.length < 5 && hasContractEstimate && (
+                          {contractClaimRows.length < 5 && (
                             <button
                               type="button"
                               onClick={addContractClaimRow}
@@ -2540,111 +3120,71 @@ export default function ClientInvoiceDetail() {
 
                     {/* Variations sub-section */}
                     <div className="border-t border-border/50" data-testid="section-variations">
-                      <div className="h-8 flex items-center justify-between px-3 gap-2 border-b border-border/50 bg-muted/40">
-                        <div className="flex items-center gap-2">
-                          <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-amber/70" />
-                          <span className="text-xs font-medium">Variations</span>
-                        </div>
-                        {selectedVariationIds.length > 0 && (
-                          <span className="text-xs font-medium tabular-nums text-muted-foreground">
-                            {formatCurrency(calculateVariationsTotal() / 100)}
-                          </span>
-                        )}
-                      </div>
-
-                      <div className="px-4 py-3">
-                        {selectedVariationIds.length === 0 ? (
-                          <div className="py-1.5 flex items-center gap-3">
-                            <button
-                              type="button"
-                              onClick={() => setVariationsModalOpen(true)}
-                              className="h-7 px-3 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1.5"
-                              data-testid="button-select-variations"
-                            >
-                              <Plus className="w-3 h-3" />
-                              Select Variations
-                            </button>
-                            <span className="text-xs text-muted-foreground/50">No approved variations selected</span>
-                          </div>
-                        ) : (
+                      {sectionHeader({
+                        label: "Variations",
+                        right: (
                           <>
-                            <Table>
-                              <TableHeader>
-                                {renderLineTableHeader(false)}
-                              </TableHeader>
-                              <TableBody>
-                                {getSelectedVariations().map((variation) => {
-                                  const claimPct = variationClaims[variation.id] ?? 100;
-                                  const claimAmt = getVariationClaimCents(variation) / 100;
-                                  const exTax = claimAmt / (1 + GST_RATE);
-                                  const tax = claimAmt - exTax;
-                                  return (
-                                    <TableRow key={variation.id} className="h-9">
-                                      {isColVisible("name") && (
-                                        <TableCell className="text-sm font-medium py-1">
-                                          {variation.variationNumber}
-                                        </TableCell>
-                                      )}
-                                      {isColVisible("description") && (
-                                        <TableCell className="text-sm text-muted-foreground py-1">
-                                          {variation.name}
-                                        </TableCell>
-                                      )}
-                                      {isColVisible("claimPercent") && (
-                                        <TableCell className="text-right py-1">
-                                          <Input
-                                            type="number"
-                                            min="0"
-                                            max="100"
-                                            value={claimPct}
-                                            onChange={(e) =>
-                                              setVariationClaims((prev) => ({
-                                                ...prev,
-                                                [variation.id]: parseInt(e.target.value) || 0,
-                                              }))
-                                            }
-                                            className="h-7 w-16 text-right text-sm border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring ml-auto"
-                                          />
-                                        </TableCell>
-                                      )}
-                                      {isColVisible("claimAmount") && (
-                                        <TableCell className="text-right text-sm font-medium py-1">
-                                          {formatCurrency(claimAmt)}
-                                        </TableCell>
-                                      )}
-                                      {isColVisible("amountExTax") && (
-                                        <TableCell className="text-right text-sm py-1">
-                                          {formatCurrency(exTax)}
-                                        </TableCell>
-                                      )}
-                                      {isColVisible("amountTax") && (
-                                        <TableCell className="text-right text-sm py-1">
-                                          {formatCurrency(tax)}
-                                        </TableCell>
-                                      )}
-                                      {isColVisible("amountIncTax") && (
-                                        <TableCell className="text-right text-sm font-medium py-1">
-                                          {formatCurrency(claimAmt)}
-                                        </TableCell>
-                                      )}
-                                      <TableCell className="py-1 w-8">
-                                        <button
-                                          type="button"
-                                          onClick={() => {
-                                            setSelectedVariationIds((prev) =>
-                                              prev.filter((id) => id !== variation.id)
-                                            );
-                                          }}
-                                          className="text-muted-foreground hover:text-destructive"
-                                        >
-                                          <X className="w-3.5 h-3.5" />
-                                        </button>
-                                      </TableCell>
-                                    </TableRow>
-                                  );
-                                })}
-                              </TableBody>
-                            </Table>
+                            {selectedVariationIds.length > 0 && (
+                              <span className="text-xs font-medium tabular-nums text-muted-foreground">
+                                {formatCurrency(calculateVariationsTotal() / 100)}
+                              </span>
+                            )}
+                            {sectionAction(
+                              selectedVariationIds.length === 0 ? "Select Variations" : "Add",
+                              () => setVariationsModalOpen(true),
+                              "button-select-variations",
+                            )}
+                          </>
+                        ),
+                      })}
+
+                      {/* Nothing selected renders no body — the header carries the
+                          action, so an unused section costs one row, not a panel. */}
+                      {selectedVariationIds.length > 0 && (
+                        <div className="px-4 py-3">
+                          <>
+                            {renderClaimGrid(
+                              getSelectedVariations().map((variation) => {
+                                // Can't claim more than the other invoices left behind.
+                                const maxClaimPct = getVariationRemainingPercent(variation.id);
+                                return {
+                                  key: variation.id,
+                                  xeroKey: lineAccountKey("variation", variation.id),
+                                  name: variation.variationNumber,
+                                  description: variation.name,
+                                  claimPercentCell: (
+                                    <Input
+                                      type="number"
+                                      min="0"
+                                      // invoice_variations.claim_percent is an integer column and
+                                      // the Zod schema is .int(), so this field is whole-number
+                                      // only — step="1" makes the browser agree. Round rather
+                                      // than truncate: parseInt("7.5") silently billed 7, and
+                                      // because the rounded value never changed, React left the
+                                      // field reading "7.5" while state held 7. Rounding makes the
+                                      // field snap to 8, so the stored number is the visible one.
+                                      step="1"
+                                      max={maxClaimPct}
+                                      value={variationClaims[variation.id] ?? 100}
+                                      onChange={(e) =>
+                                        setVariationClaims((prev) => ({
+                                          ...prev,
+                                          [variation.id]: Math.min(
+                                            maxClaimPct,
+                                            Math.round(parseFloat(e.target.value)) || 0,
+                                          ),
+                                        }))
+                                      }
+                                      className="h-7 w-16 text-right text-table border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring ml-auto"
+                                    />
+                                  ),
+                                  claimAmt: getVariationClaimCents(variation) / 100,
+                                  onRemove: () =>
+                                    setSelectedVariationIds((prev) => prev.filter((id) => id !== variation.id)),
+                                };
+                              }),
+                              "variation-claim-lines",
+                            )}
                             <div className="flex items-center justify-end gap-6 pt-2 border-t text-sm">
                               <span className="text-muted-foreground">
                                 {showAmountsIncTax ? "Amount inc Tax:" : "Amount ex Tax:"}
@@ -2657,134 +3197,73 @@ export default function ClientInvoiceDetail() {
                                     )}
                               </span>
                             </div>
-                            <div className="pt-1.5">
-                              <button
-                                type="button"
-                                onClick={() => setVariationsModalOpen(true)}
-                                className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors"
-                                data-testid="button-select-variations"
-                              >
-                                <Plus className="w-3 h-3" />
-                                Add more variations
-                              </button>
-                            </div>
                           </>
-                        )}
-                      </div>{/* end variations content */}
+                        </div>
+                      )}{/* end variations content */}
                     </div>{/* end variations sub-section */}
 
                     {/* Allowances sub-section */}
                     <div className="border-t border-border/50" data-testid="section-allowances">
-                      <div className="h-8 flex items-center justify-between px-3 gap-2 border-b border-border/50 bg-muted/40">
-                        <div className="flex items-center gap-2">
-                          <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-sage/70" />
-                          <span className="text-xs font-medium">Allowances</span>
-                        </div>
-                        {selectedAllowanceIds.length > 0 && (
-                          <span className="text-xs font-medium tabular-nums text-muted-foreground">
-                            {formatCurrency(calculateAllowancesTotal() / 100)}
-                          </span>
-                        )}
-                      </div>
-
-                      <div className="px-4 py-3">
-                        {selectedAllowanceIds.length === 0 ? (
-                          <div className="py-1.5 flex items-center gap-3">
-                            <button
-                              type="button"
-                              onClick={() => setAllowancesModalOpen(true)}
-                              className="h-7 px-3 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1.5"
-                              data-testid="button-select-allowances"
-                            >
-                              <Plus className="w-3 h-3" />
-                              Select Allowances
-                            </button>
-                            <span className="text-xs text-muted-foreground/50">No finalized allowances selected</span>
-                          </div>
-                        ) : (
+                      {sectionHeader({
+                        label: "Allowances",
+                        right: (
                           <>
-                            <Table>
-                              <TableHeader>
-                                {renderLineTableHeader(false)}
-                              </TableHeader>
-                              <TableBody>
-                                {getSelectedAllowanceItems().map((item) => {
-                                  const claimPct = allowanceClaims[item.id] ?? 100;
-                                  const claimAmt = getAllowanceClaimCents(item) / 100;
-                                  const exTax = claimAmt / (1 + GST_RATE);
-                                  const tax = claimAmt - exTax;
-                                  return (
-                                    <TableRow key={item.id} className="h-9">
-                                      {isColVisible("name") && (
-                                        <TableCell className="text-sm font-medium py-1">
-                                          <div className="flex items-center gap-1.5">
-                                            {item.name}
-                                            <Badge variant="outline" className="text-data">
-                                              {item.allowance}
-                                            </Badge>
-                                          </div>
-                                        </TableCell>
-                                      )}
-                                      {isColVisible("description") && (
-                                        <TableCell className="text-sm text-muted-foreground py-1">
-                                          {item.description}
-                                        </TableCell>
-                                      )}
-                                      {isColVisible("claimPercent") && (
-                                        <TableCell className="text-right py-1">
-                                          <Input
-                                            type="number"
-                                            min="0"
-                                            max="100"
-                                            value={claimPct}
-                                            onChange={(e) =>
-                                              setAllowanceClaims((prev) => ({
-                                                ...prev,
-                                                [item.id]: parseInt(e.target.value) || 0,
-                                              }))
-                                            }
-                                            className="h-7 w-16 text-right text-sm border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring ml-auto"
-                                          />
-                                        </TableCell>
-                                      )}
-                                      {isColVisible("claimAmount") && (
-                                        <TableCell className="text-right text-sm font-medium py-1">
-                                          {formatCurrency(claimAmt)}
-                                        </TableCell>
-                                      )}
-                                      {isColVisible("amountExTax") && (
-                                        <TableCell className="text-right text-sm py-1">
-                                          {formatCurrency(exTax)}
-                                        </TableCell>
-                                      )}
-                                      {isColVisible("amountTax") && (
-                                        <TableCell className="text-right text-sm py-1">
-                                          {formatCurrency(tax)}
-                                        </TableCell>
-                                      )}
-                                      {isColVisible("amountIncTax") && (
-                                        <TableCell className="text-right text-sm font-medium py-1">
-                                          {formatCurrency(claimAmt)}
-                                        </TableCell>
-                                      )}
-                                      <TableCell className="py-1 w-8">
-                                        <button
-                                          type="button"
-                                          onClick={() =>
-                                            setSelectedAllowanceIds((prev) =>
-                                              prev.filter((id) => id !== item.id)
-                                            )
-                                          }
-                                          className="text-muted-foreground hover:text-destructive"
-                                        >
-                                          <X className="w-3.5 h-3.5" />
-                                        </button>
-                                      </TableCell>
-                                    </TableRow>
-                                  );
-                                })}
-                              </TableBody>
-                            </Table>
+                            {selectedAllowanceIds.length > 0 && (
+                              <span className="text-xs font-medium tabular-nums text-muted-foreground">
+                                {formatCurrency(calculateAllowancesTotal() / 100)}
+                              </span>
+                            )}
+                            {sectionAction(
+                              selectedAllowanceIds.length === 0 ? "Select Allowances" : "Add",
+                              () => setAllowancesModalOpen(true),
+                              "button-select-allowances",
+                            )}
+                          </>
+                        ),
+                      })}
+
+                      {selectedAllowanceIds.length > 0 && (
+                        <div className="px-4 py-3">
+                          <>
+                            {renderClaimGrid(
+                              getSelectedAllowanceItems().map((item) => ({
+                                key: item.id,
+                                xeroKey: lineAccountKey("allowance", item.id),
+                                name: (
+                                  <div className="flex items-center gap-1.5">
+                                    {item.name}
+                                    <Badge variant="outline" className="text-data">
+                                      {item.allowance}
+                                    </Badge>
+                                  </div>
+                                ),
+                                description: item.description,
+                                claimPercentCell: (
+                                  <Input
+                                    type="number"
+                                    min="0"
+                                    // invoice_allowances.claim_percent is an integer column and
+                                    // the Zod schema is .int() — same whole-number constraint,
+                                    // and the same round-don't-truncate reasoning, as the
+                                    // variation claim input above.
+                                    step="1"
+                                    max="100"
+                                    value={allowanceClaims[item.id] ?? 100}
+                                    onChange={(e) =>
+                                      setAllowanceClaims((prev) => ({
+                                        ...prev,
+                                        [item.id]: Math.round(parseFloat(e.target.value)) || 0,
+                                      }))
+                                    }
+                                    className="h-7 w-16 text-right text-table border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring ml-auto"
+                                  />
+                                ),
+                                claimAmt: getAllowanceClaimCents(item) / 100,
+                                onRemove: () =>
+                                  setSelectedAllowanceIds((prev) => prev.filter((id) => id !== item.id)),
+                              })),
+                              "allowance-claim-lines",
+                            )}
                             <div className="flex items-center justify-end gap-6 pt-2 border-t text-sm">
                               <span className="text-muted-foreground">
                                 {showAmountsIncTax ? "Amount inc Tax:" : "Amount ex Tax:"}
@@ -2797,20 +3276,9 @@ export default function ClientInvoiceDetail() {
                                     )}
                               </span>
                             </div>
-                            <div className="pt-1.5">
-                              <button
-                                type="button"
-                                onClick={() => setAllowancesModalOpen(true)}
-                                className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors"
-                                data-testid="button-select-allowances"
-                              >
-                                <Plus className="w-3 h-3" />
-                                Add more allowances
-                              </button>
-                            </div>
                           </>
-                        )}
-                      </div>{/* end allowances content */}
+                        </div>
+                      )}{/* end allowances content */}
                     </div>{/* end allowances sub-section */}
                   </>
                 )}
@@ -2822,7 +3290,6 @@ export default function ClientInvoiceDetail() {
                     <div className="border-t border-border/50" data-testid="section-labour">
                       <div className="h-8 flex items-center justify-between px-3 gap-2 border-b border-border/50 bg-muted/40">
                         <div className="flex items-center gap-2">
-                          <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-sage/70" />
                           <span className="text-xs font-medium">Labour</span>
                           {selectedTimesheetIds.length > 0 && (
                             <span className="text-xs tabular-nums text-muted-foreground">
@@ -2841,23 +3308,22 @@ export default function ClientInvoiceDetail() {
                       </div>
                       <div className="px-4 py-3">
                         {selectedTimesheetIds.length === 0 ? (
-                          <p className="text-sm text-muted-foreground text-center py-2">No labour entries selected.</p>
+                          <p className="text-table text-muted-foreground text-center py-2">No labour entries selected.</p>
                         ) : (() => {
                           const rows = expandByCostCode(getSelectedTimesheets());
-                          const thCls = "text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2";
-                          const showCostCode = labourBreakByCostCode;
+                                                    const showCostCode = labourBreakByCostCode;
 
                           if (labourDisplayMode === "individual") {
                             return (
                               <Table>
                                 <TableHeader>
-                                  <TableRow className="h-6 bg-muted/30">
-                                    <TableHead className={thCls}>Date</TableHead>
-                                    <TableHead className={thCls}>Staff</TableHead>
-                                    {showCostCode && <TableHead className={thCls}>Cost Code</TableHead>}
-                                    <TableHead className={`text-right w-16 ${thCls}`}>Hours</TableHead>
-                                    <TableHead className={`text-right w-20 ${thCls}`}>Rate</TableHead>
-                                    <TableHead className={`text-right w-24 ${thCls}`}>Total</TableHead>
+                                  <TableRow className="[&>th]:border-b-2 [&>th]:border-border [&>th]:text-foreground/75 [&>th]:font-semibold">
+                                    <TableHead>Date</TableHead>
+                                    <TableHead>Staff</TableHead>
+                                    {showCostCode && <TableHead>Cost Code</TableHead>}
+                                    <TableHead className="text-right w-16">Hours</TableHead>
+                                    <TableHead className="text-right w-20">Rate</TableHead>
+                                    <TableHead className="text-right w-24">Total</TableHead>
                                     <TableHead className="w-8 py-0" />
                                   </TableRow>
                                 </TableHeader>
@@ -2867,12 +3333,12 @@ export default function ClientInvoiceDetail() {
                                     const rowKey = t._splitId ? `${t.id}-${t._splitId}` : t.id;
                                     return (
                                       <TableRow key={rowKey} className="h-9">
-                                        <TableCell className="text-sm py-1">{t.date ? format(new Date(t.date), "d MMM yyyy") : "—"}</TableCell>
-                                        <TableCell className="text-sm py-1">{getUserName(t.userId)}</TableCell>
-                                        {showCostCode && <TableCell className="text-sm py-1 text-muted-foreground">{cc?.code || cc?.name || "—"}</TableCell>}
-                                        <TableCell className="text-right text-sm py-1">{Number(t.duration).toFixed(1)}</TableCell>
-                                        <TableCell className="text-right text-sm py-1">{formatCurrency(Number(t.hourlyRate))}</TableCell>
-                                        <TableCell className="text-right text-sm font-medium py-1">{formatCurrency(Number(t.total))}</TableCell>
+                                        <TableCell className="text-table py-1">{t.date ? format(new Date(t.date), "d MMM yyyy") : "—"}</TableCell>
+                                        <TableCell className="text-table py-1">{getUserName(t.userId)}</TableCell>
+                                        {showCostCode && <TableCell className="text-table py-1 text-muted-foreground">{cc?.code || cc?.name || "—"}</TableCell>}
+                                        <TableCell className="text-right text-table py-1">{Number(t.duration).toFixed(1)}</TableCell>
+                                        <TableCell className="text-right text-table py-1">{formatCurrency(Number(t.hourlyRate))}</TableCell>
+                                        <TableCell className="text-right text-table font-medium py-1">{formatCurrency(Number(t.total))}</TableCell>
                                         <TableCell className="py-1 w-8">
                                           {!t._isSplit && (
                                             <button type="button" onClick={() => setSelectedTimesheetIds(prev => prev.filter(id => id !== t.id))} className="text-muted-foreground hover:text-destructive">
@@ -2898,12 +3364,12 @@ export default function ClientInvoiceDetail() {
                             return (
                               <Table>
                                 <TableHeader>
-                                  <TableRow className="h-6 bg-muted/30">
-                                    <TableHead className={thCls}>Staff</TableHead>
-                                    {showCostCode && <TableHead className={thCls}>Cost Code</TableHead>}
-                                    <TableHead className={`text-right w-20 ${thCls}`}>Hours</TableHead>
-                                    <TableHead className={`text-right w-20 ${thCls}`}>Avg Rate</TableHead>
-                                    <TableHead className={`text-right w-24 ${thCls}`}>Total</TableHead>
+                                  <TableRow className="[&>th]:border-b-2 [&>th]:border-border [&>th]:text-foreground/75 [&>th]:font-semibold">
+                                    <TableHead>Staff</TableHead>
+                                    {showCostCode && <TableHead>Cost Code</TableHead>}
+                                    <TableHead className="text-right w-20">Hours</TableHead>
+                                    <TableHead className="text-right w-20">Avg Rate</TableHead>
+                                    <TableHead className="text-right w-24">Total</TableHead>
                                   </TableRow>
                                 </TableHeader>
                                 <TableBody>
@@ -2917,11 +3383,11 @@ export default function ClientInvoiceDetail() {
                                     const avgRate = totalHours > 0 ? totalCost / totalHours : 0;
                                     return (
                                       <TableRow key={key} className="h-9">
-                                        <TableCell className="text-sm py-1 font-medium">{getUserName(userId)}</TableCell>
-                                        {showCostCode && <TableCell className="text-sm py-1 text-muted-foreground">{cc?.code || cc?.name || "—"}</TableCell>}
-                                        <TableCell className="text-right text-sm py-1">{totalHours.toFixed(1)}</TableCell>
-                                        <TableCell className="text-right text-sm py-1">{formatCurrency(avgRate)}</TableCell>
-                                        <TableCell className="text-right text-sm font-medium py-1">{formatCurrency(totalCost)}</TableCell>
+                                        <TableCell className="text-table py-1 font-medium">{getUserName(userId)}</TableCell>
+                                        {showCostCode && <TableCell className="text-table py-1 text-muted-foreground">{cc?.code || cc?.name || "—"}</TableCell>}
+                                        <TableCell className="text-right text-table py-1">{totalHours.toFixed(1)}</TableCell>
+                                        <TableCell className="text-right text-table py-1">{formatCurrency(avgRate)}</TableCell>
+                                        <TableCell className="text-right text-table font-medium py-1">{formatCurrency(totalCost)}</TableCell>
                                       </TableRow>
                                     );
                                   })}
@@ -2942,13 +3408,13 @@ export default function ClientInvoiceDetail() {
                             return (
                               <Table>
                                 <TableHeader>
-                                  <TableRow className="h-6 bg-muted/30">
-                                    <TableHead className={thCls}>Date</TableHead>
-                                    <TableHead className={thCls}>Staff</TableHead>
-                                    {showCostCode && <TableHead className={thCls}>Cost Code</TableHead>}
-                                    <TableHead className={`text-right w-20 ${thCls}`}>Hours</TableHead>
-                                    <TableHead className={`text-right w-20 ${thCls}`}>Avg Rate</TableHead>
-                                    <TableHead className={`text-right w-24 ${thCls}`}>Total</TableHead>
+                                  <TableRow className="[&>th]:border-b-2 [&>th]:border-border [&>th]:text-foreground/75 [&>th]:font-semibold">
+                                    <TableHead>Date</TableHead>
+                                    <TableHead>Staff</TableHead>
+                                    {showCostCode && <TableHead>Cost Code</TableHead>}
+                                    <TableHead className="text-right w-20">Hours</TableHead>
+                                    <TableHead className="text-right w-20">Avg Rate</TableHead>
+                                    <TableHead className="text-right w-24">Total</TableHead>
                                   </TableRow>
                                 </TableHeader>
                                 <TableBody>
@@ -2963,12 +3429,12 @@ export default function ClientInvoiceDetail() {
                                     const avgRate = totalHours > 0 ? totalCost / totalHours : 0;
                                     return (
                                       <TableRow key={key} className="h-9">
-                                        <TableCell className="text-sm py-1 tabular-nums">{dk !== "no-date" ? format(new Date(dk), "d MMM yyyy") : "—"}</TableCell>
+                                        <TableCell className="text-table py-1 tabular-nums">{dk !== "no-date" ? format(new Date(dk), "d MMM yyyy") : "—"}</TableCell>
                                         <TableCell className="text-xs py-1 text-muted-foreground max-w-[140px] truncate">{staffNames}</TableCell>
-                                        {showCostCode && <TableCell className="text-sm py-1 text-muted-foreground">{cc?.code || cc?.name || "—"}</TableCell>}
-                                        <TableCell className="text-right text-sm py-1">{totalHours.toFixed(1)}</TableCell>
-                                        <TableCell className="text-right text-sm py-1">{formatCurrency(avgRate)}</TableCell>
-                                        <TableCell className="text-right text-sm font-medium py-1">{formatCurrency(totalCost)}</TableCell>
+                                        {showCostCode && <TableCell className="text-table py-1 text-muted-foreground">{cc?.code || cc?.name || "—"}</TableCell>}
+                                        <TableCell className="text-right text-table py-1">{totalHours.toFixed(1)}</TableCell>
+                                        <TableCell className="text-right text-table py-1">{formatCurrency(avgRate)}</TableCell>
+                                        <TableCell className="text-right text-table font-medium py-1">{formatCurrency(totalCost)}</TableCell>
                                       </TableRow>
                                     );
                                   })}
@@ -2987,12 +3453,12 @@ export default function ClientInvoiceDetail() {
                           return (
                             <Table>
                               <TableHeader>
-                                <TableRow className="h-6 bg-muted/30">
-                                  <TableHead className={thCls}>Description</TableHead>
-                                  {showCostCode && <TableHead className={thCls}>Cost Code</TableHead>}
-                                  <TableHead className={`text-right w-20 ${thCls}`}>Hours</TableHead>
-                                  <TableHead className={`text-right w-20 ${thCls}`}>Avg Rate</TableHead>
-                                  <TableHead className={`text-right w-24 ${thCls}`}>Total</TableHead>
+                                <TableRow className="[&>th]:border-b-2 [&>th]:border-border [&>th]:text-foreground/75 [&>th]:font-semibold">
+                                  <TableHead>Description</TableHead>
+                                  {showCostCode && <TableHead>Cost Code</TableHead>}
+                                  <TableHead className="text-right w-20">Hours</TableHead>
+                                  <TableHead className="text-right w-20">Avg Rate</TableHead>
+                                  <TableHead className="text-right w-24">Total</TableHead>
                                 </TableRow>
                               </TableHeader>
                               <TableBody>
@@ -3005,11 +3471,11 @@ export default function ClientInvoiceDetail() {
                                   const avgRate = totalHours > 0 ? totalCost / totalHours : 0;
                                   return (
                                     <TableRow key={key} className="h-9">
-                                      <TableCell className="text-sm py-1 font-medium">Labour</TableCell>
-                                      {showCostCode && <TableCell className="text-sm py-1 text-muted-foreground">{cc?.code || cc?.name || "—"}</TableCell>}
-                                      <TableCell className="text-right text-sm py-1">{totalHours.toFixed(1)}</TableCell>
-                                      <TableCell className="text-right text-sm py-1">{formatCurrency(avgRate)}</TableCell>
-                                      <TableCell className="text-right text-sm font-medium py-1">{formatCurrency(totalCost)}</TableCell>
+                                      <TableCell className="text-table py-1 font-medium">Labour</TableCell>
+                                      {showCostCode && <TableCell className="text-table py-1 text-muted-foreground">{cc?.code || cc?.name || "—"}</TableCell>}
+                                      <TableCell className="text-right text-table py-1">{totalHours.toFixed(1)}</TableCell>
+                                      <TableCell className="text-right text-table py-1">{formatCurrency(avgRate)}</TableCell>
+                                      <TableCell className="text-right text-table font-medium py-1">{formatCurrency(totalCost)}</TableCell>
                                     </TableRow>
                                   );
                                 })}
@@ -3024,7 +3490,6 @@ export default function ClientInvoiceDetail() {
                     <div className="border-t border-border/50" data-testid="section-bills">
                       <div className="h-8 flex items-center justify-between px-3 gap-2 border-b border-border/50 bg-muted/40">
                         <div className="flex items-center gap-2">
-                          <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-amber/70" />
                           <span className="text-xs font-medium">Bills</span>
                           {selectedBillIds.length > 0 && (
                             <span className="text-xs tabular-nums text-muted-foreground">
@@ -3043,25 +3508,25 @@ export default function ClientInvoiceDetail() {
                       </div>
                       <div className="px-4 py-3">
                         {selectedBillIds.length === 0 ? (
-                          <p className="text-sm text-muted-foreground text-center py-2">No bills selected.</p>
+                          <p className="text-table text-muted-foreground text-center py-2">No bills selected.</p>
                         ) : (
                           <Table>
                             <TableHeader>
-                              <TableRow className="h-6 bg-muted/30">
-                                <TableHead className="text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Bill No.</TableHead>
-                                <TableHead className="text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Supplier</TableHead>
-                                <TableHead className="text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Date</TableHead>
-                                <TableHead className="text-right w-28 text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Total</TableHead>
+                              <TableRow className="[&>th]:border-b-2 [&>th]:border-border [&>th]:text-foreground/75 [&>th]:font-semibold">
+                                <TableHead>Bill No.</TableHead>
+                                <TableHead>Supplier</TableHead>
+                                <TableHead>Date</TableHead>
+                                <TableHead className="text-right w-28">Total</TableHead>
                                 <TableHead className="w-8 py-0" />
                               </TableRow>
                             </TableHeader>
                             <TableBody>
                               {getSelectedBills().map((b) => (
                                 <TableRow key={b.id} className="h-9">
-                                  <TableCell className="text-sm font-medium py-1">{b.billNumber}</TableCell>
-                                  <TableCell className="text-sm text-muted-foreground py-1">{(b as any).supplierName || "—"}</TableCell>
-                                  <TableCell className="text-sm text-muted-foreground py-1">{(b as any).billDate ? format(new Date((b as any).billDate), "d MMM yyyy") : "—"}</TableCell>
-                                  <TableCell className="text-right text-sm font-medium py-1">{formatCurrency(b.total / 100)}</TableCell>
+                                  <TableCell className="text-table font-medium py-1">{b.billNumber}</TableCell>
+                                  <TableCell className="text-table text-muted-foreground py-1">{(b as any).supplierName || "—"}</TableCell>
+                                  <TableCell className="text-table text-muted-foreground py-1">{(b as any).billDate ? format(new Date((b as any).billDate), "d MMM yyyy") : "—"}</TableCell>
+                                  <TableCell className="text-right text-table font-medium py-1">{formatCurrency(b.total / 100)}</TableCell>
                                   <TableCell className="py-1 w-8">
                                     <button type="button" onClick={() => setSelectedBillIds(prev => prev.filter(id => id !== b.id))} className="text-muted-foreground hover:text-destructive">
                                       <X className="w-3.5 h-3.5" />
@@ -3079,7 +3544,6 @@ export default function ClientInvoiceDetail() {
                     <div className="border-t border-border/50" data-testid="section-selections">
                       <div className="h-8 flex items-center justify-between px-3 gap-2 border-b border-border/50 bg-muted/40">
                         <div className="flex items-center gap-2">
-                          <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-primary/80" />
                           <span className="text-xs font-medium">Selections</span>
                           {selectedSelectionOptionIds.length > 0 && (
                             <span className="text-xs tabular-nums text-muted-foreground">
@@ -3098,27 +3562,27 @@ export default function ClientInvoiceDetail() {
                       </div>
                       <div className="px-4 py-3">
                         {selectedSelectionOptionIds.length === 0 ? (
-                          <p className="text-sm text-muted-foreground text-center py-2">No selections added.</p>
+                          <p className="text-table text-muted-foreground text-center py-2">No selections added.</p>
                         ) : (
                           <Table>
                             <TableHeader>
-                              <TableRow className="h-6 bg-muted/30">
-                                <TableHead className="text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Selection</TableHead>
-                                <TableHead className="text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Option</TableHead>
-                                <TableHead className="text-right w-16 text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Qty</TableHead>
-                                <TableHead className="w-16 text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Unit</TableHead>
-                                <TableHead className="text-right w-28 text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Total</TableHead>
+                              <TableRow className="[&>th]:border-b-2 [&>th]:border-border [&>th]:text-foreground/75 [&>th]:font-semibold">
+                                <TableHead>Selection</TableHead>
+                                <TableHead>Option</TableHead>
+                                <TableHead className="text-right w-16">Qty</TableHead>
+                                <TableHead className="w-16">Unit</TableHead>
+                                <TableHead className="text-right w-28">Total</TableHead>
                                 <TableHead className="w-8 py-0" />
                               </TableRow>
                             </TableHeader>
                             <TableBody>
                               {getSelectedSelectionOptions().map((o: any) => (
                                 <TableRow key={o.id} className="h-9">
-                                  <TableCell className="text-sm py-1">{o.selectionName || "—"}</TableCell>
-                                  <TableCell className="text-sm font-medium py-1">{o.name}</TableCell>
-                                  <TableCell className="text-right text-sm py-1">{o.quantity}</TableCell>
-                                  <TableCell className="text-sm text-muted-foreground py-1">{o.unitType}</TableCell>
-                                  <TableCell className="text-right text-sm font-medium py-1">{formatCurrency((o.totalCost || 0) / 100)}</TableCell>
+                                  <TableCell className="text-table py-1">{o.selectionName || "—"}</TableCell>
+                                  <TableCell className="text-table font-medium py-1">{o.name}</TableCell>
+                                  <TableCell className="text-right text-table py-1">{o.quantity}</TableCell>
+                                  <TableCell className="text-table text-muted-foreground py-1">{o.unitType}</TableCell>
+                                  <TableCell className="text-right text-table font-medium py-1">{formatCurrency((o.totalCost || 0) / 100)}</TableCell>
                                   <TableCell className="py-1 w-8">
                                     <button type="button" onClick={() => setSelectedSelectionOptionIds(prev => prev.filter(id => id !== o.id))} className="text-muted-foreground hover:text-destructive">
                                       <X className="w-3.5 h-3.5" />
@@ -3138,46 +3602,9 @@ export default function ClientInvoiceDetail() {
                 <div className="border-t border-border/50" data-testid="section-custom-lines">
                   <div className="h-8 flex items-center justify-between px-3 gap-2 border-b border-border/50 bg-muted/40">
                     <div className="flex items-center gap-2">
-                      <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-primary/70" />
                       <span className="text-xs font-medium">Custom Lines</span>
                     </div>
                     <div className="flex items-center gap-1.5">
-                      {customLines.length > 0 && (
-                        <>
-                          {xeroAccounts.length > 0 ? (
-                            <Select value={bulkAccountCode || "__none__"} onValueChange={setBulkAccountCode}>
-                              <SelectTrigger className="h-6 w-36 text-xs border-dashed" data-testid="select-bulk-xero-account">
-                                <SelectValue placeholder="Xero account…" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="__none__"><span className="text-muted-foreground">— None —</span></SelectItem>
-                                {xeroAccounts.map((acc) => (
-                                  <SelectItem key={acc.code} value={acc.code}>{acc.code} — {acc.name}</SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          ) : (
-                            <input
-                              value={bulkAccountCode}
-                              onChange={(e) => setBulkAccountCode(e.target.value)}
-                              placeholder="Account"
-                              className="h-6 w-24 px-2 text-xs border border-dashed rounded-md bg-transparent focus:outline-none focus:ring-1 focus:ring-ring"
-                              data-testid="input-bulk-xero-account"
-                            />
-                          )}
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const code = bulkAccountCode === "__none__" ? null : bulkAccountCode || null;
-                              setCustomLines(customLines.map((l) => ({ ...l, xeroAccountCode: code })));
-                            }}
-                            className="h-6 px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
-                            data-testid="button-set-all-account"
-                          >
-                            Set all
-                          </button>
-                        </>
-                      )}
                       <Popover open={customLineColPickerOpen} onOpenChange={setCustomLineColPickerOpen}>
                         <PopoverTrigger asChild>
                           <button type="button" className="h-6 w-6 flex items-center justify-center rounded hover-elevate text-muted-foreground">
@@ -3186,7 +3613,7 @@ export default function ClientInvoiceDetail() {
                         </PopoverTrigger>
                         <PopoverContent className="w-44 p-2" align="end">
                           <p className="text-xs font-medium text-muted-foreground mb-2 px-1">Columns</p>
-                          {ALL_COLUMNS.filter((c) => !c.required && ["description", "amountExTax", "amountTax", "amountIncTax"].includes(c.id)).map((col) => (
+                          {ALL_COLUMNS.filter((c) => !c.required).map((col) => (
                             <button
                               key={col.id}
                               type="button"
@@ -3213,171 +3640,155 @@ export default function ClientInvoiceDetail() {
                     </div>
                   </div>
                   <div className="overflow-x-auto">
-                    {customLines.length === 0 ? (
-                      <p className="text-sm text-muted-foreground text-center py-4 px-4">
-                        No custom lines. Click "Add Line" to add a custom line item.
-                      </p>
-                    ) : (
-                      <Table className="min-w-[1060px]">
-                        <TableHeader>
-                          <TableRow className="h-6 bg-muted/30">
-                            <TableHead className="w-8 py-0 px-2" />
-                            {isColVisible("name") && <TableHead className="w-32 text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Name</TableHead>}
-                            {isColVisible("description") && <TableHead className="text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Description</TableHead>}
-                            <TableHead className="w-36 text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Cost Code</TableHead>
-                            <TableHead className="w-20 text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Unit</TableHead>
-                            <TableHead className="text-right w-14 text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Qty</TableHead>
-                            <TableHead className="text-right w-24 text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Unit Cost (ex GST)</TableHead>
-                            <TableHead className="w-28 text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Tax</TableHead>
-                            <TableHead className="w-32 text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Account</TableHead>
-                            {isColVisible("amountExTax") && (
-                              <TableHead className="text-right w-24 text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Ex Tax</TableHead>
-                            )}
-                            {isColVisible("amountTax") && (
-                              <TableHead className="text-right w-20 text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Tax $</TableHead>
-                            )}
-                            {isColVisible("amountIncTax") && (
-                              <TableHead className="text-right w-24 text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Inc Tax</TableHead>
-                            )}
-                            <TableHead className="w-8 py-0" />
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {customLines.map((line, index) => {
-                            // Prices are entered EX GST; GST is added on top for
-                            // taxable lines (same convention as the totals/PDF/Xero).
-                            const exTax = line.totalPrice;
-                            const tax = line.taxable ? line.totalPrice * GST_RATE : 0;
-                            return (
-                              <TableRow key={index} className="h-9" data-testid={`custom-line-${index}`}>
-                                {/* Visual-only checkbox */}
-                                <TableCell className="py-1 px-2 w-8">
-                                  <div className="w-4 h-4 rounded border border-input flex items-center justify-center" />
-                                </TableCell>
-                                {isColVisible("name") && (
-                                  <TableCell className="py-1">
-                                    <Input
-                                      value={line.name}
-                                      onChange={(e) => updateCustomLine(index, "name", e.target.value)}
-                                      placeholder="Name"
-                                      className="h-7 text-sm border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1 rounded-sm placeholder:text-muted-foreground/30"
-                                    />
-                                  </TableCell>
-                                )}
-                                {isColVisible("description") && (
-                                  <TableCell className="py-1">
-                                    <Input
-                                      value={line.description}
-                                      onChange={(e) => updateCustomLine(index, "description", e.target.value)}
-                                      placeholder="Description"
-                                      className="h-7 text-sm border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1 rounded-sm placeholder:text-muted-foreground/30"
-                                    />
-                                  </TableCell>
-                                )}
-                                {/* Cost Code */}
-                                <TableCell className="py-1 w-36">
-                                  <CostCodeSelect
-                                    value={line.costCodeId || ""}
-                                    onValueChange={(v) => updateCustomLine(index, "costCodeId", v || null)}
-                                    placeholder="— Cost code —"
-                                    allowNone
-                                    triggerClassName="h-7 text-xs border-0 bg-transparent shadow-none focus:ring-1 focus:ring-ring px-1 rounded-sm w-full"
-                                  />
-                                </TableCell>
-                                {/* Unit */}
-                                <TableCell className="py-1 w-20">
-                                  <Input
-                                    value={line.unit || ""}
-                                    onChange={(e) => updateCustomLine(index, "unit", e.target.value)}
-                                    placeholder="unit"
-                                    className="h-7 text-sm border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1 rounded-sm placeholder:text-muted-foreground/30"
-                                  />
-                                </TableCell>
-                                {/* Qty */}
-                                <TableCell className="py-1">
-                                  <Input
-                                    type="number"
-                                    value={line.quantity}
-                                    onChange={(e) => updateCustomLine(index, "quantity", parseFloat(e.target.value) || 0)}
-                                    className="h-7 w-14 text-right text-sm border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1 rounded-sm ml-auto"
-                                  />
-                                </TableCell>
-                                {/* Unit Cost */}
-                                <TableCell className="py-1">
-                                  <Input
-                                    type="number"
-                                    value={line.unitPrice}
-                                    onChange={(e) => updateCustomLine(index, "unitPrice", parseFloat(e.target.value) || 0)}
-                                    className="h-7 w-20 text-right text-sm border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1 rounded-sm ml-auto"
-                                  />
-                                </TableCell>
-                                {/* Tax text */}
-                                <TableCell className="py-1 w-28">
-                                  <button
-                                    type="button"
-                                    onClick={() => updateCustomLine(index, "taxable", !line.taxable)}
-                                    className="text-xs text-muted-foreground hover:text-foreground whitespace-nowrap"
-                                  >
-                                    {line.taxable ? "GST on income" : "No Tax"}
-                                  </button>
-                                </TableCell>
-                                {/* Account */}
-                                <TableCell className="py-1 w-32">
-                                  {xeroAccounts.length > 0 ? (
-                                    <Select
-                                      value={line.xeroAccountCode || "__none__"}
-                                      onValueChange={(val) => updateCustomLine(index, "xeroAccountCode", val === "__none__" ? null : val)}
-                                    >
-                                      <SelectTrigger className="h-7 text-xs border-0 bg-transparent shadow-none focus:ring-1 focus:ring-ring px-1 rounded-sm w-full" data-testid={`select-account-${index}`}>
-                                        <SelectValue placeholder="— Account —" />
-                                      </SelectTrigger>
-                                      <SelectContent>
-                                        <SelectItem value="__none__"><span className="text-muted-foreground">— None —</span></SelectItem>
-                                        {xeroAccounts.map((acc) => (
-                                          <SelectItem key={acc.code} value={acc.code}>{acc.code} — {acc.name}</SelectItem>
-                                        ))}
-                                      </SelectContent>
-                                    </Select>
-                                  ) : (
-                                    <input
-                                      value={line.xeroAccountCode || ""}
-                                      onChange={(e) => updateCustomLine(index, "xeroAccountCode", e.target.value || null)}
-                                      placeholder="Account"
-                                      className="w-full h-7 px-1.5 text-xs bg-transparent border-0 outline-none focus:ring-1 focus:ring-ring rounded-sm placeholder:text-muted-foreground/30"
-                                      data-testid={`input-account-${index}`}
-                                    />
-                                  )}
-                                </TableCell>
-                                {isColVisible("amountExTax") && (
-                                  <TableCell className="text-right text-sm py-1">
-                                    {formatCurrency(exTax)}
-                                  </TableCell>
-                                )}
-                                {isColVisible("amountTax") && (
-                                  <TableCell className="text-right text-sm py-1">
-                                    {formatCurrency(tax)}
-                                  </TableCell>
-                                )}
-                                {isColVisible("amountIncTax") && (
-                                  <TableCell className="text-right text-sm font-medium py-1">
-                                    {formatCurrency(exTax + tax)}
-                                  </TableCell>
-                                )}
-                                <TableCell className="py-1 w-8">
-                                  <button
-                                    type="button"
-                                    onClick={() => deleteCustomLine(index)}
-                                    className="text-muted-foreground hover:text-destructive"
-                                    data-testid={`button-delete-custom-line-${index}`}
-                                  >
-                                    <X className="w-3.5 h-3.5" />
-                                  </button>
-                                </TableCell>
-                              </TableRow>
-                            );
-                          })}
-                        </TableBody>
-                      </Table>
+                    {/* Header carries "+ Add Line", so an empty section shows nothing —
+                        same as Variations and Allowances. */}
+                    {customLines.length === 0 ? null : (
+                      <LineItemTable
+                        fixedLayout
+                        filler
+                        resizeNamespace="client-invoice-custom-lines"
+                        headerClassName={GRID_HEADER}
+                        data={customLines}
+                        rowKey={(_line, index) => index}
+                        rowTestId={(_line, index) => `custom-line-${index}`}
+                        testId="custom-lines"
+                        columns={(() => {
+                          const inputCls =
+                            "h-7 text-table border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1.5 rounded-sm placeholder:text-muted-foreground/30";
+                          const cols: LineItemColumn<CustomLine>[] = [];
+                          if (isColVisible("name"))
+                            cols.push({
+                              key: "name", header: "Name", width: 128, truncate: false,
+                              cell: (line, index) => (
+                                <Input
+                                  value={line.name}
+                                  onChange={(e) => updateCustomLine(index, "name", e.target.value)}
+                                  placeholder="Name"
+                                  className={inputCls}
+                                />
+                              ),
+                            });
+                          if (isColVisible("description"))
+                            cols.push({
+                              key: "description", header: "Description", width: 220, truncate: false,
+                              cell: (line, index) => (
+                                <Input
+                                  value={line.description}
+                                  onChange={(e) => updateCustomLine(index, "description", e.target.value)}
+                                  placeholder="Description"
+                                  className={inputCls}
+                                />
+                              ),
+                            });
+                          cols.push({
+                            key: "costCode", header: "Cost Code", width: 144, truncate: false,
+                            cell: (line, index) => (
+                              <CostCodeSelect
+                                value={line.costCodeId || ""}
+                                onValueChange={(v) => updateCustomLine(index, "costCodeId", v || null)}
+                                placeholder="— Cost code —"
+                                allowNone
+                                triggerClassName="h-7 text-table border-0 bg-transparent shadow-none focus:ring-1 focus:ring-ring px-1.5 rounded-sm w-full"
+                              />
+                            ),
+                          });
+                          cols.push({
+                            key: "unit", header: "Unit", width: 80, truncate: false,
+                            cell: (line, index) => (
+                              <Input
+                                value={line.unit || ""}
+                                onChange={(e) => updateCustomLine(index, "unit", e.target.value)}
+                                placeholder="unit"
+                                className={inputCls}
+                              />
+                            ),
+                          });
+                          cols.push({
+                            key: "quantity", header: "Qty", align: "right", width: 56, truncate: false,
+                            cell: (line, index) => (
+                              <Input
+                                type="number"
+                                value={line.quantity}
+                                onChange={(e) => updateCustomLine(index, "quantity", parseFloat(e.target.value) || 0)}
+                                className="h-7 w-14 text-right text-table border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1.5 rounded-sm ml-auto"
+                              />
+                            ),
+                          });
+                          cols.push({
+                            key: "unitPrice", header: "Unit Cost (ex GST)", align: "right", width: 96, truncate: false,
+                            cell: (line, index) => (
+                              <Input
+                                type="number"
+                                value={line.unitPrice}
+                                onChange={(e) => updateCustomLine(index, "unitPrice", parseFloat(e.target.value) || 0)}
+                                className="h-7 w-20 text-right text-table border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1.5 rounded-sm ml-auto"
+                              />
+                            ),
+                          });
+                          if (isColVisible("tax")) cols.push({
+                            key: "taxable", header: "Tax", width: 112, truncate: false,
+                            cell: (line, index) => (
+                              <button
+                                type="button"
+                                onClick={() => updateCustomLine(index, "taxable", !line.taxable)}
+                                className="text-table text-muted-foreground hover:text-foreground whitespace-nowrap"
+                              >
+                                {line.taxable ? "GST on income" : "No Tax"}
+                              </button>
+                            ),
+                          });
+                          if (isColVisible("account")) cols.push({
+                            key: "account", header: "Account", width: 128, truncate: false,
+                            cell: (line, index) =>
+                              xeroAccounts.length > 0 ? (
+                                <Select
+                                  value={line.xeroAccountCode || "__none__"}
+                                  onValueChange={(val) => updateCustomLine(index, "xeroAccountCode", val === "__none__" ? null : val)}
+                                >
+                                  <SelectTrigger className="h-7 text-table border-0 bg-transparent shadow-none focus:ring-1 focus:ring-ring px-1.5 rounded-sm w-full" data-testid={`select-account-${index}`}>
+                                    <SelectValue placeholder="— Account —" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="__none__"><span className="text-muted-foreground">— None —</span></SelectItem>
+                                    {xeroAccounts.map((acc) => (
+                                      <SelectItem key={acc.code} value={acc.code}>{acc.code} — {acc.name}</SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              ) : (
+                                <input
+                                  value={line.xeroAccountCode || ""}
+                                  onChange={(e) => updateCustomLine(index, "xeroAccountCode", e.target.value || null)}
+                                  placeholder="Account"
+                                  className="w-full h-7 px-1.5 text-table bg-transparent border-0 outline-none focus:ring-1 focus:ring-ring rounded-sm placeholder:text-muted-foreground/30"
+                                  data-testid={`input-account-${index}`}
+                                />
+                              ),
+                          });
+                          // Prices are entered EX GST; GST is added on top for
+                          // taxable lines (same convention as the totals/PDF/Xero).
+                          if (isColVisible("amountExTax"))
+                            cols.push({ key: "amountExTax", header: "Ex Tax", align: "right", width: 96, cell: (line) => formatCurrency(line.totalPrice) });
+                          if (isColVisible("amountTax"))
+                            cols.push({ key: "amountTax", header: "Tax $", align: "right", width: 80, cell: (line) => formatCurrency(line.taxable ? line.totalPrice * GST_RATE : 0) });
+                          if (isColVisible("amountIncTax"))
+                            cols.push({
+                              key: "amountIncTax", header: "Inc Tax", align: "right", width: 96, className: "font-medium",
+                              cell: (line) => formatCurrency(line.totalPrice + (line.taxable ? line.totalPrice * GST_RATE : 0)),
+                            });
+                          return cols;
+                        })()}
+                        actions={(_line, index) => (
+                          <button
+                            type="button"
+                            onClick={() => deleteCustomLine(index)}
+                            className="text-muted-foreground hover:text-destructive"
+                            data-testid={`button-delete-custom-line-${index}`}
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      />
                     )}
                   </div>{/* end custom lines content */}
                 </div>{/* end custom lines sub-section */}
@@ -3387,10 +3798,9 @@ export default function ClientInvoiceDetail() {
               <div data-testid="summary-panel">
                 <div className="bg-primary/10 px-4 py-3 flex items-center justify-between gap-4">
                   <div className="flex items-center gap-2">
-                    <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-primary/80" />
                     <span className="text-xs font-medium">Invoice Summary</span>
                   </div>
-                  <div className="flex items-center gap-1.5 text-xs">
+                  <div className="relative flex items-center gap-1.5 text-xs">
                       <span
                         className={cn(
                           "text-xs",
@@ -3571,9 +3981,83 @@ export default function ClientInvoiceDetail() {
                     </div>
                   </div>{/* end summary content */}
               </div>{/* end summary-panel */}
-              </div>{/* end Card 2: Financials */}
+              </div>{/* end Act 2: Money */}
 
-              {/* ── Card 3: Documentation ── */}
+                {/* Payments — money, so it sits with the financials, not adrift
+                   at the bottom of the page. */}
+                {isEditMode && (
+                  <div className="rounded-lg border border-border bg-card overflow-hidden" data-testid="section-payments-history">
+                    {sectionHeader({
+                      label: `Payments (${payments.length})`,
+                      right: (
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); setPaymentDialogOpen(true); }}
+                          className="h-6 px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-0.5"
+                          data-testid="button-record-payment"
+                        >
+                          <Plus className="w-3 h-3" />
+                          <span>Record Payment</span>
+                        </button>
+                      ),
+                    })}
+                    {payments.length > 0 && (
+                      <div className="px-3 py-2">
+                        <LineItemTable
+                          fixedLayout
+                          filler
+                          resizeNamespace="client-invoice-payments"
+                          headerClassName={GRID_HEADER}
+                          data={payments}
+                          rowKey={(p) => p.id}
+                          rowTestId={(p) => `row-payment-${p.id}`}
+                          testId="payments-lines"
+                          rowClassName={(p) => ((p as any).isVoided ? "opacity-50" : "")}
+                          columns={[
+                            {
+                              key: "date", header: "Date", width: 120,
+                              cell: (p) => (p.paymentDate ? format(new Date(p.paymentDate), "d MMM yyyy") : "—"),
+                            },
+                            {
+                              key: "amount", header: "Amount", align: "right", width: 120, className: "font-medium",
+                              cell: (p) => (
+                                <span className={cn((p as any).isVoided && "line-through")}>
+                                  {formatCurrency(p.amount / 100)}
+                                </span>
+                              ),
+                            },
+                            {
+                              key: "method", header: "Method", width: 140, className: "text-muted-foreground",
+                              cell: (p) => p.paymentMethod || "—",
+                            },
+                            {
+                              key: "reference", header: "Reference", width: 160, className: "text-muted-foreground",
+                              cell: (p) => p.reference || "—",
+                            },
+                          ]}
+                          actions={(p) =>
+                            (p as any).isVoided ? (
+                              <Badge variant="secondary" className="text-data h-4 px-1.5">Voided</Badge>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => voidPaymentMutation.mutate(p.id)}
+                                disabled={voidPaymentMutation.isPending}
+                                className="h-5 px-1.5 text-data border rounded text-muted-foreground hover-elevate flex items-center gap-0.5"
+                                data-testid={`button-void-payment-${p.id}`}
+                              >
+                                Void
+                              </button>
+                            )
+                          }
+                        />
+                      </div>
+                    )}
+                  </div>
+                )}
+
+              {/* ── Act 3: Presentation — everything that shapes how the invoice
+                   reads to the client. All collapsible, all closed by default. ── */}
               <div className="rounded-lg border border-border bg-card overflow-hidden">
                 {/* Closing Text sub-section */}
                 <div>
@@ -3582,7 +4066,6 @@ export default function ClientInvoiceDetail() {
                     onClick={() => setClosingCollapsed((v) => !v)}
                   >
                     <div className="flex items-center gap-2">
-                      <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-amber/70" />
                       <span className="text-xs font-medium">Closing Text</span>
                     </div>
                     {closingCollapsed ? (
@@ -3621,7 +4104,6 @@ export default function ClientInvoiceDetail() {
                     onClick={() => setTermsCollapsed((v) => !v)}
                   >
                     <div className="flex items-center gap-2">
-                      <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-muted-foreground/40" />
                       <span className="text-xs font-medium">Terms &amp; Conditions</span>
                     </div>
                     {termsCollapsed ? (
@@ -3687,95 +4169,26 @@ export default function ClientInvoiceDetail() {
 
                 {/* Attachments sub-section */}
                 <div className="border-t border-border/50" data-testid="section-attachments">
-                  <div className="h-8 flex items-center justify-between px-3 gap-2 border-b border-border/50 bg-muted/40">
-                    <div className="flex items-center gap-2">
-                      <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-muted-foreground/40" />
-                      <Paperclip className="h-3 w-3 text-muted-foreground flex-shrink-0" />
-                      <span className="text-xs font-medium">Attachments</span>
-                    </div>
-                  </div>
-                  <div className="px-4 py-3">
-                    <p className="text-sm text-muted-foreground text-center py-2">
-                      No attachments
-                    </p>
-                  </div>
+                  {sectionHeader({
+                    label: "Attachments",
+                    icon: <Paperclip className="h-3 w-3 text-muted-foreground flex-shrink-0" />,
+                    right:
+                      invoiceAttachments.length > 0 ? (
+                        <span className="text-xs text-muted-foreground">{invoiceAttachments.length}</span>
+                      ) : undefined,
+                    onToggle: () => setAttachmentsCollapsed((v) => !v),
+                    collapsed: attachmentsCollapsed,
+                  })}
+                  {!attachmentsCollapsed && (
+                    <InvoiceAttachments
+                      invoiceId={effectiveInvoiceId || null}
+                      attachments={invoiceAttachments}
+                      onChange={setInvoiceAttachments}
+                    />
+                  )}
                 </div>
-              </div>{/* end Card 3: Documentation */}
+              </div>{/* end Act 3: Presentation */}
 
-                {/* ── Card 5: Payments ── */}
-                {isEditMode && (
-                  <div className="rounded-lg border border-border bg-card overflow-hidden" data-testid="section-payments-history">
-                    <div className="h-8 flex items-center justify-between px-3 gap-2 border-b border-border/50">
-                      <div className="flex items-center gap-2">
-                        <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-sage/70" />
-                        <span className="text-xs font-medium">Payments ({payments.length})</span>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => setPaymentDialogOpen(true)}
-                        className="h-6 px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-0.5"
-                        data-testid="button-record-payment"
-                      >
-                        <Plus className="w-3 h-3" />
-                        <span>Record Payment</span>
-                      </button>
-                    </div>
-                    <div className="px-4 py-3">
-                      {payments.length > 0 ? (
-                        <Table>
-                          <TableHeader>
-                            <TableRow className="h-6 bg-muted/30">
-                              <TableHead className="text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Date</TableHead>
-                              <TableHead className="text-right text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Amount</TableHead>
-                              <TableHead className="text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Method</TableHead>
-                              <TableHead className="text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Reference</TableHead>
-                              <TableHead className="w-16 py-0 px-2" />
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                            {payments.map((payment) => (
-                              <TableRow key={payment.id} className={cn("h-9", (payment as any).isVoided && "opacity-50")}>
-                                <TableCell className="text-sm px-2">
-                                  {payment.paymentDate
-                                    ? format(new Date(payment.paymentDate), "d MMM yyyy")
-                                    : "-"}
-                                </TableCell>
-                                <TableCell className={cn("text-right text-sm font-medium px-2", (payment as any).isVoided && "line-through")}>
-                                  {formatCurrency(payment.amount / 100)}
-                                </TableCell>
-                                <TableCell className="text-sm text-muted-foreground px-2">
-                                  {payment.paymentMethod || "-"}
-                                </TableCell>
-                                <TableCell className="text-sm text-muted-foreground px-2">
-                                  {payment.reference || "-"}
-                                </TableCell>
-                                <TableCell className="px-2 w-16">
-                                  {(payment as any).isVoided ? (
-                                    <Badge variant="secondary" className="text-data h-4 px-1.5">Voided</Badge>
-                                  ) : (
-                                    <button
-                                      type="button"
-                                      onClick={() => voidPaymentMutation.mutate(payment.id)}
-                                      disabled={voidPaymentMutation.isPending}
-                                      className="h-5 px-1.5 text-data border rounded text-muted-foreground hover-elevate flex items-center gap-0.5"
-                                      data-testid={`button-void-payment-${payment.id}`}
-                                    >
-                                      Void
-                                    </button>
-                                  )}
-                                </TableCell>
-                              </TableRow>
-                            ))}
-                          </TableBody>
-                        </Table>
-                      ) : (
-                        <p className="text-sm text-muted-foreground text-center py-2">
-                          No payments recorded
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                )}
 
             </div>
           </div>
@@ -3818,22 +4231,37 @@ export default function ClientInvoiceDetail() {
               variations.map((v) => {
                 const isApproved = v.status === "approved";
                 const isSelected = selectedVariationIds.includes(v.id);
+                const claimedElsewhere = otherInvoiceVariationClaims[v.id];
+                const fullyClaimed = isVariationFullyClaimedElsewhere(v.id);
+                const remaining = getVariationRemainingPercent(v.id);
+                // A variation billed in full on another invoice can't be added
+                // again. It stays visible (with the invoice that holds it) so
+                // "where did VO-017 go?" answers itself. Already-selected rows
+                // stay togglable so a bad link can always be removed.
+                const isLocked = fullyClaimed && !isSelected;
+                const canToggle = isApproved && !isLocked;
                 return (
                   <div
                     key={v.id}
                     className={cn(
                       "flex items-center gap-3 p-3 rounded-md border",
-                      isApproved
+                      canToggle
                         ? "hover-elevate cursor-pointer"
                         : "opacity-40 cursor-not-allowed"
                     )}
                     onClick={() => {
-                      if (!isApproved) return;
-                      setSelectedVariationIds((prev) =>
-                        isSelected
-                          ? prev.filter((id) => id !== v.id)
-                          : [...prev, v.id]
-                      );
+                      if (!canToggle) return;
+                      if (isSelected) {
+                        setSelectedVariationIds((prev) => prev.filter((id) => id !== v.id));
+                        return;
+                      }
+                      setSelectedVariationIds((prev) => [...prev, v.id]);
+                      // Default this invoice's claim to what's actually left,
+                      // not a blind 100% on top of an existing partial claim.
+                      setVariationClaims((prev) => ({
+                        ...prev,
+                        [v.id]: prev[v.id] ?? remaining,
+                      }));
                     }}
                     data-testid={`variation-option-${v.id}`}
                   >
@@ -3856,6 +4284,16 @@ export default function ClientInvoiceDetail() {
                         </span>
                         <span className="text-sm truncate">{v.name}</span>
                       </div>
+                      {claimedElsewhere && (
+                        <div
+                          className="text-xs text-muted-foreground mt-0.5"
+                          data-testid={`variation-claimed-note-${v.id}`}
+                        >
+                          {fullyClaimed
+                            ? `Already claimed in full on ${claimedElsewhere.invoiceNumbers.join(", ")}`
+                            : `${claimedElsewhere.percent}% claimed on ${claimedElsewhere.invoiceNumbers.join(", ")} — ${remaining}% remaining`}
+                        </div>
+                      )}
                     </div>
                     <div className="flex items-center gap-3 flex-shrink-0">
                       <Badge
@@ -4119,17 +4557,17 @@ export default function ClientInvoiceDetail() {
                     if (av > bv) return labourSortDir === "asc" ? 1 : -1;
                     return 0;
                   });
-                  const thCls = "text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2 cursor-pointer select-none hover:text-muted-foreground whitespace-nowrap";
+                  const thCls = "cursor-pointer select-none hover:text-muted-foreground whitespace-nowrap";
                   return (
                     <>
                       <TableHeader>
-                        <TableRow className="h-6 bg-muted/30 hover:bg-muted/30">
+                        <TableRow className="[&>th]:border-b-2 [&>th]:border-border [&>th]:text-foreground/75 [&>th]:font-semibold">
                           <TableHead className="w-8 py-0 px-2" />
-                          <TableHead className={thCls} onClick={() => labourSortToggle("date")}>Date <SortIcon col="date" current={labourSortCol} dir={labourSortDir} /></TableHead>
-                          <TableHead className={thCls} onClick={() => labourSortToggle("staff")}>Staff <SortIcon col="staff" current={labourSortCol} dir={labourSortDir} /></TableHead>
-                          <TableHead className={thCls} onClick={() => labourSortToggle("status")}>Status <SortIcon col="status" current={labourSortCol} dir={labourSortDir} /></TableHead>
-                          <TableHead className={`text-right ${thCls}`} onClick={() => labourSortToggle("hours")}>Hours <SortIcon col="hours" current={labourSortCol} dir={labourSortDir} /></TableHead>
-                          <TableHead className={thCls} onClick={() => labourSortToggle("costCode")}>Cost Code <SortIcon col="costCode" current={labourSortCol} dir={labourSortDir} /></TableHead>
+                          <TableHead onClick={() => labourSortToggle("date")}>Date <SortIcon col="date" current={labourSortCol} dir={labourSortDir} /></TableHead>
+                          <TableHead onClick={() => labourSortToggle("staff")}>Staff <SortIcon col="staff" current={labourSortCol} dir={labourSortDir} /></TableHead>
+                          <TableHead onClick={() => labourSortToggle("status")}>Status <SortIcon col="status" current={labourSortCol} dir={labourSortDir} /></TableHead>
+                          <TableHead className="text-right" onClick={() => labourSortToggle("hours")}>Hours <SortIcon col="hours" current={labourSortCol} dir={labourSortDir} /></TableHead>
+                          <TableHead onClick={() => labourSortToggle("costCode")}>Cost Code <SortIcon col="costCode" current={labourSortCol} dir={labourSortDir} /></TableHead>
                           <TableHead className={`${thCls} cursor-default`}>Labels</TableHead>
                         </TableRow>
                       </TableHeader>
@@ -4137,7 +4575,7 @@ export default function ClientInvoiceDetail() {
                         {timesheetsLoading ? (
                           <TableRow><TableCell colSpan={7} className="text-center py-8"><Loader2 className="w-5 h-5 animate-spin mx-auto text-muted-foreground" /></TableCell></TableRow>
                         ) : base.length === 0 ? (
-                          <TableRow><TableCell colSpan={7} className="text-center text-sm text-muted-foreground py-8">No timesheets found.</TableCell></TableRow>
+                          <TableRow><TableCell colSpan={7} className="text-center text-table text-muted-foreground py-8">No timesheets found.</TableCell></TableRow>
                         ) : base.map((t: any) => {
                           const isApproved = t.status === "approved";
                           const isChecked = modalTimesheetIds.includes(t.id);
@@ -4151,15 +4589,15 @@ export default function ClientInvoiceDetail() {
                                   {isChecked && isApproved && <Check className="h-3 w-3 text-primary-foreground" />}
                                 </div>
                               </TableCell>
-                              <TableCell className="py-1 text-sm tabular-nums whitespace-nowrap">{t.date ? format(new Date(t.date), "d MMM yy") : "—"}</TableCell>
-                              <TableCell className="py-1 text-sm font-medium whitespace-nowrap">{getUserName(t.userId)}</TableCell>
+                              <TableCell className="py-1 text-table tabular-nums whitespace-nowrap">{t.date ? format(new Date(t.date), "d MMM yy") : "—"}</TableCell>
+                              <TableCell className="py-1 text-table font-medium whitespace-nowrap">{getUserName(t.userId)}</TableCell>
                               <TableCell className="py-1 whitespace-nowrap">
                                 {isApproved
                                   ? <span className="flex items-center gap-1 text-xs"><div className="w-1.5 h-1.5 rounded-full bg-sage flex-shrink-0" />Approved</span>
                                   : <span className="flex items-center gap-1 text-xs"><div className="w-1.5 h-1.5 rounded-full bg-amber flex-shrink-0" />Pending</span>}
                               </TableCell>
-                              <TableCell className="py-1 text-right text-sm tabular-nums">{Number(t.duration).toFixed(1)}</TableCell>
-                              <TableCell className="py-1 text-sm text-muted-foreground whitespace-nowrap">{cc?.title || cc?.code || "—"}</TableCell>
+                              <TableCell className="py-1 text-right text-table tabular-nums">{Number(t.duration).toFixed(1)}</TableCell>
+                              <TableCell className="py-1 text-table text-muted-foreground whitespace-nowrap">{cc?.title || cc?.code || "—"}</TableCell>
                               <TableCell className="py-1 text-xs text-muted-foreground truncate max-w-[120px]">{labels.length > 0 ? labels.slice(0, 3).join(", ") : "—"}</TableCell>
                             </TableRow>
                           );
@@ -4257,7 +4695,7 @@ export default function ClientInvoiceDetail() {
                     return 0;
                   });
                   const colCount = 1 + INVOICE_BILL_COLUMNS.filter((c) => isBillColVisible(c.id)).length;
-                  const thCls = "text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2 cursor-pointer select-none hover:text-muted-foreground whitespace-nowrap";
+                  const thCls = "cursor-pointer select-none hover:text-muted-foreground whitespace-nowrap";
                   const billStatusBadge = (status: string) => {
                     const map: Record<string, { label: string; cls: string }> = {
                       draft: { label: "Draft", cls: "text-muted-foreground" },
@@ -4281,15 +4719,15 @@ export default function ClientInvoiceDetail() {
                   return (
                     <>
                       <TableHeader>
-                        <TableRow className="h-6 bg-muted/30 hover:bg-muted/30">
+                        <TableRow className="[&>th]:border-b-2 [&>th]:border-border [&>th]:text-foreground/75 [&>th]:font-semibold">
                           <TableHead className="w-8 py-0 px-2" />
-                          {isBillColVisible("billNumber") && <TableHead className={thCls} onClick={() => billsSortToggle("billNumber")}>Bill No. <SortIcon col="billNumber" current={billsSortCol} dir={billsSortDir} /></TableHead>}
-                          {isBillColVisible("status") && <TableHead className={thCls} onClick={() => billsSortToggle("status")}>Status <SortIcon col="status" current={billsSortCol} dir={billsSortDir} /></TableHead>}
-                          {isBillColVisible("supplier") && <TableHead className={thCls} onClick={() => billsSortToggle("supplier")}>Supplier <SortIcon col="supplier" current={billsSortCol} dir={billsSortDir} /></TableHead>}
-                          {isBillColVisible("reference") && <TableHead className={thCls} onClick={() => billsSortToggle("reference")}>Reference <SortIcon col="reference" current={billsSortCol} dir={billsSortDir} /></TableHead>}
-                          {isBillColVisible("date") && <TableHead className={thCls} onClick={() => billsSortToggle("date")}>Date <SortIcon col="date" current={billsSortCol} dir={billsSortDir} /></TableHead>}
-                          {isBillColVisible("total") && <TableHead className={`text-right ${thCls}`} onClick={() => billsSortToggle("total")}>Total <SortIcon col="total" current={billsSortCol} dir={billsSortDir} /></TableHead>}
-                          {isBillColVisible("due") && <TableHead className={thCls} onClick={() => billsSortToggle("due")}>Due <SortIcon col="due" current={billsSortCol} dir={billsSortDir} /></TableHead>}
+                          {isBillColVisible("billNumber") && <TableHead onClick={() => billsSortToggle("billNumber")}>Bill No. <SortIcon col="billNumber" current={billsSortCol} dir={billsSortDir} /></TableHead>}
+                          {isBillColVisible("status") && <TableHead onClick={() => billsSortToggle("status")}>Status <SortIcon col="status" current={billsSortCol} dir={billsSortDir} /></TableHead>}
+                          {isBillColVisible("supplier") && <TableHead onClick={() => billsSortToggle("supplier")}>Supplier <SortIcon col="supplier" current={billsSortCol} dir={billsSortDir} /></TableHead>}
+                          {isBillColVisible("reference") && <TableHead onClick={() => billsSortToggle("reference")}>Reference <SortIcon col="reference" current={billsSortCol} dir={billsSortDir} /></TableHead>}
+                          {isBillColVisible("date") && <TableHead onClick={() => billsSortToggle("date")}>Date <SortIcon col="date" current={billsSortCol} dir={billsSortDir} /></TableHead>}
+                          {isBillColVisible("total") && <TableHead className="text-right" onClick={() => billsSortToggle("total")}>Total <SortIcon col="total" current={billsSortCol} dir={billsSortDir} /></TableHead>}
+                          {isBillColVisible("due") && <TableHead onClick={() => billsSortToggle("due")}>Due <SortIcon col="due" current={billsSortCol} dir={billsSortDir} /></TableHead>}
                           {isBillColVisible("xero") && <TableHead className={`${thCls} cursor-default`}>Xero</TableHead>}
                         </TableRow>
                       </TableHeader>
@@ -4298,7 +4736,7 @@ export default function ClientInvoiceDetail() {
                           <TableRow><TableCell colSpan={colCount} className="text-center py-8"><Loader2 className="w-5 h-5 animate-spin mx-auto text-muted-foreground" /></TableCell></TableRow>
                         ) : sorted.length === 0 ? (
                           <TableRow>
-                            <TableCell colSpan={colCount} className="text-center text-sm text-muted-foreground py-8">
+                            <TableCell colSpan={colCount} className="text-center text-table text-muted-foreground py-8">
                               No bills found for this project.
                             </TableCell>
                           </TableRow>
@@ -4315,15 +4753,15 @@ export default function ClientInvoiceDetail() {
                                   {isChecked && <Check className="h-3 w-3 text-primary-foreground" />}
                                 </div>
                               </TableCell>
-                              {isBillColVisible("billNumber") && <TableCell className="py-1 text-sm font-medium font-mono whitespace-nowrap">{b.billNumber}</TableCell>}
+                              {isBillColVisible("billNumber") && <TableCell className="py-1 text-table font-medium font-mono whitespace-nowrap">{b.billNumber}</TableCell>}
                               {isBillColVisible("status") && <TableCell className="py-1">{billStatusBadge((b as any).status)}</TableCell>}
-                              {isBillColVisible("supplier") && <TableCell className="py-1 text-sm text-muted-foreground whitespace-nowrap">{(b as any).supplierName || "—"}</TableCell>}
-                              {isBillColVisible("reference") && <TableCell className="py-1 text-sm text-muted-foreground whitespace-nowrap">{(b as any).reference || "—"}</TableCell>}
-                              {isBillColVisible("date") && <TableCell className="py-1 text-sm text-muted-foreground whitespace-nowrap">{(b as any).billDate ? format(new Date((b as any).billDate), "d MMM yy") : "—"}</TableCell>}
-                              {isBillColVisible("total") && <TableCell className="py-1 text-right text-sm font-medium tabular-nums whitespace-nowrap">{formatCurrency(b.total / 100)}</TableCell>}
-                              {isBillColVisible("due") && <TableCell className="py-1 text-sm text-muted-foreground whitespace-nowrap">{(b as any).dueDate ? format(new Date((b as any).dueDate), "d MMM yy") : "—"}</TableCell>}
+                              {isBillColVisible("supplier") && <TableCell className="py-1 text-table text-muted-foreground whitespace-nowrap">{(b as any).supplierName || "—"}</TableCell>}
+                              {isBillColVisible("reference") && <TableCell className="py-1 text-table text-muted-foreground whitespace-nowrap">{(b as any).reference || "—"}</TableCell>}
+                              {isBillColVisible("date") && <TableCell className="py-1 text-table text-muted-foreground whitespace-nowrap">{(b as any).billDate ? format(new Date((b as any).billDate), "d MMM yy") : "—"}</TableCell>}
+                              {isBillColVisible("total") && <TableCell className="py-1 text-right text-table font-medium tabular-nums whitespace-nowrap">{formatCurrency(b.total / 100)}</TableCell>}
+                              {isBillColVisible("due") && <TableCell className="py-1 text-table text-muted-foreground whitespace-nowrap">{(b as any).dueDate ? format(new Date((b as any).dueDate), "d MMM yy") : "—"}</TableCell>}
                               {isBillColVisible("xero") && (
-                                <TableCell className="py-1 text-sm">
+                                <TableCell className="py-1 text-table">
                                   {(b as any).xeroInvoiceId
                                     ? <span className="flex items-center gap-1 text-xs text-sage"><div className="w-1.5 h-1.5 rounded-full bg-sage" />Synced</span>
                                     : <span className="text-muted-foreground/40">—</span>}
@@ -4376,13 +4814,13 @@ export default function ClientInvoiceDetail() {
             <div className="max-h-[380px] overflow-y-auto">
               <Table>
                 <TableHeader>
-                  <TableRow className="h-6 bg-muted/30 hover:bg-muted/30">
+                  <TableRow className="[&>th]:border-b-2 [&>th]:border-border [&>th]:text-foreground/75 [&>th]:font-semibold">
                     <TableHead className="w-8 py-0 px-2" />
-                    <TableHead className="text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Selection</TableHead>
-                    <TableHead className="text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Room</TableHead>
-                    <TableHead className="text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Option</TableHead>
-                    <TableHead className="text-right text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Qty</TableHead>
-                    <TableHead className="text-right text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Total</TableHead>
+                    <TableHead>Selection</TableHead>
+                    <TableHead>Room</TableHead>
+                    <TableHead>Option</TableHead>
+                    <TableHead className="text-right">Qty</TableHead>
+                    <TableHead className="text-right">Total</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -4408,7 +4846,7 @@ export default function ClientInvoiceDetail() {
                     if (filtered.length === 0) {
                       return (
                         <TableRow>
-                          <TableCell colSpan={6} className="text-center text-sm text-muted-foreground py-8">
+                          <TableCell colSpan={6} className="text-center text-table text-muted-foreground py-8">
                             No invoiceable selections found for this project.
                           </TableCell>
                         </TableRow>
@@ -4434,11 +4872,11 @@ export default function ClientInvoiceDetail() {
                               {isChecked && <Check className="h-3 w-3 text-primary-foreground" />}
                             </div>
                           </TableCell>
-                          <TableCell className="py-1 text-sm font-medium truncate max-w-[140px]">{o.selectionName || "—"}</TableCell>
-                          <TableCell className="py-1 text-sm text-muted-foreground">{o.room || "—"}</TableCell>
-                          <TableCell className="py-1 text-sm">{o.name}</TableCell>
-                          <TableCell className="py-1 text-right text-sm tabular-nums">{o.quantity || "—"}</TableCell>
-                          <TableCell className="py-1 text-right text-sm font-medium tabular-nums">{formatCurrency((o.totalCost || 0) / 100)}</TableCell>
+                          <TableCell className="py-1 text-table font-medium truncate max-w-[140px]">{o.selectionName || "—"}</TableCell>
+                          <TableCell className="py-1 text-table text-muted-foreground">{o.room || "—"}</TableCell>
+                          <TableCell className="py-1 text-table">{o.name}</TableCell>
+                          <TableCell className="py-1 text-right text-table tabular-nums">{o.quantity || "—"}</TableCell>
+                          <TableCell className="py-1 text-right text-table font-medium tabular-nums">{formatCurrency((o.totalCost || 0) / 100)}</TableCell>
                         </TableRow>
                       );
                     });
@@ -4459,6 +4897,79 @@ export default function ClientInvoiceDetail() {
               Add {modalSelectionOptionIds.length > 0 ? `${modalSelectionOptionIds.length} ` : ""}to Invoice
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete confirmation — only reachable before the invoice exists in Xero. */}
+      <Dialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
+        <DialogContent data-testid="dialog-delete-invoice">
+          {(() => {
+            const inXero = !!invoice?.xeroInvoiceId;
+            const hasPayments = (invoice?.paidAmount ?? 0) > 0;
+            const label = invoice?.invoiceNumber || invoice?.name || "This invoice";
+            return (
+              <>
+                <DialogHeader>
+                  <DialogTitle>
+                    {hasPayments
+                      ? "This invoice can't be deleted"
+                      : inXero
+                      ? "Void in Xero and delete?"
+                      : "Delete this invoice?"}
+                  </DialogTitle>
+                </DialogHeader>
+
+                {hasPayments ? (
+                  <p className="text-sm text-muted-foreground">
+                    {label} has {formatCurrency((invoice?.paidAmount ?? 0) / 100)} in payments
+                    recorded against it. Xero won't void an invoice that has been paid, and
+                    withdrawing money already received is a credit note, not a deletion.
+                    Raise a credit note in Xero instead.
+                  </p>
+                ) : inXero ? (
+                  <div className="space-y-2 text-sm text-muted-foreground">
+                    <p>{label} exists in Xero, so two things will happen:</p>
+                    <ul className="list-disc pl-5 space-y-1">
+                      <li>
+                        It will be <strong>voided in Xero</strong>. Xero keeps the voided invoice
+                        as a record, but <strong>voiding cannot be undone</strong> — the number
+                        can't be reused and the invoice can't be reinstated.
+                      </li>
+                      <li>
+                        It will then be <strong>deleted from Morada</strong>, along with its line
+                        items and claim links.
+                      </li>
+                    </ul>
+                    <p>
+                      If Xero refuses the void, nothing is deleted here either — you'll get the
+                      reason and the invoice stays as it is.
+                    </p>
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    {label} has never been sent to Xero. It will be permanently removed from
+                    Morada, along with its line items and claim links. This can't be undone.
+                  </p>
+                )}
+
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setDeleteConfirmOpen(false)}>
+                    {hasPayments ? "Close" : "Cancel"}
+                  </Button>
+                  {!hasPayments && (
+                    <Button
+                      variant="destructive"
+                      onClick={() => { setDeleteConfirmOpen(false); deleteInvoiceMutation.mutate(); }}
+                      disabled={deleteInvoiceMutation.isPending}
+                      data-testid="button-confirm-delete-invoice"
+                    >
+                      {inXero ? "Void in Xero and delete" : "Delete invoice"}
+                    </Button>
+                  )}
+                </DialogFooter>
+              </>
+            );
+          })()}
         </DialogContent>
       </Dialog>
 
@@ -4524,8 +5035,8 @@ export default function ClientInvoiceDetail() {
                             )}
                             data-testid="button-payment-date"
                           >
-                            <CalendarIcon className="mr-2 h-4 w-4" />
-                            {field.value ? format(field.value, "PPP") : "Pick a date"}
+                            <CalendarIcon className="mr-1.5 h-3 w-3" />
+                            {field.value ? format(field.value, "d MMM yyyy") : "Pick a date"}
                           </Button>
                         </FormControl>
                       </PopoverTrigger>
@@ -4623,6 +5134,7 @@ export default function ClientInvoiceDetail() {
           onOpenChange={setInvoicePreviewOpen}
           document={
             <InvoiceDocument
+              attachments={invoiceAttachments}
               invoiceNumber={form.watch("invoiceNumber") || invoice.invoiceNumber || "Invoice"}
               issueDate={form.watch("invoiceDate") || invoice.invoiceDate}
               dueDate={form.watch("dueDate") || invoice.dueDate}

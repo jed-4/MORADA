@@ -20,13 +20,29 @@ import {
 import { format } from "date-fns";
 import { Calendar as CalendarComponent } from "@/components/ui/calendar";
 
+/**
+ * Shared by two different filter panels, which unfortunately name the same concepts
+ * differently: this component writes `projects`/`status`, while UserCalendar's own
+ * inline panel writes `projectIds`/`statuses`. Both are declared so each panel type-checks;
+ * read whichever pair the panel in question writes.
+ */
 export interface CalendarFilters {
   projects?: string[];
   status?: string[];
+  /** UserCalendar's inline panel equivalent of `projects`. */
+  projectIds?: string[];
+  /** UserCalendar's inline panel equivalent of `status`. */
+  statuses?: string[];
   eventTypes?: string[];
   assignees?: string[];
   dateFrom?: Date;
   dateTo?: Date;
+  /**
+   * Projects whose *entire* schedule should draw as chips on a personal calendar.
+   * Anything not listed has its subbie work bars collapsed into the project band —
+   * see shared/scheduleVisibility.ts.
+   */
+  fullScheduleProjects?: string[];
 }
 
 interface CalendarFiltersProps {

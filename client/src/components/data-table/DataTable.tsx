@@ -45,6 +45,12 @@ import { cn } from "@/lib/utils";
 export interface DataTableColumnMeta {
   /** Default width in px when no persisted width exists. */
   defaultWidth?: number;
+  /**
+   * Nominates this column to soak up leftover horizontal space, so the columns
+   * reach the right edge instead of trailing off into the blank filler gap.
+   * Every other column keeps its exact saved width. First match wins.
+   */
+  flex?: boolean;
   /** Right-aligned cell (numbers, totals). */
   align?: "left" | "right" | "center";
   /** Fixed (non-draggable, non-resizable, non-hideable) — e.g. checkbox col. */
@@ -88,6 +94,12 @@ export interface DataTableProps<TData> {
   className?: string;
   /** Optional class merged onto every <th>. Useful for per-table compact header styling. */
   headerClassName?: string;
+  /**
+   * "plain" drops the filled grey header for the lighter treatment used on the
+   * allowance detail tables. Defaults to "filled" so existing tables are
+   * untouched.
+   */
+  headerVariant?: "filled" | "plain";
   /** Row min-height in px (default 36). */
   rowHeight?: number;
   /**
@@ -175,6 +187,8 @@ interface DraggableHeaderProps {
   sticky: boolean;
   /** Sticky to the right edge (actions column). */
   stickyRight?: boolean;
+  /** Lighter, unfilled header treatment (matches the allowance detail tables). */
+  plain?: boolean;
   /** Show the sticky-right shadow (only when the table actually overflows). */
   rightShadow?: boolean;
   align?: "left" | "right" | "center";
@@ -182,7 +196,7 @@ interface DraggableHeaderProps {
   thClassName?: string;
 }
 
-function DraggableHeader({ id, children, width, pinned, sticky, stickyRight, rightShadow, align, onContextMenu, thClassName }: DraggableHeaderProps) {
+function DraggableHeader({ id, children, width, pinned, sticky, stickyRight, rightShadow, align, onContextMenu, thClassName, plain }: DraggableHeaderProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging, isOver, over, active } =
     useSortable({ id, disabled: pinned });
 
@@ -197,7 +211,7 @@ function DraggableHeader({ id, children, width, pinned, sticky, stickyRight, rig
     left: sticky ? 0 : undefined,
     right: stickyRight ? 0 : undefined,
     zIndex: sticky || stickyRight ? 3 : isDragging ? 2 : 1,
-    background: sticky || stickyRight ? "hsl(var(--muted))" : undefined,
+    background: sticky || stickyRight ? (plain ? "hsl(var(--card))" : "hsl(var(--muted))") : undefined,
     boxShadow: sticky ? STICKY_SHADOW : stickyRight && rightShadow ? STICKY_SHADOW_RIGHT : undefined,
   };
 
@@ -218,7 +232,10 @@ function DraggableHeader({ id, children, width, pinned, sticky, stickyRight, rig
       style={style}
       onContextMenu={onContextMenu}
       className={cn(
-        "h-7 px-2 text-data font-medium uppercase tracking-wide text-muted-foreground/70 border-b border-border bg-muted select-none relative",
+        "px-2 uppercase tracking-wide border-b border-border select-none relative",
+        plain
+          ? "h-6 text-[9px] font-semibold text-muted-foreground bg-card"
+          : "h-7 text-data font-medium text-muted-foreground/70 bg-muted",
         align === "right" && "text-right",
         align === "center" && "text-center",
         !pinned && "cursor-grab active:cursor-grabbing",
@@ -250,6 +267,7 @@ export function DataTable<TData>({
   emptyState,
   className,
   headerClassName,
+  headerVariant = "filled",
   rowHeight = 36,
   legacyConfigKey,
   getSubRows,
@@ -455,10 +473,14 @@ export function DataTable<TData>({
   // scroll horizontally; next to the blank filler gap a shadow would look odd.
   const scrollRef = useRef<HTMLDivElement>(null);
   const [hasOverflow, setHasOverflow] = useState(false);
+  const [containerWidth, setContainerWidth] = useState(0);
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
-    const check = () => setHasOverflow(el.scrollWidth > el.clientWidth + 1);
+    const check = () => {
+      setHasOverflow(el.scrollWidth > el.clientWidth + 1);
+      setContainerWidth(el.clientWidth);
+    };
     check();
     const ro = new ResizeObserver(check);
     ro.observe(el);
@@ -466,7 +488,10 @@ export function DataTable<TData>({
   }, []);
   useEffect(() => {
     const el = scrollRef.current;
-    if (el) setHasOverflow(el.scrollWidth > el.clientWidth + 1);
+    if (el) {
+      setHasOverflow(el.scrollWidth > el.clientWidth + 1);
+      setContainerWidth(el.clientWidth);
+    }
   }, [columnSizing, columnVisibility, data]);
 
   // Auto-hide scrollbars, mimicking macOS overlay behaviour: visible while
@@ -504,22 +529,32 @@ export function DataTable<TData>({
   // space so every real column keeps its exact saved width and the actions
   // column sits flush at the right edge. Without a pinned-right column the
   // filler goes at the very end.
+  const plainHeader = headerVariant === "plain";
   const lastVisible = visibleLeafColumns[visibleLeafColumns.length - 1];
   const pinnedRightVisible = !!lastVisible && lastVisible.id === pinnedRightId;
+  // A column flagged meta.flex takes the leftover space that would otherwise
+  // sit in the blank filler, so the columns span the full width and any
+  // pinned-right actions column lands flush against the last real column.
+  const flexColId = visibleLeafColumns.find(
+    (c) => ((c.columnDef.meta as DataTableColumnMeta | undefined) ?? {}).flex,
+  )?.id;
+  const slack = flexColId ? Math.max(0, containerWidth - totalWidth) : 0;
+  const widthFor = (c: { id: string; getSize: () => number }) =>
+    c.getSize() + (c.id === flexColId ? slack : 0);
 
   return (
     <div ref={scrollRef} className={cn("relative w-full h-full overflow-auto dt-autohide-scrollbar", className)} data-testid={`datatable-${storageKey}`}>
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
         <table
           className="border-separate border-spacing-0 text-sm"
-          style={{ width: totalWidth, minWidth: "100%", tableLayout: "fixed" }}
+          style={{ width: totalWidth + slack, minWidth: "100%", tableLayout: "fixed" }}
         >
           <colgroup>
             {(pinnedRightVisible ? visibleLeafColumns.slice(0, -1) : visibleLeafColumns).map((c) => (
-              <col key={c.id} style={{ width: c.getSize() }} />
+              <col key={c.id} style={{ width: widthFor(c) }} />
             ))}
             <col key="__filler" />
-            {pinnedRightVisible && <col key={lastVisible.id} style={{ width: lastVisible.getSize() }} />}
+            {pinnedRightVisible && <col key={lastVisible.id} style={{ width: widthFor(lastVisible) }} />}
           </colgroup>
 
           <thead className="sticky top-0 z-20">
@@ -540,19 +575,20 @@ export function DataTable<TData>({
                   return (
                     <Fragment key={id}>
                     {isPinnedRight && (
-                      <th aria-hidden className={cn("h-7 border-b border-border bg-muted", headerClassName)} />
+                      <th aria-hidden className={cn("border-b border-border", plainHeader ? "h-6 bg-card" : "h-7 bg-muted", headerClassName)} />
                     )}
                     <ContextMenu>
                       <ContextMenuTrigger asChild>
                         <DraggableHeader
                           id={id}
-                          width={header.getSize()}
+                          width={widthFor(header.column)}
                           pinned={isFixed}
                           sticky={isSticky}
                           stickyRight={isPinnedRight}
                           rightShadow={hasOverflow}
                           align={meta.align}
                           thClassName={headerClassName}
+                          plain={plainHeader}
                         >
                           <div
                             className={cn(
@@ -629,7 +665,7 @@ export function DataTable<TData>({
                   );
                 })}
                 {!pinnedRightVisible && (
-                  <th aria-hidden className={cn("h-7 border-b border-border bg-muted", headerClassName)} />
+                  <th aria-hidden className={cn("border-b border-border", plainHeader ? "h-6 bg-card" : "h-7 bg-muted", headerClassName)} />
                 )}
               </tr>
             </SortableContext>

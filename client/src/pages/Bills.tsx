@@ -67,6 +67,7 @@ import {
   RefreshCw,
   Banknote,
   ScanText,
+  Ban,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -78,6 +79,12 @@ import {
 import { type Bill, type Project, type Supplier } from "@shared/schema";
 import { useAuth } from "@/hooks/use-auth";
 import { ReimbursementsQueue } from "@/components/bills/ReimbursementsQueue";
+import {
+  XeroReviewDialog,
+  XERO_REVIEW_QUERY_KEY,
+  type XeroReviewBill,
+  type XeroReviewResponse,
+} from "@/components/bills/XeroReviewDialog";
 import { FilePreviewModal, type PreviewFile } from "@/components/FilePreviewModal";
 import { ProjectIcon } from "@/components/ProjectIcon";
 import { StatusBadge } from "@/components/StatusBadge";
@@ -1014,6 +1021,30 @@ export default function Bills({ embedded }: { embedded?: boolean } = {}) {
   const [reconcileOpen, setReconcileOpen] = useState(false);
   const [reconcileReport, setReconcileReport] = useState<ReconcileReport | null>(null);
 
+  // ── Xero review queue ──────────────────────────────────────────────────
+  // The nightly sweep parks total changes, voids, and vanished invoices on the
+  // bill rows. Cheap DB read, so it's always live for the count badge.
+  const [xeroReviewOpen, setXeroReviewOpen] = useState(false);
+  const { data: xeroReview } = useQuery<XeroReviewResponse>({ queryKey: XERO_REVIEW_QUERY_KEY });
+  const xeroReviewCount = xeroReview?.count ?? 0;
+
+  // The "Bills need review" notification links to /bills?review=xero. Strip the
+  // param once consumed so a refresh (or a later back-nav) doesn't reopen it.
+  useEffect(() => {
+    if (searchParams.get("review") !== "xero") return;
+    setXeroReviewOpen(true);
+    const next = new URLSearchParams(searchString);
+    next.delete("review");
+    const qs = next.toString();
+    setLocation(`${window.location.pathname}${qs ? `?${qs}` : ""}`, { replace: true });
+  }, [searchParams, searchString, setLocation]);
+
+  const openBillFromReview = (bill: XeroReviewBill) => {
+    setXeroReviewOpen(false);
+    if (bill.projectId) setLocation(`/projects/${bill.projectId}/bills/${bill.billId}`);
+    else setLocation(`/bills/${bill.billId}`);
+  };
+
   const reconcilePreview = useMutation({
     mutationFn: async () => apiRequest("/api/xero/bills/reconcile?dryRun=true", "POST", {}) as Promise<ReconcileReport>,
     onSuccess: (data) => {
@@ -1163,13 +1194,27 @@ export default function Bills({ embedded }: { embedded?: boolean } = {}) {
           const syncStatus = bill.xeroLastSyncStatus;
           const syncErr = bill.xeroLastSyncError;
           const syncAt = bill.xeroLastSyncAt;
+          // On success the error column carries non-fatal warnings (e.g.
+          // pushed without job tracking) — amber icon, not the red failure one.
+          const syncWarn = syncStatus === "success" ? syncErr : null;
           const tip = syncStatus === "failed"
             ? `Last push failed${syncAt ? ` (${new Date(syncAt).toLocaleString()})` : ""}: ${syncErr || "unknown error"}`
-            : syncStatus === "success" && syncAt
-              ? `Synced ${new Date(syncAt).toLocaleString()}`
-              : bill.xeroInvoiceId ? "Linked to Xero" : "";
-          return syncStatus === "failed" ? (
+            : syncWarn
+              ? syncWarn
+              : syncStatus === "success" && syncAt
+                ? `Synced ${new Date(syncAt).toLocaleString()}`
+                : bill.xeroInvoiceId ? "Linked to Xero" : "";
+          // A void outranks every sync state below it: the invoice no longer
+          // exists in Xero, so "linked" or "synced ok" would both be misleading.
+          // It survives resolving the review-queue entry that first surfaced it.
+          return (bill as any).xeroVoidedAt ? (
+            <span title="Voided in Xero" aria-label="Voided in Xero">
+              <Ban className="h-3.5 w-3.5 inline" style={{ color: "hsl(var(--coral))" }} />
+            </span>
+          ) : syncStatus === "failed" ? (
             <span title={tip}><AlertCircle className="h-3 w-3 inline text-destructive" /></span>
+          ) : syncWarn ? (
+            <span title={tip}><AlertCircle className="h-3 w-3 inline" style={{ color: "hsl(var(--amber))" }} /></span>
           ) : bill.xeroInvoiceId ? (
             <span title={tip}><SiXero className="h-3.5 w-3.5 inline text-[#13B5EA]" /></span>
           ) : null;
@@ -1382,6 +1427,24 @@ export default function Bills({ embedded }: { embedded?: boolean } = {}) {
 
         <div className="flex-1" />
 
+        {/* Xero review queue — discoverable without waiting for the notification */}
+        {xeroReviewCount > 0 && billsView === "bills" && (
+          <button
+            className="h-6 px-2 text-xs rounded-md border flex items-center gap-1 flex-shrink-0 hover-elevate active-elevate-2"
+            style={{
+              backgroundColor: "hsl(var(--coral-light))",
+              borderColor: "hsl(var(--coral))",
+              color: "hsl(var(--foreground))",
+            }}
+            onClick={() => setXeroReviewOpen(true)}
+            data-testid="button-xero-review-badge"
+          >
+            <AlertTriangle className="w-3 h-3" />
+            <span className="tabular-nums">{xeroReviewCount}</span>
+            <span className="hidden sm:inline">need review</span>
+          </button>
+        )}
+
         {/* New Bill button */}
         {(isAdminLike || billsView === "bills") && (
           <button
@@ -1431,6 +1494,21 @@ export default function Bills({ embedded }: { embedded?: boolean } = {}) {
               Import from Xero
             </DropdownMenuItem>
             <DropdownMenuItem
+              onSelect={() => setXeroReviewOpen(true)}
+              data-testid="menu-item-xero-review"
+            >
+              <AlertTriangle className="w-3.5 h-3.5 mr-2" />
+              <span className="flex-1">Bills needing review</span>
+              {xeroReviewCount > 0 && (
+                <span
+                  className="ml-2 text-[10px] font-semibold tabular-nums rounded-full px-1.5 py-0.5"
+                  style={{ backgroundColor: "hsl(var(--coral-light))", color: "hsl(var(--foreground))" }}
+                >
+                  {xeroReviewCount}
+                </span>
+              )}
+            </DropdownMenuItem>
+            <DropdownMenuItem
               onSelect={() => reconcilePreview.mutate()}
               disabled={reconcilePreview.isPending}
               data-testid="menu-item-reconcile-xero"
@@ -1438,7 +1516,7 @@ export default function Bills({ embedded }: { embedded?: boolean } = {}) {
               {reconcilePreview.isPending
                 ? <Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" />
                 : <RefreshCw className="w-3.5 h-3.5 mr-2" />}
-              Reconcile with Xero
+              Full Xero reconcile…
             </DropdownMenuItem>
             <DropdownMenuItem
               onSelect={() => setLocation("/settings?tab=integrations")}
@@ -1603,6 +1681,12 @@ export default function Bills({ embedded }: { embedded?: boolean } = {}) {
         projects={projects}
         suppliers={suppliers}
         defaultProjectId={importProjectId}
+      />
+
+      <XeroReviewDialog
+        open={xeroReviewOpen}
+        onOpenChange={setXeroReviewOpen}
+        onOpenBill={openBillFromReview}
       />
 
       {/* Reconcile-with-Xero divergence report */}

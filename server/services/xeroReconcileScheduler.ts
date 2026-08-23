@@ -19,9 +19,14 @@ function hoursSince(d: Date | null | undefined): number {
 }
 
 async function notifySurprises(companyId: string, report: Awaited<ReturnType<typeof reconcileBillsWithXero>>): Promise<void> {
+  const total = report.surprises.length;
+  const voided = report.surprises.filter((s) => s.reviewReason === "voided_in_xero").length;
   const names = report.surprises.map((s) => s.billNumber).slice(0, 8).join(", ");
-  const more = report.surprises.length > 8 ? ` +${report.surprises.length - 8} more` : "";
-  const message = `${report.surprises.length} bill${report.surprises.length === 1 ? "" : "s"} changed unexpectedly in Xero and need review: ${names}${more}`;
+  const more = total > 8 ? ` +${total - 8} more` : "";
+  // Voids get called out by name — they're the change a builder most wants to
+  // hear about, and they read very differently from a total being edited.
+  const voidNote = voided > 0 ? ` (${voided} voided in Xero)` : "";
+  const message = `${total} bill${total === 1 ? "" : "s"} changed unexpectedly in Xero and need review${voidNote}: ${names}${more}`;
 
   let users;
   try {
@@ -42,7 +47,10 @@ async function notifySurprises(companyId: string, report: Awaited<ReturnType<typ
         type: "xero_reconcile",
         title: "Bills need review",
         message,
-        link: "/bills",
+        // Query param matters: NotificationBell does a full navigation (not a
+        // wouter push) for links containing "?", which remounts Bills so the
+        // review modal opens from a cold mount.
+        link: "/bills?review=xero",
         entityType: "bill",
         isRead: false,
       } as any);
@@ -75,8 +83,17 @@ async function runDueConnections(): Promise<void> {
       const report = await reconcileBillsWithXero(conn.companyId, { safeOnly: true });
       await storage.updateXeroConnection(conn.id, { lastReconciledAt: new Date() } as any);
       if (report.connected) {
-        console.log(`[xeroReconcile] ${conn.companyId}: ${report.corrected} corrected, ${report.surprises.length} surprise(s)`);
-        if (report.surprises.length > 0) await notifySurprises(conn.companyId, report);
+        // Only newly-raised surprises notify. A bill that's been sitting in the
+        // review queue (or was explicitly dismissed) must not re-notify every
+        // single night — that's what trained everyone to ignore this.
+        const newlyFlagged = report.surprises.filter((s) => s.isNew);
+        console.log(
+          `[xeroReconcile] ${conn.companyId}: ${report.corrected} corrected, ` +
+          `${report.surprises.length} needing review (${newlyFlagged.length} new)`,
+        );
+        if (newlyFlagged.length > 0) {
+          await notifySurprises(conn.companyId, { ...report, surprises: newlyFlagged });
+        }
       }
     } catch (e) {
       console.error(`[xeroReconcile] sweep failed for company ${conn.companyId}:`, e);

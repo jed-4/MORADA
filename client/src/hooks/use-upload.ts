@@ -10,6 +10,13 @@ interface UploadMetadata {
 interface UploadResponse {
   uploadURL: string;
   objectPath: string;
+  /**
+   * Signed proof that this exact path was uploaded by this company. Required
+   * by consumers that have no database row to authorise against yet (bill OCR
+   * runs before the bill exists) — the company segment in objectPath is not
+   * proof, since the bucket is flat and the segment is stripped server-side.
+   */
+  uploadGrant?: string;
   metadata: UploadMetadata;
 }
 
@@ -174,6 +181,7 @@ export function useUpload(options: UseUploadOptions = {}) {
       return {
         uploadURL: "", // unused for server-side flow
         objectPath: data.objectPath,
+        uploadGrant: data.uploadGrant,
         metadata: {
           name: data.name ?? file.name,
           size: file.size,

@@ -93,6 +93,7 @@ const PersonalCalendar = lazy(() => import("@/pages/PersonalCalendar"));
 const UserProfile = lazy(() => import("@/pages/UserProfile"));
 const BusinessTasks = lazy(() => import("@/pages/BusinessTasks"));
 const Systems = lazy(() => import("@/pages/Systems"));
+const PriceListsPage = lazy(() => import("@/pages/PriceListsPage"));
 const PriceListPage = lazy(() => import("@/pages/PriceListPage"));
 const AIPriceReviewPage = lazy(() => import("@/pages/AIPriceReviewPage"));
 const CreateRFQ = lazy(() => import("@/pages/CreateRFQ"));
@@ -337,7 +338,10 @@ function Router() {
       <Route path="/roles-permissions" component={RolesPermissions} />
       <Route path="/suppliers" component={Suppliers} />
       <Route path="/trades" component={Trades} />
-      <Route path="/price-list" component={PriceListPage} />
+      <Route path="/price-lists" component={PriceListsPage} />
+      <Route path="/price-lists/:id" component={PriceListPage} />
+      {/* Legacy single-catalogue URL — the flat page is now the library. */}
+      <Route path="/price-list" component={PriceListsPage} />
       <Route path="/ai-price-review" component={AIPriceReviewPage} />
       <Route path="/product-library" component={ProductLibrary} />
       <Route path="/cost-codes" component={CostCodes} />

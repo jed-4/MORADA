@@ -1,6 +1,10 @@
 import { useState, useMemo, useEffect, useRef } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
-import { format, isWithinInterval } from "date-fns";
+import { useQuery, useQueries, useMutation } from "@tanstack/react-query";
+import {
+  format, isWithinInterval, addDays, startOfDay, endOfDay,
+  startOfWeek, endOfWeek, startOfMonth, endOfMonth,
+} from "date-fns";
+import { useWeekStartDay } from "@/hooks/useWeekStartDay";
 import { useTimezone, formatInTimezone, formatDateTimeInTimezone } from "@/hooks/useTimezone";
 import {
   Select,
@@ -79,7 +83,25 @@ function deterministicProjectColor(seed: string): string {
 }
 
 // Module-level constant — never changes, so safe as a useEffect dependency
-const DEFAULT_EVENT_TYPES = ["task", "schedule", "google-calendar"];
+const DEFAULT_EVENT_TYPES = ["task", "schedule", "google-calendar", "reminder", "projected"];
+
+/** Reminders draw in amber — distinct from tasks, and not tied to a project colour. */
+const REMINDER_COLOR = "#D4B670";
+
+/** Block length given to a task that had no time until it was dropped on the grid. */
+const DEFAULT_TIMEBOX_MINUTES = 30;
+
+const toMinutes = (time: string) => {
+  const [h, m] = time.split(":").map(Number);
+  return h * 60 + m;
+};
+
+const fromMinutes = (total: number) => {
+  const clamped = Math.max(0, Math.min(24 * 60 - 1, total));
+  const h = Math.floor(clamped / 60);
+  const m = clamped % 60;
+  return `${`${h}`.padStart(2, "0")}:${`${m}`.padStart(2, "0")}`;
+};
 
 // Helper function to normalize filter dates from API responses
 function normalizeFilterDates(filters: CalendarFiltersType): CalendarFiltersType {
@@ -117,6 +139,8 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
   const [newViewName, setNewViewName] = useState("");
   const [currentDate, setCurrentDate] = useState(new Date());
   const [showSettingsDialog, setShowSettingsDialog] = useState(false);
+  const [miniMonthOpen, setMiniMonthOpen] = useState(false);
+  const weekStartDay = useWeekStartDay();
   const [connectingGoogle, setConnectingGoogle] = useState(false);
   const { toast } = useToast();
   const defaultViewCreationAttempted = useRef(false);
@@ -125,30 +149,75 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
 
   // Fetch tasks for displayed user
   const { data: userTasks = [], isLoading: isLoadingTasks } = useQuery({
-    queryKey: ["/api/tasks", displayedUserId],
+    queryKey: ["/api/tasks", { assigneeId: displayedUserId }],
     queryFn: async () => {
-      const allTasks = await apiRequest("/api/tasks", "GET");
-      return Array.isArray(allTasks) 
-        ? allTasks.filter((task: any) => {
-            // Check if user is assigned via assigneeId or assignedTo array
-            const isAssigned = task.assigneeId === displayedUserId || 
-              (Array.isArray(task.assignedTo) && task.assignedTo.includes(displayedUserId));
-            return isAssigned && task.dueDate;
-          }) 
-        : [];
+      const tasks = await apiRequest(
+        `/api/tasks?assigneeId=${encodeURIComponent(displayedUserId!)}`,
+        "GET"
+      );
+      return Array.isArray(tasks) ? tasks.filter((task: any) => task.dueDate) : [];
     },
     enabled: !!displayedUserId,
   });
 
   // Fetch projects for color coding
-  const { data: projects = [] } = useQuery({
+  const { data: projects = [] } = useQuery<any[]>({
     queryKey: ["/api/projects"],
   });
 
   // Fetch task templates to filter out tasks from inactive templates
-  const { data: taskTemplates = [] } = useQuery({
-    queryKey: ["/api/task-templates"],
+  // The route is /api/systems/task-templates. "/api/task-templates" doesn't exist —
+  // it fell through to the SPA and returned HTML, so this list was always empty and
+  // two things silently did nothing: skipping tasks from archived templates, and
+  // sizing a newly timeboxed task from its template's estimatedDuration.
+  const { data: taskTemplates = [] } = useQuery<any[]>({
+    queryKey: ["/api/systems/task-templates"],
   });
+
+  // Active reminders for the displayed user.
+  //
+  // Only *one-time* reminders reach the calendar. A recurring reminder is a
+  // notification cadence ("chase the tiling quote at 16:30 every weekday"), not an
+  // appointment — drawing one on every matching day would re-create exactly the
+  // all-day flood that Phase 1 removed. They stay in the Reminders tab.
+  const { data: reminders = [] } = useQuery<any[]>({
+    queryKey: ["/api/reminders", "active", displayedUserId],
+    queryFn: () => apiRequest("/api/reminders?status=active", "GET").catch(() => []),
+    enabled: isOwnPage && !!displayedUserId,
+    staleTime: 60 * 1000,
+  });
+
+  // Focus blocks for the displayed user. The API takes ?userId= for admins viewing
+  // someone else; only the block's owner may edit one, so editing is own-page only.
+  const { data: focusBlocks = [] } = useQuery<any[]>({
+    queryKey: ["/api/focus-blocks", displayedUserId],
+    queryFn: () =>
+      apiRequest(
+        isOwnPage ? "/api/focus-blocks" : `/api/focus-blocks?userId=${encodeURIComponent(displayedUserId)}`,
+        "GET"
+      ).catch(() => []),
+    enabled: !!displayedUserId,
+    staleTime: 60 * 1000,
+  });
+
+  // Each block's pinned/matching tasks, for the chips drawn inside the overlay.
+  const focusBlockTaskQueries = useQueries({
+    queries: focusBlocks.map((fb: any) => ({
+      queryKey: ["/api/focus-blocks", fb.id, "tasks"],
+      queryFn: () => apiRequest(`/api/focus-blocks/${fb.id}/tasks`, "GET").catch(() => []),
+      staleTime: 60 * 1000,
+      enabled: !!displayedUserId,
+    })),
+  });
+
+  const focusBlocksWithTasks = useMemo(
+    () =>
+      focusBlocks.map((fb: any, idx: number) => ({
+        ...fb,
+        tasks: (focusBlockTaskQueries[idx]?.data as any[]) || [],
+      })),
+    [focusBlocks, focusBlockTaskQueries]
+  );
 
   // Fetch field categories to get completed status option
   const { data: fieldCategories = [] } = useQuery<FieldCategoryWithOptions[]>({
@@ -196,13 +265,18 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
 
   // Task reschedule mutation (for drag-and-drop)
   const rescheduleTaskMutation = useMutation({
-    mutationFn: async ({ taskId, newDate, newTime }: { taskId: string; newDate: Date; newTime?: string }) => {
-      const updateData: any = { 
+    mutationFn: async ({ taskId, newDate, newTime, newEndTime }: { taskId: string; newDate: Date; newTime?: string; newEndTime?: string }) => {
+      const updateData: any = {
         dueDate: newDate.toISOString(),
         isModified: true, // Mark as moved from original template time
       };
       if (newTime !== undefined) {
         updateData.startTime = newTime;
+      }
+      // Carried alongside the start so a moved block keeps its length, and a newly
+      // timeboxed task gets one instead of relying on the renderer's 1-hour fallback.
+      if (newEndTime !== undefined) {
+        updateData.endTime = newEndTime;
       }
       return await apiRequest(`/api/tasks/${taskId}`, "PATCH", updateData);
     },
@@ -241,34 +315,132 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
     },
   });
 
+  // Clears a task's times, sending it back to the unscheduled tray.
+  const unscheduleTaskMutation = useMutation({
+    mutationFn: async (taskId: string) => {
+      return await apiRequest(`/api/tasks/${taskId}`, "PATCH", {
+        startTime: null,
+        endTime: null,
+        isModified: true,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+      toast({ title: "Task unscheduled" });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Failed to unschedule task",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
   // Handler for task reschedule from calendar drag-and-drop
-  const handleEventReschedule = (eventId: string, newDate: Date, eventType: "task" | "schedule" | "meeting" | "google-calendar", newTime?: string) => {
+  const handleEventReschedule = (eventId: string, newDate: Date, eventType: CalendarEvent["type"], newTime?: string) => {
     // Only allow rescheduling of tasks (not Google Calendar events)
+    if (eventType !== "task") return;
+
+    let newEndTime: string | undefined;
+    if (newTime) {
+      const task = userTasks.find((t: any) => t.id === eventId);
+      if (task?.startTime && task?.endTime) {
+        // Moving an existing block — keep its length rather than silently resizing it.
+        newEndTime = fromMinutes(toMinutes(newTime) + (toMinutes(task.endTime) - toMinutes(task.startTime)));
+      } else {
+        // Timeboxing an untimed task — length comes from the template's estimate.
+        const template = taskTemplates.find((t: any) => t.id === task?.taskTemplateId);
+        newEndTime = fromMinutes(toMinutes(newTime) + (template?.estimatedDuration || DEFAULT_TIMEBOX_MINUTES));
+      }
+    }
+
+    rescheduleTaskMutation.mutate({ taskId: eventId, newDate, newTime, newEndTime });
+  };
+
+  const handleEventUnschedule = (eventId: string, eventType: CalendarEvent["type"]) => {
     if (eventType === "task") {
-      rescheduleTaskMutation.mutate({ taskId: eventId, newDate, newTime });
+      unscheduleTaskMutation.mutate(eventId);
     }
   };
 
+  // Pins a task to a focus block. Read-modify-write because the API replaces the
+  // whole pinnedTaskIds array rather than appending.
+  const pinTaskToFocusBlockMutation = useMutation({
+    mutationFn: async ({ blockId, taskId }: { blockId: string; taskId: string }) => {
+      const block = focusBlocks.find((fb: any) => fb.id === blockId);
+      const current: string[] = (block?.pinnedTaskIds as string[]) || [];
+      if (current.includes(taskId)) return null;
+      return await apiRequest(`/api/focus-blocks/${blockId}`, "PATCH", {
+        pinnedTaskIds: [...current, taskId],
+      });
+    },
+    onSuccess: (result, { blockId }) => {
+      if (!result) return; // already pinned
+      queryClient.invalidateQueries({ queryKey: ["/api/focus-blocks"] });
+      const block = focusBlocks.find((fb: any) => fb.id === blockId);
+      toast({ title: block?.title ? `Added to ${block.title}` : "Added to focus block" });
+    },
+    // Deliberately quiet on failure: the task was still timeboxed, which is the
+    // action the user asked for. Pinning is a convenience on top of it.
+    onError: () => {},
+  });
+
+  const handleTaskDropInFocusBlock = (blockId: string, taskId: string) => {
+    if (!isOwnPage) return; // only a block's owner may edit it
+    pinTaskToFocusBlockMutation.mutate({ blockId, taskId });
+  };
+
+  // Dragging or resizing the block overlay itself.
+  const updateFocusBlockMutation = useMutation({
+    mutationFn: async ({ blockId, startTime, endTime }: { blockId: string; startTime: string; endTime: string }) =>
+      await apiRequest(`/api/focus-blocks/${blockId}`, "PATCH", { startTime, endTime }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/focus-blocks"] });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Failed to move focus block",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
   // Handler for task resize from calendar
-  const handleEventResize = (eventId: string, startTime: string, endTime: string, eventType: "task" | "schedule" | "meeting" | "google-calendar") => {
+  const handleEventResize = (eventId: string, startTime: string, endTime: string, eventType: CalendarEvent["type"]) => {
     if (eventType === "task") {
       resizeTaskMutation.mutate({ taskId: eventId, startTime, endTime });
     }
   };
 
-  // Fetch schedule items for displayed user
-  const { data: scheduleItems = [], isLoading: isLoadingSchedule } = useQuery({
-    queryKey: ["/api/schedule-items/all", { calendarUser: displayedUserId }],
+  // Projects the user has opted into seeing in full; everything else is banded.
+  // Sorted so the query key is stable regardless of selection order.
+  const fullScheduleKey = [...(filters.fullScheduleProjects ?? [])].sort().join(",");
+
+  // Schedule items split into grid chips (in-house work + appointments) and
+  // collapsed per-project bands (everyone else's work bars).
+  const { data: scheduleCalendar, isLoading: isLoadingSchedule } = useQuery({
+    queryKey: ["/api/schedule-items/calendar", fullScheduleKey],
     queryFn: async () => {
       try {
-        const allSchedule = await apiRequest("/api/schedule-items/all", "GET");
-        return Array.isArray(allSchedule) ? allSchedule : [];
+        const qs = fullScheduleKey
+          ? `?fullScheduleProjects=${encodeURIComponent(fullScheduleKey)}`
+          : "";
+        const result = await apiRequest(`/api/schedule-items/calendar${qs}`, "GET");
+        return {
+          events: Array.isArray(result?.events) ? result.events : [],
+          bands: Array.isArray(result?.bands) ? result.bands : [],
+        };
       } catch {
-        return [];
+        return { events: [], bands: [] };
       }
     },
     enabled: !!displayedUserId,
   });
+
+  const scheduleItems = scheduleCalendar?.events ?? [];
+  const projectBands = scheduleCalendar?.bands ?? [];
 
   // Fetch Google Calendar connection status
   const { data: googleCalendarStatus } = useQuery<{ connected: boolean; email?: string }>({
@@ -357,6 +529,13 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
           if (!normalizedFilters.eventTypes.includes("schedule")) {
             // Ensure schedule is always included in eventTypes (backward compat for old saved views)
             normalizedFilters.eventTypes = [...normalizedFilters.eventTypes, "schedule"];
+          }
+          if (!normalizedFilters.eventTypes.includes("reminder")) {
+            // Views saved before reminders existed would otherwise hide them for good
+            normalizedFilters.eventTypes = [...normalizedFilters.eventTypes, "reminder"];
+          }
+          if (!normalizedFilters.eventTypes.includes("projected")) {
+            normalizedFilters.eventTypes = [...normalizedFilters.eventTypes, "projected"];
           }
         }
         setFilters(normalizedFilters);
@@ -450,8 +629,39 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
       });
     }
 
+    // Add one-time reminders that have a due moment. Recurring ones are excluded
+    // deliberately — see the query comment.
+    reminders.forEach((reminder: any) => {
+      if (reminder.reminderType === "recurring" || !reminder.dueAt) return;
+      const dueAt = new Date(reminder.dueAt);
+      if (isNaN(dueAt.getTime())) return;
+
+      // A reminder is a moment, not a span: give it a start time and no end, so it
+      // draws as a short block rather than claiming an hour of the grid.
+      const hh = `${dueAt.getHours()}`.padStart(2, "0");
+      const mm = `${dueAt.getMinutes()}`.padStart(2, "0");
+      const isMidnight = dueAt.getHours() === 0 && dueAt.getMinutes() === 0;
+
+      events.push({
+        id: `reminder-${reminder.id}`,
+        title: reminder.title,
+        startDate: dueAt,
+        endDate: dueAt,
+        // Midnight almost always means "that day" rather than 00:00, so treat it as
+        // all-day instead of pinning it to the top of the grid.
+        startTime: isMidnight ? null : `${hh}:${mm}`,
+        endTime: null,
+        type: "reminder",
+        description: reminder.description,
+        color: REMINDER_COLOR,
+        projectId: reminder.linkedProjectId ?? null,
+        status: reminder.status,
+        isCompleted: reminder.status === "completed",
+      });
+    });
+
     return events;
-  }, [userTasks, scheduleItems, googleCalendarEvents, projects, taskTemplates]);
+  }, [userTasks, scheduleItems, googleCalendarEvents, reminders, projects, taskTemplates]);
 
   // Apply filters
   const filteredEvents = useMemo(() => {
@@ -488,6 +698,121 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
       return true;
     });
   }, [calendarEvents, filters]);
+
+  // Your standard week, projected onto weeks that haven't been generated yet.
+  //
+  // Recurring task templates are only materialised into real tasks for the current
+  // and next week (generateRecurringTaskInstances uses a 14-day window), so looking
+  // a month ahead showed an empty grid even though the routine is fixed. These are
+  // ghosts: read-only, not draggable, and never persisted. The moment the generator
+  // creates the real task, the projection for that day disappears.
+  const projectedTemplateEvents = useMemo(() => {
+    if (!isOwnPage) return [] as CalendarEvent[];
+
+    const recurring = taskTemplates.filter(
+      (t: any) => t.isActive && t.isRecurringTemplate && (t.recurringDays?.length || 0) > 0
+    );
+    if (recurring.length === 0) return [] as CalendarEvent[];
+
+    // Visible window only — projecting further is wasted work and risks duplicates.
+    let rangeStart: Date;
+    let rangeEnd: Date;
+    if (calendarMode === "day") {
+      rangeStart = startOfDay(currentDate);
+      rangeEnd = endOfDay(currentDate);
+    } else if (calendarMode === "month") {
+      rangeStart = startOfWeek(startOfMonth(currentDate), { weekStartsOn: weekStartDay });
+      rangeEnd = endOfWeek(endOfMonth(currentDate), { weekStartsOn: weekStartDay });
+    } else {
+      rangeStart = startOfWeek(currentDate, { weekStartsOn: weekStartDay });
+      rangeEnd = endOfWeek(currentDate, { weekStartsOn: weekStartDay });
+    }
+
+    // Days already materialised, so a projection never doubles up on a real task.
+    // occurrenceDate is the template's original slot and survives the task being moved.
+    const materialised = new Set<string>();
+    const templatesUsedByMe = new Set<string>();
+    userTasks.forEach((task: any) => {
+      if (!task.templateId) return;
+      templatesUsedByMe.add(task.templateId);
+      const ref = task.occurrenceDate || task.dueDate;
+      if (ref) materialised.add(`${task.templateId}|${format(new Date(ref), "yyyy-MM-dd")}`);
+    });
+
+    const projected: CalendarEvent[] = [];
+
+    for (let day = new Date(rangeStart); day <= rangeEnd; day = addDays(day, 1)) {
+      const dow = day.getDay();
+      const dayKey = format(day, "yyyy-MM-dd");
+
+      for (const template of recurring as any[]) {
+        if (!(template.recurringDays || []).includes(dow)) continue;
+        if (materialised.has(`${template.id}|${dayKey}`)) continue;
+
+        // Whose routine is it? Either explicitly this user's, or a template they
+        // already receive tasks from — a reliable proxy for role-based templates,
+        // whose assignment can't be resolved from the template alone.
+        const explicitlyMine =
+          template.assigneeType === "user" && template.assigneeUserId === displayedUserId;
+        if (!explicitlyMine && !templatesUsedByMe.has(template.id)) continue;
+
+        // Only project templates with a time. An untimed routine item would land in
+        // the all-day row and re-create the clutter Phase 1 cleared out.
+        const slot = (template.recurringSchedule || []).find(
+          (s: any) => Number(s.dayOfWeek) === dow
+        );
+        const startTime = slot?.startTime || template.dueTime || null;
+        if (!startTime) continue;
+
+        const duration = Number(slot?.duration) || template.estimatedDuration || 60;
+
+        projected.push({
+          id: `projected-${template.id}-${dayKey}`,
+          title: template.title,
+          startDate: new Date(day),
+          endDate: new Date(day),
+          startTime,
+          endTime: fromMinutes(toMinutes(startTime) + duration),
+          type: "projected",
+          color: template.color || undefined,
+          description: template.goal || template.description || null,
+          templateId: template.id,
+        });
+      }
+    }
+
+    return projected;
+  }, [isOwnPage, taskTemplates, userTasks, currentDate, calendarMode, weekStartDay, displayedUserId]);
+
+  // Untimed tasks go to the tray to be timeboxed, rather than piling up in the
+  // all-day row. Everything else — including genuinely all-day schedule items and
+  // Google all-day events — stays on the grid.
+  const isUntimedTask = (event: CalendarEvent) =>
+    event.type === "task" && !event.startTime && !event.endTime;
+
+  const gridEvents = useMemo(() => {
+    const base = filteredEvents.filter(event => !isUntimedTask(event));
+    // Projections bypass the main filter memo (they're derived from the visible
+    // range, not from calendarEvents), so honour the event-type filter here.
+    const showProjected = !filters.eventTypes?.length || filters.eventTypes.includes("projected");
+    return showProjected ? [...base, ...projectedTemplateEvents] : base;
+  }, [filteredEvents, projectedTemplateEvents, filters.eventTypes]);
+
+  const unscheduledEvents = useMemo(
+    () =>
+      filteredEvents
+        .filter(isUntimedTask)
+        .sort((a, b) => a.startDate.getTime() - b.startDate.getTime()),
+    [filteredEvents]
+  );
+
+  // Bands follow the same project filter as events, so filtering to one project
+  // doesn't leave other projects' bands stranded above an empty grid.
+  const filteredProjectBands = useMemo(() => {
+    if (!filters.projectIds?.length) return projectBands;
+    const wanted = new Set(filters.projectIds);
+    return projectBands.filter((band: any) => wanted.has(band.projectId));
+  }, [projectBands, filters.projectIds]);
 
   const handleEventClick = (event: CalendarEvent) => {
     setSelectedEvent(event);
@@ -528,6 +853,44 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
     setCurrentDate(newDate);
   };
 
+  // Keyboard navigation, the way a calendar you live in should work:
+  // t = today, ←/→ = previous/next, d/w/m = day/week/month.
+  //
+  // Deliberately conservative about when it fires — never while typing in a field or
+  // a rich-text editor, never with a modifier held (so browser and OS shortcuts are
+  // untouched), and never while a dialog or menu is open, since the detail and edit
+  // modals sit above this and their own keys must win.
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+
+      // instanceof, not a truthiness check: an event dispatched on window has
+      // target === window, which has no tagName or closest() and would throw.
+      const target = e.target;
+      if (target instanceof HTMLElement) {
+        const tag = target.tagName;
+        if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || target.isContentEditable) return;
+        if (target.closest('[role="dialog"], [role="menu"], [role="listbox"], [contenteditable="true"]')) return;
+      }
+      if (document.querySelector('[role="dialog"]')) return;
+
+      switch (e.key) {
+        case "t": case "T": handleNavigateToday(); break;
+        case "ArrowLeft": handleNavigatePrevious(); break;
+        case "ArrowRight": handleNavigateNext(); break;
+        case "d": case "D": setCalendarMode("day"); break;
+        case "w": case "W": setCalendarMode("week"); break;
+        case "m": case "M": setCalendarMode("month"); break;
+        default: return;
+      }
+      e.preventDefault();
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+    // Re-subscribed each render so the handlers close over the current date/mode.
+  });
+
   // Get status options from field categories instead of hardcoded values
   const filterStatusOptions = (statusCategory?.options || []).map(opt => ({
     key: opt.key,
@@ -538,6 +901,8 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
   const eventTypeOptions = [
     { key: "task", label: "Tasks", disabled: false },
     { key: "schedule", label: "Schedule Items", disabled: false },
+    { key: "reminder", label: "Reminders", disabled: false },
+    { key: "projected", label: "Routine (projected)", disabled: false },
     { key: "google-calendar", label: "Google Calendar", disabled: !isGoogleCalendarConnected },
   ];
 
@@ -750,21 +1115,48 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
                     )}
                   </div>
                   <div className="space-y-1.5 max-h-64 overflow-y-auto">
-                    {projects.map((project: any) => (
-                      <label key={project.id} className="flex items-center gap-2 cursor-pointer">
-                        <Checkbox
-                          checked={filters.projectIds?.includes(project.id) || false}
-                          onCheckedChange={() => {
-                            const current = filters.projectIds || [];
-                            const updated = current.includes(project.id)
-                              ? current.filter(p => p !== project.id)
-                              : [...current, project.id];
-                            setFilters({...filters, projectIds: updated.length > 0 ? updated : undefined});
-                          }}
-                        />
-                        <span className="text-xs">{project.name}</span>
-                      </label>
-                    ))}
+                    {projects.map((project: any) => {
+                      const showsFullSchedule = filters.fullScheduleProjects?.includes(project.id) || false;
+                      return (
+                        <div key={project.id} className="flex items-center gap-2">
+                          <label className="flex items-center gap-2 cursor-pointer flex-1 min-w-0">
+                            <Checkbox
+                              checked={filters.projectIds?.includes(project.id) || false}
+                              onCheckedChange={() => {
+                                const current = filters.projectIds || [];
+                                const updated = current.includes(project.id)
+                                  ? current.filter(p => p !== project.id)
+                                  : [...current, project.id];
+                                setFilters({...filters, projectIds: updated.length > 0 ? updated : undefined});
+                              }}
+                            />
+                            <span className="text-xs truncate">{project.name}</span>
+                          </label>
+                          <button
+                            type="button"
+                            className="text-2xs px-1.5 py-0.5 rounded border hover-elevate active-elevate-2 flex-shrink-0"
+                            title={
+                              showsFullSchedule
+                                ? "Showing every schedule item for this project"
+                                : "Subcontractor work is collapsed into the project band"
+                            }
+                            onClick={() => {
+                              const current = filters.fullScheduleProjects || [];
+                              const updated = current.includes(project.id)
+                                ? current.filter(p => p !== project.id)
+                                : [...current, project.id];
+                              setFilters({
+                                ...filters,
+                                fullScheduleProjects: updated.length > 0 ? updated : undefined,
+                              });
+                            }}
+                            data-testid={`full-schedule-toggle-${project.id}`}
+                          >
+                            {showsFullSchedule ? "Full" : "Band"}
+                          </button>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               </PopoverContent>
@@ -983,10 +1375,32 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
             <ChevronRight className="w-3 h-3" />
           </button>
 
-          {/* Current Date Display */}
-          <span className="text-xs text-muted-foreground px-2" data-testid="text-current-date">
-            {formatInTimezone(currentDate, effectiveTimezone, { month: 'short', day: 'numeric', year: 'numeric' })}
-          </span>
+          {/* Current date — click for a mini-month to jump anywhere without
+              stepping a week at a time */}
+          <Popover open={miniMonthOpen} onOpenChange={setMiniMonthOpen}>
+            <PopoverTrigger asChild>
+              <button
+                className="text-xs text-muted-foreground px-2 h-6 rounded-md hover-elevate active-elevate-2"
+                data-testid="text-current-date"
+                title="Jump to a date"
+              >
+                {formatInTimezone(currentDate, effectiveTimezone, { month: 'short', day: 'numeric', year: 'numeric' })}
+              </button>
+            </PopoverTrigger>
+            <PopoverContent align="end" className="w-auto p-0">
+              <CalendarComponent
+                mode="single"
+                selected={currentDate}
+                defaultMonth={currentDate}
+                onSelect={(date) => {
+                  if (!date) return;
+                  setCurrentDate(date);
+                  setMiniMonthOpen(false);
+                }}
+                initialFocus
+              />
+            </PopoverContent>
+          </Popover>
 
           {/* View Mode Selector */}
           <div className="flex items-center gap-0.5">
@@ -1028,7 +1442,7 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
       {/* Calendar Content - No Card Wrapper, Flush with Header */}
       <div className="flex-1 min-h-0">
         <EnhancedCalendar
-          events={filteredEvents}
+          events={gridEvents}
           onEventClick={handleEventClick}
           onEventComplete={handleEventComplete}
           onEventReschedule={handleEventReschedule}
@@ -1039,6 +1453,17 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
           view={calendarMode as any}
           onViewChange={(newView) => setCalendarMode(newView)}
           hideInternalHeader={true}
+          projectBands={filteredProjectBands}
+          unscheduledEvents={unscheduledEvents}
+          onEventUnschedule={handleEventUnschedule}
+          focusBlocks={focusBlocksWithTasks}
+          onTaskDropInFocusBlock={handleTaskDropInFocusBlock}
+          onFocusBlockUpdate={
+            isOwnPage
+              ? (blockId, startTime, endTime) =>
+                  updateFocusBlockMutation.mutate({ blockId, startTime, endTime })
+              : undefined
+          }
         />
       </div>
 

@@ -527,12 +527,23 @@ export default function Tasks({ embedded }: { embedded?: boolean } = {}) {
     updateTaskMutation.mutate({ taskId, updates: { completed } });
   };
 
-  const handleTaskReschedule = (taskId: string, dueDate: string) => {
-    updateTaskMutation.mutate({ taskId, updates: { dueDate } });
+  // Both of these are wired straight to EnhancedCalendar's callbacks, so they must
+  // match its signatures. They previously declared `(taskId, dueDate: string)`:
+  // reschedule was handed a Date and stored a full ISO timestamp instead of a
+  // plain date, and resize — whose second argument is actually `startTime` — wrote
+  // a time string like "09:00" into dueDate.
+  const handleTaskReschedule = (taskId: string, newDate: Date, eventType: CalendarEvent["type"], newTime?: string) => {
+    if (eventType !== "task") return;
+    const updates: Partial<Task> = {
+      dueDate: new Date(newDate).toISOString().split('T')[0],
+    } as Partial<Task>;
+    if (newTime) (updates as any).startTime = newTime;
+    updateTaskMutation.mutate({ taskId, updates });
   };
 
-  const handleTaskResize = (taskId: string, dueDate: string) => {
-    updateTaskMutation.mutate({ taskId, updates: { dueDate } });
+  const handleTaskResize = (taskId: string, startTime: string, endTime: string, eventType: CalendarEvent["type"]) => {
+    if (eventType !== "task") return;
+    updateTaskMutation.mutate({ taskId, updates: { startTime, endTime } as Partial<Task> });
   };
 
   // Create task mutation (for inline task creation)

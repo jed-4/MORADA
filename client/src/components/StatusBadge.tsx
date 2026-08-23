@@ -26,6 +26,7 @@ const TONE_BUCKETS: Record<Exclude<StatusTone, "neutral">, string[]> = {
   success: [
     "paid",
     "approved",
+    "contract",
     "complete",
     "completed",
     "accepted",
@@ -42,6 +43,7 @@ const TONE_BUCKETS: Record<Exclude<StatusTone, "neutral">, string[]> = {
     "in_progress",
     "in-progress",
     "inprogress",
+    "working",
     "processing",
     "awaiting_payment",
     "awaiting-payment",

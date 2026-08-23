@@ -465,12 +465,18 @@ export class XeroService {
     return all;
   }
 
-  async getTrackingCategories(connectionId: string, opts: { maxRetries?: number } = {}): Promise<any[]> {
+  async getTrackingCategories(
+    connectionId: string,
+    opts: { maxRetries?: number; includeArchived?: boolean } = {},
+  ): Promise<any[]> {
     const accessToken = await this.getValidToken(connectionId);
     const connection = await storage.getXeroConnection(connectionId);
     if (!connection) throw new Error("Connection not found");
 
-    const response = await xeroFetchWithRetry(`${XERO_API_BASE}/TrackingCategories`, {
+    const url = opts.includeArchived
+      ? `${XERO_API_BASE}/TrackingCategories?includeArchived=true`
+      : `${XERO_API_BASE}/TrackingCategories`;
+    const response = await xeroFetchWithRetry(url, {
       headers: {
         Authorization: `Bearer ${accessToken}`,
         "Xero-Tenant-Id": connection.tenantId,
@@ -552,6 +558,30 @@ export class XeroService {
   /** Invalidate cached tax rates for a connection (e.g. after re-auth). */
   invalidateTaxRateCache(connectionId: string): void {
     this.taxRateCache.delete(connectionId);
+  }
+
+  /**
+   * Find an ACTIVE tracking option by name within a category (trimmed,
+   * case-insensitive). Deliberately never creates options — Xero is the
+   * source of truth for the tracking option list, and enforces unique names
+   * (including archived ones), so blind auto-creation 400s for any name that
+   * was ever used. Callers surface a warning when no match exists.
+   */
+  async findTrackingOptionByName(
+    connectionId: string,
+    trackingCategoryId: string,
+    name: string,
+  ): Promise<{ TrackingOptionID: string; Name: string; Status?: string } | null> {
+    const categories = await this.getTrackingCategories(connectionId);
+    const category = categories.find((tc: any) => tc.TrackingCategoryID === trackingCategoryId);
+    const options = (category?.Options || []) as any[];
+    const wanted = name.trim().toLowerCase();
+    return (
+      options.find(
+        (o: any) =>
+          o.Status === "ACTIVE" && String(o.Name || "").trim().toLowerCase() === wanted,
+      ) || null
+    );
   }
 
   async createTrackingOption(connectionId: string, trackingCategoryId: string, name: string): Promise<any> {
@@ -1289,6 +1319,62 @@ export class XeroService {
 
     const data = (await response.json()) as any;
     return data.Payments?.[0] || null;
+  }
+
+  /**
+   * Flag an invoice as sent to the contact in Xero.
+   *
+   * Xero has no SENT status — AUTHORISED covers both "approved" and "sent", and
+   * SentToContact is the boolean that separates them. Morada carries those as
+   * two statuses, so emailing from here has to write the flag back or Xero
+   * keeps showing the invoice as never sent.
+   */
+  /**
+   * Void an invoice in Xero.
+   *
+   * An AUTHORISED invoice cannot be deleted through the API — voiding is the
+   * only way to withdraw it, and it is irreversible. Xero refuses to void an
+   * invoice carrying payments; that needs a credit note instead, so callers
+   * must check before reaching this.
+   */
+  async voidInvoice(connectionId: string, invoiceId: string): Promise<void> {
+    const accessToken = await this.getValidToken(connectionId);
+    const connection = await storage.getXeroConnection(connectionId);
+    if (!connection) throw new Error("Xero connection not found");
+
+    const response = await fetch(`${XERO_API_BASE}/Invoices`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Xero-Tenant-Id": connection.tenantId,
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify({ Invoices: [{ InvoiceID: invoiceId, Status: "VOIDED" }] }),
+    });
+    if (!response.ok) {
+      throw new Error(summarizeXeroError(await response.text()));
+    }
+  }
+
+  async markInvoiceSentToContact(connectionId: string, invoiceId: string): Promise<void> {
+    const accessToken = await this.getValidToken(connectionId);
+    const connection = await storage.getXeroConnection(connectionId);
+    if (!connection) throw new Error("Xero connection not found");
+
+    const response = await fetch(`${XERO_API_BASE}/Invoices`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Xero-Tenant-Id": connection.tenantId,
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify({ Invoices: [{ InvoiceID: invoiceId, SentToContact: true }] }),
+    });
+    if (!response.ok) {
+      throw new Error(summarizeXeroError(await response.text()));
+    }
   }
 
   async getInvoice(connectionId: string, invoiceId: string): Promise<any> {

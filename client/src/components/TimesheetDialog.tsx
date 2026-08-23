@@ -9,7 +9,6 @@ import {
   Calendar as CalendarIcon,
   Plus,
   Trash2,
-  Bell,
   Check,
   Clock,
   AlertTriangle,
@@ -18,7 +17,6 @@ import {
 } from "lucide-react";
 import { useTimesheetLabelOptions } from "@/hooks/useTimesheetLabelOptions";
 import { useAuth } from "@/hooks/use-auth";
-import { SetReminderDialog } from "@/components/SetReminderDialog";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
 import {
@@ -50,7 +48,6 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -141,7 +138,6 @@ export function TimesheetDialog({
   const [isSplit, setIsSplit] = useState(false);
   const [lastEditedField, setLastEditedField] = useState<"startTime" | "endTime" | "duration" | "breakDuration" | null>(null);
   const [costCodeSplits, setCostCodeSplits] = useState<CostCodeSplit[]>([]);
-  const [showReminderDialog, setShowReminderDialog] = useState(false);
   const [showBreakTimes, setShowBreakTimes] = useState(false);
   const [showCostCodeSplit, setShowCostCodeSplit] = useState(false);
   const [showLabels, setShowLabels] = useState(false);
@@ -267,7 +263,14 @@ export function TimesheetDialog({
       });
       // Load existing cost-code splits
       const existingSplits = (timesheet as any).costCodeSplits as any[] | undefined;
-      if (existingSplits && existingSplits.length > 0) {
+      // Only a genuine multi-row split opens the split view. Saves used to
+      // write one mirror row for every entry, so a single row means "not
+      // split" — hydrate the plain cost-code field from it and stay collapsed,
+      // which is what makes previously-saved entries stop reopening as splits.
+      if (existingSplits && existingSplits.length === 1 && !timesheet.costCodeId) {
+        form.setValue("costCodeId", existingSplits[0].costCodeId || "");
+      }
+      if (existingSplits && existingSplits.length > 1) {
         setCostCodeSplits(
           existingSplits.map((s: any) => ({
             id: s.id,
@@ -388,6 +391,19 @@ export function TimesheetDialog({
       if (isSplit && costCodeSplits.length === 0) {
         throw new Error("Please add at least one cost code split");
       }
+      // Every split row needs a cost code: the column is NOT NULL, so a blank
+      // one made the replace-splits PUT fail with a 500 and roll back, losing
+      // the edit with no visible error.
+      if (isSplit && costCodeSplits.some((sp) => !sp.costCodeId)) {
+        throw new Error("Every split row needs a cost code");
+      }
+      // An end time is what places the entry on the calendar. Without one the
+      // block is drawn from the duration alone, which excludes the break, so
+      // it renders short and drifts off the hour gridlines.
+      if (!data.endTime) {
+        form.setError("endTime", { message: "End time is required" });
+        throw new Error("Please enter an end time");
+      }
 
       const duration = parseFloat(data.duration || "0");
       const selectedUser = users.find((u: any) => u.id === data.userId);
@@ -426,12 +442,10 @@ export function TimesheetDialog({
             hourlyRate: split.hourlyRate,
             total: split.total,
           }))
-        : [{
-            costCodeId: data.costCodeId,
-            duration: duration.toString(),
-            hourlyRate: hourlyRate.toString(),
-            total: total,
-          }];
+        // Not split: write NO split rows. The cost code lives on the timesheet
+        // itself and the reporting rollups fall back to it. Writing a mirror
+        // row here is what made every saved entry reopen in split view.
+        : [];
 
       if (timesheet) {
         const res = await apiRequest(
@@ -647,18 +661,7 @@ export function TimesheetDialog({
   const displayId = timesheet?.id ? `#TS-${timesheet.id.slice(0, 8)}` : "New entry";
   const headerTitle = readonly ? "View Timesheet" : timesheet ? "Edit Timesheet" : "Add Timesheet";
 
-  if (!isMounted) {
-    return (
-      <SetReminderDialog
-        open={showReminderDialog}
-        onOpenChange={setShowReminderDialog}
-        linkedItemType="timesheet"
-        linkedItemId={timesheet?.id}
-        linkedItemTitle={timesheet ? `Timesheet: ${format(new Date(timesheet.date), "MMM d, yyyy")}` : undefined}
-        projectId={form.watch("projectId")}
-      />
-    );
-  }
+  if (!isMounted) return null;
 
   const labelClass = "text-[10px] uppercase tracking-wider font-semibold text-muted-foreground mb-1 block";
   const inputClass =
@@ -1038,8 +1041,8 @@ export function TimesheetDialog({
 
                   {/* Split table — shown when split mode is active */}
                   {isSplit && (
-                    <Card className="mt-0 overflow-hidden">
-                      <CardContent className="p-3 space-y-2">
+                    <div className="mt-0 overflow-hidden rounded-md border border-border bg-muted/30">
+                      <div className="p-3 space-y-2">
                         {/* Single shared grid so all rows have identical column widths */}
                         <div className={cn(
                           "grid gap-x-2 gap-y-2 items-center min-w-0",
@@ -1048,10 +1051,10 @@ export function TimesheetDialog({
                             : "grid-cols-[minmax(0,2fr)_minmax(0,1fr)_auto]"
                         )}>
                           {/* Column headers */}
-                          <Label className="text-[10px] text-muted-foreground">Cost Code</Label>
-                          <Label className="text-[10px] text-muted-foreground">Hours</Label>
+                          <Label className={labelClass}>Cost Code</Label>
+                          <Label className={labelClass}>Hours</Label>
                           {canViewTimesheetRates && (
-                            <Label className="text-[10px] text-muted-foreground">Rate</Label>
+                            <Label className={labelClass}>Rate</Label>
                           )}
                           <div />
 
@@ -1107,7 +1110,7 @@ export function TimesheetDialog({
                             variant="outline"
                             size="sm"
                             onClick={addCostCodeSplit}
-                            className="flex-shrink-0"
+                            className="flex-shrink-0 h-8 bg-muted/30 border-border text-[11px] font-normal"
                             data-testid="button-add-split"
                           >
                             <Plus className="h-3 w-3 mr-1" />
@@ -1125,8 +1128,8 @@ export function TimesheetDialog({
                             {splitAllocStr} / {displayHoursStr} allocated
                           </span>
                         </div>
-                      </CardContent>
-                    </Card>
+                      </div>
+                    </div>
                   )}
                 </div>
 
@@ -1285,19 +1288,7 @@ export function TimesheetDialog({
             <div
               className="flex items-center justify-between px-5 min-h-[60px] border-t border-border bg-card flex-none gap-2 py-3 flex-wrap"
             >
-              {timesheet ? (
-                <button
-                  type="button"
-                  onClick={() => setShowReminderDialog(true)}
-                  className="flex items-center gap-1.5 text-[11px] text-muted-foreground border border-border rounded-md px-3 h-[30px] hover:bg-muted/40 transition-colors"
-                  data-testid="button-set-reminder"
-                >
-                  <Bell className="h-3.5 w-3.5" />
-                  Set reminder
-                </button>
-              ) : (
-                <span />
-              )}
+              <span />
 
               <div className="flex items-center gap-2 flex-wrap justify-end">
                 {/* Approve / Reject — visible when user can approve and timesheet is submitted */}
@@ -1393,14 +1384,6 @@ export function TimesheetDialog({
   return (
     <>
       {createPortal(drawer, document.body)}
-      <SetReminderDialog
-        open={showReminderDialog}
-        onOpenChange={setShowReminderDialog}
-        linkedItemType="timesheet"
-        linkedItemId={timesheet?.id}
-        linkedItemTitle={timesheet ? `Timesheet: ${format(new Date(timesheet.date), "MMM d, yyyy")}` : undefined}
-        projectId={form.watch("projectId")}
-      />
       {/* Saving changes to an approved entry: keep the approval (and any PO
           state) or send it back through the approval workflow. */}
       <AlertDialog

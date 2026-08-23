@@ -20,6 +20,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { usePermission } from "@/hooks/use-permission";
 import { useSelectionStatusOptions } from "@/hooks/useSelectionStatusOptions";
 import { SelectionStatusPill, getDerivedStatus, isDecided } from "@/components/selections/selectionHelpers";
+import { useSelectionPdfExport } from "@/components/selections/useSelectionPdfExport";
 import { 
   insertSelectionOptionSchema, 
   insertSelectionSchema,
@@ -245,6 +246,7 @@ export default function SelectionDetail() {
   const { id, projectId } = useParams<{ id: string; projectId?: string }>();
   const [, setLocation] = useLocation();
   const { currentProject } = useProject();
+  const { exportPdf, isExporting: isExportingPdf } = useSelectionPdfExport();
   const [isAddingOption, setIsAddingOption] = useState(false);
   const [editingOption, setEditingOption] = useState<SelectionOption | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
@@ -1260,10 +1262,16 @@ export default function SelectionDetail() {
               Show QR Code
             </DropdownMenuItem>
             <DropdownMenuItem
-              onClick={() => window.open(`/api/selections/${id}/pdf`, "_blank")}
+              onSelect={(e) => e.preventDefault()}
+              disabled={isExportingPdf}
+              onClick={() => exportPdf(`/api/selections/${id}/pdf`, "selection.pdf")}
             >
-              <Package className="w-4 h-4 mr-2" />
-              Export PDF
+              {isExportingPdf ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <Package className="w-4 h-4 mr-2" />
+              )}
+              {isExportingPdf ? "Exporting…" : "Export PDF"}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

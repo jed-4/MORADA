@@ -58,11 +58,42 @@ export function isPendingVariationStatus(status: string | null | undefined): boo
   return !!status && PENDING_VARIATION_STATUS_SET.has(status);
 }
 
+/**
+ * The frozen contract sum captured when an estimate was marked as the contract
+ * (projects.contracted_total_ex_gst_cents / _inc_gst_cents). Once a job is
+ * contracted the sum the client owes MUST NOT move — only an approved
+ * variation may change it — so when this is supplied it REPLACES the live
+ * estimate recomputation as the original contract price.
+ */
+export interface FrozenContractTotalCents {
+  exGstCents: number;
+  incGstCents: number;
+}
+
+/**
+ * True when a project carries a usable frozen contract sum. `contractedAt`
+ * is the authority on "this job is contracted"; the two totals must both be
+ * present for the freeze to be meaningful (a half-written row falls back to
+ * the live estimate rather than reporting a zero contract).
+ */
+export function frozenContractTotalFrom(project: {
+  contractedAt?: Date | string | null;
+  contractedTotalExGstCents?: number | null;
+  contractedTotalIncGstCents?: number | null;
+} | null | undefined): FrozenContractTotalCents | null {
+  if (!project?.contractedAt) return null;
+  const ex = project.contractedTotalExGstCents;
+  const inc = project.contractedTotalIncGstCents;
+  if (ex == null || inc == null) return null;
+  return { exGstCents: Number(ex), incGstCents: Number(inc) };
+}
+
 export function computeContractMetricsCents(
   estimateItems: EstimateItemForMetrics[],
   variations: VariationForMetrics[],
   projectMarkupPercent: number | null | undefined = 0,
   taxRate: number | null | undefined = 10,
+  frozen?: FrozenContractTotalCents | null,
 ): ContractMetricsCents {
   // The ORIGINAL contract price is the canonical estimate total. Derive it from
   // the single pricing source of truth (computeEstimateSummary) so it ALWAYS
@@ -72,12 +103,24 @@ export function computeContractMetricsCents(
   // double-count that occurs when project markup is re-applied on top of the
   // cached priceIncTax (which already bakes it in for null-markup lines).
   // computeEstimateSummary returns dollars (2dp); convert to cents here.
-  const summary = computeEstimateSummary(estimateItems, {
-    projectMarkupPercent,
-    taxRate,
-  });
-  const originalExGst = Math.round((summary.totalExTax || 0) * 100);
-  const originalIncGst = Math.round((summary.total || 0) * 100);
+  //
+  // EXCEPT once the job is contracted: `frozen` short-circuits the whole
+  // recomputation. This is the freeze. Without it, editing a contracted
+  // estimate silently moves what the client owes — and excluding an allowance
+  // would credit the client twice (once by shrinking the estimate, again via
+  // the deduction variation raised for it).
+  const summary = frozen
+    ? null
+    : computeEstimateSummary(estimateItems, {
+        projectMarkupPercent,
+        taxRate,
+      });
+  const originalExGst = frozen
+    ? Math.round(frozen.exGstCents)
+    : Math.round((summary!.totalExTax || 0) * 100);
+  const originalIncGst = frozen
+    ? Math.round(frozen.incGstCents)
+    : Math.round((summary!.total || 0) * 100);
 
   let varExGst = 0;
   let varIncGst = 0;
@@ -114,6 +157,7 @@ export function computeContractMetrics(
   variations: VariationForMetrics[],
   projectMarkupPercent: number | null | undefined = 0,
   taxRate: number | null | undefined = 10,
+  frozen?: FrozenContractTotalCents | null,
 ): ContractMetrics {
   return toContractMetrics(
     computeContractMetricsCents(
@@ -121,6 +165,7 @@ export function computeContractMetrics(
       variations,
       projectMarkupPercent,
       taxRate,
+      frozen,
     ),
   );
 }

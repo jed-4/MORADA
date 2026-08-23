@@ -61,27 +61,28 @@ export function usePersonalCalendarEvents({
   const REFETCH_INTERVAL = 5 * 60 * 1000; // Refresh every 5 minutes
 
   const { data: tasks = [], isLoading: tasksLoading } = useQuery<any[]>({
-    queryKey: ["/api/tasks", { calendarUser: userId }],
+    queryKey: ["/api/tasks", { assigneeId: userId }],
     queryFn: async () => {
       if (!userId) return [];
-      const allTasks = await apiRequest("/api/tasks", "GET");
-      return Array.isArray(allTasks)
-        ? allTasks.filter((task: any) => {
-            // assigneeIds is the current multi-assignee field; assigneeId is legacy.
-            // (The old code checked `assignedTo`, which doesn't exist, so tasks
-            // assigned through the multi-assignee UI never reached the calendar.)
-            const isAssigned = task.assigneeId === userId ||
-              (Array.isArray(task.assigneeIds) && task.assigneeIds.includes(userId));
-            return isAssigned && task.dueDate;
-          })
-        : [];
+      // Filtered server-side rather than fetching every company task and
+      // narrowing here. Both storage implementations match the legacy single
+      // `assigneeId` *or* the `assigneeIds` array, so multi-assignee tasks are
+      // included. (The original code filtered on `assignedTo`, which is not a
+      // column, so those tasks never reached the calendar at all.)
+      const tasks = await apiRequest(
+        `/api/tasks?assigneeId=${encodeURIComponent(userId)}`,
+        "GET"
+      );
+      return Array.isArray(tasks) ? tasks.filter((task: any) => task.dueDate) : [];
     },
     enabled: !!userId && includeTasks,
     refetchInterval: REFETCH_INTERVAL,
   });
 
   const { data: scheduleItems = [], isLoading: scheduleLoading } = useQuery<any[]>({
-    queryKey: ["/api/schedule-items/all", { calendarUser: userId }],
+    // Not user-scoped: this route returns every schedule item the caller can access,
+    // so the cache entry is shared rather than keyed per user.
+    queryKey: ["/api/schedule-items/all"],
     queryFn: async () => {
       try {
         const allSchedule = await apiRequest("/api/schedule-items/all", "GET");

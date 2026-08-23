@@ -23,25 +23,38 @@ import {
   Tag,
 } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
+import { useQuery } from "@tanstack/react-query";
 import { useSortable } from '@dnd-kit/sortable';
-import type { EstimateGroup, EstimateItem, CostCode, CostCategory } from "@shared/schema";
+import { StatusBadge } from "@/components/StatusBadge";
+import type { EstimateGroup, EstimateItem, CostCode, CostCategory, FieldCategoryWithOptions, FieldOption } from "@shared/schema";
 
-type GroupStatus = "not_started" | "in_progress" | "complete";
+/** Any key configured under Field Settings > Estimate Section Statuses. */
+type GroupStatus = string;
 
-const STATUS_CONFIG: Record<GroupStatus, { label: string; className: string }> = {
-  not_started: {
-    label: "Not Started",
-    className: "bg-muted text-muted-foreground border-border",
-  },
-  in_progress: {
-    label: "In Progress",
-    className: "bg-status-warning-bg text-status-warning border-status-warning/30",
-  },
-  complete: {
-    label: "Complete",
-    className: "bg-status-success-bg text-status-success border-status-success/30",
-  },
-};
+/**
+ * Used only until the field settings query resolves, or on a company that has
+ * no estimate item statuses configured at all.
+ */
+const FALLBACK_STATUS_OPTIONS: Pick<FieldOption, "key" | "name" | "color">[] = [
+  { key: "not_started", name: "Not Started", color: null },
+  { key: "in_progress", name: "In Progress", color: null },
+  { key: "complete", name: "Complete", color: null },
+];
+
+/**
+ * A section and the lines inside it are the same kind of thing at different
+ * scales, so they share one list of statuses — the estimate_item.status
+ * options from Field Settings. Configure them once and both follow.
+ */
+function useGroupStatusOptions() {
+  const { data } = useQuery<FieldCategoryWithOptions>({
+    queryKey: ["/api/field-categories/by-key/estimate_item.status"],
+    staleTime: 5 * 60 * 1000,
+    retry: false,
+  });
+  const configured = (data?.options || []).filter((o) => o.isActive);
+  return configured.length > 0 ? configured : FALLBACK_STATUS_OPTIONS;
+}
 
 type ColumnConfig = { id: string; label: string; visible: boolean; widthPx: number };
 
@@ -182,8 +195,30 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
   const gridTemplate = parentGridTemplate || `40px ${visibleCols.map(c => `${c.widthPx}px`).join(' ')} 80px`;
   const cellBase = "h-9 px-2 flex items-center text-sm overflow-hidden";
 
-  const currentStatus = ((group as any).status as GroupStatus) || "not_started";
-  const statusCfg = STATUS_CONFIG[currentStatus] || STATUS_CONFIG.not_started;
+  // Kept in step with the line-item cells in EstimateDetail: same numeric
+  // right-alignment, same muted band on computed figures, same money boundary.
+  const NUMERIC_COLUMNS = new Set([
+    'quantity', 'unitCostExTax', 'unitCostIncTax', 'builderCost', 'builderCostIncTax',
+    'markup', 'markupDollarAmount', 'clientPriceExTax', 'clientTax', 'clientPriceIncTax',
+  ]);
+  const DERIVED_COLUMNS = new Set([
+    'unitCostIncTax', 'builderCost', 'builderCostIncTax',
+    'clientTax', 'markupDollarAmount', 'clientPriceExTax', 'clientPriceIncTax',
+  ]);
+  const columnCellClass = (columnId: string) =>
+    `${cellBase}` +
+    (NUMERIC_COLUMNS.has(columnId) ? ' justify-end text-right tabular-nums' : '') +
+    (DERIVED_COLUMNS.has(columnId) ? ' text-muted-foreground bg-muted/40' : '') +
+    (columnId === 'unitCostExTax' ? ' border-l border-border' : '');
+
+  // Right-click opens the full list; left click just cycles.
+  const [statusMenuOpen, setStatusMenuOpen] = useState(false);
+  const statusOptions = useGroupStatusOptions();
+  const currentStatus = ((group as any).status as GroupStatus) || statusOptions[0]?.key || "not_started";
+  const currentStatusOption = statusOptions.find((o) => o.key === currentStatus);
+  // A status removed from Field Settings after the fact still has to render.
+  const statusLabel = currentStatusOption?.name
+    ?? currentStatus.replace(/[_-]+/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase());
 
   return (
     <div
@@ -199,7 +234,7 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
         <div className="absolute -bottom-[2px] left-0 right-0 h-1 bg-primary z-50 rounded-full shadow-[0_0_8px_rgba(168,144,212,0.6)]" />
       )}
     <Card
-      className={`rounded-xl border border-border bg-card shadow-sm mb-2 overflow-hidden ${isGroupSelected ? 'ring-2 ring-primary' : ''}`}
+      className={`rounded-xl border border-border bg-card shadow-sm mb-4 overflow-hidden ${isGroupSelected ? 'ring-2 ring-primary' : ''}`}
       data-testid={`card-group-${group.id}`}
     >
       {/* Group Header - CSS Grid */}
@@ -242,8 +277,11 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
         {visibleCols.map(column => {
           if (column.id === 'item') {
             return (
-              <div key={column.id} className={`${cellBase} font-semibold`} role="gridcell">
-                <div className="flex items-center gap-2 min-w-0">
+              <div key={column.id} className={`${columnCellClass(column.id)} font-semibold`} role="gridcell">
+                {/* w-full so the total's ml-auto has room to push into: the name
+                    sits left, the amount pins to the right edge of the column,
+                    and the amounts line up down the page. */}
+                <div className="flex items-center gap-2 min-w-0 w-full">
                   <Button
                     variant="ghost"
                     size="sm"
@@ -257,9 +295,17 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
                       <ChevronDown className="h-4 w-4" />
                     )}
                   </Button>
-                  <span className="font-semibold text-sm truncate">{group.name}</span>
+                  <span className="font-semibold text-sm flex-shrink-0">{group.name}</span>
                   {group.description && (
-                    <span className="text-xs text-muted-foreground truncate">- {group.description}</span>
+                    // The name keeps its full width; the description takes what
+                    // is left. Previously both truncated equally, so a real
+                    // description squeezed the group name down to a few letters.
+                    <span
+                      className="text-xs text-muted-foreground truncate min-w-0"
+                      title={group.description}
+                    >
+                      {group.description}
+                    </span>
                   )}
                   {(group as any).defaultCostCode && costCodes.length > 0 && (() => {
                     const code = costCodes.find(c => c.id === (group as any).defaultCostCode);
@@ -283,48 +329,56 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
           // line-item status cells below it.
           if (column.id === 'status') {
             return (
-              <div key={column.id} className={cellBase} role="gridcell">
+              <div key={column.id} className={columnCellClass(column.id)} role="gridcell">
                 {onUpdateStatus && !isLocked ? (
-                  <DropdownMenu>
+                  <DropdownMenu open={statusMenuOpen} onOpenChange={setStatusMenuOpen}>
                     <DropdownMenuTrigger asChild>
-                      <Badge
-                        variant="outline"
-                        className={`text-xs px-1.5 py-0 h-5 min-w-[84px] justify-center flex-shrink-0 cursor-pointer no-default-hover-elevate no-default-active-elevate border ${statusCfg.className}`}
+                      <button
+                        type="button"
+                        className="inline-flex rounded-[9px] hover-elevate active-elevate-2 flex-shrink-0"
                         data-testid={`badge-group-status-${group.id}`}
-                        onClick={(e) => e.stopPropagation()}
+                        title="Click to cycle, right-click to choose"
+                        // Left click cycles, matching the line-item chips below
+                        // it. The full list is a right-click away, for jumping
+                        // straight to a status rather than clicking through.
+                        onPointerDown={(e) => e.preventDefault()}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const i = statusOptions.findIndex(o => o.key === currentStatus);
+                          const next = statusOptions[(i + 1) % statusOptions.length];
+                          if (next) onUpdateStatus(group.id, next.key);
+                        }}
+                        onDoubleClick={(e) => e.stopPropagation()}
+                        onContextMenu={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setStatusMenuOpen(true);
+                        }}
                       >
-                        {statusCfg.label}
-                      </Badge>
+                        <StatusBadge status={currentStatus} label={statusLabel} />
+                      </button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="start" onClick={(e) => e.stopPropagation()}>
-                      {(Object.keys(STATUS_CONFIG) as GroupStatus[]).map((s) => (
+                      {statusOptions.map((option) => (
                         <DropdownMenuItem
-                          key={s}
+                          key={option.key}
                           onClick={(e) => {
                             e.stopPropagation();
-                            onUpdateStatus(group.id, s);
+                            onUpdateStatus(group.id, option.key);
+                            setStatusMenuOpen(false);
                           }}
-                          className={currentStatus === s ? "font-medium" : ""}
-                          data-testid={`menu-item-status-${s}-${group.id}`}
+                          className={currentStatus === option.key ? "font-medium" : ""}
+                          data-testid={`menu-item-status-${option.key}-${group.id}`}
                         >
-                          <span className={`inline-block w-2 h-2 rounded-full mr-2 flex-shrink-0 ${
-                            s === 'not_started' ? 'bg-muted-foreground/50' :
-                            s === 'in_progress' ? 'bg-amber' :
-                            'bg-sage'
-                          }`} />
-                          {STATUS_CONFIG[s].label}
+                          <StatusBadge status={option.key} label={option.name} />
                         </DropdownMenuItem>
                       ))}
                     </DropdownMenuContent>
                   </DropdownMenu>
                 ) : (
-                  <Badge
-                    variant="outline"
-                    className={`text-xs px-1.5 py-0 h-5 min-w-[84px] justify-center flex-shrink-0 border ${statusCfg.className}`}
-                    data-testid={`badge-group-status-${group.id}`}
-                  >
-                    {statusCfg.label}
-                  </Badge>
+                  <span className="flex-shrink-0" data-testid={`badge-group-status-${group.id}`}>
+                    <StatusBadge status={currentStatus} label={statusLabel} />
+                  </span>
                 )}
               </div>
             );
@@ -348,7 +402,7 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
           return (
             <div
               key={column.id}
-              className={`${cellBase} font-semibold`}
+              className={`${columnCellClass(column.id)} font-semibold`}
               role="gridcell"
               data-testid={cellContent ? `group-total-${column.id}-${group.id}` : undefined}
             >

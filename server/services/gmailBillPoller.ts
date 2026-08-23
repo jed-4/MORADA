@@ -13,8 +13,18 @@ function getGoogleOAuthService(): GoogleOAuthService {
   return googleOAuthService;
 }
 
-export async function pollBillInbox(): Promise<{ processed: number; errors: string[] }> {
-  const settings = await storage.getCompanySettings();
+/**
+ * Polls one company's connected Gmail inbox. The companyId is required: this
+ * reads and rewrites OAuth credentials, so there is no safe default — polling
+ * "whichever settings row came back first" is how one company's inbox ends up
+ * filing invoices into another company's books.
+ */
+export async function pollBillInbox(companyId: string): Promise<{ processed: number; errors: string[] }> {
+  if (!companyId) {
+    throw new Error('pollBillInbox requires a companyId');
+  }
+
+  const settings = await storage.getCompanySettings(companyId);
 
   if (!settings) {
     return { processed: 0, errors: [] };
@@ -33,7 +43,7 @@ export async function pollBillInbox(): Promise<{ processed: number; errors: stri
     return { processed: 0, errors: [] };
   }
 
-  console.log(`[BillInbox] Polling ${settings.billInboxGmailEmail} for new invoices...`);
+  console.log(`[BillInbox] Polling ${settings.billInboxGmailEmail} for new invoices (company ${companyId})...`);
   console.log(`[BillInbox] Token present: accessToken=${!!settings.billInboxGmailAccessToken} refreshToken=${!!settings.billInboxGmailRefreshToken} expiry=${settings.billInboxGmailTokenExpiry}`);
 
   let gmail: any;
@@ -42,7 +52,7 @@ export async function pollBillInbox(): Promise<{ processed: number; errors: stri
       billInboxGmailAccessToken: settings.billInboxGmailAccessToken,
       billInboxGmailRefreshToken: settings.billInboxGmailRefreshToken,
       billInboxGmailTokenExpiry: settings.billInboxGmailTokenExpiry,
-    });
+    }, companyId);
     console.log('[BillInbox] Gmail client obtained successfully');
   } catch (err: any) {
     console.error('[BillInbox] Failed to get Gmail client (token error):', err.message);
@@ -50,7 +60,7 @@ export async function pollBillInbox(): Promise<{ processed: number; errors: stri
       billInboxStatus: 'error',
       billInboxLastError: err.message,
       billInboxLastErrorAt: new Date(),
-    });
+    }, companyId);
     return { processed: 0, errors: [err.message] };
   }
 
@@ -80,7 +90,7 @@ export async function pollBillInbox(): Promise<{ processed: number; errors: stri
         billInboxStatus: 'error',
         billInboxLastError: err.message,
         billInboxLastErrorAt: new Date(),
-      });
+      }, companyId);
     }
     return { processed: 0, errors: [err.message] };
   }
@@ -91,7 +101,7 @@ export async function pollBillInbox(): Promise<{ processed: number; errors: stri
       billInboxLastPolledAt: new Date(),
       billInboxStatus: null,
       billInboxLastError: null,
-    });
+    }, companyId);
     return { processed: 0, errors: [] };
   }
 
@@ -144,17 +154,8 @@ export async function pollBillInbox(): Promise<{ processed: number; errors: stri
         attachments,
       };
 
-      // The companyId is stored directly on the company_settings record — the same
-      // record that holds the Gmail credentials. Bills are scoped exclusively to that
-      // company; there is no fallback or guessing. If companyId is somehow missing
-      // (pre-migration data) we skip rather than risk cross-company contamination.
-      const companyId = settings.companyId ?? undefined;
-      if (!companyId) {
-        console.error('[BillInbox] company_settings.company_id is not set — cannot import bill safely. Run the startup backfill or set it manually.');
-        errors.push('company_id not configured on company settings');
-        continue;
-      }
-
+      // Bills are scoped to the company whose Gmail credentials we just read —
+      // the same company this poll was invoked for. No fallback, no guessing.
       const results = await autoBillCreator.processEmailInvoices(parsedEmail, {
         defaultUserId: null,
         autoMatch: true,
@@ -186,7 +187,7 @@ export async function pollBillInbox(): Promise<{ processed: number; errors: stri
     billInboxLastPolledAt: new Date(),
     billInboxStatus: null,
     billInboxLastError: null,
-  });
+  }, companyId);
 
   console.log(`[BillInbox] Poll complete — ${processed} bill(s) created, ${errors.length} error(s)`);
   return { processed, errors };
@@ -254,6 +255,63 @@ async function markRead(gmail: any, messageId: string) {
   }
 }
 
+/**
+ * Polls every company that has the bill inbox switched on.
+ *
+ * This is the only cross-tenant entry point, and it exists because the
+ * scheduled poller has no request context to take a company from. Each company
+ * is polled in its own try/catch so one tenant's expired token or revoked
+ * consent can't stop the rest from being polled.
+ */
+export async function pollAllBillInboxes(): Promise<{ processed: number; errors: string[] }> {
+  let allSettings: Awaited<ReturnType<typeof storage.getAllCompanySettings>>;
+  try {
+    allSettings = await storage.getAllCompanySettings();
+  } catch (err: any) {
+    console.error('[BillInbox] Failed to load company settings for polling:', err.message);
+    return { processed: 0, errors: [err.message] };
+  }
+
+  const pollable = allSettings.filter(
+    (s) => s.companyId && s.billInboxPollingEnabled && s.billInboxGmailRefreshToken,
+  );
+
+  if (pollable.length === 0) {
+    return { processed: 0, errors: [] };
+  }
+
+  // A settings row with no companyId can't be polled safely — we'd have no
+  // company to file the resulting bills against. Surface it rather than
+  // silently skipping, since it means the startup backfill hasn't run.
+  const unowned = allSettings.filter(
+    (s) => !s.companyId && s.billInboxPollingEnabled && s.billInboxGmailRefreshToken,
+  );
+  if (unowned.length > 0) {
+    console.error(
+      `[BillInbox] ${unowned.length} connected inbox(es) have no company_id — skipping. Run the startup backfill.`,
+    );
+  }
+
+  console.log(`[BillInbox] Polling ${pollable.length} connected inbox(es)`);
+
+  let processed = 0;
+  const errors: string[] = [];
+
+  for (const settings of pollable) {
+    const companyId = settings.companyId!;
+    try {
+      const result = await pollBillInbox(companyId);
+      processed += result.processed;
+      errors.push(...result.errors);
+    } catch (err: any) {
+      console.error(`[BillInbox] Poll failed for company ${companyId}:`, err.message);
+      errors.push(`${companyId}: ${err.message}`);
+    }
+  }
+
+  return { processed, errors };
+}
+
 export function startGmailBillPoller(intervalMinutes: number = 5) {
   if (pollerInterval) {
     console.log('[BillInbox] Poller already running');
@@ -263,11 +321,11 @@ export function startGmailBillPoller(intervalMinutes: number = 5) {
   console.log(`[BillInbox] Starting Gmail bill poller (every ${intervalMinutes} minutes)`);
 
   setTimeout(() => {
-    pollBillInbox().catch(console.error);
+    pollAllBillInboxes().catch(console.error);
   }, 15000);
 
   pollerInterval = setInterval(() => {
-    pollBillInbox().catch(console.error);
+    pollAllBillInboxes().catch(console.error);
   }, intervalMinutes * 60 * 1000);
 }
 

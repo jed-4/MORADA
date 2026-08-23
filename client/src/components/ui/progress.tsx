@@ -19,7 +19,9 @@ const Progress = React.forwardRef<
   >
     <ProgressPrimitive.Indicator
       className="h-full w-full flex-1 bg-primary transition-all"
-      style={{ transform: `translateX(-${100 - (value || 0)}%)` }}
+      // Clamped: an unclamped value over 100 translates the indicator out of
+      // the overflow-hidden track, so 200% used would render as an empty bar.
+      style={{ transform: `translateX(-${100 - Math.min(100, Math.max(0, value || 0))}%)` }}
     />
   </ProgressPrimitive.Root>
 ))

@@ -53,6 +53,7 @@ import { EmptyState } from "@/components/EmptyState";
 const STATUS_OPTIONS = [
   { value: "all",     label: "All statuses" },
   { value: "draft",   label: "Draft" },
+  { value: "approved", label: "Approved" },
   { value: "sent",    label: "Sent" },
   { value: "partial", label: "Partial" },
   { value: "paid",    label: "Paid" },
@@ -60,12 +61,12 @@ const STATUS_OPTIONS = [
 ];
 
 const STATUS_LABEL: Record<string, string> = {
-  draft: "Draft", sent: "Sent", partial: "Partial", paid: "Paid", overdue: "Overdue",
+  draft: "Draft", approved: "Approved", sent: "Sent", partial: "Partial", paid: "Paid", overdue: "Overdue",
 };
 
 // An invoice only carries a real amount "Due" once it has been issued. Drafts are
 // not yet a receivable; paid invoices have a zero balance (and show "Paid").
-const ISSUED_INVOICE_STATUSES = new Set(["sent", "partial", "overdue"]);
+const ISSUED_INVOICE_STATUSES = new Set(["approved", "sent", "partial", "overdue"]);
 const isIssuedInvoice = (status: string) => ISSUED_INVOICE_STATUSES.has(status);
 
 function StatusChip({ status }: { status: string }) {
@@ -282,10 +283,28 @@ export default function ClientInvoices({ embedded }: { embedded?: boolean } = {}
 
   const duplicateMutation = useMutation({
     mutationFn: async (id: string) =>
-      (await apiRequest(`/api/client-invoices/${id}/duplicate`, "POST")) as ClientInvoice,
+      (await apiRequest(`/api/client-invoices/${id}/duplicate`, "POST")) as ClientInvoice & {
+        skippedClaims?: string[];
+        adjustedClaims?: string[];
+      },
     onSuccess: (copy) => {
       queryClient.invalidateQueries({ queryKey: ["/api/client-invoices"] });
-      toast({ title: "Invoice duplicated", description: `Created draft ${copy.invoiceNumber || ""}` });
+      queryClient.invalidateQueries({ queryKey: ["/api/invoice-variations/by-project"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/invoice-allowances/by-project"] });
+      // Claims already billed across the project are dropped (or trimmed to
+      // what's left) rather than copied — duplicating used to re-bill them
+      // outright. Name them so the change is visible rather than silent.
+      const notes: string[] = [];
+      if (copy.skippedClaims?.length) {
+        notes.push(`${copy.skippedClaims.join(", ")} not copied — already claimed in full.`);
+      }
+      if (copy.adjustedClaims?.length) {
+        notes.push(`Reduced to the unclaimed balance: ${copy.adjustedClaims.join(", ")}.`);
+      }
+      toast({
+        title: "Invoice duplicated",
+        description: [`Created draft ${copy.invoiceNumber || ""}`.trim(), ...notes].join(" "),
+      });
     },
     onError: (err: any) => {
       toast({ title: "Failed to duplicate invoice", description: err?.payload?.message || err.message, variant: "destructive" });
@@ -296,6 +315,11 @@ export default function ClientInvoices({ embedded }: { embedded?: boolean } = {}
     mutationFn: async (id: string) => apiRequest(`/api/client-invoices/${id}`, "DELETE"),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/client-invoices"] });
+      // Deleting an invoice cascades its variation/allowance claim links, which
+      // frees those lines to be claimed again. Drop the cached cross-invoice
+      // claim lists (staleTime: Infinity) so the pickers see them as available.
+      queryClient.invalidateQueries({ queryKey: ["/api/invoice-variations/by-project"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/invoice-allowances/by-project"] });
       toast({ title: "Invoice deleted" });
     },
     onError: (err: any) => {

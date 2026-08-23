@@ -41,6 +41,7 @@ interface ChecklistInstance {
   projectId: string;
   completedCount: number;
   totalCount: number;
+  createdAt?: string;
 }
 
 interface ChecklistItem {
@@ -48,6 +49,7 @@ interface ChecklistItem {
   instanceId: string;
   groupId?: string;
   groupName?: string;
+  groupOrder?: number;
   description: string;
   order: number;
   isRequired: boolean;
@@ -69,10 +71,55 @@ type Props = {
   route: RouteProp<any>;
 };
 
-// Items render in their authored `order`, falling back to description for
-// ties or missing values (previously sorted alphabetically, ignoring order).
+// Oldest first. Mirrors compareCreatedAt in shared/utils.ts — mobile can't
+// reach the web app's @shared alias, so it keeps its own copy.
+function compareCreatedAt(
+  a: { createdAt?: string | null } | null | undefined,
+  b: { createdAt?: string | null } | null | undefined,
+): number {
+  const at = a?.createdAt ? new Date(a.createdAt).getTime() : 0;
+  const bt = b?.createdAt ? new Date(b.createdAt).getTime() : 0;
+  return at - bt;
+}
+
+// The number a user typed at the front of a name: "3. Slab" -> 3, "ITP013 -
+// Dilapidation" -> 13. Mirrors leadingSequenceNumber in shared/utils.ts —
+// mobile can't reach the web app's @shared alias, so it keeps its own copy.
+function leadingSequenceNumber(name: string | null | undefined): number | null {
+  const text = (name || '').trim();
+  if (!text) return null;
+  const separated = text.match(/^(\d+)(?:\s*[.)\-:\u2013\u2014]\s*\S|$)/);
+  if (separated) return parseInt(separated[1], 10);
+  const prefixed = text.match(/^[A-Za-z]{1,6}[-_]?(\d+)(?![\w])/);
+  if (prefixed) return parseInt(prefixed[1], 10);
+  return null;
+}
+
+// Mirrors compareNumberedNames in shared/utils.ts: 0 unless both names are
+// numbered, so an unnumbered list keeps the sequence it was stored in.
+function compareNumberedNames(a: string | null | undefined, b: string | null | undefined): number {
+  const an = leadingSequenceNumber(a);
+  const bn = leadingSequenceNumber(b);
+  if (an === null || bn === null) return 0;
+  return an - bn;
+}
+
+// Items render in their authored `order`, then by the number at the front of
+// the description. Ties that aren't numbered keep the order the server sent
+// (Array.sort is stable) rather than being alphabetised out of it.
 function compareItems(a: ChecklistItem, b: ChecklistItem): number {
-  return (a.order ?? 0) - (b.order ?? 0) || (a.description || '').localeCompare(b.description || '');
+  return (a.order ?? 0) - (b.order ?? 0) || compareNumberedNames(a.description, b.description);
+}
+
+// Groups render in the order their checklist was authored — each item carries
+// its parent's position in groupOrder — then by leading number. Unnumbered
+// ties keep insertion order.
+function compareGroupEntries(
+  [nameA, itemsA]: [string, ChecklistItem[]],
+  [nameB, itemsB]: [string, ChecklistItem[]],
+): number {
+  return (itemsA[0]?.groupOrder ?? 0) - (itemsB[0]?.groupOrder ?? 0)
+    || compareNumberedNames(nameA, nameB);
 }
 
 export default function ChecklistsScreen({ navigation, route }: Props) {
@@ -130,7 +177,9 @@ const colors = {
       const filterPid = projectId || selectedProjectId;
       const query = filterPid ? `?projectId=${filterPid}` : '';
       const data = await apiFetch<ChecklistInstance[]>(`/api/checklist-instances${query}`);
-      const sorted = (data || []).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+      // Checklists have no order column of their own, so they hold the order
+      // they were added in — same as the web checklists page and the widget.
+      const sorted = (data || []).sort(compareCreatedAt);
       setInstances(sorted);
     } catch {
       setInstances([]);
@@ -515,7 +564,7 @@ const colors = {
     return (
       <View style={[styles.itemsContainer, { borderTopColor: colors.border }]}>
         {ungrouped.length > 0 && ungrouped.map(renderItemRow)}
-        {Object.entries(groups).sort(([a], [b]) => a.localeCompare(b)).map(([groupName, grpItems]) => {
+        {Object.entries(groups).sort(compareGroupEntries).map(([groupName, grpItems]) => {
           const groupKey = `${instanceId}:${groupName}`;
           const isCollapsed = collapsedGroups[groupKey];
           const completedInGroup = grpItems.filter(i => i.status === 'completed' || i.status === 'na').length;

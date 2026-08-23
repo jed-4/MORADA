@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useRoute, useLocation, Link } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
@@ -9,6 +9,7 @@ import {
   type ChecklistTemplateItem,
   type UserRole,
 } from "@shared/schema";
+import { compareNumberedNames } from "@shared/utils";
 import {
   DndContext,
   closestCenter,
@@ -129,7 +130,12 @@ export default function ChecklistTemplateDetail() {
     queryFn: async () => {
       const res = await fetch(`/api/checklist-templates/${templateId}/groups`);
       if (!res.ok) throw new Error("Failed to fetch groups");
-      return res.json();
+      const data: ChecklistTemplateGroup[] = await res.json();
+      // Authored order, then the number at the front of the name. Legacy
+      // templates carry order 0 on every group, so without the second key the
+      // editor shows them in whatever sequence the database happened to return.
+      return data.sort((a, b) =>
+        (a.order ?? 0) - (b.order ?? 0) || compareNumberedNames(a.name, b.name));
     },
     enabled: !!templateId,
   });
@@ -212,6 +218,18 @@ export default function ChecklistTemplateDetail() {
     },
   });
 
+  // Reorder items mutation
+  const reorderItemsMutation = useMutation({
+    mutationFn: async ({ groupId, orderedItemIds }: { groupId: string; orderedItemIds: string[] }) => {
+      return await apiRequest(`/api/checklist-template-groups/${groupId}/items/reorder`, 'POST', {
+        orderedItemIds,
+      });
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/checklist-template-items", templateId] });
+    },
+  });
+
   // Sensors for drag and drop
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -243,6 +261,44 @@ export default function ChecklistTemplateDetail() {
 
       reorderGroupsMutation.mutate(orderedIds);
     }
+  };
+
+  // Items of the selected checklist, in their authored order. Legacy items all
+  // carry order 0, so description is the tie-break — that keeps pre-existing
+  // templates looking exactly as they did until someone drags them.
+  const selectedGroupItems = useMemo(
+    () =>
+      allItems
+        .filter(item => item.groupId === selectedGroupId)
+        // Ties fall back to the number at the front of the description, not a
+        // full name sort — an unnumbered list would otherwise be alphabetised
+        // away from the sequence it was entered in.
+        .sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || compareNumberedNames(a.description, b.description)),
+    [allItems, selectedGroupId],
+  );
+
+  const handleItemDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id || !selectedGroupId) return;
+
+    const oldIndex = selectedGroupItems.findIndex((i) => i.id === active.id);
+    const newIndex = selectedGroupItems.findIndex((i) => i.id === over.id);
+    if (oldIndex === -1 || newIndex === -1) return;
+
+    const reordered = arrayMove(selectedGroupItems, oldIndex, newIndex);
+
+    // Optimistic update. allItems spans every group, so splice the reordered
+    // slice back in with its new order values rather than replacing the array.
+    const orderById = new Map(reordered.map((item, i) => [item.id, i]));
+    queryClient.setQueryData<ChecklistTemplateItem[]>(
+      ["/api/checklist-template-items", templateId],
+      (old) => old?.map(item => orderById.has(item.id) ? { ...item, order: orderById.get(item.id)! } : item),
+    );
+
+    reorderItemsMutation.mutate({
+      groupId: selectedGroupId,
+      orderedItemIds: reordered.map((i) => i.id),
+    });
   };
 
   // Delete template mutation
@@ -424,7 +480,7 @@ export default function ChecklistTemplateDetail() {
                     </div>
                   </CardHeader>
                   <CardContent className="flex-1 overflow-y-auto">
-                    {allItems.filter(item => item.groupId === selectedGroupId).sort((a, b) => a.description.localeCompare(b.description)).length === 0 ? (
+                    {selectedGroupItems.length === 0 ? (
                       <div className="flex flex-col items-center justify-center h-full text-center py-12">
                         <CheckSquare className="h-10 w-10 text-muted-foreground mb-3" />
                         <p className="text-sm text-muted-foreground mb-3">
@@ -440,74 +496,28 @@ export default function ChecklistTemplateDetail() {
                         </Button>
                       </div>
                     ) : (
-                      <div className="space-y-1">
-                        {allItems
-                          .filter(item => item.groupId === selectedGroupId)
-                          .sort((a, b) => a.description.localeCompare(b.description))
-                          .map((item) => {
-                            const responseType = (item.responseType as string) || "checkbox";
-                            const responseOptions = (item.responseOptions as string[]) || [];
-                            const ResponseIcon = responseType === "checkbox" ? CheckSquare 
-                              : responseType === "text" ? Type 
-                              : responseType === "single_choice" ? CircleDot 
-                              : ListChecks;
-                            
-                            return (
-                              <div
+                      <DndContext
+                        sensors={sensors}
+                        collisionDetection={closestCenter}
+                        onDragEnd={handleItemDragEnd}
+                      >
+                        <SortableContext
+                          items={selectedGroupItems.map((i) => i.id)}
+                          strategy={verticalListSortingStrategy}
+                        >
+                          <div className="space-y-1">
+                            {selectedGroupItems.map((item) => (
+                              <SortableTemplateItem
                                 key={item.id}
-                                className="py-2 px-2 rounded border hover-elevate"
-                                data-testid={`item-${item.id}`}
-                              >
-                                <div className="flex items-center gap-2">
-                                  <ResponseIcon className="h-4 w-4 text-muted-foreground shrink-0" />
-                                  <span className="flex-1 text-sm">{item.description}</span>
-                                  {item.assignedRoleId && roleMap[item.assignedRoleId] && (
-                                    <Badge variant="secondary" className="text-data px-1.5 py-0">
-                                      {roleMap[item.assignedRoleId]}
-                                    </Badge>
-                                  )}
-                                  {responseType !== "checkbox" && (
-                                    <Badge variant="outline" className="text-data px-1.5 py-0 text-muted-foreground">
-                                      {responseType === "text" ? "Text" : responseType === "single_choice" ? "Single" : "Multiple"}
-                                    </Badge>
-                                  )}
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    className="h-7 w-7 shrink-0"
-                                    onClick={() => setEditingItem(item)}
-                                    data-testid={`button-edit-item-${item.id}`}
-                                  >
-                                    <FileText className="h-3 w-3" />
-                                  </Button>
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    className="h-7 w-7 shrink-0"
-                                    onClick={() => deleteItemMutation.mutate(item.id)}
-                                    data-testid={`button-delete-item-${item.id}`}
-                                  >
-                                    <Trash2 className="h-3 w-3" />
-                                  </Button>
-                                </div>
-                                {item.tooltip && (
-                                  <div className="ml-6 mt-1 text-xs text-muted-foreground">
-                                    {item.tooltip}
-                                  </div>
-                                )}
-                                {responseOptions.length > 0 && (
-                                  <div className="ml-6 mt-1 flex flex-wrap gap-1">
-                                    {responseOptions.map((opt, i) => (
-                                      <Badge key={i} variant="secondary" className="text-data px-1.5 py-0">
-                                        {opt}
-                                      </Badge>
-                                    ))}
-                                  </div>
-                                )}
-                              </div>
-                            );
-                          })}
-                      </div>
+                                item={item}
+                                roleName={item.assignedRoleId ? roleMap[item.assignedRoleId] : undefined}
+                                onEdit={() => setEditingItem(item)}
+                                onDelete={() => deleteItemMutation.mutate(item.id)}
+                              />
+                            ))}
+                          </div>
+                        </SortableContext>
+                      </DndContext>
                     )}
                   </CardContent>
                 </Card>
@@ -591,6 +601,98 @@ export default function ChecklistTemplateDetail() {
 }
 
 // Sortable Group Item Component
+function SortableTemplateItem({
+  item,
+  roleName,
+  onEdit,
+  onDelete,
+}: {
+  item: ChecklistTemplateItem;
+  roleName?: string;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
+    useSortable({ id: item.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  const responseType = (item.responseType as string) || "checkbox";
+  const responseOptions = (item.responseOptions as string[]) || [];
+  const ResponseIcon = responseType === "checkbox" ? CheckSquare
+    : responseType === "text" ? Type
+    : responseType === "single_choice" ? CircleDot
+    : ListChecks;
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className="py-2 px-2 rounded border hover-elevate"
+      data-testid={`item-${item.id}`}
+    >
+      <div className="flex items-center gap-2">
+        <div
+          {...attributes}
+          {...listeners}
+          className="cursor-grab active:cursor-grabbing touch-none"
+          data-testid={`drag-item-${item.id}`}
+        >
+          <GripVertical className="h-4 w-4 text-muted-foreground shrink-0" />
+        </div>
+        <ResponseIcon className="h-4 w-4 text-muted-foreground shrink-0" />
+        <span className="flex-1 text-sm">{item.description}</span>
+        {roleName && (
+          <Badge variant="secondary" className="text-data px-1.5 py-0">
+            {roleName}
+          </Badge>
+        )}
+        {responseType !== "checkbox" && (
+          <Badge variant="outline" className="text-data px-1.5 py-0 text-muted-foreground">
+            {responseType === "text" ? "Text" : responseType === "single_choice" ? "Single" : "Multiple"}
+          </Badge>
+        )}
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7 shrink-0"
+          onClick={onEdit}
+          data-testid={`button-edit-item-${item.id}`}
+        >
+          <FileText className="h-3 w-3" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7 shrink-0"
+          onClick={onDelete}
+          data-testid={`button-delete-item-${item.id}`}
+        >
+          <Trash2 className="h-3 w-3" />
+        </Button>
+      </div>
+      {item.tooltip && (
+        <div className="ml-12 mt-1 text-xs text-muted-foreground">
+          {item.tooltip}
+        </div>
+      )}
+      {responseOptions.length > 0 && (
+        <div className="ml-12 mt-1 flex flex-wrap gap-1">
+          {responseOptions.map((opt, i) => (
+            <Badge key={i} variant="secondary" className="text-data px-1.5 py-0">
+              {opt}
+            </Badge>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function SortableGroupItem({
   group,
   isSelected,
@@ -733,7 +835,7 @@ function GroupFormDialog({
       return await apiRequest("/api/checklist-template-groups", 'POST', {
         templateId,
         name: data.name,
-        order: 0,
+        // No order: the server appends to the end of the template.
       });
     },
     onSuccess: () => {
@@ -918,7 +1020,7 @@ function ItemFormDialog({
         responseType: data.responseType,
         responseOptions: data.responseOptions || [],
         assignedRoleId: data.assignedRoleId || null,
-        order: 0,
+        // No order: the server appends to the end of the group.
       };
       return await apiRequest(url, method, body);
     },

@@ -160,7 +160,7 @@ const sections: Record<Exclude<SectionId, "projects" | "business">, { label: str
       { title: "Templates", url: "/templates", icon: LayoutTemplate },
       { title: "Product Library", url: "/product-library", icon: Package },
       { title: "Cost Codes", url: "/cost-codes", icon: Tag },
-      { title: "Price List", url: "/price-list", icon: DollarSign },
+      { title: "Price Lists", url: "/price-lists", icon: DollarSign },
       { title: "AI Price Review", url: "/ai-price-review", icon: Sparkles },
       { title: "Contacts", url: "/contacts", icon: Users },
       { title: "Suppliers", url: "/suppliers", icon: Truck },

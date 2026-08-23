@@ -1,11 +1,13 @@
+import { useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
-import { FolderOpen, FileText, ExternalLink, Folder } from "lucide-react";
+import { FileText, ExternalLink, Folder } from "lucide-react";
 import type { WidgetProps } from "@/types/widgets";
 import { useProject } from "@/contexts/ProjectContext";
 import { WidgetSkeleton, WidgetEmpty, WidgetError } from "@/components/ui/widget-states";
 import { formatDate } from "@/lib/formatters";
 import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 interface DriveFile {
   id: string;
@@ -17,11 +19,10 @@ interface DriveFile {
   size?: string | number | null;
 }
 
-export default function ProjectDocumentsWidget({ widget }: WidgetProps) {
+export default function ProjectDocumentsWidget({ widget, onSetHeaderActions }: WidgetProps) {
   const { currentProject } = useProject();
   const [, setLocation] = useLocation();
   const folderId = currentProject?.googleDriveFolderId;
-  const folderName = currentProject?.googleDriveFolderName;
 
   const { data, isLoading, isError, refetch } = useQuery<DriveFile[]>({
     queryKey: ["/api/google-drive/files", folderId],
@@ -38,6 +39,36 @@ export default function ProjectDocumentsWidget({ widget }: WidgetProps) {
     },
     enabled: !!folderId,
   });
+
+  // Header row: hover link out to the Drive folder
+  useEffect(() => {
+    onSetHeaderActions?.(
+      currentProject && folderId ? (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              asChild
+              size="icon"
+              variant="ghost"
+              className="h-6 w-6 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity"
+              data-testid="button-open-drive-folder"
+              aria-label="Open Drive folder"
+            >
+              <a
+                href={`https://drive.google.com/drive/folders/${folderId}`}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <ExternalLink className="h-3.5 w-3.5" />
+              </a>
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="top">Open in Drive</TooltipContent>
+        </Tooltip>
+      ) : null,
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentProject?.id, folderId]);
 
   if (!currentProject) return <WidgetEmpty message="Select a project to view documents" />;
 
@@ -71,53 +102,33 @@ export default function ProjectDocumentsWidget({ widget }: WidgetProps) {
     );
   }
 
+  // Simple Notion-style rows: icon + name + date, nothing else
   return (
-    <div className="flex flex-col h-full" data-testid="widget-documents">
-      <div className="flex items-center justify-between gap-2 px-4 pt-3 pb-2">
-        <div className="flex items-center gap-2 min-w-0">
-          <FolderOpen className="h-3.5 w-3.5 text-bp-purple flex-shrink-0" />
-          <span className="text-xs font-medium truncate">{folderName || "Project files"}</span>
-        </div>
-        <Button
-          asChild
-          size="sm"
-          variant="ghost"
-          className="h-6 px-2 text-xs flex-shrink-0"
-          data-testid="button-open-drive-folder"
+    <div className="space-y-0.5" data-testid="widget-documents">
+      {files.map((f) => (
+        <a
+          key={f.id}
+          href={f.webViewLink || `https://drive.google.com/file/d/${f.id}/view`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center gap-2 px-1.5 py-1.5 rounded-md hover:bg-muted/60"
+          data-testid={`document-${f.id}`}
         >
-          <a
-            href={`https://drive.google.com/drive/folders/${folderId}`}
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Open <ExternalLink className="h-3 w-3 ml-1" />
-          </a>
-        </Button>
-      </div>
-      <div className="flex-1 overflow-auto px-2 pb-3 space-y-0.5">
-        {files.map((f) => (
-          <a
-            key={f.id}
-            href={f.webViewLink || `https://drive.google.com/file/d/${f.id}/view`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-2 px-2 py-1.5 rounded-md hover-elevate"
-            data-testid={`document-${f.id}`}
-          >
+          <span className="flex-shrink-0 w-5 text-center">
             {f.isFolder ? (
-              <Folder className="h-3.5 w-3.5 text-bp-amber flex-shrink-0" />
+              <Folder className="h-4 w-4 inline" style={{ color: "hsl(var(--amber))" }} />
             ) : (
-              <FileText className="h-3.5 w-3.5 text-bp-muted flex-shrink-0" />
+              <FileText className="h-4 w-4 text-muted-foreground inline" />
             )}
-            <span className="text-sm flex-1 truncate">{f.name}</span>
-            {f.modifiedTime && (
-              <span className="text-[11px] text-muted-foreground flex-shrink-0">
-                {formatDate(f.modifiedTime)}
-              </span>
-            )}
-          </a>
-        ))}
-      </div>
+          </span>
+          <span className="text-sm flex-1 min-w-0 truncate">{f.name}</span>
+          {f.modifiedTime && (
+            <span className="text-[11px] text-muted-foreground flex-shrink-0">
+              {formatDate(f.modifiedTime)}
+            </span>
+          )}
+        </a>
+      ))}
     </div>
   );
 }
