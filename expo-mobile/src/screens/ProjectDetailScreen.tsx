@@ -459,7 +459,9 @@ const colors = {
                 </View>
               )}
               <Ionicons name={tile.icon} size={22} color={colors.accent} />
-              <Text style={[styles.tileLabel, { color: colors.secondary }]}>{tile.label}</Text>
+              <Text style={[styles.tileLabel, { color: colors.secondary }]} numberOfLines={2}>
+                {tile.label}
+              </Text>
             </TouchableOpacity>
           ))}
         </ScrollView>
@@ -855,6 +857,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
+    // Keeps two-word labels off the edges, and narrows the text box enough
+    // that "Labour Hours" wraps rather than spanning the full tile.
+    paddingHorizontal: 8,
     gap: 6,
     position: 'relative',
   },
@@ -870,7 +875,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
   },
   tileBadgeText: { color: '#ffffff', fontSize: 10, fontWeight: '700' },
-  tileLabel: { fontSize: 11, fontWeight: '500' },
+  tileLabel: { fontSize: 11, fontWeight: '500', textAlign: 'center', lineHeight: 14 },
   section: { marginBottom: 4 },
   sectionHeader: {
     flexDirection: 'row',
