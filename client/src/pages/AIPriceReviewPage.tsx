@@ -9,7 +9,8 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { ChevronRight, Filter, Loader2, Paperclip, Receipt, Search, Check } from "lucide-react";
+import { Check, ChevronDown, ChevronRight, Loader2, Paperclip, Receipt, Search, X } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import BillReviewResults, { type BatchResult } from "@/components/systems/BillReviewResults";
 
 type BillRow = {
@@ -30,7 +31,8 @@ function formatDate(value: string | null) {
 }
 
 export default function AIPriceReviewPage() {
-  const [supplierId, setSupplierId] = useState("all");
+  const [supplierIds, setSupplierIds] = useState<Set<string>>(new Set());
+  const [supplierSearch, setSupplierSearch] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [search, setSearch] = useState("");
@@ -51,13 +53,12 @@ export default function AIPriceReviewPage() {
   });
 
   const effectiveListId = priceListId || priceLists[0]?.id || "";
-  const activeFilterCount =
-    (supplierId !== "all" ? 1 : 0) + (dateFrom ? 1 : 0) + (dateTo ? 1 : 0);
+
 
   const searchBills = useMutation({
     mutationFn: async (): Promise<BillRow[]> => {
       const params = new URLSearchParams();
-      if (supplierId !== "all") params.set("supplierId", supplierId);
+      if (supplierIds.size) params.set("supplierIds", Array.from(supplierIds).join(","));
       if (dateFrom) params.set("dateFrom", dateFrom);
       if (dateTo) params.set("dateTo", dateTo);
       if (search.trim()) params.set("search", search.trim());
@@ -85,6 +86,13 @@ export default function AIPriceReviewPage() {
         selected.has(b.id) ? { ...b, priceReviewedAt: new Date().toISOString() } : b) ?? prev);
     },
   });
+
+  const toggleSupplier = (id: string) => setSupplierIds((prev) => {
+    const next = new Set(prev);
+    next.has(id) ? next.delete(id) : next.add(id);
+    return next;
+  });
+  const selectedSuppliers = suppliers.filter((sup) => supplierIds.has(sup.id));
 
   const toggle = (id: string) => setSelected((prev) => {
     const next = new Set(prev);
@@ -119,60 +127,6 @@ export default function AIPriceReviewPage() {
                 data-testid="input-search-bills"
               />
             </div>
-
-            <Popover>
-              <PopoverTrigger asChild>
-                <button
-                  className="relative flex h-6 w-6 items-center justify-center rounded-md border border-border/50 text-muted-foreground hover-elevate active-elevate-2"
-                  data-testid="button-filter-bills"
-                >
-                  <Filter className="h-3 w-3" />
-                  {activeFilterCount > 0 && (
-                    <span className="absolute -right-1 -top-1 h-[14px] min-w-[14px] rounded-full bg-primary px-1 text-[9px] font-semibold leading-[14px] text-white">
-                      {activeFilterCount}
-                    </span>
-                  )}
-                </button>
-              </PopoverTrigger>
-              <PopoverContent align="start" className="w-60 space-y-2 p-2">
-                <div className="space-y-1">
-                  <label className="text-xs text-muted-foreground">Supplier</label>
-                  <Select value={supplierId} onValueChange={setSupplierId}>
-                    <SelectTrigger className="h-7 text-xs" data-testid="select-bill-supplier">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All suppliers</SelectItem>
-                      {suppliers.map((s) => (
-                        <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="flex gap-2">
-                  <div className="flex-1 space-y-1">
-                    <label className="text-xs text-muted-foreground">From</label>
-                    <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)}
-                      className="h-7 text-xs" data-testid="input-bill-date-from" />
-                  </div>
-                  <div className="flex-1 space-y-1">
-                    <label className="text-xs text-muted-foreground">To</label>
-                    <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)}
-                      className="h-7 text-xs" data-testid="input-bill-date-to" />
-                  </div>
-                </div>
-                {activeFilterCount > 0 && (
-                  <button
-                    onClick={() => { setSupplierId("all"); setDateFrom(""); setDateTo(""); }}
-                    className="h-6 w-full rounded-md border border-border/50 text-xs hover-elevate active-elevate-2"
-                    data-testid="button-clear-bill-filters"
-                  >
-                    Clear filters
-                  </button>
-                )}
-              </PopoverContent>
-            </Popover>
-
             <Select value={effectiveListId} onValueChange={setPriceListId}>
               <SelectTrigger className="h-6 w-44 flex-shrink-0 text-xs" data-testid="select-review-price-list">
                 <SelectValue placeholder="Price list" />
@@ -185,34 +139,121 @@ export default function AIPriceReviewPage() {
             </Select>
           </div>
 
-          <div className="flex flex-shrink-0 items-center gap-2">
-            {bills && selectable.length > 0 && (
+          {bills && selectable.length > 0 && (
+            <button
+              onClick={() => runReview.mutate()}
+              disabled={!selected.size || !effectiveListId || runReview.isPending}
+              className="flex h-6 w-auto flex-shrink-0 items-center gap-0.5 rounded-md border border-primary/20 bg-primary px-2 text-xs text-white hover:bg-primary/90 active-elevate-2 disabled:opacity-50"
+              data-testid="button-review-selected"
+            >
+              {runReview.isPending
+                ? <><Loader2 className="mr-1 h-3 w-3 animate-spin" />Reading…</>
+                : `Review ${selected.size} bill${selected.size === 1 ? "" : "s"}`}
+            </button>
+          )}
+        </div>
+
+        <div className="flex items-center justify-between gap-2 border-t border-border px-3 py-2">
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <Popover>
+              <PopoverTrigger asChild>
+                <button
+                  className="flex h-6 min-w-[9rem] max-w-[18rem] items-center justify-between gap-1.5 rounded-md border border-border/50 px-2 text-xs text-muted-foreground hover-elevate active-elevate-2"
+                  data-testid="button-supplier-filter"
+                >
+                  {selectedSuppliers.length === 0 ? (
+                    <span>All suppliers</span>
+                  ) : (
+                    <span className="flex items-center gap-1 overflow-hidden">
+                      {selectedSuppliers.slice(0, 2).map((sup) => (
+                        <Badge key={sup.id} variant="secondary" className="h-4 max-w-[7rem] gap-1 px-1.5 text-[10px]">
+                          <span className="truncate">{sup.name}</span>
+                          <X
+                            className="h-2.5 w-2.5 flex-shrink-0 cursor-pointer opacity-70 hover:opacity-100"
+                            onClick={(e) => { e.stopPropagation(); toggleSupplier(sup.id); }}
+                          />
+                        </Badge>
+                      ))}
+                      {selectedSuppliers.length > 2 && (
+                        <Badge variant="secondary" className="h-4 px-1.5 text-[10px]">
+                          +{selectedSuppliers.length - 2}
+                        </Badge>
+                      )}
+                    </span>
+                  )}
+                  <ChevronDown className="h-3 w-3 flex-shrink-0 opacity-50" />
+                </button>
+              </PopoverTrigger>
+              <PopoverContent align="start" className="w-64 p-2">
+                <Input
+                  placeholder="Search suppliers…"
+                  value={supplierSearch}
+                  onChange={(e) => setSupplierSearch(e.target.value)}
+                  className="mb-2 h-7 text-xs"
+                  data-testid="input-supplier-search"
+                />
+                <div className="max-h-56 space-y-0.5 overflow-y-auto">
+                  {suppliers
+                    .filter((sup) => sup.name?.toLowerCase().includes(supplierSearch.toLowerCase()))
+                    .map((sup) => (
+                      <label
+                        key={sup.id}
+                        className="flex cursor-pointer items-center gap-2 rounded px-1 py-1 text-xs hover:bg-muted"
+                      >
+                        <Checkbox
+                          checked={supplierIds.has(sup.id)}
+                          onCheckedChange={() => toggleSupplier(sup.id)}
+                        />
+                        <span className="truncate">{sup.name}</span>
+                      </label>
+                    ))}
+                </div>
+                {supplierIds.size > 0 && (
+                  <button
+                    onClick={() => setSupplierIds(new Set())}
+                    className="mt-2 h-6 w-full rounded-md border border-border/50 text-xs hover-elevate active-elevate-2"
+                    data-testid="button-clear-suppliers"
+                  >
+                    Clear suppliers
+                  </button>
+                )}
+              </PopoverContent>
+            </Popover>
+
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs text-muted-foreground">From</span>
+              <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)}
+                className="h-6 w-[8.5rem] text-xs" data-testid="input-bill-date-from" />
+              <span className="text-xs text-muted-foreground">to</span>
+              <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)}
+                className="h-6 w-[8.5rem] text-xs" data-testid="input-bill-date-to" />
+            </div>
+
+            {(supplierIds.size > 0 || dateFrom || dateTo) && (
               <button
-                onClick={() => runReview.mutate()}
-                disabled={!selected.size || !effectiveListId || runReview.isPending}
-                className="flex h-6 w-auto items-center gap-0.5 rounded-md border border-primary/20 bg-primary px-2 text-xs text-white hover:bg-primary/90 active-elevate-2 disabled:opacity-50"
-                data-testid="button-review-selected"
+                onClick={() => { setSupplierIds(new Set()); setDateFrom(""); setDateTo(""); }}
+                className="h-6 rounded-md border border-border/50 px-2 text-xs text-muted-foreground hover-elevate active-elevate-2"
+                data-testid="button-clear-bill-filters"
               >
-                {runReview.isPending
-                  ? <><Loader2 className="mr-1 h-3 w-3 animate-spin" />Reading…</>
-                  : `Review ${selected.size} bill${selected.size === 1 ? "" : "s"}`}
+                Clear
               </button>
             )}
-            <button
-              onClick={() => searchBills.mutate()}
-              disabled={searchBills.isPending}
-              className={`flex h-6 w-auto items-center gap-1 rounded-md border px-2 text-xs active-elevate-2 ${
-                bills
-                  ? "border-border/50 text-muted-foreground hover-elevate"
-                  : "border-primary/20 bg-primary text-white hover:bg-primary/90"
-              }`}
-              data-testid="button-search-bills"
-            >
-              {searchBills.isPending
-                ? <><Loader2 className="h-3 w-3 animate-spin" />Searching…</>
-                : <><Search className="h-3 w-3" />Search bills</>}
-            </button>
           </div>
+
+          <button
+            onClick={() => searchBills.mutate()}
+            disabled={searchBills.isPending}
+            className={`flex h-6 w-auto flex-shrink-0 items-center gap-1 rounded-md border px-2 text-xs active-elevate-2 ${
+              bills
+                ? "border-border/50 text-muted-foreground hover-elevate"
+                : "border-primary/20 bg-primary text-white hover:bg-primary/90"
+            }`}
+            data-testid="button-search-bills"
+          >
+            {searchBills.isPending
+              ? <><Loader2 className="h-3 w-3 animate-spin" />Searching…</>
+              : <><Search className="h-3 w-3" />Search bills</>}
+          </button>
         </div>
       </div>
 
@@ -272,21 +313,27 @@ export default function AIPriceReviewPage() {
                     aria-label={`Select ${b.billNumber}`}
                   />
                   <div className="min-w-0 flex-1">
-                    <p className="truncate">
-                      {b.billNumber}
-                      {b.supplierName ? <span className="text-muted-foreground"> · {b.supplierName}</span> : null}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {formatDate(b.billDate)} · {b.lineCount} line{b.lineCount === 1 ? "" : "s"} · {formatCents(b.total)}
+                    {/* Supplier leads: it is what you recognise a bill by. The bill
+                        number is a reference you look up, not a label you scan. */}
+                    <p className="truncate font-medium">{b.supplierName ?? "No supplier"}</p>
+                    <p className="truncate text-xs text-muted-foreground">
+                      {formatDate(b.billDate)} · {b.lineCount} line{b.lineCount === 1 ? "" : "s"} · {b.billNumber}
                     </p>
                   </div>
+                  <span className="flex-shrink-0 text-sm tabular-nums">{formatCents(b.total)}</span>
                   {b.hasAttachment && (
                     <Paperclip className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground/60" />
                   )}
-                  {b.priceReviewedAt && (
-                    <span className="flex flex-shrink-0 items-center gap-1 text-xs text-sage">
-                      <Check className="h-3.5 w-3.5" />Reviewed
-                    </span>
+                  {b.priceReviewedAt ? (
+                    <Badge
+                      variant="secondary"
+                      className="h-5 flex-shrink-0 gap-1 px-1.5 text-[10px] text-muted-foreground"
+                      data-testid={`badge-reviewed-${b.id}`}
+                    >
+                      <Check className="h-2.5 w-2.5" />Reviewed
+                    </Badge>
+                  ) : (
+                    <span className="w-[4.75rem] flex-shrink-0" aria-hidden />
                   )}
                 </div>
               ))}

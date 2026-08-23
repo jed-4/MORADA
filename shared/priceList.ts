@@ -78,6 +78,8 @@ export type PriceHistoryEntry = {
   billId?: string;
   billNumber?: string | null;
   billLineItemId?: string;
+  /** The date on the supplier's invoice, NOT when it was accepted. */
+  billDate?: string | null;
   /** Who accepted the change. Bill prices are never applied automatically. */
   acceptedBy?: string;
 };
@@ -283,4 +285,53 @@ export function verdictFor(
   if (!confident) return "ambiguous";
   if (!comparison) return "unchanged";
   return comparison.changed ? "moved" : "unchanged";
+}
+
+
+/**
+ * The newest invoice that has priced this item, if any.
+ *
+ * Reads the bill-sourced price history rather than lastPriceUpdate, because
+ * lastPriceUpdate records when somebody clicked accept — which says nothing
+ * about how old the invoice was. A bill from four months ago accepted today
+ * would otherwise look like the most recent word on the price.
+ */
+export function latestBillPricing(
+  item: { priceHistory?: unknown },
+): { billDate: string; billNumber: string | null; billId: string | null } | null {
+  const history = Array.isArray(item.priceHistory) ? (item.priceHistory as PriceHistoryEntry[]) : [];
+  let best: { billDate: string; billNumber: string | null; billId: string | null } | null = null;
+
+  for (const entry of history) {
+    if (entry?.source !== "bill" || !entry.billDate) continue;
+    if (!best || entry.billDate > best.billDate) {
+      best = {
+        billDate: entry.billDate,
+        billNumber: entry.billNumber ?? null,
+        billId: entry.billId ?? null,
+      };
+    }
+  }
+  return best;
+}
+
+/**
+ * Whether a bill is too old to reprice an item.
+ *
+ * The newest invoice wins (Jed, 2026-08-23): reviewing a recent bill, accepting
+ * its rise, then working back through an older one must not quietly restore the
+ * older, lower price. Only a bill that already priced this item can block —
+ * prices set by hand or by spreadsheet import carry no date to compare against,
+ * so they never block, and an item never priced from a bill never blocks.
+ */
+export function isSupersededByNewerBill(
+  item: { priceHistory?: unknown },
+  incomingBillDate: string | null | undefined,
+): { superseded: boolean; by: { billDate: string; billNumber: string | null } | null } {
+  const latest = latestBillPricing(item);
+  if (!latest || !incomingBillDate) return { superseded: false, by: null };
+  // Same-day re-reviews are allowed: the later accept is the intended one.
+  return incomingBillDate < latest.billDate
+    ? { superseded: true, by: { billDate: latest.billDate, billNumber: latest.billNumber } }
+    : { superseded: false, by: null };
 }

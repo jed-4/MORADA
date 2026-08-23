@@ -22,6 +22,8 @@ export type BatchLine = {
   };
   verdict: LineVerdict;
   comparison: BillPriceComparison | null;
+  /** Set when a newer invoice already priced this item, so this bill must not win. */
+  superseded: { billDate: string; billNumber: string | null } | null;
   alreadyLinked: boolean;
   candidates: Array<{ id: string; name: string; code: string | null; score: number; reason: string }>;
 };
@@ -168,7 +170,7 @@ export function BillReviewResults({ result, priceListId }: { result: BatchResult
 
   const applyAll = () => {
     for (const r of moved) {
-      if (!applied.has(r.line.lineId) && r.candidates[0]) {
+      if (!applied.has(r.line.lineId) && !r.superseded && r.candidates[0]) {
         applyPrice.mutate({ priceListItemId: r.candidates[0].id, billLineItemId: r.line.lineId });
       }
     }
@@ -289,7 +291,15 @@ export function BillReviewResults({ result, priceListId }: { result: BatchResult
                     )}
 
                     {verdict === "moved" && (
-                      applied.has(r.line.lineId) ? (
+                      r.superseded ? (
+                        <span
+                          className="max-w-[40%] flex-shrink-0 text-right text-xs text-muted-foreground"
+                          data-testid={`superseded-${r.line.lineId}`}
+                        >
+                          Superseded by a newer invoice
+                          {r.superseded.billNumber ? ` (${r.superseded.billNumber})` : ""}
+                        </span>
+                      ) : applied.has(r.line.lineId) ? (
                         <span className="flex flex-shrink-0 items-center gap-1 text-xs text-sage">
                           <Check className="h-3.5 w-3.5" />Updated
                         </span>

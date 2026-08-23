@@ -35676,9 +35676,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const user = req.user as any;
       if (!user?.companyId) return res.status(401).json({ error: "Unauthorized" });
-      const { supplierId, dateFrom, dateTo, search } = req.query as Record<string, string | undefined>;
+      const { supplierIds, dateFrom, dateTo, search } = req.query as Record<string, string | undefined>;
       const bills = await storage.searchBillsForPriceReview(user.companyId, {
-        supplierId: supplierId || undefined,
+        supplierIds: supplierIds ? supplierIds.split(",").filter(Boolean) : undefined,
         dateFrom: dateFrom ? new Date(dateFrom) : undefined,
         dateTo: dateTo ? new Date(dateTo) : undefined,
         search: search || undefined,
@@ -35789,7 +35789,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       const { priceListId, supplierId, dateFrom, dateTo, billIds } = req.body ?? {};
 
-      const { matchBillLine, verdictFor, compareBillPriceToItem } = await import("@shared/priceList");
+      const { matchBillLine, verdictFor, compareBillPriceToItem, isSupersededByNewerBill } = await import("@shared/priceList");
 
       const lines = await storage.getBillLinesForPriceReview(user.companyId, {
         supplierId: supplierId || undefined,
@@ -35847,10 +35847,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
             })
           : null;
 
+        const stale = best
+          ? isSupersededByNewerBill(
+              best.item as any,
+              line.billDate ? new Date(line.billDate).toISOString() : null,
+            )
+          : { superseded: false, by: null };
+
         return {
           line,
           verdict: verdictFor(candidates, comparison),
           comparison,
+          superseded: stale.superseded ? stale.by : null,
           alreadyLinked: !!linked,
           candidates: candidates.slice(0, 3).map((c) => ({
             id: c.item.id, name: c.item.name, code: (c.item as any).code ?? null,
@@ -35903,6 +35911,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       );
       if (!result) {
         return res.status(404).json({ error: "Price list item or bill line not found" });
+      }
+      if (result.superseded) {
+        // 409: the request was well formed, the state says no.
+        return res.status(409).json({
+          error: "A newer invoice already set this price",
+          superseded: result.superseded,
+          comparison: result.comparison,
+        });
       }
       res.json(result);
     } catch (error: any) {
