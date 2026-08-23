@@ -282,6 +282,7 @@ const colors = {
     { key: 'checklists', icon: 'checkmark-done-outline', label: 'Checklists', showCount: false },
     { key: 'notes', icon: 'document-text-outline', label: 'Notes', showCount: false },
     { key: 'receiptCapture', icon: 'receipt-outline', label: 'Capture Receipt', showCount: false },
+    { key: 'defects', icon: 'warning-outline', label: 'Defects', showCount: false },
     // Only offered to users who can view the labour budget.
     ...(canViewLabourHours
       ? [{ key: 'labourHours', icon: 'time-outline' as const, label: 'Labour Hours', showCount: false }]
@@ -314,6 +315,9 @@ const colors = {
         break;
       case 'labourHours':
         navigation.navigate('LabourHours', { projectId, projectName: project.name });
+        break;
+      case 'defects':
+        navigation.navigate('Defects', { projectId, projectName: project.name });
         break;
       default:
         if (collapsed[key]) {
