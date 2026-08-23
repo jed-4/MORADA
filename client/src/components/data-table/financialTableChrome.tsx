@@ -89,9 +89,11 @@ export function FinancialTableLegend() {
   return (
     <div className="flex-shrink-0 flex items-center flex-wrap gap-x-5 gap-y-1 px-3 py-1.5 border-t border-border/50">
       {[
-        { color: "hsl(var(--bp-green))", label: "Under" },
-        { color: "hsl(var(--muted-foreground) / 0.4)", label: "On Track" },
-        { color: "hsl(var(--bp-coral))", label: "Over" },
+        { color: "hsl(var(--status-success-fg))", label: "Under 95%" },
+        { color: "hsl(var(--status-warning-fg))", label: "95–99%" },
+        { color: "hsl(var(--status-caution-fg))", label: "100–105%" },
+        { color: "hsl(var(--status-danger-fg))", label: "Over 105%" },
+        { color: "hsl(var(--status-info-fg))", label: "Unbudgeted" },
       ].map(({ color, label }) => (
         <div key={label} className="flex items-center gap-1.5">
           <span className="w-2 h-2 rounded-full" style={{ backgroundColor: color }} />

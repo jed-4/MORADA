@@ -18,6 +18,9 @@ import type { RouteProp } from '@react-navigation/native';
 
 import { useTheme } from '../theme';
 import { useAuth } from '../contexts/AuthContext';
+import { usePermission } from '../lib/usePermission';
+
+
 interface Project {
   id: string;
   name: string;
@@ -130,6 +133,10 @@ const colors = {
     accent: theme.primary,
     muted: theme.textMuted,
 };
+
+  // Gates the Labour Hours tile. The endpoint behind it enforces the same
+  // permission; this only stops the UI offering it.
+  const canViewLabourHours = usePermission('financial.budget_labour');
 
   const fetchData = useCallback(async () => {
     try {
@@ -275,6 +282,10 @@ const colors = {
     { key: 'checklists', icon: 'checkmark-done-outline', label: 'Checklists', showCount: false },
     { key: 'notes', icon: 'document-text-outline', label: 'Notes', showCount: false },
     { key: 'receiptCapture', icon: 'receipt-outline', label: 'Capture Receipt', showCount: false },
+    // Only offered to users who can view the labour budget.
+    ...(canViewLabourHours
+      ? [{ key: 'labourHours', icon: 'time-outline' as const, label: 'Labour Hours', showCount: false }]
+      : []),
   ];
 
   const handleTileTap = (key: string) => {
@@ -300,6 +311,9 @@ const colors = {
         break;
       case 'receiptCapture':
         navigation.navigate('ReceiptCapture', { projectId, projectName: project.name });
+        break;
+      case 'labourHours':
+        navigation.navigate('LabourHours', { projectId, projectName: project.name });
         break;
       default:
         if (collapsed[key]) {
@@ -445,7 +459,9 @@ const colors = {
                 </View>
               )}
               <Ionicons name={tile.icon} size={22} color={colors.accent} />
-              <Text style={[styles.tileLabel, { color: colors.secondary }]}>{tile.label}</Text>
+              <Text style={[styles.tileLabel, { color: colors.secondary }]} numberOfLines={2}>
+                {tile.label}
+              </Text>
             </TouchableOpacity>
           ))}
         </ScrollView>
@@ -841,6 +857,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
+    // Keeps two-word labels off the edges, and narrows the text box enough
+    // that "Labour Hours" wraps rather than spanning the full tile.
+    paddingHorizontal: 8,
     gap: 6,
     position: 'relative',
   },
@@ -856,7 +875,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
   },
   tileBadgeText: { color: '#ffffff', fontSize: 10, fontWeight: '700' },
-  tileLabel: { fontSize: 11, fontWeight: '500' },
+  tileLabel: { fontSize: 11, fontWeight: '500', textAlign: 'center', lineHeight: 14 },
   section: { marginBottom: 4 },
   sectionHeader: {
     flexDirection: 'row',
