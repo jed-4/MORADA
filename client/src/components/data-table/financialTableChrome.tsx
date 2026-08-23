@@ -93,6 +93,7 @@ export function FinancialTableLegend() {
         { color: "hsl(var(--status-warning-fg))", label: "95–99%" },
         { color: "hsl(var(--status-caution-fg))", label: "100–105%" },
         { color: "hsl(var(--status-danger-fg))", label: "Over 105%" },
+        { color: "hsl(var(--status-info-fg))", label: "Unbudgeted" },
       ].map(({ color, label }) => (
         <div key={label} className="flex items-center gap-1.5">
           <span className="w-2 h-2 rounded-full" style={{ backgroundColor: color }} />

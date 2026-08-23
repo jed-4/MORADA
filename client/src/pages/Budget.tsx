@@ -18,7 +18,7 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { Progress } from "@/components/ui/progress";
-import { RefreshCw, DollarSign, AlertCircle, Clock, ChevronDown, ChevronRight, ChevronsDownUp, ChevronsUpDown, Columns3, Eye, EyeOff } from "lucide-react";
+import { RefreshCw, DollarSign, AlertCircle, Clock, ChevronDown, ChevronRight, ChevronsDownUp, ChevronsUpDown, Columns3, Eye, EyeOff, ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { Budget, BudgetLineItem, CostCategory, CostCode, LabourHoursBudget, Project } from "@shared/schema";
 import type { ContractMetrics } from "@shared/projectMetrics";
@@ -26,6 +26,52 @@ import { cn } from "@/lib/utils";
 import { EmptyState } from "@/components/EmptyState";
 import { usePermission } from "@/hooks/use-permission";
 import { useAuth } from "@/hooks/use-auth";
+
+type BudgetTone = "under" | "near" | "at" | "over" | "unbudgeted" | "neutral";
+
+type HoursSort = { id: string; dir: "asc" | "desc" } | null;
+
+/**
+ * Grouping the hours table cost tanstack's built-in sorting, which would
+ * reorder the flat row list and scatter the category headers. This sorts
+ * within each group instead, so clicking a header still works.
+ */
+function HoursSortHeader({
+  label,
+  id,
+  sort,
+  onSort,
+  align,
+}: {
+  label: string;
+  id: string;
+  sort: HoursSort;
+  onSort: (id: string) => void;
+  align?: "right";
+}) {
+  const dir = sort?.id === id ? sort.dir : null;
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        onSort(id);
+      }}
+      data-sort-state={dir ?? "none"}
+      className={cn(
+        "group/sort flex items-center gap-1 w-full min-w-0 uppercase tracking-wide",
+        align === "right" && "justify-end",
+      )}
+    >
+      <span className="truncate">{label}</span>
+      <span className="flex-shrink-0">
+        {dir === "asc" && <ArrowUp className="w-3 h-3 text-primary" />}
+        {dir === "desc" && <ArrowDown className="w-3 h-3 text-primary" />}
+        {!dir && <ArrowUpDown className="w-3 h-3 opacity-0 group-hover/sort:opacity-40" />}
+      </span>
+    </button>
+  );
+}
 
 const PHASE_LABELS: Record<string, string> = {
   lead: "Lead",
@@ -73,6 +119,16 @@ export default function BudgetPage() {
   // Kept separate from the costs tab so collapsing a category on one tab does
   // not silently reshape the other.
   const [collapsedHourCategories, setCollapsedHourCategories] = useState<Set<string>>(new Set());
+  // Sorting applies within each category; null falls back to cost code order.
+  const [hoursSort, setHoursSort] = useState<HoursSort>(null);
+
+  // Cycles asc → desc → back to cost code order.
+  const toggleHoursSort = (id: string) =>
+    setHoursSort((prev) => {
+      if (prev?.id !== id) return { id, dir: "asc" };
+      if (prev.dir === "asc") return { id, dir: "desc" };
+      return null;
+    });
 
   // Fetch project to get current phase
   const { data: project } = useQuery<Project>({
@@ -187,30 +243,6 @@ export default function BudgetPage() {
     enabled: !!projectId && !!labourDrill,
   });
 
-  const recalculateMutation = useMutation({
-    mutationFn: async () => {
-      return await apiRequest(`/api/projects/${projectId}/budget/calculate`, 'POST', {});
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/budget`] });
-    },
-    // Auto-recalc runs silently on open; on failure the page keeps its last
-    // known figures rather than surfacing a toast on every visit.
-    onError: () => {},
-  });
-
-  const recalculateLineItemsMutation = useMutation({
-    mutationFn: async () => {
-      return await apiRequest(`/api/budgets/${budget?.id}/line-items/recalculate`, 'POST', {});
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/budgets/${budget?.id}/line-items`] });
-      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "labour-costs"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "actual-costs"] });
-    },
-    onError: () => {},
-  });
-
   const recalculateLabourHoursMutation = useMutation({
     mutationFn: async () => {
       return await apiRequest(`/api/projects/${projectId}/labour-hours-budget/recalculate`, 'POST', {});
@@ -246,9 +278,11 @@ export default function BudgetPage() {
 
   // How much of the budget has been consumed, banded:
   //   <95% under · 95–99% nearly there · 100–105% just over · >105% over.
-  // A zero budget with anything spent against it is over by definition.
-  const budgetTone = (budgeted: number, used: number) => {
-    if (budgeted <= 0) return used > 0 ? "over" : "neutral";
+  // Spend against no budget is its own state, not "over": most projects carry
+  // unbudgeted cost codes, and colouring them all red makes the page read as
+  // one solid wall of failure and stops meaning anything.
+  const budgetTone = (budgeted: number, used: number): BudgetTone => {
+    if (budgeted <= 0) return used > 0 ? "unbudgeted" : "neutral";
     const percent = (used / budgeted) * 100;
     if (percent < 95) return "under";
     if (percent < 100) return "near";
@@ -256,12 +290,32 @@ export default function BudgetPage() {
     return "over";
   };
 
-  const TONE_CLASS: Record<string, string> = {
+  const TONE_CLASS: Record<BudgetTone, string> = {
     under: "bg-[hsl(var(--status-success-bg))] text-[hsl(var(--status-success-fg))]",
     near: "bg-[hsl(var(--status-warning-bg))] text-[hsl(var(--status-warning-fg))]",
     at: "bg-[hsl(var(--status-caution-bg))] text-[hsl(var(--status-caution-fg))]",
     over: "bg-[hsl(var(--status-danger-bg))] text-[hsl(var(--status-danger-fg))]",
+    unbudgeted: "bg-[hsl(var(--status-info-bg))] text-[hsl(var(--status-info-fg))]",
     neutral: "bg-muted text-muted-foreground",
+  };
+
+  // Solid fill for the % Used bar, so the bar agrees with its row's chips.
+  const TONE_BAR: Record<BudgetTone, string> = {
+    under: "[&>div]:bg-[hsl(var(--status-success-fg))]",
+    near: "[&>div]:bg-[hsl(var(--status-warning-fg))]",
+    at: "[&>div]:bg-[hsl(var(--status-caution-fg))]",
+    over: "[&>div]:bg-[hsl(var(--status-danger-fg))]",
+    unbudgeted: "[&>div]:bg-[hsl(var(--status-info-fg))]",
+    neutral: "",
+  };
+
+  const TONE_LABEL: Record<BudgetTone, string> = {
+    under: "Under",
+    near: "Near",
+    at: "At limit",
+    over: "Over",
+    unbudgeted: "Unbudgeted",
+    neutral: "—",
   };
 
   const renderVarianceChip = (value: string, budgeted: number, used: number) => (
@@ -275,22 +329,16 @@ export default function BudgetPage() {
     </span>
   );
 
-  const renderStatusChip = (value: number) => {
-    const label = value > 0 ? "Under" : value < 0 ? "Over" : "On Track";
-    const tone =
-      value > 0
-        ? "bg-[hsl(var(--status-success-bg))] text-[hsl(var(--status-success-fg))]"
-        : value < 0
-          ? "bg-[hsl(var(--status-danger-bg))] text-[hsl(var(--status-danger-fg))]"
-          : "bg-muted text-muted-foreground";
+  const renderStatusChip = (budgeted: number, used: number) => {
+    const tone = budgetTone(budgeted, used);
     return (
       <span
         className={cn(
           "inline-flex items-center justify-center w-[68px] h-5 rounded-md text-[10px] font-medium",
-          tone,
+          TONE_CLASS[tone],
         )}
       >
-        {label}
+        {TONE_LABEL[tone]}
       </span>
     );
   };
@@ -641,8 +689,9 @@ export default function BudgetPage() {
       enableSorting: false,
       cell: ({ row }) => {
         const r = row.original;
-        const value = r.kind === "category" ? r.budgeted - r.total : r.item.budgeted - r.item.total;
-        return renderStatusChip(value);
+        const budgeted = r.kind === "category" ? r.budgeted : r.item.budgeted;
+        const total = r.kind === "category" ? r.total : r.item.total;
+        return renderStatusChip(budgeted, total);
       },
       size: 90,
       meta: { defaultWidth: 90, align: "right", headerLabel: "Status" },
@@ -695,6 +744,28 @@ export default function BudgetPage() {
       }
     | { kind: "item"; id: string; item: LabourHoursBudget; code: string; zebra: boolean };
 
+  const hoursSortValue = (
+    e: { item: LabourHoursBudget; code: string },
+    id: string,
+  ): number | string => {
+    const budgeted = parseFloat(e.item.budgetedHours || "0");
+    const pending = parseFloat(e.item.pendingHours || "0");
+    const approved = parseFloat(e.item.approvedHours || "0");
+    const total = pending + approved;
+    switch (id) {
+      case "budgeted": return budgeted;
+      case "pending": return pending;
+      case "approved": return approved;
+      case "total": return total;
+      case "variance": return budgeted - total;
+      case "percentUsed": return budgeted > 0 ? (total / budgeted) * 100 : 0;
+      default: {
+        const code = parseFloat(e.code);
+        return isNaN(code) ? (e.item.costCodeTitle || "") : code;
+      }
+    }
+  };
+
   const hoursRows = useMemo<HoursRow[]>(() => {
     type Entry = { item: LabourHoursBudget; code: string; categoryCode: string; categoryTitle: string };
     const groups = new Map<string, { categoryCode: string; entries: Entry[] }>();
@@ -729,11 +800,22 @@ export default function BudgetPage() {
     const rows: HoursRow[] = [];
     let itemIdx = 0;
     sortedGroups.forEach(([categoryTitle, group]) => {
-      const entries = [...group.entries].sort((a, b) => {
+      const byCostCode = (a: Entry, b: Entry) => {
         if (a.code && b.code) return compareCode(a.code, b.code);
         if (a.code) return -1;
         if (b.code) return 1;
         return (a.item.costCodeTitle || "").localeCompare(b.item.costCodeTitle || "");
+      };
+      const entries = [...group.entries].sort((a, b) => {
+        if (!hoursSort) return byCostCode(a, b);
+        const av = hoursSortValue(a, hoursSort.id);
+        const bv = hoursSortValue(b, hoursSort.id);
+        const cmp =
+          typeof av === "number" && typeof bv === "number"
+            ? av - bv
+            : String(av).localeCompare(String(bv));
+        // Ties keep cost code order so the list never jumps around.
+        return (hoursSort.dir === "asc" ? cmp : -cmp) || byCostCode(a, b);
       });
       rows.push({
         kind: "category",
@@ -751,7 +833,7 @@ export default function BudgetPage() {
       });
     });
     return rows;
-  }, [filteredLabourHours, costCodeMeta, collapsedHourCategories]);
+  }, [filteredLabourHours, costCodeMeta, collapsedHourCategories, hoursSort]);
 
   const hourCategoryTitles = useMemo(
     () => hoursRows.filter((r) => r.kind === "category").map((r) => (r as { categoryTitle: string }).categoryTitle),
@@ -799,7 +881,15 @@ export default function BudgetPage() {
     return [
       {
         id: "costCode",
-        header: "Cost Code",
+        header: () => (
+          <HoursSortHeader
+            label="Cost Code"
+            id="costCode"
+            sort={hoursSort}
+            onSort={toggleHoursSort}
+            
+          />
+        ),
         enableSorting: false,
         cell: ({ row }) => {
           const r = row.original;
@@ -835,7 +925,15 @@ export default function BudgetPage() {
       },
       {
         id: "budgeted",
-        header: "Budgeted",
+        header: () => (
+          <HoursSortHeader
+            label="Budgeted"
+            id="budgeted"
+            sort={hoursSort}
+            onSort={toggleHoursSort}
+            align="right"
+          />
+        ),
         enableSorting: false,
         cell: ({ row }) => {
           const r = row.original;
@@ -852,7 +950,15 @@ export default function BudgetPage() {
       },
       {
         id: "pending",
-        header: "Pending",
+        header: () => (
+          <HoursSortHeader
+            label="Pending"
+            id="pending"
+            sort={hoursSort}
+            onSort={toggleHoursSort}
+            align="right"
+          />
+        ),
         enableSorting: false,
         cell: ({ row }) => {
           const r = row.original;
@@ -872,7 +978,15 @@ export default function BudgetPage() {
       },
       {
         id: "approved",
-        header: "Approved",
+        header: () => (
+          <HoursSortHeader
+            label="Approved"
+            id="approved"
+            sort={hoursSort}
+            onSort={toggleHoursSort}
+            align="right"
+          />
+        ),
         enableSorting: false,
         cell: ({ row }) => {
           const r = row.original;
@@ -889,7 +1003,15 @@ export default function BudgetPage() {
       },
       {
         id: "total",
-        header: "Total",
+        header: () => (
+          <HoursSortHeader
+            label="Total"
+            id="total"
+            sort={hoursSort}
+            onSort={toggleHoursSort}
+            align="right"
+          />
+        ),
         enableSorting: false,
         cell: ({ row }) => {
           const r = row.original;
@@ -906,7 +1028,15 @@ export default function BudgetPage() {
       },
       {
         id: "variance",
-        header: "Variance",
+        header: () => (
+          <HoursSortHeader
+            label="Variance"
+            id="variance"
+            sort={hoursSort}
+            onSort={toggleHoursSort}
+            align="right"
+          />
+        ),
         enableSorting: false,
         cell: ({ row }) => {
           const r = row.original;
@@ -923,17 +1053,30 @@ export default function BudgetPage() {
       },
       {
         id: "percentUsed",
-        header: "% Used",
+        header: () => (
+          <HoursSortHeader
+            label="% Used"
+            id="percentUsed"
+            sort={hoursSort}
+            onSort={toggleHoursSort}
+            align="right"
+          />
+        ),
         enableSorting: false,
         cell: ({ row }) => {
           const r = row.original;
           const budgeted = hoursOf(r, "budgetedHours");
           const percentUsed = budgeted > 0 ? Math.round((totalOf(r) / budgeted) * 100) : 0;
+          const tone = budgetTone(budgeted, totalOf(r));
           return (
             // The bar fills whatever room the column is given, so widening the
-            // column widens the bar.
+            // column widens the bar. Progress clamps at 100, so the number
+            // beside it carries the overrun.
             <div className="flex items-center gap-2 w-full min-w-0">
-              <Progress value={percentUsed} className="flex-1 min-w-0 h-1.5" />
+              <Progress
+                value={percentUsed}
+                className={cn("flex-1 min-w-0 h-1.5", TONE_BAR[tone])}
+              />
               <span className="text-xs tabular-nums shrink-0 w-9 text-right">{percentUsed}%</span>
             </div>
           );
@@ -942,7 +1085,7 @@ export default function BudgetPage() {
         meta: { defaultWidth: 140, align: "right", headerLabel: "% Used" },
       } satisfies ColumnDef<HoursRow, unknown> & { meta: DataTableColumnMeta },
     ];
-  }, [collapsedHourCategories]);
+  }, [collapsedHourCategories, hoursSort]);
 
   const handleToggleEmpty = (checked: boolean) => {
     setHideEmptyCostCodes(checked);
@@ -957,48 +1100,34 @@ export default function BudgetPage() {
     });
   };
 
-  // Always-live budget: recalculate automatically when the page opens so the
-  // figures are always current (replaces the old manual Recalculate button).
-  // Fires once per mount. If a recalc fails, the queries keep their last known
-  // values so the page still renders rather than breaking.
-  // Tracks the project we've already auto-recalculated for. Keyed by projectId
-  // (rather than a plain boolean) so navigating between projects re-triggers a
-  // fresh recalc, and so an early render with permissions still resolving never
-  // permanently suppresses the recalc.
+  // Always-live figures without a manual Recalculate button.
+  //
+  // The costs side needs nothing here: GET /projects/:id/budget already runs
+  // calculateBudget (which creates one when absent) and
+  // recalculateBudgetLineItems on every read. This effect used to POST both of
+  // those as well, and each POST invalidated the budget query, triggering
+  // another recomputing GET — so opening the page recomputed the whole budget
+  // three times before it could paint. Labour hours have no read-time
+  // recompute, so that one still runs.
+  //
+  // Keyed by projectId rather than a boolean so switching projects re-triggers,
+  // and so an early render with permissions unresolved can't permanently
+  // suppress it.
   const autoRecalcProjectId = useRef<string | null>(null);
   useEffect(() => {
-    // Wait until auth (and therefore the permission flags) has resolved —
-    // otherwise the first render runs with both perms false and would mark this
-    // project "done" without ever recalculating.
+    // Wait for auth, or the first render runs with the permission flags false
+    // and marks this project done without ever recalculating.
     if (authLoading) return;
     if (!projectId) return;
     if (autoRecalcProjectId.current === projectId) return;
-    // For cost-viewers wait for the budget query to settle so we know whether a
-    // budget record already exists before deciding to run the line-item recalc.
-    if (canViewActuals && budgetLoading) return;
-    // Nothing to recalc if the user can't view either surface.
-    if (!canViewActuals && !canViewLabour) return;
+    if (!canViewLabour) return;
 
-    if (canViewActuals) {
-      // Always run the project-level recalc — this is what generates a budget
-      // breakdown when none exists yet, so it must NOT be gated on budget?.id.
-      recalculateMutation.mutate();
-      // Line-item recalc only makes sense once a budget record exists.
-      if (budget?.id) {
-        recalculateLineItemsMutation.mutate();
-      }
-    }
-    if (canViewLabour) {
-      recalculateLabourHoursMutation.mutate();
-    }
+    recalculateLabourHoursMutation.mutate();
     autoRecalcProjectId.current = projectId;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authLoading, projectId, budgetLoading, budget?.id, canViewActuals, canViewLabour]);
+  }, [authLoading, projectId, canViewLabour]);
 
-  const isRecalculating =
-    recalculateMutation.isPending ||
-    recalculateLineItemsMutation.isPending ||
-    recalculateLabourHoursMutation.isPending;
+  const isRecalculating = recalculateLabourHoursMutation.isPending;
 
   if (budgetLoading) {
     return (
