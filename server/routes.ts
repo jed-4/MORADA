@@ -35670,6 +35670,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Bills a review could cover. Deliberately requires the caller to ask -- the
+  // page opens empty rather than loading every bill you have ever received.
+  app.get("/api/price-list/review/bills", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.companyId) return res.status(401).json({ error: "Unauthorized" });
+      const { supplierId, dateFrom, dateTo, search } = req.query as Record<string, string | undefined>;
+      const bills = await storage.searchBillsForPriceReview(user.companyId, {
+        supplierId: supplierId || undefined,
+        dateFrom: dateFrom ? new Date(dateFrom) : undefined,
+        dateTo: dateTo ? new Date(dateTo) : undefined,
+        search: search || undefined,
+      });
+      res.json(bills);
+    } catch (error: any) {
+      console.error("Bill search for price review failed:", error);
+      res.status(500).json({ error: "Failed to search bills", details: error.message });
+    }
+  });
+
   // A few sentences over a whole review. The caller sends the movements it is
   // already displaying; the arithmetic is redone here so the summary can never
   // describe numbers the server did not produce.
@@ -35780,15 +35800,43 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const catalogue = await storage.getPriceListItems(user.companyId, { priceListId });
 
+      // Codes read out of each bill's own document, when the caller asks for it.
+      // Cached per bill, so this costs tokens once and nothing on a re-review.
+      const skuByLine = new Map<string, string>();
+      if (req.body?.readSkus) {
+        const { extractSkusForBill } = await import("./services/billSkuReader");
+        const billsInScope = Array.from(new Set(lines.map((l) => l.billId)));
+        for (const id of billsInScope) {
+          try {
+            const out = await extractSkusForBill(id, user.companyId);
+            out.skus.forEach((sku, lineId) => skuByLine.set(lineId, sku));
+          } catch (error) {
+            console.error(`[Price review] SKU read failed for bill ${id}:`, error);
+          }
+        }
+      }
+
       const results = lines.map((line) => {
         // An existing link is a decision a human already made; respect it rather
         // than letting the matcher second-guess it.
         const linked = line.priceListItemId
           ? catalogue.find((i) => i.id === line.priceListItemId)
           : undefined;
+        // A code read off the document beats anything the prose can tell us, so
+        // it is searched first and exactly. Only if that misses do we fall back
+        // to the description matcher.
+        const sku = skuByLine.get(line.lineId);
+        const bySku = sku
+          ? catalogue.find((i) =>
+              (i.code && i.code.toLowerCase() === sku.toLowerCase()) ||
+              (i.supplierCode && i.supplierCode.toLowerCase() === sku.toLowerCase()))
+          : undefined;
+
         const candidates = linked
           ? [{ item: linked, score: 1, reason: "code" as const }]
-          : matchBillLine(line.description, catalogue);
+          : bySku
+            ? [{ item: bySku, score: 1, reason: "code" as const }]
+            : matchBillLine(line.description, catalogue);
 
         const best = candidates[0];
         const comparison = best
@@ -35816,9 +35864,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return acc;
       }, {});
 
+      // Reviewed means a human has actually seen these lines, so stamp only when
+      // the caller says so -- a speculative preview should not clear the flag.
+      if (req.body?.markReviewed) {
+        await storage.markBillsPriceReviewed(
+          Array.from(new Set(lines.map((l) => l.billId))), user.companyId, user.id,
+        );
+      }
+
       res.json({
         results,
         summary,
+        skusRead: skuByLine.size,
         billsScanned: new Set(lines.map((l) => l.billId)).size,
         linesScanned: lines.length,
         catalogueSize: catalogue.length,
