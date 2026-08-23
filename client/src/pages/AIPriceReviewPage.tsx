@@ -6,9 +6,6 @@ import type { Contact, PriceList } from "@shared/schema";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from "@/components/ui/select";
 import { Check, ChevronDown, ChevronRight, Loader2, Paperclip, Receipt, Search, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import BillReviewResults, { type BatchResult } from "@/components/systems/BillReviewResults";
@@ -36,7 +33,6 @@ export default function AIPriceReviewPage() {
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [search, setSearch] = useState("");
-  const [priceListId, setPriceListId] = useState("");
   const [readSkus, setReadSkus] = useState(true);
 
   /** null until a search has actually been run — the page opens empty on purpose. */
@@ -52,7 +48,8 @@ export default function AIPriceReviewPage() {
     queryKey: ["/api/price-lists"],
   });
 
-  const effectiveListId = priceListId || priceLists[0]?.id || "";
+  // No list is chosen any more: the server picks each bill's supplier list.
+  const fallbackListId = priceLists[0]?.id ?? "";
 
 
   const searchBills = useMutation({
@@ -75,7 +72,6 @@ export default function AIPriceReviewPage() {
   const runReview = useMutation({
     mutationFn: async (): Promise<BatchResult> =>
       apiRequest("/api/price-list/review/batch", "POST", {
-        priceListId: effectiveListId,
         billIds: Array.from(selected),
         readSkus,
         markReviewed: true,
@@ -127,22 +123,12 @@ export default function AIPriceReviewPage() {
                 data-testid="input-search-bills"
               />
             </div>
-            <Select value={effectiveListId} onValueChange={setPriceListId}>
-              <SelectTrigger className="h-6 w-44 flex-shrink-0 text-xs" data-testid="select-review-price-list">
-                <SelectValue placeholder="Price list" />
-              </SelectTrigger>
-              <SelectContent>
-                {priceLists.map((l) => (
-                  <SelectItem key={l.id} value={l.id}>{l.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
           </div>
 
           {bills && selectable.length > 0 && (
             <button
               onClick={() => runReview.mutate()}
-              disabled={!selected.size || !effectiveListId || runReview.isPending}
+              disabled={!selected.size || runReview.isPending}
               className="flex h-6 w-auto flex-shrink-0 items-center gap-0.5 rounded-md border border-primary/20 bg-primary px-2 text-xs text-white hover:bg-primary/90 active-elevate-2 disabled:opacity-50"
               data-testid="button-review-selected"
             >
@@ -223,10 +209,10 @@ export default function AIPriceReviewPage() {
             <div className="flex items-center gap-1.5">
               <span className="text-xs text-muted-foreground">From</span>
               <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)}
-                className="h-6 w-[8.5rem] text-xs" data-testid="input-bill-date-from" />
+                className="h-6 w-[8.5rem] bg-card text-xs" data-testid="input-bill-date-from" />
               <span className="text-xs text-muted-foreground">to</span>
               <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)}
-                className="h-6 w-[8.5rem] text-xs" data-testid="input-bill-date-to" />
+                className="h-6 w-[8.5rem] bg-card text-xs" data-testid="input-bill-date-to" />
             </div>
 
             {(supplierIds.size > 0 || dateFrom || dateTo) && (
@@ -341,7 +327,7 @@ export default function AIPriceReviewPage() {
           </div>
         )}
 
-        {result && <BillReviewResults result={result} priceListId={effectiveListId} />}
+        {result && <BillReviewResults result={result} fallbackPriceListId={fallbackListId} />}
       </div>
     </div>
   );
