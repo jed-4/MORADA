@@ -329,6 +329,34 @@ export default function BudgetPage() {
     </span>
   );
 
+  // The drill-down previously printed the raw enum ("awaiting_payment") in a
+  // plain outline badge. Paid is the state people scan for, so it carries the
+  // only solid tone.
+  const BILL_STATUS: Record<string, { label: string; tone: string }> = {
+    paid: { label: "Paid", tone: "bg-[hsl(var(--status-success-bg))] text-[hsl(var(--status-success-fg))]" },
+    awaiting_payment: { label: "Unpaid", tone: "bg-[hsl(var(--status-warning-bg))] text-[hsl(var(--status-warning-fg))]" },
+    awaiting_approval: { label: "Approval", tone: "bg-muted text-muted-foreground" },
+    needs_review: { label: "Review", tone: "bg-muted text-muted-foreground" },
+    draft: { label: "Draft", tone: "bg-muted text-muted-foreground" },
+  };
+
+  const renderBillStatusChip = (status: string) => {
+    const meta = BILL_STATUS[status] ?? {
+      label: status.replace(/_/g, " "),
+      tone: "bg-muted text-muted-foreground",
+    };
+    return (
+      <span
+        className={cn(
+          "inline-flex items-center justify-center w-full h-5 rounded-md text-[10px] font-medium capitalize",
+          meta.tone,
+        )}
+      >
+        {meta.label}
+      </span>
+    );
+  };
+
   const renderStatusChip = (budgeted: number, used: number) => {
     const tone = budgetTone(budgeted, used);
     return (
@@ -529,13 +557,13 @@ export default function BudgetPage() {
         if (r.kind === "category") {
           const isCollapsed = collapsedCategories.has(r.categoryTitle);
           return (
-            <div className="flex items-center gap-1.5 font-semibold text-xs">
+            <div className="flex items-center gap-1.5 text-xs">
               {isCollapsed ? (
-                <ChevronRight className="h-3 w-3 flex-shrink-0 text-muted-foreground" />
+                <ChevronRight className="h-3.5 w-3.5 flex-shrink-0 text-[hsl(var(--bp-purple))]" />
               ) : (
-                <ChevronDown className="h-3 w-3 flex-shrink-0 text-muted-foreground" />
+                <ChevronDown className="h-3.5 w-3.5 flex-shrink-0 text-[hsl(var(--bp-purple))]" />
               )}
-              <span>{r.categoryTitle}</span>
+              <span className="font-semibold uppercase tracking-wide">{r.categoryTitle}</span>
               <Badge variant="secondary" className="h-4 px-1.5 text-data">{r.count}</Badge>
             </div>
           );
@@ -896,13 +924,13 @@ export default function BudgetPage() {
           if (r.kind === "category") {
             const isCollapsed = collapsedHourCategories.has(r.categoryTitle);
             return (
-              <div className="flex items-center gap-1.5 font-semibold text-xs">
+              <div className="flex items-center gap-1.5 text-xs">
                 {isCollapsed ? (
-                  <ChevronRight className="h-3 w-3 flex-shrink-0 text-muted-foreground" />
+                  <ChevronRight className="h-3.5 w-3.5 flex-shrink-0 text-[hsl(var(--bp-purple))]" />
                 ) : (
-                  <ChevronDown className="h-3 w-3 flex-shrink-0 text-muted-foreground" />
+                  <ChevronDown className="h-3.5 w-3.5 flex-shrink-0 text-[hsl(var(--bp-purple))]" />
                 )}
-                <span className="truncate">{r.categoryTitle}</span>
+                <span className="font-semibold uppercase tracking-wide truncate">{r.categoryTitle}</span>
                 <Badge variant="secondary" className="h-4 px-1.5 text-data">{r.count}</Badge>
               </div>
             );
@@ -1237,58 +1265,6 @@ export default function BudgetPage() {
             )}
           </div>
 
-          {/* CENTRE: key figures — doubles as the expand/collapse affordance */}
-          <button
-            type="button"
-            onClick={toggleHeaderExpanded}
-            className="flex items-center gap-3 sm:gap-4 px-2 rounded-md hover-elevate min-w-0"
-            data-testid="button-header-toggle"
-            aria-expanded={headerExpanded}
-            title={headerExpanded ? "Hide detail" : "Show detail"}
-          >
-            {activeTab === "costs" && canViewActuals && (
-              <>
-                <div className="flex flex-col items-end leading-tight">
-                  <span className="text-[9px] uppercase tracking-wide text-muted-foreground">Revised Contract</span>
-                  <span className="text-[12px] font-semibold tabular-nums text-foreground">{formatCurrency(revisedContractCents)}</span>
-                </div>
-                <div className="flex flex-col items-end leading-tight">
-                  <span className="text-[9px] uppercase tracking-wide text-muted-foreground">Actual Costs</span>
-                  <span className="text-[12px] font-semibold tabular-nums text-foreground">{formatCurrency(actualCostCents)}</span>
-                </div>
-                <div className="flex flex-col items-end leading-tight">
-                  <span className="text-[9px] uppercase tracking-wide text-muted-foreground">Gross Profit</span>
-                  <span className={cn("text-[12px] font-semibold tabular-nums", getVarianceColor(grossProfitCents))}>{formatCurrency(grossProfitCents)}</span>
-                </div>
-                <div className="flex flex-col items-end leading-tight" data-testid="header-margin-percent">
-                  <span className="text-[9px] uppercase tracking-wide text-muted-foreground">GP %</span>
-                  <span className={cn("text-base font-bold tabular-nums leading-none", getVarianceColor(grossProfitCents))}>{marginPct.toFixed(1)}%</span>
-                </div>
-              </>
-            )}
-            {activeTab === "hours" && (
-              <>
-                <div className="flex flex-col items-end leading-tight">
-                  <span className="text-[9px] uppercase tracking-wide text-muted-foreground">Budgeted</span>
-                  <span className="text-[12px] font-semibold tabular-nums text-foreground">{formatHours(totalBudgetedHours)}</span>
-                </div>
-                <div className="flex flex-col items-end leading-tight">
-                  <span className="text-[9px] uppercase tracking-wide text-muted-foreground">Approved</span>
-                  <span className="text-[12px] font-semibold tabular-nums text-foreground">{formatHours(totalApprovedHours)}</span>
-                </div>
-                <div className="flex flex-col items-end leading-tight">
-                  <span className="text-[9px] uppercase tracking-wide text-muted-foreground">Remaining</span>
-                  <span className={cn("text-[12px] font-semibold tabular-nums", getVarianceColor(hoursRemaining))}>{formatHours(hoursRemaining)}</span>
-                </div>
-                <div className="flex flex-col items-end leading-tight" data-testid="header-efficiency-percent">
-                  <span className="text-[9px] uppercase tracking-wide text-muted-foreground">Efficiency</span>
-                  <span className="text-base font-bold tabular-nums leading-none text-foreground">{hoursPercentUsed}%</span>
-                </div>
-              </>
-            )}
-            <ChevronDown className={cn("h-4 w-4 text-muted-foreground transition-transform flex-shrink-0", headerExpanded && "rotate-180")} />
-          </button>
-
           {/* RIGHT: refresh indicator + columns picker */}
           <div className="flex items-center gap-2">
             {isRecalculating && (
@@ -1339,6 +1315,79 @@ export default function BudgetPage() {
             </Popover>
           </div>
         </div>
+
+        {/* HERO SUMMARY — the headline figure gets the size, the rest support it.
+            Previously all four sat at 12px inside the 40px tab row, so nothing
+            read as the number that matters. Doubles as the expand affordance. */}
+        <button
+          type="button"
+          onClick={toggleHeaderExpanded}
+          className="w-full flex items-center gap-5 px-4 py-2.5 border-b border-border bg-[hsl(var(--bp-subtle))] hover-elevate text-left"
+          data-testid="button-header-toggle"
+          aria-expanded={headerExpanded}
+          title={headerExpanded ? "Hide detail" : "Show detail"}
+        >
+          {activeTab === "costs" && canViewActuals && (
+            <>
+              <div className="flex flex-col leading-none">
+                <span className="text-[9px] uppercase tracking-wide text-muted-foreground mb-1">GP %</span>
+                <span
+                  className={cn("text-3xl font-bold tabular-nums leading-none", getVarianceColor(grossProfitCents))}
+                  data-testid="header-margin-percent"
+                >
+                  {marginPct.toFixed(1)}%
+                </span>
+              </div>
+              <div className="h-8 w-px bg-border flex-shrink-0" />
+              <div className="flex items-center gap-6 min-w-0 flex-wrap">
+                {[
+                  { label: "Revised Contract", value: formatCurrency(revisedContractCents), color: "text-foreground" },
+                  { label: "Actual Costs", value: formatCurrency(actualCostCents), color: "text-foreground" },
+                  { label: "Gross Profit", value: formatCurrency(grossProfitCents), color: getVarianceColor(grossProfitCents) },
+                ].map((stat) => (
+                  <div key={stat.label} className="flex flex-col leading-tight">
+                    <span className="text-[9px] uppercase tracking-wide text-muted-foreground">{stat.label}</span>
+                    <span className={cn("text-sm font-semibold tabular-nums", stat.color)}>{stat.value}</span>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+
+          {activeTab === "hours" && canViewLabour && (
+            <>
+              <div className="flex flex-col leading-none">
+                <span className="text-[9px] uppercase tracking-wide text-muted-foreground mb-1">Efficiency</span>
+                <span
+                  className="text-3xl font-bold tabular-nums leading-none text-foreground"
+                  data-testid="header-efficiency-percent"
+                >
+                  {hoursPercentUsed}%
+                </span>
+              </div>
+              <div className="h-8 w-px bg-border flex-shrink-0" />
+              <div className="flex items-center gap-6 min-w-0 flex-wrap">
+                {[
+                  { label: "Budgeted", value: formatHours(totalBudgetedHours), color: "text-foreground" },
+                  { label: "Approved", value: formatHours(totalApprovedHours), color: "text-foreground" },
+                  { label: "Remaining", value: formatHours(hoursRemaining), color: getVarianceColor(hoursRemaining) },
+                ].map((stat) => (
+                  <div key={stat.label} className="flex flex-col leading-tight">
+                    <span className="text-[9px] uppercase tracking-wide text-muted-foreground">{stat.label}</span>
+                    <span className={cn("text-sm font-semibold tabular-nums", stat.color)}>{stat.value}</span>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+
+          <ChevronDown
+            className={cn(
+              "h-4 w-4 text-muted-foreground transition-transform flex-shrink-0 ml-auto",
+              headerExpanded && "rotate-180",
+            )}
+          />
+        </button>
 
         {/* EXPANDED DETAIL — Costs */}
         {headerExpanded && activeTab === "costs" && canViewActuals && (
@@ -1654,67 +1703,75 @@ export default function BudgetPage() {
       </div>
 
       <Dialog open={!!actualDrill} onOpenChange={(o) => { if (!o) setActualDrill(null); }}>
-        <DialogContent className="max-w-2xl" data-testid="dialog-actual-drill">
-          <DialogHeader>
-            <DialogTitle>Actual costs — {actualDrill?.title}</DialogTitle>
-            <DialogDescription>
-              Bills contributing to this cost code's actual spend.
+        <DialogContent className="max-w-2xl gap-0 p-0 overflow-hidden" data-testid="dialog-actual-drill">
+          <DialogHeader className="px-4 py-3 border-b border-border">
+            <DialogTitle className="text-sm font-semibold">{actualDrill?.title}</DialogTitle>
+            <DialogDescription className="text-xs">
+              Bills contributing to this cost code
             </DialogDescription>
           </DialogHeader>
+
           {drillLoading ? (
-            <div className="space-y-2 py-2">
+            <div className="p-4 space-y-2">
               {[1, 2, 3].map((i) => (
-                <Skeleton key={i} className="h-12 w-full" />
+                <Skeleton key={i} className="h-11 w-full" />
               ))}
             </div>
           ) : !drillData || drillData.bills.length === 0 ? (
-            <p className="text-sm text-muted-foreground py-4 text-center">
+            <p className="text-sm text-muted-foreground py-10 text-center">
               No bills found for this cost code.
             </p>
           ) : (
-            <div className="space-y-2 max-h-[60vh] overflow-y-auto">
-              {drillData.bills.map((b) => (
-                <Link
-                  key={b.billId}
-                  href={`/projects/${projectId}/bills/${b.billId}`}
-                  onClick={() => setActualDrill(null)}
-                  className="block p-2.5 border rounded-md hover-elevate"
-                  data-testid={`drill-bill-${b.billId}`}
-                >
-                  <div className="flex items-center justify-between gap-2 flex-wrap">
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        <span className="text-sm font-medium">{b.billNumber || "Bill"}</span>
+            <>
+              <div className="max-h-[60vh] overflow-y-auto divide-y divide-border">
+                {drillData.bills.map((b) => (
+                  <Link
+                    key={b.billId}
+                    href={`/projects/${projectId}/bills/${b.billId}`}
+                    onClick={() => setActualDrill(null)}
+                    className="flex items-center gap-3 px-4 py-2.5 hover-elevate"
+                    data-testid={`drill-bill-${b.billId}`}
+                  >
+                    {/* Supplier leads: it is what identifies the row. */}
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <span className="text-sm font-medium truncate">{b.supplierName || "—"}</span>
                         {b.billType === "credit" && (
-                          <Badge variant="secondary" className="text-data">Credit</Badge>
-                        )}
-                        {b.status && (
-                          <Badge variant="outline" className="text-data">{b.status}</Badge>
+                          <Badge variant="secondary" className="h-4 px-1.5 text-data flex-shrink-0">Credit</Badge>
                         )}
                       </div>
-                      <p className="text-xs text-muted-foreground mt-0.5">
-                        {b.supplierName || "—"}
-                        {b.billDate ? ` · ${new Date(b.billDate).toLocaleDateString("en-AU")}` : ""}
-                      </p>
+                      {b.billDate && (
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          {new Date(b.billDate).toLocaleDateString("en-AU")}
+                        </p>
+                      )}
                     </div>
+
+                    {/* Status gets its own column so the chips line up down the
+                        list instead of floating after variable-length text. */}
+                    <div className="w-20 flex-shrink-0 flex justify-end">
+                      {b.status && renderBillStatusChip(b.status)}
+                    </div>
+
                     <span
                       className={cn(
-                        "text-sm font-semibold tabular-nums",
-                        b.lineTotal < 0 && "text-[hsl(var(--bp-coral))]",
+                        "w-24 flex-shrink-0 text-right text-sm font-semibold tabular-nums",
+                        b.lineTotal < 0 && "text-[hsl(var(--status-danger-fg))]",
                       )}
                     >
                       {formatCurrency(b.lineTotal)}
                     </span>
-                  </div>
-                </Link>
-              ))}
-              <div className="flex items-center justify-between gap-2 pt-2 border-t">
-                <span className="text-sm font-semibold">Total</span>
+                  </Link>
+                ))}
+              </div>
+
+              <div className="flex items-center justify-between px-4 py-2.5 border-t border-border bg-[hsl(var(--bp-subtle))]">
+                <span className="text-xs uppercase tracking-wide text-muted-foreground font-semibold">Total</span>
                 <span className="text-sm font-bold tabular-nums" data-testid="text-drill-total">
                   {formatCurrency(drillData.total)}
                 </span>
               </div>
-            </div>
+            </>
           )}
         </DialogContent>
       </Dialog>
