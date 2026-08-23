@@ -1,11 +1,14 @@
 import { useState } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { formatCents } from "@shared/money";
 import type { BillPriceComparison, LineVerdict } from "@shared/priceList";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import type { PriceListItem } from "@shared/schema";
 import {
-  Check, CircleSlash, HelpCircle, Loader2, Plus, Sparkles, TrendingDown, TrendingUp,
+  Check, ChevronDown, CircleSlash, HelpCircle, Loader2, Plus, Sparkles, TrendingDown, TrendingUp,
 } from "lucide-react";
 
 export type BatchLine = {
@@ -94,13 +97,129 @@ function Chip({
   );
 }
 
+
+const REASON_LABEL: Record<string, string> = {
+  code: "matched on code",
+  "exact-name": "exact name match",
+  "name-contains": "name found in the line",
+  "token-overlap": "similar wording",
+};
+
+/** Code and exact-name are certain enough to act on; everything else is inference. */
+function isCertain(reason: string | undefined) {
+  return reason === "code" || reason === "exact-name";
+}
+
+/**
+ * The matched item, shown and changeable.
+ *
+ * The match used to be picked silently and applied by the Update button, so a
+ * click accepted a pairing that was never actually agreed to. Now the row shows
+ * what it matched, why, and lets you swap it for anything in that supplier's
+ * list — which is also how manual linking comes back.
+ */
+function MatchPicker({
+  current, reason, items, confirmed, onPick,
+}: {
+  current: { id: string; name: string } | null;
+  reason: string | undefined;
+  items: PriceListItem[];
+  confirmed: boolean;
+  onPick: (item: PriceListItem) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState("");
+  const shown = items.filter((i) => i.name.toLowerCase().includes(q.toLowerCase())).slice(0, 60);
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          className={`flex h-6 min-w-0 max-w-[14rem] flex-shrink-0 items-center gap-1 rounded-md border px-2 text-xs hover-elevate active-elevate-2 ${
+            confirmed ? "border-border/50 text-muted-foreground" : "border-amber/50 text-foreground"
+          }`}
+          data-testid="button-match-picker"
+        >
+          <span className="truncate">{current ? current.name : "Choose an item"}</span>
+          <ChevronDown className="h-3 w-3 flex-shrink-0 opacity-50" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-72 p-2">
+        <p className="mb-1.5 text-xs text-muted-foreground">
+          {current ? (REASON_LABEL[reason ?? ""] ?? "suggested") : "nothing matched automatically"}
+        </p>
+        <Input
+          placeholder="Search the price list…"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          className="mb-2 h-7 text-xs"
+          data-testid="input-match-search"
+        />
+        <div className="max-h-56 space-y-0.5 overflow-y-auto">
+          {shown.length === 0 && (
+            <p className="px-1 py-2 text-xs text-muted-foreground">No items match.</p>
+          )}
+          {shown.map((i) => (
+            <button
+              key={i.id}
+              onClick={() => { onPick(i); setOpen(false); }}
+              className={`flex w-full items-center gap-2 rounded px-1 py-1 text-left text-xs hover:bg-muted ${
+                current?.id === i.id ? "text-primary" : ""
+              }`}
+              data-testid={`option-match-${i.id}`}
+            >
+              <Check className={`h-3 w-3 flex-shrink-0 ${current?.id === i.id ? "opacity-100" : "opacity-0"}`} />
+              <span className="truncate">{i.name}</span>
+              {i.code && <span className="ml-auto flex-shrink-0 text-muted-foreground">{i.code}</span>}
+            </button>
+          ))}
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 export function BillReviewResults({ result, fallbackPriceListId }: { result: BatchResult; fallbackPriceListId: string }) {
   const [applied, setApplied] = useState<Set<string>>(new Set());
   const [added, setAdded] = useState<Set<string>>(new Set());
   const [resolutions, setResolutions] = useState<Map<string, Resolution>>(new Map());
   const [appliedDelta, setAppliedDelta] = useState<Map<string, BillPriceComparison>>(new Map());
   const [overview, setOverview] = useState<string | null>(null);
+  /** Matches the user changed by hand. A pick is itself a confirmation. */
+  const [overrides, setOverrides] = useState<Map<string, { id: string; name: string }>>(new Map());
   const [aiUnavailable, setAiUnavailable] = useState(false);
+
+  const { data: catalogue = [] } = useQuery<PriceListItem[]>({ queryKey: ["/api/price-list/items"] });
+
+  /** What the row will actually apply: your pick, else the AI's, else the matcher's. */
+  const matchFor = (r: BatchLine): { id: string; name: string } | null => {
+    const override = overrides.get(r.line.lineId);
+    if (override) return override;
+    const res = resolutions.get(r.line.lineId);
+    if (res?.chosenItemId) {
+      const c = r.candidates.find((x) => x.id === res.chosenItemId);
+      if (c) return { id: c.id, name: c.name };
+    }
+    return r.candidates[0] ? { id: r.candidates[0].id, name: r.candidates[0].name } : null;
+  };
+
+  const reasonFor = (r: BatchLine) =>
+    overrides.has(r.line.lineId) ? "chosen by you"
+      : resolutions.get(r.line.lineId)?.chosenItemId ? "chosen by AI"
+      : r.candidates[0]?.reason;
+
+  /**
+   * A row is safe to apply in bulk when the pairing is not a guess: you picked
+   * it, or the matcher was certain (a supplier's own code, or an exact name).
+   * Inferred matches stay out of "Update confirmed" until looked at.
+   */
+  const isConfirmed = (r: BatchLine) =>
+    overrides.has(r.line.lineId) || isCertain(r.candidates[0]?.reason);
+
+  const itemsFor = (r: BatchLine) => {
+    const scoped = catalogue.filter((i) => i.priceListId === (r.targetPriceListId ?? fallbackPriceListId));
+    return scoped.length ? scoped : catalogue;
+  };
 
   const moved = result.results.filter((r) => r.verdict === "moved");
   const ambiguous = result.results.filter((r) => r.verdict === "ambiguous");
@@ -175,11 +294,12 @@ export function BillReviewResults({ result, fallbackPriceListId }: { result: Bat
     },
   });
 
-  const applyAll = () => {
-    for (const r of moved) {
-      if (!applied.has(r.line.lineId) && !r.superseded && r.candidates[0]) {
-        applyPrice.mutate({ priceListItemId: r.candidates[0].id, billLineItemId: r.line.lineId });
-      }
+  const confirmedMoved = moved.filter((r) => !applied.has(r.line.lineId) && !r.superseded && isConfirmed(r) && matchFor(r));
+
+  const applyConfirmed = () => {
+    for (const r of confirmedMoved) {
+      const m = matchFor(r)!;
+      applyPrice.mutate({ priceListItemId: m.id, billLineItemId: r.line.lineId });
     }
   };
 
@@ -234,10 +354,10 @@ export function BillReviewResults({ result, fallbackPriceListId }: { result: Bat
               <h4 className="text-sm font-medium">{VERDICT_LABEL[verdict]}</h4>
               <Badge variant="secondary" className="text-xs">{rows.length}</Badge>
 
-              {verdict === "moved" && rows.some((r) => !applied.has(r.line.lineId)) && (
+              {verdict === "moved" && confirmedMoved.length > 0 && (
                 <div className="ml-auto">
-                  <Chip onClick={applyAll} disabled={applyPrice.isPending} testId="button-apply-all" tone="primary">
-                    Update all
+                  <Chip onClick={applyConfirmed} disabled={applyPrice.isPending} testId="button-apply-confirmed" tone="primary">
+                    Update {confirmedMoved.length} confirmed
                   </Chip>
                 </div>
               )}
@@ -278,10 +398,20 @@ export function BillReviewResults({ result, fallbackPriceListId }: { result: Bat
                       <p className="truncate text-xs text-muted-foreground">
                         {r.line.billNumber}
                         {r.line.supplierName ? ` · ${r.line.supplierName}` : ""}
-                        {r.candidates[0] && verdict !== "unmatched" ? ` · ${r.candidates[0].name}` : ""}
-                        {r.candidates[0]?.reason === "code" ? " · matched on code" : ""}
+                        {verdict !== "unmatched" && reasonFor(r) ? ` · ${REASON_LABEL[reasonFor(r)!] ?? reasonFor(r)}` : ""}
                       </p>
                     </div>
+
+                    {verdict === "moved" && !r.superseded && !applied.has(r.line.lineId) && (
+                      <MatchPicker
+                        current={matchFor(r)}
+                        reason={reasonFor(r)}
+                        items={itemsFor(r)}
+                        confirmed={isConfirmed(r)}
+                        onPick={(item) => setOverrides((prev) =>
+                          new Map(prev).set(r.line.lineId, { id: item.id, name: item.name }))}
+                      />
+                    )}
 
                     {verdict === "moved" && r.comparison && (
                       <div className="flex-shrink-0 text-right tabular-nums">
@@ -312,10 +442,11 @@ export function BillReviewResults({ result, fallbackPriceListId }: { result: Bat
                         </span>
                       ) : (
                         <Chip
-                          onClick={() => r.candidates[0] && applyPrice.mutate({
-                            priceListItemId: r.candidates[0].id, billLineItemId: r.line.lineId,
-                          })}
-                          disabled={!r.candidates[0] || applyPrice.isPending}
+                          onClick={() => {
+                            const m = matchFor(r);
+                            if (m) applyPrice.mutate({ priceListItemId: m.id, billLineItemId: r.line.lineId });
+                          }}
+                          disabled={!matchFor(r) || applyPrice.isPending}
                           testId={`button-accept-${r.line.lineId}`}
                         >
                           Update
@@ -324,6 +455,36 @@ export function BillReviewResults({ result, fallbackPriceListId }: { result: Bat
                     )}
 
                     {verdict === "ambiguous" && (
+                      <MatchPicker
+                        current={matchFor(r)}
+                        reason={reasonFor(r)}
+                        items={itemsFor(r)}
+                        confirmed={overrides.has(r.line.lineId)}
+                        onPick={(item) => setOverrides((prev) =>
+                          new Map(prev).set(r.line.lineId, { id: item.id, name: item.name }))}
+                      />
+                    )}
+
+                    {verdict === "ambiguous" && overrides.has(r.line.lineId) && (
+                      applied.has(r.line.lineId) ? (
+                        <span className="flex flex-shrink-0 items-center gap-1 text-xs text-sage">
+                          <Check className="h-3.5 w-3.5" />Updated
+                        </span>
+                      ) : (
+                        <Chip
+                          onClick={() => {
+                            const m = matchFor(r);
+                            if (m) applyPrice.mutate({ priceListItemId: m.id, billLineItemId: r.line.lineId });
+                          }}
+                          disabled={applyPrice.isPending}
+                          testId={`button-accept-picked-${r.line.lineId}`}
+                        >
+                          Update
+                        </Chip>
+                      )
+                    )}
+
+                    {verdict === "ambiguous" && !overrides.has(r.line.lineId) && (
                       res ? (
                         picked ? (
                           <div className="flex max-w-[52%] flex-shrink-0 items-center gap-2">
