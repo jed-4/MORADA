@@ -18537,7 +18537,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!ownedBill) return;
       const { priceListItemId } = req.body;
       const lineItem = await storage.updateBillLineItem(req.params.id, { priceListItemId });
-      res.json(lineItem);
+
+      // Linking used to end here, which is why the price list never moved. Report
+      // the gap between what the supplier charged and what the catalogue says so
+      // the client can offer to update it. Applying stays a separate, explicit call.
+      let priceComparison = null;
+      const companyId = (req.user as any)?.companyId;
+      if (priceListItemId && companyId) {
+        const { compareBillPriceToItem } = await import("@shared/priceList");
+        const { priceListItems: priceListItemsTbl } = await import("@shared/schema");
+        const [item] = await db
+          .select({ costPrice: priceListItemsTbl.costPrice, gstInclusive: priceListItemsTbl.gstInclusive })
+          .from(priceListItemsTbl)
+          .where(and(eq(priceListItemsTbl.id, priceListItemId), eq(priceListItemsTbl.companyId, companyId)));
+        if (item && lineItem) {
+          priceComparison = compareBillPriceToItem({
+            itemCostCents: item.costPrice,
+            itemGstInclusive: item.gstInclusive,
+            billUnitPriceExCents: lineItem.unitPrice,
+          });
+        }
+      }
+      res.json({ ...lineItem, priceComparison });
     } catch (error) {
       if (error instanceof Error && error.message === "Bill line item not found") {
         return res.status(404).json({ error: "Bill line item not found" });
@@ -35646,6 +35667,278 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(links);
     } catch (error: any) {
       res.status(500).json({ error: "Failed to fetch price list links", details: error.message });
+    }
+  });
+
+  // Bills a review could cover. Deliberately requires the caller to ask -- the
+  // page opens empty rather than loading every bill you have ever received.
+  app.get("/api/price-list/review/bills", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.companyId) return res.status(401).json({ error: "Unauthorized" });
+      const { supplierIds, dateFrom, dateTo, search } = req.query as Record<string, string | undefined>;
+      const bills = await storage.searchBillsForPriceReview(user.companyId, {
+        supplierIds: supplierIds ? supplierIds.split(",").filter(Boolean) : undefined,
+        dateFrom: dateFrom ? new Date(dateFrom) : undefined,
+        dateTo: dateTo ? new Date(dateTo) : undefined,
+        search: search || undefined,
+      });
+      res.json(bills);
+    } catch (error: any) {
+      console.error("Bill search for price review failed:", error);
+      res.status(500).json({ error: "Failed to search bills", details: error.message });
+    }
+  });
+
+  // A few sentences over a whole review. The caller sends the movements it is
+  // already displaying; the arithmetic is redone here so the summary can never
+  // describe numbers the server did not produce.
+  app.post("/api/price-list/review/summary", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.companyId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+      const { billsScanned, linesScanned, counts, movements } = req.body ?? {};
+      if (!Array.isArray(movements)) {
+        return res.status(400).json({ error: "movements is required" });
+      }
+
+      const clean = movements
+        .filter((m: any) => typeof m?.fromCents === "number" && typeof m?.toCents === "number")
+        .map((m: any) => ({
+          item: String(m.item ?? "unknown").slice(0, 120),
+          supplier: m.supplier ? String(m.supplier).slice(0, 120) : null,
+          fromCents: Math.round(m.fromCents),
+          toCents: Math.round(m.toCents),
+          percent: typeof m.percent === "number" ? m.percent : null,
+        }));
+
+      const { summariseReview } = await import("./services/priceMatchAi");
+      const summary = await summariseReview({
+        billsScanned: Number(billsScanned) || 0,
+        linesScanned: Number(linesScanned) || 0,
+        counts: counts && typeof counts === "object" ? counts : {},
+        movements: clean,
+      });
+
+      res.json({ summary, configured: !!process.env.ANTHROPIC_API_KEY });
+    } catch (error: any) {
+      console.error("Review summary failed:", error);
+      res.status(500).json({ error: "Failed to summarise review", details: error.message });
+    }
+  });
+
+  // Resolve the ambiguous tail of a review with the model. Proposes only --
+  // it writes nothing, and every suggestion still goes through apply-price.
+  app.post("/api/price-list/review/resolve", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.companyId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+      const { lines } = req.body ?? {};
+      if (!Array.isArray(lines) || !lines.length) {
+        return res.status(400).json({ error: "lines is required" });
+      }
+
+      // Re-read the catalogue rather than trusting candidate names from the body:
+      // the model must only ever choose among this company's own items.
+      const catalogue = await storage.getPriceListItems(user.companyId, {});
+      const byId = new Map(catalogue.map((i) => [i.id, i]));
+
+      const scoped = lines.flatMap((l: any) => {
+        const candidates = (Array.isArray(l?.candidates) ? l.candidates : [])
+          .map((c: any) => byId.get(c?.id))
+          .filter(Boolean)
+          .map((i: any) => ({ id: i.id, name: i.name, code: i.code ?? null }));
+        if (!candidates.length || typeof l?.description !== "string") return [];
+        return [{
+          lineId: String(l.lineId),
+          description: l.description,
+          supplierName: typeof l.supplierName === "string" ? l.supplierName : null,
+          candidates,
+        }];
+      });
+
+      if (!scoped.length) return res.json({ resolutions: [], configured: true });
+
+      const { resolveAmbiguousLines } = await import("./services/priceMatchAi");
+      const resolutions = await resolveAmbiguousLines(scoped);
+
+      res.json({
+        resolutions,
+        // Distinguish "the model found nothing" from "no API key on this server",
+        // so the UI can say which rather than showing a silent empty result.
+        configured: !!process.env.ANTHROPIC_API_KEY,
+      });
+    } catch (error: any) {
+      console.error("AI price match resolve failed:", error);
+      res.status(500).json({ error: "Failed to resolve matches", details: error.message });
+    }
+  });
+
+  // Batch price review: sweep a set of bills, match each line against the
+  // catalogue, and report a verdict per line. Read-only — it proposes, it never
+  // writes a price. Applying stays the explicit per-line apply-price call.
+  app.post("/api/price-list/review/batch", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.companyId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+      const { priceListId, supplierId, dateFrom, dateTo, billIds } = req.body ?? {};
+
+      const { matchBillLine, verdictFor, compareBillPriceToItem, isSupersededByNewerBill } = await import("@shared/priceList");
+
+      const lines = await storage.getBillLinesForPriceReview(user.companyId, {
+        supplierId: supplierId || undefined,
+        dateFrom: dateFrom ? new Date(dateFrom) : undefined,
+        dateTo: dateTo ? new Date(dateTo) : undefined,
+        billIds: Array.isArray(billIds) && billIds.length ? billIds : undefined,
+      });
+
+      // Scope by the bill's own supplier rather than making the user pick a list.
+      // A bill knows who sent it, and comparing a Plaster Shop invoice against a
+      // Bunnings list is a mistake nobody would make on purpose. Falls back to the
+      // whole catalogue when a supplier has no list of their own.
+      const catalogue = await storage.getPriceListItems(user.companyId, priceListId ? { priceListId } : {});
+      const allLists = await storage.getPriceLists(user.companyId);
+      const listBySupplier = new Map<string, string>();
+      for (const l of allLists) {
+        if (l.supplierId && !l.isArchived) listBySupplier.set(l.supplierId, l.id);
+      }
+
+      // Codes read out of each bill's own document, when the caller asks for it.
+      // Cached per bill, so this costs tokens once and nothing on a re-review.
+      const skuByLine = new Map<string, string>();
+      if (req.body?.readSkus) {
+        const { extractSkusForBill } = await import("./services/billSkuReader");
+        const billsInScope = Array.from(new Set(lines.map((l) => l.billId)));
+        for (const id of billsInScope) {
+          try {
+            const out = await extractSkusForBill(id, user.companyId);
+            out.skus.forEach((sku, lineId) => skuByLine.set(lineId, sku));
+          } catch (error) {
+            console.error(`[Price review] SKU read failed for bill ${id}:`, error);
+          }
+        }
+      }
+
+      const results = lines.map((line) => {
+        const supplierListId = line.supplierId ? listBySupplier.get(line.supplierId) : undefined;
+        const scoped = supplierListId
+          ? catalogue.filter((i) => i.priceListId === supplierListId)
+          : catalogue;
+        const pool = scoped.length ? scoped : catalogue;
+        // An existing link is a decision a human already made; respect it rather
+        // than letting the matcher second-guess it.
+        const linked = line.priceListItemId
+          ? catalogue.find((i) => i.id === line.priceListItemId)
+          : undefined;
+        // A code read off the document beats anything the prose can tell us, so
+        // it is searched first and exactly. Only if that misses do we fall back
+        // to the description matcher.
+        const sku = skuByLine.get(line.lineId);
+        const bySku = sku
+          ? pool.find((i) =>
+              (i.code && i.code.toLowerCase() === sku.toLowerCase()) ||
+              (i.supplierCode && i.supplierCode.toLowerCase() === sku.toLowerCase()))
+          : undefined;
+
+        const candidates = linked
+          ? [{ item: linked, score: 1, reason: "code" as const }]
+          : bySku
+            ? [{ item: bySku, score: 1, reason: "code" as const }]
+            : matchBillLine(line.description, pool);
+
+        const best = candidates[0];
+        const comparison = best
+          ? compareBillPriceToItem({
+              itemCostCents: (best.item as any).costPrice ?? 0,
+              itemGstInclusive: (best.item as any).gstInclusive ?? false,
+              billUnitPriceExCents: line.unitPrice,
+            })
+          : null;
+
+        const stale = best
+          ? isSupersededByNewerBill(
+              best.item as any,
+              line.billDate ? new Date(line.billDate).toISOString() : null,
+            )
+          : { superseded: false, by: null };
+
+        return {
+          line,
+          verdict: verdictFor(candidates, comparison),
+          comparison,
+          superseded: stale.superseded ? stale.by : null,
+          // Where an Add should put a new item: this supplier's own list.
+          targetPriceListId: supplierListId ?? priceListId ?? allLists[0]?.id ?? null,
+          alreadyLinked: !!linked,
+          candidates: candidates.slice(0, 3).map((c) => ({
+            id: c.item.id, name: c.item.name, code: (c.item as any).code ?? null,
+            score: Number(c.score.toFixed(3)), reason: c.reason,
+          })),
+        };
+      });
+
+      const summary = results.reduce((acc: Record<string, number>, r) => {
+        acc[r.verdict] = (acc[r.verdict] ?? 0) + 1;
+        return acc;
+      }, {});
+
+      // Reviewed means a human has actually seen these lines, so stamp only when
+      // the caller says so -- a speculative preview should not clear the flag.
+      if (req.body?.markReviewed) {
+        await storage.markBillsPriceReviewed(
+          Array.from(new Set(lines.map((l) => l.billId))), user.companyId, user.id,
+        );
+      }
+
+      res.json({
+        results,
+        summary,
+        skusRead: skuByLine.size,
+        billsScanned: new Set(lines.map((l) => l.billId)).size,
+        linesScanned: lines.length,
+        catalogueSize: catalogue.length,
+      });
+    } catch (error: any) {
+      console.error("Batch price review failed:", error);
+      res.status(500).json({ error: "Failed to run batch price review", details: error.message });
+    }
+  });
+
+  // Accept a supplier's price onto the catalogue item. The amount is re-derived
+  // from the bill line server-side; nothing about the price is taken from the body.
+  app.post("/api/price-list/review/apply-price", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.companyId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+      const { priceListItemId, billLineItemId } = req.body ?? {};
+      if (!priceListItemId || !billLineItemId) {
+        return res.status(400).json({ error: "priceListItemId and billLineItemId are required" });
+      }
+      const result = await storage.applyBillPriceToItem(
+        priceListItemId, billLineItemId, user.companyId, user.id,
+      );
+      if (!result) {
+        return res.status(404).json({ error: "Price list item or bill line not found" });
+      }
+      if (result.superseded) {
+        // 409: the request was well formed, the state says no.
+        return res.status(409).json({
+          error: "A newer invoice already set this price",
+          superseded: result.superseded,
+          comparison: result.comparison,
+        });
+      }
+      res.json(result);
+    } catch (error: any) {
+      res.status(500).json({ error: "Failed to apply bill price", details: error.message });
     }
   });
 

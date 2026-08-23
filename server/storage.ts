@@ -1433,6 +1433,10 @@ export interface IStorage {
   createBillLineItemPriceLink(link: InsertBillLineItemPriceLink, companyId: string): Promise<BillLineItemPriceLink | undefined>;
   updateBillLineItemPriceLink(id: string, link: Partial<InsertBillLineItemPriceLink>, companyId: string): Promise<BillLineItemPriceLink | undefined>;
   getUnlinkedBillLineItems(companyId: string): Promise<Array<import("@shared/schema").BillLineItem & { bill: import("@shared/schema").Bill; supplier: import("@shared/schema").Contact | null }>>;
+  applyBillPriceToItem(priceListItemId: string, billLineItemId: string, companyId: string, userId: string): Promise<{ item: PriceListItem; comparison: import("@shared/priceList").BillPriceComparison } | undefined>;
+  getBillLinesForPriceReview(companyId: string, filters: { supplierId?: string; dateFrom?: Date; dateTo?: Date; billIds?: string[] }): Promise<Array<{ lineId: string; description: string; unitPrice: number; quantity: number; unit: string | null; priceListItemId: string | null; billId: string; billNumber: string; billDate: Date | null; supplierId: string | null; supplierName: string | null }>>;
+  searchBillsForPriceReview(companyId: string, filters: { supplierIds?: string[]; dateFrom?: Date; dateTo?: Date; search?: string }): Promise<Array<{ id: string; billNumber: string; billDate: Date | null; total: number; supplierId: string | null; supplierName: string | null; lineCount: number; priceReviewedAt: Date | null; hasAttachment: boolean }>>;
+  markBillsPriceReviewed(billIds: string[], companyId: string, userId: string): Promise<number>;
 
   // Dashboard Views CRUD
   getDashboardViews(companyId: string, userId: string, viewType?: "personal" | "business"): Promise<DashboardView[]>;
@@ -25498,6 +25502,210 @@ export class DbStorage implements IStorage {
       return result[0];
     } catch (error) {
       console.error("Database error in updateBillLineItemPriceLink:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Accept a supplier's price: copy a bill line's unit price onto the catalogue
+   * item and record why it moved.
+   *
+   * The price is re-derived from the bill line here rather than taken from the
+   * caller — a client-supplied amount would let anyone set any cost by POSTing
+   * a number. Both sides are scoped to companyId, so a link cannot be used to
+   * reach another tenant's bill or item.
+   *
+   * Cost only. sellPrice is left alone deliberately: under markup-wins an item
+   * with a markup re-derives its sell from the new cost automatically, and an
+   * item without one has a sell that was set by hand and is not ours to move.
+   */
+  async applyBillPriceToItem(
+    priceListItemId: string,
+    billLineItemId: string,
+    companyId: string,
+    userId: string,
+  ): Promise<{ item: PriceListItem; comparison: import("@shared/priceList").BillPriceComparison; superseded?: { billDate: string; billNumber: string | null } } | undefined> {
+    try {
+      const { compareBillPriceToItem, billPriceAsItemCost, isSupersededByNewerBill } = await import("@shared/priceList");
+
+      const [item] = await db.select().from(schema.priceListItems)
+        .where(and(
+          eq(schema.priceListItems.id, priceListItemId),
+          eq(schema.priceListItems.companyId, companyId),
+        ));
+      if (!item) return undefined;
+
+      const [line] = await db
+        .select({
+          id: schema.billLineItems.id,
+          unitPrice: schema.billLineItems.unitPrice,
+          billId: schema.billLineItems.billId,
+          billNumber: schema.bills.billNumber,
+          billDate: schema.bills.billDate,
+        })
+        .from(schema.billLineItems)
+        .innerJoin(schema.bills, eq(schema.bills.id, schema.billLineItems.billId))
+        .where(and(
+          eq(schema.billLineItems.id, billLineItemId),
+          eq(schema.bills.companyId, companyId),
+        ));
+      if (!line) return undefined;
+
+      const comparison = compareBillPriceToItem({
+        itemCostCents: item.costPrice,
+        itemGstInclusive: item.gstInclusive,
+        billUnitPriceExCents: line.unitPrice,
+      });
+      if (!comparison.changed) return { item, comparison };
+
+      // The newest invoice wins. Working back through older bills must not
+      // quietly restore a price a later invoice has already superseded.
+      const billDateIso = line.billDate ? new Date(line.billDate).toISOString() : null;
+      const stale = isSupersededByNewerBill(item, billDateIso);
+      if (stale.superseded) return { item, comparison, superseded: stale.by! };
+
+      const now = new Date();
+      const entry = {
+        date: now.toISOString(),
+        costPrice: billPriceAsItemCost({
+          itemGstInclusive: item.gstInclusive,
+          billUnitPriceExCents: line.unitPrice,
+        }),
+        sellPrice: item.sellPrice ?? undefined,
+        source: "bill" as const,
+        billId: line.billId,
+        billNumber: line.billNumber,
+        billLineItemId: line.id,
+        billDate: billDateIso,
+        acceptedBy: userId,
+      };
+
+      const [updated] = await db.update(schema.priceListItems)
+        .set({
+          costPrice: entry.costPrice,
+          lastPriceUpdate: now,
+          updatedAt: now,
+          priceHistory: ((item.priceHistory as any[]) || []).concat(entry),
+        })
+        .where(and(
+          eq(schema.priceListItems.id, priceListItemId),
+          eq(schema.priceListItems.companyId, companyId),
+        ))
+        .returning();
+
+      return updated ? { item: updated, comparison } : undefined;
+    } catch (error) {
+      console.error("Database error in applyBillPriceToItem:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Every bill line in scope for a batch price review, with its bill and
+   * supplier alongside so the matcher can narrow candidates by supplier.
+   *
+   * One query rather than a bill-then-lines loop: at ~400ms per round trip to
+   * Neon from AU, a fifty-bill review would otherwise take most of a minute.
+   */
+  async getBillLinesForPriceReview(
+    companyId: string,
+    filters: { supplierId?: string; dateFrom?: Date; dateTo?: Date; billIds?: string[] },
+  ) {
+    try {
+      const where = [eq(schema.bills.companyId, companyId)];
+      if (filters.supplierId) where.push(eq(schema.bills.supplierId, filters.supplierId));
+      if (filters.dateFrom) where.push(gte(schema.bills.billDate, filters.dateFrom));
+      if (filters.dateTo) where.push(lte(schema.bills.billDate, filters.dateTo));
+      if (filters.billIds?.length) where.push(inArray(schema.bills.id, filters.billIds));
+
+      return await db
+        .select({
+          lineId: schema.billLineItems.id,
+          description: schema.billLineItems.description,
+          unitPrice: schema.billLineItems.unitPrice,
+          quantity: schema.billLineItems.quantity,
+          unit: schema.billLineItems.unit,
+          priceListItemId: schema.billLineItems.priceListItemId,
+          billId: schema.bills.id,
+          billNumber: schema.bills.billNumber,
+          billDate: schema.bills.billDate,
+          supplierId: schema.bills.supplierId,
+          supplierName: schema.contacts.name,
+        })
+        .from(schema.billLineItems)
+        .innerJoin(schema.bills, eq(schema.bills.id, schema.billLineItems.billId))
+        .leftJoin(schema.contacts, eq(schema.contacts.id, schema.bills.supplierId))
+        .where(and(...where))
+        .orderBy(desc(schema.bills.billDate));
+    } catch (error) {
+      console.error("Database error in getBillLinesForPriceReview:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Bills a price review could cover, newest first.
+   *
+   * The line count comes back with the row rather than from a second pass, so
+   * the list can show "8 lines" without a query per bill -- at ~400ms to Neon
+   * from AU that difference is the whole page.
+   */
+  async searchBillsForPriceReview(
+    companyId: string,
+    filters: { supplierIds?: string[]; dateFrom?: Date; dateTo?: Date; search?: string },
+  ) {
+    try {
+      const where = [eq(schema.bills.companyId, companyId)];
+      if (filters.supplierIds?.length) where.push(inArray(schema.bills.supplierId, filters.supplierIds));
+      if (filters.dateFrom) where.push(gte(schema.bills.billDate, filters.dateFrom));
+      if (filters.dateTo) where.push(lte(schema.bills.billDate, filters.dateTo));
+      if (filters.search?.trim()) {
+        const term = `%${filters.search.trim()}%`;
+        where.push(sql`(${schema.bills.billNumber} ILIKE ${term} OR ${schema.contacts.name} ILIKE ${term})`);
+      }
+
+      const rows = await db
+        .select({
+          id: schema.bills.id,
+          billNumber: schema.bills.billNumber,
+          billDate: schema.bills.billDate,
+          total: schema.bills.total,
+          supplierId: schema.bills.supplierId,
+          supplierName: schema.contacts.name,
+          priceReviewedAt: schema.bills.priceReviewedAt,
+          attachmentUrls: schema.bills.attachmentUrls,
+          lineCount: sql<number>`(
+            SELECT COUNT(*)::int FROM ${schema.billLineItems}
+            WHERE ${schema.billLineItems.billId} = ${schema.bills.id}
+          )`,
+        })
+        .from(schema.bills)
+        .leftJoin(schema.contacts, eq(schema.contacts.id, schema.bills.supplierId))
+        .where(and(...where))
+        .orderBy(desc(schema.bills.billDate))
+        .limit(200);
+
+      return rows.map(({ attachmentUrls, ...r }) => ({
+        ...r,
+        hasAttachment: Array.isArray(attachmentUrls) && attachmentUrls.length > 0,
+      }));
+    } catch (error) {
+      console.error("Database error in searchBillsForPriceReview:", error);
+      throw error;
+    }
+  }
+
+  /** Stamp bills as price-reviewed so the list can show what is already done. */
+  async markBillsPriceReviewed(billIds: string[], companyId: string, userId: string): Promise<number> {
+    if (!billIds.length) return 0;
+    try {
+      const rows = await db.update(schema.bills)
+        .set({ priceReviewedAt: new Date(), priceReviewedBy: userId })
+        .where(and(inArray(schema.bills.id, billIds), eq(schema.bills.companyId, companyId)))
+        .returning({ id: schema.bills.id });
+      return rows.length;
+    } catch (error) {
+      console.error("Database error in markBillsPriceReviewed:", error);
       throw error;
     }
   }
