@@ -25,7 +25,10 @@ export function useIsDark(): boolean {
 export function financialRowTints(isDark: boolean): { zebra: string; category: string } {
   return {
     zebra: isDark ? "hsl(var(--foreground) / 0.05)" : "hsl(var(--muted) / 0.5)",
-    category: isDark ? "hsl(var(--foreground) / 0.09)" : "hsl(var(--muted) / 0.85)",
+    // Category rows used to be muted-at-0.85 against zebra's muted-at-0.5 —
+    // near-identical greys, so group headers sank into their own line items.
+    // The accent hue separates them by more than a shade.
+    category: isDark ? "hsl(var(--bp-purple) / 0.22)" : "hsl(var(--bp-purple) / 0.14)",
   };
 }
 
