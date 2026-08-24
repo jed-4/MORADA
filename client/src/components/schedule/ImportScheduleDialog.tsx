@@ -499,7 +499,7 @@ export function ImportScheduleDialog({
                     value={columnMapping.name || "__none__"}
                     onValueChange={(value) => handleColumnMappingChange('name', value)}
                   >
-                    <SelectTrigger className="h-8 text-xs" data-testid="select-map-name">
+                    <SelectTrigger data-testid="select-map-name">
                       <SelectValue placeholder="Select column" />
                     </SelectTrigger>
                     <SelectContent>
@@ -517,7 +517,7 @@ export function ImportScheduleDialog({
                     value={columnMapping.category || "__none__"}
                     onValueChange={(value) => handleColumnMappingChange('category', value)}
                   >
-                    <SelectTrigger className="h-8 text-xs" data-testid="select-map-category">
+                    <SelectTrigger data-testid="select-map-category">
                       <SelectValue placeholder="Select column" />
                     </SelectTrigger>
                     <SelectContent>
@@ -535,7 +535,7 @@ export function ImportScheduleDialog({
                     value={columnMapping.duration || "__none__"}
                     onValueChange={(value) => handleColumnMappingChange('duration', value)}
                   >
-                    <SelectTrigger className="h-8 text-xs" data-testid="select-map-duration">
+                    <SelectTrigger data-testid="select-map-duration">
                       <SelectValue placeholder="Select column" />
                     </SelectTrigger>
                     <SelectContent>
@@ -553,7 +553,7 @@ export function ImportScheduleDialog({
                     value={columnMapping.assignee || "__none__"}
                     onValueChange={(value) => handleColumnMappingChange('assignee', value)}
                   >
-                    <SelectTrigger className="h-8 text-xs" data-testid="select-map-assignee">
+                    <SelectTrigger data-testid="select-map-assignee">
                       <SelectValue placeholder="Select column" />
                     </SelectTrigger>
                     <SelectContent>
@@ -571,7 +571,7 @@ export function ImportScheduleDialog({
                     value={columnMapping.predecessors || "__none__"}
                     onValueChange={(value) => handleColumnMappingChange('predecessors', value)}
                   >
-                    <SelectTrigger className="h-8 text-xs" data-testid="select-map-predecessors">
+                    <SelectTrigger data-testid="select-map-predecessors">
                       <SelectValue placeholder="Select column" />
                     </SelectTrigger>
                     <SelectContent>
@@ -589,7 +589,7 @@ export function ImportScheduleDialog({
                     value={columnMapping.description || "__none__"}
                     onValueChange={(value) => handleColumnMappingChange('description', value)}
                   >
-                    <SelectTrigger className="h-8 text-xs" data-testid="select-map-description">
+                    <SelectTrigger data-testid="select-map-description">
                       <SelectValue placeholder="Select column" />
                     </SelectTrigger>
                     <SelectContent>

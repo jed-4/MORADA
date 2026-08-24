@@ -4478,7 +4478,7 @@ export default function ClientInvoiceDetail() {
               />
             </div>
             <Select value={labourFilterUser} onValueChange={setLabourFilterUser}>
-              <SelectTrigger className="h-7 text-xs w-36">
+              <SelectTrigger className="w-36">
                 <SelectValue placeholder="All staff" />
               </SelectTrigger>
               <SelectContent>
@@ -4489,7 +4489,7 @@ export default function ClientInvoiceDetail() {
               </SelectContent>
             </Select>
             <Select value={labourFilterStatus} onValueChange={setLabourFilterStatus}>
-              <SelectTrigger className="h-7 text-xs w-32">
+              <SelectTrigger className="w-32">
                 <SelectValue placeholder="All status" />
               </SelectTrigger>
               <SelectContent>
@@ -4499,7 +4499,7 @@ export default function ClientInvoiceDetail() {
               </SelectContent>
             </Select>
             <Select value={labourFilterCostCode} onValueChange={setLabourFilterCostCode}>
-              <SelectTrigger className="h-7 text-xs w-36">
+              <SelectTrigger className="w-36">
                 <SelectValue placeholder="All cost codes" />
               </SelectTrigger>
               <SelectContent>
@@ -4510,7 +4510,7 @@ export default function ClientInvoiceDetail() {
               </SelectContent>
             </Select>
             <Select value={labourFilterLabel} onValueChange={setLabourFilterLabel}>
-              <SelectTrigger className="h-7 text-xs w-32">
+              <SelectTrigger className="w-32">
                 <SelectValue placeholder="All labels" />
               </SelectTrigger>
               <SelectContent>

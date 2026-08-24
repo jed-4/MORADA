@@ -418,7 +418,7 @@ function ImportFromXeroDialog({
           <div className="flex items-center gap-1.5">
             <span className="text-xs text-muted-foreground whitespace-nowrap">Default project:</span>
             <Select value={projectMap.get("__default__") || defaultProjectId} onValueChange={setDefaultForAll}>
-              <SelectTrigger className="h-8 w-48" data-testid="select-import-project">
+              <SelectTrigger className="w-48" data-testid="select-import-project">
                 <SelectValue placeholder="Set for all rows..." />
               </SelectTrigger>
               <SelectContent>
@@ -436,7 +436,7 @@ function ImportFromXeroDialog({
             <div className="flex items-center gap-1.5">
               <span className="text-xs text-muted-foreground whitespace-nowrap">Tracking:</span>
               <Select value={trackingFilter} onValueChange={setTrackingFilter}>
-                <SelectTrigger className="h-8 w-44" data-testid="select-tracking-filter">
+                <SelectTrigger className="w-44" data-testid="select-tracking-filter">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -455,7 +455,7 @@ function ImportFromXeroDialog({
           <div className="flex items-center gap-1.5">
             <span className="text-xs text-muted-foreground whitespace-nowrap">Import as:</span>
             <Select value={importStatus} onValueChange={(v) => setImportStatus(v as any)}>
-              <SelectTrigger className="h-8 w-40" data-testid="select-import-status">
+              <SelectTrigger className="w-40" data-testid="select-import-status">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -1538,7 +1538,7 @@ export default function Bills({ embedded }: { embedded?: boolean } = {}) {
           <div className="space-y-3">
             <p className="text-xs text-muted-foreground" data-testid="text-email-to-bill-description">Forward invoices to auto-create bills</p>
             <div className="flex items-center gap-2">
-              <Input value={webhookUrl} readOnly className="font-mono text-xs flex-1 h-7" data-testid="input-webhook-url" />
+              <Input value={webhookUrl} readOnly className="font-mono flex-1" data-testid="input-webhook-url" />
               <button className="h-6 w-6 border rounded-md hover-elevate active-elevate-2 flex items-center justify-center" onClick={handleCopyWebhookUrl} data-testid="button-copy-webhook-url">
                 <Copy className="h-3 w-3" />
               </button>

@@ -1188,7 +1188,7 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
                   value={templateForm.projectId}
                   onValueChange={(value) => setTemplateForm({ ...templateForm, projectId: value })}
                 >
-                  <SelectTrigger className="h-7 text-table" data-testid="select-template-project">
+                  <SelectTrigger data-testid="select-template-project">
                     <SelectValue placeholder="Select a project" />
                   </SelectTrigger>
                   <SelectContent>
@@ -1210,7 +1210,7 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
                   value={templateForm.status}
                   onValueChange={(value: "published" | "draft" | "archived") => setTemplateForm({ ...templateForm, status: value })}
                 >
-                  <SelectTrigger className="h-7 text-table" data-testid="select-template-status">
+                  <SelectTrigger data-testid="select-template-status">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -1226,7 +1226,7 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
                   value={templateForm.category}
                   onValueChange={(value) => setTemplateForm({ ...templateForm, category: value })}
                 >
-                  <SelectTrigger className="h-7 text-table" data-testid="select-template-category">
+                  <SelectTrigger data-testid="select-template-category">
                     <SelectValue placeholder="Select" />
                   </SelectTrigger>
                   <SelectContent>
@@ -1309,7 +1309,7 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
                       value={templateForm.defaultRoleId}
                       onValueChange={(value) => setTemplateForm({ ...templateForm, defaultRoleId: value })}
                     >
-                      <SelectTrigger className="h-7 text-table" data-testid="select-recurring-role">
+                      <SelectTrigger data-testid="select-recurring-role">
                         <SelectValue placeholder="Select a role" />
                       </SelectTrigger>
                       <SelectContent>
@@ -1338,7 +1338,7 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
                     value={templateForm.defaultTaskStatus}
                     onValueChange={(value) => setTemplateForm({ ...templateForm, defaultTaskStatus: value })}
                   >
-                    <SelectTrigger className="h-7 text-table" data-testid="select-default-task-status">
+                    <SelectTrigger data-testid="select-default-task-status">
                       <SelectValue placeholder="Select status" />
                     </SelectTrigger>
                     <SelectContent>
@@ -1361,7 +1361,7 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
                     value={templateForm.frequency}
                     onValueChange={(value) => setTemplateForm({ ...templateForm, frequency: value })}
                   >
-                    <SelectTrigger className="h-7 text-table" data-testid="select-template-frequency">
+                    <SelectTrigger data-testid="select-template-frequency">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -1614,7 +1614,7 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
                 value={createTaskFormData.assigneeId || "none"}
                 onValueChange={(v) => setCreateTaskFormData(prev => ({ ...prev, assigneeId: v === "none" ? undefined : v }))}
               >
-                <SelectTrigger className="h-7 text-table" data-testid="select-create-task-assignee">
+                <SelectTrigger data-testid="select-create-task-assignee">
                   <SelectValue placeholder="Select assignee" />
                 </SelectTrigger>
                 <SelectContent>
@@ -1658,7 +1658,7 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
                 value={createTaskFormData.status}
                 onValueChange={(v) => setCreateTaskFormData(prev => ({ ...prev, status: v }))}
               >
-                <SelectTrigger className="h-7 text-table" data-testid="select-create-task-status">
+                <SelectTrigger data-testid="select-create-task-status">
                   <SelectValue placeholder="Select status" />
                 </SelectTrigger>
                 <SelectContent>

@@ -910,7 +910,7 @@ export default function TaskTemplates() {
                 value={createTaskFormData.assigneeId || "none"}
                 onValueChange={(v) => setCreateTaskFormData(prev => ({ ...prev, assigneeId: v === "none" ? undefined : v }))}
               >
-                <SelectTrigger className="h-8 text-sm" data-testid="select-create-task-assignee">
+                <SelectTrigger data-testid="select-create-task-assignee">
                   <SelectValue placeholder="Select assignee" />
                 </SelectTrigger>
                 <SelectContent>
@@ -954,7 +954,7 @@ export default function TaskTemplates() {
                 value={createTaskFormData.status}
                 onValueChange={(v) => setCreateTaskFormData(prev => ({ ...prev, status: v }))}
               >
-                <SelectTrigger className="h-8 text-sm" data-testid="select-create-task-status">
+                <SelectTrigger data-testid="select-create-task-status">
                   <SelectValue placeholder="Select status" />
                 </SelectTrigger>
                 <SelectContent>

@@ -1269,7 +1269,7 @@ export default function SelectionTemplateDetail() {
                         <Input
                           type="number"
                           min="0"
-                          className="h-8 text-xs"
+                          
                           value={optionForm.specifications?.[key] ?? ""}
                           onChange={(e) => setOptionForm({
                             ...optionForm,
@@ -1286,7 +1286,7 @@ export default function SelectionTemplateDetail() {
                         value={optionForm.specifications?.finish ?? ""}
                         onValueChange={(v) => setOptionForm({ ...optionForm, specifications: { ...optionForm.specifications, finish: v || undefined } })}
                       >
-                        <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Select finish..." /></SelectTrigger>
+                        <SelectTrigger ><SelectValue placeholder="Select finish..." /></SelectTrigger>
                         <SelectContent>
                           {FINISH_OPTIONS.map(f => <SelectItem key={f} value={f}>{f}</SelectItem>)}
                         </SelectContent>
@@ -1298,7 +1298,7 @@ export default function SelectionTemplateDetail() {
                         value={optionForm.specifications?.material ?? ""}
                         onValueChange={(v) => setOptionForm({ ...optionForm, specifications: { ...optionForm.specifications, material: v || undefined } })}
                       >
-                        <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Select material..." /></SelectTrigger>
+                        <SelectTrigger ><SelectValue placeholder="Select material..." /></SelectTrigger>
                         <SelectContent>
                           {MATERIAL_OPTIONS.map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}
                         </SelectContent>
@@ -1336,7 +1336,7 @@ export default function SelectionTemplateDetail() {
                         ) : (
                           <Input
                             type={field.type}
-                            className="h-8 text-xs"
+                            
                             value={val}
                             onChange={(e) => setOptionForm({ ...optionForm, specifications: { ...optionForm.specifications, [field.key]: field.type === "number" ? parseFloat(e.target.value) || undefined : e.target.value } })}
                           />
@@ -1350,7 +1350,7 @@ export default function SelectionTemplateDetail() {
                       <div className="space-y-1">
                         <Label className="text-xs">Label</Label>
                         <Input
-                          className="h-8 text-xs"
+                          
                           value={c.label}
                           onChange={(e) => {
                             const custom = [...(optionForm.specifications?.custom || [])];
@@ -1374,7 +1374,7 @@ export default function SelectionTemplateDetail() {
                           </button>
                         </div>
                         <Input
-                          className="h-8 text-xs"
+                          
                           value={c.value}
                           onChange={(e) => {
                             const custom = [...(optionForm.specifications?.custom || [])];

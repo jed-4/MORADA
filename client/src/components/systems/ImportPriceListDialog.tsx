@@ -208,7 +208,7 @@ export function ImportPriceListDialog({ open, onOpenChange, priceListId }: Props
                           })
                         }
                       >
-                        <SelectTrigger className="h-7 text-xs" data-testid={`map-${f.key}`}>
+                        <SelectTrigger data-testid={`map-${f.key}`}>
                           <SelectValue placeholder="Not imported" />
                         </SelectTrigger>
                         <SelectContent>
