@@ -23,3 +23,8 @@ expo-mobile/.env.local
 
 # Replit agent state (large binary files, never include in builds)
 .local/state/
+
+# Claude Code: shared config is committed (.claude/settings.json, hooks,
+# launch.json); per-machine state is not.
+.claude/settings.local.json
+.claude/settings.local*.json
