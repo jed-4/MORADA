@@ -3539,6 +3539,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
+      if (!(await enforceProjectCompany(req, res, validationResult.data.projectId, "Project not found"))) return;
+
       const defect = await storage.createDefect(validationResult.data);
       res.status(201).json(defect);
     } catch (error) {
@@ -3559,6 +3561,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const owned = await getOwnedDefect(req, res, req.params.id);
       if (!owned) return;
+      // A reassignment must land on a project the caller also owns.
+      if (validationResult.data.projectId && validationResult.data.projectId !== owned.projectId) {
+        if (!(await enforceProjectCompany(req, res, validationResult.data.projectId, "Project not found"))) return;
+      }
       const defect = await storage.updateDefect(req.params.id, validationResult.data);
       if (!defect) {
         return res.status(404).json({ error: "Defect not found" });
@@ -33385,79 +33391,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Defects API Routes
-  app.get("/api/defects", async (req, res) => {
-    try {
-      const { projectId, status } = req.query;
-      const defects = await storage.getDefects(
-        projectId as string | undefined, 
-        status as string | undefined
-      );
-      res.json(defects);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to fetch defects" });
-    }
-  });
-
-  app.get("/api/defects/:id", async (req, res) => {
-    try {
-      const defect = await getOwnedDefect(req, res, req.params.id);
-      if (!defect) return;
-      res.json(defect);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to fetch defect" });
-    }
-  });
-
-  app.post("/api/defects", async (req, res) => {
-    try {
-      const validationResult = insertDefectSchema.safeParse(req.body);
-      if (!validationResult.success) {
-        return res.status(400).json({ 
-          error: "Validation failed", 
-          details: fromZodError(validationResult.error).toString() 
-        });
-      }
-
-      const defect = await storage.createDefect(validationResult.data);
-      res.status(201).json(defect);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to create defect" });
-    }
-  });
-
-  app.patch("/api/defects/:id", async (req, res) => {
-    try {
-      const validationResult = insertDefectSchema.partial().safeParse(req.body);
-      if (!validationResult.success) {
-        return res.status(400).json({ 
-          error: "Validation failed", 
-          details: fromZodError(validationResult.error).toString() 
-        });
-      }
-
-      const owned = await getOwnedDefect(req, res, req.params.id);
-      if (!owned) return;
-      const defect = await storage.updateDefect(req.params.id, validationResult.data);
-      res.json(defect);
-    } catch (error) {
-      if (error instanceof Error && error.message === "Defect not found") {
-        return res.status(404).json({ error: "Defect not found" });
-      }
-      res.status(500).json({ error: "Failed to update defect" });
-    }
-  });
-
-  app.delete("/api/defects/:id", async (req, res) => {
-    try {
-      const owned = await getOwnedDefect(req, res, req.params.id);
-      if (!owned) return;
-      await storage.deleteDefect(req.params.id);
-      res.status(204).send();
-    } catch (error) {
-      res.status(500).json({ error: "Failed to delete defect" });
-    }
-  });
-
   // ============================================================
   // SYSTEMS LIBRARY API Routes
   // ============================================================
