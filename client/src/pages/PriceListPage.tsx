@@ -99,7 +99,7 @@ export default function PriceListPage() {
             {list.supplierName || list.name}
           </h1>
           {list.isArchived && (
-            <Badge variant="secondary" className="h-4 text-label flex-shrink-0">Archived</Badge>
+            <Badge variant="secondary" className="h-4 text-label flex-shrink-0">Inactive</Badge>
           )}
           {effective && (
             <span className="text-xs text-muted-foreground truncate hidden lg:inline">{effective}</span>

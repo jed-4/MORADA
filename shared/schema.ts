@@ -2027,6 +2027,11 @@ export const bills = pgTable("bills", {
   xeroVoidedAt: timestamp("xero_voided_at"),
   attachmentUrls: json("attachment_urls").default([]), // Array of PDF/image URLs
   ocrProcessed: boolean("ocr_processed").notNull().default(false),
+  // Distinct from ocrProcessed, which only says the document was read at import.
+  // This says a human has run the price review over this bill's lines, which is
+  // what stops the same bill being reviewed twice.
+  priceReviewedAt: timestamp("price_reviewed_at"),
+  priceReviewedBy: varchar("price_reviewed_by"),
   ocrData: json("ocr_data"), // Raw OCR results
   gmailMessageId: text("gmail_message_id"), // Gmail message ID if imported from bill inbox
   // Confirmed PO match (ID of purchase_orders row). Column name kept for back-compat
@@ -6449,6 +6454,22 @@ export type PriceListItem = typeof priceListItems.$inferSelect;
 
 // Bill Line Item to Price List Item link (for AI review tracking)
 // This tracks which bill line items have been reviewed and linked to price list
+export const billLineItemSkus = pgTable("bill_line_item_skus", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  billLineItemId: varchar("bill_line_item_id").notNull().references(() => billLineItems.id, { onDelete: "cascade" }),
+  sku: text("sku").notNull(),
+  /** Where the code came from, so a bad extraction run can be found and cleared. */
+  source: text("source").notNull().default("pdf"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  lineUnique: uniqueIndex("bill_line_item_skus_line_unique").on(table.billLineItemId),
+  companyIdx: index("bill_line_item_skus_company_idx").on(table.companyId),
+  skuIdx: index("bill_line_item_skus_sku_idx").on(table.companyId, table.sku),
+}));
+
+export type BillLineItemSku = typeof billLineItemSkus.$inferSelect;
+
 export const billLineItemPriceLinks = pgTable("bill_line_item_price_links", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   billLineItemId: varchar("bill_line_item_id").notNull().references(() => billLineItems.id, { onDelete: "cascade" }),
