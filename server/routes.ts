@@ -7181,9 +7181,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       const updateData: any = { ...req.body };
 
+      // A supplied catalogue link must be one of THIS company's items. Estimate item
+      // ids say nothing about the catalogue, so without this an id from another
+      // tenant's price book would be stored verbatim.
+      if (updateData.priceListItemId) {
+        const companyId = (req.user as any)?.companyId;
+        const linked = companyId
+          ? await storage.getPriceListItem(updateData.priceListItemId, companyId)
+          : undefined;
+        if (!linked) {
+          return res.status(404).json({ error: "Price list item not found" });
+        }
+      }
+
       const unitCostExTax = updateData.unitCostExTax !== undefined
         ? updateData.unitCostExTax
         : existingItem.unitCostExTax;
+
+      // Editing the unit cost takes the line OFF the catalogue — the number is the
+      // estimator's now, so the provenance marker must stop claiming otherwise.
+      // Enforced here rather than in the grid so every path obeys it: inline cell,
+      // edit dialog, bulk edit, import, mobile.
+      //
+      // Skipped when the caller sets priceListItemId in the same request, because
+      // that IS the link being made (picking an item writes cost + link together).
+      // Everything else about a line — name, qty, wastage, markup — keeps the link.
+      const isRelinking = updateData.priceListItemId !== undefined;
+      const costChanged = updateData.unitCostExTax !== undefined
+        && Math.abs(Number(unitCostExTax) - Number(existingItem.unitCostExTax)) > 0.0001;
+      if (!isRelinking && costChanged && existingItem.priceListItemId) {
+        updateData.priceListItemId = null;
+      }
       const quantity = updateData.quantity !== undefined
         ? updateData.quantity
         : existingItem.quantity;
@@ -35533,6 +35561,48 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(items);
     } catch (error: any) {
       res.status(500).json({ error: "Failed to fetch price list items", details: error.message });
+    }
+  });
+
+  // Typeahead for the estimate grid's item-name cell. Only ever offers ACTIVE items
+  // from NON-ARCHIVED lists — see searchPriceListItemsForEstimate for why that is a
+  // separate method rather than a flag on /items.
+  //
+  // Declared before "/api/price-list/items/:id" would be reached, but the path is
+  // distinct so ordering is not load-bearing here.
+  app.get("/api/price-list/lookup", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.companyId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+      const q = typeof req.query.q === "string" ? req.query.q : "";
+      // Capped server-side: this fires per keystroke, and an uncapped LIKE over a
+      // full supplier price book is exactly the "never query in a loop" trap.
+      const requested = Number.parseInt(String(req.query.limit ?? ""), 10);
+      const limit = Number.isFinite(requested) ? Math.min(Math.max(requested, 1), 50) : 20;
+
+      const items = await storage.searchPriceListItemsForEstimate(user.companyId, q, limit);
+      res.json(items);
+    } catch (error: any) {
+      res.status(500).json({ error: "Failed to search price list", details: error.message });
+    }
+  });
+
+  // Resolve the catalogue links an estimate's lines already carry, in one hit.
+  // Declared before "/items/:id" so "by-ids" isn't swallowed as an id.
+  app.get("/api/price-list/items/by-ids", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.companyId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+      const raw = typeof req.query.ids === "string" ? req.query.ids : "";
+      const ids = raw.split(",").map(s => s.trim()).filter(Boolean).slice(0, 500);
+      const items = await storage.getPriceListItemsByIds(user.companyId, ids);
+      res.json(items);
+    } catch (error: any) {
+      res.status(500).json({ error: "Failed to resolve price list items", details: error.message });
     }
   });
 
