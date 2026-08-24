@@ -430,7 +430,7 @@ export default function QuickReviewPanel({
                 name="contactType"
                 render={({ field }) => (
                   <Select onValueChange={field.onChange} value={field.value}>
-                    <SelectTrigger className="h-7 w-auto min-w-[100px] text-table gap-1" data-testid="select-contact-type">
+                    <SelectTrigger className="w-auto min-w-[100px] gap-1" data-testid="select-contact-type">
                       {field.value === "supplier" && <Building2 className="h-3 w-3" />}
                       {field.value === "trade" && <Briefcase className="h-3 w-3" />}
                       {field.value === "client" && <User className="h-3 w-3" />}
@@ -470,7 +470,7 @@ export default function QuickReviewPanel({
                         <Input 
                           {...field} 
                           value={field.value || ""} 
-                          className="h-7 text-table"
+                          
                           autoFocus
                           data-testid="input-name"
                         />
@@ -490,7 +490,7 @@ export default function QuickReviewPanel({
                           <FormItem className="space-y-1">
                             <FormLabel className="text-table">Key Person First Name</FormLabel>
                             <FormControl>
-                              <Input {...field} value={field.value || ""} className="h-7 text-table" data-testid="input-first-name" />
+                              <Input {...field} value={field.value || ""}  data-testid="input-first-name" />
                             </FormControl>
                             <FormMessage className="text-data" />
                           </FormItem>
@@ -503,7 +503,7 @@ export default function QuickReviewPanel({
                           <FormItem className="space-y-1">
                             <FormLabel className="text-table">Key Person Last Name</FormLabel>
                             <FormControl>
-                              <Input {...field} value={field.value || ""} className="h-7 text-table" data-testid="input-last-name" />
+                              <Input {...field} value={field.value || ""}  data-testid="input-last-name" />
                             </FormControl>
                             <FormMessage className="text-data" />
                           </FormItem>
@@ -519,7 +519,7 @@ export default function QuickReviewPanel({
                           <FormItem className="space-y-1">
                             <FormLabel className="text-table">Phone</FormLabel>
                             <FormControl>
-                              <Input {...field} value={field.value || ""} className="h-7 text-table" data-testid="input-phone" />
+                              <Input {...field} value={field.value || ""}  data-testid="input-phone" />
                             </FormControl>
                             <FormMessage className="text-data" />
                           </FormItem>
@@ -532,7 +532,7 @@ export default function QuickReviewPanel({
                           <FormItem className="space-y-1">
                             <FormLabel className="text-table">Email</FormLabel>
                             <FormControl>
-                              <Input type="email" {...field} value={field.value || ""} className="h-7 text-table" data-testid="input-email" />
+                              <Input type="email" {...field} value={field.value || ""}  data-testid="input-email" />
                             </FormControl>
                             <FormMessage className="text-data" />
                           </FormItem>
@@ -553,7 +553,7 @@ export default function QuickReviewPanel({
                           <FormItem className="space-y-1">
                             <FormLabel className="text-table">First Name *</FormLabel>
                             <FormControl>
-                              <Input {...field} value={field.value || ""} className="h-7 text-table" data-testid="input-first-name" />
+                              <Input {...field} value={field.value || ""}  data-testid="input-first-name" />
                             </FormControl>
                             <FormMessage className="text-data" />
                           </FormItem>
@@ -566,7 +566,7 @@ export default function QuickReviewPanel({
                           <FormItem className="space-y-1">
                             <FormLabel className="text-table">Last Name</FormLabel>
                             <FormControl>
-                              <Input {...field} value={field.value || ""} className="h-7 text-table" data-testid="input-last-name" />
+                              <Input {...field} value={field.value || ""}  data-testid="input-last-name" />
                             </FormControl>
                             <FormMessage className="text-data" />
                           </FormItem>
@@ -582,7 +582,7 @@ export default function QuickReviewPanel({
                           <FormItem className="space-y-1">
                             <FormLabel className="text-table">Phone</FormLabel>
                             <FormControl>
-                              <Input {...field} value={field.value || ""} className="h-7 text-table" data-testid="input-phone" />
+                              <Input {...field} value={field.value || ""}  data-testid="input-phone" />
                             </FormControl>
                             <FormMessage className="text-data" />
                           </FormItem>
@@ -595,7 +595,7 @@ export default function QuickReviewPanel({
                           <FormItem className="space-y-1">
                             <FormLabel className="text-table">Email</FormLabel>
                             <FormControl>
-                              <Input type="email" {...field} value={field.value || ""} className="h-7 text-table" data-testid="input-email" />
+                              <Input type="email" {...field} value={field.value || ""}  data-testid="input-email" />
                             </FormControl>
                             <FormMessage className="text-data" />
                           </FormItem>
@@ -611,7 +611,7 @@ export default function QuickReviewPanel({
                           <FormItem className="space-y-1">
                             <FormLabel className="text-table">Role / Position</FormLabel>
                             <FormControl>
-                              <Input {...field} value={field.value || ""} className="h-7 text-table" data-testid="input-role" />
+                              <Input {...field} value={field.value || ""}  data-testid="input-role" />
                             </FormControl>
                             <FormMessage className="text-data" />
                           </FormItem>
@@ -655,7 +655,7 @@ export default function QuickReviewPanel({
                             <FormLabel className="text-table">Payment Terms</FormLabel>
                             <Select onValueChange={field.onChange} value={field.value || "__none__"}>
                               <FormControl>
-                                <SelectTrigger className="h-7 text-table" data-testid="select-payment-terms">
+                                <SelectTrigger data-testid="select-payment-terms">
                                   <SelectValue placeholder="Select terms" />
                                 </SelectTrigger>
                               </FormControl>

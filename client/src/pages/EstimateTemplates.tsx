@@ -1587,7 +1587,7 @@ export default function EstimateTemplates() {
                       value={columnMapping.name || "__none__"}
                       onValueChange={(value) => handleColumnMappingChange('name', value)}
                     >
-                      <SelectTrigger className="h-8 text-xs" data-testid="select-map-name">
+                      <SelectTrigger data-testid="select-map-name">
                         <SelectValue placeholder="Select column" />
                       </SelectTrigger>
                       <SelectContent>
@@ -1605,7 +1605,7 @@ export default function EstimateTemplates() {
                       value={columnMapping.groupName || "__none__"}
                       onValueChange={(value) => handleColumnMappingChange('groupName', value)}
                     >
-                      <SelectTrigger className="h-8 text-xs" data-testid="select-map-group">
+                      <SelectTrigger data-testid="select-map-group">
                         <SelectValue placeholder="Select column" />
                       </SelectTrigger>
                       <SelectContent>
@@ -1623,7 +1623,7 @@ export default function EstimateTemplates() {
                       value={columnMapping.costCode || "__none__"}
                       onValueChange={(value) => handleColumnMappingChange('costCode', value)}
                     >
-                      <SelectTrigger className="h-8 text-xs" data-testid="select-map-costcode">
+                      <SelectTrigger data-testid="select-map-costcode">
                         <SelectValue placeholder="Select column" />
                       </SelectTrigger>
                       <SelectContent>
@@ -1641,7 +1641,7 @@ export default function EstimateTemplates() {
                       value={columnMapping.unit || "__none__"}
                       onValueChange={(value) => handleColumnMappingChange('unit', value)}
                     >
-                      <SelectTrigger className="h-8 text-xs" data-testid="select-map-unit">
+                      <SelectTrigger data-testid="select-map-unit">
                         <SelectValue placeholder="Select column" />
                       </SelectTrigger>
                       <SelectContent>
@@ -1659,7 +1659,7 @@ export default function EstimateTemplates() {
                       value={columnMapping.quantity || "__none__"}
                       onValueChange={(value) => handleColumnMappingChange('quantity', value)}
                     >
-                      <SelectTrigger className="h-8 text-xs" data-testid="select-map-quantity">
+                      <SelectTrigger data-testid="select-map-quantity">
                         <SelectValue placeholder="Select column" />
                       </SelectTrigger>
                       <SelectContent>
@@ -1677,7 +1677,7 @@ export default function EstimateTemplates() {
                       value={columnMapping.unitPrice || "__none__"}
                       onValueChange={(value) => handleColumnMappingChange('unitPrice', value)}
                     >
-                      <SelectTrigger className="h-8 text-xs" data-testid="select-map-unitprice">
+                      <SelectTrigger data-testid="select-map-unitprice">
                         <SelectValue placeholder="Select column" />
                       </SelectTrigger>
                       <SelectContent>
@@ -1709,7 +1709,7 @@ export default function EstimateTemplates() {
                       value={columnMapping.markup || "__none__"}
                       onValueChange={(value) => handleColumnMappingChange('markup', value)}
                     >
-                      <SelectTrigger className="h-8 text-xs" data-testid="select-map-markup">
+                      <SelectTrigger data-testid="select-map-markup">
                         <SelectValue placeholder="Select column" />
                       </SelectTrigger>
                       <SelectContent>
@@ -1727,7 +1727,7 @@ export default function EstimateTemplates() {
                       value={columnMapping.description || "__none__"}
                       onValueChange={(value) => handleColumnMappingChange('description', value)}
                     >
-                      <SelectTrigger className="h-8 text-xs" data-testid="select-map-description">
+                      <SelectTrigger data-testid="select-map-description">
                         <SelectValue placeholder="Select column" />
                       </SelectTrigger>
                       <SelectContent>

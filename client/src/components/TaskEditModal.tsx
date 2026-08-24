@@ -1845,7 +1845,7 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
                           value={form.watch("recurringType") || "weekly"}
                           onValueChange={(value) => form.setValue("recurringType", value as any, { shouldDirty: true, shouldTouch: true })}
                         >
-                          <SelectTrigger className="h-8 text-xs">
+                          <SelectTrigger >
                             <SelectValue placeholder="Weekly" />
                           </SelectTrigger>
                           <SelectContent>
@@ -1970,7 +1970,7 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
                                 value={String(form.watch("dueDayOfMonth") || 1)}
                                 onValueChange={(value) => form.setValue("dueDayOfMonth", parseInt(value), { shouldDirty: true, shouldTouch: true })}
                               >
-                                <SelectTrigger className="h-8 text-xs w-20" data-testid="select-day-of-month">
+                                <SelectTrigger className="w-20" data-testid="select-day-of-month">
                                   <SelectValue />
                                 </SelectTrigger>
                                 <SelectContent className="max-h-[200px]">

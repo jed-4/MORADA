@@ -2597,14 +2597,14 @@ export default function SelectionDetail() {
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                     <div className="space-y-1">
                       <Label className="text-xs">Colour</Label>
-                      <Input className="h-8 text-xs" placeholder="e.g. Matte White"
+                      <Input placeholder="e.g. Matte White"
                         value={optionSpecifications.colour ?? ""}
                         onChange={(e) => setOptionSpecifications((sp) => ({ ...sp, colour: e.target.value || undefined }))}
                         data-testid="input-key-colour" />
                     </div>
                     <div className="space-y-1">
                       <Label className="text-xs">Finish</Label>
-                      <Input className="h-8 text-xs" placeholder="e.g. Brushed Nickel"
+                      <Input placeholder="e.g. Brushed Nickel"
                         value={optionSpecifications.finish ?? ""}
                         onChange={(e) => setOptionSpecifications((sp) => ({ ...sp, finish: e.target.value || undefined }))}
                         data-testid="input-key-finish" />
@@ -2617,7 +2617,7 @@ export default function SelectionDetail() {
                     ] as const).map(([key, label]) => (
                       <div key={key} className="space-y-1">
                         <Label className="text-xs">{label}</Label>
-                        <Input type="number" min="0" className="h-8 text-xs"
+                        <Input type="number" min="0" 
                           value={optionSpecifications[key] ?? ""}
                           onChange={(e) => setOptionSpecifications((sp) => ({ ...sp, [key]: e.target.value ? parseFloat(e.target.value) : undefined }))}
                           data-testid={`input-key-${key}`} />
@@ -2947,7 +2947,7 @@ export default function SelectionDetail() {
                           <div className="space-y-1">
                             <Label className="text-xs">Material</Label>
                             <Select value={optionSpecifications.material ?? ""} onValueChange={v => setSpec("material", v || undefined)}>
-                              <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Select..." /></SelectTrigger>
+                              <SelectTrigger ><SelectValue placeholder="Select..." /></SelectTrigger>
                               <SelectContent>{MATERIAL_OPTS.map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}</SelectContent>
                             </Select>
                           </div>
@@ -2961,7 +2961,7 @@ export default function SelectionDetail() {
                                 <Switch checked={!!optionSpecifications[f.key]} onCheckedChange={checked => setSpec(f.key, checked)} />
                               ) : (
                                 <div className="flex-1 flex items-center gap-1">
-                                  <Input type={f.type === "number" ? "number" : "text"} min="0" className="h-8 text-xs flex-1"
+                                  <Input type={f.type === "number" ? "number" : "text"} min="0" className="flex-1"
                                     value={optionSpecifications[f.key] ?? ""}
                                     onChange={e => setSpec(f.key, f.type === "number" ? (e.target.value ? parseFloat(e.target.value) : undefined) : e.target.value || undefined)} />
                                   <button type="button" className="p-1 text-muted-foreground hover:text-foreground" onClick={() => removeSpec(f.key)}>
@@ -2973,13 +2973,13 @@ export default function SelectionDetail() {
                           ))}
                           {((optionSpecifications.custom || []) as { label: string; value: string }[]).map((c, idx) => (
                             <div key={idx} className="flex items-center gap-2">
-                              <Input className="h-8 text-xs w-28 shrink-0" placeholder="Label" value={c.label}
+                              <Input className="w-28 shrink-0" placeholder="Label" value={c.label}
                                 onChange={e => {
                                   const custom = [...((optionSpecifications.custom || []) as {label:string;value:string}[])];
                                   custom[idx] = { ...custom[idx], label: e.target.value };
                                   setSpec("custom", custom);
                                 }} />
-                              <Input className="h-8 text-xs flex-1" placeholder="Value" value={c.value}
+                              <Input className="flex-1" placeholder="Value" value={c.value}
                                 onChange={e => {
                                   const custom = [...((optionSpecifications.custom || []) as {label:string;value:string}[])];
                                   custom[idx] = { ...custom[idx], value: e.target.value };

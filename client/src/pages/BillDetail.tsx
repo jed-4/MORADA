@@ -4411,7 +4411,7 @@ export default function BillDetail() {
                   setSupplierDefaultsTermsDirty(true);
                 }}
               >
-                <SelectTrigger className="text-xs" data-testid="select-supplier-defaults-terms">
+                <SelectTrigger data-testid="select-supplier-defaults-terms">
                   <SelectValue placeholder="Select payment terms" />
                 </SelectTrigger>
                 <SelectContent>

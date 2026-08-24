@@ -436,7 +436,7 @@ export function RapidApprovalModal({
             <div>
               <Label className="text-data text-muted-foreground">Project</Label>
               <Select value={editedProjectId || "business"} onValueChange={(val) => setEditedProjectId(val === "business" ? "" : val)}>
-                <SelectTrigger className="h-7 text-table">
+                <SelectTrigger >
                   <SelectValue placeholder="Select" />
                 </SelectTrigger>
                 <SelectContent>
