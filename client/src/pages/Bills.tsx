@@ -691,6 +691,7 @@ export default function Bills({ embedded }: { embedded?: boolean } = {}) {
   const [filterDateRange, setFilterDateRange] = useState<string>("all");
   const [filterOverdue, setFilterOverdue] = useState<string[]>([]);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [convertTarget, setConvertTarget] = useState<{ id: string; number: string } | null>(null);
   const [changeProjectDialogOpen, setChangeProjectDialogOpen] = useState(false);
   const [changeSupplierDialogOpen, setChangeSupplierDialogOpen] = useState(false);
   const [selectedProjectId, setSelectedProjectId] = useState<string>("");
@@ -834,6 +835,26 @@ export default function Bills({ embedded }: { embedded?: boolean } = {}) {
       setLocation(`/bills/${data.id}`);
     },
     onError: () => toast({ title: "Error", description: "Failed to duplicate bill", variant: "destructive" }),
+  });
+
+  const convertToCreditMutation = useMutation({
+    mutationFn: (billId: string) => apiRequest(`/api/bills/${billId}/convert-to-credit`, "POST"),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/bills"] });
+      setConvertTarget(null);
+      toast({
+        title: "Converted to a vendor credit",
+        description: "The amount now reduces what's owed. Record the credit note in Xero directly.",
+      });
+    },
+    onError: (error: any) =>
+      toast({
+        title: "Couldn't convert this bill",
+        // The server's refusals are the useful part here — already paid,
+        // already in Xero, wrong type — so show them rather than a generic line.
+        description: error?.message?.replace(/^\d+:\s*/, "") || "Please try again.",
+        variant: "destructive",
+      }),
   });
 
   useEffect(() => {
@@ -1330,6 +1351,14 @@ export default function Bills({ embedded }: { embedded?: boolean } = {}) {
                   >
                     Duplicate
                   </DropdownMenuItem>
+                  {bill.billType === "bill" && (
+                    <DropdownMenuItem
+                      onSelect={() => setConvertTarget({ id: bill.id, number: bill.billNumber })}
+                      disabled={convertToCreditMutation.isPending}
+                    >
+                      Convert to credit note
+                    </DropdownMenuItem>
+                  )}
                   <DropdownMenuSeparator />
                   <DropdownMenuItem
                     className="text-destructive focus:text-destructive"
@@ -1351,6 +1380,33 @@ export default function Bills({ embedded }: { embedded?: boolean } = {}) {
     ];
     return cols;
   }, [filteredBills.length, selectedBills, projectIdFromUrl, projects, suppliers, duplicateBillMutation.isPending]);
+
+  const convertDialog = (
+    <Dialog open={!!convertTarget} onOpenChange={(o) => { if (!o) setConvertTarget(null); }}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Convert {convertTarget?.number} to a credit note?</DialogTitle>
+        </DialogHeader>
+        <p className="text-sm text-muted-foreground">
+          The bill becomes a vendor credit in place — same attachment, line items and history — and
+          its amount starts reducing what you owe this supplier instead of adding to it. Vendor
+          credits can't sync to Xero yet, so record the credit note in Xero directly.
+        </p>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setConvertTarget(null)}>
+            Cancel
+          </Button>
+          <Button
+            onClick={() => convertTarget && convertToCreditMutation.mutate(convertTarget.id)}
+            disabled={convertToCreditMutation.isPending}
+            data-testid="button-confirm-convert-credit"
+          >
+            {convertToCreditMutation.isPending ? "Converting..." : "Convert"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
 
   const billPickerColumns = useMemo(
     () => BILL_COLUMN_LABELS.filter((c) => !(c.id === "project" && projectIdFromUrl)),
@@ -1625,6 +1681,8 @@ export default function Bills({ embedded }: { embedded?: boolean } = {}) {
       </BulkActionBar>
 
       {/* ── Dialogs ── */}
+      {convertDialog}
+
       <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <DialogContent>
           <DialogHeader><DialogTitle>Delete {selectedBills.size} bill(s)?</DialogTitle></DialogHeader>
