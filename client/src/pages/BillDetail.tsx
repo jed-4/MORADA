@@ -245,6 +245,17 @@ function CopyableValue({
   );
 }
 
+// Status chip shown beside the totals in the bill header. Every bill status is
+// covered so the chip is never blank — the header should always say what state
+// the bill you're looking at is in.
+const BILL_STATUS_CHIP: Record<string, { label: string; className: string }> = {
+  draft: { label: "Draft", className: "bg-muted text-muted-foreground" },
+  needs_review: { label: "Needs Review", className: "bg-status-warning-bg text-status-warning" },
+  awaiting_approval: { label: "Awaiting Approval", className: "bg-status-warning-bg text-status-warning" },
+  awaiting_payment: { label: "Awaiting Payment", className: "bg-status-info-bg text-status-info" },
+  paid: { label: "Paid", className: "bg-status-success-bg text-status-success" },
+};
+
 export default function BillDetail() {
   const { id, projectId } = useParams<{ id: string; projectId?: string }>();
   const [, setLocation] = useLocation();
@@ -1567,12 +1578,19 @@ export default function BillDetail() {
       return response;
     },
     onSuccess: () => {
+      // Approving rewrites the bill server-side (status, approver, timestamps).
+      // The refetched record re-hydrates the form, but baselineRef only reset
+      // on an id change — so the post-approval snapshot was compared against a
+      // pre-approval baseline and the page decided you had unsaved changes.
+      // That is what lit up Save and put an "unsaved changes" warning between
+      // the reviewer and the bills list on a bill they had just approved.
+      baselineRef.current = null;
       queryClient.invalidateQueries({ queryKey: ["/api/bills"] });
       queryClient.invalidateQueries({ queryKey: ["/api/bills", id] });
       queryClient.invalidateQueries({ queryKey: ["/api/bills", id, "approvals"] });
       toast({
-        title: "Success",
-        description: "Bill approved successfully",
+        title: "Bill approved",
+        description: "Approved and saved.",
       });
     },
     onError: (error: Error) => {
@@ -1633,7 +1651,13 @@ export default function BillDetail() {
         return; // save failed — updateMutation.onError already showed the toast
       }
     }
-    approveMutation.mutate(undefined, goNext ? { onSuccess: () => goToNextInQueue() } : undefined);
+    // Approving is the end of the job on this bill either way: "Approve"
+    // returns to the awaiting-approval list, "Approve & next" opens the next
+    // bill in it. Staying put left the reviewer on a bill they were finished
+    // with, with a live Save button and nothing left to do.
+    approveMutation.mutate(undefined, {
+      onSuccess: () => (goNext ? goToNextInQueue() : setLocation("/bills?status=awaiting_approval")),
+    });
   };
   const approveBusy = approveMutation.isPending || updateMutation.isPending;
 
@@ -1648,6 +1672,7 @@ export default function BillDetail() {
       queryClient.invalidateQueries({ queryKey: ["/api/bills"] });
       queryClient.invalidateQueries({ queryKey: ["/api/bills", id] });
       queryClient.invalidateQueries({ queryKey: ["/api/bills", id, "approvals"] });
+      baselineRef.current = null;
       setRejectDialogOpen(false);
       setRejectComments("");
       toast({
@@ -2315,6 +2340,14 @@ export default function BillDetail() {
             </h1>
           </div>
           <div className="flex items-center gap-4 flex-wrap">
+            {isEditMode && bill?.status && (
+              <span
+                className={`inline-flex items-center px-2 py-0.5 rounded-full text-data font-medium ${BILL_STATUS_CHIP[bill.status]?.className ?? "bg-muted text-muted-foreground"}`}
+                data-testid="chip-bill-status"
+              >
+                {BILL_STATUS_CHIP[bill.status]?.label ?? bill.status}
+              </span>
+            )}
             <div className="flex items-center gap-1.5 text-xs">
               <span className="text-muted-foreground">Total:</span>
               <span className="font-semibold" data-testid="text-header-total">
@@ -3669,10 +3702,16 @@ export default function BillDetail() {
                                 className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-data font-medium ${
                                   approval.status === "approved"
                                     ? "bg-status-success-bg text-status-success"
+                                    : approval.status === "edited"
+                                    ? "bg-status-info-bg text-status-info"
                                     : "bg-status-danger-bg text-status-danger"
                                 }`}
                               >
-                                {approval.status === "approved" ? "Approved" : "Rejected"}
+                                {approval.status === "approved"
+                                  ? "Approved"
+                                  : approval.status === "edited"
+                                  ? "Edited after approval"
+                                  : "Rejected"}
                               </span>
                             </div>
                             {approval.comments && (

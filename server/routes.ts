@@ -17589,6 +17589,57 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const bill = await storage.updateBill(req.params.id, validationResult.data);
 
+      // ── Post-approval edits land in the approval history ────────────────
+      // An approved bill that is then edited used to leave an approval record
+      // describing amounts that no longer existed. Any material change made
+      // once a bill has passed approval is appended to the same history, so
+      // the trail reads in order and an approver can see what moved after
+      // they signed off.
+      if (previous.status === "awaiting_payment" || previous.status === "paid") {
+        const editorId = (req as any).user?.id;
+        if (editorId) {
+          const money = (c: number | null | undefined) =>
+            `$${((c ?? 0) / 100).toFixed(2)}`;
+          const changes: string[] = [];
+          const d = validationResult.data as any;
+          if ("total" in d && d.total !== previous.total) {
+            changes.push(`Total ${money(previous.total)} → ${money(d.total)}`);
+          }
+          if ("supplierId" in d && d.supplierId !== previous.supplierId) {
+            changes.push("Supplier changed");
+          }
+          if ("projectId" in d && d.projectId !== previous.projectId) {
+            changes.push("Project changed");
+          }
+          if ("billReference" in d && d.billReference !== previous.billReference) {
+            changes.push(`Reference "${previous.billReference || "—"}" → "${d.billReference || "—"}"`);
+          }
+          if ("billDate" in d && String(d.billDate) !== String(previous.billDate)) {
+            changes.push("Bill date changed");
+          }
+          if ("dueDate" in d && String(d.dueDate) !== String(previous.dueDate)) {
+            changes.push("Due date changed");
+          }
+          if ("taxMode" in d && d.taxMode !== (previous as any).taxMode) {
+            changes.push(`Tax mode → ${d.taxMode}`);
+          }
+          // Status transitions are already narrated by the payment records and
+          // by the approve/reject rows, so they are not an "edit" on their own.
+          if (changes.length > 0) {
+            await storage
+              .createBillApproval({
+                billId: req.params.id,
+                approvedById: editorId,
+                status: "edited",
+                comments: changes.join("; "),
+              } as any)
+              .catch((e) =>
+                console.error("[bills PATCH] couldn't record the post-approval edit:", e),
+              );
+          }
+        }
+      }
+
       // ── Recompute linked PO status from bills (source of truth) ─────────
       // Triggered whenever the bill's link, status, paidAmount, or total changed.
       const linkChanged = "matchedSitePOId" in validationResult.data

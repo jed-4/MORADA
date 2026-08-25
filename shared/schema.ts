@@ -1672,7 +1672,10 @@ export type SelectionOptionWithAttachments = SelectionOption & {
 export const billTypeEnum = pgEnum("bill_type", ["bill", "credit", "receipt"]);
 export const billStatusEnum = pgEnum("bill_status", ["draft", "needs_review", "awaiting_approval", "awaiting_payment", "paid"]);
 export const billLineTypeEnum = pgEnum("bill_line_type", ["estimate", "item", "custom"]);
-export const billApprovalStatusEnum = pgEnum("bill_approval_status", ["approved", "rejected"]);
+// "edited" is an activity row, not an approval decision: it records a change
+// made to a bill AFTER it was approved, so the approval history shows the full
+// story rather than an approval that silently stopped describing the bill.
+export const billApprovalStatusEnum = pgEnum("bill_approval_status", ["approved", "rejected", "edited"]);
 export const taxTypeEnum = pgEnum("tax_type", ["GST on expenses", "No GST"]);
 
 // Supplier type enum (supplier = hardware stores, trade = subcontractors)
