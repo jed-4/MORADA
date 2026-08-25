@@ -1783,6 +1783,12 @@ export class MemStorage implements IStorage {
       { key: "projects.invoices", name: "Progress Claims", description: "Manage client invoices and progress claims", category: "projects", actions: ["view", "add", "edit", "delete", "approve", "send"], isBuiltIn: true },
       { key: "projects.site_diary", name: "Site Diary", description: "Manage site diary", category: "projects", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "projects.selections", name: "Selections and Allowances", description: "Manage selections", category: "projects", actions: ["view", "add", "edit", "delete", "approve"], isBuiltIn: true },
+      // Two view-only keys that narrow what `projects.selections:view` returns.
+      // Without them a role sees the on-site spec only: approved selections,
+      // approved options, no costs. Enforced server-side in
+      // server/selectionVisibility.ts — NOT by hiding fields in the client.
+      { key: "projects.selections.pending", name: "Selections — not yet approved", description: "See selections that have not been approved yet, and the options being considered", category: "projects", actions: ["view"], isBuiltIn: true },
+      { key: "projects.selections.pricing", name: "Selections — costs", description: "See selection costs, markups and allowances", category: "projects", actions: ["view"], isBuiltIn: true },
       { key: "projects.timesheet", name: "Project Timesheet", description: "Manage per-project timesheets", category: "projects", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "projects.rfi", name: "RFI", description: "Manage RFIs", category: "projects", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "projects.team_calendars", name: "View Team Calendars", description: "View other team members' calendars", category: "projects", actions: ["view"], isBuiltIn: true },
@@ -6923,6 +6929,12 @@ export class DbStorage implements IStorage {
       { key: "projects.invoices", name: "Progress Claims", description: "Manage client invoices and progress claims", category: "projects", actions: ["view", "add", "edit", "delete", "approve", "send"], isBuiltIn: true },
       { key: "projects.site_diary", name: "Site Diary", description: "Manage site diary", category: "projects", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "projects.selections", name: "Selections and Allowances", description: "Manage selections", category: "projects", actions: ["view", "add", "edit", "delete", "approve"], isBuiltIn: true },
+      // Two view-only keys that narrow what `projects.selections:view` returns.
+      // Without them a role sees the on-site spec only: approved selections,
+      // approved options, no costs. Enforced server-side in
+      // server/selectionVisibility.ts — NOT by hiding fields in the client.
+      { key: "projects.selections.pending", name: "Selections — not yet approved", description: "See selections that have not been approved yet, and the options being considered", category: "projects", actions: ["view"], isBuiltIn: true },
+      { key: "projects.selections.pricing", name: "Selections — costs", description: "See selection costs, markups and allowances", category: "projects", actions: ["view"], isBuiltIn: true },
       { key: "projects.timesheet", name: "Project Timesheet", description: "Manage per-project timesheets", category: "projects", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "projects.rfi", name: "RFI", description: "Manage RFIs", category: "projects", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "projects.team_calendars", name: "View Team Calendars", description: "View other team members' calendars", category: "projects", actions: ["view"], isBuiltIn: true },
@@ -6981,12 +6993,14 @@ export class DbStorage implements IStorage {
       { key: "business.reports", name: "Business Reports", description: "Access company-level reports and analytics", category: "business", actions: ["view", "summary_only"], isBuiltIn: true },
     ];
 
+    const createdKeys = new Set<string>();
+
     for (const permData of builtInPermissions) {
       // Check if permission exists by key
       const existing = await db.select().from(schema.permissions)
         .where(eq(schema.permissions.key, permData.key))
         .limit(1);
-      
+
       if (existing.length === 0) {
         // Permission doesn't exist, insert it with deterministic ID
         await db.insert(schema.permissions).values({
@@ -6995,7 +7009,70 @@ export class DbStorage implements IStorage {
           actions: permData.actions as PermissionAction[],
           createdAt: now,
         });
+        createdKeys.add(permData.key);
       }
+    }
+
+    await this.backfillSelectionVisibilityGrants(createdKeys);
+  }
+
+  /**
+   * One-time grant for the two selections visibility keys, run only on the boot
+   * that first creates them — so an admin who later UNticks a role never has it
+   * silently re-granted.
+   *
+   * The grant is deliberately narrow: only roles already trusted to APPROVE
+   * selections keep seeing costs and unapproved items. Every other role (site
+   * staff, trades, carpenters) drops to the on-site spec view, which is the
+   * point of the change. Admin/Owner/GM roles bypass permission checks entirely
+   * and so need no row.
+   */
+  private async backfillSelectionVisibilityGrants(createdKeys: Set<string>): Promise<void> {
+    const newKeys = ['projects.selections.pending', 'projects.selections.pricing']
+      .filter((k) => createdKeys.has(k));
+    if (newKeys.length === 0) return;
+
+    try {
+      const [basePerm] = await db.select().from(schema.permissions)
+        .where(eq(schema.permissions.key, 'projects.selections')).limit(1);
+      if (!basePerm) return;
+
+      const newPerms = await db.select().from(schema.permissions)
+        .where(inArray(schema.permissions.key, newKeys));
+      if (newPerms.length === 0) return;
+
+      // Roles that can approve selections today.
+      const approverRolePerms = await db.select().from(schema.rolePermissions)
+        .where(eq(schema.rolePermissions.permissionId, basePerm.id));
+
+      let granted = 0;
+      for (const rp of approverRolePerms) {
+        const actions = Array.isArray(rp.allowedActions) ? rp.allowedActions as string[] : [];
+        if (!actions.includes('approve')) continue;
+
+        for (const perm of newPerms) {
+          const [existing] = await db.select().from(schema.rolePermissions)
+            .where(and(
+              eq(schema.rolePermissions.roleId, rp.roleId),
+              eq(schema.rolePermissions.permissionId, perm.id),
+            )).limit(1);
+          if (existing) continue;
+
+          await db.insert(schema.rolePermissions).values({
+            id: `rp-${rp.roleId}-${perm.id}`,
+            roleId: rp.roleId,
+            permissionId: perm.id,
+            allowedActions: ['view'] as PermissionAction[],
+            viewScope: 'all',
+            viewableRoleIds: [],
+            createdAt: new Date(),
+          });
+          granted++;
+        }
+      }
+      console.log(`[selections visibility] seeded ${newKeys.join(', ')} — ${granted} role grant(s) backfilled to approver roles`);
+    } catch (error) {
+      console.error('[selections visibility] backfill failed:', error);
     }
   }
 
