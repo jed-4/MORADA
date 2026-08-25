@@ -127,11 +127,14 @@ export default function SelectionsScreen({ navigation, route }: Props) {
 
   const openSelection = useCallback(
     (selection: Selection) => {
-      // The detail screen lands in the next PR; until then the row is inert
-      // rather than navigating somewhere that doesn't exist.
-      if (!selection.restricted) haptic.select();
+      haptic.select();
+      navigation.navigate('SelectionDetail', {
+        selectionId: selection.id,
+        projectId,
+        projectName,
+      });
     },
-    [],
+    [navigation, projectId, projectName],
   );
 
   const switchMode = (mode: GroupMode) => {

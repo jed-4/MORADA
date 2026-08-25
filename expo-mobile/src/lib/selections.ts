@@ -149,6 +149,24 @@ export function specLine(option?: SelectionOption): string {
   return [option.brand, option.sku].filter(Boolean).join(' · ');
 }
 
+/**
+ * Turns a specifications JSON key into a label: "unitSize" / "unit_size" →
+ * "Unit size". Only the first character is forced, so acronyms survive
+ * ("PEI rating", not "Pei rating").
+ */
+export function prettifySpecKey(key: string): string {
+  const spaced = key
+    .replace(/[_-]+/g, ' ')
+    // Split a camelCase boundary, lowercasing the capital only when a
+    // lowercase letter follows it — that marks the start of an ordinary word
+    // ("unitSize" → "unit size") rather than an acronym run, which is left
+    // intact ("colourPEI" → "colour PEI").
+    .replace(/([a-z0-9])([A-Z])(?=[a-z])/g, (_m, before, capital) => `${before} ${capital.toLowerCase()}`)
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .trim();
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
+}
+
 export function formatCents(cents?: number | null): string {
   if (cents === null || cents === undefined) return '—';
   return `$${(cents / 100).toLocaleString('en-AU', { maximumFractionDigits: 0 })}`;

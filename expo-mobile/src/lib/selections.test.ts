@@ -13,6 +13,7 @@ import {
   groupByRoom,
   isSettled,
   matchesSearch,
+  prettifySpecKey,
   specLine,
   unitLabel,
   type Selection,
@@ -112,6 +113,14 @@ check('spec line is brand then code, skipping blanks', () => {
   assert.equal(specLine(option()), 'Concept Tile & Timber · ZL-100');
   assert.equal(specLine(option({ sku: null })), 'Concept Tile & Timber');
   assert.equal(specLine(option({ brand: null, sku: null })), '');
+});
+
+check('spec keys become labels without eating acronyms', () => {
+  assert.equal(prettifySpecKey('unitSize'), 'Unit size');
+  assert.equal(prettifySpecKey('unit_size'), 'Unit size');
+  assert.equal(prettifySpecKey('PEI rating'), 'PEI rating');
+  assert.equal(prettifySpecKey('colourPEI'), 'Colour PEI', 'acronym runs survive the split');
+  assert.equal(prettifySpecKey('finish'), 'Finish');
 });
 
 // ── Grouping ──────────────────────────────────────────────────────────────
