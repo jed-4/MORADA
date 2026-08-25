@@ -735,11 +735,18 @@ export interface IStorage {
   getContacts(contactType?: "team" | "supplier" | "client"): Promise<Contact[]>;
   getContact(id: string): Promise<Contact | undefined>;
   createContact(contact: InsertContact): Promise<Contact>;
+  createContacts(contacts: (InsertContact & { companyId: string })[]): Promise<Contact[]>;
   updateContact(id: string, contact: Partial<InsertContact>): Promise<Contact | undefined>;
   archiveContact(id: string): Promise<Contact | undefined>;
   restoreContact(id: string): Promise<Contact | undefined>;
   deleteArchivedContactsOlderThan(date: Date): Promise<number>;
   deleteContact(id: string, companyId: string): Promise<void>;
+  bulkContactAction(
+    ids: string[],
+    action: "archive" | "restore" | "changeType" | "delete",
+    companyId: string,
+    contactType?: string,
+  ): Promise<string[]>;
   mergeContacts(sourceId: string, targetId: string, companyId: string): Promise<{ success: boolean; transferredCounts: Record<string, number> }>;
 
   // Supplier Name Mappings (invoice name → contact id learned associations)
@@ -14724,24 +14731,42 @@ export class DbStorage implements IStorage {
     }
   }
 
+  // For business contacts (trade/supplier) `name` is the Business Name and must
+  // be supplied by the caller — never auto-fall-back to the key person, because
+  // that overwrites business identity in lists. For team/client/etc. the
+  // firstName + lastName fallback is fine.
+  private resolveContactName(contact: InsertContact & { companyId: string }): string {
+    const isBusiness = contact.contactType === "trade" || contact.contactType === "supplier";
+    const trimmedName = (contact.name || "").trim();
+    return isBusiness
+      ? trimmedName
+      : trimmedName || [contact.firstName, contact.lastName].filter(Boolean).join(" ").trim() || "";
+  }
+
   async createContact(contact: InsertContact & { companyId: string }): Promise<Contact> {
     try {
-      // For business contacts (trade/supplier) `name` is the Business Name
-      // and must be supplied by the caller — never auto-fall-back to the
-      // key person, because that overwrites business identity in lists.
-      // For team/client/etc. the firstName + lastName fallback is fine.
-      const isBusiness = contact.contactType === "trade" || contact.contactType === "supplier";
-      const trimmedName = (contact.name || "").trim();
-      const name = isBusiness
-        ? trimmedName
-        : trimmedName || [contact.firstName, contact.lastName].filter(Boolean).join(" ").trim() || "";
-
       const newContacts = await db.insert(schema.contacts)
-        .values({ ...contact, name })
+        .values({ ...contact, name: this.resolveContactName(contact) })
         .returning();
       return newContacts[0];
     } catch (error) {
       console.error("Database error in createContact:", error);
+      throw error;
+    }
+  }
+
+  // Batch insert for imports. Neon round trips are ~400ms from AU, so a
+  // per-row loop turns a few hundred contacts into minutes; this is one
+  // statement. Callers validate each row first and handle attribution of
+  // failures, so this deliberately does not swallow errors.
+  async createContacts(contacts: (InsertContact & { companyId: string })[]): Promise<Contact[]> {
+    if (contacts.length === 0) return [];
+    try {
+      return await db.insert(schema.contacts)
+        .values(contacts.map((c) => ({ ...c, name: this.resolveContactName(c) })))
+        .returning();
+    } catch (error) {
+      console.error("Database error in createContacts:", error);
       throw error;
     }
   }
@@ -14875,6 +14900,46 @@ export class DbStorage implements IStorage {
         ));
     } catch (error) {
       console.error("Database error in deleteContact:", error);
+      throw error;
+    }
+  }
+
+  // One statement per bulk action instead of one per contact. Returns the ids
+  // that were actually affected, so callers can report a truthful count —
+  // the old per-id loop counted a miss (wrong company, already gone) as a
+  // success because archiveContact() resolves undefined rather than throwing.
+  async bulkContactAction(
+    ids: string[],
+    action: "archive" | "restore" | "changeType" | "delete",
+    companyId: string,
+    contactType?: string,
+  ): Promise<string[]> {
+    if (ids.length === 0) return [];
+    try {
+      const scope = and(
+        inArray(schema.contacts.id, ids),
+        eq(schema.contacts.companyId, companyId),
+      );
+
+      if (action === "delete") {
+        const deleted = await db.delete(schema.contacts).where(scope).returning({ id: schema.contacts.id });
+        return deleted.map((r) => r.id);
+      }
+
+      const patch =
+        action === "archive"
+          ? { isArchived: true, archivedAt: new Date(), updatedAt: new Date() }
+          : action === "restore"
+          ? { isArchived: false, archivedAt: null, updatedAt: new Date() }
+          : { contactType: contactType as Contact["contactType"], updatedAt: new Date() };
+
+      const updated = await db.update(schema.contacts)
+        .set(patch)
+        .where(scope)
+        .returning({ id: schema.contacts.id });
+      return updated.map((r) => r.id);
+    } catch (error) {
+      console.error("Database error in bulkContactAction:", error);
       throw error;
     }
   }
