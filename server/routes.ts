@@ -23757,6 +23757,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
             if (supplierId) resolvedSupplierId = supplierId;
           }
 
+          // A read that came back without a total is not a read. Marking one
+          // as processed stamped ocrProcessed=true, zeroed the bill's totals
+          // and pushed it into the approval queue at $0 — and because the
+          // "Read & Apply" button keys off ocrProcessed, the bill could never
+          // be re-read from the UI. Keep whatever the AI did give us (the
+          // supplier match and the raw ocrData, for diagnosis) but leave the
+          // bill unprocessed and where it was, so it can be retried.
+          const usableRead =
+            (invoiceData.totalAmount ?? 0) > 0 &&
+            (!!invoiceData.invoiceNumber || (invoiceData.lineItems?.length ?? 0) > 0);
+
+          if (!usableRead) {
+            await storage.updateBill(billId, {
+              supplierId: resolvedSupplierId,
+              ocrData: invoiceData as any,
+            });
+            console.warn(
+              `[bulk-ai-read] bill ${billNumber} low-quality read (confidence ${invoiceData.confidence ?? "?"}) — left unprocessed`,
+            );
+            results.push({
+              billId,
+              billNumber,
+              status: "failed",
+              reason: "The AI couldn't read enough from this document — open the bill and try Read & Apply, or enter it manually",
+            });
+            continue;
+          }
+
           // Move straight to awaiting_approval after AI extraction — the PM
           // approves from the Awaiting Approval queue. Consistent with the
           // individual "Read & Apply" button.
@@ -23825,6 +23853,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const bill = await getOwnedBill(req, res, req.params.id);
       if (!bill) return;
+
+      // Needed to sign the re-issued upload grant below. Its absence was a
+      // bare ReferenceError that surfaced as "500: userCompanyId is not
+      // defined" on every Read & Apply of an already-saved bill.
+      const userCompanyId = (req as any).user?.companyId;
+      if (!userCompanyId) return res.status(403).json({ error: "Forbidden" });
 
       // Find first processable attachment (PDF or image)
       type Att = string | { objectPath?: string; filename?: string; mimeType?: string };
