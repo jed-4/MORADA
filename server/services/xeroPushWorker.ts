@@ -30,6 +30,15 @@ async function drainOnce(): Promise<void> {
         await markPushDone(job.id);
         continue;
       }
+      // INVOICE_LOCKED is not a failure: Xero refused the edit because the
+      // bill is already settled there, and the push handler responded by
+      // pulling Xero's version back over ours. The work is done — recording it
+      // as a failed job leaves a dead-lettered row and a red badge for a bill
+      // that is now correct.
+      if (result.error === "INVOICE_LOCKED") {
+        await markPushDone(job.id);
+        continue;
+      }
       const reason = result.message || result.error || "Push failed";
       await markPushRetry(job, reason, !isRetryable(result.status));
     } catch (e: any) {

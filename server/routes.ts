@@ -923,8 +923,19 @@ export async function pushBillToXeroInternal(
       // the bill flips to paid and the guard catches future edits), clear the
       // red badge, and return the calm INVOICE_LOCKED result the client already
       // renders as a plain "saved" note — never the raw validation string.
+      // "Invoice not of valid status for modification" is what Xero actually
+      // returns once a bill is PAID, VOIDED or DELETED there — and it matched
+      // none of the three patterns below, so the self-heal never ran. The push
+      // fell through to the raw validation path instead: red sync-failed badge,
+      // dead-lettered job, and nothing pulled back from Xero. That is why
+      // reconciling a bill in Xero left Morada stuck on "Awaiting Payment"
+      // until someone pressed Sync by hand.
+      //
+      // Pulling is the right response to all of these states, not just paid:
+      // syncBillFromXeroInternal maps VOIDED/DELETED to draft with a note, and
+      // PAID to paid.
       const invoiceLocked = error.validationErrors.some((v) =>
-        /LineItemID|payments or credit notes|has payments/i.test(v?.message || ""),
+        /LineItemID|payments or credit notes|has payments|not of valid status/i.test(v?.message || ""),
       );
       if (invoiceLocked) {
         const lockedBill = await storage.getBillById(billId).catch(() => null);
@@ -935,7 +946,7 @@ export async function pushBillToXeroInternal(
           });
         }
         const lockedMsg =
-          "This bill is paid in Xero, so Xero won't accept changes to its line items. Your edit was saved in Morada.";
+          "This bill is already settled in Xero, so Xero won't accept changes to it. Your edit was saved in Morada, and its status has been pulled back from Xero.";
         try {
           await storage.updateBill(billId, {
             xeroLastSyncStatus: null,
