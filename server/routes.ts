@@ -1013,11 +1013,23 @@ function scheduleAutoPushBill(billId: string, companyId: string, delayMs = 2000)
  * Internal helper to sync a bill from Xero (used by webhook + manual sync route).
  * Pulls amounts, dates, status, and line items from a Xero invoice.
  */
+// The caller reports the outcome to the user, so return what was actually
+// learned from Xero. This used to return only { ok }, while the client cast
+// the response to { xeroStatus, amountPaidCents } and rendered
+// `Status: ${data.xeroStatus}` — which is where "Status: undefined" came from.
+// The cast asserted a shape nothing produced, so nothing caught it.
 async function syncBillFromXeroInternal(
   billId: string,
   companyId: string,
   xeroInvoice?: any,
-): Promise<{ ok: boolean; error?: string }> {
+): Promise<{
+  ok: boolean;
+  error?: string;
+  xeroStatus?: string;
+  amountPaidCents?: number;
+  totalCents?: number;
+  lineItemsSynced?: number;
+}> {
   try {
     const bill = await storage.getBillById(billId);
     if (!bill || !bill.xeroInvoiceId) return { ok: false, error: "Bill not linked to Xero" };
@@ -1117,6 +1129,7 @@ async function syncBillFromXeroInternal(
     // Once submitted/approved/paid, BuildPro line items are preserved.
     const canOverwriteLines = bill.status === "draft";
     const xeroLineItems: any[] = invoice.LineItems || [];
+    let lineItemsSynced = 0;
     if (canOverwriteLines && xeroLineItems.length > 0) {
       const existingLineItems = await storage.getBillLineItems(bill.id);
       for (const li of existingLineItems) {
@@ -1144,13 +1157,14 @@ async function syncBillFromXeroInternal(
           total: totalLineCents,
           order: i,
         } as any);
+        lineItemsSynced++;
       }
     }
 
     // Totals/line items may have changed from the Xero side → keep the budget live.
     await recalcProjectBudget((bill as any).projectId);
 
-    return { ok: true };
+    return { ok: true, xeroStatus, amountPaidCents, totalCents, lineItemsSynced };
   } catch (error: any) {
     console.error("[syncBillFromXeroInternal] error:", error);
     return { ok: false, error: error?.message || "Sync failed" };

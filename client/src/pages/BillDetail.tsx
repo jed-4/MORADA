@@ -271,6 +271,17 @@ function reconcileLineUnitPrice(unitPriceCents: number | null | undefined, total
   return qty !== 0 ? totalCents / qty : totalCents;
 }
 
+// Xero's own wording for an invoice state, so the toast reads the way the Xero
+// screen the user is about to check does.
+const XERO_STATUS_LABEL: Record<string, string> = {
+  DRAFT: "Draft",
+  SUBMITTED: "Awaiting Approval",
+  AUTHORISED: "Awaiting Payment",
+  PAID: "Paid",
+  VOIDED: "Voided",
+  DELETED: "Deleted",
+};
+
 // Status chip shown beside the totals in the bill header. Every bill status is
 // covered so the chip is never blank — the header should always say what state
 // the bill you're looking at is in.
@@ -1593,14 +1604,25 @@ export default function BillDetail() {
 
   const syncBillPaymentMutation = useMutation({
     mutationFn: async () => {
-      return await apiRequest(`/api/xero/sync-bill-payment/${id}`, "POST") as { synced: boolean; xeroStatus: string; amountPaidCents: number };
+      return await apiRequest(`/api/xero/sync-bill-payment/${id}`, "POST") as {
+        synced: boolean;
+        xeroStatus?: string;
+        amountPaidCents?: number;
+        lineItemsSynced?: number;
+      };
     },
     onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/bills", id] });
       queryClient.invalidateQueries({ queryKey: ["/api/bills"] });
       queryClient.invalidateQueries({ queryKey: ["/api/bills", id, "line-items"] });
-      const lineMsg = data.lineItemsSynced > 0 ? ` ${data.lineItemsSynced} line item${data.lineItemsSynced !== 1 ? "s" : ""} updated.` : "";
-      toast({ title: "Synced from Xero", description: `Status: ${data.xeroStatus}.${lineMsg}` });
+      // Every field here is optional on the wire. Reading them unguarded is how
+      // this toast came to say "Status: undefined."
+      const lineCount = data?.lineItemsSynced ?? 0;
+      const lineMsg = lineCount > 0 ? ` ${lineCount} line item${lineCount !== 1 ? "s" : ""} updated.` : "";
+      const statusMsg = data?.xeroStatus
+        ? `Xero says ${XERO_STATUS_LABEL[data.xeroStatus] ?? data.xeroStatus}.`
+        : "This bill now matches Xero.";
+      toast({ title: "Synced from Xero", description: `${statusMsg}${lineMsg}` });
     },
     onError: (error: Error) => {
       toast({ title: "Sync failed", description: error.message, variant: "destructive" });
