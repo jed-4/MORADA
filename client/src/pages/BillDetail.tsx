@@ -1365,17 +1365,15 @@ export default function BillDetail() {
 
       const updatedBill = await apiRequest(`/api/bills/${id}`, "PATCH", billData) as Bill;
 
-      const existingIds = existingLineItems.map((item) => item.id);
-      const currentIds = lineItems.map((item) => item.id).filter(Boolean);
-      
-      const toDelete = existingIds.filter((id) => !currentIds.includes(id));
-      for (const itemId of toDelete) {
-        await apiRequest(`/api/bills/${id}/line-items/${itemId}`, "DELETE");
-      }
-
-      for (let i = 0; i < lineItems.length; i++) {
-        const item = lineItems[i];
-        const itemData = {
+      // One request for the whole line-item set. This used to be a sequential
+      // round-trip per line — a DELETE per removed line, a PATCH or POST per
+      // remaining line, and up to one more per allowance link — with the
+      // server running a budget recalc and a Xero auto-push on every one of
+      // them. Round-trip latency to the database region made that the reason
+      // saving a bill took seconds.
+      await apiRequest(`/api/bills/${id}/line-items`, "PUT", {
+        lineItems: lineItems.map((item, i) => ({
+          id: item.id || undefined,
           billId: id,
           lineType: item.lineType,
           description: item.description,
@@ -1387,35 +1385,10 @@ export default function BillDetail() {
           account: item.account,
           total: Math.round(item.total * 100),
           order: i,
-        };
-
-        let lineItemId = item.id;
-        if (item.id) {
-          await apiRequest(`/api/bills/${id}/line-items/${item.id}`, "PATCH", itemData);
-        } else {
-          const createdLineItem = await apiRequest(`/api/bills/${id}/line-items`, "POST", itemData);
-          lineItemId = createdLineItem.id;
-        }
-
-        const existingAllowance = existingAllowances.find(a => a.billLineItemId === lineItemId);
-        
-        if (item.appliesToAllowances && item.allowanceItemId) {
-          if (existingAllowance) {
-            await apiRequest(`/api/bill-line-item-allowances/${existingAllowance.id}`, "PATCH", {
-              estimateItemId: item.allowanceItemId,
-              amount: Math.round(item.total * 100),
-            });
-          } else {
-            await apiRequest("/api/bill-line-item-allowances", "POST", {
-              billLineItemId: lineItemId,
-              estimateItemId: item.allowanceItemId,
-              amount: Math.round(item.total * 100),
-            });
-          }
-        } else if (existingAllowance) {
-          await apiRequest(`/api/bill-line-item-allowances/${existingAllowance.id}`, "DELETE");
-        }
-      }
+          allowanceItemId:
+            item.appliesToAllowances && item.allowanceItemId ? item.allowanceItemId : null,
+        })),
+      });
 
       return updatedBill;
     },
