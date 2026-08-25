@@ -1245,7 +1245,13 @@ function classifyXeroSurprise(local: { total: number | null }, xInv: any): XeroR
   // Void outranks a total change: it's the more consequential thing to tell a
   // human about, and a voided invoice often reports a different total anyway.
   if (status === "VOIDED" || status === "DELETED") return "voided_in_xero";
-  if ((local.total ?? 0) !== xTotal) return "total_changed";
+  // A sub-cent rounding difference is not someone editing the invoice, and
+  // treating it as one had a real cost: any total mismatch marks the bill a
+  // "surprise", the nightly sweep only auto-applies "safe" drift, so a bill
+  // that Xero had marked PAID sat unpaid in Morada forever because the two
+  // totals disagreed by a cent. The same tolerance the bill screen already
+  // allows itself for reconciling against a supplier invoice.
+  if (Math.abs((local.total ?? 0) - xTotal) > MAX_ROUNDING_CENTS) return "total_changed";
   return null;
 }
 
@@ -38499,8 +38505,20 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
 
       const payload = req.body;
       if (!payload?.events || !Array.isArray(payload.events)) {
+        // Xero's "intent to receive" check posts an empty event list. Logging
+        // it confirms the subscription is pointed at this deployment.
+        console.log("[xero-webhook] delivery with no events (intent-to-receive check)");
         return res.status(200).json({ processed: 0 });
       }
+      // A successful INVOICE delivery previously logged NOTHING — only the
+      // PAYMENT and CREDITNOTE branches were traced — so a working webhook and
+      // a webhook that was never called looked identical in the logs. That
+      // ambiguity cost real diagnostic time; every delivery is now accounted
+      // for at both ends.
+      console.log(
+        `[xero-webhook] delivery: ${payload.events.length} event(s) — ` +
+        payload.events.map((e: any) => `${e?.resourceType}/${e?.eventType}`).join(", "),
+      );
 
       // tenantId at the payload level identifies which Xero org sent this webhook
       const payloadTenantId: string | undefined = payload.tenantId;
@@ -38603,8 +38621,12 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
               // Fall through to client-invoice branch below
             } else {
               const result = await syncBillFromXeroInternal(localBill.id, resolvedConnection.companyId, xeroInvoice);
-              if (result.ok) processed++;
-              else console.warn(`[Xero Webhook] Bill sync failed for ${xeroInvoiceId}: ${result.error}`);
+              if (result.ok) {
+                processed++;
+                console.log(
+                  `[xero-webhook] INVOICE event synced bill ${localBill.billNumber} — Xero status ${result.xeroStatus ?? "?"}`,
+                );
+              } else console.warn(`[Xero Webhook] Bill sync failed for ${xeroInvoiceId}: ${result.error}`);
               continue;
             }
           } catch (err) {
@@ -38655,6 +38677,7 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
         }
       }
 
+      console.log(`[xero-webhook] delivery complete — ${processed} record(s) updated`);
       res.status(200).json({ processed });
     } catch (error: any) {
       console.error("[Xero Webhook] Error processing webhook:", error);
