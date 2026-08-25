@@ -1730,7 +1730,14 @@ export default function BillDetail() {
   const ocrFromAttachmentMutation = useMutation({
     mutationFn: async (objectPath: string) => {
       if (id) {
-        return await apiRequest(`/api/bills/${id}/ocr-from-attachment`, "POST", { objectPath });
+        // Clicking the button is an explicit request to read the document, so
+        // always force it. Without this the server short-circuits on
+        // ocrProcessed and returns { skipped: true }, which looks to the user
+        // like a read that did nothing.
+        return await apiRequest(`/api/bills/${id}/ocr-from-attachment`, "POST", {
+          objectPath,
+          forceReprocess: true,
+        });
       }
       const meta = attachmentMeta[objectPath];
       return await apiRequest(`/api/bills/ocr-from-path`, "POST", {
@@ -1743,6 +1750,13 @@ export default function BillDetail() {
       });
     },
     onSuccess: (data: any) => {
+      if (data?.skipped) {
+        toast({
+          title: "Nothing to apply",
+          description: "This bill has already been read and the server skipped the re-run.",
+        });
+        return;
+      }
       if (data.billReference || data.invoiceNumber) {
         form.setValue("billReference", data.billReference || data.invoiceNumber);
       }
@@ -2916,7 +2930,11 @@ export default function BillDetail() {
                               type="button"
                               className="w-full"
                               size="sm"
-                              disabled={!firstProcessable || ocrFromAttachmentMutation.isPending || !!(bill as any)?.ocrProcessed}
+                              // Deliberately NOT disabled on ocrProcessed: a read
+                              // that came back empty still sets that flag, and
+                              // greying the button out left those bills with no way
+                              // to try again.
+                              disabled={!firstProcessable || ocrFromAttachmentMutation.isPending}
                               onClick={() => firstProcessable && ocrFromAttachmentMutation.mutate(firstProcessable)}
                               data-testid="button-read-attachment-ai"
                             >
@@ -2928,7 +2946,7 @@ export default function BillDetail() {
                               ) : (
                                 <>
                                   <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
-                                  Read & Apply
+                                  {(bill as any)?.ocrProcessed ? "Read again" : "Read & Apply"}
                                 </>
                               )}
                             </Button>
