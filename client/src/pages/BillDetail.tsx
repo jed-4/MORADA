@@ -1612,6 +1612,14 @@ export default function BillDetail() {
       };
     },
     onSuccess: (data: any) => {
+      // Syncing overwrites the bill from Xero — totals, status, dates, line
+      // items. The refetched record re-hydrates the form, but the dirty
+      // baseline was captured before the sync, so the page then insisted there
+      // were unsaved changes and the user had to press Save on data they had
+      // just pulled from Xero. Worse, that save pushes the pre-sync form back
+      // over the values Xero just gave us. Re-arm it, exactly as approving and
+      // saving already do.
+      baselineRef.current = null;
       queryClient.invalidateQueries({ queryKey: ["/api/bills", id] });
       queryClient.invalidateQueries({ queryKey: ["/api/bills"] });
       queryClient.invalidateQueries({ queryKey: ["/api/bills", id, "line-items"] });
