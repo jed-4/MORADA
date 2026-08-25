@@ -11,6 +11,7 @@ import {
   ArrowLeft, 
   Copy, 
   MoreHorizontal, 
+  Undo2, 
   Plus, 
   Trash2, 
   Ban,
@@ -334,6 +335,7 @@ export default function BillDetail() {
   const [previewAttachment, setPreviewAttachment] = useState<string | null>(null);
   const [fullscreenPreview, setFullscreenPreview] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [convertDialogOpen, setConvertDialogOpen] = useState(false);
   // Set as soon as a bill is created. Several branches of the create flow stay
   // on the page after the bill already exists — the Xero contact isn't mapped,
   // the push failed, the credit can't sync — and hitting Save again from there
@@ -1724,6 +1726,37 @@ export default function BillDetail() {
     },
   });
 
+  const convertToCreditMutation = useMutation({
+    mutationFn: async () => {
+      return await apiRequest(`/api/bills/${id}/convert-to-credit`, "POST");
+    },
+    onSuccess: () => {
+      setConvertDialogOpen(false);
+      // The form still holds billType "bill". PATCH now refuses a type change,
+      // so leaving it stale would make the next Save fail rather than quietly
+      // reverting the conversion — either way the form has to follow the
+      // server. Re-arm the baseline so this doesn't read as an unsaved edit.
+      form.setValue("billType", "credit");
+      baselineRef.current = null;
+      queryClient.invalidateQueries({ queryKey: ["/api/bills"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/bills", id] });
+      queryClient.invalidateQueries({ queryKey: ["/api/bills", id, "approvals"] });
+      toast({
+        title: "Converted to a vendor credit",
+        description: "The amount now reduces what's owed. Record the credit note in Xero directly.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Couldn't convert this bill",
+        // The server's refusals are the useful part — already paid, already in
+        // Xero — so show them rather than a generic line.
+        description: error?.message?.replace(/^\d+:\s*/, "") || "Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
+
   const deleteMutation = useMutation({
     mutationFn: async () => {
       return await apiRequest(`/api/bills/${id}`, "DELETE");
@@ -2449,6 +2482,16 @@ export default function BillDetail() {
                     <Copy className="h-3.5 w-3.5 mr-2" />
                     Duplicate
                   </DropdownMenuItem>
+                  {bill?.billType === "bill" && (
+                    <DropdownMenuItem
+                      onSelect={() => setConvertDialogOpen(true)}
+                      disabled={convertToCreditMutation.isPending}
+                      data-testid="menu-convert-to-credit"
+                    >
+                      <Undo2 className="h-3.5 w-3.5 mr-2" />
+                      Convert to credit note
+                    </DropdownMenuItem>
+                  )}
                   <DropdownMenuSeparator />
                   <DropdownMenuItem
                     className="text-destructive focus:text-destructive"
@@ -2625,9 +2668,15 @@ export default function BillDetail() {
                     render={({ field }) => (
                       <FormItem className="space-y-1">
                         <FormLabel className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">Type</FormLabel>
+                        {/* Locked once the bill exists: changing the type is a
+                            conversion, and it has to go through the endpoint
+                            that checks for recorded payments and Xero links.
+                            On a bill being created there is nothing to check,
+                            so the picker stays live there. */}
                         <Select
                           onValueChange={field.onChange}
                           value={field.value}
+                          disabled={isEditMode}
                         >
                           <FormControl>
                             <SelectTrigger className="h-9 border border-border bg-muted/30 text-sm font-normal" data-testid="select-bill-type">
@@ -4276,6 +4325,29 @@ export default function BillDetail() {
         open={!!modalPreviewFile}
         onOpenChange={(o) => { if (!o) setModalPreviewFile(null); }}
       />
+
+      <AlertDialog open={convertDialogOpen} onOpenChange={setConvertDialogOpen}>
+        <AlertDialogContent data-testid="dialog-convert-to-credit">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Convert {bill?.billNumber || "this bill"} to a credit note?</AlertDialogTitle>
+            <AlertDialogDescription>
+              It becomes a vendor credit in place — same attachment, line items and history — and its
+              amount starts reducing what you owe this supplier instead of adding to it. Vendor
+              credits can't sync to Xero yet, so record the credit note in Xero directly.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={convertToCreditMutation.isPending}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => { e.preventDefault(); convertToCreditMutation.mutate(); }}
+              disabled={convertToCreditMutation.isPending}
+              data-testid="button-confirm-convert-credit"
+            >
+              {convertToCreditMutation.isPending ? "Converting..." : "Convert"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <AlertDialogContent data-testid="dialog-delete-bill">

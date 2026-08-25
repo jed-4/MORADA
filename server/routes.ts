@@ -17621,6 +17621,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const previous = await getOwnedBill(req, res, req.params.id);
       if (!previous) return;
 
+      // A bill's type is changed through POST /api/bills/:id/convert-to-credit,
+      // which refuses the cases where converting would leave something untrue —
+      // payments already recorded, or a bill already pushed to Xero as an
+      // ACCPAY invoice. Letting a plain PATCH carry billType made the Type
+      // dropdown a way around all of those checks. Saves that resend the
+      // unchanged value are unaffected.
+      if (
+        "billType" in validationResult.data &&
+        validationResult.data.billType !== (previous as any).billType
+      ) {
+        return res.status(409).json({
+          error:
+            "Use \"Convert to credit note\" to change a bill's type — it checks for recorded payments and Xero links first.",
+        });
+      }
+
       // Rounding is a cent-level reconciliation, never a way to fudge amounts.
       if (validationResult.data.roundingCents != null) {
         validationResult.data.roundingCents = clampRoundingCents(validationResult.data.roundingCents);
