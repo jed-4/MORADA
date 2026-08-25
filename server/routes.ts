@@ -189,7 +189,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { AI_TOOLS } from "./ai/tools";
 import { AI_MODEL, buildSystemPrompt, buildCircuitStartMessage } from "./ai/prompts";
 import { executeTool } from "./ai/executor";
-import { computeBillTotalsCents, billLineExGstCents, clampRoundingCents } from "@shared/billTotals";
+import { computeBillTotalsCents, billLineExGstCents, clampRoundingCents, detectBillTaxMode, MAX_ROUNDING_CENTS } from "@shared/billTotals";
 import { computeVariationTotals, computeVariationLinePriceCents } from "@shared/variationTotals";
 import { isFullyClaimedPercent, ClaimOverBillingError, findWorsenedOverClaims } from "@shared/invoiceClaims";
 import { PENDING_VARIATION_STATUSES, isApprovedVariationStatus, frozenContractTotalFrom } from "@shared/projectMetrics";
@@ -727,10 +727,26 @@ export async function pushBillToXeroInternal(
         });
       }
 
+      // Xero computes the line amount as Quantity x UnitAmount — it never sees
+      // the line total we store. unitPrice is integer cents, so a unit price
+      // the supplier prints to four decimals (100 @ $6.4999 = $649.99) rounds
+      // to $6.50 and Xero bills $650.00: our bill and the Xero bill disagree
+      // with each other and with the invoice. When the two can't be made to
+      // agree, send the stored total as a single unit and keep the quantity in
+      // the description, so the pushed amount is always the amount we hold.
+      const qty = typeof item.quantity === "number" && item.quantity !== 0 ? item.quantity : 1;
+      const unitCents = typeof item.unitPrice === "number" ? item.unitPrice : 0;
+      const storedTotalCents =
+        typeof item.total === "number" ? item.total : Math.round(qty * unitCents);
+      const reconciles = Math.abs(Math.round(qty * unitCents) - storedTotalCents) < 1;
+      const description = item.description || "";
+
       return {
-        description: item.description || "",
-        quantity: typeof item.quantity === "number" ? item.quantity : 1,
-        unitAmount: typeof item.unitPrice === "number" ? item.unitPrice / 100 : 0,
+        description: reconciles
+          ? description
+          : `${description}${description ? " " : ""}(${qty} × $${(unitCents / 100).toFixed(4).replace(/0+$/, "").replace(/\.$/, "")})`.trim(),
+        quantity: reconciles ? qty : 1,
+        unitAmount: reconciles ? unitCents / 100 : storedTotalCents / 100,
         taxType,
         accountCode: item.account || supplierDefaultAccountCode || companyDefaultAccountCode || undefined,
         tracking: tracking.length > 0 ? tracking : undefined,
@@ -23836,6 +23852,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
             continue;
           }
 
+          // Read the extraction the way the document meant it. The bulk path
+          // used to write the AI's totals straight onto a bill whose taxMode
+          // was still the "exclusive" column default — so an invoice printing
+          // inc-GST line totals (the norm here) was stored as if those figures
+          // were ex-GST. Everything downstream then compounded it: the header
+          // recompute added another 10%, and the Xero push declared
+          // LineAmountTypes "Exclusive" over inc-GST amounts, so Xero grossed
+          // the same invoice up a second time. The individual Read & Apply
+          // button has always detected this; the bulk read never did.
+          const detectedTaxMode = detectBillTaxMode({
+            lineTotalsCents: (invoiceData.lineItems ?? []).map((li) => li.totalAmount ?? 0),
+            documentSubtotalCents: invoiceData.subtotalAmount ?? null,
+            documentTotalCents: invoiceData.totalAmount ?? null,
+          });
+          // The total printed on the document is the anchor rounding is derived
+          // from, and the thing the bill screen compares against when it warns
+          // that the lines don't add up to the invoice.
+          const docTotalCents = invoiceData.totalAmount ?? null;
+          const docHasGst = (invoiceData.totalTax ?? 0) > 0;
+
           // Move straight to awaiting_approval after AI extraction — the PM
           // approves from the Awaiting Approval queue. Consistent with the
           // individual "Read & Apply" button.
@@ -23845,6 +23881,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
             billDate: invoiceData.invoiceDate ? new Date(invoiceData.invoiceDate) : (bill.billDate ?? new Date()),
             dueDate: invoiceData.dueDate ? new Date(invoiceData.dueDate) : undefined,
             billReference: invoiceData.invoiceNumber || bill.billReference,
+            taxMode: detectedTaxMode,
+            documentTotalCents: docTotalCents,
             subtotal: invoiceData.subtotalAmount || 0,
             tax: invoiceData.totalTax || 0,
             total: invoiceData.totalAmount || 0,
@@ -23865,20 +23903,72 @@ export async function registerRoutes(app: Express): Promise<Server> {
             const learnedCostCodeId = (matchedSupplier as any)?.defaultCostCodeId || undefined;
             for (let i = 0; i < invoiceData.lineItems.length; i++) {
               const item = invoiceData.lineItems[i];
+              // Most AU invoices print GST once in the footer, never per line,
+              // so item.taxAmount is usually null even on a fully taxable
+              // invoice. Treating that as "No GST" zeroed the GST on the whole
+              // bill and pushed GST-free lines to Xero. Follow the document
+              // instead: if it carries GST, lines are taxable unless the AI
+              // explicitly said a line's tax was zero.
+              const lineTax =
+                docHasGst && !(item.taxAmount === 0) ? "GST on expenses" : "No GST";
+
+              // unitPrice is integer cents, so a unit price the supplier prints
+              // to four decimals (100 @ $6.4999) cannot be stored exactly. The
+              // Xero push sends Quantity x UnitAmount, so an unrepresentable
+              // unit price becomes a real discrepancy against the invoice. Keep
+              // the line total as the authority and back-solve the unit price;
+              // reconcileBillToDocument below absorbs whatever cent is left.
+              const lineTotalCents = item.totalAmount || 0;
+              const qty = item.quantity || 1;
+              const unitPriceCents =
+                item.unitPrice != null && Math.abs(Math.round(qty * item.unitPrice) - lineTotalCents) <= 1
+                  ? item.unitPrice
+                  : qty !== 0
+                  ? Math.round(lineTotalCents / qty)
+                  : lineTotalCents;
+
               await storage.createBillLineItem({
                 billId,
                 lineType: "custom",
                 description: item.description || `Line Item ${i + 1}`,
                 costCodeId: learnedCostCodeId,
-                quantity: item.quantity || 1,
-                unitPrice: item.unitPrice || 0,
-                tax: item.taxAmount ? "GST on expenses" : "No GST",
+                quantity: qty,
+                unitPrice: unitPriceCents,
+                tax: lineTax,
                 account: "Expenses",
-                total: item.totalAmount || 0,
+                total: lineTotalCents,
                 order: i,
               });
             }
           }
+
+          // Reconcile the stored bill against the printed invoice: derive the
+          // rounding adjustment from the document anchor, then recompute the
+          // header from the lines through the canonical helper. Anything the
+          // clamp can't absorb stays visible as the "invoice says X but lines
+          // total Y" warning on the bill rather than being quietly accepted.
+          if (docTotalCents != null) {
+            const createdLines = await storage.getBillLineItems(billId);
+            if (createdLines.length > 0) {
+              const settings = await storage.getCompanySettings(companyId);
+              const taxRatePct = Number(settings?.taxRate ?? 10) || 10;
+              const pre = computeBillTotalsCents(
+                createdLines.map((l) => ({ total: l.total ?? 0, tax: l.tax })),
+                detectedTaxMode,
+                taxRatePct,
+                0,
+              );
+              const drift = docTotalCents - pre.total;
+              await storage.updateBill(billId, { roundingCents: clampRoundingCents(drift) });
+              if (Math.abs(drift) > MAX_ROUNDING_CENTS) {
+                console.warn(
+                  `[bulk-ai-read] bill ${billNumber} lines total ${pre.total}c but the document says ${docTotalCents}c — flagged for review`,
+                );
+              }
+            }
+          }
+          await storage.recomputeBillTotals(billId).catch((e) =>
+            console.error(`[bulk-ai-read] recompute failed for ${billNumber}:`, e));
 
           // Recalc budget
           await recalcProjectBudget(bill.projectId);

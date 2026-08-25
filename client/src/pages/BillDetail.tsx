@@ -100,7 +100,7 @@ import {
   CommandList,
 } from "@/components/ui/command";
 import { matchSupplier, type SupplierMatch } from "@shared/supplierMatcher";
-import { clampRoundingCents, MAX_ROUNDING_CENTS } from "@shared/billTotals";
+import { clampRoundingCents, MAX_ROUNDING_CENTS, detectBillTaxMode } from "@shared/billTotals";
 import { computeDueDate, describePaymentTerms, PAYMENT_TERMS_OPTIONS } from "@shared/paymentTerms";
 import { DatePicker } from "@/components/DatePicker";
 import {
@@ -1887,22 +1887,15 @@ export default function BillDetail() {
       // the inc-GST total they are inc-GST (inclusive). Forcing inclusive on an
       // ex-GST invoice made every computed total ~10% off the document — the
       // main source of "the Total ends up being wrong".
+      // Same detector the bulk read uses, so the two extraction paths can't
+      // disagree about how to read the same document.
       let detectedTaxMode: "inclusive" | "exclusive" = "inclusive";
       if (data.lineItems && data.lineItems.length > 0) {
-        const sumLinesCents = data.lineItems.reduce(
-          (s: number, it: any) => s + (it.totalAmount || 0),
-          0,
-        );
-        const docTotal = data.totalAmount as number | null | undefined; // cents inc GST
-        const docSubtotal = data.subtotalAmount as number | null | undefined; // cents ex GST
-        if (
-          docTotal != null &&
-          docSubtotal != null &&
-          docTotal !== docSubtotal &&
-          Math.abs(sumLinesCents - docSubtotal) < Math.abs(sumLinesCents - docTotal)
-        ) {
-          detectedTaxMode = "exclusive";
-        }
+        detectedTaxMode = detectBillTaxMode({
+          lineTotalsCents: data.lineItems.map((it: any) => it.totalAmount || 0),
+          documentSubtotalCents: data.subtotalAmount ?? null,
+          documentTotalCents: data.totalAmount ?? null,
+        });
         const firstCostCode = costCodes[0]?.id;
         const defaultAccount = getSupplierDefaultAccount();
         setTaxMode(detectedTaxMode);
