@@ -17759,6 +17759,69 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Turn an uploaded bill into a vendor credit in place. Amounts are stored
+  // positive and negated at read time off billType (bills list, budget actuals,
+  // storage rollups all do `billType === "credit" ? -1 : 1`), so the conversion
+  // is the type flip and nothing else — no amount rewriting, no new record, and
+  // the attachment, line items and history stay with it.
+  app.post("/api/bills/:id/convert-to-credit", requireAuth, async (req, res) => {
+    try {
+      const bill = await getOwnedBill(req, res, req.params.id);
+      if (!bill) return;
+
+      if ((bill as any).billType === "credit") {
+        return res.status(409).json({ error: "This bill is already a vendor credit." });
+      }
+      // "receipt" is a worker reimbursement, not a supplier invoice.
+      if ((bill as any).billType !== "bill") {
+        return res.status(409).json({ error: "Only bills can be converted to a vendor credit." });
+      }
+      if ((bill.paidAmount ?? 0) !== 0) {
+        return res.status(409).json({
+          error: "This bill has payments recorded against it. Reverse the payments before converting it.",
+        });
+      }
+      // The Xero side is an ACCPAY bill and vendor credits can't sync yet
+      // (see xeroCreditGuard), so converting would leave the two files
+      // permanently disagreeing with no way to reconcile them.
+      if (bill.xeroInvoiceId) {
+        return res.status(409).json({
+          error:
+            "This bill has already been pushed to Xero. Void it in Xero and enter the credit note there, or unlink it first.",
+        });
+      }
+
+      const updated = await storage.updateBill(req.params.id, {
+        billType: "credit",
+        // A credit can't be pushed (CREDIT_NOT_SUPPORTED), so leaving the flag
+        // on would only queue a push that is refused every time.
+        sendToXero: false,
+      } as any);
+
+      // Converting an approved bill changes what was approved — say so in the
+      // same history the approval lives in.
+      const editorId = (req as any).user?.id;
+      if (editorId && (bill.status === "awaiting_payment" || bill.status === "paid")) {
+        await storage
+          .createBillApproval({
+            billId: req.params.id,
+            approvedById: editorId,
+            status: "edited",
+            comments: "Converted to a vendor credit",
+          } as any)
+          .catch((e) => console.error("[convert-to-credit] couldn't record the change:", e));
+      }
+
+      await recalcProjectBudget(bill.projectId).catch((e) =>
+        console.error("[convert-to-credit] budget recalc failed:", e));
+
+      return res.json(updated);
+    } catch (error: any) {
+      console.error("[convert-to-credit] failed:", error);
+      return res.status(500).json({ error: error?.message || "Failed to convert the bill" });
+    }
+  });
+
   app.post("/api/bills/:id/duplicate", async (req, res) => {
     try {
       const originalBill = await getOwnedBill(req, res, req.params.id);
