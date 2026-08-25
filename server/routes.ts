@@ -17531,12 +17531,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (!(await enforceProjectCompany(req, res, billData.projectId, "Project not found"))) return;
       }
 
-      if (!billData.billNumber || billData.billNumber.startsWith("BILL-") && /BILL-\d{13,}/.test(billData.billNumber)) {
-        if (!billData.companyId) {
-          return res.status(400).json({ error: "No company associated with current user" });
-        }
-        billData.billNumber = await storage.getNextBillNumber(billData.companyId);
+      // The bill number is the server's to assign, never the client's. The form
+      // fetches /api/bills/next-number once and caches it for the session
+      // (staleTime: Infinity), so the second bill created in a tab sent back a
+      // number that had already been used — and the unique index rejected it.
+      // The old condition only regenerated when the number was missing or looked
+      // like a timestamp fallback, so a stale sequential number went straight to
+      // the database. Allocate fresh on every create; the client shows whatever
+      // comes back.
+      if (!billData.companyId) {
+        return res.status(400).json({ error: "No company associated with current user" });
       }
+      const requestedBillNumber = billData.billNumber;
+      billData.billNumber = await storage.getNextBillNumber(billData.companyId);
 
       const validationResult = insertBillSchema.safeParse(billData);
       if (!validationResult.success) {
@@ -17550,7 +17557,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         validationResult.data.roundingCents = clampRoundingCents(validationResult.data.roundingCents);
       }
 
+      // Still retried: getNextBillNumber reads the max and adds one with no
+      // lock, so two simultaneous creates can still be handed the same number.
       const bill = await createBillRetryingNumber(validationResult.data, billData.companyId);
+      if (requestedBillNumber && requestedBillNumber !== bill.billNumber) {
+        console.log(
+          `[bills/create] client asked for ${requestedBillNumber}; assigned ${bill.billNumber}`,
+        );
+      }
 
       // Receipt flow: if an objectPath was provided, attach the photo inline
       // so the client doesn't need a separate POST /api/bills/:id/attachments call.
