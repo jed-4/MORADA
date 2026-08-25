@@ -293,6 +293,9 @@ export default function BillDetail() {
   const [ocrFileIsImage, setOcrFileIsImage] = useState(false);
   const [previewAttachment, setPreviewAttachment] = useState<string | null>(null);
   const [fullscreenPreview, setFullscreenPreview] = useState(false);
+  // Only one qty cell can be focused at a time, so a single draft beats a map
+  // keyed by row index (which would go stale on reorder/delete).
+  const [qtyDraft, setQtyDraft] = useState<{ index: number; value: string } | null>(null);
   const dueDateManuallySet = useRef(false);
   const [visibleAmountCols, setVisibleAmountCols] = useState<{ exTax: boolean; tax: boolean; incTax: boolean }>({ exTax: false, tax: false, incTax: false });
   const [colMenuOpen, setColMenuOpen] = useState(false);
@@ -657,14 +660,16 @@ export default function BillDetail() {
     }
   }, [existingLineItemsLoading, existingAllowancesLoading, existingLineItems, existingAllowances, isEditMode]);
 
+  // Only prefill the project when the route already says which one we're in
+  // (i.e. /projects/:projectId/bills/new). Falling back to projects[0] meant
+  // every business-level bill silently arrived tagged to whichever project
+  // happened to sort first — a wrong project that reads exactly like a
+  // deliberate one, so nobody corrects it.
   useEffect(() => {
-    if (!isEditMode && projects.length > 0) {
-      const projectIdToUse = projectId || projects[0]?.id;
-      if (projectIdToUse) {
-        form.setValue("projectId", projectIdToUse);
-      }
+    if (!isEditMode && projectId) {
+      form.setValue("projectId", projectId);
     }
-  }, [projects.length, isEditMode, projectId]);
+  }, [isEditMode, projectId]);
 
   useEffect(() => {
     if (!isEditMode && nextBillNumberData?.billNumber) {
@@ -759,6 +764,47 @@ export default function BillDetail() {
   useEffect(() => {
     baselineRef.current = null;
   }, [id]);
+
+  // "Approve & next" swaps the bill underneath a still-mounted component, and
+  // the preview pane's state is not derived from the bill — so it kept showing
+  // the document of the bill you just approved. Drop it on every id change,
+  // then re-open on the new bill's first previewable attachment so a reviewer
+  // working the queue keeps the pane without ever seeing the wrong invoice.
+  //
+  // The ref is assigned during render rather than in an effect: when the id
+  // effect below runs, the preview state still holds the OUTGOING bill's
+  // document, which is exactly what we need to read before clearing it.
+  const sheetPreviewUrlRef = useRef<string | null>(null);
+  sheetPreviewUrlRef.current = sheetPreviewUrl;
+  const reopenPreviewRef = useRef(false);
+  useEffect(() => {
+    reopenPreviewRef.current = !!sheetPreviewUrlRef.current;
+    setSheetPreviewUrl(null);
+    setSheetPreviewFilename("");
+    setModalPreviewFile(null);
+    setFullscreenPreview(false);
+  }, [id]);
+  useEffect(() => {
+    if (!reopenPreviewRef.current || sheetPreviewUrl || attachmentUrls.length === 0) return;
+    const first = attachmentUrls.find((url) => {
+      const path = url.split("?")[0].split("#")[0];
+      const meta = attachmentMeta[url];
+      const extFromMeta = meta?.filename?.split(".").pop()?.toLowerCase() || "";
+      const mime = meta?.mimeType || "";
+      return (
+        /\.(pdf|jpe?g|png|gif|webp|bmp|tiff?)$/i.test(path) ||
+        /^(pdf|jpe?g|png|gif|webp|bmp|tiff?)$/i.test(extFromMeta) ||
+        mime === "application/pdf" ||
+        mime.startsWith("image/")
+      );
+    });
+    if (!first) return;
+    reopenPreviewRef.current = false;
+    setSheetPreviewUrl(first);
+    setSheetPreviewFilename(
+      attachmentMeta[first]?.filename || first.split("?")[0].split("/").pop() || "Attachment",
+    );
+  }, [attachmentUrls, attachmentMeta, sheetPreviewUrl]);
   const currentSnapshotRef = useRef(currentSnapshot);
   currentSnapshotRef.current = currentSnapshot;
   useEffect(() => {
@@ -1549,10 +1595,21 @@ export default function BillDetail() {
     },
     enabled: isEditMode && bill?.status === "awaiting_approval" && canApprove,
   });
+  // Walk the queue in order from where you are. Jumping to remainingInQueue[0]
+  // always sent you back to the TOP of the awaiting-approval list, so any bill
+  // you deliberately skipped was handed straight back to you on the next
+  // "Approve & next" — every time. Once you reach the end of the queue there is
+  // no next bill, so return to the list rather than wrapping around onto the
+  // ones you passed over.
   const remainingInQueue = approvalQueue.filter((b) => b.id !== id);
+  const nextInQueue = (() => {
+    const idx = approvalQueue.findIndex((b) => b.id === id);
+    if (idx === -1) return remainingInQueue[0];
+    return approvalQueue.slice(idx + 1).find((b) => b.id !== id);
+  })();
   const goToNextInQueue = () => {
-    if (remainingInQueue.length === 0) setLocation("/bills?status=awaiting_approval");
-    else setLocation(`/bills/${remainingInQueue[0].id}`);
+    if (!nextInQueue) setLocation("/bills?status=awaiting_approval");
+    else setLocation(`/bills/${nextInQueue.id}`);
   };
 
   // Approve commits whatever is on screen: unsaved edits are saved FIRST, then
@@ -1871,15 +1928,33 @@ export default function BillDetail() {
           })
           .catch((err) => console.error("Failed to persist AI-extracted bill fields:", err));
       }
+      // Same bar the bulk read uses: a total plus either an invoice number or
+      // line items. Below that the AI has effectively read nothing, and
+      // claiming the fields were populated sends the user hunting for changes
+      // that were never applied.
+      const usableRead =
+        (data.totalAmount ?? 0) > 0 &&
+        (!!(data.billReference || data.invoiceNumber) || (data.lineItems?.length ?? 0) > 0);
+      if (!usableRead) {
+        toast({
+          title: "Couldn't read this document",
+          description:
+            "The AI couldn't pull enough off this file — check it's a clear invoice, or fill the bill in manually.",
+        });
+        return;
+      }
       toast({
         title: "Bill updated",
         description: "AI has populated the bill fields. Review and save when ready.",
       });
     },
     onError: (error: any) => {
+      // Server errors here are ours, not the user's — show them something
+      // actionable and keep the detail in the console for debugging.
+      console.error("[Read & Apply] failed:", error);
       toast({
-        title: "AI extraction failed",
-        description: error?.message || "Couldn't extract invoice details. Fill the bill in manually.",
+        title: "Couldn't read this document",
+        description: "The AI read didn't come back. Try again in a moment, or fill the bill in manually.",
         variant: "destructive",
       });
     },
@@ -3253,8 +3328,19 @@ export default function BillDetail() {
                         cell: (item, index) => (
                           <input
                             type="number"
-                            value={item.quantity}
-                            onChange={(e) => updateLineItem(index, "quantity", parseFloat(e.target.value) || 0)}
+                            // Bound to a draft string while the cell is focused. Binding
+                            // straight to the number meant clearing the field snapped it
+                            // back to 0, so you could only ever type after that 0.
+                            value={qtyDraft?.index === index ? qtyDraft.value : item.quantity}
+                            onFocus={(e) => {
+                              setQtyDraft({ index, value: String(item.quantity ?? "") });
+                              e.currentTarget.select();
+                            }}
+                            onChange={(e) => {
+                              setQtyDraft({ index, value: e.target.value });
+                              updateLineItem(index, "quantity", parseFloat(e.target.value) || 0);
+                            }}
+                            onBlur={() => setQtyDraft(null)}
                             className="w-full h-7 px-1.5 text-table text-right bg-transparent border-0 outline-none focus:ring-1 focus:ring-ring rounded-sm"
                             data-testid={`input-quantity-${index}`}
                           />
