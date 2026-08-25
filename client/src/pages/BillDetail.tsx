@@ -288,7 +288,11 @@ export default function BillDetail() {
   const isEditMode = !!(id && id !== "new");
 
   const [lineItems, setLineItems] = useState<LineItem[]>([]);
-  const [taxMode, setTaxMode] = useState<"inclusive" | "exclusive">("exclusive");
+  // Australian supplier invoices quote inc-GST, so that is what a bill being
+  // entered by hand should start as. Saved bills overwrite this on hydration
+  // and both AI extraction paths detect it from the document, so this only
+  // decides where a fresh, empty bill begins.
+  const [taxMode, setTaxMode] = useState<"inclusive" | "exclusive">("inclusive");
   // Manual rounding adjustment in cents (±MAX_ROUNDING_CENTS), applied to the
   // total so it can be nudged to match the supplier invoice — like Xero.
   const [roundingCents, setRoundingCents] = useState(0);
@@ -330,6 +334,16 @@ export default function BillDetail() {
   const [previewAttachment, setPreviewAttachment] = useState<string | null>(null);
   const [fullscreenPreview, setFullscreenPreview] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  // Set as soon as a bill is created. Several branches of the create flow stay
+  // on the page after the bill already exists — the Xero contact isn't mapped,
+  // the push failed, the credit can't sync — and hitting Save again from there
+  // used to POST a second time and create a DUPLICATE BILL. It used to fail
+  // loudly instead, because the client resent the same bill number and the
+  // unique index rejected it; now that the server allocates a fresh number per
+  // create, the duplicate goes through cleanly. Once this is set, saving
+  // updates the bill that was created rather than making another.
+  const createdBillIdRef = useRef<string | null>(null);
+  const billIdForWrite = () => id || createdBillIdRef.current;
   // Only one qty cell can be focused at a time, so a single draft beats a map
   // keyed by row index (which would go stale on reorder/delete).
   const [qtyDraft, setQtyDraft] = useState<{ index: number; value: string } | null>(null);
@@ -1284,6 +1298,9 @@ export default function BillDetail() {
       return newBill;
     },
     onSuccess: async (newBill) => {
+      // Before anything that can return early — every path below this point
+      // leaves a real bill behind, so the next Save must update it.
+      if (newBill?.id) createdBillIdRef.current = newBill.id;
       queryClient.invalidateQueries({ queryKey: ["/api/bills"] });
       queryClient.invalidateQueries({ queryKey: ["/api/bills/next-number"] });
       queryClient.invalidateQueries({ queryKey: ["/api/projects", form.getValues("projectId"), "allowances"] });
@@ -1407,7 +1424,8 @@ export default function BillDetail() {
         // preserve richer metadata and avoid overwriting concurrent uploads.
       };
 
-      const updatedBill = await apiRequest(`/api/bills/${id}`, "PATCH", billData) as Bill;
+      const writeId = billIdForWrite();
+      const updatedBill = await apiRequest(`/api/bills/${writeId}`, "PATCH", billData) as Bill;
 
       // One request for the whole line-item set. This used to be a sequential
       // round-trip per line — a DELETE per removed line, a PATCH or POST per
@@ -1415,7 +1433,7 @@ export default function BillDetail() {
       // server running a budget recalc and a Xero auto-push on every one of
       // them. Round-trip latency to the database region made that the reason
       // saving a bill took seconds.
-      await apiRequest(`/api/bills/${id}/line-items`, "PUT", {
+      await apiRequest(`/api/bills/${writeId}/line-items`, "PUT", {
         lineItems: lineItems.map((item, i) => ({
           id: item.id || undefined,
           billId: id,
@@ -2027,7 +2045,9 @@ export default function BillDetail() {
   // This prevents unintended re-processing and gives the user full control.
 
   const performSubmit = (data: BillFormData) => {
-    if (isEditMode) {
+    // createdBillIdRef covers the create flows that stay on the page after the
+    // bill exists: saving again must update it, never create a second one.
+    if (isEditMode || createdBillIdRef.current) {
       updateMutation.mutate(data);
     } else {
       createMutation.mutate(data);
@@ -3301,21 +3321,28 @@ export default function BillDetail() {
                   </div>
                   <div className="flex items-center gap-1.5">
                     <span className="text-table text-muted-foreground">Amounts are</span>
+                    {/* The selected side used to be bg-background on a bg-muted/30
+                        track — a shade apart, on the control that decides whether
+                        every figure on the bill includes GST. It reads as the
+                        app's primary colour now, because getting this wrong is a
+                        10% error on the whole bill. */}
                     <div className="inline-flex rounded-md border bg-muted/30 p-0.5" data-testid="select-tax-mode">
-                      <button
-                        type="button"
-                        onClick={() => setTaxMode("exclusive")}
-                        className={`px-2.5 py-0.5 text-table rounded-sm transition-colors ${taxMode === "exclusive" ? "bg-background shadow-sm font-medium text-foreground" : "text-muted-foreground"}`}
-                      >
-                        Exclusive
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setTaxMode("inclusive")}
-                        className={`px-2.5 py-0.5 text-table rounded-sm transition-colors ${taxMode === "inclusive" ? "bg-background shadow-sm font-medium text-foreground" : "text-muted-foreground"}`}
-                      >
-                        Inclusive
-                      </button>
+                      {(["exclusive", "inclusive"] as const).map((mode) => (
+                        <button
+                          key={mode}
+                          type="button"
+                          onClick={() => setTaxMode(mode)}
+                          aria-pressed={taxMode === mode}
+                          data-testid={`button-tax-mode-${mode}`}
+                          className={`px-2.5 py-0.5 text-table rounded-sm transition-colors ${
+                            taxMode === mode
+                              ? "bg-primary text-primary-foreground shadow-sm font-semibold"
+                              : "text-muted-foreground hover:text-foreground"
+                          }`}
+                        >
+                          {mode === "exclusive" ? "Exclusive" : "Inclusive"}
+                        </button>
+                      ))}
                     </div>
                     <span className="text-table text-muted-foreground">of tax</span>
                   </div>
