@@ -10,6 +10,7 @@ import { formatDate } from "@/lib/formatters";
 import { 
   ArrowLeft, 
   Copy, 
+  MoreHorizontal, 
   Plus, 
   Trash2, 
   Ban,
@@ -76,6 +77,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -321,6 +329,7 @@ export default function BillDetail() {
   const [ocrFileIsImage, setOcrFileIsImage] = useState(false);
   const [previewAttachment, setPreviewAttachment] = useState<string | null>(null);
   const [fullscreenPreview, setFullscreenPreview] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   // Only one qty cell can be focused at a time, so a single draft beats a map
   // keyed by row index (which would go stale on reorder/delete).
   const [qtyDraft, setQtyDraft] = useState<{ index: number; value: string } | null>(null);
@@ -1697,6 +1706,32 @@ export default function BillDetail() {
     },
   });
 
+  const deleteMutation = useMutation({
+    mutationFn: async () => {
+      return await apiRequest(`/api/bills/${id}`, "DELETE");
+    },
+    onSuccess: () => {
+      // Drop the dirty baseline before navigating: the bill is gone, so the
+      // unsaved-changes guard has nothing left to protect and would otherwise
+      // be able to prompt on the way out.
+      baselineRef.current = null;
+      setDeleteDialogOpen(false);
+      queryClient.invalidateQueries({ queryKey: ["/api/bills"] });
+      toast({
+        title: "Bill deleted",
+        description: `${bill?.billNumber || "The bill"} has been deleted.`,
+      });
+      setLocation(projectId ? `/projects/${projectId}/bills` : "/bills");
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Couldn't delete this bill",
+        description: error?.message?.replace(/^\d+:\s*/, "") || "Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
+
   const duplicateMutation = useMutation({
     mutationFn: async () => {
       return await apiRequest(`/api/bills/${id}/duplicate`, "POST");
@@ -2379,15 +2414,32 @@ export default function BillDetail() {
                 bar at the bottom, next to Save — they were up here, far from
                 the save controls and easy to miss. */}
             {isEditMode && (
-              <Button 
-                variant="ghost" 
-                size="icon" 
-                data-testid="button-duplicate"
-                onClick={() => duplicateMutation.mutate()}
-                disabled={duplicateMutation.isPending}
-              >
-                <Copy className="h-3.5 w-3.5" />
-              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="icon" data-testid="button-bill-actions" aria-label="Bill actions">
+                    <MoreHorizontal className="h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-44">
+                  <DropdownMenuItem
+                    onSelect={() => duplicateMutation.mutate()}
+                    disabled={duplicateMutation.isPending}
+                    data-testid="menu-duplicate-bill"
+                  >
+                    <Copy className="h-3.5 w-3.5 mr-2" />
+                    Duplicate
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    className="text-destructive focus:text-destructive"
+                    onSelect={() => setDeleteDialogOpen(true)}
+                    data-testid="menu-delete-bill"
+                  >
+                    <Trash2 className="h-3.5 w-3.5 mr-2" />
+                    Delete
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             )}
           </div>
         </div>
@@ -4197,6 +4249,35 @@ export default function BillDetail() {
         open={!!modalPreviewFile}
         onOpenChange={(o) => { if (!o) setModalPreviewFile(null); }}
       />
+
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent data-testid="dialog-delete-bill">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete {bill?.billNumber || "this bill"}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This deletes the bill, its line items and its attachments. It can't be undone, and
+              the project budget will be recalculated without it.
+              {(bill?.paidAmount ?? 0) > 0 && (
+                <> This bill has {formatCurrency(paid)} recorded against it as paid.</>
+              )}
+              {bill?.xeroInvoiceId && (
+                <> It has already been pushed to Xero — deleting it here does not remove it from Xero.</>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleteMutation.isPending}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={(e) => { e.preventDefault(); deleteMutation.mutate(); }}
+              disabled={deleteMutation.isPending}
+              data-testid="button-confirm-delete-bill"
+            >
+              {deleteMutation.isPending ? "Deleting..." : "Delete bill"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <Dialog open={rejectDialogOpen} onOpenChange={setRejectDialogOpen}>
         <DialogContent data-testid="dialog-reject-bill">
