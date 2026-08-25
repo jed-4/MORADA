@@ -706,12 +706,12 @@ export default function EditContactDialog({
                   {isTeam ? (
                     <FormField
                       control={form.control}
-                      name="position"
+                      name="role"
                       render={({ field }) => (
                         <FormItem>
                           <FormLabel>Role</FormLabel>
                           <FormControl>
-                            <Input placeholder="e.g., Carpenter, Plumber" {...field} value={field.value || ""} data-testid="input-position" />
+                            <Input placeholder="e.g., Carpenter, Plumber" {...field} value={field.value || ""} data-testid="input-role" />
                           </FormControl>
                           <FormMessage />
                         </FormItem>

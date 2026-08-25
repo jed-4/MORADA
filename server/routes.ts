@@ -179,7 +179,8 @@ import {
   insertPriceListGroupSchema,
   insertPriceListItemSchema,
   insertBillLineItemPriceLinkSchema,
-  type CircuitContext
+  type CircuitContext,
+  type InsertContact
 } from "@shared/schema";
 // Namespace import for table references (schema.selections etc.). Several
 // existing routes already referenced `schema.` without this import and threw
@@ -15795,51 +15796,72 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const results = { success: 0, errors: [] as string[] };
-      
+      const rowLabel = (i: number) => `Row ${i + 1} (${contacts[i]?.name || 'Unknown'})`;
+
+      // Validate every row up front, then insert the survivors in batches.
+      // Neon is ~400ms per round trip from AU, so the old row-at-a-time loop
+      // made a few hundred contacts take minutes and time the request out.
+      const valid: { index: number; data: InsertContact & { companyId: string } }[] = [];
+
       for (let i = 0; i < contacts.length; i++) {
         const contactData = contacts[i];
+        // Sanitize data: convert null values to empty strings or defaults
+        const sanitizedData = {
+          ...contactData,
+          // Convert null strings to empty string for optional text fields
+          email: contactData.email ?? "",
+          phone: contactData.phone ?? "",
+          mobile: contactData.mobile ?? "",
+          company: contactData.company ?? "",
+          position: contactData.position ?? "",
+          address: contactData.address ?? "",
+          suburb: contactData.suburb ?? "",
+          state: contactData.state ?? "",
+          postcode: contactData.postcode ?? "",
+          country: contactData.country ?? "",
+          notes: contactData.notes ?? "",
+          abn: contactData.abn ?? "",
+          // Default contactType to 'supplier' if not provided
+          contactType: contactData.contactType || "supplier",
+        };
+
+        const validationResult = insertContactSchema.safeParse(sanitizedData);
+        if (!validationResult.success) {
+          results.errors.push(`${rowLabel(i)}: ${fromZodError(validationResult.error).toString()}`);
+          continue;
+        }
+        // Apply the same business-name guard as the single-create
+        // endpoint so bulk import can't bypass the rule.
+        const validated = validationResult.data;
+        const isBusiness = validated.contactType === "trade" || validated.contactType === "supplier";
+        const trimmedName = (validated.name || "").trim();
+        if (isBusiness && !trimmedName) {
+          results.errors.push(`${rowLabel(i)}: Business name is required for trade and supplier contacts`);
+          continue;
+        }
+        valid.push({ index: i, data: { ...validated, name: trimmedName || validated.name || "", companyId } });
+      }
+
+      const BATCH_SIZE = 250;
+      for (let start = 0; start < valid.length; start += BATCH_SIZE) {
+        const batch = valid.slice(start, start + BATCH_SIZE);
         try {
-          // Sanitize data: convert null values to empty strings or defaults
-          const sanitizedData = {
-            ...contactData,
-            // Convert null strings to empty string for optional text fields
-            email: contactData.email ?? "",
-            phone: contactData.phone ?? "",
-            mobile: contactData.mobile ?? "",
-            company: contactData.company ?? "",
-            position: contactData.position ?? "",
-            address: contactData.address ?? "",
-            suburb: contactData.suburb ?? "",
-            state: contactData.state ?? "",
-            postcode: contactData.postcode ?? "",
-            country: contactData.country ?? "",
-            notes: contactData.notes ?? "",
-            abn: contactData.abn ?? "",
-            // Default contactType to 'supplier' if not provided
-            contactType: contactData.contactType || "supplier",
-          };
-          
-          const validationResult = insertContactSchema.safeParse(sanitizedData);
-          if (!validationResult.success) {
-            results.errors.push(`Row ${i + 1} (${contactData.name || 'Unknown'}): ${fromZodError(validationResult.error).toString()}`);
-            continue;
+          const inserted = await storage.createContacts(batch.map((r) => r.data));
+          results.success += inserted.length;
+        } catch {
+          // A batch is all-or-nothing, so on failure fall back to row-by-row
+          // for just this batch to keep per-row error attribution.
+          for (const row of batch) {
+            try {
+              await storage.createContact(row.data);
+              results.success++;
+            } catch (error: any) {
+              results.errors.push(`${rowLabel(row.index)}: ${error.message || 'Failed to import'}`);
+            }
           }
-          // Apply the same business-name guard as the single-create
-          // endpoint so bulk import can't bypass the rule.
-          const validated = validationResult.data;
-          const isBusiness = validated.contactType === "trade" || validated.contactType === "supplier";
-          const trimmedName = (validated.name || "").trim();
-          if (isBusiness && !trimmedName) {
-            results.errors.push(`Row ${i + 1} (${contactData.name || 'Unknown'}): Business name is required for trade and supplier contacts`);
-            continue;
-          }
-          await storage.createContact({ ...validated, name: trimmedName || validated.name || "", companyId });
-          results.success++;
-        } catch (error: any) {
-          results.errors.push(`Row ${i + 1} (${contactData.name || 'Unknown'}): ${error.message || 'Failed to import'}`);
         }
       }
-      
+
       res.json(results);
     } catch (error) {
       console.error("Bulk import error:", error);
@@ -15850,11 +15872,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.patch("/api/contacts/:id", requireAuth, requireTeamMember, async (req, res) => {
     try {
       const companyId = req.user!.companyId!;
-      console.log("[PATCH /api/contacts] Request body:", JSON.stringify(req.body, null, 2));
       const validationResult = insertContactSchema.partial().safeParse(req.body);
       if (!validationResult.success) {
         const errorDetails = fromZodError(validationResult.error).toString();
-        console.error("[PATCH /api/contacts] Validation failed:", errorDetails);
+        // Log the field names only — the body carries names, emails, phones,
+        // addresses and pay rates and must not land in the server log.
+        console.error("[PATCH /api/contacts] Validation failed for fields:", Object.keys(req.body ?? {}).join(", "), errorDetails);
         return res.status(400).json({ 
           error: "Validation failed", 
           details: errorDetails 
@@ -16308,24 +16331,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       const results = { success: 0, errors: [] as string[] };
-      
-      for (const id of ids) {
-        try {
-          if (action === "archive") {
-            await storage.archiveContact(id, companyId);
-          } else if (action === "restore") {
-            await storage.restoreContact(id, companyId);
-          } else if (action === "changeType") {
-            await storage.updateContact(id, { contactType }, companyId);
-          } else if (action === "delete") {
-            await storage.deleteContact(id, companyId);
+
+      // One statement rather than one round trip per contact.
+      try {
+        const affected = await storage.bulkContactAction(ids, action, companyId, contactType);
+        results.success = affected.length;
+
+        // Anything the statement didn't touch is a miss (wrong company, or
+        // already gone). The old loop counted these as successes.
+        const affectedSet = new Set(affected);
+        for (const id of ids) {
+          if (!affectedSet.has(id)) results.errors.push(`Contact ${id}: Not found`);
+        }
+      } catch (error: any) {
+        // The batch is all-or-nothing (a single FK violation on delete fails
+        // the lot), so fall back to per-contact to attribute the failures.
+        for (const id of ids) {
+          try {
+            const affected = await storage.bulkContactAction([id], action, companyId, contactType);
+            if (affected.length) results.success++;
+            else results.errors.push(`Contact ${id}: Not found`);
+          } catch (rowError: any) {
+            results.errors.push(`Contact ${id}: ${rowError.message || 'Failed'}`);
           }
-          results.success++;
-        } catch (error: any) {
-          results.errors.push(`Contact ${id}: ${error.message || 'Failed'}`);
         }
       }
-      
+
       res.json(results);
     } catch (error) {
       console.error("Bulk action error:", error);
@@ -39882,31 +39913,6 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
     } catch (error: any) {
       console.error("Error updating Xero settings:", error);
       res.status(500).json({ error: error.message || "Failed to update Xero settings" });
-    }
-  });
-
-  // Xero: Link a BuildPro contact to a Xero contact
-  app.patch("/api/contacts/:id/xero-link", requireAuth, async (req, res) => {
-    try {
-      const user = req.user as any;
-      const companyId = user?.companyId;
-      if (!companyId) return res.status(401).json({ error: "Unauthorized" });
-
-      const { xeroContactId, xeroDefaultAccountCode } = req.body;
-      const contactId = req.params.id;
-
-      const contact = await storage.getContact(contactId, companyId);
-      if (!contact) return res.status(404).json({ error: "Contact not found" });
-
-      const updated = await storage.updateContact(contactId, companyId, {
-        xeroContactId: xeroContactId || null,
-        xeroDefaultAccountCode: xeroDefaultAccountCode || null,
-      } as any);
-
-      res.json(updated);
-    } catch (error: any) {
-      console.error("Error linking Xero contact:", error);
-      res.status(500).json({ error: error.message || "Failed to link Xero contact" });
     }
   });
 

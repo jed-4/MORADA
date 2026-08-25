@@ -56,12 +56,14 @@ import { MergeContactDialog } from "@/components/contacts/MergeContactDialog";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { EmptyState } from "@/components/EmptyState";
 
+type ContactType = "team" | "trade" | "supplier" | "client";
+
 export default function Contacts() {
   const { toast } = useToast();
   const [selectedTab, setSelectedTab] = useState<string>("all");
   const [searchTerm, setSearchTerm] = useState("");
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
-  const [selectedContactType, setSelectedContactType] = useState<"trade" | "supplier" | "client" | undefined>();
+  const [selectedContactType, setSelectedContactType] = useState<ContactType | undefined>();
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [contactToEdit, setContactToEdit] = useState<Contact | null>(null);
   const [confirmArchive, setConfirmArchive] = useState<{ id: string; name: string } | null>(null);
@@ -210,7 +212,7 @@ export default function Contacts() {
     return "??";
   };
 
-  const handleAddContact = (type?: "trade" | "supplier" | "client") => {
+  const handleAddContact = (type?: ContactType) => {
     setSelectedContactType(type);
     setIsAddDialogOpen(true);
   };
@@ -536,7 +538,7 @@ export default function Contacts() {
           <Button
             size="sm"
             className="h-6 px-2 text-xs bg-primary hover:bg-primary/90 text-white border-primary/20"
-            onClick={() => handleAddContact(selectedTab === "all" ? undefined : selectedTab as any)}
+            onClick={() => handleAddContact(selectedTab === "all" ? undefined : (selectedTab as ContactType))}
             data-testid="button-add-contact"
           >
             <Plus className="w-3 h-3 mr-0.5" />
@@ -760,7 +762,7 @@ export default function Contacts() {
         open={isQuickReviewOpen}
         onClose={() => setIsQuickReviewOpen(false)}
         contacts={contacts}
-        contactTypeFilter={selectedTab === "all" ? null : selectedTab as "team" | "trade" | "supplier" | "client"}
+        contactTypeFilter={selectedTab === "all" ? null : (selectedTab as ContactType)}
       />
 
       <MergeContactDialog
