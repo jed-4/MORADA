@@ -81,3 +81,28 @@ export function billLineExGstCents(
   }
   return Math.round(total);
 }
+
+// Which way round the AI's line totals should be read. An extractor returns the
+// numbers printed on the document: per-line totals, plus the document's own
+// subtotal (ex-GST) and total (inc-GST). If the lines add up to the subtotal
+// they are ex-GST lines (exclusive); if they add up to the total they include
+// GST (inclusive). Guessing wrong puts every stored figure ~10% out AND sends
+// Xero the wrong LineAmountTypes, so both the bill and the pushed invoice are
+// wrong in the same direction.
+//
+// Australian supplier invoices most often print inc-GST line totals, so that is
+// the fallback when the document gives us nothing to compare against.
+export function detectBillTaxMode(input: {
+  lineTotalsCents: number[];
+  documentSubtotalCents?: number | null;
+  documentTotalCents?: number | null;
+}): BillTaxMode {
+  const { lineTotalsCents, documentSubtotalCents, documentTotalCents } = input;
+  if (!lineTotalsCents || lineTotalsCents.length === 0) return "inclusive";
+  if (documentSubtotalCents == null || documentTotalCents == null) return "inclusive";
+  if (documentSubtotalCents === documentTotalCents) return "inclusive";
+  const sum = lineTotalsCents.reduce((s, n) => s + (n || 0), 0);
+  return Math.abs(sum - documentSubtotalCents) < Math.abs(sum - documentTotalCents)
+    ? "exclusive"
+    : "inclusive";
+}
