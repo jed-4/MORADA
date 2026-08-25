@@ -1,3 +1,98 @@
+// ---------------------------------------------------------------------------
+// MORADA_PALETTE — the canonical picker palette.
+//
+// Source: Figma "BUILDPRO" file, "Project Colour Palette" frame
+// (node 1450:8706). 24 curated colours, all warm and muted, grouped the way
+// they are grouped in the design. Hex values were read from the Figma node
+// names, not sampled from a render — several swatches are drawn with an
+// overlay, so sampling a screenshot gives values up to ~10% darker.
+//
+// This supersedes MORADA_PROJECT_PALETTE and BUILDPRO_PALETTE below, which are
+// kept because pickers still point at them and existing rows hold their hexes.
+// New pickers should use this one.
+//
+// Four of these already exist as CSS custom properties in index.css and match
+// exactly: Coral (--coral), Sage (--sage), Teal (--teal). Two are marked in
+// Figma as existing tokens but DO NOT match what index.css currently ships:
+// Amber #F0B964 vs --amber #D4B670, and Lavender #A890D4 vs --primary #87749A.
+// Left alone deliberately — reconciling those changes the app's accent colours,
+// which is a design call, not a refactor.
+// ---------------------------------------------------------------------------
+
+export type MoradaSwatch = { name: string; hex: string };
+export type MoradaSwatchGroup = { group: string; colors: MoradaSwatch[] };
+
+export const MORADA_PALETTE_GROUPS: MoradaSwatchGroup[] = [
+  {
+    group: 'Warm',
+    colors: [
+      { name: 'Rose Quartz', hex: '#E8A0A8' },
+      { name: 'Coral',       hex: '#DA988A' },
+      { name: 'Peach',       hex: '#E09878' },
+      { name: 'Dusty Red',   hex: '#C87878' },
+      { name: 'Mauve Rose',  hex: '#D484A0' },
+      { name: 'Blush',       hex: '#E8B0C0' },
+    ],
+  },
+  {
+    group: 'Earthy',
+    colors: [
+      { name: 'Apricot',     hex: '#E8B480' },
+      { name: 'Warm Orange', hex: '#E09868' },
+      { name: 'Amber',       hex: '#F0B964' },
+      { name: 'Soft Yellow', hex: '#EAD070' },
+      { name: 'Gold',        hex: '#D4A840' },
+      { name: 'Ochre',       hex: '#C89050' },
+    ],
+  },
+  {
+    group: 'Natural',
+    colors: [
+      { name: 'Mint',        hex: '#96D4A8' },
+      { name: 'Sage',        hex: '#82C8A2' },
+      { name: 'Forest',      hex: '#68B088' },
+      { name: 'Seafoam',     hex: '#80C8C0' },
+      { name: 'Teal',        hex: '#70CAD0' },
+      { name: 'Deep Teal',   hex: '#58A8B0' },
+    ],
+  },
+  {
+    group: 'Cool',
+    colors: [
+      { name: 'Sky',         hex: '#80B8D8' },
+      { name: 'Cornflower',  hex: '#7890C8' },
+      { name: 'Periwinkle',  hex: '#8888C4' },
+      { name: 'Lavender',    hex: '#A890D4' },
+      { name: 'Soft Purple', hex: '#B0A0C8' },
+      { name: 'Dusty Mauve', hex: '#C090B4' },
+    ],
+  },
+];
+
+export const MORADA_PALETTE: MoradaSwatch[] = MORADA_PALETTE_GROUPS.flatMap(g => g.colors);
+export const MORADA_PALETTE_HEXES = MORADA_PALETTE.map(c => c.hex);
+
+/** Look up a palette colour's name, for tooltips and a11y labels. */
+export function moradaColorName(hex: string | null | undefined): string | undefined {
+  if (!hex) return undefined;
+  return MORADA_PALETTE.find(c => c.hex.toLowerCase() === hex.toLowerCase())?.name;
+}
+
+/** A palette colour at random — for seeding a new record's colour on create. */
+export function randomPaletteColor(): string {
+  return MORADA_PALETTE[Math.floor(Math.random() * MORADA_PALETTE.length)].hex;
+}
+
+/**
+ * Stable colour for a contact/entity that has none set, so avatars vary
+ * instead of every unset row rendering the same grey.
+ */
+export function paletteColorFor(seed: string): string {
+  let h = 0;
+  for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) | 0;
+  return MORADA_PALETTE[Math.abs(h) % MORADA_PALETTE.length].hex;
+}
+
 // Curated project-colour palette — the ONLY colours offered when picking a
 // project colour (create dialog + project settings). Kept to 10 hues that
 // harmonise with the Morada plum brand across web and mobile; other pickers
