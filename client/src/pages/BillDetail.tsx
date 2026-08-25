@@ -245,6 +245,23 @@ function CopyableValue({
   );
 }
 
+// An extractor often reports a line's total but not its unit price — receipts
+// that print only a line amount, or dockets where the price sits in a discount
+// column. Storing 0 left the Qty x Unit Cost columns reading "5 @ $0.00" beside
+// a bill whose header total was right, which looks like the amount was lost.
+// The line total is the figure off the document, so treat it as the authority
+// and back-solve the unit price from it.
+function reconcileLineUnitPrice(unitPriceCents: number | null | undefined, totalCents: number, quantity: number) {
+  const qty = quantity || 1;
+  const reconciles =
+    unitPriceCents != null &&
+    unitPriceCents !== 0 &&
+    Math.abs(Math.round(qty * unitPriceCents) - totalCents) <= 1;
+  if (reconciles) return unitPriceCents as number;
+  if (!totalCents) return unitPriceCents ?? 0;
+  return qty !== 0 ? totalCents / qty : totalCents;
+}
+
 // Status chip shown beside the totals in the bill header. Every bill status is
 // covered so the chip is never blank — the header should always say what state
 // the bill you're looking at is in.
@@ -1877,7 +1894,7 @@ export default function BillDetail() {
           description: item.description || "",
           costCodeId: firstCostCode,
           quantity: item.quantity || 1,
-          unitPrice: item.unitPrice ? item.unitPrice / 100 : 0,
+          unitPrice: reconcileLineUnitPrice(item.unitPrice, item.totalAmount || 0, item.quantity || 1) / 100,
           unit: "",
           tax: "GST on expenses" as const,
           account: defaultAccount,
@@ -2125,16 +2142,24 @@ export default function BillDetail() {
     if (ocrResults.lineItems && ocrResults.lineItems.length > 0) {
       const firstCostCode = costCodes[0]?.id;
       const defaultAccount = getSupplierDefaultAccount();
-      // OCR returns inc-GST line totals (see INVOICE_EXTRACTION_PROMPT). Force
-      // the form into Tax Inclusive mode so the calculator strips GST correctly
-      // instead of adding 10% on top.
-      setTaxMode("inclusive");
+      // Read the document rather than assuming. Inc-GST line totals are the
+      // common case here, which is why this used to hardcode inclusive — but
+      // an ex-GST invoice then had 10% added on top of already-ex figures.
+      // detectBillTaxMode falls back to inclusive when the document gives it
+      // nothing to compare, so the common case is unchanged.
+      setTaxMode(
+        detectBillTaxMode({
+          lineTotalsCents: (ocrResults.lineItems ?? []).map((it: any) => it.totalAmount || 0),
+          documentSubtotalCents: ocrResults.subtotalAmount ?? null,
+          documentTotalCents: ocrResults.totalAmount ?? null,
+        }),
+      );
       const newLineItems = ocrResults.lineItems.map((item: any, index: number) => ({
         lineType: "custom" as const,
         description: item.description || "",
         costCodeId: firstCostCode,
         quantity: item.quantity || 1,
-        unitPrice: item.unitPrice ? item.unitPrice / 100 : 0,
+        unitPrice: reconcileLineUnitPrice(item.unitPrice, item.totalAmount || 0, item.quantity || 1) / 100,
         unit: "",
         tax: "GST on expenses" as const,
         account: defaultAccount,
@@ -2747,6 +2772,45 @@ export default function BillDetail() {
                             data-testid="input-due-date"
                           />
                         </FormControl>
+                        {/* Terms shortcuts. The due date otherwise had to be
+                            picked off a calendar even though the terms that
+                            decide it — Net 7, end of month, end of next month —
+                            are a fixed, known set. Same vocabulary and same
+                            computeDueDate the supplier-terms auto-fill uses, so
+                            a shortcut and an auto-filled date can't disagree. */}
+                        {(() => {
+                          const billDate = new Date(form.watch("billDate"));
+                          if (isNaN(billDate.getTime())) return null;
+                          return (
+                            <div className="flex flex-wrap gap-1 pt-0.5">
+                              {PAYMENT_TERMS_OPTIONS.map((option) => {
+                                const due = computeDueDate(billDate, option.value);
+                                if (!due) return null;
+                                const value = format(due, "yyyy-MM-dd");
+                                const active = field.value === value;
+                                return (
+                                  <button
+                                    key={option.value}
+                                    type="button"
+                                    onClick={() => {
+                                      dueDateManuallySet.current = true;
+                                      field.onChange(value);
+                                    }}
+                                    title={`Due ${format(due, "d MMM yyyy")}`}
+                                    className={`px-1.5 py-0.5 rounded text-[10px] border transition-colors ${
+                                      active
+                                        ? "border-primary text-primary bg-primary/10"
+                                        : "border-border text-muted-foreground hover:text-foreground hover:bg-muted/50"
+                                    }`}
+                                    data-testid={`button-due-terms-${option.value}`}
+                                  >
+                                    {option.label}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          );
+                        })()}
                         {field.value && (() => {
                           const supplier = suppliers.find((s: any) => s.id === form.watch("supplierId"));
                           const supplierTerms = supplier?.paymentTerms;

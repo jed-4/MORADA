@@ -17490,6 +17490,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Bill numbers are unique per company (bills_company_bill_number_unique), but
+  // getNextBillNumber allocates by reading the current max and adding one, with
+  // no lock — and the client caches the number it was handed when the form
+  // opened. So two tabs, a second bill created without reloading, or two people
+  // saving at once all land on the same number, and Postgres rejects the second
+  // one. That surfaced as an opaque "500: Failed to create bill" with no hint
+  // that the number was the problem. Allocate a fresh number and retry instead.
+  const isDuplicateBillNumber = (err: any): boolean => {
+    if (err?.code !== "23505") return false;
+    const haystack = `${err?.constraint ?? ""} ${err?.detail ?? ""} ${err?.message ?? ""}`;
+    return /bill_number/i.test(haystack);
+  };
+
+  const createBillRetryingNumber = async (data: any, companyId: string | null | undefined) => {
+    try {
+      return await storage.createBill(data);
+    } catch (err) {
+      if (!isDuplicateBillNumber(err) || !companyId) throw err;
+      const freshNumber = await storage.getNextBillNumber(companyId);
+      console.warn(
+        `[bills] bill number ${data?.billNumber} was already taken — reallocated ${freshNumber}`,
+      );
+      return await storage.createBill({ ...data, billNumber: freshNumber });
+    }
+  };
+
   app.post("/api/bills", requireAuth, async (req, res) => {
     try {
       const currentUser = (req as any).user;
@@ -17524,7 +17550,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         validationResult.data.roundingCents = clampRoundingCents(validationResult.data.roundingCents);
       }
 
-      const bill = await storage.createBill(validationResult.data);
+      const bill = await createBillRetryingNumber(validationResult.data, billData.companyId);
 
       // Receipt flow: if an objectPath was provided, attach the photo inline
       // so the client doesn't need a separate POST /api/bills/:id/attachments call.
@@ -17830,7 +17856,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // getOwnedBill guarantees req.user.companyId; older bills may predate companyId.
       const duplicateCompanyId = (originalBill as any).companyId ?? (req as any).user?.companyId;
       const newBillNumber = await storage.getNextBillNumber(duplicateCompanyId);
-      const newBill = await storage.createBill({
+      const newBill = await createBillRetryingNumber({
         billNumber: newBillNumber,
         companyId: duplicateCompanyId,
         projectId: originalBill.projectId,
@@ -17849,7 +17875,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         sendToXero: false,
         attachmentUrls: [],
         createdById: req.user!.id,
-      });
+      }, duplicateCompanyId);
 
       const lineItems = await storage.getBillLineItems(req.params.id);
       for (const item of lineItems) {
