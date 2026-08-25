@@ -18361,6 +18361,104 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Replace a bill's whole line-item set, and their allowance links, in ONE
+  // request. Saving used to be a sequential HTTP round-trip per line — one
+  // DELETE per removed line, one PATCH or POST per remaining line, plus more
+  // for allowance links — and each of those routes then ran its own budget
+  // recalc and its own Xero auto-push. At Sydney→Neon latency a ten-line bill
+  // was a dozen serial round-trips and a dozen redundant recalcs before Xero
+  // was even touched, which is why saving a bill took seconds.
+  app.put("/api/bills/:billId/line-items", requireAuth, async (req, res) => {
+    try {
+      const ownedBill = await getOwnedBill(req, res, req.params.billId);
+      if (!ownedBill) return;
+      const billId = req.params.billId;
+
+      const incoming = Array.isArray(req.body?.lineItems) ? req.body.lineItems : null;
+      if (!incoming) return res.status(400).json({ error: "lineItems must be an array" });
+
+      type ParsedLine = {
+        id?: string;
+        allowanceItemId?: string | null;
+        data: Record<string, unknown>;
+      };
+      const parsed: ParsedLine[] = [];
+      for (let i = 0; i < incoming.length; i++) {
+        const { id, allowanceItemId, ...rest } = incoming[i] ?? {};
+        // billId comes from the ownership-checked URL, never the body.
+        const validation = insertBillLineItemSchema.safeParse({ ...rest, billId, order: i });
+        if (!validation.success) {
+          return res.status(400).json({
+            error: "Validation failed",
+            details: `Line ${i + 1}: ${fromZodError(validation.error).toString()}`,
+          });
+        }
+        parsed.push({
+          id: typeof id === "string" && id ? id : undefined,
+          allowanceItemId: typeof allowanceItemId === "string" && allowanceItemId ? allowanceItemId : null,
+          data: { ...validation.data, billId, order: i },
+        });
+      }
+
+      const existing = await storage.getBillLineItems(billId);
+      const existingIds = new Set(existing.map((l) => l.id));
+
+      // Same IDOR guard the single-line routes apply: an id in the request must
+      // already belong to THIS bill. Checked for every line up front so a bad
+      // id can't be caught halfway through a partially-applied replace.
+      for (const p of parsed) {
+        if (p.id && !existingIds.has(p.id)) {
+          return res.status(400).json({ error: "A line item in this request doesn't belong to this bill" });
+        }
+      }
+
+      const keptIds = new Set(parsed.map((p) => p.id).filter(Boolean) as string[]);
+      for (const line of existing) {
+        if (!keptIds.has(line.id)) await storage.deleteBillLineItem(line.id);
+      }
+
+      const existingAllowances = await storage.getBillLineItemAllowancesByBillId(billId);
+      const saved = [];
+      for (const p of parsed) {
+        const line = p.id
+          ? await storage.updateBillLineItem(p.id, p.data as any)
+          : await storage.createBillLineItem(p.data as any);
+        if (!line) continue;
+        saved.push(line);
+
+        const currentLink = existingAllowances.find((a) => a.billLineItemId === line.id);
+        const amount = (p.data as any).total ?? 0;
+        if (p.allowanceItemId) {
+          if (currentLink) {
+            await storage.updateBillLineItemAllowance(currentLink.id, {
+              estimateItemId: p.allowanceItemId,
+              amount,
+            } as any);
+          } else {
+            await storage.createBillLineItemAllowance({
+              billLineItemId: line.id,
+              estimateItemId: p.allowanceItemId,
+              amount,
+            } as any);
+          }
+        } else if (currentLink) {
+          await storage.deleteBillLineItemAllowance(currentLink.id);
+        }
+      }
+
+      // Once, at the end — not once per line.
+      await storage.recomputeBillTotals(billId).catch((e) =>
+        console.error("[bills line-items PUT] recompute failed:", e));
+      await recalcBudgetForBill(billId);
+      void maybeAutoPushParentBill(billId, (req as any).user?.companyId);
+
+      res.json(saved);
+    } catch (error: any) {
+      console.error("[bills line-items PUT] failed:", error);
+      res.status(500).json({ error: error?.message || "Failed to save bill line items" });
+    }
+  });
+
   app.patch("/api/bills/:billId/line-items/:id", async (req, res) => {
     try {
       // Resolve the line item by its OWN id first, then authorize against the
