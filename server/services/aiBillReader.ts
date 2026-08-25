@@ -86,6 +86,20 @@ function parseAiJson(content: string, context: string): any {
 
 // ─── Stage 1: PDF text extraction ───────────────────────────────────────────
 
+// The first content block is not necessarily the text block. Models with
+// adaptive thinking emit a thinking block first, and with the default
+// display: "omitted" its text is empty — so reading content[0].text returned ""
+// and the JSON parse failed with "no JSON found". Take the first actual text
+// block instead.
+function firstTextBlock(response: { content: Array<any> }): string {
+  for (const block of response.content ?? []) {
+    if (block?.type === "text" && typeof block.text === "string" && block.text.trim()) {
+      return block.text;
+    }
+  }
+  return "";
+}
+
 async function extractTextFromPdf(pdfBuffer: Buffer): Promise<string> {
   try {
     const pdfParse = (await import("pdf-parse")).default;
@@ -245,18 +259,24 @@ ${!alreadyExtracted.subtotal ? '- subtotalAmount: subtotal before GST, as a numb
 
 Invoice text:
 ---
-${rawText.substring(0, 4000)}
+${rawText.substring(0, 60000)}
 ---
 
 Return ONLY valid JSON. No markdown fences.`;
 
   const response = await anthropic.messages.create({
+    // The text was being cut at 4000 characters — about a page and a half — so
+    // on any longer invoice the tail simply never reached the model and those
+    // lines came back missing. Haiku has a 200K context; the cut was arbitrary.
+    // max_tokens was the matching ceiling on the way out: a long line-item
+    // array hit 2048 and the JSON came back truncated, which parseAiJson
+    // reports as "malformed data".
     model: "claude-haiku-4-5",
-    max_tokens: 2048,
+    max_tokens: 8192,
     messages: [{ role: "user", content: prompt }],
   });
 
-  const content = (response.content[0] as any).text ?? "";
+  const content = firstTextBlock(response as any);
   return parseAiJson(content, "text extraction");
 }
 
@@ -325,7 +345,12 @@ async function convertPdfToImages(pdfBuffer: Buffer): Promise<string[]> {
   fs.writeFileSync(pdfPath, pdfBuffer);
 
   const outputPrefix = path.join(tmpDir, "page");
-  await execAsync(`pdftoppm -png -r 150 -l 3 "${pdfPath}" "${outputPrefix}"`);
+  // 150dpi renders A4 at ~1240x1754 — well under what the model can use, and
+  // that lost detail is lost for good. 220dpi puts the long edge at ~2576px,
+  // which is exactly the high-resolution tier's limit: maximum fidelity with
+  // no server-side downscale and no bytes spent on resolution that would only
+  // be thrown away again.
+  await execAsync(`pdftoppm -png -r 220 -l 3 "${pdfPath}" "${outputPrefix}"`);
 
   const files = fs
     .readdirSync(tmpDir)
@@ -363,8 +388,14 @@ async function extractWithVision(pdfBuffer: Buffer): Promise<AIInvoiceResponse> 
   });
 
   const response = await anthropic.messages.create({
-    model: "claude-sonnet-4-5",
-    max_tokens: 4096,
+    // Standard-tier models cap images at 1568px on the long edge and 1568
+    // visual tokens; anything larger is downscaled before the model sees it. A
+    // phone photo of a receipt lost most of its small print to that downscale,
+    // which is why whole lines went missing. Claude Opus 5 is in the
+    // high-resolution tier — 2576px long edge, up to 4784 visual tokens — so
+    // the same photo arrives with roughly three times the detail.
+    model: "claude-opus-5",
+    max_tokens: 8192,
     messages: [
       {
         role: "user",
@@ -373,7 +404,7 @@ async function extractWithVision(pdfBuffer: Buffer): Promise<AIInvoiceResponse> 
     ],
   });
 
-  const content = (response.content[0] as any).text ?? "";
+  const content = firstTextBlock(response as any);
   return parseAiJson(content, "scanned-PDF vision");
 }
 
@@ -388,11 +419,25 @@ async function extractFromImage(
       `Unsupported image type "${mimeType}". Convert the invoice to PDF, PNG, or JPG and try again.`,
     );
   }
+  // The API rejects images over 10MB base64. Without this the rejection came
+  // back as a generic extraction failure with nothing pointing at the photo.
+  const MAX_IMAGE_BASE64_BYTES = 10 * 1024 * 1024;
+  if (base64Clean.length > MAX_IMAGE_BASE64_BYTES) {
+    throw new Error(
+      "This image is too large to read (over 10MB). Retake it at a lower resolution, or save it as a PDF.",
+    );
+  }
   const anthropic = await getAnthropic();
 
   const response = await anthropic.messages.create({
-    model: "claude-sonnet-4-5",
-    max_tokens: 4096,
+    // Standard-tier models cap images at 1568px on the long edge and 1568
+    // visual tokens; anything larger is downscaled before the model sees it. A
+    // phone photo of a receipt lost most of its small print to that downscale,
+    // which is why whole lines went missing. Claude Opus 5 is in the
+    // high-resolution tier — 2576px long edge, up to 4784 visual tokens — so
+    // the same photo arrives with roughly three times the detail.
+    model: "claude-opus-5",
+    max_tokens: 8192,
     messages: [
       {
         role: "user",
@@ -411,7 +456,7 @@ async function extractFromImage(
     ],
   });
 
-  const content = (response.content[0] as any).text ?? "";
+  const content = firstTextBlock(response as any);
   return parseAiJson(content, "image vision");
 }
 

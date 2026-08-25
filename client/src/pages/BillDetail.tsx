@@ -513,9 +513,15 @@ export default function BillDetail() {
     enabled: isEditMode,
   });
 
+  // The global query client sets staleTime: Infinity, which meant the number
+  // fetched for the first new-bill form was reused for every later one in the
+  // session — by then already taken. The server assigns the real number on
+  // create regardless; this just keeps the field from displaying a stale one.
   const { data: nextBillNumberData } = useQuery<{ billNumber: string }>({
     queryKey: ["/api/bills/next-number"],
     enabled: !isEditMode,
+    staleTime: 0,
+    refetchOnMount: "always",
   });
 
   const form = useForm<BillFormData>({
@@ -1270,7 +1276,19 @@ export default function BillDetail() {
     },
     onSuccess: async (newBill) => {
       queryClient.invalidateQueries({ queryKey: ["/api/bills"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/bills/next-number"] });
       queryClient.invalidateQueries({ queryKey: ["/api/projects", form.getValues("projectId"), "allowances"] });
+
+      // The server owns the bill number, so it can differ from the one the form
+      // was showing. Say so rather than letting the bill quietly land under a
+      // different reference than the one the user just looked at.
+      const shown = form.getValues("billNumber");
+      if (newBill?.billNumber && shown && newBill.billNumber !== shown) {
+        toast({
+          title: `Saved as ${newBill.billNumber}`,
+          description: `${shown} was already taken, so this bill was given the next free number.`,
+        });
+      }
 
       if (form.getValues("sendToXero") && newBill?.id) {
         try {
