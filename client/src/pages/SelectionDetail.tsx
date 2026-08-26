@@ -328,6 +328,7 @@ export default function SelectionDetail() {
       allowance: undefined,
       clientCanChange: true,
       clientCanSeePrice: false,
+      clientCanAddOption: false,
     },
   });
 
@@ -345,6 +346,7 @@ export default function SelectionDetail() {
         allowance: selection.allowance || undefined,
         clientCanChange: selection.clientCanChange,
         clientCanSeePrice: selection.clientCanSeePrice,
+        clientCanAddOption: (selection as any).clientCanAddOption ?? false,
       });
       if (!notesInitialized) {
         setLocalNotes((selection as any).notes || "");
@@ -1128,6 +1130,7 @@ export default function SelectionDetail() {
         allowance: selection.allowance || undefined,
         clientCanChange: selection.clientCanChange,
         clientCanSeePrice: selection.clientCanSeePrice,
+        clientCanAddOption: (selection as any).clientCanAddOption ?? false,
       });
     }
     setHasUnsavedChanges(false);
@@ -1754,6 +1757,27 @@ export default function SelectionDetail() {
                                   checked={field.value}
                                   onCheckedChange={(val) => { field.onChange(val); setHasUnsavedChanges(true); }}
                                   data-testid="switch-client-can-see-price"
+                                />
+                              </FormControl>
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={selectionForm.control}
+                          name="clientCanAddOption"
+                          render={({ field }) => (
+                            <FormItem className="flex flex-row items-center justify-between rounded-md border p-2 gap-3">
+                              <div className="space-y-0.5">
+                                <FormLabel className="text-sm">Allow Client Suggestions</FormLabel>
+                                <FormDescription className="text-xs">
+                                  Client can add their own option — a photo and a name, for your team to price up
+                                </FormDescription>
+                              </div>
+                              <FormControl>
+                                <Switch
+                                  checked={field.value ?? false}
+                                  onCheckedChange={(val) => { field.onChange(val); setHasUnsavedChanges(true); }}
+                                  data-testid="switch-client-can-add-option"
                                 />
                               </FormControl>
                             </FormItem>

@@ -213,6 +213,12 @@ import { requireActivePlan } from "./middleware/plan";
 import { requireCompany } from "./middleware/requireCompany";
 import { serveUpload } from "./middleware/uploadsAccess";
 import { createScopeOwnershipGuards } from "./middleware/scopeOwnership";
+import {
+  resolveSelectionViewer,
+  applySelectionVisibility,
+  applySelectionVisibilityToOne,
+  applyOptionVisibility,
+} from "./selectionVisibility";
 import { makeOwnedByCompany, makeOwnedViaParent, makeOwnsAllByIds, makeOwnsAllVia } from "./middleware/tenantGuards";
 import { signUploadGrant, verifyUploadGrant } from "./utils/signedGrant";
 import { getStripe, isStripeConfigured } from "./stripe";
@@ -13969,7 +13975,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       if (!(await enforceProjectCompany(req, res, projectId as string, "Project not found"))) return;
       const selections = await storage.getSelections(projectId as string);
-      res.json(selections);
+      const viewer = await resolveSelectionViewer(req);
+      res.json(applySelectionVisibility(selections, viewer));
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch selections" });
     }
@@ -13983,7 +13990,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       if (!(await enforceProjectCompany(req, res, projectId as string, "Project not found"))) return;
       const selections = await storage.getSelectionsWithOptions(projectId as string);
-      res.json(selections);
+      const viewer = await resolveSelectionViewer(req);
+      res.json(applySelectionVisibility(selections, viewer));
     } catch (error) {
       console.error("Error fetching selections with options:", error);
       res.status(500).json({ error: "Failed to fetch selections with options" });
@@ -13997,13 +14005,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: "Selection not found" });
       }
       if (!(await enforceProjectCompany(req, res, selection.projectId, "Selection not found"))) return;
-      // Lazily generate portal token if missing
-      if (!selection.portalToken) {
+      const viewer = await resolveSelectionViewer(req);
+      // Lazily generate portal token if missing. Only for viewers who could act
+      // on it — minting a share token for a trade viewing the spec is pointless,
+      // and the token must never reach a redacted payload.
+      if (!selection.portalToken && !viewer.isClient && viewer.canSeePending) {
         const token = randomBytes(24).toString("hex");
         await storage.updateSelection(selection.id, { portalToken: token } as any);
         selection.portalToken = token;
       }
-      res.json(selection);
+      res.json(applySelectionVisibilityToOne(selection, viewer));
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch selection" });
     }
@@ -14361,7 +14372,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!parentSelection) return res.status(404).json({ error: "Selection not found" });
       if (!(await enforceProjectCompany(req, res, parentSelection.projectId, "Selection not found"))) return;
       const options = await storage.getSelectionOptions(req.params.selectionId);
-      res.json(options);
+      const viewer = await resolveSelectionViewer(req);
+      res.json(applyOptionVisibility(options, parentSelection, viewer));
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch selection options" });
     }

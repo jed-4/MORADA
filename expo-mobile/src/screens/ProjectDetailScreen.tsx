@@ -137,6 +137,7 @@ const colors = {
   // Gates the Labour Hours tile. The endpoint behind it enforces the same
   // permission; this only stops the UI offering it.
   const canViewLabourHours = usePermission('financial.budget_labour');
+  const canViewSelections = usePermission('projects.selections');
 
   const fetchData = useCallback(async () => {
     try {
@@ -278,6 +279,11 @@ const colors = {
     { key: 'tasks', icon: 'checkbox-outline', label: 'Tasks', showCount: true, count: tasks.length },
     { key: 'schedule', icon: 'calendar-outline', label: 'Schedule', showCount: false },
     { key: 'scope', icon: 'layers-outline', label: 'Scope', showCount: false },
+    // Only offered to roles that can view selections at all; what they then see
+    // (approved-only, costs or not) is decided server-side.
+    ...(canViewSelections
+      ? [{ key: 'selections', icon: 'color-palette-outline' as const, label: 'Selections', showCount: false }]
+      : []),
     { key: 'siteDiary', icon: 'book-outline', label: 'Site Diary', showCount: false },
     { key: 'checklists', icon: 'checkmark-done-outline', label: 'Checklists', showCount: false },
     { key: 'notes', icon: 'document-text-outline', label: 'Notes', showCount: false },
@@ -302,6 +308,9 @@ const colors = {
         break;
       case 'scope':
         navigation.navigate('Scope', { projectId, projectName: project.name });
+        break;
+      case 'selections':
+        navigation.navigate('Selections', { projectId, projectName: project.name });
         break;
       case 'notes':
         navigation.navigate('Notes', { projectId, projectName: project.name });

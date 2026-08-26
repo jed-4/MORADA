@@ -1531,6 +1531,11 @@ export const selections = pgTable("selections", {
   sortOrder: integer("sort_order").notNull().default(0), // For drag-and-drop reordering
   clientCanChange: boolean("client_can_change").notNull().default(true),
   clientCanSeePrice: boolean("client_can_see_price").notNull().default(false),
+  // Client may photograph something they like and add it as an option. Off by
+  // default and set per selection — sensible for "Kitchen splashback", not for
+  // "Structural steel finish". An option added this way is an idea, not a
+  // priced product; the team refines it at the desk.
+  clientCanAddOption: boolean("client_can_add_option").notNull().default(false),
   estimateItemId: varchar("estimate_item_id").references(() => estimateItems.id, { onDelete: "set null" }), // Source estimate item if created via "Create Selection" in estimate
   purchaseOrderId: varchar("purchase_order_id").references(() => purchaseOrders.id, { onDelete: "set null" }), // Set when converted to a PO
   orderedAt: timestamp("ordered_at"), // Set when status becomes "ordered"
