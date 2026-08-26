@@ -15,26 +15,34 @@ export const TYPE_COLORS = {
   leave:      'hsl(var(--rose))',    // rose — personal/absence
 } as const;
 
+// Hex mirror of TYPE_COLORS above, for contexts that cannot resolve a CSS
+// variable — react-pdf, charting libraries, generateNotionColors.
+//
+// These MUST stay equal to the tokens TYPE_COLORS points at. Until 2026-08-26
+// every one of them had drifted: they still held the pre-2026 BuildPro accents,
+// so the same event type rendered one colour through TYPE_COLORS and a
+// different one through this map. `delivery` was the clearest — teal in the app,
+// blue in anything generated — and `leave` was grey against a rose token.
+// Values below are the authored hexes from the :root block in index.css.
 export const TYPE_COLORS_HEX = {
-  task:              '#a890d4', // --bp-purple
-  milestone:         '#e8952a', // --bp-amber
-  inspection:        '#68b088', // --bp-green
-  delivery:          '#4a90d4', // --bp-blue
-  meeting:           '#e85b5b', // --bp-coral
-  leave:             '#9b9b9b', // --bp-muted
-  schedule:          '#68b088', // --bp-green
-  timesheet:         '#e8952a', // --bp-amber
-  "google-calendar": '#4a90d4', // --bp-blue
-  site_diary:        '#68b088', // --bp-green
+  task:              '#87749A', // --primary
+  milestone:         '#D4B670', // --amber
+  inspection:        '#82C8A2', // --sage
+  delivery:          '#70CAD0', // --teal
+  meeting:           '#DA988A', // --coral
+  leave:             '#D08AAF', // --rose
+  schedule:          '#82C8A2', // --sage
+  timesheet:         '#D4B670', // --amber
+  "google-calendar": '#70CAD0', // --teal
+  site_diary:        '#82C8A2', // --sage
 } as const;
 
 export type ScheduleItemType = keyof typeof TYPE_COLORS;
 
-// Project colour palette — used as the swatch picker in Create / Edit Project,
-// and assigned cyclically as new projects are created (see getProjectColor below).
-// Now the shared Morada palette, so a project colour comes from the same set as
-// a contact or a tag. Widening this from 10 to 27 only changes the colour a NEW
-// project is offered at a given index; existing projects store their own hex.
+// Project colour palette — the swatch picker in Create / Edit Project, and the
+// cycle new projects are assigned from (see getProjectColor below). Re-exported
+// under this name because that is what those call sites read as; it is the
+// shared palette, not a separate set.
 export const PROJECT_COLORS = MORADA_PALETTE_HEXES;
 
 // Cyclic project-colour selector — always returns a colour from PROJECT_COLORS for any non-negative index.
