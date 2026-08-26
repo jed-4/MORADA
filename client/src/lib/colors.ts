@@ -67,6 +67,35 @@ export const MORADA_PALETTE_GROUPS: MoradaSwatchGroup[] = [
       { name: 'Dusty Mauve', hex: '#C090B4' },
     ],
   },
+  // Neutrals. The Project Colour Palette frame has none, but the old palettes
+  // did (BuildPro carried seven) and several surfaces need one — most of all
+  // ScheduleColorPicker, where #9B9B9B is not just a colour but the "no colour
+  // set" sentinel it also excludes from its auto-assign pool. Stone is ΔE 8.7
+  // from that sentinel and is the intended replacement when that picker moves.
+  //
+  // Taken from the "1 — Colour Tokens" ramp in the same Figma file, so these
+  // are the app's own neutrals rather than invented ones: Chalk = Grey-300,
+  // Stone = Grey-400, Graphite = Grey-500. Named in the palette's own style
+  // because that is what the picker shows.
+  //
+  // Only these three are usable as entity colours. White and Grey-100/200 are
+  // surface tokens (--background, --sidebar, --border) and vanish against a
+  // card; Grey-700 is --foreground and reads as text, not as a colour.
+  //
+  // Two things to fix upstream in Figma rather than here:
+  //   • Grey-500 and Grey-600 are both #6B6560, and Grey-700 and Dark are both
+  //     #2C2825 — two duplicate pairs in a nine-step ramp.
+  //   • The ramp jumps ΔE 30 from Grey-300 (L* 86) to Grey-400 (L* 56) with
+  //     nothing between, where every other step is ΔE 4–13. A mid step around
+  //     L* 70 would even it out; deliberately not invented here.
+  {
+    group: 'Neutral',
+    colors: [
+      { name: 'Chalk',       hex: '#D8D7D4' },
+      { name: 'Stone',       hex: '#8A8680' },
+      { name: 'Graphite',    hex: '#6B6560' },
+    ],
+  },
 ];
 
 export const MORADA_PALETTE: MoradaSwatch[] = MORADA_PALETTE_GROUPS.flatMap(g => g.colors);
