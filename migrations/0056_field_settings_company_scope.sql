@@ -34,7 +34,15 @@ SELECT md5(c.id || fc.id), fc.key, fc.label, fc.entity, fc.description,
        fc.is_built_in, fc.is_active, fc.sort_order, fc.created_at, NOW(), c.id
 FROM field_categories fc
 CROSS JOIN companies c
-WHERE fc.company_id IS NULL;
+WHERE fc.company_id IS NULL
+  -- Skip a clone that is already there. The clone id is deterministic, so this
+  -- makes the step replayable on a HALF-APPLIED database (which is exactly the
+  -- state dev was in: migrated ahead of the code). Without it a second run
+  -- collides on the primary key.
+  AND NOT EXISTS (SELECT 1 FROM field_categories x WHERE x.id = md5(c.id || fc.id))
+  -- ...and never produce a second row for a (company, key) that already has
+  -- one, or the per-company unique index at the end cannot be created.
+  AND NOT EXISTS (SELECT 1 FROM field_categories y WHERE y.company_id = c.id AND y.key = fc.key);
 
 -- 2. One copy of every option per company, with category_id and parent_id
 --    remapped onto that company's cloned rows.
@@ -49,7 +57,12 @@ SELECT md5(c.id || fo.id),
        fo.sort_order, fo.created_at, NOW(), c.id
 FROM field_options fo
 CROSS JOIN companies c
-WHERE fo.company_id IS NULL;
+WHERE fo.company_id IS NULL
+  AND NOT EXISTS (SELECT 1 FROM field_options x WHERE x.id = md5(c.id || fo.id))
+  -- The parent clone must exist, or category_id points at nothing. It will be
+  -- missing only if the category clone above was skipped as already-present,
+  -- in which case this company's options came across with it.
+  AND EXISTS (SELECT 1 FROM field_categories z WHERE z.id = md5(c.id || fo.category_id));
 
 -- 3. Drop the now-replaced global rows (options cascade from their category,
 --    but delete explicitly so the intent is on the record).
