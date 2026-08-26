@@ -62,7 +62,7 @@ A commit dated 2025-11-04 titled *"Unify all calendar views into a single, consi
 
 ### D1 — One engine, two lenses
 
-Rebuild `BusinessCalendar` on **`EnhancedCalendar`**, and retire `MoradaCalendar`, `TaskCalendar`, and the `/my-calendar` page.
+Rebuild `BusinessCalendar` on **`EnhancedCalendar`**, and retire `MoradaCalendar`, `TaskCalendar`, and the `PersonalCalendar` page behind it.
 
 This is the decision that delivers "it needs to look like the user calendar" — not by restyling, but by being the same component. It also means every future calendar feature lands on both surfaces at once, instead of the split that produced today's gap. `MoradaCalendar`'s only two live consumers are the two pages this plan replaces, so the whole directory goes.
 
@@ -107,22 +107,22 @@ Note "By person" is not the same as `CompanyWorkload`'s swimlanes: that groups *
 |---|---|---|
 | Schedule items, tiered | the jobs | ✅ endpoint exists, needs the `business` mode |
 | Tasks, all assignees | the work | ✅ exists, assignee resolution broken |
-| Meetings (`minutes.meetingDate`) | the meetings | ⚠️ table exists, on no calendar today |
-| Leave | who's away | ❌ **not built** — `/business/leave` is a `ComingSoonPage` |
+| **Leave** | who's away | ❌ **not built** — see Phase 4 |
+| **Meetings** | the meetings | ❌ **not built as scheduled events** — see Phase 6 |
 
 **Optional layers** — every one of these already has a date column and no calendar surface:
 
-| Layer | Column |
-|---|---|
-| Deliveries due | `purchaseOrders.requiredByDate` |
-| RFQs closing | `rfqs.dueDate`, `rfqs.deadline` |
-| RFIs owed | `rfis.dueDate` |
-| Client selections due | `selections.deadline` |
-| Defects due | `defects.dueDate` |
-| Money in | `clientInvoices.dueDate` |
-| Money out | `bills.dueDate` |
-| Timesheets (actuals lookback) | `timesheets.date` — already built in the orphan `PersonalCalendar` |
-| Site diary | `siteDiaryEntries.entryDateTime` — same |
+| Layer | Column | |
+|---|---|---|
+| Deliveries due | `purchaseOrders.requiredByDate` | |
+| RFQs closing | `rfqs.dueDate`, `rfqs.deadline` | |
+| RFIs owed | `rfis.dueDate` | |
+| Client selections due | `selections.deadline` | |
+| Defects due | `defects.dueDate` | |
+| Money in | `clientInvoices.dueDate` | permission-gated |
+| ~~Money out~~ | ~~`bills.dueDate`~~ | **cut** — 26 Aug |
+| Timesheets (actuals lookback) | `timesheets.date` | already built in the orphan `PersonalCalendar` |
+| Site diary | `siteDiaryEntries.entryDateTime` | same |
 
 **Build these as one server endpoint** returning a typed event array — `GET /api/business-calendar/events?startDate=&endDate=&layers=`. Nine client-side queries would be nine trans-Pacific round trips per navigation. One endpoint also gives one place to apply scoping, which matters for the money layers (see D7).
 
@@ -136,17 +136,15 @@ Three changes, all small:
 
 A business calendar people actually use is one where the office manager builds "Deliveries This Fortnight" once and everyone opens it.
 
-### D6 — Read-mostly, and deliberately so
+### D6 — Read-only *(revised 26 Aug — the drag rule was over-engineered)*
 
-The user calendar is a planner — you drag your own things around. The business calendar is mostly a *window*, because dragging someone else's schedule item cascades the Gantt through dependency reflow.
+The first draft proposed drag-your-own-tasks-but-not-anyone-else's. That's a rule you'd have to *explain*, and it buys almost nothing: the case for dragging a task on the business calendar is you spotting one of your own tasks while looking at the company's week — which is a thing your own calendar already does better.
 
-Proposed rule:
+So: **the business calendar is read-only.** Click any chip to open its modal and change the date there.
 
-- **Tasks** you own or are assigned to: draggable and resizable, same as the user calendar.
-- **Everyone else's tasks**: click to open, no drag.
-- **Schedule items**: never draggable here. Open the detail modal, which already offers **"Book my time"** (Phase 3, built) and a link through to Business → Schedule.
+What this deletes: an ownership branch through every drag, resize, and drop handler; the "why can't I move this one" question; and the risk of someone nudging a schedule item and cascading the Gantt. Schedule items open the detail modal, which already offers **"Book my time"** and a link through to Business → Schedule.
 
-This keeps the surfaces honest: you plan on your calendar, you reschedule the job on the Gantt, and the business calendar shows you the truth of both.
+The surfaces stay honest: you plan on your calendar, you reschedule the job on the Gantt, and the business calendar shows you the truth of both. If drag turns out to be missed once it's in daily use, it's an easy addition later — the engine already supports it.
 
 ### D7 — Permissions and the money layers
 
@@ -156,6 +154,43 @@ There is **no `business.calendar` permission key** — `business.overheads` is t
 2. The proposed money layers (`clientInvoices.dueDate`, `bills.dueDate`) expose commercial data to anyone who can open the tab. These need their own gate on the server, not just a hidden toggle in the UI.
 
 Add `business.calendar` (view) and gate the financial layers behind the existing finance permissions inside the new endpoint.
+
+### D8 — Leave is a first-class business event *(added 26 Aug)*
+
+Leave is the biggest genuine hole in "all things within the business" — knowing who's away is most of what a shared calendar is for.
+
+**Scope it as marking leave, not as leave management.** The full thing — requests, approvals, accrual, balances, public holidays, payroll — is a separate product decision. What's needed here is: an admin (or the employee) marks someone as away, and it shows on the calendar.
+
+Minimal model — a `leave_entries` table:
+
+| Column | Note |
+|---|---|
+| `userId` | who's away |
+| `startDate` / `endDate` | inclusive, day-granular |
+| `isHalfDay` + `halfDayPeriod` | AM/PM — a half day off is common and an all-day chip lies about it |
+| `leaveType` | annual / sick / unpaid / RDO / public holiday — a `field_categories` picker, so you can edit the list without a migration |
+| `note` | optional |
+| `createdBy`, `companyId` | audit + tenancy |
+
+Renders as a **person band**, not a chip: leave is duration, exactly like a work bar, and the same reasoning from D2 applies — five all-day chips per person per week would swamp the grid. In the by-person view (D3) it's a shaded column.
+
+This also fills in `/business/leave`, which is a `ComingSoonPage` today: the tab becomes the list-and-edit surface for the same table.
+
+**Deliberately deferred:** approval workflow, balances, accrual, and payroll or Xero integration. Add them if and when leave becomes its own project.
+
+### D9 — Meetings get scheduled in Morada, not inferred from minutes *(added 26 Aug)*
+
+The first draft proposed reading `minutes.meetingDate` as the meetings layer. That's backwards: `minutes` is a record of a meeting that **already happened**, so a calendar built on it can only ever show you the past. A business calendar's job is to show you Thursday's site meeting *before* Thursday.
+
+So meetings become a real scheduled entity — a `meetings` table with `startsAt` / `endsAt`, attendees (both Morada users and contacts), location or video link, and an optional `projectId`. Then:
+
+- **Forward:** schedule a meeting → it appears on every attendee's calendar *and* the business calendar.
+- **Back:** `minutes.meetingId` FK, so recording the minutes attaches them to the meeting they came from, instead of the two being unrelated rows that happen to share a date.
+
+Note `scheduleItems.type` already includes `"meeting"` — but those live inside a *project schedule*, with Gantt semantics and dependencies. A Tuesday management meeting is not a Gantt row. These are different things and should stay separate.
+
+This is the largest single piece of new build in the plan, which is why it's sequenced last.
+
 
 ---
 
@@ -182,6 +217,7 @@ No migration.
 1. Replace `MoradaCalendar` with `EnhancedCalendar` in `BusinessCalendar`, keeping every existing filter, saved view, and display option working identically.
 2. Adopt the user calendar's own header: mini-month jump, keyboard shortcuts (`t` / `←` / `→` / `d` `w` `m`), day view.
 3. Wire `hideInternalHeader` and render the page's own nav, exactly as `UserCalendar` does.
+4. Leave `onEventReschedule` / `onEventResize` unwired — read-only per D6. This is the one place the two surfaces deliberately differ, and not passing the handlers is the whole implementation.
 
 **Ships:** it looks like the user calendar, because it *is* the user calendar's grid.
 
@@ -199,28 +235,42 @@ No migration.
 
 ### Phase 3 — Sources
 
-Probably no migration. Every column listed in D4 already exists — with one caveat: `minutes` has `meetingDate` and `location` but **no end time**, so a meeting renders as a point, not a block, unless a `duration_minutes` column is added.
+No migration. Every column listed in D4 already exists.
 
-1. New endpoint `GET /api/business-calendar/events` with a `layers` parameter, project-access scoped, finance layers permission-gated.
-2. Meetings from `minutes` into the core ring.
-3. The nine optional layers behind toggles in the filter bar, persisted per saved view.
-4. Port the timesheet / site-diary lookback rendering out of `PersonalCalendar` before that page is deleted.
+1. New endpoint `GET /api/business-calendar/events?startDate=&endDate=&layers=`, project-access scoped, the invoice layer permission-gated. One round trip per navigation, not one per layer.
+2. The optional layers behind toggles in the filter bar, persisted per saved view.
+3. Port the timesheet / site-diary lookback rendering out of `PersonalCalendar` before Phase 7 deletes that page.
 
 **Ships:** "all things within the business" — as layers you switch on, not a wall of chips.
 
-### Phase 4 — People axis
+### Phase 4 — Leave
+
+**Migration:** one new table, `leave_entries` (D8). Take the next free number at implementation time — `0054` is in use on `feat/contacts-revamp`. Apply by hand via `psql`, dev then prod.
+
+1. `leave_entries` table + CRUD endpoints, tenancy-scoped by `companyId`.
+2. Leave types as a `field_categories` picker, so the list is editable without a migration.
+3. Mark leave from the business calendar — select a person and a date range.
+4. Render as a person band, with half-days rendering as a half-width segment.
+5. `/business/leave` becomes the list-and-edit surface, replacing its `ComingSoonPage`.
+
+**Ships:** who's away, visible to everyone, on the calendar they already open. The tab stops saying "coming soon".
+
+**Explicitly not in scope:** requests, approvals, balances, accrual, payroll or Xero sync.
+
+### Phase 5 — People axis
 
 No migration.
 
 1. Grouping control: All / By person.
 2. By-person day view — a column per team member, unassigned in its own column.
 3. Person column headers show a load count; click through to that user's calendar.
+4. Leave (Phase 4) shades that person's whole column.
 
 **Ships:** "who's on what today" in one glance — the answer Business → Schedule can't give at day granularity.
 
-### Phase 5 — Shared views
+### Phase 6 — Shared views
 
-Migration: likely one column (`isCompanyDefault` on `calendar_views`) — take the next free number at implementation time; `0054` is in use on `feat/contacts-revamp`.
+Migration: likely one column (`isCompanyDefault` on `calendar_views`).
 
 1. Company-level default view instead of per-user auto-creation.
 2. Wire the existing `SavedViews` sharing UI.
@@ -229,17 +279,24 @@ Migration: likely one column (`isCompanyDefault` on `calendar_views`) — take t
 
 **Ships:** a calendar the team shares rather than fifteen private copies of the same thing.
 
-### Phase 6 — Retire the dead engines
+### Phase 7 — Retire the dead engines
 
-No migration. Pure deletion, once Phases 1–3 have landed and been eyeballed in prod.
+No migration. Once Phases 1–3 have landed and been eyeballed in prod.
 
-Delete `client/src/components/calendar/` (8 files), `TaskCalendar.tsx`, `PersonalCalendar.tsx`, and the `/my-calendar` route; repoint the Quick Actions "Schedule" button at the user calendar.
+Delete `client/src/components/calendar/` (8 files), `TaskCalendar.tsx`, and `PersonalCalendar.tsx`. **Keep the `/my-calendar` route as a redirect** to the user's own calendar, and repoint the Quick Actions "Schedule" button at the same place — see the note on this in Part 5, it dissolves the "is anyone using it" question rather than answering it.
 
 **Ships:** one calendar engine instead of three. Every future fix lands everywhere.
 
-### Phase 7 — Leave *(blocked — separate build)*
+### Phase 8 — Meetings
 
-Leave is the largest genuinely missing business source, and it is not a calendar feature: it needs a request/approve flow, a balance model, and a table. `/business/leave` is a `ComingSoonPage` today. **Scope it separately**; the calendar consumes it in an afternoon once it exists.
+**Migration:** new `meetings` table plus `minutes.meeting_id` (D9). The largest build in the plan.
+
+1. `meetings` table — `startsAt` / `endsAt`, attendee users and contacts, location or video link, optional `projectId`.
+2. Create and edit a meeting from the business calendar; it lands on every attendee's own calendar too.
+3. `minutes.meetingId` FK — recording minutes attaches them to the meeting, and a meeting shows whether its minutes exist yet.
+4. Backfill is optional: existing `minutes` rows keep working with a null `meetingId`.
+
+**Ships:** you schedule Thursday's site meeting in Morada and it's on everyone's calendar — instead of the calendar only ever showing meetings that already happened.
 
 ---
 
@@ -250,23 +307,37 @@ Leave is the largest genuinely missing business source, and it is not a calendar
 | 0 | Correctness — two assignee bugs | — | — |
 | 1 | Engine swap to `EnhancedCalendar` | — | 0 (smaller diff) |
 | 2 | Tiering + project band row | — | 1 |
-| 3 | Sources: meetings + layers endpoint | probably none | 1 |
-| 4 | People axis / by-person day view | — | 0 |
-| 5 | Shared + company-default views | 1 column | — |
-| 6 | Delete the two dead engines | — | 1, 3 |
-| 7 | Leave | new table | a separate build |
+| 3 | Sources / layers endpoint | — | 1 |
+| 4 | **Leave** | `leave_entries` | 1 |
+| 5 | People axis / by-person day view | — | 0, reads 4 |
+| 6 | Shared + company-default views | 1 column | — |
+| 7 | Delete the dead engines | — | 1, 3 |
+| 8 | **Meetings** | `meetings` + FK | 1 |
 
-Phases 0–2 are what change how the page feels, and none of them touch the schema. Phase 3 is where it becomes "the whole business". Phases 5–6 are the tidy-up that stops this drifting apart again.
+Phases 0–2 change how the page feels and touch no schema — that's the first shippable chunk. Phase 3 makes it the whole business. Phases 4 and 8 are the two real builds. Phases 6–7 are the tidy-up that stops this drifting apart again.
 
 ---
 
-## Open questions
+## Part 5 — Decisions, and what's still open
 
-1. **Write access.** D6 proposes: drag your own tasks, never drag schedule items. Is read-mostly right, or do you want to reschedule the job from here too?
-2. **Leave.** It's the biggest hole in "all things within the business". Worth scoping as its own build now, or park it?
-3. **Money layers.** Invoice and bill due dates on the business calendar — genuinely useful, or is that Metrics' job? It's the only part of this plan that puts commercial figures on a screen the whole team opens.
-4. **`/my-calendar`.** Confirm nobody uses it before Phase 6 deletes it. It's reachable only from the Quick Actions "Schedule" button, but that button is on the dashboard.
-5. **Meetings.** `minutes` records a meeting *after* the fact. Is there an intent to schedule meetings in Morada, or should the meetings layer be Google-sourced instead?
+### Settled 26 August
+
+| # | Decision |
+|---|---|
+| 1 | **Read-only.** The drag-your-own-tasks rule was over-engineered and is dropped — see D6. |
+| 2 | **Leave is in scope** as *marking* leave, not leave management — Phase 4, D8. |
+| 3 | **Client invoice due dates in, bill due dates out.** The invoice layer stays permission-gated. |
+| 5 | **Meetings get scheduled in Morada** rather than inferred from minutes — Phase 8, D9. |
+
+### 4 — `/my-calendar`: the question is dissolved, not answered
+
+**I could not verify whether anyone uses it, and neither can telemetry.** For the record, what was checked:
+
+- **Sentry has essentially no tracing data.** The `javascript-react` project holds two transaction names totalling 960 spans across 90 days (`/accept-invite/*` and `/projects/*`). No `/my-calendar` — but with a sample that thin, absence there is not evidence of absence.
+- **No pageview logging exists in the app.** The `activities` table is an entity feed (created / updated / approved), not navigation.
+- **The API calls can't isolate it.** `PersonalCalendar`'s most distinctive query, `/api/company/site-diary-entries`, is also used by the Site Diary page, so hits on it prove nothing.
+
+So Phase 7 **redirects `/my-calendar` at the user's own calendar instead of deleting the route.** Anyone with it bookmarked, and the Quick Actions button, land on the calendar that's actually maintained. The page component still gets deleted; nobody hits a 404; and the usage question stops mattering.
 
 ---
 
