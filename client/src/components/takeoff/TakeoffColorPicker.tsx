@@ -1,18 +1,15 @@
 import { useState } from "react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Input } from "@/components/ui/input";
-import { BUILDPRO_PALETTE_HEXES } from "@/lib/colors";
+import { MORADA_MARKUP_PALETTE_HEXES, markupColorName } from "@/lib/colors";
 
-// Deliberately still on BUILDPRO_PALETTE while the rest of the app moves to
-// MORADA_PALETTE. These colours are drawn over plans, not over app chrome, so
-// they need contrast against white paper rather than harmony with the UI, and
-// the Morada palette is warm and muted by design. Measured against white: only
-// 5 of its 27 colours reach a 3:1 ratio and 9 fall below 2:1, versus 18 of 44
-// for BuildPro. Switching would make most markup options near-invisible on a
-// drawing. Needs either a saturated markup set added to the palette, or a
-// decision that takeoff stays a deliberate exception.
-export const MEASUREMENT_COLORS = BUILDPRO_PALETTE_HEXES;
-export const MARKUP_COLORS = BUILDPRO_PALETTE_HEXES;
+// Takeoff uses the drawing-weight palette, not MORADA_PALETTE. These colours
+// are strokes over PDF plans and need to carry against white paper rather than
+// sit harmoniously on app chrome — see the note on MORADA_MARKUP_PALETTE in
+// lib/colors.ts for how they are derived from the Morada hues and why they are
+// kept separate.
+export const MEASUREMENT_COLORS = MORADA_MARKUP_PALETTE_HEXES;
+export const MARKUP_COLORS = MORADA_MARKUP_PALETTE_HEXES;
 
 interface Props {
   color: string;
@@ -42,13 +39,18 @@ export default function TakeoffColorPicker({
           aria-label="Pick colour"
         />
       </PopoverTrigger>
-      <PopoverContent className="w-72 p-2">
-        <div className="grid grid-cols-8 gap-1.5 mb-2">
+      {/* Narrower than before: the palette is 11 drawing colours, not 44, so the
+          popover no longer needs to be w-72 and a 6-wide grid fills two rows
+          evenly instead of leaving three orphans under a row of eight. */}
+      <PopoverContent className="w-auto p-2">
+        <div className="grid grid-cols-6 gap-1.5 mb-2">
           {palette.map((c) => (
             <button
               key={c}
               type="button"
               onClick={() => { onChange(c); setOpen(false); }}
+              title={markupColorName(c) ?? c}
+              aria-label={markupColorName(c) ?? c}
               className={`h-7 w-7 rounded-full border-2 ${color === c ? "border-foreground" : "border-transparent"}`}
               style={{ backgroundColor: c }}
               data-testid={`swatch-${c.replace("#", "")}`}
