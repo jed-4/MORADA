@@ -734,8 +734,17 @@ export async function pushBillToXeroInternal(
       // with each other and with the invoice. When the two can't be made to
       // agree, send the stored total as a single unit and keep the quantity in
       // the description, so the pushed amount is always the amount we hold.
-      const qty = typeof item.quantity === "number" && item.quantity !== 0 ? item.quantity : 1;
-      const unitCents = typeof item.unitPrice === "number" ? item.unitPrice : 0;
+      // Xero rejects a negative Quantity outright ("Quantity must not be less
+      // than zero") but is perfectly happy with a negative UnitAmount. A line
+      // entered as -1 x $106.60 — the usual way of putting a credit on a
+      // normal bill — therefore failed the push permanently: a 4xx never
+      // retries, so the bill sat flagged and unsynced. Carry the sign on the
+      // amount instead; the line total is identical either way.
+      const rawQty = typeof item.quantity === "number" && item.quantity !== 0 ? item.quantity : 1;
+      const negativeQty = rawQty < 0;
+      const qty = negativeQty ? -rawQty : rawQty;
+      const unitCents =
+        (typeof item.unitPrice === "number" ? item.unitPrice : 0) * (negativeQty ? -1 : 1);
       const storedTotalCents =
         typeof item.total === "number" ? item.total : Math.round(qty * unitCents);
       const reconciles = Math.abs(Math.round(qty * unitCents) - storedTotalCents) < 1;
@@ -1012,9 +1021,18 @@ function scheduleAutoPushBill(billId: string, companyId: string, delayMs = 2000)
       const result = await pushBillToXeroInternal(billId, companyId);
       if (!result.ok) {
         console.warn(`[auto-push bill ${billId}] failed:`, result.error, result.message);
+        // A transient failure here used to be logged and abandoned — this path
+        // never touched the outbox, unlike the explicit push route. So a Xero
+        // rate-limit or a 5xx during an auto-push silently lost the change
+        // until someone edited the bill again. Same rule as the explicit
+        // route: retryable goes to the queue, 4xx validation won't self-heal.
+        const retryable = !result.status || result.status === 429 || result.status >= 500;
+        if (retryable) await enqueueXeroPush(companyId, billId).catch(() => {});
       }
     } catch (e) {
       console.error(`[auto-push bill ${billId}] unexpected error:`, e);
+      // An unexpected throw is almost always network — always worth a retry.
+      await enqueueXeroPush(companyId, billId).catch(() => {});
     }
   }, delayMs);
   __billAutoPushTimers.set(billId, timer);
