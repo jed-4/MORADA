@@ -108,6 +108,55 @@ export const MORADA_PALETTE_GROUPS: MoradaSwatchGroup[] = [
 export const MORADA_PALETTE: MoradaSwatch[] = MORADA_PALETTE_GROUPS.flatMap(g => g.colors);
 export const MORADA_PALETTE_HEXES = MORADA_PALETTE.map(c => c.hex);
 
+
+// ---------------------------------------------------------------------------
+// MORADA_MARKUP_PALETTE — takeoff only.
+//
+// Measurement and markup colours are strokes 1–3px wide drawn over PDF plans,
+// not chrome sitting on app surfaces. They have to carry against white paper
+// and stay tellable apart from one another; MORADA_PALETTE is warm and muted
+// by design and cannot do that. Measured against white, only 5 of its 27
+// colours reach 3:1 and 9 fall below 2:1.
+//
+// So these are derived from Morada hues rather than picked fresh: each keeps
+// its source hue, takes 25% more chroma, and is darkened until it clears 4.5:1
+// on white. The set was then chosen greedily for separation — every pair is at
+// least ΔE 25 apart, which is what stops two measurements on one plan reading
+// as the same colour. Names are plain drawing names, none of which collide
+// with a name in MORADA_PALETTE or BUILDPRO_PALETTE.
+//
+// The 4.5:1 target is for full-opacity strokes, which is how measurements are
+// drawn. Two places composite instead — the in-progress guide line at 0.6 and
+// some markup fills at 0.7 — and over white those land near 2.3:1 and 2.8:1.
+// That is accepted: the guide line is a transient cursor affordance and the
+// fills are large areas, neither of which is thin line work.
+//
+// Do NOT fold these into MORADA_PALETTE. At this saturation they would look
+// wrong on a contact avatar or a status chip, which is exactly why the two
+// sets are separate.
+// ---------------------------------------------------------------------------
+export const MORADA_MARKUP_PALETTE: MoradaSwatch[] = [
+  { name: 'Ink',      hex: '#6C655F' },  // from Graphite #6B6560
+  { name: 'Red',      hex: '#E22B3F' },  // from Rose Quartz #E8A0A8
+  { name: 'Orange',   hex: '#CA4F19' },  // from Peach #E09878
+  { name: 'Bronze',   hex: '#A96700' },  // from Amber #F0B964
+  { name: 'Green',    hex: '#2A8645' },  // from Mint #96D4A8
+  { name: 'Jade',     hex: '#2C8379' },  // from Seafoam #80C8C0
+  { name: 'Cobalt',   hex: '#247DB0' },  // from Sky #80B8D8
+  { name: 'Denim',    hex: '#4F73C8' },  // from Cornflower #7890C8
+  { name: 'Iris',     hex: '#8860D1' },  // from Lavender #A890D4
+  { name: 'Orchid',   hex: '#AE5898' },  // from Dusty Mauve #C090B4
+  { name: 'Magenta',  hex: '#CF3F71' },  // from Mauve Rose #D484A0
+];
+
+export const MORADA_MARKUP_PALETTE_HEXES = MORADA_MARKUP_PALETTE.map(c => c.hex);
+
+/** Name of a markup colour, for swatch tooltips in the takeoff picker. */
+export function markupColorName(hex: string | null | undefined): string | undefined {
+  if (!hex) return undefined;
+  return MORADA_MARKUP_PALETTE.find(c => c.hex.toLowerCase() === hex.toLowerCase())?.name;
+}
+
 /** Look up a palette colour's name, for tooltips and a11y labels. */
 export function moradaColorName(hex: string | null | undefined): string | undefined {
   if (!hex) return undefined;
