@@ -7,6 +7,13 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 
+// Deliberately still on BUILDPRO_PALETTE, and the last picker to move.
+// GRAY_COLOR is not just a colour: it is the "no colour set" sentinel, and it
+// is excluded from the pool that generateColorFromString() indexes into. Two
+// things therefore have to happen together when this switches — the sentinel
+// becomes Stone (#8A8680, ΔE 8.7 from this value), and the pool changes size,
+// which reassigns the auto-generated colour of every user and trade that never
+// picked one. That reshuffle is visible app-wide and wants its own change.
 const GRAY_COLOR = "#9b9b9b"; // Slate — default fallback
 
 // Generate a deterministic color from a string (user ID or name)

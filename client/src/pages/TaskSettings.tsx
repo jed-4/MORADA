@@ -16,10 +16,10 @@ import type { TaskTag, TaskTemplateStatus } from "@shared/schema";
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { BUILDPRO_PALETTE } from '@/lib/colors';
+import { MORADA_PALETTE } from '@/lib/colors';
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 
-const TAG_COLORS = BUILDPRO_PALETTE.map(c => ({ value: c.hex, label: c.name }));
+const TAG_COLORS = MORADA_PALETTE.map(c => ({ value: c.hex, label: c.name }));
 
 interface SortableTagRowProps {
   tag: TaskTag;
