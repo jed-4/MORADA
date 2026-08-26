@@ -1458,7 +1458,12 @@ export type CostCode = typeof costCodes.$inferSelect;
 // Field Categories (Buildern-style predefined categories)
 export const fieldCategories = pgTable("field_categories", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  key: text("key").notNull().unique(), // e.g., "task.status", "task.priority"
+  // Field Settings are PER COMPANY. They used to be global — one shared list of
+  // units / statuses / rooms for every company on the deployment, so a customer
+  // renaming an option renamed it for everyone. Migration 0056 cloned a set per
+  // company; `key` is now unique per company, not globally.
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  key: text("key").notNull(), // e.g., "task.status", "task.priority"
   label: text("label").notNull(), // Display name
   entity: text("entity").notNull(), // "task" | "note" | "project"
   description: text("description"),
@@ -1467,7 +1472,10 @@ export const fieldCategories = pgTable("field_categories", {
   sortOrder: integer("sort_order").notNull().default(0),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  // Composite unique: a category key is unique per company, not globally
+  companyKeyUnique: uniqueIndex("field_categories_company_key_unique").on(table.companyId, table.key),
+}));
 
 export const insertFieldCategorySchema = createInsertSchema(fieldCategories).omit({
   id: true,
@@ -1481,7 +1489,16 @@ export type FieldCategory = typeof fieldCategories.$inferSelect;
 // Field Options (configurable options for each category)
 export const fieldOptions = pgTable("field_options", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  // Denormalised from the parent category so option reads/writes can be
+  // company-scoped without a join. See migration 0056.
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
   categoryId: varchar("category_id").notNull().references(() => fieldCategories.id, { onDelete: "cascade" }),
+  // NOTE: this self-reference has no `(): AnyPgColumn` return type, so
+  // TypeScript can't infer the table while inferring the column and fieldOptions
+  // degrades to `any` (TS7022). Annotating it is the right fix, but it exposes
+  // ~17 latent errors in client code that the `any` was hiding — including
+  // reads of a non-existent `.label` on a field option. Left as-is here so that
+  // clean-up is its own change rather than a rider on the company-scoping work.
   parentId: varchar("parent_id").references(() => fieldOptions.id, { onDelete: "cascade" }), // For hierarchical options (e.g., project sub-statuses)
   key: text("key").notNull(), // Slug/identifier (e.g., "todo", "in_progress", "done")
   name: text("name").notNull(), // Display name (editable by user)
