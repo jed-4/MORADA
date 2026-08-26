@@ -59,26 +59,55 @@ Two types with different behaviour:
 
 ## Design system (Morada)
 
-All CSS custom properties defined in `client/src/index.css`:
+All CSS custom properties defined in `client/src/index.css`. **Values below are
+what the stylesheet actually ships** — verified against `:root` on 2026-08-26.
+Tokens are stored as HSL; the hex is derived, so a ±1 difference from a design
+file is rounding, not drift.
 
 | Token | HSL | Hex | Use |
 |---|---|---|---|
-| `--primary` | 261 44% 70% | `#A890D4` | Lavender — primary accent, buttons |
-| `--primary-light` | 262 48% 95% | `#F2EEF9` | Lavender wash — badges, pills |
-| `--background` | 60 15% 98% | `#FAFAF8` | Page background |
+| `--primary` | 270 16% 53% | `#87749A` | Deep plum — primary accent, buttons |
+| `--primary-light` | 270 36% 95% | `#F2EEF7` | Plum wash — badges, pills |
+| `--background` | 38 40% 96% | `#F9F6F1` | Page background |
 | `--card` | 0 0% 100% | `#FFFFFF` | Card background |
-| `--sidebar` | 48 20% 95% | `#F5F4F0` | Sidebar background |
-| `--foreground` | 20 8% 16% | `#2C2825` | Dark ink — primary text, total bars |
-| `--muted-foreground` | 25 5% 40% | `#6B6560` | Secondary text |
-| `--border` | 60 5% 91% | `#EAEAE8` | Subtle borders |
-| `--amber` | 42 54% 64% | `#D4B670` | Bills section accent |
-| `--amber-light` | 42 54% 93% | `#F7EDDA` | Bills section background |
-| `--teal` | 184 51% 63% | `#70CAD0` | Timesheets section accent |
-| `--teal-light` | 184 51% 93% | `#DFF5F6` | Timesheets section background |
-| `--sage` | 147 39% 65% | `#82C8A2` | Custom lines / positive accent |
-| `--sage-light` | 147 39% 93% | `#E0F5E9` | Custom lines background |
-| `--coral` | 11 52% 70% | `#DA988A` | Error / over-budget accent |
-| `--coral-light` | 11 52% 93% | `#F7E5E2` | Error background |
+| `--sidebar` | 40 33% 98% | `#FCFAF8` | Sidebar background |
+| `--foreground` | 26 9% 16% | `#2C2825` | Dark ink — primary text, total bars |
+| `--muted-foreground` | 27 5% 40% | `#6B6561` | Secondary text |
+| `--border` | 60 5% 91% | `#E9E9E7` | Subtle borders |
+| `--amber` | 42 54% 64% | `#D5B772` | Bills section accent |
+| `--amber-light` | 41 53% 94% | `#F8F3E8` | Bills section background |
+| `--teal` | 184 51% 63% | `#71CAD1` | Timesheets section accent |
+| `--teal-light` | 187 53% 94% | `#E8F6F8` | Timesheets section background |
+| `--sage` | 147 39% 65% | `#83C9A2` | Custom lines / positive accent |
+| `--sage-light` | 147 38% 94% | `#EAF6EF` | Custom lines background |
+| `--coral` | 11 52% 70% | `#DA998B` | Error / over-budget accent |
+| `--coral-light` | 14 52% 95% | `#F9EFEC` | Error background |
+
+**⚠️ The stylesheet and the Figma file disagree. The stylesheet is what runs.**
+This table used to document the Figma values, which meant it was wrong about
+the brand colour — it said `--primary` was `#A890D4` lavender when the app has
+shipped `#87749A` deep plum since the April 2026 "warmer, more cohesive
+interface" pass. The four accent hues (amber, teal, sage, coral) do match Figma
+within rounding. What diverged in that pass and was never reflected back:
+
+| Token | Figma | Ships | ΔE |
+|---|---|---|---|
+| `--primary` | `#A890D4` | `#87749A` | 20.1 |
+| `--amber-light` | `#F7EDDA` | `#F8F3E8` | 4.9 |
+| `--sage-light` | `#E0F5E9` | `#EAF6EF` | 4.3 |
+| `--coral-light` | `#F7E5E2` | `#F9EFEC` | 4.1 |
+| `--teal-light` | `#DFF5F6` | `#E8F6F8` | 2.9 |
+| `--sidebar` | `#F5F4F0` | `#FCFAF8` | 2.5 |
+| `--background` | `#FAFAF8` | `#F9F6F1` | 2.2 |
+
+Figma also contradicts itself on the brand colour: the "1 — Colour Tokens"
+frame swatches LAV as `#A68AC7`, while a component spec note in the same file
+says `--primary (#A890D4)`. Neither is what ships. Resolving this is a design
+decision, not a refactor — `--primary` has ~1,600 usages across ~220 files.
+
+`--primary` is also redefined as `261 44% 60%` inside `.dark-warm-g`, an opt-in
+light-mode variant applied only when `localStorage["dark-warm-variant"] === "g"`
+(default is `none`), so it is not what most users see.
 
 Section cards use a 3px left accent border in the section colour. Use `hsl(var(--amber))` etc in inline styles for dynamic colours.
 
