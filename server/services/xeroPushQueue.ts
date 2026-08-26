@@ -4,27 +4,42 @@ import { and, eq, inArray, lte, asc } from "drizzle-orm";
 
 // Enqueue a bill for a background Xero push. Idempotent: if an active job already
 // exists for the bill, just make it due now (coalesces rapid successive edits).
-export async function enqueueXeroPush(companyId: string, billId: string): Promise<void> {
+export async function enqueueXeroPush(companyId: string, billId: string, delayMs = 0): Promise<void> {
+  const dueAt = new Date(Date.now() + Math.max(0, delayMs));
   const active = await db
-    .select({ id: xeroPushQueue.id })
+    .select({ id: xeroPushQueue.id, nextAttemptAt: xeroPushQueue.nextAttemptAt })
     .from(xeroPushQueue)
     .where(and(eq(xeroPushQueue.billId, billId), inArray(xeroPushQueue.status, ["pending", "processing"])))
     .limit(1);
 
   if (active.length > 0) {
+    // Never push an already-due job further out: a delayed safety-net enqueue
+    // must not delay a job that something else already needs run now.
+    const existingDue = active[0].nextAttemptAt;
+    const nextAttemptAt = existingDue && existingDue < dueAt ? existingDue : dueAt;
     await db
       .update(xeroPushQueue)
-      .set({ status: "pending", nextAttemptAt: new Date(), updatedAt: new Date() })
+      .set({ status: "pending", nextAttemptAt, updatedAt: new Date() })
       .where(eq(xeroPushQueue.id, active[0].id));
     return;
   }
 
   try {
-    await db.insert(xeroPushQueue).values({ companyId, billId });
+    await db.insert(xeroPushQueue).values({ companyId, billId, nextAttemptAt: dueAt });
   } catch (e: any) {
     // 23505 = the partial-unique index caught a concurrent enqueue — fine.
     if (e?.code !== "23505") throw e;
   }
+}
+
+// Clear a bill's outstanding job because the work is already done. Used by the
+// in-process auto-push once its own attempt has succeeded, so the durable
+// safety net it registered beforehand doesn't fire a redundant second push.
+export async function resolvePendingPush(billId: string): Promise<void> {
+  await db
+    .update(xeroPushQueue)
+    .set({ status: "done", lastError: null, updatedAt: new Date() })
+    .where(and(eq(xeroPushQueue.billId, billId), inArray(xeroPushQueue.status, ["pending"])));
 }
 
 // Claim up to `limit` due jobs, flipping them to "processing" so a second worker

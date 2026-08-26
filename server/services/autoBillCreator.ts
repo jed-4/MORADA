@@ -211,7 +211,12 @@ export class AutoBillCreatorService {
         tax: 0,
         total: 0,
         paidAmount: 0,
-        sendToXero: false,
+        // Bills that arrive by email are real supplier bills and belong in Xero
+        // like any other. Defaulting this off meant every emailed bill waited
+        // for someone to notice the checkbox, and quietly never synced if
+        // nobody did. The push still only fires once the bill reaches
+        // awaiting_approval, so nothing leaves as an unreviewed draft.
+        sendToXero: true,
         ocrProcessed: false,
         attachmentUrls: [],
         createdById: options.defaultUserId || null,

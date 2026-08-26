@@ -15,7 +15,7 @@ import { sanitizeNoteHtml } from "./utils/sanitizeNoteHtml";
 import { GoogleOAuthService } from "./services/googleOAuthService";
 import { ObjectStorageService } from "./replit_integrations/object_storage";
 import { xeroService, XeroValidationError, type XeroValidationIssue, encryptXeroToken, summarizeXeroError } from "./services/xeroService";
-import { enqueueXeroPush } from "./services/xeroPushQueue";
+import { enqueueXeroPush, resolvePendingPush } from "./services/xeroPushQueue";
 import { recomputePOStatusFromBills, recomputePOStatusForLinks } from "./services/poStatusFromBills";
 import { isVendorCredit, CREDIT_NOT_SUPPORTED, CREDIT_NOT_SUPPORTED_MESSAGE } from "./services/xeroCreditGuard";
 import { applyPOSuggestionsToBill } from "./services/poSuggestions";
@@ -996,7 +996,36 @@ export async function pushBillToXeroInternal(
  * last edit, coalescing rapid sequential PATCHes into a single push.
  */
 const __billAutoPushTimers = new Map<string, NodeJS.Timeout>();
+// How long after the in-process attempt the durable safety net becomes due.
+// Long enough that the normal path has finished and cleared it, short enough
+// that a restart isn't a long silence.
+const AUTO_PUSH_FALLBACK_MS = 90_000;
+
+// Whether an automatic (not user-initiated) push should go ahead. Shared with
+// the queue worker: a durable fallback job can sit for a while, and by the time
+// it runs the bill may have been paid, unlinked from Xero, or had its sync flag
+// turned off. Pushing then would be acting on a stale intent.
+export function isAutoPushEligible(bill: {
+  status?: string | null;
+  xeroInvoiceId?: string | null;
+  sendToXero?: boolean | null;
+}): boolean {
+  if (bill.status === "paid") return false; // never overwrite paid bills
+  if (bill.xeroInvoiceId) return true; // already linked: keep it in step
+  return Boolean(
+    bill.sendToXero && (bill.status === "awaiting_approval" || bill.status === "awaiting_payment"),
+  );
+}
+
 function scheduleAutoPushBill(billId: string, companyId: string, delayMs = 2000) {
+  // Register the intent to push in the database BEFORE the in-memory timer.
+  // The debounce is a setTimeout in a Map, so a deploy or crash inside the
+  // window used to drop the push entirely — no queue row, no retry, no trace.
+  // The row is due well after the inline attempt should have finished and is
+  // cleared on success, so in the normal case the worker never sees it; if the
+  // process dies first, it survives and the worker picks it up.
+  void enqueueXeroPush(companyId, billId, AUTO_PUSH_FALLBACK_MS).catch(() => {});
+
   const existing = __billAutoPushTimers.get(billId);
   if (existing) clearTimeout(existing);
   const timer = setTimeout(async () => {
@@ -1004,21 +1033,19 @@ function scheduleAutoPushBill(billId: string, companyId: string, delayMs = 2000)
     try {
       const bill = await storage.getBillById(billId);
       if (!bill) return;
-      if (bill.status === "paid") return; // never overwrite paid bills
       // Linked: always allowed. Unlinked: only when sendToXero and the bill
       // has reached the approval workflow (awaiting_approval or later). This
       // mirrors the BuildPro lifecycle into Xero so the two systems stay in
       // step (SUBMITTED ↔ awaiting_approval, AUTHORISED ↔ awaiting_payment).
-      if (
-        !bill.xeroInvoiceId &&
-        !(
-          bill.sendToXero &&
-          (bill.status === "awaiting_approval" || bill.status === "awaiting_payment")
-        )
-      ) {
+      if (!isAutoPushEligible(bill as any)) {
+        void resolvePendingPush(billId).catch(() => {});
         return;
       }
       const result = await pushBillToXeroInternal(billId, companyId);
+      if (result.ok) {
+        // Done — drop the safety net so the worker doesn't push again.
+        void resolvePendingPush(billId).catch(() => {});
+      }
       if (!result.ok) {
         console.warn(`[auto-push bill ${billId}] failed:`, result.error, result.message);
         // A transient failure here used to be logged and abandoned — this path
@@ -1027,7 +1054,11 @@ function scheduleAutoPushBill(billId: string, companyId: string, delayMs = 2000)
         // until someone edited the bill again. Same rule as the explicit
         // route: retryable goes to the queue, 4xx validation won't self-heal.
         const retryable = !result.status || result.status === 429 || result.status >= 500;
+        // Bring the safety-net row forward to now rather than waiting it out.
         if (retryable) await enqueueXeroPush(companyId, billId).catch(() => {});
+        // A 4xx will never self-heal; leaving the row pending would just burn
+        // the worker's attempts on it until it dead-lettered anyway.
+        else await resolvePendingPush(billId).catch(() => {});
       }
     } catch (e) {
       console.error(`[auto-push bill ${billId}] unexpected error:`, e);
