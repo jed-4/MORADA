@@ -11,12 +11,19 @@
 // kept because pickers still point at them and existing rows hold their hexes.
 // New pickers should use this one.
 //
-// Four of these already exist as CSS custom properties in index.css and match
-// exactly: Coral (--coral), Sage (--sage), Teal (--teal). Two are marked in
-// Figma as existing tokens but DO NOT match what index.css currently ships:
-// Amber #F0B964 vs --amber #D4B670, and Lavender #A890D4 vs --primary #87749A.
-// Left alone deliberately — reconciling those changes the app's accent colours,
-// which is a design call, not a refactor.
+// The dots in the Figma frame marking some of these as "existing design token"
+// are misleading, and an earlier version of this comment repeated the mistake.
+// These are picker swatches — colours a user assigns to a contact or a tag —
+// and they are a separate concern from the accent tokens in index.css, even
+// where a name is shared. Coral, Sage and Teal happen to be the same value as
+// --coral, --sage and --teal. Amber is NOT: this palette's Amber is #F0B964,
+// while --amber is #D4B670, which matches Figma's own token frame exactly.
+// There is no amber mismatch to fix.
+//
+// Lavender #A890D4 is likewise a swatch, not the brand colour. --primary ships
+// #87749A deep plum and stays that way (decided 2026-08-26): the April 2026
+// palette pass moved it deliberately, so Figma and the docs are what get
+// corrected, not the ~1,600 usages across ~220 files. See CLAUDE.md.
 // ---------------------------------------------------------------------------
 
 export type MoradaSwatch = { name: string; hex: string };
