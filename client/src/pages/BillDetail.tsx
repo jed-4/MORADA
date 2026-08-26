@@ -182,10 +182,11 @@ function isXeroPushError(e: unknown): e is XeroPushError {
   return e instanceof Error;
 }
 
-// Fallback copy for the server's CREDIT_NOT_SUPPORTED response (the server
-// sends its own message; this only covers an empty body).
+// Fallback copy for a CREDIT_NOT_SUPPORTED response. Credits push as
+// ACCPAYCREDIT now, so this should no longer be reachable — it is kept so an
+// older server build still produces a sentence rather than an empty toast.
 const CREDIT_NOT_SUPPORTED_COPY =
-  "Vendor credits can't sync to Xero yet — record the credit note in Xero directly.";
+  "This credit couldn't be sent to Xero — record the credit note in Xero directly.";
 
 /**
  * Build a human-readable description for a failed Xero push. When the server
@@ -4363,7 +4364,7 @@ export default function BillDetail() {
             <AlertDialogDescription>
               It becomes a vendor credit in place — same attachment, line items and history — and its
               amount starts reducing what you owe this supplier instead of adding to it. Vendor
-              credits can't sync to Xero yet, so record the credit note in Xero directly.
+              it syncs to Xero as a supplier credit note.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

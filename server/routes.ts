@@ -17,7 +17,7 @@ import { ObjectStorageService } from "./replit_integrations/object_storage";
 import { xeroService, XeroValidationError, type XeroValidationIssue, encryptXeroToken, summarizeXeroError } from "./services/xeroService";
 import { enqueueXeroPush, resolvePendingPush } from "./services/xeroPushQueue";
 import { recomputePOStatusFromBills, recomputePOStatusForLinks } from "./services/poStatusFromBills";
-import { isVendorCredit, CREDIT_NOT_SUPPORTED, CREDIT_NOT_SUPPORTED_MESSAGE } from "./services/xeroCreditGuard";
+import { isVendorCredit } from "./services/xeroCreditGuard";
 import { applyPOSuggestionsToBill } from "./services/poSuggestions";
 import { dedupXeroBills } from "./services/xeroBillDedup";
 import { 
@@ -532,18 +532,13 @@ export async function pushBillToXeroInternal(
       return { ok: false, status: 403, error: "FORBIDDEN", message: msg };
     }
 
-    // Vendor credits must not go down this path — it would create a positive
-    // ACCPAY bill in Xero (see server/services/xeroCreditGuard.ts). Checked
-    // after the ownership guard so a cross-tenant probe still gets FORBIDDEN.
-    if (isVendorCredit((bill as any).billType)) {
-      logOutcome({ ok: false, reason: CREDIT_NOT_SUPPORTED, message: CREDIT_NOT_SUPPORTED_MESSAGE });
-      return {
-        ok: false,
-        status: 422,
-        error: CREDIT_NOT_SUPPORTED,
-        message: CREDIT_NOT_SUPPORTED_MESSAGE,
-      };
-    }
+    // A vendor credit is a different Xero document — ACCPAYCREDIT on
+    // /CreditNotes — and used to be refused outright rather than pushed as an
+    // ACCPAY bill, which would have raised payables instead of reducing them.
+    // It now takes the credit-note path below; everything up to the payload is
+    // shared, because a credit's lines, accounts, tracking and tax are built
+    // exactly like a bill's.
+    const isCredit = isVendorCredit((bill as any).billType);
 
     // A Xero invoice with a payment allocated is locked by Xero: it rejects any
     // change to its line items or status ("To update fields on a paid invoice
@@ -871,7 +866,9 @@ export async function pushBillToXeroInternal(
       supplierXeroContactId,
       billDate: formatDate(bill.billDate),
       dueDate: bill.dueDate ? formatDate(bill.dueDate) : undefined,
-      reference: bill.billNumber || undefined,
+      // Xero documents Reference as ACCRECCREDIT-only, so a payables credit
+      // must not carry one — sending it is a validation error.
+      reference: isCredit ? undefined : bill.billNumber || undefined,
       invoiceNumber: bill.billReference || undefined,
       taxMode: ((bill as any).taxMode === "inclusive" ? "inclusive" : "exclusive") as
         | "inclusive"
@@ -882,12 +879,19 @@ export async function pushBillToXeroInternal(
 
     let xeroBill: any;
     if (bill.xeroInvoiceId) {
-      xeroBill = await xeroService.updateBill(connection.id, bill.xeroInvoiceId, billPayload);
+      xeroBill = isCredit
+        ? await xeroService.updateCreditNote(connection.id, bill.xeroInvoiceId, billPayload)
+        : await xeroService.updateBill(connection.id, bill.xeroInvoiceId, billPayload);
     } else {
-      xeroBill = await xeroService.createBill(connection.id, billPayload);
-      if (xeroBill?.InvoiceID) {
+      xeroBill = isCredit
+        ? await xeroService.createCreditNote(connection.id, billPayload)
+        : await xeroService.createBill(connection.id, billPayload);
+      // A credit note comes back as CreditNoteID; both are stored in
+      // xeroInvoiceId, which is what every read path already looks up by.
+      const newXeroId = xeroBill?.InvoiceID || xeroBill?.CreditNoteID;
+      if (newXeroId) {
         await storage.updateBill(billId, {
-          xeroInvoiceId: xeroBill.InvoiceID,
+          xeroInvoiceId: newXeroId,
           sendToXero: true,
         } as any);
       }
@@ -896,7 +900,7 @@ export async function pushBillToXeroInternal(
     // Best-effort: push BuildPro attachments to Xero. Failures here must not
     // fail the overall sync — the bill itself is already in Xero. We log a
     // warning and let users retry from the bill page.
-    const xeroInvoiceIdForAttachments = xeroBill?.InvoiceID || bill.xeroInvoiceId;
+    const xeroInvoiceIdForAttachments = xeroBill?.InvoiceID || xeroBill?.CreditNoteID || bill.xeroInvoiceId;
     if (xeroInvoiceIdForAttachments) {
       try {
         await pushBillAttachmentsToXero(connection.id, xeroInvoiceIdForAttachments, bill, companyId);
@@ -1094,12 +1098,17 @@ async function syncBillFromXeroInternal(
     const bill = await storage.getBillById(billId);
     if (!bill || !bill.xeroInvoiceId) return { ok: false, error: "Bill not linked to Xero" };
 
+    const billIsCredit = (bill as any).billType === "credit";
     let invoice = xeroInvoice;
     if (!invoice) {
       const connection = await storage.getXeroConnectionByCompanyId(companyId);
       if (!connection) return { ok: false, error: "Xero not connected" };
-      invoice = await xeroService.getInvoice(connection.id, bill.xeroInvoiceId);
-      if (!invoice) return { ok: false, error: "Xero invoice not found" };
+      // /Invoices does not return credit notes — fetching one there 404s, which
+      // would have read as "the document is gone from Xero".
+      invoice = billIsCredit
+        ? await xeroService.getCreditNote(connection.id, bill.xeroInvoiceId)
+        : await xeroService.getInvoice(connection.id, bill.xeroInvoiceId);
+      if (!invoice) return { ok: false, error: billIsCredit ? "Xero credit note not found" : "Xero invoice not found" };
     }
 
     const parseXeroDate = (d: string | undefined): Date | undefined => {
@@ -1171,7 +1180,9 @@ async function syncBillFromXeroInternal(
       // Reference mapping (mirror of push):
       //   Xero InvoiceNumber → BuildPro billReference (supplier's invoice #).
       //   Xero Reference holds our own bill number; we don't overwrite it back.
-      ...(invoice.InvoiceNumber ? { billReference: invoice.InvoiceNumber } : {}),
+      ...((invoice.InvoiceNumber || invoice.CreditNoteNumber)
+        ? { billReference: invoice.InvoiceNumber || invoice.CreditNoteNumber }
+        : {}),
       ...(extraNotes ? { notes: ((bill as any).notes ? (bill as any).notes + "\n" : "") + extraNotes } : {}),
     } as any);
 
@@ -17927,11 +17938,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
+      // sendToXero is deliberately left as it was: a credit now pushes to Xero
+      // as an ACCPAYCREDIT, so there is no longer a reason to switch syncing
+      // off when converting. Clearing it used to be necessary because the push
+      // was refused every time.
       const updated = await storage.updateBill(req.params.id, {
         billType: "credit",
-        // A credit can't be pushed (CREDIT_NOT_SUPPORTED), so leaving the flag
-        // on would only queue a push that is refused every time.
-        sendToXero: false,
       } as any);
 
       // Converting an approved bill changes what was approved — say so in the
@@ -38641,7 +38653,7 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
             console.log(`[xero-webhook] CREDITNOTE event — resourceId: ${xeroInvoiceId}, found local bill: ${!!localCreditNote}`);
             if (!localCreditNote) continue;
 
-            const xeroCreditNote = await xeroService.getInvoice(resolvedConnection.id, xeroInvoiceId);
+            const xeroCreditNote = await xeroService.getCreditNote(resolvedConnection.id, xeroInvoiceId);
             if (!xeroCreditNote) continue;
 
             const result = await syncBillFromXeroInternal(localCreditNote.id, resolvedConnection.companyId, xeroCreditNote);
