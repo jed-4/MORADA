@@ -1,19 +1,13 @@
 import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { type ColumnDef } from "@tanstack/react-table";
-import { DataTable, type DataTableColumnMeta } from "@/components/data-table/DataTable";
-import { Button } from "@/components/ui/button";
+import { DataTable, DataTableColumnPicker, type DataTableColumnMeta } from "@/components/data-table/DataTable";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -40,9 +34,9 @@ import {
   Upload,
   Zap,
   Merge,
-  ChevronDown,
   ChevronRight,
-  Trash2,
+  Filter,
+  Settings2,
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { type Contact } from "@shared/schema";
@@ -56,12 +50,39 @@ import { MergeContactDialog } from "@/components/contacts/MergeContactDialog";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { EmptyState } from "@/components/EmptyState";
 
+type ContactType = "team" | "trade" | "supplier" | "client";
+
+// One place for each type's label and badge tint. Team, trade and supplier
+// borrow the estimate line-type palette (Labour, Subcontractor, Material) so a
+// trade reads the same colour here as its lines do on an estimate. Client takes
+// coral, which leaves lavender to mean "selected" and nothing else — the old
+// supplier badge was bg-primary/20, the same tint as the active type chip.
+const CONTACT_TYPES: { value: ContactType; label: string; plural: string; badge: string }[] = [
+  { value: "team", label: "Team", plural: "Team", badge: "bg-status-success-bg text-status-success" },
+  { value: "trade", label: "Trade", plural: "Trades", badge: "bg-amber-light text-amber" },
+  { value: "supplier", label: "Supplier", plural: "Suppliers", badge: "bg-teal/15 text-teal" },
+  { value: "client", label: "Client", plural: "Clients", badge: "bg-coral-light text-coral" },
+];
+
+const TYPE_META = Object.fromEntries(CONTACT_TYPES.map((t) => [t.value, t])) as Record<ContactType, typeof CONTACT_TYPES[number]>;
+
+const TABLE_STORAGE_KEY = "contacts";
+
+const PICKER_COLUMNS = [
+  { id: "name", label: "Business Name" },
+  { id: "keyPerson", label: "Key Person" },
+  { id: "role", label: "Role" },
+  { id: "phone", label: "Phone" },
+  { id: "email", label: "Email" },
+  { id: "type", label: "Type" },
+];
+
 export default function Contacts() {
   const { toast } = useToast();
   const [selectedTab, setSelectedTab] = useState<string>("all");
   const [searchTerm, setSearchTerm] = useState("");
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
-  const [selectedContactType, setSelectedContactType] = useState<"trade" | "supplier" | "client" | undefined>();
+  const [selectedContactType, setSelectedContactType] = useState<ContactType | undefined>();
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [contactToEdit, setContactToEdit] = useState<Contact | null>(null);
   const [confirmArchive, setConfirmArchive] = useState<{ id: string; name: string } | null>(null);
@@ -69,7 +90,7 @@ export default function Contacts() {
   const [isQuickReviewOpen, setIsQuickReviewOpen] = useState(false);
   const [isMergeDialogOpen, setIsMergeDialogOpen] = useState(false);
   const [mergeSourceId, setMergeSourceId] = useState<string | undefined>();
-  const [showArchivedContacts, setShowArchivedContacts] = useState(false);
+  const [showArchived, setShowArchived] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   const { data: contacts = [], isLoading } = useQuery<Contact[]>({
@@ -137,54 +158,46 @@ export default function Contacts() {
     },
   });
 
-  const { activeContacts, archivedContacts } = useMemo(() => {
-    const matchesFilters = (contact: Contact) => {
-      if (selectedTab !== "all" && contact.contactType !== selectedTab) {
-        return false;
-      }
-
-      if (searchTerm) {
-        const search = searchTerm.toLowerCase();
-        return (
-          contact.name?.toLowerCase().includes(search) ||
-          contact.firstName?.toLowerCase().includes(search) ||
-          contact.lastName?.toLowerCase().includes(search) ||
-          contact.email?.toLowerCase().includes(search) ||
-          contact.company?.toLowerCase().includes(search) ||
-          contact.phone?.toLowerCase().includes(search)
-        );
-      }
-
-      return true;
-    };
-
-    const active: Contact[] = [];
-    const archived: Contact[] = [];
-    
-    contacts.forEach((contact) => {
-      if (matchesFilters(contact)) {
-        if (contact.isArchived) {
-          archived.push(contact);
-        } else {
-          active.push(contact);
-        }
-      }
+  // Everything except the type chip — so a chip's count is exactly what you get
+  // when you click it. Archived contacts are rows in this same list behind the
+  // filter toggle, rather than a second hand-rolled table below the first.
+  const searchedContacts = useMemo(() => {
+    const search = searchTerm.trim().toLowerCase();
+    return contacts.filter((contact) => {
+      if (!showArchived && contact.isArchived) return false;
+      if (!search) return true;
+      return (
+        contact.name?.toLowerCase().includes(search) ||
+        contact.firstName?.toLowerCase().includes(search) ||
+        contact.lastName?.toLowerCase().includes(search) ||
+        contact.email?.toLowerCase().includes(search) ||
+        contact.company?.toLowerCase().includes(search) ||
+        contact.phone?.toLowerCase().includes(search) ||
+        contact.mobile?.toLowerCase().includes(search)
+      );
     });
+  }, [contacts, searchTerm, showArchived]);
 
-    return { activeContacts: active, archivedContacts: archived };
-  }, [contacts, selectedTab, searchTerm]);
+  const filteredContacts = useMemo(
+    () => (selectedTab === "all"
+      ? searchedContacts
+      : searchedContacts.filter((c) => c.contactType === selectedTab)),
+    [searchedContacts, selectedTab],
+  );
 
-  const filteredContacts = activeContacts;
+  const archivedCount = useMemo(() => contacts.filter((c) => c.isArchived).length, [contacts]);
 
-  const tabCounts = useMemo(() => {
-    return {
-      all: contacts.length,
-      team: contacts.filter((c) => c.contactType === "team").length,
-      trade: contacts.filter((c) => c.contactType === "trade").length,
-      supplier: contacts.filter((c) => c.contactType === "supplier").length,
-      client: contacts.filter((c) => c.contactType === "client").length,
-    };
-  }, [contacts]);
+  // Counts follow the search and the archived toggle. They used to count every
+  // contact unconditionally, so "All 86" could sit above 74 rows.
+  const tabCounts = useMemo(() => ({
+    all: searchedContacts.length,
+    team: searchedContacts.filter((c) => c.contactType === "team").length,
+    trade: searchedContacts.filter((c) => c.contactType === "trade").length,
+    supplier: searchedContacts.filter((c) => c.contactType === "supplier").length,
+    client: searchedContacts.filter((c) => c.contactType === "client").length,
+  }), [searchedContacts]);
+
+  const activeFilterCount = showArchived ? 1 : 0;
 
   const unreviewedCount = useMemo(() => {
     return contacts.filter(c => !c.isArchived && c.reviewStatus !== "reviewed").length;
@@ -210,7 +223,7 @@ export default function Contacts() {
     return "??";
   };
 
-  const handleAddContact = (type?: "trade" | "supplier" | "client") => {
+  const handleAddContact = (type?: ContactType) => {
     setSelectedContactType(type);
     setIsAddDialogOpen(true);
   };
@@ -245,6 +258,10 @@ export default function Contacts() {
     bulkActionMutation.mutate({ ids: Array.from(selectedIds), action: "archive" });
   };
 
+  const handleBulkRestore = () => {
+    bulkActionMutation.mutate({ ids: Array.from(selectedIds), action: "restore" });
+  };
+
   const handleBulkChangeType = (type: string) => {
     bulkActionMutation.mutate({ ids: Array.from(selectedIds), action: "changeType", contactType: type });
   };
@@ -256,10 +273,7 @@ export default function Contacts() {
 
   const tabs = [
     { value: "all", label: "All", count: tabCounts.all },
-    { value: "team", label: "Team", count: tabCounts.team },
-    { value: "trade", label: "Trades", count: tabCounts.trade },
-    { value: "supplier", label: "Suppliers", count: tabCounts.supplier },
-    { value: "client", label: "Clients", count: tabCounts.client },
+    ...CONTACT_TYPES.map((t) => ({ value: t.value, label: t.plural, count: tabCounts[t.value] })),
   ];
 
   const contactColumns = useMemo<ColumnDef<Contact, unknown>[]>(() => {
@@ -287,45 +301,39 @@ export default function Contacts() {
         meta: { defaultWidth: 32, align: "center", pinned: true, headerLabel: "Select" } satisfies DataTableColumnMeta,
       },
       {
-        id: "avatar",
-        header: "",
-        enableSorting: false,
-        cell: ({ row }) => {
-          const contact = row.original;
-          return (
-            <Avatar
-              className="h-7 w-7"
-              style={{ backgroundColor: contact.avatarUrl ? undefined : (contact.avatarColor || "#64748b") }}
-            >
-              {contact.avatarUrl && (
-                <AvatarImage src={contact.avatarUrl} alt={contact.name || "Avatar"} />
-              )}
-              <AvatarFallback className="text-white text-xs" style={{ backgroundColor: "transparent" }}>
-                {getInitials(contact)}
-              </AvatarFallback>
-            </Avatar>
-          );
-        },
-        size: 44,
-        meta: { defaultWidth: 44, align: "center", headerLabel: "Avatar" } satisfies DataTableColumnMeta,
-      },
-      {
-        id: "businessName",
+        id: "name",
         header: "Business Name",
         accessorFn: (c) => c.name || c.company || "",
         cell: ({ row }) => {
           const contact = row.original;
           return (
-            <span className="text-sm font-medium">
-              {contact.name || contact.company || "-"}
+            <div className="flex items-center gap-2 min-w-0">
+              <Avatar
+                className="h-6 w-6 flex-shrink-0"
+                style={{ backgroundColor: contact.avatarUrl ? undefined : (contact.avatarColor || "#64748b") }}
+              >
+                {contact.avatarUrl && (
+                  <AvatarImage src={contact.avatarUrl} alt={contact.name || "Avatar"} />
+                )}
+                <AvatarFallback className="text-white text-[10px]" style={{ backgroundColor: "transparent" }}>
+                  {getInitials(contact)}
+                </AvatarFallback>
+              </Avatar>
+              <span className="text-sm font-medium truncate">
+                {contact.name || contact.company || "-"}
+              </span>
               {contact.isArchived && (
-                <Badge variant="outline" className="ml-2 text-xs">Archived</Badge>
+                <Badge variant="outline" className="text-[10px] h-4 px-1 flex-shrink-0 font-normal text-muted-foreground">
+                  Archived
+                </Badge>
               )}
-            </span>
+            </div>
           );
         },
-        size: 200,
-        meta: { defaultWidth: 200, headerLabel: "Business Name" } satisfies DataTableColumnMeta,
+        size: 280,
+        // Absorbs leftover width so the columns reach the right edge and the
+        // pinned actions column sits flush, instead of a blank filler column.
+        meta: { defaultWidth: 280, flex: true, headerLabel: "Business Name" } satisfies DataTableColumnMeta,
       },
       {
         id: "keyPerson",
@@ -407,21 +415,11 @@ export default function Contacts() {
         header: "Type",
         accessorFn: (c) => c.contactType || "",
         cell: ({ row }) => {
-          const contact = row.original;
+          const meta = TYPE_META[row.original.contactType as ContactType];
+          if (!meta) return <span className="text-sm text-muted-foreground">-</span>;
           return (
-            <Badge
-              variant="secondary"
-              className={`text-xs capitalize ${
-                contact.contactType === "team"
-                  ? "bg-status-info-bg text-status-info"
-                  : contact.contactType === "trade"
-                  ? "bg-status-warning-bg text-status-warning"
-                  : contact.contactType === "supplier"
-                  ? "bg-primary/20 text-primary"
-                  : "bg-status-success-bg text-status-success"
-              }`}
-            >
-              {contact.contactType}
+            <Badge variant="secondary" className={`text-xs font-normal ${meta.badge}`}>
+              {meta.label}
             </Badge>
           );
         },
@@ -438,14 +436,13 @@ export default function Contacts() {
             <span onClick={(e) => e.stopPropagation()}>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-7 w-7"
+                  <button
+                    className="h-6 w-6 flex items-center justify-center rounded-md text-muted-foreground hover-elevate active-elevate-2"
                     data-testid={`button-actions-${contact.id}`}
+                    aria-label="Actions"
                   >
-                    <MoreHorizontal className="h-4 w-4" />
-                  </Button>
+                    <MoreHorizontal className="h-3.5 w-3.5" />
+                  </button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
                   <DropdownMenuItem
@@ -499,244 +496,307 @@ export default function Contacts() {
 
   return (
     <div className="flex h-full flex-col">
-      {/* Row 1 - Page Title + Action Button (36px) */}
-      <div className="h-9 bg-background flex items-center justify-between px-3 gap-4 flex-shrink-0 border-b">
-        <div className="flex items-center gap-3">
-          <h2 className="text-sm font-semibold" data-testid="text-page-title">
-            Contacts
-          </h2>
-        </div>
-
-        <div className="flex items-center gap-1.5">
-          {unreviewedCount > 0 && (
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-6 px-2 text-xs border-status-warning/50 text-status-warning hover:bg-status-warning-bg"
-              onClick={() => setIsQuickReviewOpen(true)}
-              data-testid="button-quick-review"
-            >
-              <Zap className="w-3 h-3 mr-0.5" />
-              Quick Review
-              <Badge variant="secondary" className="ml-1 h-4 px-1 text-data bg-status-warning-bg text-status-warning">
-                {unreviewedCount}
-              </Badge>
-            </Button>
-          )}
-          <Button
-            size="sm"
-            variant="outline"
-            className="h-6 px-2 text-xs"
-            onClick={() => setIsImportDialogOpen(true)}
-            data-testid="button-import-contacts"
-          >
-            <Upload className="w-3 h-3 mr-0.5" />
-            Import
-          </Button>
-          <Button
-            size="sm"
-            className="h-6 px-2 text-xs bg-primary hover:bg-primary/90 text-white border-primary/20"
-            onClick={() => handleAddContact(selectedTab === "all" ? undefined : selectedTab as any)}
-            data-testid="button-add-contact"
-          >
-            <Plus className="w-3 h-3 mr-0.5" />
-            Add Contact
-          </Button>
-        </div>
+      {/* Breadcrumb strip — matches Tasks / Timesheets / Price Lists. */}
+      <div className="flex items-center gap-1 px-4 pt-3 pb-1 flex-shrink-0">
+        <span className="text-xs text-muted-foreground">Resources</span>
+        <ChevronRight className="h-3 w-3 text-muted-foreground/50 flex-shrink-0" />
+        <span className="text-xs font-medium text-foreground" data-testid="text-page-title">
+          Contacts
+        </span>
       </div>
 
-      {/* Row 2 - Search and Tabs (36px) */}
-      <div className="h-9 bg-background flex items-center px-3 gap-4 flex-shrink-0 border-b">
-        <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-          <Input
-            type="text"
-            placeholder="Search contacts..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="h-7 pl-7 pr-7 text-xs"
-            data-testid="input-search-contacts"
-          />
-          {searchTerm && (
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => setSearchTerm("")}
-              className="absolute right-1 top-1/2 -translate-y-1/2 h-5 w-5"
-              data-testid="button-clear-search"
+      {/* Header panel — one condensed row, card top. Replaces the two stacked
+          full-bleed bars, which were the legacy Nov-2025 pattern. */}
+      <div className="border border-border rounded-t-lg bg-card flex-shrink-0">
+        <div className="h-9 flex items-center justify-between px-3 gap-2">
+          {/* LEFT: search, filters, type segments */}
+          <div className="flex items-center gap-1 min-w-0">
+            <div className="relative w-44 flex-shrink-0">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground pointer-events-none" />
+              <Input
+                placeholder="Search..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="h-6 pl-7 pr-6 py-0 text-xs border bg-transparent"
+                data-testid="input-search-contacts"
+              />
+              {searchTerm && (
+                <button
+                  onClick={() => setSearchTerm("")}
+                  className="absolute right-1.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  aria-label="Clear search"
+                  data-testid="button-clear-search"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              )}
+            </div>
+
+            {/* One filter control with a count badge. */}
+            <Popover>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <PopoverTrigger asChild>
+                    <button
+                      className={`relative h-6 w-6 flex items-center justify-center rounded-md border transition-all hover-elevate active-elevate-2 ${
+                        activeFilterCount > 0
+                          ? "bg-primary/10 text-primary border-primary/20"
+                          : "border-border/50 text-muted-foreground"
+                      }`}
+                      data-testid="button-filter-contacts"
+                      aria-label="Filter"
+                    >
+                      <Filter className="h-3 w-3" />
+                      {activeFilterCount > 0 && (
+                        <span
+                          className="absolute -top-1 -right-1 min-w-[14px] h-[14px] px-1 rounded-full bg-primary text-white text-[9px] leading-[14px] font-semibold text-center"
+                          data-testid="badge-filter-count"
+                        >
+                          {activeFilterCount}
+                        </span>
+                      )}
+                    </button>
+                  </PopoverTrigger>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">Filter</TooltipContent>
+              </Tooltip>
+
+              <PopoverContent align="start" className="w-56 p-3 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    Filters
+                  </span>
+                  {activeFilterCount > 0 && (
+                    <button
+                      onClick={() => setShowArchived(false)}
+                      className="text-xs text-muted-foreground hover:text-foreground hover-elevate active-elevate-2 px-1 rounded"
+                      data-testid="button-clear-filters"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+
+                <label className="flex items-center justify-between gap-2 cursor-pointer">
+                  <span className="text-xs text-muted-foreground">
+                    Show archived
+                    {archivedCount > 0 && (
+                      <span className="ml-1 text-muted-foreground/60">({archivedCount})</span>
+                    )}
+                  </span>
+                  <Checkbox
+                    checked={showArchived}
+                    onCheckedChange={(v) => setShowArchived(v === true)}
+                    data-testid="checkbox-show-archived"
+                  />
+                </label>
+              </PopoverContent>
+            </Popover>
+
+            <div className="h-4 w-px bg-border mx-1 flex-shrink-0" />
+
+            {/* Contact type is the page's primary axis, so it stays a visible
+                segmented control rather than collapsing into the popover. */}
+            <div className="flex items-center gap-0.5 min-w-0" data-testid="tabs-contact-type">
+              {tabs.map((tab) => {
+                const isActive = selectedTab === tab.value;
+                return (
+                  <button
+                    key={tab.value}
+                    onClick={() => setSelectedTab(tab.value)}
+                    className={`h-6 px-2 text-xs rounded-md border transition-all hover-elevate active-elevate-2 flex items-center gap-1 flex-shrink-0 ${
+                      isActive
+                        ? "bg-primary text-white border-primary/20"
+                        : "border-border/50 text-muted-foreground"
+                    }`}
+                    data-testid={`tab-${tab.value}`}
+                  >
+                    {tab.label}
+                    <span className={isActive ? "text-white/70" : "text-muted-foreground/60"}>
+                      {tab.count}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* RIGHT: review nudge, columns, primary CTA, overflow */}
+          <div className="flex items-center gap-1 flex-shrink-0">
+            {unreviewedCount > 0 && (
+              <button
+                onClick={() => setIsQuickReviewOpen(true)}
+                className="h-6 px-2 text-xs rounded-md border border-status-warning/40 text-status-warning hover-elevate active-elevate-2 flex items-center gap-1"
+                data-testid="button-quick-review"
+              >
+                <Zap className="h-3 w-3" />
+                Review
+                <span className="text-status-warning/70">{unreviewedCount}</span>
+              </button>
+            )}
+
+            <Popover>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <PopoverTrigger asChild>
+                    <button
+                      className="h-6 w-6 flex items-center justify-center rounded-md border border-border/50 text-muted-foreground hover-elevate active-elevate-2"
+                      data-testid="button-columns"
+                      aria-label="Columns"
+                    >
+                      <Settings2 className="h-3 w-3" />
+                    </button>
+                  </PopoverTrigger>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">Columns</TooltipContent>
+              </Tooltip>
+              <PopoverContent className="w-56 p-0" align="end">
+                <DataTableColumnPicker storageKey={TABLE_STORAGE_KEY} columns={PICKER_COLUMNS} />
+              </PopoverContent>
+            </Popover>
+
+            <div className="h-4 w-px bg-border mx-0.5" />
+
+            <button
+              onClick={() => handleAddContact(selectedTab === "all" ? undefined : (selectedTab as ContactType))}
+              className="h-6 w-auto px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-0.5"
+              data-testid="button-add-contact"
+            >
+              <Plus className="h-3 w-3" />
+              Add Contact
+            </button>
+
+            <DropdownMenu>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      className="h-6 w-6 flex items-center justify-center rounded-md border border-border/50 text-muted-foreground hover-elevate active-elevate-2"
+                      data-testid="button-options"
+                      aria-label="Options"
+                    >
+                      <MoreHorizontal className="h-3 w-3" />
+                    </button>
+                  </DropdownMenuTrigger>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">Options</TooltipContent>
+              </Tooltip>
+              <DropdownMenuContent align="end" className="w-48">
+                <DropdownMenuItem onClick={() => setIsImportDialogOpen(true)} data-testid="menu-import-contacts">
+                  <Upload className="h-3.5 w-3.5 mr-2" />
+                  Import
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => { setMergeSourceId(undefined); setIsMergeDialogOpen(true); }}
+                  data-testid="menu-merge-contacts"
+                >
+                  <Merge className="h-3.5 w-3.5 mr-2" />
+                  Merge duplicates
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        </div>
+
+        {/* Bulk action bar — a second row inside the card, only while selecting. */}
+        {selectedIds.size > 0 && (
+          <div className="h-8 border-t border-border bg-primary/5 flex items-center px-3 gap-2">
+            <span className="text-xs font-medium" data-testid="text-selected-count">
+              {selectedIds.size} selected
+            </span>
+            <div className="h-4 w-px bg-border" />
+            <Select onValueChange={handleBulkChangeType}>
+              <SelectTrigger
+                className="h-6 w-auto min-w-[110px] text-xs border-border/50"
+                data-testid="select-bulk-change-type"
+              >
+                <SelectValue placeholder="Change type" />
+              </SelectTrigger>
+              <SelectContent>
+                {CONTACT_TYPES.filter((t) => t.value !== "team").map((t) => (
+                  <SelectItem key={t.value} value={t.value}>
+                    Set as {t.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <button
+              onClick={handleBulkArchive}
+              disabled={bulkActionMutation.isPending}
+              className="h-6 px-2 text-xs rounded-md border border-border/50 hover-elevate active-elevate-2 flex items-center gap-1 disabled:opacity-50"
+              data-testid="button-bulk-archive"
+            >
+              <Archive className="h-3 w-3" />
+              Archive
+            </button>
+            {showArchived && (
+              <button
+                onClick={handleBulkRestore}
+                disabled={bulkActionMutation.isPending}
+                className="h-6 px-2 text-xs rounded-md border border-border/50 hover-elevate active-elevate-2 flex items-center gap-1 disabled:opacity-50"
+                data-testid="button-bulk-restore"
+              >
+                <ArchiveRestore className="h-3 w-3" />
+                Restore
+              </button>
+            )}
+            <div className="flex-1" />
+            <button
+              onClick={() => setSelectedIds(new Set())}
+              className="h-6 px-2 text-xs rounded-md border border-border/50 text-muted-foreground hover-elevate active-elevate-2 flex items-center gap-1"
+              data-testid="button-clear-selection"
             >
               <X className="h-3 w-3" />
-            </Button>
-          )}
-        </div>
-
-        <div className="flex items-center gap-1" data-testid="tabs-contact-type">
-          {tabs.map((tab) => (
-            <Button
-              key={tab.value}
-              variant={selectedTab === tab.value ? "secondary" : "ghost"}
-              size="sm"
-              className={`h-6 px-2 text-xs ${
-                selectedTab === tab.value 
-                  ? "bg-primary/20 text-primary border border-primary/30" 
-                  : ""
-              }`}
-              onClick={() => setSelectedTab(tab.value)}
-              data-testid={`tab-${tab.value}`}
-            >
-              {tab.label}
-            </Button>
-          ))}
-        </div>
-      </div>
-
-      {/* Bulk Action Bar - appears when contacts are selected */}
-      {selectedIds.size > 0 && (
-        <div className="h-10 bg-muted/50 border-b flex items-center px-3 gap-3 flex-shrink-0">
-          <span className="text-xs font-medium">
-            {selectedIds.size} selected
-          </span>
-          <div className="h-4 w-px bg-border" />
-          <Select onValueChange={handleBulkChangeType}>
-            <SelectTrigger className="h-7 w-auto min-w-[120px] text-xs" data-testid="select-bulk-change-type">
-              <SelectValue placeholder="Change Type" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="supplier">Set as Supplier</SelectItem>
-              <SelectItem value="trade">Set as Trade</SelectItem>
-              <SelectItem value="client">Set as Client</SelectItem>
-            </SelectContent>
-          </Select>
-          <Button
-            size="sm"
-            variant="outline"
-            className="h-7 text-xs"
-            onClick={handleBulkArchive}
-            disabled={bulkActionMutation.isPending}
-            data-testid="button-bulk-archive"
-          >
-            <Archive className="h-3 w-3 mr-1" />
-            Archive
-          </Button>
-          <div className="flex-1" />
-          <Button
-            size="sm"
-            variant="ghost"
-            className="h-7 text-xs"
-            onClick={() => setSelectedIds(new Set())}
-            data-testid="button-clear-selection"
-          >
-            <X className="h-3 w-3 mr-1" />
-            Clear Selection
-          </Button>
-        </div>
-      )}
-
-      {/* Content Area */}
-      <div className="flex-1 overflow-auto">
-        {isLoading ? (
-          <div className="text-center py-12 text-muted-foreground">Loading contacts...</div>
-        ) : filteredContacts.length === 0 ? (
-          <EmptyState
-            icon={Users}
-            title={searchTerm ? "No contacts match your search" : "No contacts yet"}
-            description={searchTerm ? "Try a different search term" : "Add team members, suppliers, and clients"}
-            variant="card"
-          />
-        ) : (
-          <DataTable
-            data={filteredContacts}
-            columns={contactColumns}
-            storageKey="contacts"
-            legacyConfigKey="contacts-column-config-v1"
-            rowKey={(c) => c.id}
-            onRowClick={(c) => handleEdit(c)}
-            rowClassName={(c) => (selectedIds.has(c.id) ? "bg-primary/8 dark:bg-primary/10" : "")}
-          />
-        )}
-
-        {/* Archived Contacts Section - Hidden by default */}
-        {archivedContacts.length > 0 && (
-          <div className="mt-6 border-t pt-4">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setShowArchivedContacts(!showArchivedContacts)}
-              className="text-muted-foreground"
-              data-testid="button-toggle-archived"
-            >
-              {showArchivedContacts ? (
-                <ChevronDown className="h-4 w-4 mr-2" />
-              ) : (
-                <ChevronRight className="h-4 w-4 mr-2" />
-              )}
-              <Archive className="h-4 w-4 mr-2" />
-              Archived Contacts ({archivedContacts.length})
-            </Button>
-            
-            {showArchivedContacts && (
-              <div className="mt-3">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-[300px]">Name</TableHead>
-                      <TableHead>Type</TableHead>
-                      <TableHead>Email</TableHead>
-                      <TableHead>Phone</TableHead>
-                      <TableHead className="w-[50px]"></TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {archivedContacts.map((contact) => (
-                      <TableRow key={contact.id} className="opacity-60">
-                        <TableCell>
-                          <div className="flex items-center gap-3">
-                            <Avatar 
-                              className="h-8 w-8"
-                              style={{ backgroundColor: contact.avatarUrl ? undefined : (contact.avatarColor || "#64748b") }}
-                            >
-                              {contact.avatarUrl && (
-                                <AvatarImage src={contact.avatarUrl} alt={contact.name || "Avatar"} />
-                              )}
-                              <AvatarFallback className="text-xs text-white" style={{ backgroundColor: "transparent" }}>
-                                {getInitials(contact)}
-                              </AvatarFallback>
-                            </Avatar>
-                            <div>
-                              <div className="font-medium text-sm">
-                                {contact.name || `${contact.firstName || ''} ${contact.lastName || ''}`.trim() || 'Unnamed'}
-                              </div>
-                            </div>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="outline" className="text-xs capitalize">
-                            {contact.contactType}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-sm">{contact.email || '-'}</TableCell>
-                        <TableCell className="text-sm">{contact.mobile || contact.phone || '-'}</TableCell>
-                        <TableCell>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => handleRestore(contact.id)}
-                            title="Restore contact"
-                            data-testid={`button-restore-${contact.id}`}
-                          >
-                            <ArchiveRestore className="h-4 w-4" />
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
+              Clear
+            </button>
           </div>
         )}
       </div>
 
+      {/* Body closes the card. One scroll container — the DataTable is h-full,
+          so it must not be nested inside another overflow-auto. */}
+      <div className="flex-1 min-h-0 border-x border-b border-border rounded-b-lg bg-card overflow-hidden">
+        {isLoading ? (
+          <div className="p-3 space-y-2" data-testid="loading-contacts">
+            {Array.from({ length: 8 }).map((_, i) => (
+              <div key={i} className="flex items-center gap-3">
+                <Skeleton className="h-6 w-6 rounded-full flex-shrink-0" />
+                <Skeleton className="h-3 flex-1 max-w-[240px]" />
+                <Skeleton className="h-3 w-32" />
+                <Skeleton className="h-3 w-28" />
+                <Skeleton className="h-3 w-40" />
+                <Skeleton className="h-4 w-16 rounded-full" />
+              </div>
+            ))}
+          </div>
+        ) : (
+          <DataTable
+            data={filteredContacts}
+            columns={contactColumns}
+            storageKey={TABLE_STORAGE_KEY}
+            legacyConfigKey="contacts-column-config-v1"
+            rowKey={(c) => c.id}
+            onRowClick={(c) => handleEdit(c)}
+            rowClassName={(c) =>
+              [
+                selectedIds.has(c.id) ? "bg-primary/8 dark:bg-primary/10" : "",
+                c.isArchived ? "opacity-55" : "",
+              ].filter(Boolean).join(" ")
+            }
+            emptyState={
+              <EmptyState
+                icon={Users}
+                title={searchTerm ? "No contacts match your search" : "No contacts yet"}
+                description={
+                  searchTerm
+                    ? "Try a different search term"
+                    : "Add team members, trades, suppliers and clients"
+                }
+              />
+            }
+          />
+        )}
+      </div>
       <AddContactDialog
         open={isAddDialogOpen}
         onOpenChange={setIsAddDialogOpen}
@@ -760,7 +820,7 @@ export default function Contacts() {
         open={isQuickReviewOpen}
         onClose={() => setIsQuickReviewOpen(false)}
         contacts={contacts}
-        contactTypeFilter={selectedTab === "all" ? null : selectedTab as "team" | "trade" | "supplier" | "client"}
+        contactTypeFilter={selectedTab === "all" ? null : (selectedTab as ContactType)}
       />
 
       <MergeContactDialog
