@@ -7502,167 +7502,177 @@ export class DbStorage implements IStorage {
     }
   }
 
+  // Seed colours come from MORADA_PALETTE (client/src/lib/colors.ts). They were
+  // stock Tailwind hexes until 2026-08-26 — blue-500, gray-500 and so on — which
+  // predated every palette the app has had and matched none of them.
+  //
+  // The remap was authored by hand, not by nearest-colour: an automatic pass over
+  // these values collapses 26 distinct colours onto 13, which would have made
+  // previously-distinct options in the same category render identically. This
+  // mapping preserves both hue family and relative weight (Urgent stays darker
+  // than High, the pale "Awaiting" run stays paler than "In Progress") and was
+  // checked to produce zero within-category merges.
   private getRequiredOptionsForCategory(categoryKey: string, categoryId: string): any[] {
     switch (categoryKey) {
       case 'task.status':
         return [
-          { id: 'opt-status-todo', categoryId, key: 'todo', name: 'Not Started', color: '#6B7280', isDefault: true, isCompleted: false, sortOrder: 0 },
-          { id: 'opt-status-progress', categoryId, key: 'in-progress', name: 'In Progress', color: '#F59E0B', isDefault: false, isCompleted: false, sortOrder: 1 },
-          { id: 'opt-status-done', categoryId, key: 'done', name: 'Done', color: '#10B981', isDefault: false, isCompleted: true, sortOrder: 2 },
-          { id: 'opt-status-hold', categoryId, key: 'on-hold', name: 'On Hold', color: '#EF4444', isDefault: false, isCompleted: false, sortOrder: 3 },
+          { id: 'opt-status-todo', categoryId, key: 'todo', name: 'Not Started', color: '#8A8680', isDefault: true, isCompleted: false, sortOrder: 0 },
+          { id: 'opt-status-progress', categoryId, key: 'in-progress', name: 'In Progress', color: '#F0B964', isDefault: false, isCompleted: false, sortOrder: 1 },
+          { id: 'opt-status-done', categoryId, key: 'done', name: 'Done', color: '#82C8A2', isDefault: false, isCompleted: true, sortOrder: 2 },
+          { id: 'opt-status-hold', categoryId, key: 'on-hold', name: 'On Hold', color: '#DA988A', isDefault: false, isCompleted: false, sortOrder: 3 },
         ];
       case 'task.priority':
         return [
-          { id: 'opt-priority-low', categoryId, key: 'low', name: 'Low', color: '#10B981', isDefault: true, sortOrder: 0 },
-          { id: 'opt-priority-medium', categoryId, key: 'medium', name: 'Medium', color: '#F59E0B', isDefault: false, sortOrder: 1 },
-          { id: 'opt-priority-high', categoryId, key: 'high', name: 'High', color: '#EF4444', isDefault: false, sortOrder: 2 },
+          { id: 'opt-priority-low', categoryId, key: 'low', name: 'Low', color: '#82C8A2', isDefault: true, sortOrder: 0 },
+          { id: 'opt-priority-medium', categoryId, key: 'medium', name: 'Medium', color: '#F0B964', isDefault: false, sortOrder: 1 },
+          { id: 'opt-priority-high', categoryId, key: 'high', name: 'High', color: '#DA988A', isDefault: false, sortOrder: 2 },
         ];
       case 'task.labels':
         return [
-          { id: 'opt-label-bug', categoryId, key: 'bug', name: 'Bug', color: '#EF4444', isDefault: false, sortOrder: 0 },
-          { id: 'opt-label-feature', categoryId, key: 'feature', name: 'Feature', color: '#3B82F6', isDefault: false, sortOrder: 1 },
-          { id: 'opt-label-urgent', categoryId, key: 'urgent', name: 'Urgent', color: '#DC2626', isDefault: false, sortOrder: 2 },
-          { id: 'opt-label-review', categoryId, key: 'review', name: 'Review', color: '#F59E0B', isDefault: false, sortOrder: 3 },
-          { id: 'opt-label-documentation', categoryId, key: 'documentation', name: 'Documentation', color: '#8B5CF6', isDefault: false, sortOrder: 4 },
-          { id: 'opt-label-client-request', categoryId, key: 'client-request', name: 'Client Request', color: '#10B981', isDefault: false, sortOrder: 5 },
+          { id: 'opt-label-bug', categoryId, key: 'bug', name: 'Bug', color: '#DA988A', isDefault: false, sortOrder: 0 },
+          { id: 'opt-label-feature', categoryId, key: 'feature', name: 'Feature', color: '#7890C8', isDefault: false, sortOrder: 1 },
+          { id: 'opt-label-urgent', categoryId, key: 'urgent', name: 'Urgent', color: '#C87878', isDefault: false, sortOrder: 2 },
+          { id: 'opt-label-review', categoryId, key: 'review', name: 'Review', color: '#F0B964', isDefault: false, sortOrder: 3 },
+          { id: 'opt-label-documentation', categoryId, key: 'documentation', name: 'Documentation', color: '#8888C4', isDefault: false, sortOrder: 4 },
+          { id: 'opt-label-client-request', categoryId, key: 'client-request', name: 'Client Request', color: '#82C8A2', isDefault: false, sortOrder: 5 },
         ];
       case 'task.trade':
         return [
-          { id: 'opt-trade-electrical', categoryId, key: 'electrical', name: 'Electrical', color: '#3B82F6', isDefault: true, sortOrder: 0 },
-          { id: 'opt-trade-plumbing', categoryId, key: 'plumbing', name: 'Plumbing', color: '#06B6D4', isDefault: false, sortOrder: 1 },
-          { id: 'opt-trade-carpentry', categoryId, key: 'carpentry', name: 'Carpentry', color: '#D97706', isDefault: false, sortOrder: 2 },
-          { id: 'opt-trade-painting', categoryId, key: 'painting', name: 'Painting & Decorating', color: '#7C3AED', isDefault: false, sortOrder: 3 },
-          { id: 'opt-trade-flooring', categoryId, key: 'flooring', name: 'Flooring', color: '#059669', isDefault: false, sortOrder: 4 },
+          { id: 'opt-trade-electrical', categoryId, key: 'electrical', name: 'Electrical', color: '#7890C8', isDefault: true, sortOrder: 0 },
+          { id: 'opt-trade-plumbing', categoryId, key: 'plumbing', name: 'Plumbing', color: '#70CAD0', isDefault: false, sortOrder: 1 },
+          { id: 'opt-trade-carpentry', categoryId, key: 'carpentry', name: 'Carpentry', color: '#C89050', isDefault: false, sortOrder: 2 },
+          { id: 'opt-trade-painting', categoryId, key: 'painting', name: 'Painting & Decorating', color: '#A890D4', isDefault: false, sortOrder: 3 },
+          { id: 'opt-trade-flooring', categoryId, key: 'flooring', name: 'Flooring', color: '#68B088', isDefault: false, sortOrder: 4 },
         ];
       case 'selection.category':
         return [
-          { id: 'opt-sel-fixtures', categoryId, key: 'fixtures', name: 'Fixtures & Fittings', color: '#8B5CF6', isDefault: true, sortOrder: 0 },
-          { id: 'opt-sel-finishes', categoryId, key: 'finishes', name: 'Finishes', color: '#EC4899', isDefault: false, sortOrder: 1 },
-          { id: 'opt-sel-appliances', categoryId, key: 'appliances', name: 'Appliances', color: '#F59E0B', isDefault: false, sortOrder: 2 },
+          { id: 'opt-sel-fixtures', categoryId, key: 'fixtures', name: 'Fixtures & Fittings', color: '#8888C4', isDefault: true, sortOrder: 0 },
+          { id: 'opt-sel-finishes', categoryId, key: 'finishes', name: 'Finishes', color: '#D484A0', isDefault: false, sortOrder: 1 },
+          { id: 'opt-sel-appliances', categoryId, key: 'appliances', name: 'Appliances', color: '#F0B964', isDefault: false, sortOrder: 2 },
         ];
       case 'selection.room':
         return [
-          { id: 'opt-room-kitchen', categoryId, key: 'kitchen', name: 'Kitchen', color: '#059669', isDefault: true, sortOrder: 0 },
-          { id: 'opt-room-living', categoryId, key: 'living', name: 'Living Room', color: '#DC2626', isDefault: false, sortOrder: 1 },
-          { id: 'opt-room-master', categoryId, key: 'master-bedroom', name: 'Master Bedroom', color: '#7C3AED', isDefault: false, sortOrder: 2 },
-          { id: 'opt-room-bathroom', categoryId, key: 'main-bathroom', name: 'Main Bathroom', color: '#06B6D4', isDefault: false, sortOrder: 3 },
-          { id: 'opt-room-ensuite', categoryId, key: 'ensuite', name: 'Ensuite', color: '#0891B2', isDefault: false, sortOrder: 4 },
-          { id: 'opt-room-laundry', categoryId, key: 'laundry', name: 'Laundry', color: '#65A30D', isDefault: false, sortOrder: 5 },
+          { id: 'opt-room-kitchen', categoryId, key: 'kitchen', name: 'Kitchen', color: '#68B088', isDefault: true, sortOrder: 0 },
+          { id: 'opt-room-living', categoryId, key: 'living', name: 'Living Room', color: '#C87878', isDefault: false, sortOrder: 1 },
+          { id: 'opt-room-master', categoryId, key: 'master-bedroom', name: 'Master Bedroom', color: '#A890D4', isDefault: false, sortOrder: 2 },
+          { id: 'opt-room-bathroom', categoryId, key: 'main-bathroom', name: 'Main Bathroom', color: '#70CAD0', isDefault: false, sortOrder: 3 },
+          { id: 'opt-room-ensuite', categoryId, key: 'ensuite', name: 'Ensuite', color: '#58A8B0', isDefault: false, sortOrder: 4 },
+          { id: 'opt-room-laundry', categoryId, key: 'laundry', name: 'Laundry', color: '#96D4A8', isDefault: false, sortOrder: 5 },
         ];
       case 'estimate_item.status':
         return [
-          { id: 'opt-estimate-item-status-pending', categoryId, key: 'pending', name: 'Pending', color: '#6B7280', isDefault: true, isCompleted: false, sortOrder: 0 },
-          { id: 'opt-estimate-item-status-quoted', categoryId, key: 'quoted', name: 'Quoted', color: '#F59E0B', isDefault: false, isCompleted: false, sortOrder: 1 },
-          { id: 'opt-estimate-item-status-confirmed', categoryId, key: 'confirmed', name: 'Confirmed', color: '#10B981', isDefault: false, isCompleted: true, sortOrder: 2 },
-          { id: 'opt-estimate-item-status-ordered', categoryId, key: 'ordered', name: 'Ordered', color: '#3B82F6', isDefault: false, isCompleted: false, sortOrder: 3 },
-          { id: 'opt-estimate-item-status-cancelled', categoryId, key: 'cancelled', name: 'Cancelled', color: '#EF4444', isDefault: false, isCompleted: false, sortOrder: 4 },
+          { id: 'opt-estimate-item-status-pending', categoryId, key: 'pending', name: 'Pending', color: '#8A8680', isDefault: true, isCompleted: false, sortOrder: 0 },
+          { id: 'opt-estimate-item-status-quoted', categoryId, key: 'quoted', name: 'Quoted', color: '#F0B964', isDefault: false, isCompleted: false, sortOrder: 1 },
+          { id: 'opt-estimate-item-status-confirmed', categoryId, key: 'confirmed', name: 'Confirmed', color: '#82C8A2', isDefault: false, isCompleted: true, sortOrder: 2 },
+          { id: 'opt-estimate-item-status-ordered', categoryId, key: 'ordered', name: 'Ordered', color: '#7890C8', isDefault: false, isCompleted: false, sortOrder: 3 },
+          { id: 'opt-estimate-item-status-cancelled', categoryId, key: 'cancelled', name: 'Cancelled', color: '#DA988A', isDefault: false, isCompleted: false, sortOrder: 4 },
         ];
       case 'estimate_item.unit':
         return [
-          { id: 'opt-estimate-item-unit-ea', categoryId, key: 'ea', name: 'ea', color: '#6B7280', isDefault: true, isCompleted: false, sortOrder: 0 },
-          { id: 'opt-estimate-item-unit-m', categoryId, key: 'm', name: 'm', color: '#6B7280', isDefault: false, isCompleted: false, sortOrder: 1 },
-          { id: 'opt-estimate-item-unit-m2', categoryId, key: 'm²', name: 'm²', color: '#6B7280', isDefault: false, isCompleted: false, sortOrder: 2 },
-          { id: 'opt-estimate-item-unit-m3', categoryId, key: 'm³', name: 'm³', color: '#6B7280', isDefault: false, isCompleted: false, sortOrder: 3 },
-          { id: 'opt-estimate-item-unit-item', categoryId, key: 'item', name: 'item', color: '#6B7280', isDefault: false, isCompleted: false, sortOrder: 4 },
-          { id: 'opt-estimate-item-unit-hr', categoryId, key: 'hr', name: 'hr', color: '#6B7280', isDefault: false, isCompleted: false, sortOrder: 5 },
-          { id: 'opt-estimate-item-unit-day', categoryId, key: 'day', name: 'day', color: '#6B7280', isDefault: false, isCompleted: false, sortOrder: 6 },
-          { id: 'opt-estimate-item-unit-load', categoryId, key: 'load', name: 'load', color: '#6B7280', isDefault: false, isCompleted: false, sortOrder: 7 },
-          { id: 'opt-estimate-item-unit-tonne', categoryId, key: 'tonne', name: 'tonne', color: '#6B7280', isDefault: false, isCompleted: false, sortOrder: 8 },
-          { id: 'opt-estimate-item-unit-kg', categoryId, key: 'kg', name: 'kg', color: '#6B7280', isDefault: false, isCompleted: false, sortOrder: 9 },
-          { id: 'opt-estimate-item-unit-set', categoryId, key: 'set', name: 'set', color: '#6B7280', isDefault: false, isCompleted: false, sortOrder: 10 },
+          { id: 'opt-estimate-item-unit-ea', categoryId, key: 'ea', name: 'ea', color: '#8A8680', isDefault: true, isCompleted: false, sortOrder: 0 },
+          { id: 'opt-estimate-item-unit-m', categoryId, key: 'm', name: 'm', color: '#8A8680', isDefault: false, isCompleted: false, sortOrder: 1 },
+          { id: 'opt-estimate-item-unit-m2', categoryId, key: 'm²', name: 'm²', color: '#8A8680', isDefault: false, isCompleted: false, sortOrder: 2 },
+          { id: 'opt-estimate-item-unit-m3', categoryId, key: 'm³', name: 'm³', color: '#8A8680', isDefault: false, isCompleted: false, sortOrder: 3 },
+          { id: 'opt-estimate-item-unit-item', categoryId, key: 'item', name: 'item', color: '#8A8680', isDefault: false, isCompleted: false, sortOrder: 4 },
+          { id: 'opt-estimate-item-unit-hr', categoryId, key: 'hr', name: 'hr', color: '#8A8680', isDefault: false, isCompleted: false, sortOrder: 5 },
+          { id: 'opt-estimate-item-unit-day', categoryId, key: 'day', name: 'day', color: '#8A8680', isDefault: false, isCompleted: false, sortOrder: 6 },
+          { id: 'opt-estimate-item-unit-load', categoryId, key: 'load', name: 'load', color: '#8A8680', isDefault: false, isCompleted: false, sortOrder: 7 },
+          { id: 'opt-estimate-item-unit-tonne', categoryId, key: 'tonne', name: 'tonne', color: '#8A8680', isDefault: false, isCompleted: false, sortOrder: 8 },
+          { id: 'opt-estimate-item-unit-kg', categoryId, key: 'kg', name: 'kg', color: '#8A8680', isDefault: false, isCompleted: false, sortOrder: 9 },
+          { id: 'opt-estimate-item-unit-set', categoryId, key: 'set', name: 'set', color: '#8A8680', isDefault: false, isCompleted: false, sortOrder: 10 },
         ];
       case 'estimate.status':
         return [
-          { id: 'opt-estimate-status-draft', categoryId, key: 'draft', name: 'Draft', color: '#6B7280', isDefault: true, isCompleted: false, sortOrder: 0 },
-          { id: 'opt-estimate-status-working', categoryId, key: 'working', name: 'Working', color: '#F59E0B', isDefault: false, isCompleted: false, sortOrder: 1 },
+          { id: 'opt-estimate-status-draft', categoryId, key: 'draft', name: 'Draft', color: '#8A8680', isDefault: true, isCompleted: false, sortOrder: 0 },
+          { id: 'opt-estimate-status-working', categoryId, key: 'working', name: 'Working', color: '#F0B964', isDefault: false, isCompleted: false, sortOrder: 1 },
           // No "locked" status: locking is the estimates.is_locked flag, set by
           // Mark as Contract and the manual Lock action, not a workflow stage.
-          { id: 'opt-estimate-status-approved', categoryId, key: 'approved', name: 'Approved', color: '#10B981', isDefault: false, isCompleted: true, sortOrder: 2 },
+          { id: 'opt-estimate-status-approved', categoryId, key: 'approved', name: 'Approved', color: '#82C8A2', isDefault: false, isCompleted: true, sortOrder: 2 },
         ];
       case 'defect.status':
         return [
-          { id: 'opt-defect-status-open', categoryId, key: 'open', name: 'Open', color: '#EF4444', isDefault: true, isCompleted: false, sortOrder: 0 },
-          { id: 'opt-defect-status-progress', categoryId, key: 'in_progress', name: 'In Progress', color: '#F59E0B', isDefault: false, isCompleted: false, sortOrder: 1 },
-          { id: 'opt-defect-status-resolved', categoryId, key: 'resolved', name: 'Resolved', color: '#10B981', isDefault: false, isCompleted: true, sortOrder: 2 },
-          { id: 'opt-defect-status-closed', categoryId, key: 'closed', name: 'Closed', color: '#6B7280', isDefault: false, isCompleted: true, sortOrder: 3 },
+          { id: 'opt-defect-status-open', categoryId, key: 'open', name: 'Open', color: '#DA988A', isDefault: true, isCompleted: false, sortOrder: 0 },
+          { id: 'opt-defect-status-progress', categoryId, key: 'in_progress', name: 'In Progress', color: '#F0B964', isDefault: false, isCompleted: false, sortOrder: 1 },
+          { id: 'opt-defect-status-resolved', categoryId, key: 'resolved', name: 'Resolved', color: '#82C8A2', isDefault: false, isCompleted: true, sortOrder: 2 },
+          { id: 'opt-defect-status-closed', categoryId, key: 'closed', name: 'Closed', color: '#8A8680', isDefault: false, isCompleted: true, sortOrder: 3 },
         ];
       case 'defect.priority':
         return [
-          { id: 'opt-defect-priority-critical', categoryId, key: 'critical', name: 'Critical', color: '#DC2626', isDefault: false, sortOrder: 0 },
-          { id: 'opt-defect-priority-high', categoryId, key: 'high', name: 'High', color: '#EF4444', isDefault: false, sortOrder: 1 },
-          { id: 'opt-defect-priority-medium', categoryId, key: 'medium', name: 'Medium', color: '#F59E0B', isDefault: true, sortOrder: 2 },
-          { id: 'opt-defect-priority-low', categoryId, key: 'low', name: 'Low', color: '#10B981', isDefault: false, sortOrder: 3 },
+          { id: 'opt-defect-priority-critical', categoryId, key: 'critical', name: 'Critical', color: '#C87878', isDefault: false, sortOrder: 0 },
+          { id: 'opt-defect-priority-high', categoryId, key: 'high', name: 'High', color: '#DA988A', isDefault: false, sortOrder: 1 },
+          { id: 'opt-defect-priority-medium', categoryId, key: 'medium', name: 'Medium', color: '#F0B964', isDefault: true, sortOrder: 2 },
+          { id: 'opt-defect-priority-low', categoryId, key: 'low', name: 'Low', color: '#82C8A2', isDefault: false, sortOrder: 3 },
         ];
       case 'defect.type':
         return [
-          { id: 'opt-defect-type-builder', categoryId, key: 'builder', name: 'Builder Defect', color: '#3B82F6', isDefault: true, sortOrder: 0 },
-          { id: 'opt-defect-type-subcontractor', categoryId, key: 'subcontractor', name: 'Subcontractor', color: '#F59E0B', isDefault: false, sortOrder: 1 },
-          { id: 'opt-defect-type-client', categoryId, key: 'client', name: 'Client Reported', color: '#8B5CF6', isDefault: false, sortOrder: 2 },
-          { id: 'opt-defect-type-warranty', categoryId, key: 'warranty', name: 'Warranty', color: '#EF4444', isDefault: false, sortOrder: 3 },
+          { id: 'opt-defect-type-builder', categoryId, key: 'builder', name: 'Builder Defect', color: '#7890C8', isDefault: true, sortOrder: 0 },
+          { id: 'opt-defect-type-subcontractor', categoryId, key: 'subcontractor', name: 'Subcontractor', color: '#F0B964', isDefault: false, sortOrder: 1 },
+          { id: 'opt-defect-type-client', categoryId, key: 'client', name: 'Client Reported', color: '#8888C4', isDefault: false, sortOrder: 2 },
+          { id: 'opt-defect-type-warranty', categoryId, key: 'warranty', name: 'Warranty', color: '#DA988A', isDefault: false, sortOrder: 3 },
         ];
       case 'defect.trade':
         return [
-          { id: 'opt-defect-trade-general', categoryId, key: 'general', name: 'General', color: '#6B7280', isDefault: true, sortOrder: 0 },
-          { id: 'opt-defect-trade-carpentry', categoryId, key: 'carpentry', name: 'Carpentry', color: '#D97706', isDefault: false, sortOrder: 1 },
-          { id: 'opt-defect-trade-plumbing', categoryId, key: 'plumbing', name: 'Plumbing', color: '#06B6D4', isDefault: false, sortOrder: 2 },
-          { id: 'opt-defect-trade-electrical', categoryId, key: 'electrical', name: 'Electrical', color: '#3B82F6', isDefault: false, sortOrder: 3 },
-          { id: 'opt-defect-trade-painting', categoryId, key: 'painting', name: 'Painting', color: '#7C3AED', isDefault: false, sortOrder: 4 },
-          { id: 'opt-defect-trade-flooring', categoryId, key: 'flooring', name: 'Flooring', color: '#059669', isDefault: false, sortOrder: 5 },
-          { id: 'opt-defect-trade-tiling', categoryId, key: 'tiling', name: 'Tiling', color: '#0891B2', isDefault: false, sortOrder: 6 },
+          { id: 'opt-defect-trade-general', categoryId, key: 'general', name: 'General', color: '#8A8680', isDefault: true, sortOrder: 0 },
+          { id: 'opt-defect-trade-carpentry', categoryId, key: 'carpentry', name: 'Carpentry', color: '#C89050', isDefault: false, sortOrder: 1 },
+          { id: 'opt-defect-trade-plumbing', categoryId, key: 'plumbing', name: 'Plumbing', color: '#70CAD0', isDefault: false, sortOrder: 2 },
+          { id: 'opt-defect-trade-electrical', categoryId, key: 'electrical', name: 'Electrical', color: '#7890C8', isDefault: false, sortOrder: 3 },
+          { id: 'opt-defect-trade-painting', categoryId, key: 'painting', name: 'Painting', color: '#A890D4', isDefault: false, sortOrder: 4 },
+          { id: 'opt-defect-trade-flooring', categoryId, key: 'flooring', name: 'Flooring', color: '#68B088', isDefault: false, sortOrder: 5 },
+          { id: 'opt-defect-trade-tiling', categoryId, key: 'tiling', name: 'Tiling', color: '#58A8B0', isDefault: false, sortOrder: 6 },
         ];
       case 'schedule_item.status':
         return [
-          { id: 'opt-schedule-item-status-not-started', categoryId, key: 'not_started', name: 'Not Started', color: '#6B7280', isDefault: true, isCompleted: false, sortOrder: 0 },
-          { id: 'opt-schedule-item-status-in-progress', categoryId, key: 'in_progress', name: 'In Progress', color: '#F59E0B', isDefault: false, isCompleted: false, sortOrder: 1 },
-          { id: 'opt-schedule-item-status-completed', categoryId, key: 'completed', name: 'Completed', color: '#10B981', isDefault: false, isCompleted: true, sortOrder: 2 },
-          { id: 'opt-schedule-item-status-on-hold', categoryId, key: 'on_hold', name: 'On Hold', color: '#EF4444', isDefault: false, isCompleted: false, sortOrder: 3 },
-          { id: 'opt-schedule-item-status-cancelled', categoryId, key: 'cancelled', name: 'Cancelled', color: '#94A3B8', isDefault: false, isCompleted: false, sortOrder: 4 },
+          { id: 'opt-schedule-item-status-not-started', categoryId, key: 'not_started', name: 'Not Started', color: '#8A8680', isDefault: true, isCompleted: false, sortOrder: 0 },
+          { id: 'opt-schedule-item-status-in-progress', categoryId, key: 'in_progress', name: 'In Progress', color: '#F0B964', isDefault: false, isCompleted: false, sortOrder: 1 },
+          { id: 'opt-schedule-item-status-completed', categoryId, key: 'completed', name: 'Completed', color: '#82C8A2', isDefault: false, isCompleted: true, sortOrder: 2 },
+          { id: 'opt-schedule-item-status-on-hold', categoryId, key: 'on_hold', name: 'On Hold', color: '#DA988A', isDefault: false, isCompleted: false, sortOrder: 3 },
+          { id: 'opt-schedule-item-status-cancelled', categoryId, key: 'cancelled', name: 'Cancelled', color: '#D8D7D4', isDefault: false, isCompleted: false, sortOrder: 4 },
         ];
       case 'project.status':
         return [
           // Parent statuses
-          { id: 'opt-project-status-lead', categoryId, key: 'lead', name: 'Lead', color: '#6B7280', isDefault: true, sortOrder: 0 },
-          { id: 'opt-project-status-pre-construction', categoryId, key: 'pre_construction', name: 'Pre-Construction', color: '#F59E0B', isDefault: false, sortOrder: 1 },
-          { id: 'opt-project-status-construction', categoryId, key: 'construction', name: 'Construction', color: '#3B82F6', isDefault: false, sortOrder: 2 },
-          { id: 'opt-project-status-post-construction', categoryId, key: 'post_construction', name: 'Post Construction', color: '#10B981', isDefault: false, sortOrder: 3 },
+          { id: 'opt-project-status-lead', categoryId, key: 'lead', name: 'Lead', color: '#8A8680', isDefault: true, sortOrder: 0 },
+          { id: 'opt-project-status-pre-construction', categoryId, key: 'pre_construction', name: 'Pre-Construction', color: '#F0B964', isDefault: false, sortOrder: 1 },
+          { id: 'opt-project-status-construction', categoryId, key: 'construction', name: 'Construction', color: '#7890C8', isDefault: false, sortOrder: 2 },
+          { id: 'opt-project-status-post-construction', categoryId, key: 'post_construction', name: 'Post Construction', color: '#82C8A2', isDefault: false, sortOrder: 3 },
           
           // Lead sub-statuses
-          { id: 'opt-project-substatus-lead-new', categoryId, key: 'lead_new', name: 'Application Submitted', color: '#9CA3AF', parentId: 'opt-project-status-lead', sortOrder: 4 },
-          { id: 'opt-project-substatus-lead-contacted', categoryId, key: 'lead_contacted', name: 'On-Site Consultation Booked', color: '#9CA3AF', parentId: 'opt-project-status-lead', sortOrder: 5 },
-          { id: 'opt-project-substatus-lead-proposal', categoryId, key: 'lead_proposal_sent', name: 'Awaiting Pre-Con', color: '#9CA3AF', parentId: 'opt-project-status-lead', sortOrder: 6 },
+          { id: 'opt-project-substatus-lead-new', categoryId, key: 'lead_new', name: 'Application Submitted', color: '#D8D7D4', parentId: 'opt-project-status-lead', sortOrder: 4 },
+          { id: 'opt-project-substatus-lead-contacted', categoryId, key: 'lead_contacted', name: 'On-Site Consultation Booked', color: '#D8D7D4', parentId: 'opt-project-status-lead', sortOrder: 5 },
+          { id: 'opt-project-substatus-lead-proposal', categoryId, key: 'lead_proposal_sent', name: 'Awaiting Pre-Con', color: '#D8D7D4', parentId: 'opt-project-status-lead', sortOrder: 6 },
           
           // Pre-Construction sub-statuses
-          { id: 'opt-project-substatus-precon-awaiting-agreement', categoryId, key: 'awaiting_pre-con_agreement', name: 'Awaiting Pre-Con Agreement', color: '#FDE68A', parentId: 'opt-project-status-pre-construction', sortOrder: 7 },
-          { id: 'opt-project-substatus-precon-agreement-signed', categoryId, key: 'pre-con_agreement_signed', name: 'Pre-Con Agreement Signed', color: '#FDE68A', parentId: 'opt-project-status-pre-construction', sortOrder: 8 },
-          { id: 'opt-project-substatus-precon-awaiting-fdp', categoryId, key: 'awaiting_fdp', name: 'Awaiting FDP', color: '#FDE68A', parentId: 'opt-project-status-pre-construction', sortOrder: 9 },
-          { id: 'opt-project-substatus-precon-fdp', categoryId, key: 'fdp', name: 'FDP', color: '#FDE68A', parentId: 'opt-project-status-pre-construction', sortOrder: 10 },
-          { id: 'opt-project-substatus-precon-fdp-review', categoryId, key: 'fdp_review', name: 'FDP Review', color: '#FDE68A', parentId: 'opt-project-status-pre-construction', sortOrder: 11 },
-          { id: 'opt-project-substatus-precon-planning', categoryId, key: 'precon_planning', name: 'QBE', color: '#FDE68A', parentId: 'opt-project-status-pre-construction', sortOrder: 12 },
-          { id: 'opt-project-substatus-precon-awaiting-confirmation', categoryId, key: 'awaiting_confirmation', name: 'Awaiting Confirmation', color: '#FDE68A', parentId: 'opt-project-status-pre-construction', sortOrder: 13 },
-          { id: 'opt-project-substatus-precon-contract-prep', categoryId, key: 'contract_preparation', name: 'Contract Preparation', color: '#FDE68A', parentId: 'opt-project-status-pre-construction', sortOrder: 14 },
-          { id: 'opt-project-substatus-precon-scheduling', categoryId, key: 'scheduling', name: 'Scheduling', color: '#FDE68A', parentId: 'opt-project-status-pre-construction', sortOrder: 15 },
+          { id: 'opt-project-substatus-precon-awaiting-agreement', categoryId, key: 'awaiting_pre-con_agreement', name: 'Awaiting Pre-Con Agreement', color: '#EAD070', parentId: 'opt-project-status-pre-construction', sortOrder: 7 },
+          { id: 'opt-project-substatus-precon-agreement-signed', categoryId, key: 'pre-con_agreement_signed', name: 'Pre-Con Agreement Signed', color: '#EAD070', parentId: 'opt-project-status-pre-construction', sortOrder: 8 },
+          { id: 'opt-project-substatus-precon-awaiting-fdp', categoryId, key: 'awaiting_fdp', name: 'Awaiting FDP', color: '#EAD070', parentId: 'opt-project-status-pre-construction', sortOrder: 9 },
+          { id: 'opt-project-substatus-precon-fdp', categoryId, key: 'fdp', name: 'FDP', color: '#EAD070', parentId: 'opt-project-status-pre-construction', sortOrder: 10 },
+          { id: 'opt-project-substatus-precon-fdp-review', categoryId, key: 'fdp_review', name: 'FDP Review', color: '#EAD070', parentId: 'opt-project-status-pre-construction', sortOrder: 11 },
+          { id: 'opt-project-substatus-precon-planning', categoryId, key: 'precon_planning', name: 'QBE', color: '#EAD070', parentId: 'opt-project-status-pre-construction', sortOrder: 12 },
+          { id: 'opt-project-substatus-precon-awaiting-confirmation', categoryId, key: 'awaiting_confirmation', name: 'Awaiting Confirmation', color: '#EAD070', parentId: 'opt-project-status-pre-construction', sortOrder: 13 },
+          { id: 'opt-project-substatus-precon-contract-prep', categoryId, key: 'contract_preparation', name: 'Contract Preparation', color: '#EAD070', parentId: 'opt-project-status-pre-construction', sortOrder: 14 },
+          { id: 'opt-project-substatus-precon-scheduling', categoryId, key: 'scheduling', name: 'Scheduling', color: '#EAD070', parentId: 'opt-project-status-pre-construction', sortOrder: 15 },
           
           // Construction sub-statuses
-          { id: 'opt-project-substatus-const-foundation', categoryId, key: 'const_foundation', name: 'Construction', color: '#93C5FD', parentId: 'opt-project-status-construction', sortOrder: 16 },
+          { id: 'opt-project-substatus-const-foundation', categoryId, key: 'const_foundation', name: 'Construction', color: '#80B8D8', parentId: 'opt-project-status-construction', sortOrder: 16 },
           
           // Post Construction sub-statuses
-          { id: 'opt-project-substatus-postcon-defects', categoryId, key: 'postcon_defects_period', name: 'Post Construction', color: '#86EFAC', parentId: 'opt-project-status-post-construction', sortOrder: 17 },
-          { id: 'opt-project-substatus-postcon-completed', categoryId, key: 'postcon_completed', name: 'Completed', color: '#86EFAC', parentId: 'opt-project-status-post-construction', sortOrder: 18 },
+          { id: 'opt-project-substatus-postcon-defects', categoryId, key: 'postcon_defects_period', name: 'Post Construction', color: '#96D4A8', parentId: 'opt-project-status-post-construction', sortOrder: 17 },
+          { id: 'opt-project-substatus-postcon-completed', categoryId, key: 'postcon_completed', name: 'Completed', color: '#96D4A8', parentId: 'opt-project-status-post-construction', sortOrder: 18 },
         ];
       case 'timesheet.label':
         return [
-          { id: 'opt-timesheet-label-regular', categoryId, key: 'regular', name: 'Regular Hours', color: '#3B82F6', isDefault: true, sortOrder: 0 },
-          { id: 'opt-timesheet-label-overtime', categoryId, key: 'overtime', name: 'Overtime', color: '#F59E0B', isDefault: false, sortOrder: 1 },
-          { id: 'opt-timesheet-label-travel', categoryId, key: 'travel', name: 'Travel Time', color: '#8B5CF6', isDefault: false, sortOrder: 2 },
-          { id: 'opt-timesheet-label-meeting', categoryId, key: 'meeting', name: 'Meeting', color: '#06B6D4', isDefault: false, sortOrder: 3 },
-          { id: 'opt-timesheet-label-training', categoryId, key: 'training', name: 'Training', color: '#10B981', isDefault: false, sortOrder: 4 },
-          { id: 'opt-timesheet-label-site-visit', categoryId, key: 'site-visit', name: 'Site Visit', color: '#EC4899', isDefault: false, sortOrder: 5 },
+          { id: 'opt-timesheet-label-regular', categoryId, key: 'regular', name: 'Regular Hours', color: '#7890C8', isDefault: true, sortOrder: 0 },
+          { id: 'opt-timesheet-label-overtime', categoryId, key: 'overtime', name: 'Overtime', color: '#F0B964', isDefault: false, sortOrder: 1 },
+          { id: 'opt-timesheet-label-travel', categoryId, key: 'travel', name: 'Travel Time', color: '#8888C4', isDefault: false, sortOrder: 2 },
+          { id: 'opt-timesheet-label-meeting', categoryId, key: 'meeting', name: 'Meeting', color: '#70CAD0', isDefault: false, sortOrder: 3 },
+          { id: 'opt-timesheet-label-training', categoryId, key: 'training', name: 'Training', color: '#82C8A2', isDefault: false, sortOrder: 4 },
+          { id: 'opt-timesheet-label-site-visit', categoryId, key: 'site-visit', name: 'Site Visit', color: '#D484A0', isDefault: false, sortOrder: 5 },
         ];
       case 'enote.status':
         return [
-          { id: 'opt-enote-status-not-started', categoryId, key: 'not_started', name: 'Not Started', color: '#6B7280', isDefault: true, isCompleted: false, sortOrder: 0 },
-          { id: 'opt-enote-status-in-progress', categoryId, key: 'in_progress', name: 'In Progress', color: '#F59E0B', isDefault: false, isCompleted: false, sortOrder: 1 },
-          { id: 'opt-enote-status-complete', categoryId, key: 'complete', name: 'Complete', color: '#10B981', isDefault: false, isCompleted: true, sortOrder: 2 },
+          { id: 'opt-enote-status-not-started', categoryId, key: 'not_started', name: 'Not Started', color: '#8A8680', isDefault: true, isCompleted: false, sortOrder: 0 },
+          { id: 'opt-enote-status-in-progress', categoryId, key: 'in_progress', name: 'In Progress', color: '#F0B964', isDefault: false, isCompleted: false, sortOrder: 1 },
+          { id: 'opt-enote-status-complete', categoryId, key: 'complete', name: 'Complete', color: '#82C8A2', isDefault: false, isCompleted: true, sortOrder: 2 },
         ];
       default:
         return [];
