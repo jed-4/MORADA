@@ -8,9 +8,9 @@ interface ColorPickerProps {
   /** Show the native colour input + hex field under the presets. */
   showCustom?: boolean;
   /**
-   * Override the preset groups. Defaults to the canonical Morada palette —
-   * pass BUILDPRO_PALETTE-shaped groups only if a surface genuinely needs a
-   * different set.
+   * Override the preset groups. Defaults to the canonical Morada palette; pass
+   * your own only if a surface genuinely needs a different set, the way takeoff
+   * needs drawing-weight colours (see MORADA_MARKUP_PALETTE in lib/colors.ts).
    */
   groups?: MoradaSwatchGroup[];
   'data-testid'?: string;
