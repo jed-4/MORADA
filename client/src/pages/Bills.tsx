@@ -1390,7 +1390,7 @@ export default function Bills({ embedded }: { embedded?: boolean } = {}) {
         <p className="text-sm text-muted-foreground">
           The bill becomes a vendor credit in place — same attachment, line items and history — and
           its amount starts reducing what you owe this supplier instead of adding to it. Vendor
-          credits can't sync to Xero yet, so record the credit note in Xero directly.
+          it syncs to Xero as a supplier credit note.
         </p>
         <DialogFooter>
           <Button variant="outline" onClick={() => setConvertTarget(null)}>
