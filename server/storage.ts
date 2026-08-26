@@ -14746,15 +14746,43 @@ export class DbStorage implements IStorage {
     }
   }
 
+  // Purging archived contacts used to be a single bulk DELETE. A contact that
+  // is still referenced — by a bill, a PO, a timesheet — raises a foreign key
+  // violation, and because it was one statement that aborted the WHOLE sweep:
+  // nothing was ever purged, and the nightly job logged a stack trace every
+  // run. Delete per row and step over the ones something still points at,
+  // rather than guessing at the full set of referencing tables (which would
+  // silently go stale the next time one is added).
   async deleteArchivedContactsOlderThan(date: Date): Promise<number> {
     try {
-      const deleted = await db.delete(schema.contacts)
+      const candidates = await db.select({ id: schema.contacts.id })
+        .from(schema.contacts)
         .where(and(
           eq(schema.contacts.isArchived, true),
           lte(schema.contacts.archivedAt, date)
-        ))
-        .returning();
-      return deleted.length;
+        ));
+      if (candidates.length === 0) return 0;
+
+      let deleted = 0;
+      let stillReferenced = 0;
+      for (const c of candidates) {
+        try {
+          await db.delete(schema.contacts).where(eq(schema.contacts.id, c.id));
+          deleted++;
+        } catch (err: any) {
+          // 23503 = foreign_key_violation: the contact is archived but still
+          // attached to a record that needs it. Keeping it is correct — the
+          // alternative is orphaning or cascading away real history.
+          if (err?.code === "23503") { stillReferenced++; continue; }
+          throw err;
+        }
+      }
+      if (stillReferenced > 0) {
+        console.log(
+          `[deleteArchivedContactsOlderThan] kept ${stillReferenced} archived contact(s) still referenced by other records`,
+        );
+      }
+      return deleted;
     } catch (error) {
       console.error("Database error in deleteArchivedContactsOlderThan:", error);
       return 0;
