@@ -469,11 +469,41 @@ const trackingCategoryId = (raw: unknown): string | undefined => {
   return v;
 };
 
+const fmtMoney = (dollars: number) =>
+  `${dollars < 0 ? "-" : ""}$${Math.abs(dollars).toFixed(2)}`;
+
+// Xero's validation text is written for whoever built the integration, not for
+// the person looking at the bill. Rewrite the messages we understand into
+// something that says what to do; anything unrecognised passes through
+// unchanged rather than being flattened into a generic apology.
+export function explainXeroValidation(raw: string, billType?: string | null): string {
+  const msg = String(raw || "");
+  const isCredit = billType === "credit";
+  if (/Total for this document must be greater than or equal to zero/i.test(msg)) {
+    return isCredit
+      ? "Xero needs a credit note's total to be zero or more — a credit already reduces what you owe, so its lines should be positive. If this document mixes credits and purchases, split the purchases onto their own bill."
+      : "Xero won't accept a supplier bill for a negative amount. If the whole document is a refund or return, convert it to a credit note from the actions menu; if it mixes a return with purchases, split the return onto its own credit note.";
+  }
+  if (/Quantity must not be less than zero/i.test(msg)) {
+    return "One of the lines has a negative quantity, which Xero rejects. Enter the amount as a negative unit price instead, or move that line onto a credit note.";
+  }
+  if (/Account code .* is not a valid code/i.test(msg) || /AccountCode is required/i.test(msg)) {
+    return `${msg} Set an account on the line, on the supplier, or as a company default in Settings → Integrations → Xero.`;
+  }
+  if (/Contact/i.test(msg) && /required|not valid/i.test(msg)) {
+    return "Xero couldn't match the supplier on this bill. Link the supplier to a Xero contact and push again.";
+  }
+  return msg;
+}
+
 export async function pushBillToXeroInternal(
   billId: string,
   companyId: string,
   overrideXeroContactId?: string,
 ): Promise<PushBillResult> {
+  // Remembered outside the try so the catch can tailor Xero's validation text
+  // to the document kind — `bill` itself is scoped to the try.
+  let billTypeForErrors: string | null = null;
   const writeSyncStatus = async (status: "success" | "failed", error?: string) => {
     try {
       await storage.updateBill(billId, {
@@ -545,6 +575,7 @@ export async function pushBillToXeroInternal(
     // shared, because a credit's lines, accounts, tracking and tax are built
     // exactly like a bill's.
     const isCredit = isVendorCredit((bill as any).billType);
+    billTypeForErrors = (bill as any).billType ?? null;
 
     // A Xero invoice with a payment allocated is locked by Xero: it rejects any
     // change to its line items or status ("To update fields on a paid invoice
@@ -787,6 +818,30 @@ export async function pushBillToXeroInternal(
       };
     }
 
+    // Pre-flight: Xero requires Total >= 0 on both an ACCPAY bill and an
+    // ACCPAYCREDIT credit note, and rejects anything else with "The Total for
+    // this document must be greater than or equal to zero." Catching it here
+    // means the user gets told what is actually wrong with their document
+    // instead of Xero's wording arriving after a failed round trip.
+    //
+    // A net-negative supplier document is almost always a return mixed in with
+    // purchases on one docket, and no single Xero document represents that —
+    // it has to be split. Sum the way Xero will: quantity x unit amount.
+    const documentTotal = xeroLineItems.reduce(
+      (sum, li) => sum + (li.quantity ?? 1) * (li.unitAmount ?? 0),
+      0,
+    );
+    if (documentTotal < 0) {
+      const asCredit = isCredit;
+      const msg = asCredit
+        ? `This credit note totals ${fmtMoney(documentTotal)}. Xero needs a credit note's total to be zero or more — a credit already reduces what you owe, so its lines should be positive. If this document mixes credits and purchases, split the purchases onto their own bill.`
+        : `This bill totals ${fmtMoney(documentTotal)}. Xero won't accept a supplier bill for a negative amount. If the whole document is a refund or return, convert it to a credit note from the actions menu; if it mixes a return with purchases, split the return onto its own credit note and leave the purchases here.`;
+      const issues: XeroValidationIssue[] = [{ scope: "invoice", message: msg }];
+      await writeSyncStatus("failed", msg);
+      logOutcome({ ok: false, reason: "NEGATIVE_TOTAL", message: msg, validationErrors: issues });
+      return { ok: false, status: 422, error: "NEGATIVE_TOTAL", message: msg, validationErrors: issues };
+    }
+
     // Pre-flight: tax types referenced on lines must exist on the connected
     // Xero org. We only block when we can confidently confirm a mismatch — if
     // the TaxRates fetch fails (network, scope, etc) we let Xero be the source
@@ -930,7 +985,10 @@ export async function pushBillToXeroInternal(
     };
   } catch (error: any) {
     if (error instanceof XeroValidationError) {
-      const summary = error.validationErrors[0]?.message || error.message;
+      const summary = explainXeroValidation(
+        error.validationErrors[0]?.message || error.message,
+        billTypeForErrors,
+      );
 
       // A paid / credit-noted invoice is locked by Xero: it rejects line-item or
       // status changes with "…must supply a LineItemID" / "…has payments or
