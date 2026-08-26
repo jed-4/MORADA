@@ -53,6 +53,14 @@ export interface CalendarEvent {
   projectName?: string | null;
   assigneeName?: string | null;
   assigneeId?: string | null;
+  /**
+   * Every *Morada user* this event is assigned to — filter on this, never on
+   * `assigneeId`, which only ever holds the legacy single assignee.
+   *
+   * Empty for schedule items: `scheduleItems.assignedToId` references `contacts`
+   * (subbies and suppliers), so no user owns one. See `shared/taskAssignees.ts`.
+   */
+  assigneeIds?: string[] | null;
   /** "projected" is a ghost from a recurring template — read-only, never persisted. */
   type: "task" | "schedule" | "meeting" | "google-calendar" | "timesheet" | "site_diary" | "reminder" | "projected";
   status?: string;

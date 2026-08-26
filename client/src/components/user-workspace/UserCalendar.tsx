@@ -892,9 +892,11 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
   });
 
   // Get status options from field categories instead of hardcoded values
+  // `field_options` stores the display name as `name` — there is no `label` column,
+  // so this read was undefined and the Status filter rendered blank checkboxes.
   const filterStatusOptions = (statusCategory?.options || []).map(opt => ({
     key: opt.key,
-    label: opt.label,
+    label: opt.name,
   }));
 
   // Event type options for filtering - always show Google Calendar but disable if not connected

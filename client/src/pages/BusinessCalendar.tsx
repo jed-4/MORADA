@@ -17,6 +17,12 @@ import {
 } from "lucide-react";
 import { format, isWithinInterval, startOfMonth, endOfMonth, startOfWeek, endOfWeek, addMonths, subMonths } from "date-fns";
 import type { Task, ScheduleItem, Project, User as UserType, FieldCategoryWithOptions, Schedule, CompanySettings } from "@shared/schema";
+import {
+  taskAssigneeIds,
+  cachedAssigneeNameById,
+  formatAssigneeLabel,
+  type AssignableTask,
+} from "@shared/taskAssignees";
 import type { CalendarEvent, CalendarDisplayOptions } from "@/components/EnhancedCalendar";
 import {
   MoradaCalendar,
@@ -261,9 +267,21 @@ export default function BusinessCalendar() {
       .filter(task => task.dueDate)
       .map(task => {
         const project = projects.find(p => p.id === task.projectId);
-        const assignee = users.find(u => u.id === task.assigneeId);
+        // Both assignee columns, not just the legacy single one — see shared/taskAssignees.ts.
+        const assigneeIds = taskAssigneeIds(task as AssignableTask);
+        // Resolve per id, not all-or-nothing: someone who has left the company is
+        // no longer in `users`, and the row's cached name is all we have for them.
+        // Falling back for the whole task would have dropped everyone else's name.
+        const cachedNames = cachedAssigneeNameById(task as AssignableTask);
+        const assigneeNames = assigneeIds
+          .map(id => {
+            const u = users.find(candidate => candidate.id === id);
+            const live = u ? `${u.firstName || ''} ${u.lastName || ''}`.trim() || u.email : null;
+            return live || cachedNames.get(id) || null;
+          })
+          .filter((name): name is string => !!name);
         const isCompleted = task.status === completedOption?.key;
-        
+
         return {
           id: task.id,
           title: task.title,
@@ -275,8 +293,9 @@ export default function BusinessCalendar() {
           projectId: task.projectId,
           projectColor: project?.color || deterministicProjectColor(task.projectId || task.id),
           projectName: project?.name || null,
-          assigneeName: assignee ? `${assignee.firstName || ''} ${assignee.lastName || ''}`.trim() || null : null,
+          assigneeName: formatAssigneeLabel(assigneeNames),
           assigneeId: task.assigneeId,
+          assigneeIds,
           type: "task" as const,
           status: task.status,
           isCompleted,
@@ -304,7 +323,10 @@ export default function BusinessCalendar() {
       .map(item => {
         const schedule = schedules.find(s => s.id === item.scheduleId);
         const project = schedule ? projects.find(p => p.id === schedule.projectId) : undefined;
-        const assignee = item.assignedToId ? users.find(u => u.id === item.assignedToId) : undefined;
+        // `assignedToId` references CONTACTS, not users — a subbie or supplier — so
+        // there is nothing to look up in `users`. The row caches the name already,
+        // and for in-house work it caches the company's name with a null id.
+        const assigneeName = (item as any).assignedToName || null;
         const isCompleted = item.status === "completed";
         const projectColor = project?.color || deterministicProjectColor(project?.id || item.id);
         
@@ -319,8 +341,11 @@ export default function BusinessCalendar() {
           projectId: project?.id,
           projectColor: projectColor,
           projectName: project?.name || null,
-          assigneeName: assignee ? `${assignee.firstName || ''} ${assignee.lastName || ''}`.trim() || null : null,
+          assigneeName,
           assigneeId: item.assignedToId,
+          // No Morada user owns a schedule item, so it never belongs to one person's
+          // view. Filtering by person deliberately excludes them.
+          assigneeIds: [],
           type: "schedule" as const,
           status: item.status,
           isCompleted,
@@ -332,9 +357,11 @@ export default function BusinessCalendar() {
     // Apply filters
     let filtered = allEvents;
 
-    // Apply "View as User" filter first (separate from assignee multi-select filter)
+    // Apply "View as User" filter first (separate from assignee multi-select filter).
+    // Matches on `assigneeIds`, which carries both assignee columns — testing
+    // `assigneeId` alone dropped every multi-assignee task.
     if (selectedViewUserId !== "all") {
-      filtered = filtered.filter(event => event.assigneeId === selectedViewUserId);
+      filtered = filtered.filter(event => (event.assigneeIds ?? []).includes(selectedViewUserId));
     }
 
     // Event type filter
@@ -361,10 +388,10 @@ export default function BusinessCalendar() {
       );
     }
 
-    // Assignee filter
+    // Assignee filter — same rule as "View as User" above.
     if (filters.assignees && filters.assignees.length > 0) {
-      filtered = filtered.filter(event => 
-        event.assigneeId && filters.assignees!.includes(event.assigneeId)
+      filtered = filtered.filter(event =>
+        (event.assigneeIds ?? []).some(id => filters.assignees!.includes(id))
       );
     }
 
