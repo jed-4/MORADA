@@ -424,7 +424,7 @@ export default function Contacts() {
           );
         },
         size: 110,
-        meta: { defaultWidth: 110, headerLabel: "Type" } satisfies DataTableColumnMeta,
+        meta: { defaultWidth: 110, align: "center", headerLabel: "Type" } satisfies DataTableColumnMeta,
       },
       {
         id: "actions",

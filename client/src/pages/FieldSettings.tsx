@@ -20,9 +20,9 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { FieldOption, FieldCategory, SupplierLabel, ScopeItemTypeDefinition, UserRole } from "@shared/schema";
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent, DragStartEvent, DragOverlay } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
-import { BUILDPRO_PALETTE } from '@/lib/colors';
+import { MORADA_PALETTE } from '@/lib/colors';
 
-const STATUS_COLORS = BUILDPRO_PALETTE.map(c => ({ value: c.hex, label: c.name }));
+const STATUS_COLORS = MORADA_PALETTE.map(c => ({ value: c.hex, label: c.name }));
 
 interface SortableRowProps {
   option: FieldOption;

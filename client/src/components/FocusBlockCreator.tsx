@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { BUILDPRO_PALETTE_HEXES } from '@/lib/colors';
+import { MORADA_PALETTE_HEXES } from '@/lib/colors';
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -48,7 +48,7 @@ export function FocusBlockCreator({ open, onClose, onOpenChange, onCreated, edit
   const { toast } = useToast();
 
   const [title, setTitle] = useState("");
-  const [color, setColor] = useState(BUILDPRO_PALETTE_HEXES[0]);
+  const [color, setColor] = useState(MORADA_PALETTE_HEXES[0]);
   const [startTime, setStartTime] = useState("09:00");
   const [endTime, setEndTime] = useState("11:00");
   const [isRecurring, setIsRecurring] = useState(false);
@@ -80,7 +80,7 @@ export function FocusBlockCreator({ open, onClose, onOpenChange, onCreated, edit
       setCategoryId(editBlock.categoryId || "");
     } else {
       setTitle("");
-      setColor(BUILDPRO_PALETTE_HEXES[0]);
+      setColor(MORADA_PALETTE_HEXES[0]);
       setStartTime("09:00");
       setEndTime("11:00");
       setIsRecurring(false);
@@ -178,7 +178,7 @@ export function FocusBlockCreator({ open, onClose, onOpenChange, onCreated, edit
           <div className="space-y-1.5">
             <Label className="text-xs">Color</Label>
             <div className="flex gap-2 flex-wrap">
-              {BUILDPRO_PALETTE_HEXES.map((c) => (
+              {MORADA_PALETTE_HEXES.map((c) => (
                 <button
                   key={c}
                   onClick={() => setColor(c)}

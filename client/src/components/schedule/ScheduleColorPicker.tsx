@@ -1,4 +1,5 @@
-import { BUILDPRO_PALETTE } from '@/lib/colors';
+import { MORADA_PALETTE_GROUPS } from '@/lib/colors';
+import { ColorPicker } from '@/components/ui/ColorPicker';
 import { Palette } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -7,20 +8,35 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 
-const GRAY_COLOR = "#9b9b9b"; // Slate — default fallback
+// Fallback for an assignee with no usable id. Was #9b9b9b (BuildPro Slate);
+// now Stone, the nearest Morada neutral at ΔE 8.7.
+const FALLBACK_COLOR = "#8A8680";
+
+// A schedule colour derived from the assignee, offered as a one-click option
+// alongside the palette. Neutrals are excluded so an auto-suggested colour is
+// always an actual colour — the same reason Slate was excluded before.
+//
+// This only ever SUGGESTS. The hex is stored on the schedule item the moment
+// it is clicked, and nothing renders a stored colour through this function, so
+// changing the pool does not repaint anything that already exists. The one
+// visible effect is that an assignee whose colour was picked from here before
+// the palette changed will no longer see the tick against the shortcut, since
+// the suggestion for that id is now a different colour.
+const ASSIGNEE_POOL = MORADA_PALETTE_GROUPS
+  .filter(g => g.group !== 'Neutral')
+  .flatMap(g => g.colors);
 
 // Generate a deterministic color from a string (user ID or name)
 export function generateColorFromString(str: string): string {
-  if (!str) return GRAY_COLOR;
+  if (!str) return FALLBACK_COLOR;
 
   let hash = 0;
   for (let i = 0; i < str.length; i++) {
     hash = str.charCodeAt(i) + ((hash << 5) - hash);
   }
 
-  const pool = BUILDPRO_PALETTE.filter(c => c.hex !== GRAY_COLOR);
-  const index = Math.abs(hash) % pool.length;
-  return pool[index].hex;
+  const index = Math.abs(hash) % ASSIGNEE_POOL.length;
+  return ASSIGNEE_POOL[index].hex;
 }
 
 interface ScheduleColorPickerProps {
@@ -64,7 +80,7 @@ export function ScheduleColorPicker({
       </PopoverTrigger>
       <PopoverContent
         align={align}
-        className="w-72 p-3"
+        className="w-auto p-3"
         data-testid="popover-color-picker"
         onMouseEnter={onMouseEnter}
         onMouseLeave={onMouseLeave}
@@ -93,28 +109,15 @@ export function ScheduleColorPicker({
             </div>
           )}
 
-          {/* Palette */}
-          <div>
-            <div className="text-xs font-medium text-muted-foreground mb-2">Colors</div>
-            <div className="grid grid-cols-8 gap-1.5">
-              {BUILDPRO_PALETTE.map(({ name, hex }) => (
-                <button
-                  key={hex}
-                  onClick={() => handleColorSelect(hex)}
-                  className="w-7 h-7 rounded-full border-2 hover-elevate active-elevate-2 relative flex items-center justify-center"
-                  style={{
-                    backgroundColor: hex,
-                    borderColor: currentColor?.toLowerCase() === hex.toLowerCase() ? "#000" : "transparent",
-                  }}
-                  title={name}
-                  data-testid={`button-color-${name.toLowerCase().replace(/\s+/g, '-')}`}
-                >
-                  {currentColor?.toLowerCase() === hex.toLowerCase() && (
-                    <span className="text-white text-xs font-bold drop-shadow-sm">✓</span>
-                  )}
-                </button>
-              ))}
-            </div>
+          {/* Palette — the shared picker, so schedule offers the same grouped
+              set as every other colour control in the app. */}
+          <div className="-mx-3">
+            <ColorPicker
+              value={currentColor ?? ""}
+              onChange={handleColorSelect}
+              showCustom={false}
+              data-testid="color-picker-schedule"
+            />
           </div>
 
           {/* Clear Color */}
