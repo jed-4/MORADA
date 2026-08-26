@@ -29,20 +29,19 @@ function slice(decl) {
 }
 const hexes = (seg) => [...seg.matchAll(/hex:\s*'(#[0-9A-Fa-f]{6})'/g)].map(m => m[1].toUpperCase());
 
-const MORADA   = new Set(hexes(slice("export const MORADA_PALETTE_GROUPS")));
-const BUILDPRO = new Set(hexes(slice("export const BUILDPRO_PALETTE")));
-const PROJECT  = new Set(hexes(slice("export const MORADA_PROJECT_PALETTE")));
+const MORADA = new Set(hexes(slice("export const MORADA_PALETTE_GROUPS")));
+const MARKUP = new Set(hexes(slice("export const MORADA_MARKUP_PALETTE")));
 
 // column -> which picker feeds it today (see the consumer grep in colors.ts)
 const TARGETS = [
-  ["contacts",               "avatar_color",         "contacts picker (already Morada)"],
-  ["contacts",               "schedule_color",       "ScheduleColorPicker → BuildPro"],
-  ["schedule_items",         "color",                "ScheduleColorPicker → BuildPro"],
+  ["contacts",               "avatar_color",         "contacts picker → Morada"],
+  ["contacts",               "schedule_color",       "ScheduleColorPicker → Morada"],
+  ["schedule_items",         "color",                "ScheduleColorPicker → Morada"],
   ["schedule_items",         "assigned_to_color",    "mirror of contacts.schedule_color"],
-  ["schedules",              "business_assign_color","ScheduleColorPicker → BuildPro"],
+  ["schedules",              "business_assign_color","ScheduleColorPicker → Morada"],
   ["focus_blocks",           "color",                "FocusBlockCreator → Morada"],
-  ["takeoff_measurements",   "color",                "TakeoffColorPicker → BuildPro (held: contrast)"],
-  ["takeoff_markups",        "color",                "TakeoffColorPicker → BuildPro (held: contrast)"],
+  ["takeoff_measurements",   "color",                "TakeoffColorPicker → Markup palette"],
+  ["takeoff_markups",        "color",                "TakeoffColorPicker → Markup palette"],
   ["task_tags",              "color",                "TaskSettings → Morada"],
   ["task_templates",         "color",                "TaskSettings → Morada"],
   ["task_template_statuses", "color",                "TaskSettings → Morada"],
@@ -68,12 +67,14 @@ for (const [table, column, picker] of TARGETS) {
     );
     const total = rows.reduce((a, r) => a + r.n, 0);
     const values = rows.map(r => r.hex);
-    const offPalette = rows.filter(r => !MORADA.has(r.hex));
+    // Takeoff legitimately holds markup colours, which are not in MORADA.
+    const allowed = table.startsWith("takeoff_") ? MARKUP : MORADA;
+    const offPalette = rows.filter(r => !allowed.has(r.hex));
     results.push({
       table, column, picker, rows: total, distinct: values.length,
-      inMorada:   values.filter(h => MORADA.has(h)).length,
-      inBuildpro: values.filter(h => BUILDPRO.has(h)).length,
-      inProject:  values.filter(h => PROJECT.has(h)).length,
+      inPalette: values.filter(h => allowed.has(h)).length,
+      inMorada: values.filter(h => MORADA.has(h)).length,
+      inMarkup: values.filter(h => MARKUP.has(h)).length,
       offPaletteRows: offPalette.reduce((a, r) => a + r.n, 0),
       offPaletteValues: offPalette.map(r => `${r.hex}×${r.n}`),
     });
@@ -93,11 +94,11 @@ for (const r of results) {
   totalRows += r.rows; totalOff += r.offPaletteRows;
   console.log(
     pad(`${r.table}.${r.column}`, 36), pad(r.rows, 6), pad(r.distinct, 9),
-    pad(`${r.offPaletteRows} rows / ${r.distinct - r.inMorada} vals`, 12), r.picker
+    pad(`${r.offPaletteRows} rows / ${r.distinct - r.inPalette} vals`, 12), r.picker
   );
 }
 console.log("-".repeat(110));
-console.log(`TOTAL ${totalRows} coloured rows, ${totalOff} of them off the Morada palette`);
+console.log(`TOTAL ${totalRows} coloured rows, ${totalOff} of them off their expected palette`);
 console.log("\nOff-palette values by column:");
 for (const r of results) {
   if (r.error || !r.offPaletteValues?.length) continue;
