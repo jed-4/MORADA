@@ -45,6 +45,7 @@ import {
   cachedAssigneeNameById,
   formatAssigneeLabel,
 } from "../shared/taskAssignees";
+import { scheduleItemTier } from "../shared/scheduleVisibility";
 
 // ---------------------------------------------------------------------------
 // Reference implementation — the `filteredEvents` useMemo body exactly as it
@@ -250,7 +251,27 @@ const tasks: any[] = [
   { id: "t-template", title: "From a recurring template", dueDate: day(8), assigneeIds: [USER_A], projectId: "p-colour", status: "todo", templateId: "tpl-1" },
 ];
 
-const scheduleItems: any[] = [
+const SCHEDULE_PROJECT: Record<string, string | null> = {
+  "s-colour": "p-colour",
+  "s-nocolour": "p-nocolour",
+  "s-orphan": null,
+};
+
+/**
+ * `getAllScheduleItems` joins schedules -> projects and attaches projectId /
+ * projectName / projectColor before anything tiers or bands an item, so the corpus
+ * has to carry them too. Without projectId the Band/Full opt-in is unreachable,
+ * which is exactly the hole the tier check found.
+ */
+function withProject<T extends { scheduleId?: string | null }>(items: T[]): T[] {
+  return items.map(item => {
+    const projectId = item.scheduleId ? SCHEDULE_PROJECT[item.scheduleId] ?? null : null;
+    const project = projects.find(p => p.id === projectId);
+    return { ...item, projectId, projectName: project?.name ?? null, projectColor: project?.color ?? null };
+  });
+}
+
+const scheduleItems: any[] = withProject([
   // --- parent / child / orphan ---
   { id: "si-parent", name: "Parent item", scheduleId: "s-colour", startDate: day(0), endDate: day(4), status: "not_started", type: "task", assignedToId: "contact-1", assignedToName: "Alf Stewart Plumbing" },
   { id: "si-child", name: "Child item", scheduleId: "s-colour", parentItemId: "si-parent", startDate: day(1), endDate: day(2), status: "in_progress", type: "task", assignedToId: "contact-1", assignedToName: "Alf Stewart Plumbing" },
@@ -286,7 +307,7 @@ const scheduleItems: any[] = [
   { id: "si-sameday", name: "Single day", scheduleId: "s-colour", startDate: day(9), endDate: day(9), status: "not_started", type: "task" },
   { id: "si-string-dates", name: "Dates as ISO strings", scheduleId: "s-colour", startDate: day(10).toISOString(), endDate: day(10).toISOString(), status: "not_started", type: "task" },
   { id: "si-straddle", name: "Straddles the month boundary", scheduleId: "s-colour", startDate: new Date(2026, 6, 28), endDate: new Date(2026, 8, 3), status: "in_progress", type: "task" },
-];
+]);
 
 // ---------------------------------------------------------------------------
 // State matrix
@@ -517,6 +538,56 @@ for (const mutation of mutations) {
   } else {
     console.log(`MUTATION    ok — "${mutation.name}" caught by ${caught.length}/${states.length} states (e.g. ${caught[0].key})`);
   }
+}
+
+// --- 2b. Tier rules -------------------------------------------------------
+// The business calendar's tier test is the opposite of the personal one for
+// in-house work (see ScheduleVisibilityMode), so both are pinned here against the
+// same corpus. Personal is asserted unchanged; business is asserted to be what
+// Phase 2 intends.
+const TIER_EXPECTATIONS: Array<{ id: string; personal: "event" | "band"; business: "event" | "band"; why: string }> = [
+  { id: "si-parent",              personal: "band",  business: "band",  why: "subbie work bar" },
+  { id: "si-child",               personal: "band",  business: "band",  why: "subbie work bar" },
+  { id: "si-orphan",              personal: "event", business: "event", why: "milestone" },
+  { id: "si-type-inspection",     personal: "event", business: "event", why: "appointment type" },
+  { id: "si-type-delivery",       personal: "event", business: "event", why: "appointment type" },
+  { id: "si-type-meeting",        personal: "event", business: "event", why: "appointment type" },
+  { id: "si-type-milestone",      personal: "event", business: "event", why: "appointment type" },
+  { id: "si-type-task",           personal: "band",  business: "event", why: "subbie's plain task — banded personally, a chip company-wide because it has a clock time" },
+  // The three storage forms of in-house assignment: chips on a personal calendar
+  // because they might be yours, banded company-wide because they are the bulk.
+  { id: "si-inhouse-explicit",    personal: "event", business: "band",  why: "in-house, assignedCompanyId" },
+  { id: "si-inhouse-convention",  personal: "event", business: "band",  why: "in-house, null id + cached name" },
+  { id: "si-inhouse-legacy",      personal: "event", business: "band",  why: "in-house, legacy company: prefix" },
+  { id: "si-unassigned",          personal: "band",  business: "band",  why: "nobody, no time" },
+  { id: "si-multiday",            personal: "band",  business: "band",  why: "three-week span" },
+];
+
+const tierFailures: string[] = [];
+for (const expected of TIER_EXPECTATIONS) {
+  const item = scheduleItems.find(i => i.id === expected.id);
+  if (!item) { tierFailures.push(`${expected.id}: not in corpus`); continue; }
+  const personal = scheduleItemTier(item, COMPANY, null, "personal");
+  const business = scheduleItemTier(item, COMPANY, null, "business");
+  if (personal !== expected.personal) tierFailures.push(`${expected.id} personal: expected ${expected.personal}, got ${personal} (${expected.why})`);
+  if (business !== expected.business) tierFailures.push(`${expected.id} business: expected ${expected.business}, got ${business} (${expected.why})`);
+}
+// Opting a project in overrides both modes.
+for (const mode of ["personal", "business"] as const) {
+  const banded = scheduleItems.find(i => i.id === "si-multiday")!;
+  if (scheduleItemTier(banded, COMPANY, null, mode) !== "band") {
+    tierFailures.push(`si-multiday ${mode}: should band before the project is opted in`);
+  }
+  if (scheduleItemTier(banded, COMPANY, [banded.projectId], mode) !== "event") {
+    tierFailures.push(`si-multiday ${mode}: opting the project into Full did not promote it to a chip`);
+  }
+}
+if (tierFailures.length) {
+  failures++;
+  console.log(`TIERS       FAIL — ${tierFailures.length} mismatch(es):`);
+  for (const f of tierFailures) console.log(`  ${f}`);
+} else {
+  console.log(`TIERS       ok — ${TIER_EXPECTATIONS.length} items tier the same in personal mode and as intended in business mode`);
 }
 
 // --- 3. Fingerprint -------------------------------------------------------

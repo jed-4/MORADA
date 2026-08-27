@@ -255,7 +255,7 @@ Read-only per D6 — but *not* by omitting the handlers, which was the original 
 
 ---
 
-### Phase 2 — The band layer
+### Phase 2 — The band layer ✅ *(done 28 Aug)*
 
 No migration.
 
@@ -419,7 +419,7 @@ Recommendation: **port `AgendaView` into `EnhancedCalendar` as a fifth mode befo
 |---|---|---|---|
 | 0 | Correctness — two assignee bugs ✅ | — | — |
 | 1 | Engine swap to `EnhancedCalendar` (+ port `AgendaView`) | — | 0 (smaller diff) |
-| 2 | Tiering + project band row | — | 1 |
+| 2 | Tiering + project band row ✅ | — | 1 |
 | 3 | Sources / layers endpoint | — | 1 |
 | 4 | **Leave** | `leave_entries` | 1 |
 | 5 | People axis / by-person day view | — | 0, reads 4 |

@@ -31345,7 +31345,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(401).json({ error: "Unauthorized - no company context" });
       }
 
-      const { startDate, endDate, fullScheduleProjects } = req.query;
+      const { startDate, endDate, fullScheduleProjects, mode } = req.query;
+      // Anything but an explicit "business" is the personal calendar's rules, so a
+      // malformed value degrades to the stricter, longer-standing behaviour.
+      const visibilityMode = mode === "business" ? "business" : "personal";
       const dateRange = (startDate || endDate) ? {
         startDate: startDate as string | undefined,
         endDate: endDate as string | undefined
@@ -31380,7 +31383,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const events: any[] = [];
       const banded: any[] = [];
       for (const item of items as any[]) {
-        if (scheduleItemTier(item, user.companyId, optedInProjects) === "event") {
+        if (scheduleItemTier(item, user.companyId, optedInProjects, visibilityMode) === "event") {
           events.push(item);
         } else {
           banded.push(item);

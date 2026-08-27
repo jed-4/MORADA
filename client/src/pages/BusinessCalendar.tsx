@@ -18,6 +18,7 @@ import {
 import { format, startOfMonth, endOfMonth, startOfWeek, endOfWeek, addMonths, subMonths } from "date-fns";
 import type { Task, ScheduleItem, Project, User as UserType, FieldCategoryWithOptions, Schedule } from "@shared/schema";
 import { buildBusinessCalendarEvents } from "@shared/businessCalendarEvents";
+import type { ProjectBand } from "@shared/scheduleVisibility";
 import {
   EnhancedCalendar,
   type CalendarEvent,
@@ -162,15 +163,37 @@ export default function BusinessCalendar() {
     },
   });
 
-  // Fetch schedule items with date range filtering for calendar performance
-  const { data: allScheduleItems = [], isLoading: isLoadingSchedule } = useQuery<ScheduleItem[]>({
-    queryKey: ["/api/schedule-items/all", { startDate: dateRange.startDate, endDate: dateRange.endDate }],
+  // Schedule items, split by the server into chips and collapsed per-project bands.
+  //
+  // The whole company's schedule as chips is unreadable — every active job's every
+  // work bar competing with the things people actually have to turn up to. `mode=
+  // business` keeps milestones, inspections, deliveries, meetings and anything with
+  // a clock time on the grid, and collapses the rest into one slim band per project.
+  // Opting a project into "Full" sends it through untouched.
+  const fullScheduleKey = [...(filters.fullScheduleProjects ?? [])].sort().join(",");
+  const { data: scheduleCalendar, isLoading: isLoadingSchedule } = useQuery<{
+    events: ScheduleItem[];
+    bands: ProjectBand[];
+  }>({
+    queryKey: ["/api/schedule-items/calendar", { startDate: dateRange.startDate, endDate: dateRange.endDate, fullScheduleKey }],
     queryFn: async () => {
-      const response = await fetch(`/api/schedule-items/all?startDate=${dateRange.startDate}&endDate=${dateRange.endDate}`);
+      const qs = new URLSearchParams({
+        startDate: dateRange.startDate,
+        endDate: dateRange.endDate,
+        mode: "business",
+      });
+      if (fullScheduleKey) qs.set("fullScheduleProjects", fullScheduleKey);
+      const response = await fetch(`/api/schedule-items/calendar?${qs}`);
       if (!response.ok) throw new Error('Failed to fetch schedule items');
-      return response.json();
+      const result = await response.json();
+      return {
+        events: Array.isArray(result?.events) ? result.events : [],
+        bands: Array.isArray(result?.bands) ? result.bands : [],
+      };
     },
   });
+  const allScheduleItems = scheduleCalendar?.events ?? [];
+  const projectBands = scheduleCalendar?.bands ?? [];
 
   // Fetch all schedules to map schedule items to projects
   const { data: schedules = [] } = useQuery<Schedule[]>({
@@ -268,6 +291,14 @@ export default function BusinessCalendar() {
       }),
     [allTasks, allScheduleItems, schedules, projects, users, completedOption, filters, selectedViewUserId, showParentItems, showChildItems],
   );
+
+  // Bands respect the project filter as well — filtering to one job should not
+  // leave other projects' bands stranded above an empty grid.
+  const filteredProjectBands = useMemo(() => {
+    if (!filters.projects?.length) return projectBands;
+    const wanted = new Set(filters.projects);
+    return projectBands.filter((band) => wanted.has(band.projectId));
+  }, [projectBands, filters.projects]);
 
   const handleEventClick = (event: CalendarEvent) => {
     if (event.type === "task") {
@@ -605,21 +636,50 @@ export default function BusinessCalendar() {
                     )}
                   </div>
                   <div className="space-y-1.5 max-h-64 overflow-y-auto">
-                    {projects.map((project: any) => (
-                      <label key={project.id} className="flex items-center gap-2 cursor-pointer">
-                        <Checkbox
-                          checked={filters.projects?.includes(project.id) || false}
-                          onCheckedChange={() => {
-                            const current = filters.projects || [];
-                            const updated = current.includes(project.id)
-                              ? current.filter(p => p !== project.id)
-                              : [...current, project.id];
-                            setFilters({...filters, projects: updated.length > 0 ? updated : undefined});
-                          }}
-                        />
-                        <span className="text-xs">{project.name}</span>
-                      </label>
-                    ))}
+                    {projects.map((project: any) => {
+                      const showsFullSchedule = filters.fullScheduleProjects?.includes(project.id) || false;
+                      return (
+                        <div key={project.id} className="flex items-center gap-2">
+                          <label className="flex items-center gap-2 cursor-pointer flex-1 min-w-0">
+                            <Checkbox
+                              checked={filters.projects?.includes(project.id) || false}
+                              onCheckedChange={() => {
+                                const current = filters.projects || [];
+                                const updated = current.includes(project.id)
+                                  ? current.filter(p => p !== project.id)
+                                  : [...current, project.id];
+                                setFilters({...filters, projects: updated.length > 0 ? updated : undefined});
+                              }}
+                            />
+                            <span className="text-xs truncate">{project.name}</span>
+                          </label>
+                          {/* Per-project escape hatch from the band: some jobs you do
+                              want to see item by item. Persisted in the saved view. */}
+                          <button
+                            type="button"
+                            className="text-2xs px-1.5 py-0.5 rounded border hover-elevate active-elevate-2 flex-shrink-0"
+                            title={
+                              showsFullSchedule
+                                ? "Showing every schedule item for this project"
+                                : "Work bars are collapsed into the project band"
+                            }
+                            onClick={() => {
+                              const current = filters.fullScheduleProjects || [];
+                              const updated = current.includes(project.id)
+                                ? current.filter(p => p !== project.id)
+                                : [...current, project.id];
+                              setFilters({
+                                ...filters,
+                                fullScheduleProjects: updated.length > 0 ? updated : undefined,
+                              });
+                            }}
+                            data-testid={`full-schedule-toggle-${project.id}`}
+                          >
+                            {showsFullSchedule ? "Full" : "Band"}
+                          </button>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               </PopoverContent>
@@ -1022,6 +1082,8 @@ export default function BusinessCalendar() {
           view={calendarMode}
           onViewChange={setCalendarMode}
           displayOptions={displayOptions}
+          projectBands={filteredProjectBands}
+          onProjectBandClick={(band) => navigate(`/projects/${band.projectId}/schedule`)}
           mobileFallbackView="agenda"
           readOnly
           hideInternalHeader
