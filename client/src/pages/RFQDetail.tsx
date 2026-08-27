@@ -230,10 +230,16 @@ export default function RFQDetail() {
   });
 
   const { data: companySettings } = useQuery<{
-    logo?: string | null;
+    // logoUrl, not logo. This page asked for `logo` — a field company_settings
+    // has never had — so every RFQ PDF went out with no logo at all while the
+    // other document pages, which all read logoUrl, rendered theirs fine.
+    logoUrl?: string | null;
     companyName?: string | null;
+    abn?: string | null;
     email?: string | null;
     phone?: string | null;
+    brandColor?: string | null;
+    documentStyle?: string | null;
     termsAndConditions?: string | null;
     termsTemplates?: Array<{ id: string; name: string; content: string; defaultFor: string[] }>;
   }>({
@@ -249,6 +255,17 @@ export default function RFQDetail() {
   });
 
   const project = projects.find((p) => p.id === rfq?.projectId);
+
+  // Branding for the RFQ PDF, resolved the same way every other document page
+  // does it. The logo path is absolutised because @react-pdf fetches it itself
+  // and has no page origin to resolve a relative path against.
+  const rfqLogoUrl = companySettings?.logoUrl
+    ? (companySettings.logoUrl.startsWith("http")
+        ? companySettings.logoUrl
+        : `${window.location.origin}${companySettings.logoUrl}`)
+    : undefined;
+  const rfqDocStyle = (companySettings?.documentStyle as "style1" | "style2" | undefined) || "style1";
+  const rfqBrandColor = companySettings?.brandColor || "#6d28d9";
 
   const { data: teamUsers = [] } = useQuery<User[]>({
     queryKey: ["/api/users"],
@@ -467,11 +484,16 @@ export default function RFQDetail() {
         <RFQDocument
           rfq={rfq}
           items={items}
-          companyLogo={companySettings?.logo ?? undefined}
-          companyName={companySettings?.companyName || "Morada"}
-          companyEmail={companySettings?.email ?? undefined}
-          companyPhone={companySettings?.phone ?? undefined}
-          primaryColor="#215E35"
+          company={{
+            name: companySettings?.companyName || "",
+            abn: companySettings?.abn,
+            email: companySettings?.email,
+            phone: companySettings?.phone,
+          }}
+          project={project ? { name: project.name, address: (project as any).address } : null}
+          brandColor={rfqBrandColor}
+          documentStyle={rfqDocStyle}
+          logoUrl={rfqLogoUrl}
         />
       ).toBlob();
     } catch (error) {
