@@ -20071,6 +20071,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // are maintained from invoice payments, and portal/signature/approval
   // stamps are only written by their dedicated flows.
   const VARIATION_GUARDED_FIELDS = {
+    globalMarkupAmount: true,
     subtotal: true,
     gstAmount: true,
     totalAmount: true,
@@ -20137,8 +20138,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       storage.getVariationTimesheets(variationId),
     ]);
     if (!current) return undefined;
-    const totals = computeVariationTotals({ items, bills, timesheets });
+    // The stored percentage is the authority — never a value off the request —
+    // so a PATCH that changes it must persist it BEFORE calling this.
+    const totals = computeVariationTotals({
+      items,
+      bills,
+      timesheets,
+      globalMarkupPercent: (current as any).globalMarkupPercent ?? 0,
+    });
     return storage.updateVariation(variationId, {
+      globalMarkupAmount: totals.globalMarkupCents,
       subtotal: totals.subtotalCents,
       gstAmount: totals.gstCents,
       totalAmount: totals.totalCents,
@@ -20836,6 +20845,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     closingText: variation.closingText,
     approvalDeadline: variation.approvalDeadline,
     daysChanged: variation.daysChanged,
+    // The document-level markup is a charge on the client's own document, so it
+    // is theirs to see. Per-line markup is deliberately NOT exposed: it lives in
+    // variation_items.markupPercent and stays server-side.
+    globalMarkupPercent: variation.globalMarkupPercent,
+    globalMarkupAmount: variation.globalMarkupAmount,
     subtotal: variation.subtotal,
     gstAmount: variation.gstAmount,
     totalAmount: variation.totalAmount,

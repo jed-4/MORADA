@@ -92,6 +92,12 @@ export interface VariationDocModel {
   /** Value of lines the builder chose not to itemise, shown as one row so the
    *  visible breakdown still reconciles with the Total. */
   notItemisedIncCents: Cents;
+  /** Document-level markup in EX-GST cents, as banked by the server. Already
+   *  inside subtotalCents; surfaced separately so it can print as its own row.
+   *  Read, never recomputed, so the document can't drift from the Total the
+   *  client is asked to approve. */
+  globalMarkupExCents: Cents;
+  globalMarkupPercent: number;
   subtotalCents: Cents;
   gstCents: Cents;
   totalCents: Cents;
@@ -167,6 +173,8 @@ export function buildVariationDocumentModel(input: {
     })),
     labourIncCents: labourExCents + Math.round(labourExCents * GST_MULTIPLIER),
     notItemisedIncCents,
+    globalMarkupExCents: variation?.globalMarkupAmount ?? 0,
+    globalMarkupPercent: variation?.globalMarkupPercent ?? 0,
     subtotalCents: variation?.subtotal ?? 0,
     gstCents: variation?.gstAmount ?? 0,
     totalCents: variation?.totalAmount ?? 0,

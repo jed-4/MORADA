@@ -585,6 +585,18 @@ export function VariationPreviewContent({
         <div className="flex justify-end">
           <div className="w-72 border border-border rounded-lg overflow-hidden">
             <div className="px-4 py-3 space-y-2">
+              {docModel.globalMarkupExCents !== 0 && (
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted">
+                    {docModel.globalMarkupPercent
+                      ? `Margin (${docModel.globalMarkupPercent}%)`
+                      : "Margin"}
+                  </span>
+                  <span className="font-medium tabular-nums">
+                    {formatCents(docModel.globalMarkupExCents)}
+                  </span>
+                </div>
+              )}
               <div className="flex justify-between text-sm">
                 <span className="text-muted">Subtotal (ex. GST)</span>
                 <span className="font-medium tabular-nums">{formatCents(subtotalCents)}</span>

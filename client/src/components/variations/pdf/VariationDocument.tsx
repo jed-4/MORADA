@@ -632,6 +632,21 @@ export function VariationDocument({
 
           {/* Summary */}
           <View style={{ alignItems: "flex-end", marginBottom: 16 }}>
+            {/* Document-level markup, shown before the subtotal it is part of.
+                Per-line markup is inside the line amounts above and is not
+                broken out — only this one is a separate, visible charge. */}
+            {docModel.globalMarkupExCents !== 0 && (
+              <View style={{ flexDirection: "row", justifyContent: "space-between", width: 220, paddingHorizontal: 12, paddingVertical: 5, borderBottomWidth: 1, borderBottomColor: "#f3f4f6" }}>
+                <Text style={{ fontSize: 9, color: "#6b7280" }}>
+                  {docModel.globalMarkupPercent
+                    ? `Margin (${docModel.globalMarkupPercent}%)`
+                    : "Margin"}
+                </Text>
+                <Text style={{ fontSize: 9, color: "#111827" }}>
+                  {formatAUD(docModel.globalMarkupExCents / 100)}
+                </Text>
+              </View>
+            )}
             <View style={{ flexDirection: "row", justifyContent: "space-between", width: 220, paddingHorizontal: 12, paddingVertical: 5, borderBottomWidth: 1, borderBottomColor: "#f3f4f6" }}>
               <Text style={{ fontSize: 9, color: "#6b7280" }}>Subtotal (ex. GST)</Text>
               <Text style={{ fontSize: 9, color: "#111827", fontFamily: "Helvetica-Bold" }}>

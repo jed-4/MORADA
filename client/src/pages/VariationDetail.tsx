@@ -193,7 +193,13 @@ export default function VariationDetail() {
   // Cost lines state
   const [costLines, setCostLines] = useState<CostLine[]>([]);
   const [allowanceLines, setAllowanceLines] = useState<AllowanceLine[]>([]);
+  // Document-level markup, persisted on the variation. Held as a string so the
+  // input can be empty (= none) rather than forced to 0 while being typed.
   const [globalMarkup, setGlobalMarkup] = useState<string>("");
+  // Separate, transient value for the "set every line's markup" bulk action.
+  // Deliberately NOT the same field: one is a stored margin on the document,
+  // the other overwrites per-line data and cannot be undone.
+  const [bulkLineMarkup, setBulkLineMarkup] = useState<string>("");
 
   // Dialog state
   const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
@@ -419,6 +425,12 @@ export default function VariationDetail() {
         termsAndConditions: (variation as any).termsAndConditions || "",
         status: variation.status as "draft" | "action" | "pending" | "approved" | "rejected",
       });
+      const storedGlobalMarkup = (variation as any).globalMarkupPercent;
+      setGlobalMarkup(
+        storedGlobalMarkup === null || storedGlobalMarkup === undefined
+          ? ""
+          : String(storedGlobalMarkup),
+      );
       // T002: Load attachments
       const storedAttachments = (variation as any).attachments;
       if (Array.isArray(storedAttachments) && storedAttachments.length > 0) {
@@ -600,8 +612,10 @@ export default function VariationDetail() {
     setCostLines(costLines.filter((_, i) => i !== index));
   };
 
-  const applyGlobalMarkup = () => {
-    const pct = parseFloat(globalMarkup);
+  /** Overwrites EVERY line's own markup. Distinct from the document-level
+   *  global markup, which leaves line data alone. */
+  const applyBulkLineMarkup = () => {
+    const pct = parseFloat(bulkLineMarkup);
     if (isNaN(pct)) return;
     setCostLines(costLines.map((line) => ({ ...line, markupPercent: pct })));
   };
@@ -799,22 +813,36 @@ export default function VariationDetail() {
   const calculateLabourTotal = () =>
     getSelectedTimesheets().reduce((sum: number, t: any) => sum + toNumber(t.total), 0);
 
+  /** The document-level markup as a number. Empty or unparseable = none.
+   *  parseFloat, not parseInt: a 12.5% margin must survive the round trip. */
+  const globalMarkupValue = (): number => {
+    const n = parseFloat(globalMarkup);
+    return Number.isFinite(n) ? n : 0;
+  };
+
   const calculateTotals = () =>
     computeVariationTotals({
       items: [
         ...costLines.map((line) => ({
           totalPrice: dollarsToCents(getCostLineAmountExTax(line)),
           taxable: line.taxable,
+          itemType: "cost_line",
         })),
+        // itemType matters here: allowances are excluded from the markup base
+        // server-side, so omitting it would make this preview disagree with the
+        // figure that actually gets saved.
         ...allowanceLines.map((line) => ({
           totalPrice: dollarsToCents(line.amount),
           taxable: line.taxable,
+          itemType: "allowance",
         })),
       ],
       bills: getSelectedBills(),
       timesheets: getSelectedTimesheets(),
     });
 
+  const calculateGlobalMarkupAmount = () => centsToDollars(calculateTotals().globalMarkupCents);
+  const calculateMarkupBase = () => centsToDollars(calculateTotals().markupBaseCents);
   const calculateSubtotal = () => centsToDollars(calculateTotals().subtotalCents);
   const calculateGST = () => centsToDollars(calculateTotals().gstCents);
   const calculateTotal = () => centsToDollars(calculateTotals().totalCents);
@@ -837,6 +865,7 @@ export default function VariationDetail() {
         ...data,
         approvalDeadline: data.approvalDeadline || undefined,
         daysChanged: data.daysChanged || undefined,
+        globalMarkupPercent: globalMarkup === "" ? null : globalMarkupValue(),
         // subtotal/gstAmount/totalAmount/paidAmount/balanceAmount are
         // server-maintained — recomputed from items/bills/timesheets on every
         // write and from invoice payments; never sent from the client.
@@ -909,6 +938,7 @@ export default function VariationDetail() {
         ...data,
         approvalDeadline: data.approvalDeadline || undefined,
         daysChanged: data.daysChanged || undefined,
+        globalMarkupPercent: globalMarkup === "" ? null : globalMarkupValue(),
         // Money totals + paid/balance are server-maintained; see createMutation.
       };
 
@@ -1999,27 +2029,27 @@ export default function VariationDetail() {
                       </div>
                       {costLines.length > 0 && (
                         <div className="flex items-center gap-1.5">
-                          <span className="text-xs text-muted-foreground">Global markup</span>
+                          <span className="text-xs text-muted-foreground">Set every line to</span>
                           <Input
                             type="number"
                             min="0"
                             step="1"
                             placeholder="0"
-                            value={globalMarkup}
-                            onChange={(e) => setGlobalMarkup(e.target.value)}
+                            value={bulkLineMarkup}
+                            onChange={(e) => setBulkLineMarkup(e.target.value)}
                             onFocus={(e) => e.target.select()}
                             className="h-6 w-16 text-xs border px-1.5 rounded-md shadow-none text-right"
-                            data-testid="input-global-markup"
+                            data-testid="input-bulk-line-markup"
                           />
                           <span className="text-xs text-muted-foreground">%</span>
                           <button
                             type="button"
-                            onClick={applyGlobalMarkup}
-                            disabled={globalMarkup === "" || isNaN(parseFloat(globalMarkup))}
+                            onClick={applyBulkLineMarkup}
+                            disabled={bulkLineMarkup === "" || isNaN(parseFloat(bulkLineMarkup))}
                             className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed"
-                            data-testid="button-apply-global-markup"
+                            data-testid="button-apply-bulk-line-markup"
                           >
-                            Apply to all lines
+                            Overwrite line markups
                           </button>
                         </div>
                       )}
@@ -2039,7 +2069,10 @@ export default function VariationDetail() {
                             const blendedPct = base > 0 ? Math.round((markupAmt / base) * 100) : 0;
                             return (
                               <div className="flex justify-between text-sm">
-                                <span className="text-muted-foreground">Markup ({blendedPct}%)</span>
+                                {/* Blended across the lines, and already inside
+                                    the line amounts. Named to distinguish it
+                                    from the document-level markup below. */}
+                                <span className="text-muted-foreground">Line markup ({blendedPct}%)</span>
                                 <span className="font-medium tabular-nums">{formatCurrency(markupAmt)}</span>
                               </div>
                             );
@@ -2062,6 +2095,31 @@ export default function VariationDetail() {
                               <span className={cn("font-medium tabular-nums", calculateAllowancesTotal() < 0 ? "text-status-danger" : "")}>{formatCurrency(calculateAllowancesTotal())}</span>
                             </div>
                           )}
+                          {/* Document-level markup. Sits on the ex-GST value of
+                              cost lines + bills + labour (never allowances) and
+                              prints as its own row on the client's document. */}
+                          <div className="flex justify-between items-center text-sm">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-muted-foreground">Global markup</span>
+                              <Input
+                                type="number"
+                                min="0"
+                                step="0.5"
+                                placeholder="0"
+                                value={globalMarkup}
+                                onChange={(e) => setGlobalMarkup(e.target.value)}
+                                onFocus={(e) => e.target.select()}
+                                className="h-6 w-16 text-xs border px-1.5 rounded-md shadow-none text-right"
+                                data-testid="input-global-markup"
+                              />
+                              <span className="text-xs text-muted-foreground">
+                                % of {formatCurrency(calculateMarkupBase())}
+                              </span>
+                            </div>
+                            <span className="font-medium tabular-nums" data-testid="text-global-markup-amount">
+                              {formatCurrency(calculateGlobalMarkupAmount())}
+                            </span>
+                          </div>
                           <div className="flex justify-between text-sm pt-1 border-t border-border/50">
                             <span className="text-muted-foreground" data-testid="text-label-subtotal">Subtotal</span>
                             <span className="font-medium tabular-nums" data-testid="text-subtotal">{formatCurrency(calculateSubtotal())}</span>
