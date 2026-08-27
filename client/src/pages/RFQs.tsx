@@ -131,161 +131,27 @@ function daysOutstanding(rfq: Rfq): number | null {
   return Math.max(0, Math.floor((Date.now() - sent.getTime()) / 86400000));
 }
 
-// ── Expanded supplier-quote panel ────────────────────────────────────────────
-// Lazy-fetches the quotes for a given RFQ when its row is expanded and renders
-// one row per supplier with status, amount, and an attachments badge that
-// opens the attachment preview modal.
-function RfqQuotesPanel({
-  rfq,
-  project,
-  showProject,
-  onOpenAttachments,
-  onNavigate,
-}: {
-  rfq: Rfq;
-  project: Project | undefined;
-  showProject: boolean;
-  onOpenAttachments: (label: string, attachments: Attachment[]) => void;
-  onNavigate: (rfqId: string) => void;
-}) {
-  const { data: recipients, isLoading: recipientsLoading } = useQuery<RfqRecipient[]>({
-    queryKey: ["/api/rfqs", rfq.id, "recipients"],
-  });
+// ── Row model ────────────────────────────────────────────────────────────────
+// An RFQ is a group: the parent row is the enquiry, and each supplier it went
+// to is a child row beneath it. Both kinds share one column grid so the child
+// values line up under their parent's, which is why they live in a single
+// union type rather than a separately-rendered panel.
 
-  const { data: quotes, isLoading: quotesLoading } = useQuery<RfqQuote[]>({
-    queryKey: ["/api/rfqs", rfq.id, "quotes"],
-  });
+type RfqParentRow = Rfq & { __kind: "rfq"; __children: RfqChildRow[] };
 
-  const isLoading = recipientsLoading || quotesLoading;
-
-  if (isLoading) {
-    return (
-      <div className="flex items-center gap-2 px-4 h-8 text-xs text-muted-foreground">
-        <Loader2 className="w-3 h-3 animate-spin" />
-        Loading suppliers…
-      </div>
-    );
-  }
-
-  if (!recipients || recipients.length === 0) {
-    return (
-      <div className="flex items-center px-4 h-8 text-xs text-muted-foreground italic">
-        No suppliers added to this RFQ
-      </div>
-    );
-  }
-
-  return (
-    <div className="divide-y divide-border/30">
-      {recipients.map((recipient) => {
-        // Each recipient carries its own quote link now, so this no longer has
-        // to guess by matching supplier names across two parallel arrays.
-        const quote = recipient.quoteId
-          ? quotes?.find((q) => q.id === recipient.quoteId) ?? null
-          : null;
-        const files = (quote?.attachments as Attachment[] | undefined) ?? [];
-        return (
-          <div
-            key={recipient.id}
-            className="flex items-center px-4 h-8 cursor-pointer hover-elevate"
-            onClick={() => onNavigate(rfq.id)}
-            data-testid={`row-supplier-${rfq.id}-${recipient.id}`}
-          >
-            {/* Supplier name */}
-            <div className="flex items-center gap-1.5 min-w-[200px] flex-shrink-0 pr-3">
-              <span className="text-xs text-foreground truncate font-medium">
-                {recipient.supplierName}
-              </span>
-              {recipient.isExternal && (
-                <span className="text-data text-muted-foreground/60 flex-shrink-0">ext</span>
-              )}
-            </div>
-            {/* Project */}
-            {showProject && (
-              <div className="flex items-center gap-1.5 min-w-[140px] flex-shrink-0 pr-3">
-                {project && (
-                  <>
-                    <ProjectIcon
-                      icon={project.icon || "Briefcase"}
-                      color={project.color}
-                      className="w-3 h-3 flex-shrink-0"
-                    />
-                    <span className="text-xs text-muted-foreground truncate">{project.name}</span>
-                  </>
-                )}
-              </div>
-            )}
-            {/* Due date */}
-            <div className="flex items-center min-w-[88px] flex-shrink-0 pr-3">
-              <span className="text-xs text-muted-foreground">
-                {formatDate(rfq.dueDate) ?? <span className="text-muted-foreground/40">—</span>}
-              </span>
-            </div>
-            {/* Sent — per supplier, not per RFQ */}
-            <div className="flex items-center min-w-[88px] flex-shrink-0 pr-3">
-              <span className="text-xs text-muted-foreground">
-                {recipient.sentAt
-                  ? formatDate(recipient.sentAt)
-                  : <span className="text-muted-foreground/30">Not sent</span>}
-              </span>
-            </div>
-            {/* Viewed — real data now that the portal records it per recipient */}
-            <div className="flex items-center justify-center min-w-[40px] flex-shrink-0">
-              {recipient.viewedAt ? (
-                <span title={`Viewed ${formatDate(recipient.viewedAt)}`}>
-                  <Eye className="w-3 h-3 text-status-info" />
-                </span>
-              ) : (
-                <span title="Not opened yet">
-                  <EyeOff className="w-3 h-3 text-muted-foreground/25" />
-                </span>
-              )}
-            </div>
-            {/* Attachments */}
-            <div className="flex items-center justify-center min-w-[60px] flex-shrink-0">
-              {files.length === 0 ? (
-                <span className="text-muted-foreground/25"><Paperclip className="w-3 h-3" /></span>
-              ) : (
-                <button
-                  type="button"
-                  className="flex items-center gap-0.5 px-1.5 py-0.5 rounded hover-elevate text-[#8b6bb1]"
-                  title={`${files.length} file${files.length !== 1 ? "s" : ""}`}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onOpenAttachments(`${rfq.rfqNumber} — ${recipient.supplierName}`, files);
-                  }}
-                  data-testid={`button-attachments-${rfq.id}-${recipient.id}`}
-                >
-                  <Paperclip className="w-3 h-3" />
-                  <span className="text-data font-semibold">{files.length}</span>
-                </button>
-              )}
-            </div>
-            {/* Recipient status */}
-            <div className="flex items-center min-w-[88px] flex-shrink-0 pr-3 pl-3">
-              <StatusBadge
-                status={recipient.status}
-                label={RECIPIENT_STATUS_LABEL[recipient.status] ?? recipient.status}
-              />
-            </div>
-            {/* Quote amount */}
-            <div className="flex items-center min-w-[96px] flex-shrink-0 pr-3">
-              <span className={cn(
-                "text-xs tabular-nums font-medium",
-                quote && quote.totalAmount > 0 ? "text-foreground" : "text-muted-foreground/40"
-              )}>
-                {quote && quote.totalAmount > 0 ? formatCents(quote.totalAmount) : "—"}
-              </span>
-            </div>
-            <div className="flex items-center justify-center min-w-[24px] flex-shrink-0">
-              <ExternalLink className="w-3 h-3 text-muted-foreground/40" />
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
+interface RfqChildRow {
+  __kind: "supplier";
+  /** Recipient id — unique against RFQ ids, so it works as the table row key. */
+  id: string;
+  rfqId: string;
+  rfqNumber: string;
+  recipient: RfqRecipient;
+  quote: RfqQuote | null;
 }
+
+type RfqListRow = RfqParentRow | RfqChildRow;
+
+const isParentRow = (r: RfqListRow): r is RfqParentRow => r.__kind === "rfq";
 
 // ── Main component ────────────────────────────────────────────────────────────
 
@@ -361,6 +227,28 @@ export default function RFQs({ embedded }: { embedded?: boolean } = {}) {
     return map;
   }, [allRecipients]);
 
+  // Quotes are batched for the same reason as recipients: every supplier row
+  // shows its quote total, so a per-RFQ fetch would be one round trip per row.
+  const { data: allQuotes = [] } = useQuery<RfqQuote[]>({
+    queryKey: projectIdFromUrl
+      ? ["/api/rfq-quotes", { projectId: projectIdFromUrl }]
+      : ["/api/rfq-quotes"],
+    queryFn: async () => {
+      const url = projectIdFromUrl
+        ? `/api/rfq-quotes?projectId=${encodeURIComponent(projectIdFromUrl)}`
+        : "/api/rfq-quotes";
+      const response = await fetch(url, { credentials: "include" });
+      if (!response.ok) return [];
+      return response.json();
+    },
+  });
+
+  const quotesById = useMemo(() => {
+    const map = new Map<string, RfqQuote>();
+    for (const q of allQuotes) map.set(q.id, q);
+    return map;
+  }, [allQuotes]);
+
   const getProject = (projectId: string | null | undefined) =>
     projectId ? projects.find((p) => p.id === projectId) : undefined;
   const currentProject = projectIdFromUrl ? getProject(projectIdFromUrl) : null;
@@ -391,39 +279,109 @@ export default function RFQs({ embedded }: { embedded?: boolean } = {}) {
     });
   }, [rfqs, searchQuery, selectedStatus, recipientsByRfq]);
 
+  // Each RFQ becomes a group carrying its suppliers as child rows. Sub-rows are
+  // real rows in the same grid, so they inherit the parent's column widths
+  // instead of the hand-set pixel widths the old expanded panel needed.
+  const tableRows = useMemo<RfqListRow[]>(() => {
+    return filteredRFQs.map((rfq) => {
+      const children: RfqChildRow[] = (recipientsByRfq.get(rfq.id) ?? []).map((recipient) => ({
+        __kind: "supplier" as const,
+        id: recipient.id,
+        rfqId: rfq.id,
+        rfqNumber: rfq.rfqNumber,
+        recipient,
+        // Each recipient carries its own quote link, so this no longer has to
+        // guess by matching supplier names across two parallel arrays.
+        quote: recipient.quoteId ? quotesById.get(recipient.quoteId) ?? null : null,
+      }));
+      return { ...rfq, __kind: "rfq" as const, __children: children };
+    });
+  }, [filteredRFQs, recipientsByRfq, quotesById]);
+
   const handleNavigate = (rfqId: string) => {
     setLocation(getNavigationPath(`/rfqs/${rfqId}`));
   };
 
   const showProject = !projectIdFromUrl;
 
+  const openAttachments = (label: string, attachments: Attachment[]) => {
+    setActiveAttachment(attachments[0] ?? null);
+    setPreviewError(false);
+    setAttachmentModal({ label, attachments });
+  };
+
   // ── DataTable column defs ───────────────────────────────────────────────
-  const rfqColumns = useMemo<ColumnDef<Rfq, unknown>[]>(() => {
-    const cols: (ColumnDef<Rfq, unknown> & { meta?: DataTableColumnMeta })[] = [
+  // Parent rows are the enquiry; child rows are one supplier each. Both share
+  // this grid, so every cell has to say which kind it is rendering. Columns the
+  // parent doesn't need are left blank on it rather than given filler text —
+  // the group row is a summary, the detail belongs to the children.
+  const rfqColumns = useMemo<ColumnDef<RfqListRow, unknown>[]>(() => {
+    const cols: (ColumnDef<RfqListRow, unknown> & { meta?: DataTableColumnMeta })[] = [
       {
         id: "rfqNumber",
-        header: "ID",
-        accessorFn: (r) => r.rfqNumber,
-        cell: ({ row }) => (
-          <div className="flex items-center gap-1.5" data-testid={`cell-number-${row.original.id}`}>
-            <FileText className="w-3 h-3 text-muted-foreground flex-shrink-0" />
-            <span className="text-xs font-semibold text-foreground">{row.original.rfqNumber}</span>
-          </div>
-        ),
-        size: 110,
-        meta: { defaultWidth: 110, headerLabel: "ID" },
+        header: "RFQ",
+        accessorFn: (r) => (isParentRow(r) ? r.rfqNumber : ""),
+        cell: ({ row }) => {
+          const r = row.original;
+          // Child rows leave this blank: the number belongs to the RFQ, and
+          // repeating it down the group is noise.
+          if (!isParentRow(r)) return null;
+          return (
+            <span className="text-data text-muted-foreground/80" data-testid={`cell-number-${r.id}`}>
+              {r.rfqNumber}
+            </span>
+          );
+        },
+        size: 96,
+        meta: { defaultWidth: 96, headerLabel: "RFQ" },
       },
       {
         id: "title",
         header: "Title",
-        accessorFn: (r) => r.title,
-        cell: ({ row }) => (
-          <span className="text-xs text-foreground truncate" data-testid={`cell-title-${row.original.id}`}>
-            {row.original.title}
-          </span>
-        ),
-        size: 240,
-        meta: { defaultWidth: 240, headerLabel: "Title" },
+        accessorFn: (r) => (isParentRow(r) ? r.title : r.recipient.supplierName),
+        cell: ({ row }) => {
+          const r = row.original;
+          if (!isParentRow(r)) {
+            const files = (r.quote?.attachments as Attachment[] | undefined) ?? [];
+            return (
+              <div className="flex items-center gap-2 min-w-0" data-testid={`cell-supplier-${r.id}`}>
+                <span className="text-xs text-foreground truncate">{r.recipient.supplierName}</span>
+                {r.recipient.isExternal && (
+                  <span className="text-data text-muted-foreground/60 flex-shrink-0" title="Contacted outside Morada">
+                    ext
+                  </span>
+                )}
+                {r.recipient.viewedAt && (
+                  <span title={`Opened ${formatDate(r.recipient.viewedAt)}`} className="flex-shrink-0">
+                    <Eye className="w-3 h-3 text-status-info" />
+                  </span>
+                )}
+                {files.length > 0 && (
+                  <button
+                    type="button"
+                    className="flex items-center gap-0.5 px-1 rounded hover-elevate text-[#8b6bb1] flex-shrink-0"
+                    title={`${files.length} file${files.length !== 1 ? "s" : ""}`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      openAttachments(`${r.rfqNumber} — ${r.recipient.supplierName}`, files);
+                    }}
+                    data-testid={`button-attachments-${r.rfqId}-${r.id}`}
+                  >
+                    <Paperclip className="w-3 h-3" />
+                    <span className="text-data font-semibold">{files.length}</span>
+                  </button>
+                )}
+              </div>
+            );
+          }
+          return (
+            <div className="flex items-center gap-2 min-w-0" data-testid={`cell-title-${r.id}`}>
+              <span className="text-xs font-semibold text-foreground truncate">{r.title}</span>
+            </div>
+          );
+        },
+        size: 320,
+        meta: { defaultWidth: 320, flex: true, headerLabel: "Title" },
       },
     ];
 
@@ -431,17 +389,22 @@ export default function RFQs({ embedded }: { embedded?: boolean } = {}) {
       cols.push({
         id: "project",
         header: "Project",
-        accessorFn: (r) => (r.projectId ? getProject(r.projectId)?.name ?? "" : "General"),
+        accessorFn: (r) => {
+          if (!isParentRow(r)) return "";
+          return r.projectId ? getProject(r.projectId)?.name ?? "" : "General";
+        },
         cell: ({ row }) => {
-          if (!row.original.projectId) {
+          const r = row.original;
+          if (!isParentRow(r)) return null;
+          if (!r.projectId) {
             // A general enquiry logged against no job — the registry's whole
             // point. Labelled rather than blank so it doesn't read as an error.
             return <span className="text-xs text-muted-foreground/60 italic">General</span>;
           }
-          const project = getProject(row.original.projectId);
+          const project = getProject(r.projectId);
           if (!project) return <span className="text-xs text-muted-foreground">—</span>;
           return (
-            <div className="flex items-center gap-1.5" data-testid={`cell-project-${row.original.id}`}>
+            <div className="flex items-center gap-1.5" data-testid={`cell-project-${r.id}`}>
               <ProjectIcon
                 icon={project.icon || "Briefcase"}
                 color={project.color}
@@ -460,42 +423,51 @@ export default function RFQs({ embedded }: { embedded?: boolean } = {}) {
       {
         id: "suppliers",
         header: "Suppliers",
-        accessorFn: (r) => recipientsByRfq.get(r.id)?.length ?? 0,
+        accessorFn: (r) => (isParentRow(r) ? r.__children.length : 0),
         cell: ({ row }) => {
-          const recipients = recipientsByRfq.get(row.original.id) ?? [];
+          const r = row.original;
+          if (!isParentRow(r)) return null;
+          const recipients = r.__children.map((c) => c.recipient);
           if (recipients.length === 0) {
             return <span className="text-xs text-muted-foreground/40">—</span>;
           }
-          // "4 suppliers · 2 quoted" reads as pipeline state; the old version
-          // joined the names into a string you had to parse yourself.
+          // "2/3 returned" — the one number you scan a procurement list for.
+          // The old "1 quoted · 2 awaiting · 1 declined" string was longer than
+          // the column and got truncated to "1 quoted · 2 await…".
           const c = summariseRecipients(recipients);
-          const parts: string[] = [];
-          if (c.quoted) parts.push(`${c.quoted} quoted`);
-          if (c.sent + c.viewed) parts.push(`${c.sent + c.viewed} awaiting`);
-          if (c.declined) parts.push(`${c.declined} declined`);
-          if (c.notSent) parts.push(`${c.notSent} not sent`);
+          const returned = c.quoted + c.declined;
+          const complete = returned === c.total;
           return (
             <span
-              className="text-xs text-foreground truncate"
-              title={recipients.map((r) => r.supplierName).join(", ")}
-              data-testid={`cell-suppliers-${row.original.id}`}
+              className="flex items-baseline gap-1.5 text-xs"
+              title={recipients
+                .map((x) => `${x.supplierName} — ${RECIPIENT_STATUS_LABEL[x.status] ?? x.status}`)
+                .join("\n")}
+              data-testid={`cell-suppliers-${r.id}`}
             >
-              {c.total} supplier{c.total !== 1 ? "s" : ""}
-              {parts.length > 0 && (
-                <span className="text-muted-foreground"> · {parts.join(" · ")}</span>
-              )}
+              <span
+                className={cn(
+                  "tabular-nums font-medium",
+                  complete ? "text-sage" : "text-foreground",
+                )}
+              >
+                {returned}/{c.total}
+              </span>
+              <span className="text-muted-foreground">returned</span>
             </span>
           );
         },
-        size: 220,
-        meta: { defaultWidth: 220, headerLabel: "Suppliers" },
+        size: 200,
+        meta: { defaultWidth: 200, headerLabel: "Suppliers" },
       },
       {
         id: "dueDate",
         header: "Due Date",
-        accessorFn: (r) => (r.dueDate ? new Date(r.dueDate).getTime() : 0),
+        accessorFn: (r) => (isParentRow(r) && r.dueDate ? new Date(r.dueDate).getTime() : 0),
         cell: ({ row }) => {
-          const urgency = dueUrgency(row.original);
+          const r = row.original;
+          if (!isParentRow(r)) return null;
+          const urgency = dueUrgency(r);
           return (
             <span
               className={cn(
@@ -505,9 +477,9 @@ export default function RFQs({ embedded }: { embedded?: boolean } = {}) {
                 urgency === "none" && "text-muted-foreground",
               )}
               title={urgency === "overdue" ? "Past the response deadline" : undefined}
-              data-testid={`cell-due-${row.original.id}`}
+              data-testid={`cell-due-${r.id}`}
             >
-              {formatDate(row.original.dueDate) ?? <span className="text-muted-foreground/40">—</span>}
+              {formatDate(r.dueDate) ?? <span className="text-muted-foreground/40">—</span>}
             </span>
           );
         },
@@ -515,11 +487,65 @@ export default function RFQs({ embedded }: { embedded?: boolean } = {}) {
         meta: { defaultWidth: 100, headerLabel: "Due Date" },
       },
       {
+        id: "quote",
+        header: "Quote",
+        // Quotes are stored inc GST — see the RFQ audit. Shown as stored rather
+        // than converted, so this matches the figure on the quote itself.
+        accessorFn: (r) => {
+          if (!isParentRow(r)) return r.quote?.totalAmount ?? 0;
+          const accepted = r.__children.find((c) => c.quote?.status === "accepted");
+          return accepted?.quote?.totalAmount ?? 0;
+        },
+        cell: ({ row }) => {
+          const r = row.original;
+          const quote = isParentRow(r)
+            ? r.__children.find((c) => c.quote?.status === "accepted")?.quote ?? null
+            : r.quote;
+          if (!quote || quote.totalAmount <= 0) {
+            return <span className="text-xs text-muted-foreground/30">—</span>;
+          }
+          const isAccepted = quote.status === "accepted";
+          return (
+            <span
+              className={cn(
+                "text-xs tabular-nums",
+                isAccepted ? "text-sage font-semibold" : "text-foreground",
+              )}
+              title={isAccepted ? "Accepted quote (inc GST)" : "Quoted inc GST"}
+              data-testid={`cell-quote-${r.id}`}
+            >
+              {formatCents(quote.totalAmount)}
+            </span>
+          );
+        },
+        size: 110,
+        meta: { defaultWidth: 110, align: "right", headerLabel: "Quote" },
+      },
+      {
+        id: "status",
+        header: "Status",
+        accessorFn: (r) => (isParentRow(r) ? r.status : r.recipient.status),
+        cell: ({ row }) => {
+          const r = row.original;
+          if (isParentRow(r)) return <StatusChip status={r.status} />;
+          return (
+            <StatusBadge
+              status={r.recipient.status}
+              label={RECIPIENT_STATUS_LABEL[r.recipient.status] ?? r.recipient.status}
+            />
+          );
+        },
+        size: 110,
+        meta: { defaultWidth: 110, headerLabel: "Status" },
+      },
+      {
         id: "outstanding",
         header: "Open",
-        accessorFn: (r) => daysOutstanding(r) ?? -1,
+        accessorFn: (r) => (isParentRow(r) ? daysOutstanding(r) ?? -1 : -1),
         cell: ({ row }) => {
-          const days = daysOutstanding(row.original);
+          const r = row.original;
+          if (!isParentRow(r)) return null;
+          const days = daysOutstanding(r);
           if (days === null) {
             return <span className="text-xs text-muted-foreground/40">—</span>;
           }
@@ -529,78 +555,89 @@ export default function RFQs({ embedded }: { embedded?: boolean } = {}) {
             <span
               className={cn("text-xs tabular-nums", days >= 14 ? "text-coral font-medium" : "text-muted-foreground")}
               title={`Sent ${days} day${days === 1 ? "" : "s"} ago, still awaiting a response`}
-              data-testid={`cell-outstanding-${row.original.id}`}
+              data-testid={`cell-outstanding-${r.id}`}
             >
               {days}d
             </span>
           );
         },
         size: 64,
-        meta: { defaultWidth: 64, align: "center", headerLabel: "Open" },
+        meta: { defaultWidth: 64, align: "center", headerLabel: "Open", defaultHidden: true },
       },
       {
         id: "owner",
         header: "Owner",
-        accessorFn: (r) => r.ownerName ?? "",
-        cell: ({ row }) => (
-          <span className="text-xs text-muted-foreground truncate" data-testid={`cell-owner-${row.original.id}`}>
-            {row.original.ownerName || <span className="text-muted-foreground/40">Unassigned</span>}
-          </span>
-        ),
+        accessorFn: (r) => (isParentRow(r) ? r.ownerName ?? "" : ""),
+        cell: ({ row }) => {
+          const r = row.original;
+          if (!isParentRow(r)) return null;
+          return (
+            <span className="text-xs text-muted-foreground truncate" data-testid={`cell-owner-${r.id}`}>
+              {r.ownerName || <span className="text-muted-foreground/40">Unassigned</span>}
+            </span>
+          );
+        },
         size: 120,
-        meta: { defaultWidth: 120, headerLabel: "Owner" },
+        meta: { defaultWidth: 120, headerLabel: "Owner", defaultHidden: true },
       },
       {
         id: "sentAt",
         header: "Sent",
-        accessorFn: (r) => (r.sentAt ? new Date(r.sentAt).getTime() : 0),
-        cell: ({ row }) => (
-          <span className="text-xs text-muted-foreground" data-testid={`cell-sent-${row.original.id}`}>
-            {row.original.sentAt
-              ? formatDate(row.original.sentAt)
-              : <span className="text-muted-foreground/30">Not sent</span>}
-          </span>
-        ),
+        accessorFn: (r) => {
+          const sent = isParentRow(r) ? r.sentAt : r.recipient.sentAt;
+          return sent ? new Date(sent).getTime() : 0;
+        },
+        cell: ({ row }) => {
+          const r = row.original;
+          const sent = isParentRow(r) ? r.sentAt : r.recipient.sentAt;
+          return (
+            <span className="text-xs text-muted-foreground tabular-nums" data-testid={`cell-sent-${r.id}`}>
+              {sent ? formatDate(sent) : <span className="text-muted-foreground/30">Not sent</span>}
+            </span>
+          );
+        },
         size: 100,
         meta: { defaultWidth: 100, headerLabel: "Sent" },
-      },
-      {
-        id: "status",
-        header: "Status",
-        accessorFn: (r) => r.status,
-        cell: ({ row }) => <StatusChip status={row.original.status} />,
-        size: 110,
-        meta: { defaultWidth: 110, headerLabel: "Status" },
       },
       {
         id: "attachments",
         header: "Files",
         enableSorting: false,
-        accessorFn: (r) => r.attachmentUrls.length,
+        accessorFn: (r) =>
+          isParentRow(r)
+            ? r.attachmentUrls.length
+            : ((r.quote?.attachments as Attachment[] | undefined) ?? []).length,
         cell: ({ row }) => {
-          const count = row.original.attachmentUrls.length;
+          const r = row.original;
+          const count = isParentRow(r)
+            ? r.attachmentUrls.length
+            : ((r.quote?.attachments as Attachment[] | undefined) ?? []).length;
           if (count === 0) {
             return <span className="text-muted-foreground/25"><Paperclip className="w-3 h-3" /></span>;
           }
           return (
-            <span className="inline-flex items-center gap-0.5 text-[#8b6bb1]" data-testid={`cell-files-${row.original.id}`}>
+            <span className="inline-flex items-center gap-0.5 text-[#8b6bb1]" data-testid={`cell-files-${r.id}`}>
               <Paperclip className="w-3 h-3" />
               <span className="text-data font-semibold">{count}</span>
             </span>
           );
         },
         size: 70,
-        meta: { defaultWidth: 70, align: "center", headerLabel: "Files" },
+        meta: { defaultWidth: 70, align: "center", headerLabel: "Files", defaultHidden: true },
       },
       {
         id: "createdAt",
         header: "Created",
-        accessorFn: (r) => new Date(r.createdAt).getTime(),
-        cell: ({ row }) => (
-          <span className="text-xs text-muted-foreground" data-testid={`cell-created-${row.original.id}`}>
-            {formatDate(row.original.createdAt)}
-          </span>
-        ),
+        accessorFn: (r) => (isParentRow(r) ? new Date(r.createdAt).getTime() : 0),
+        cell: ({ row }) => {
+          const r = row.original;
+          if (!isParentRow(r)) return null;
+          return (
+            <span className="text-xs text-muted-foreground" data-testid={`cell-created-${r.id}`}>
+              {formatDate(r.createdAt)}
+            </span>
+          );
+        },
         size: 100,
         meta: { defaultWidth: 100, headerLabel: "Created", defaultHidden: true },
       },
@@ -608,29 +645,33 @@ export default function RFQs({ embedded }: { embedded?: boolean } = {}) {
         id: "actions",
         header: "",
         enableSorting: false,
-        cell: ({ row }) => (
-          <div className="flex items-center justify-center" data-testid={`cell-actions-${row.original.id}`}>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-                <button
-                  type="button"
-                  className="p-1 rounded hover-elevate text-muted-foreground"
-                  data-testid={`button-rfq-actions-${row.original.id}`}
-                >
-                  <MoreHorizontal className="w-3.5 h-3.5" />
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem
-                  onClick={(e) => { e.stopPropagation(); handleNavigate(row.original.id); }}
-                >
-                  <FileText className="mr-2 h-4 w-4" />
-                  View Details
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-        ),
+        cell: ({ row }) => {
+          const r = row.original;
+          if (!isParentRow(r)) return null;
+          return (
+            <div className="flex items-center justify-center" data-testid={`cell-actions-${r.id}`}>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                  <button
+                    type="button"
+                    className="p-1 rounded hover-elevate text-muted-foreground"
+                    data-testid={`button-rfq-actions-${r.id}`}
+                  >
+                    <MoreHorizontal className="w-3.5 h-3.5" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem
+                    onClick={(e) => { e.stopPropagation(); handleNavigate(r.id); }}
+                  >
+                    <FileText className="mr-2 h-4 w-4" />
+                    View Details
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          );
+        },
         size: 48,
         meta: { defaultWidth: 48, align: "center", pinned: true, headerLabel: "Actions" },
       },
@@ -638,7 +679,7 @@ export default function RFQs({ embedded }: { embedded?: boolean } = {}) {
 
     return cols;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showProject, projects, recipientsByRfq]);
+  }, [showProject, projects]);
 
   const pickerColumns = useMemo(() => {
     return rfqColumns
@@ -653,11 +694,6 @@ export default function RFQs({ embedded }: { embedded?: boolean } = {}) {
       });
   }, [rfqColumns]);
 
-  const openAttachments = (label: string, attachments: Attachment[]) => {
-    setActiveAttachment(attachments[0] ?? null);
-    setPreviewError(false);
-    setAttachmentModal({ label, attachments });
-  };
 
   const handleSelectAttachment = (file: Attachment) => {
     setActiveAttachment(file);
@@ -776,7 +812,7 @@ export default function RFQs({ embedded }: { embedded?: boolean } = {}) {
                 </button>
               </PopoverTrigger>
               <PopoverContent className="w-auto p-0" align="end">
-                <DataTableColumnPicker storageKey="rfqs" columns={pickerColumns} />
+                <DataTableColumnPicker storageKey="rfqs-v3" columns={pickerColumns} />
               </PopoverContent>
             </Popover>
 
@@ -850,21 +886,27 @@ export default function RFQs({ embedded }: { embedded?: boolean } = {}) {
         ) : (
           <div className="rounded-lg border border-border bg-card overflow-hidden h-full">
             <DataTable
-              data={filteredRFQs}
+              data={tableRows}
               columns={rfqColumns}
-              storageKey="rfqs"
-              legacyConfigKey="rfqs-column-config-v1"
+              // Bumped from "rfqs": the column set changed shape, so saved
+              // layouts from the old table would pin widths for columns that no
+              // longer mean the same thing and suppress the new defaults.
+              storageKey="rfqs-v3"
               rowKey={(r) => r.id}
-              onRowClick={(r) => handleNavigate(r.id)}
-              renderExpandedPanel={(rfq) => (
-                <RfqQuotesPanel
-                  rfq={rfq}
-                  project={getProject(rfq.projectId)}
-                  showProject={showProject}
-                  onOpenAttachments={openAttachments}
-                  onNavigate={handleNavigate}
-                />
-              )}
+              // The sticky expander and actions columns paint their own
+              // background so they stay opaque during horizontal scroll, and
+              // default to --background (page grey). This table sits on a card,
+              // so without this they read as grey blocks bracketing white rows.
+              rowStyle={(r) => {
+                const bg = isParentRow(r) ? "hsl(var(--card))" : "hsl(var(--muted) / 0.45)";
+                return { background: bg, ["--dt-row-bg" as any]: bg };
+              }}
+              rowClassName={(r) =>
+                isParentRow(r) ? "border-t border-border" : "border-t-0"
+              }
+              onRowClick={(r) => handleNavigate(isParentRow(r) ? r.id : r.rfqId)}
+              getSubRows={(r) => (isParentRow(r) ? r.__children : undefined)}
+              headerVariant="plain"
             />
           </div>
         )}
