@@ -12,6 +12,7 @@ import {
   Search,
   Trash2,
   X,
+  Users,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -174,7 +175,7 @@ export function RfqRecipientsPanel({
   const addButton = readOnly ? null : (
     <Popover open={addOpen} onOpenChange={setAddOpen}>
       <PopoverTrigger asChild>
-        <Button size="sm" variant="outline" className="h-6 text-xs" data-testid="button-add-recipient">
+        <Button size="sm" variant="ghost" className="h-6 px-1.5 text-xs font-medium text-primary rounded hover:bg-primary/10 hover:text-primary" data-testid="button-add-recipient">
           <Plus className="w-3 h-3 mr-1" />
           Add supplier
         </Button>
@@ -222,8 +223,10 @@ export function RfqRecipientsPanel({
   );
 
   return (
-    <SectionCard
+    <SectionCard variant="editorial"
       title="Suppliers"
+      subtitle="Who this RFQ went to, and where each one is up to"
+      icon={<Users className="w-4 h-4" />}
       accent="primary"
       count={recipients.length}
       actions={addButton}

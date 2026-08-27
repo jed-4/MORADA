@@ -2,6 +2,7 @@ import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { pdf } from "@react-pdf/renderer";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/EmptyState";
 import { Badge } from "@/components/ui/badge";
@@ -55,7 +56,16 @@ import {
   AlertCircle,
   ChevronDown,
   ChevronRight,
+  ClipboardList,
+  Info,
+  ListChecks,
+  ScrollText,
+  StickyNote,
+  History,
+  Radio,
+  DollarSign,
 } from "lucide-react";
+import { ProjectIcon } from "@/components/ProjectIcon";
 import { RFQDocument } from "@/components/rfq/pdf/RFQDocument";
 import { SendRFQDialog } from "@/components/rfq/SendRFQDialog";
 import { UploadQuoteDialog } from "@/components/rfq/UploadQuoteDialog";
@@ -63,7 +73,7 @@ import { QuoteComparisonView } from "@/components/rfq/QuoteComparisonView";
 import type { Rfq, RfqItem, RfqQuote, RfqTemplate, CostCode, EstimateItem, Project, User, RfqRecipient, RfqReminderTemplate } from "@shared/schema";
 import { format } from "date-fns";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { dollarsToCents } from "@shared/money";
+import { dollarsToCents, formatCents, incGstFromEx } from "@shared/money";
 import { useToast } from "@/hooks/use-toast";
 import { StatusBadge } from "@/components/StatusBadge";
 import { CostCodeSelect } from "@/components/CostCodeSelect";
@@ -80,6 +90,68 @@ import { reminderDueAt } from "@shared/rfqReminders";
 // Radix Select cannot hold an empty string value, so "no selection" needs a
 // sentinel rather than "".
 const UNASSIGNED = "__unassigned__";
+
+/**
+ * Field styling for the editorial layout. Boxed inputs read as a form pasted
+ * onto the page; an underline keeps the value as the thing you see and the
+ * chrome as a hint, which is what the rest of this page now does.
+ */
+const EDITORIAL_INPUT =
+  "h-8 px-0 text-sm rounded-none border-0 border-b border-border bg-transparent " +
+  "shadow-none focus-visible:ring-0 focus-visible:border-primary transition-colors";
+
+const EDITORIAL_TEXTAREA =
+  "text-sm resize-none rounded-md border-0 bg-muted/30 shadow-none " +
+  "focus-visible:ring-1 focus-visible:ring-primary/40";
+
+/**
+ * Label + popover calendar, assembled by hand in two places on this page with
+ * the two copies already drifting (one used a Calendar icon, one a Clock, and
+ * only one had a sensible empty state). One control now.
+ */
+function DateField({
+  label,
+  value,
+  placeholder,
+  icon,
+  onChange,
+}: {
+  label: string;
+  value: Date | null | undefined;
+  placeholder: string;
+  icon: React.ReactNode;
+  onChange: (date: Date | undefined) => void;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <Label className="text-xs text-muted-foreground">{label}</Label>
+      <Popover>
+        <PopoverTrigger asChild>
+          <Button
+            variant="ghost"
+            className={cn(
+              "w-full justify-start h-8 px-0 text-sm font-normal rounded-none",
+              "border-0 border-b border-border bg-transparent hover:bg-transparent",
+              "hover:border-primary transition-colors",
+              !value && "text-muted-foreground",
+            )}
+          >
+            {icon}
+            {value ? format(value, "MMM d, yyyy") : placeholder}
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent className="w-auto p-0" align="start">
+          <Calendar
+            mode="single"
+            selected={value || undefined}
+            onSelect={onChange}
+            initialFocus
+          />
+        </PopoverContent>
+      </Popover>
+    </div>
+  );
+}
 
 export default function RFQDetail() {
   const { id } = useParams<{ id: string }>();
@@ -142,6 +214,17 @@ export default function RFQDetail() {
     enabled: !!id,
   });
 
+  // The builder's own pricing for the scope, ex GST. Summed in cents so it
+  // agrees with the per-row totals to the last cent.
+  const itemsTotalCents = useMemo(
+    () =>
+      items.reduce((sum, item) => {
+        const qty = item.quantity ? parseFloat(item.quantity.toString()) : 0;
+        return sum + Math.round(qty * (item.unitPrice ?? 0));
+      }, 0),
+    [items],
+  );
+
   const { data: rfqTemplates = [] } = useQuery<RfqTemplate[]>({
     queryKey: ["/api/rfq-templates"],
   });
@@ -151,6 +234,8 @@ export default function RFQDetail() {
     companyName?: string | null;
     email?: string | null;
     phone?: string | null;
+    termsAndConditions?: string | null;
+    termsTemplates?: Array<{ id: string; name: string; content: string; defaultFor: string[] }>;
   }>({
     queryKey: ["/api/company-settings"],
   });
@@ -162,6 +247,8 @@ export default function RFQDetail() {
   const { data: projects = [] } = useQuery<Project[]>({
     queryKey: ["/api/projects"],
   });
+
+  const project = projects.find((p) => p.id === rfq?.projectId);
 
   const { data: teamUsers = [] } = useQuery<User[]>({
     queryKey: ["/api/users"],
@@ -453,15 +540,21 @@ export default function RFQDetail() {
     setHasChanges(true);
   };
 
+  // The T&C library lives on company_settings.termsTemplates and is edited in
+  // Settings → Terms & Conditions. This selector used to read /api/rfq-templates
+  // — the whole-RFQ template table, an entirely different thing — which is why
+  // picking a template never filled anything in.
+  const termsTemplates = companySettings?.termsTemplates ?? [];
+
   const handleTermsTemplateChange = (templateId: string) => {
     if (templateId === "custom") {
       handleFieldChange("termsTemplateId", "");
       return;
     }
     handleFieldChange("termsTemplateId", templateId);
-    const template = rfqTemplates.find(t => t.id === templateId);
-    if (template?.termsAndConditions) {
-      handleFieldChange("customTerms", template.termsAndConditions);
+    const template = termsTemplates.find((t) => t.id === templateId);
+    if (template) {
+      handleFieldChange("customTerms", template.content);
     }
   };
 
@@ -561,10 +654,13 @@ export default function RFQDetail() {
       <DetailLayout
         sidebar={
           <>
-      <SectionCard title="Registry" accent="primary">
-        <div className="p-3 space-y-3">
+      <SectionCard variant="editorial"
+        title="Owner"
+        icon={<ClipboardList className="w-4 h-4" />}
+        accent="primary"
+      >
+        <div className="pt-2 space-y-3">
           <div className="space-y-1.5">
-            <Label className="text-xs text-muted-foreground">Owner</Label>
             <Select
               value={rfq.ownerId ?? UNASSIGNED}
               onValueChange={(value) =>
@@ -587,12 +683,7 @@ export default function RFQDetail() {
           </div>
 
           <div className="space-y-1.5">
-            <Label className="text-xs text-muted-foreground">Project</Label>
-            {rfq.projectId ? (
-              <p className="text-xs" data-testid="text-rfq-project">
-                {projects.find((p) => p.id === rfq.projectId)?.name ?? "—"}
-              </p>
-            ) : (
+            {rfq.projectId ? null : (
               // Attach-once: a general enquiry can be pulled into a job when the
               // job becomes real, but an RFQ suppliers have already quoted
               // against is never re-parented.
@@ -619,8 +710,10 @@ export default function RFQDetail() {
         </div>
       </SectionCard>
 
-      <SectionCard
+      <SectionCard variant="editorial"
         title="Track Only Mode"
+        subtitle="RFQ sent outside Morada"
+        icon={<Radio className="w-4 h-4" />}
         accent="muted"
         actions={
           <Switch
@@ -635,19 +728,16 @@ export default function RFQDetail() {
                   value={formData.externalNotes}
                   onChange={(e) => handleFieldChange("externalNotes", e.target.value)}
                   placeholder="Where was this RFQ sent? (email, phone, etc.)"
-                  className="text-xs min-h-[60px]"
+                  className={cn("min-h-[60px]", EDITORIAL_TEXTAREA)}
                 />
               </div>
             )}
-            {!formData.isExternal && (
-              <p className="text-data text-muted-foreground px-3 py-2">
-                Track RFQ sent outside Morada
-              </p>
-            )}
       </SectionCard>
 
-      <SectionCard
+      <SectionCard variant="editorial"
         title="Reminders"
+        subtitle="Chase suppliers who go quiet"
+        icon={<Bell className="w-4 h-4" />}
         accent="amber"
         actions={
           <Switch
@@ -685,81 +775,91 @@ export default function RFQDetail() {
         </div>
       </SectionCard>
 
-      <SectionCard title="Internal Notes" accent="muted">
+      <SectionCard variant="editorial"
+        title="Internal Notes"
+        subtitle="Only visible to your team"
+        icon={<StickyNote className="w-4 h-4" />}
+        accent="muted"
+      >
             <div className="p-3">
-              <p className="text-data text-muted-foreground mb-2">
-                Only visible to your team
-              </p>
               <Textarea
                 value={formData.internalNotes}
                 onChange={(e) => handleFieldChange("internalNotes", e.target.value)}
                 placeholder="Notes for your team..."
-                className="text-xs min-h-[80px]"
+                className={cn("min-h-[80px]", EDITORIAL_TEXTAREA)}
                 data-testid="input-internal-notes"
               />
             </div>
       </SectionCard>
 
-      <SectionCard title="Activity" accent="muted">
+      <SectionCard variant="editorial"
+        title="Activity"
+        subtitle="Everything that has happened"
+        icon={<History className="w-4 h-4" />}
+        accent="muted"
+      >
         <RfqActivityFeed rfq={rfq} quotes={quotes} />
       </SectionCard>
           </>
         }
       >
-        {/* Suppliers — the main event. One row per request, each with its own
-            state, replacing the "3 selected" popover that hid them. */}
-        <RfqRecipientsPanel rfqId={rfq.id} quotes={quotes} />
-
-        <SectionCard title="RFQ Info" accent="primary">
-            {/* Dates */}
-            <div className="p-3">
+        <SectionCard variant="editorial"
+          title="RFQ Info"
+          subtitle="Response dates and description"
+          icon={<Info className="w-4 h-4" />}
+          accent="primary"
+        >
+            <div className="pt-3 space-y-3">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {/* Due Date */}
                 <div className="space-y-1.5">
-                  <Label className="text-xs text-muted-foreground">Response Due</Label>
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <Button variant="outline" className="w-full justify-start text-sm font-normal">
-                        <CalendarIcon className="w-4 h-4 mr-2 text-muted-foreground" />
-                        {formData.dueDate ? format(formData.dueDate, "MMM d, yyyy") : "Set due date"}
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0" align="start">
-                      <Calendar
-                        mode="single"
-                        selected={formData.dueDate || undefined}
-                        onSelect={(date) => handleFieldChange("dueDate", date)}
-                        initialFocus
-                      />
-                    </PopoverContent>
-                  </Popover>
+                  <Label className="text-xs text-muted-foreground">Title</Label>
+                  <Input
+                    value={formData.title}
+                    onChange={(e) => handleFieldChange("title", e.target.value)}
+                    placeholder="What are you asking for?"
+                    className={EDITORIAL_INPUT}
+                    data-testid="input-rfq-title"
+                  />
                 </div>
-
-                {/* Deadline */}
                 <div className="space-y-1.5">
-                  <Label className="text-xs text-muted-foreground">Work Deadline</Label>
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <Button variant="outline" className="w-full justify-start text-sm font-normal">
-                        <Clock className="w-4 h-4 mr-2 text-muted-foreground" />
-                        {formData.deadline ? format(formData.deadline, "MMM d, yyyy") : "Set deadline"}
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0" align="start">
-                      <Calendar
-                        mode="single"
-                        selected={formData.deadline || undefined}
-                        onSelect={(date) => handleFieldChange("deadline", date)}
-                        initialFocus
-                      />
-                    </PopoverContent>
-                  </Popover>
+                  <Label className="text-xs text-muted-foreground">Project</Label>
+                  <div className="h-8 flex items-center gap-2 text-sm border-b border-transparent">
+                    {project ? (
+                      <>
+                        <ProjectIcon
+                          icon={project.icon || "Briefcase"}
+                          color={project.color}
+                          className="w-3.5 h-3.5 flex-shrink-0"
+                        />
+                        <span className="truncate">{project.name}</span>
+                      </>
+                    ) : (
+                      // Registry RFQs legitimately have no job yet.
+                      <span className="text-muted-foreground/60 italic">General enquiry</span>
+                    )}
+                  </div>
                 </div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <DateField
+                  label="Response Due"
+                  value={formData.dueDate}
+                  placeholder="Set due date"
+                  icon={<CalendarIcon className="w-4 h-4 mr-2 text-muted-foreground" />}
+                  onChange={(date) => handleFieldChange("dueDate", date)}
+                />
+                <DateField
+                  label="Work Deadline"
+                  value={formData.deadline}
+                  placeholder="Set deadline"
+                  icon={<Clock className="w-4 h-4 mr-2 text-muted-foreground" />}
+                  onChange={(date) => handleFieldChange("deadline", date)}
+                />
               </div>
             </div>
 
             {/* Description — collapsible sub-section */}
-            <div className="border-t border-border/50">
+            <div className="mt-3 border-t border-border/50">
               <button
                 type="button"
                 onClick={() => setDescOpen((o) => !o)}
@@ -776,7 +876,7 @@ export default function RFQDetail() {
                     value={formData.description}
                     onChange={(e) => handleFieldChange("description", e.target.value)}
                     placeholder="Brief description of the request..."
-                    className="min-h-[60px] text-sm"
+                    className={cn("min-h-[60px]", EDITORIAL_TEXTAREA)}
                     data-testid="input-description"
                   />
                 </div>
@@ -785,7 +885,17 @@ export default function RFQDetail() {
 
         </SectionCard>
 
-        <SectionCard title="Scope & Items" accent="amber">
+        {/* Suppliers — the main event. One row per request, each with its own
+            state, replacing the "3 selected" popover that hid them. */}
+        <RfqRecipientsPanel rfqId={rfq.id} quotes={quotes} />
+
+
+        <SectionCard variant="editorial"
+          title="Scope & Items"
+          subtitle="What you are asking suppliers to price"
+          icon={<ListChecks className="w-4 h-4" />}
+          accent="amber"
+        >
             {/* Scope of Work — always visible */}
             <div className="border-b border-border/50">
               <SectionSubHeader title="Scope of Work" />
@@ -794,7 +904,7 @@ export default function RFQDetail() {
                   value={formData.scope}
                   onChange={(e) => handleFieldChange("scope", e.target.value)}
                   placeholder="Detailed scope including specifications, quantities, delivery requirements..."
-                  className="min-h-[80px] text-sm"
+                  className={cn("min-h-[80px]", EDITORIAL_TEXTAREA)}
                   data-testid="input-scope"
                 />
               </div>
@@ -813,25 +923,16 @@ export default function RFQDetail() {
                   {estimateItems.length > 0 && (
                     <Button
                       size="sm"
-                      variant="outline"
+                      variant="ghost"
                       onClick={() => setShowImportDialog(true)}
-                      className="h-6 text-xs"
+                      className="h-6 px-1.5 text-xs font-medium text-primary rounded hover:bg-primary/10 hover:text-primary"
                       data-testid="button-import-items"
                     >
                       <FileText className="w-3 h-3 mr-1" />
-                      Import
+                      Import from estimate
                     </Button>
                   )}
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => openItemDialog()}
-                    className="h-6 text-xs"
-                    data-testid="button-add-item"
-                  >
-                    <Plus className="w-3 h-3 mr-1" />
-                    Add
-                  </Button>
+
                 </div>
               </div>
 
@@ -845,46 +946,59 @@ export default function RFQDetail() {
               />
             ) : (
               <Table>
+                {/* Type scale, hairline rules and hover-revealed row actions
+                    all match components/LineItemsTable, so the RFQ schedule and
+                    the allowance tables read as the same control. */}
                 <TableHeader>
-                  <TableRow className="h-8">
-                    <TableHead className="text-xs">Cost Code</TableHead>
-                    <TableHead className="text-xs">Description</TableHead>
-                    <TableHead className="text-xs w-20 text-right">Qty</TableHead>
-                    <TableHead className="text-xs w-16">Unit</TableHead>
-                    <TableHead className="text-xs w-24 text-right">Unit Price</TableHead>
-                    <TableHead className="text-xs w-24 text-right">Total</TableHead>
-                    <TableHead className="text-xs w-10"></TableHead>
+                  <TableRow className="hover:bg-transparent border-b border-border">
+                    <TableHead className="h-auto py-2 text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">Cost Code</TableHead>
+                    <TableHead className="h-auto py-2 text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">Description</TableHead>
+                    <TableHead className="h-auto py-2 text-[9px] font-semibold uppercase tracking-wide text-muted-foreground w-20 text-right">Qty</TableHead>
+                    <TableHead className="h-auto py-2 text-[9px] font-semibold uppercase tracking-wide text-muted-foreground w-16">Unit</TableHead>
+                    <TableHead className="h-auto py-2 text-[9px] font-semibold uppercase tracking-wide text-muted-foreground w-24 text-right">Unit Ex</TableHead>
+                    <TableHead className="h-auto py-2 text-[9px] font-semibold uppercase tracking-wide text-muted-foreground w-24 text-right">Unit Inc</TableHead>
+                    <TableHead className="h-auto py-2 text-[9px] font-semibold uppercase tracking-wide text-muted-foreground w-24 text-right">Total Ex</TableHead>
+                    <TableHead className="h-auto py-2 text-[9px] font-semibold uppercase tracking-wide text-muted-foreground w-24 text-right">Total Inc</TableHead>
+                    <TableHead className="h-auto py-2 text-[9px] font-semibold uppercase tracking-wide text-muted-foreground w-10"></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {items.map((item) => {
                     const costCode = costCodes.find(cc => cc.id === item.costCodeId);
                     const qty = item.quantity ? parseFloat(item.quantity.toString()) : 0;
-                    const price = item.unitPrice ? item.unitPrice / 100 : 0;
-                    const total = qty * price;
+                    // Stay in cents: rounding dollars per row and summing them
+                    // drifts against the same figure computed from the total.
+                    const totalCents = Math.round(qty * (item.unitPrice ?? 0));
                     return (
-                      <TableRow key={item.id} className="h-10">
-                        <TableCell className="text-sm text-muted-foreground">
+                      <TableRow
+                        key={item.id}
+                        className="group border-b border-border hover:bg-muted/40 cursor-pointer"
+                        onClick={() => openItemDialog(item)}
+                      >
+                        <TableCell className="py-2 text-xs text-muted-foreground">
                           {costCode ? `${costCode.code}` : "-"}
                         </TableCell>
-                        <TableCell
-                          className="text-sm cursor-pointer"
-                          onClick={() => openItemDialog(item)}
-                        >
+                        <TableCell className="py-2 text-xs">
                           {item.description}
                         </TableCell>
-                        <TableCell className="text-sm text-right">
+                        <TableCell className="py-2 text-xs text-right tabular-nums">
                           {qty > 0 ? qty.toFixed(2) : "-"}
                         </TableCell>
-                        <TableCell className="text-sm">{item.unit || "-"}</TableCell>
-                        <TableCell className="text-sm text-right">
-                          {price > 0 ? `$${price.toFixed(2)}` : "-"}
+                        <TableCell className="py-2 text-xs">{item.unit || "-"}</TableCell>
+                        <TableCell className="py-2 text-xs text-right tabular-nums">
+                          {item.unitPrice ? formatCents(item.unitPrice) : "-"}
                         </TableCell>
-                        <TableCell className="text-sm text-right font-medium">
-                          {total > 0 ? `$${total.toFixed(2)}` : "-"}
+                        <TableCell className="py-2 text-xs text-right tabular-nums text-muted-foreground">
+                          {item.unitPrice ? formatCents(incGstFromEx(item.unitPrice)) : "-"}
                         </TableCell>
-                        <TableCell>
-                          <div className="flex items-center justify-end gap-0.5">
+                        <TableCell className="py-2 text-xs text-right font-medium tabular-nums">
+                          {totalCents > 0 ? formatCents(totalCents) : "-"}
+                        </TableCell>
+                        <TableCell className="py-2 text-xs text-right font-medium tabular-nums text-muted-foreground">
+                          {totalCents > 0 ? formatCents(incGstFromEx(totalCents)) : "-"}
+                        </TableCell>
+                        <TableCell className="py-2" onClick={(e) => e.stopPropagation()}>
+                          <div className="flex items-center justify-end gap-0.5 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
                             <Button
                               size="icon"
                               variant="ghost"
@@ -910,19 +1024,32 @@ export default function RFQDetail() {
                       </TableRow>
                     );
                   })}
+                  {/* Inline add row, aligned to the columns — the same
+                      affordance LineItemsTable uses, rather than only a button
+                      floating in the sub-header. */}
+                  <TableRow
+                    className="border-b border-border hover:bg-muted/40 cursor-pointer"
+                    onClick={() => openItemDialog()}
+                    data-testid="row-add-line-item"
+                  >
+                    <TableCell colSpan={9} className="py-2">
+                      <span className="text-xs font-medium flex items-center gap-1.5 text-primary">
+                        <Plus className="h-3.5 w-3.5" /> Add line
+                      </span>
+                    </TableCell>
+                  </TableRow>
                   {items.length > 0 && items.some(i => i.unitPrice) && (
-                    <TableRow className="bg-muted/30">
-                      <TableCell colSpan={5} className="text-sm font-medium text-right">
-                        Total (ex GST):
+                    <TableRow className="hover:bg-transparent border-0">
+                      <TableCell colSpan={6} className="pt-2 text-xs font-semibold text-right">
+                        Your estimate:
                       </TableCell>
-                      <TableCell className="text-sm font-bold text-right">
-                        ${items.reduce((sum, item) => {
-                          const qty = item.quantity ? parseFloat(item.quantity.toString()) : 0;
-                          const price = item.unitPrice ? item.unitPrice / 100 : 0;
-                          return sum + (qty * price);
-                        }, 0).toFixed(2)}
+                      <TableCell className="pt-2 text-xs font-semibold text-right tabular-nums">
+                        {formatCents(itemsTotalCents)}
                       </TableCell>
-                      <TableCell></TableCell>
+                      <TableCell className="pt-2 text-xs font-semibold text-right tabular-nums text-muted-foreground">
+                        {formatCents(incGstFromEx(itemsTotalCents))}
+                      </TableCell>
+                      <TableCell className="border-0" />
                     </TableRow>
                   )}
                 </TableBody>
@@ -931,8 +1058,10 @@ export default function RFQDetail() {
             </div>{/* end Line Items section */}
         </SectionCard>
 
-        <SectionCard
+        <SectionCard variant="editorial"
           title="Terms & Conditions"
+          subtitle="Included in the RFQ document"
+          icon={<ScrollText className="w-4 h-4" />}
           accent="primary"
           collapsible
           collapsed={tcCollapsed}
@@ -947,7 +1076,7 @@ export default function RFQDetail() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="custom">Custom</SelectItem>
-                {rfqTemplates.filter(t => t.termsAndConditions).map((template) => (
+                {termsTemplates.map((template) => (
                   <SelectItem key={template.id} value={template.id}>
                     {template.name}
                   </SelectItem>
@@ -963,7 +1092,7 @@ export default function RFQDetail() {
                     value={formData.customTerms}
                     onChange={(e) => handleFieldChange("customTerms", e.target.value)}
                     placeholder="Terms and conditions to include in the RFQ..."
-                    className="min-h-[80px] text-sm"
+                    className={cn("min-h-[80px]", EDITORIAL_TEXTAREA)}
                     data-testid="input-terms"
                   />
                 </div>
@@ -972,8 +1101,10 @@ export default function RFQDetail() {
 
         </SectionCard>
 
-        <SectionCard
+        <SectionCard variant="editorial"
           title="Attachments"
+          subtitle="Drawings and specs sent with the RFQ"
+          icon={<Paperclip className="w-4 h-4" />}
           accent="amber"
           count={rfq.attachmentUrls?.length ?? 0}
           collapsible
@@ -983,20 +1114,22 @@ export default function RFQDetail() {
           <RfqAttachments rfq={rfq} />
         </SectionCard>
 
-        <SectionCard
+        <SectionCard variant="editorial"
           title="Quotes Received"
+          subtitle="Supplier responses"
+          icon={<DollarSign className="w-4 h-4" />}
           accent="sage"
           count={quotes.length}
           actions={
             <Button
               size="sm"
-              variant="outline"
+              variant="ghost"
               onClick={() => setShowUploadQuoteDialog(true)}
-              className="h-6 text-xs"
+              className="h-6 px-1.5 text-xs font-medium text-primary rounded hover:bg-primary/10 hover:text-primary"
               data-testid="button-upload-quote"
             >
               <Upload className="w-3 h-3 mr-1" />
-              Upload Quote
+              Upload quote
             </Button>
           }
         >
@@ -1008,7 +1141,12 @@ export default function RFQDetail() {
         </SectionCard>
 
           {showPreview && (
-            <SectionCard title="PDF Preview" accent="muted">
+            <SectionCard variant="editorial"
+            title="PDF Preview"
+            subtitle="What the supplier receives"
+            icon={<FileText className="w-4 h-4" />}
+            accent="muted"
+          >
               {isGenerating ? (
                 <div className="flex items-center justify-center h-[500px] bg-muted/20">
                   <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
@@ -1100,7 +1238,7 @@ export default function RFQDetail() {
                 value={newItem.notes}
                 onChange={(e) => setNewItem(prev => ({ ...prev, notes: e.target.value }))}
                 placeholder="Additional notes..."
-                className="min-h-[60px]"
+                className="min-h-[60px] resize-none"
               />
             </div>
           </div>
@@ -1197,7 +1335,7 @@ export default function RFQDetail() {
                         <TableCell className="text-sm">{item.unitType || "-"}</TableCell>
                         <TableCell className="text-sm text-right">
                           {/* estimate_items prices are dollars, not cents. */}
-                          {item.unitCostExTax ? `$${item.unitCostExTax.toFixed(2)}` : "-"}
+                          {item.unitCostExTax ? formatCents(dollarsToCents(item.unitCostExTax)) : "-"}
                         </TableCell>
                       </TableRow>
                     ))

@@ -4,11 +4,30 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
-import { Check, X, FileText, TrendingDown, ShoppingCart } from "lucide-react";
+import { Check, X, FileText, TrendingDown, ShoppingCart, MoreHorizontal } from "lucide-react";
 import { format } from "date-fns";
-import { gstSplit } from "@shared/money";
+import { gstSplit, formatCents } from "@shared/money";
 import type { RfqQuote, Rfq } from "@shared/schema";
+
+/**
+ * Quote status is a free-text column rather than a pg enum, so the vocabulary
+ * lives here. Titles match the tone of RECIPIENT_STATUS_LABEL / RFQ_STATUS_LABEL
+ * so one page does not mix "Quoted" with "pending".
+ */
+const QUOTE_STATUS_LABEL: Record<string, string> = {
+  pending: "Awaiting decision",
+  accepted: "Accepted",
+  declined: "Declined",
+};
+
+const quoteStatusLabel = (status: string) => QUOTE_STATUS_LABEL[status] ?? status;
 
 interface QuoteComparisonViewProps {
   rfqId: string;
@@ -120,9 +139,14 @@ export function QuoteComparisonView({ rfqId, quotes, rfq }: QuoteComparisonViewP
   , quotes[0]);
 
   return (
-    <div className="space-y-4">
-      {/* Mobile: Card view */}
-      <div className="md:hidden space-y-4">
+    <div className="p-3">
+      {/* One card per quote at every width. This used to be a mobile-only
+          fallback behind a transposed matrix (suppliers as columns, attributes
+          as rows) which put Accept and Decline as full-width buttons inside a
+          table cell. The matrix also stopped being a comparison the moment the
+          panel sat in the detail page's ~540px column. Each card now carries
+          its own gap to the cheapest quote, so comparison survives without it. */}
+      <div className="space-y-3">
         {quotes.map((quote) => {
           const isLowest = quote.id === lowestQuote.id && quotes.length > 1;
           
@@ -147,19 +171,28 @@ export function QuoteComparisonView({ rfqId, quotes, rfq }: QuoteComparisonViewP
                         : "secondary"
                     }
                   >
-                    {quote.status}
+                    {quoteStatusLabel(quote.status)}
                   </Badge>
                 </div>
 
-                <div className="flex items-center gap-2">
-                  <div className="text-2xl font-bold">
-                    ${(quote.totalAmount / 100).toFixed(2)}
+                <div className="flex items-baseline gap-2 flex-wrap">
+                  <div className="text-xl font-bold tabular-nums">
+                    {formatCents(quote.totalAmount)}
                   </div>
-                  {isLowest && (
+                  <span className="text-xs text-muted-foreground">inc GST</span>
+                  {isLowest ? (
                     <Badge variant="default" className="gap-1">
                       <TrendingDown className="h-3 w-3" />
-                      Best Price
+                      Lowest
                     </Badge>
+                  ) : (
+                    quotes.length > 1 && (
+                      // The gap to the cheapest quote, which is the only thing
+                      // the old side-by-side matrix was really there to show.
+                      <span className="text-xs text-coral font-medium tabular-nums">
+                        +{formatCents(quote.totalAmount - lowestQuote.totalAmount)} vs lowest
+                      </span>
+                    )
                   )}
                 </div>
 
@@ -169,7 +202,7 @@ export function QuoteComparisonView({ rfqId, quotes, rfq }: QuoteComparisonViewP
                   </div>
                 )}
 
-                {quote.attachments && Array.isArray(quote.attachments) && quote.attachments.length > 0 && (
+                {Array.isArray(quote.attachments) && quote.attachments.length > 0 && (
                   <div className="flex items-center gap-2 flex-wrap">
                     {/* Real object-storage paths now, so these open. They used
                         to be fabricated /uploads/quotes/ URLs pointing at
@@ -193,28 +226,40 @@ export function QuoteComparisonView({ rfqId, quotes, rfq }: QuoteComparisonViewP
                 )}
 
                 {quote.status === "pending" && (
-                  <div className="flex gap-2">
+                  <div className="flex items-center gap-2">
                     <Button
                       size="sm"
                       onClick={() => acceptMutation.mutate(quote.id)}
                       disabled={acceptMutation.isPending || declineMutation.isPending}
-                      className="flex-1"
+                      className="h-7 text-xs"
                       data-testid={`button-accept-${quote.id}`}
                     >
-                      <Check className="h-4 w-4 mr-2" />
-                      Accept
+                      <Check className="h-3 w-3 mr-1.5" />
+                      Accept quote
                     </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => declineMutation.mutate(quote.id)}
-                      disabled={acceptMutation.isPending || declineMutation.isPending}
-                      className="flex-1"
-                      data-testid={`button-decline-${quote.id}`}
-                    >
-                      <X className="h-4 w-4 mr-2" />
-                      Decline
-                    </Button>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 w-7 p-0 text-muted-foreground"
+                          disabled={acceptMutation.isPending || declineMutation.isPending}
+                          aria-label="More quote actions"
+                          data-testid={`button-quote-menu-${quote.id}`}
+                        >
+                          <MoreHorizontal className="h-3.5 w-3.5" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="start">
+                        <DropdownMenuItem
+                          onClick={() => declineMutation.mutate(quote.id)}
+                          data-testid={`button-decline-${quote.id}`}
+                        >
+                          <X className="h-4 w-4 mr-2" />
+                          Decline quote
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </div>
                 )}
 
@@ -236,173 +281,6 @@ export function QuoteComparisonView({ rfqId, quotes, rfq }: QuoteComparisonViewP
         })}
       </div>
 
-      {/* Desktop: Comparison matrix. Suppliers are columns and attributes are
-          rows, so this intentionally is NOT the shared DataTable (its
-          row-model, sorting and persisted column layout don't apply here);
-          instead it mirrors DataTable's visual language: h-7 uppercase muted
-          header, ~36px rows, border-border/40 dividers, hover-elevate,
-          auto-hide scrollbars. */}
-      <div className="hidden md:block overflow-x-auto dt-autohide-scrollbar">
-        <table className="w-full border-separate border-spacing-0">
-          <thead>
-            <tr>
-              <th className="h-7 px-2 text-left text-data font-medium uppercase tracking-wide text-muted-foreground/70 border-b border-border bg-muted w-32">
-                Supplier
-              </th>
-              {quotes.map((quote) => (
-                <th
-                  key={quote.id}
-                  className="h-7 px-2 text-center text-data font-medium uppercase tracking-wide text-muted-foreground/70 border-b border-border bg-muted min-w-[200px]"
-                >
-                  {quote.supplierName}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            <tr className="hover-elevate" style={{ height: 36 }}>
-              <td className="px-2 py-1.5 border-b border-border/40 text-xs font-medium text-muted-foreground">
-                Uploaded
-              </td>
-              {quotes.map((quote) => (
-                <td key={quote.id} className="px-2 py-1.5 border-b border-border/40 text-center">
-                  <span className="text-xs text-muted-foreground">
-                    {format(new Date(quote.createdAt), "MMM d, yyyy")}
-                  </span>
-                </td>
-              ))}
-            </tr>
-
-            <tr className="hover-elevate" style={{ height: 36 }}>
-              <td className="px-2 py-1.5 border-b border-border/40 text-xs font-medium text-muted-foreground">
-                Status
-              </td>
-              {quotes.map((quote) => (
-                <td key={quote.id} className="px-2 py-1.5 border-b border-border/40 text-center">
-                  <div className="flex justify-center">
-                    <Badge
-                      variant={
-                        quote.status === "accepted"
-                          ? "default"
-                          : quote.status === "declined"
-                          ? "destructive"
-                          : "secondary"
-                      }
-                    >
-                      {quote.status}
-                    </Badge>
-                  </div>
-                </td>
-              ))}
-            </tr>
-
-            <tr className="hover-elevate bg-muted/20" style={{ height: 36 }}>
-              <td className="px-2 py-1.5 border-b border-border/40 text-xs font-medium text-muted-foreground">
-                Total Amount
-              </td>
-              {quotes.map((quote) => {
-                const isLowest = quote.id === lowestQuote.id && quotes.length > 1;
-
-                return (
-                  <td key={quote.id} className="px-2 py-1.5 border-b border-border/40 text-center">
-                    <div className="text-xl font-bold">
-                      ${(quote.totalAmount / 100).toFixed(2)}
-                    </div>
-                    {isLowest && (
-                      <Badge variant="default" className="gap-1 mt-2">
-                        <TrendingDown className="h-3 w-3" />
-                        Best Price
-                      </Badge>
-                    )}
-                  </td>
-                );
-              })}
-            </tr>
-
-            <tr className="hover-elevate" style={{ height: 36 }}>
-              <td className="px-2 py-1.5 border-b border-border/40 text-xs font-medium text-muted-foreground align-top">
-                Notes
-              </td>
-              {quotes.map((quote) => (
-                <td key={quote.id} className="px-2 py-1.5 border-b border-border/40 text-center">
-                  <div className="text-xs text-muted-foreground">
-                    {quote.notes || "-"}
-                  </div>
-                </td>
-              ))}
-            </tr>
-
-            <tr className="hover-elevate" style={{ height: 36 }}>
-              <td className="px-2 py-1.5 border-b border-border/40 text-xs font-medium text-muted-foreground align-top">
-                Attachments
-              </td>
-              {quotes.map((quote) => (
-                <td key={quote.id} className="px-2 py-1.5 border-b border-border/40">
-                  {quote.attachments && Array.isArray(quote.attachments) && quote.attachments.length > 0 ? (
-                    <div className="flex flex-col gap-1 items-center">
-                      {(quote.attachments as any[]).map((attachment: any, index: number) => (
-                        <Badge key={index} variant="outline" className="gap-1 text-xs">
-                          <FileText className="h-3 w-3" />
-                          {attachment.name}
-                        </Badge>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="text-xs text-muted-foreground text-center">-</div>
-                  )}
-                </td>
-              ))}
-            </tr>
-
-            <tr className="hover-elevate" style={{ height: 36 }}>
-              <td className="px-2 py-1.5 border-b border-border/40 text-xs font-medium text-muted-foreground">
-                Actions
-              </td>
-              {quotes.map((quote) => (
-                <td key={quote.id} className="px-2 py-1.5 border-b border-border/40">
-                  {quote.status === "pending" ? (
-                    <div className="flex flex-col gap-2">
-                      <Button
-                        size="sm"
-                        onClick={() => acceptMutation.mutate(quote.id)}
-                        disabled={acceptMutation.isPending || declineMutation.isPending}
-                        data-testid={`button-accept-${quote.id}`}
-                      >
-                        <Check className="h-4 w-4 mr-2" />
-                        Accept
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => declineMutation.mutate(quote.id)}
-                        disabled={acceptMutation.isPending || declineMutation.isPending}
-                        data-testid={`button-decline-${quote.id}`}
-                      >
-                        <X className="h-4 w-4 mr-2" />
-                        Decline
-                      </Button>
-                    </div>
-                  ) : quote.status === "accepted" ? (
-                    <div className="flex justify-center">
-                      <Button
-                        size="sm"
-                        onClick={() => convertToPOMutation.mutate(quote)}
-                        disabled={convertToPOMutation.isPending}
-                        data-testid={`button-convert-po-${quote.id}`}
-                      >
-                        <ShoppingCart className="h-4 w-4 mr-2" />
-                        {convertToPOMutation.isPending ? "Creating..." : "Convert to PO"}
-                      </Button>
-                    </div>
-                  ) : (
-                    <div className="text-xs text-muted-foreground text-center">-</div>
-                  )}
-                </td>
-              ))}
-            </tr>
-          </tbody>
-        </table>
-      </div>
     </div>
   );
 }
